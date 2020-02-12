@@ -1,19 +1,17 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var {FileUtils} = Cu.import("resource://gre/modules/FileUtils.jsm", {});
-
-function run_test() {
-  run_next_test();
-}
+"use strict";
 
 function readFile(file) {
-  let stream = Cc['@mozilla.org/network/file-input-stream;1']
-               .createInstance(Ci.nsIFileInputStream);
+  let stream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
   stream.init(file, -1, -1, Ci.nsIFileInputStream.CLOSE_ON_EOF);
 
-  let sis = Cc["@mozilla.org/scriptableinputstream;1"]
-            .createInstance(Ci.nsIScriptableInputStream);
+  let sis = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+    Ci.nsIScriptableInputStream
+  );
   sis.init(stream);
   let contents = sis.read(file.fileSize);
   sis.close();
@@ -23,9 +21,7 @@ function readFile(file) {
 function checkDirectoryContains(dir, files) {
   print("checking " + dir.path + " - should contain " + Object.keys(files));
   let seen = new Set();
-  let enumerator = dir.directoryEntries;
-  while (enumerator.hasMoreElements()) {
-    let file = enumerator.getNext().QueryInterface(Ci.nsIFile);
+  for (let file of dir.directoryEntries) {
     print("found file: " + file.path);
     Assert.ok(file.leafName in files, file.leafName + " exists, but shouldn't");
 
@@ -85,15 +81,13 @@ function createSubDir(dir, subDirName) {
 }
 
 function promiseMigrator(name, srcDir, targetDir) {
-  let migrator = Cc["@mozilla.org/profile/migrator;1?app=browser&type=firefox"]
-                 .createInstance(Ci.nsISupports)
-                 .wrappedJSObject;
+  let migrator = Cc[
+    "@mozilla.org/profile/migrator;1?app=browser&type=firefox"
+  ].createInstance(Ci.nsISupports).wrappedJSObject;
   let migrators = migrator._getResourcesInternal(srcDir, targetDir);
   for (let m of migrators) {
     if (m.name == name) {
-      return new Promise((resolve, reject) => {
-        m.migrate(resolve);
-      });
+      return new Promise(resolve => m.migrate(resolve));
     }
   }
   throw new Error("failed to find the " + name + " migrator");
@@ -103,16 +97,16 @@ function promiseTelemetryMigrator(srcDir, targetDir) {
   return promiseMigrator("telemetry", srcDir, targetDir);
 }
 
-add_task(function* test_empty() {
+add_task(async function test_empty() {
   let [srcDir, targetDir] = getTestDirs();
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true with empty directories");
   // check both are empty
   checkDirectoryContains(srcDir, {});
   checkDirectoryContains(targetDir, {});
 });
 
-add_task(function* test_migrate_files() {
+add_task(async function test_migrate_files() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Set up datareporting files, some to copy, some not.
@@ -136,78 +130,61 @@ add_task(function* test_migrate_files() {
   writeToFile(subDir, "other.file", "do not copy");
 
   // Perform migration.
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
-  Assert.ok(ok, "callback should have been true with important telemetry files copied");
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
+  Assert.ok(
+    ok,
+    "callback should have been true with important telemetry files copied"
+  );
 
   checkDirectoryContains(targetDir, {
-    "datareporting": {
+    datareporting: {
       "state.json": stateContent,
       "session-state.json": sessionStateContent,
     },
   });
 });
 
-add_task(function* test_fallback_fhr_state() {
-  let [srcDir, targetDir] = getTestDirs();
-
-  // Test that we fall back to migrating FHR state if the datareporting
-  // state file does not exist.
-  let stateContent = JSON.stringify({
-    clientId: "68d5474e-19dc-45c1-8e9a-81fca592707c",
-  });
-  let subDir = createSubDir(srcDir, "healthreport");
-  writeToFile(subDir, "state.json", stateContent);
-
-  // Perform migration.
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
-  Assert.ok(ok, "callback should have been true");
-
-  checkDirectoryContains(targetDir, {
-    "healthreport": {
-      "state.json": stateContent,
-    },
-  });
-});
-
-
-add_task(function* test_datareporting_not_dir() {
+add_task(async function test_datareporting_not_dir() {
   let [srcDir, targetDir] = getTestDirs();
 
   writeToFile(srcDir, "datareporting", "I'm a file but should be a directory");
 
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
-  Assert.ok(ok, "callback should have been true even though the directory was a file");
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
+  Assert.ok(
+    ok,
+    "callback should have been true even though the directory was a file"
+  );
 
   checkDirectoryContains(targetDir, {});
 });
 
-add_task(function* test_datareporting_empty() {
+add_task(async function test_datareporting_empty() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Migrate with an empty 'datareporting' subdir.
-  let subDir = createSubDir(srcDir, "datareporting");
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  createSubDir(srcDir, "datareporting");
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
 
   // We should end up with no migrated files.
   checkDirectoryContains(targetDir, {
-    "datareporting": {},
+    datareporting: {},
   });
 });
 
-add_task(function* test_healthreport_empty() {
+add_task(async function test_healthreport_empty() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Migrate with no 'datareporting' and an empty 'healthreport' subdir.
-  let subDir = createSubDir(srcDir, "healthreport");
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  createSubDir(srcDir, "healthreport");
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
 
   // We should end up with no migrated files.
   checkDirectoryContains(targetDir, {});
 });
 
-add_task(function* test_datareporting_many() {
+add_task(async function test_datareporting_many() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Create some datareporting files.
@@ -218,18 +195,18 @@ add_task(function* test_datareporting_many() {
   writeToFile(subDir, "something.else", "should not");
   createSubDir(subDir, "emptyDir");
 
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
 
   checkDirectoryContains(targetDir, {
-    "datareporting" : {
+    datareporting: {
       "state.json": shouldBeCopied,
       "session-state.json": shouldBeCopied,
-    }
+    },
   });
 });
 
-add_task(function* test_no_session_state() {
+add_task(async function test_no_session_state() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Check that migration still works properly if we only have state.json.
@@ -237,17 +214,17 @@ add_task(function* test_no_session_state() {
   let stateContent = "abcd984";
   writeToFile(subDir, "state.json", stateContent);
 
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
 
   checkDirectoryContains(targetDir, {
-    "datareporting" : {
+    datareporting: {
       "state.json": stateContent,
-    }
+    },
   });
 });
 
-add_task(function* test_no_state() {
+add_task(async function test_no_state() {
   let [srcDir, targetDir] = getTestDirs();
 
   // Check that migration still works properly if we only have session-state.json.
@@ -255,25 +232,25 @@ add_task(function* test_no_state() {
   let sessionStateContent = "abcd512";
   writeToFile(subDir, "session-state.json", sessionStateContent);
 
-  let ok = yield promiseTelemetryMigrator(srcDir, targetDir);
+  let ok = await promiseTelemetryMigrator(srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
 
   checkDirectoryContains(targetDir, {
-    "datareporting" : {
+    datareporting: {
       "session-state.json": sessionStateContent,
-    }
+    },
   });
 });
 
-add_task(function* test_times_migration() {
+add_task(async function test_times_migration() {
   let [srcDir, targetDir] = getTestDirs();
 
   // create a times.json in the source directory.
-  let contents = JSON.stringify({created: 1234});
+  let contents = JSON.stringify({ created: 1234 });
   writeToFile(srcDir, "times.json", contents);
 
   let earliest = Date.now();
-  let ok = yield promiseMigrator("times", srcDir, targetDir);
+  let ok = await promiseMigrator("times", srcDir, targetDir);
   Assert.ok(ok, "callback should have been true");
   let latest = Date.now();
 

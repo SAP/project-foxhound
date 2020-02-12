@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test whether an audio file played with a volume set to 0 plays silence</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -13,7 +13,7 @@
   var count = 20;
 
   function isSilent(b) {
-    for (var i = 0; i < b.length; b++) {
+    for (var i = 0; i < b.length; i++) {
       if (b[i] != 0.0) {
         return false;
       }

@@ -4,89 +4,44 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["LightweightThemes"];
+var EXPORTED_SYMBOLS = ["LightweightThemes"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const { AddonManager } = ChromeUtils.import(
+  "resource://gre/modules/AddonManager.jsm"
+);
 
-Cu.import("resource://gre/modules/LightweightThemeManager.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-
-this.LightweightThemes = {
-  init(libDir) {
-    // convert -size 3000x200 canvas:#333 black_theme.png
-    let blackImage = libDir.clone();
-    blackImage.append("black_theme.png");
-    this._blackImageURL = Services.io.newFileURI(blackImage).spec;
-
-    // convert -size 3000x200 canvas:#eee white_theme.png
-    let whiteImage = libDir.clone();
-    whiteImage.append("white_theme.png");
-    this._whiteImageURL = Services.io.newFileURI(whiteImage).spec;
-  },
+var LightweightThemes = {
+  init(libDir) {},
 
   configurations: {
     noLWT: {
-      applyConfig: Task.async(function*() {
-        LightweightThemeManager.currentTheme = null;
-      }),
-    },
-
-    darkLWT: {
-      applyConfig() {
-        LightweightThemeManager.setLocalTheme({
-          id:          "black",
-          name:        "black",
-          headerURL:   LightweightThemes._blackImageURL,
-          footerURL:   LightweightThemes._blackImageURL,
-          textcolor:   "#eeeeee",
-          accentcolor: "#111111",
-        });
-
-        // Wait for LWT listener
-        return new Promise(resolve => {
-          setTimeout(() => {
-            resolve("darkLWT");
-          }, 500);
-        });
+      selectors: [],
+      async applyConfig() {
+        let addon = await AddonManager.getAddonByID(
+          "default-theme@mozilla.org"
+        );
+        await addon.enable();
       },
-
-      verifyConfig: verifyConfigHelper,
     },
 
-    lightLWT: {
-      applyConfig() {
-        LightweightThemeManager.setLocalTheme({
-          id:          "white",
-          name:        "white",
-          headerURL:   LightweightThemes._whiteImageURL,
-          footerURL:   LightweightThemes._whiteImageURL,
-          textcolor:   "#111111",
-          accentcolor: "#eeeeee",
-        });
-        // Wait for LWT listener
-        return new Promise(resolve => {
-          setTimeout(() => {
-            resolve("lightLWT");
-          }, 500);
-        });
+    compactLight: {
+      selectors: [],
+      async applyConfig() {
+        let addon = await AddonManager.getAddonByID(
+          "firefox-compact-light@mozilla.org"
+        );
+        await addon.enable();
       },
-
-      verifyConfig: verifyConfigHelper,
     },
 
+    compactDark: {
+      selectors: [],
+      async applyConfig() {
+        let addon = await AddonManager.getAddonByID(
+          "firefox-compact-dark@mozilla.org"
+        );
+        await addon.enable();
+      },
+    },
   },
 };
-
-
-function verifyConfigHelper() {
-  return new Promise((resolve, reject) => {
-    let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
-    if (browserWindow.document.documentElement.hasAttribute("lwtheme")) {
-      resolve("verifyConfigHelper");
-    } else {
-      reject("The @lwtheme attribute wasn't present so themes may not be available");
-    }
-  });
-}

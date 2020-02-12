@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348497
 -->
 <head>
   <title>Test for Bug 348497</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -20,13 +20,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348497
 
 /** Test for Bug 348497 **/
 function doe() {
-    document.getElementById('testIframe').style.display = 'block';
-    document.getElementById('testIframe').contentDocument.designMode = 'on';
+    document.getElementById("testIframe").style.display = "block";
+    document.getElementById("testIframe").contentDocument.designMode = "on";
 }
 
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(doe);
-addLoadEvent(function() { ok(true, "enabling designmode on an iframe onload does not crash Mozilla")});
+addLoadEvent(function() { ok(true, "enabling designmode on an iframe onload does not crash Mozilla"); });
 addLoadEvent(SimpleTest.finish);
 
 </script>

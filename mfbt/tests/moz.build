@@ -4,7 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+if CONFIG['MOZ_WIDGET_TOOLKIT']:
+    TEST_DIRS += [
+        'gtest',
+    ]
+
+# Important: for these tests to be run, they also need to be added
+# to testing/cppunittest.ini.
 CppUnitTests([
+    'TestAlgorithm',
+    'TestArray',
     'TestArrayUtils',
     'TestAtomics',
     'TestBinarySearch',
@@ -15,13 +24,15 @@ CppUnitTests([
     'TestCheckedInt',
     'TestCountPopulation',
     'TestCountZeroes',
+    'TestDefineEnum',
+    'TestDoublyLinkedList',
     'TestEndian',
+    'TestEnumeratedArray',
     'TestEnumSet',
     'TestEnumTypeTraits',
     'TestFastBernoulliTrial',
     'TestFloatingPoint',
-    'TestFunction',
-    'TestInitializerList',
+    'TestFunctionTypeTraits',
     'TestIntegerPrintfMacros',
     'TestIntegerRange',
     'TestJSONWriter',
@@ -30,16 +41,24 @@ CppUnitTests([
     'TestMacroForEach',
     'TestMathAlgorithms',
     'TestMaybe',
+    'TestNonDereferenceable',
     'TestNotNull',
     'TestPair',
+    'TestRandomNum',
+    'TestRange',
     'TestRefPtr',
+    'TestResult',
     'TestRollingMean',
     'TestSaturate',
     'TestScopeExit',
     'TestSegmentedVector',
     'TestSHA1',
+    'TestSmallPointerArray',
     'TestSplayTree',
+    'TestSPSCQueue',
     'TestTemplateLib',
+    'TestTextUtils',
+    'TestThreadSafeWeakPtr',
     'TestTuple',
     'TestTypedEnum',
     'TestTypeTraits',
@@ -47,7 +66,15 @@ CppUnitTests([
     'TestVariant',
     'TestVector',
     'TestWeakPtr',
+    'TestWrappingOperations',
     'TestXorShift128PlusRNG',
+])
+
+# Not to be unified with the rest, because this test
+# sets MOZ_PRETEND_NO_JSRUST, which changes the behavior
+# of the included headers.
+CppUnitTests([
+    'TestUtf8',
 ])
 
 if not CONFIG['MOZ_ASAN']:
@@ -58,9 +85,9 @@ if not CONFIG['MOZ_ASAN']:
 # Since we link directly with MFBT object files, define IMPL_MFBT
 DEFINES['IMPL_MFBT'] = True
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
   CXXFLAGS += [
     '-wd4275', # non dll-interface class used as base for dll-interface class
     '-wd4530', # C++ exception handler used, but unwind semantics are not enabled
@@ -70,5 +97,5 @@ USE_LIBS += [
     'mfbt',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

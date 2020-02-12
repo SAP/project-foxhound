@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import os
-
 
 class LintException(Exception):
     pass
@@ -16,7 +14,7 @@ class LinterNotFound(LintException):
 
 class LinterParseError(LintException):
     def __init__(self, path, message):
-        LintException.__init__(self, "{}: {}".format(os.path.basename(path), message))
+        LintException.__init__(self, "{}: {}".format(path, message))
 
 
 class LintersNotConfigured(LintException):

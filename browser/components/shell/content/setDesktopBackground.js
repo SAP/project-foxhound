@@ -2,70 +2,92 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/AppConstants.jsm");
-
-var Ci = Components.interfaces;
+/* import-globals-from ../../../base/content/utilityOverlay.js */
 
 var gSetBackground = {
-  _position        : AppConstants.platform == "macosx" ? "STRETCH" : "",
-  _backgroundColor : AppConstants.platform != "macosx" ? 0 : undefined,
-  _screenWidth     : 0,
-  _screenHeight    : 0,
-  _image           : null,
-  _canvas          : null,
+  _position: AppConstants.platform == "macosx" ? "STRETCH" : "",
+  _backgroundColor: AppConstants.platform != "macosx" ? 0 : undefined,
+  _screenWidth: 0,
+  _screenHeight: 0,
+  _image: null,
+  _canvas: null,
+  _imageName: null,
 
-  get _shell()
-  {
-    return Components.classes["@mozilla.org/browser/shell-service;1"]
-                     .getService(Ci.nsIShellService);
+  get _shell() {
+    return Cc["@mozilla.org/browser/shell-service;1"].getService(
+      Ci.nsIShellService
+    );
   },
 
-  load: function ()
-  {
+  load() {
     this._canvas = document.getElementById("screen");
     this._screenWidth = screen.width;
     this._screenHeight = screen.height;
+    // Cap ratio to 4 so the dialog width doesn't get ridiculous. Highest
+    // regular screens seem to be 32:9 (3.56) according to Wikipedia.
+    let screenRatio = Math.min(this._screenWidth / this._screenHeight, 4);
+    this._canvas.width = this._canvas.height * screenRatio;
+    document.getElementById("preview-unavailable").style.width =
+      this._canvas.width + "px";
+
     if (AppConstants.platform == "macosx") {
       document.documentElement.getButton("accept").hidden = true;
-    }
-    if (this._screenWidth / this._screenHeight >= 1.6)
-      document.getElementById("monitor").setAttribute("aspectratio", "16:10");
+    } else {
+      let multiMonitors = false;
+      if (AppConstants.platform == "linux") {
+        // getMonitors only ever returns the primary monitor on Linux, so just
+        // always show the option
+        multiMonitors = true;
+      } else {
+        const gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
+        const monitors = gfxInfo.getMonitors();
+        multiMonitors = monitors.length > 1;
+      }
 
-    if (AppConstants.platform == "win") {
-      // Hide fill + fit options if < Win7 since they don't work.
-      var version = Components.classes["@mozilla.org/system-info;1"]
-                    .getService(Ci.nsIPropertyBag2)
-                    .getProperty("version");
-      var isWindows7OrHigher = (parseFloat(version) >= 6.1);
-      if (!isWindows7OrHigher) {
-        document.getElementById("fillPosition").hidden = true;
-        document.getElementById("fitPosition").hidden = true;
+      if (
+        !multiMonitors ||
+        AppConstants.isPlatformAndVersionAtMost("win", 6.1)
+      ) {
+        // Hide span option if < Win8 since that's when it was introduced.
+        document.getElementById("spanPosition").hidden = true;
       }
     }
 
+    document.addEventListener("dialogaccept", function() {
+      gSetBackground.setDesktopBackground();
+    });
     // make sure that the correct dimensions will be used
-    setTimeout(function(self) {
-      self.init(window.arguments[0]);
-    }, 0, this);
+    setTimeout(
+      function(self) {
+        self.init(window.arguments[0], window.arguments[1]);
+      },
+      0,
+      this
+    );
   },
 
-  init: function (aImage)
-  {
+  init(aImage, aImageName) {
     this._image = aImage;
+    this._imageName = aImageName;
 
     // set the size of the coordinate space
     this._canvas.width = this._canvas.clientWidth;
     this._canvas.height = this._canvas.clientHeight;
 
     var ctx = this._canvas.getContext("2d");
-    ctx.scale(this._canvas.clientWidth / this._screenWidth, this._canvas.clientHeight / this._screenHeight);
+    ctx.scale(
+      this._canvas.clientWidth / this._screenWidth,
+      this._canvas.clientHeight / this._screenHeight
+    );
 
     if (AppConstants.platform != "macosx") {
       this._initColor();
     } else {
       // Make sure to reset the button state in case the user has already
       // set an image as their desktop background.
-      var setDesktopBackground = document.getElementById("setDesktopBackground");
+      var setDesktopBackground = document.getElementById(
+        "setDesktopBackground"
+      );
       setDesktopBackground.hidden = false;
       var bundle = document.getElementById("backgroundBundle");
       setDesktopBackground.label = bundle.getString("DesktopBackgroundSet");
@@ -76,29 +98,38 @@ var gSetBackground = {
     this.updatePosition();
   },
 
-  setDesktopBackground: function ()
-  {
+  setDesktopBackground() {
     if (AppConstants.platform != "macosx") {
-      document.persist("menuPosition", "value");
-      this._shell.desktopBackgroundColor = this._hexStringToLong(this._backgroundColor);
+      Services.xulStore.persist(
+        document.getElementById("menuPosition"),
+        "value"
+      );
+      this._shell.desktopBackgroundColor = this._hexStringToLong(
+        this._backgroundColor
+      );
     } else {
-      Components.classes["@mozilla.org/observer-service;1"]
-                .getService(Ci.nsIObserverService)
-                .addObserver(this, "shell:desktop-background-changed", false);
+      Services.obs.addObserver(this, "shell:desktop-background-changed");
 
       var bundle = document.getElementById("backgroundBundle");
-      var setDesktopBackground = document.getElementById("setDesktopBackground");
+      var setDesktopBackground = document.getElementById(
+        "setDesktopBackground"
+      );
       setDesktopBackground.disabled = true;
-      setDesktopBackground.label = bundle.getString("DesktopBackgroundDownloading");
+      setDesktopBackground.label = bundle.getString(
+        "DesktopBackgroundDownloading"
+      );
     }
-    this._shell.setDesktopBackground(this._image,
-                                     Ci.nsIShellService["BACKGROUND_" + this._position]);
+    this._shell.setDesktopBackground(
+      this._image,
+      Ci.nsIShellService["BACKGROUND_" + this._position],
+      this._imageName
+    );
   },
 
-  updatePosition: function ()
-  {
+  updatePosition() {
     var ctx = this._canvas.getContext("2d");
     ctx.clearRect(0, 0, this._screenWidth, this._screenHeight);
+    document.getElementById("preview-unavailable").hidden = true;
 
     if (AppConstants.platform != "macosx") {
       this._position = document.getElementById("menuPosition").value;
@@ -154,13 +185,18 @@ var gSetBackground = {
         ctx.drawImage(this._image, x, y, width, height);
         break;
       }
+      case "SPAN": {
+        document.getElementById("preview-unavailable").hidden = false;
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 0, this._screenWidth, this._screenHeight);
+        ctx.stroke();
+      }
     }
-  }
+  },
 };
 
 if (AppConstants.platform != "macosx") {
-  gSetBackground["_initColor"] = function ()
-  {
+  gSetBackground._initColor = function() {
     var color = this._shell.desktopBackgroundColor;
 
     const rMask = 4294901760;
@@ -168,47 +204,47 @@ if (AppConstants.platform != "macosx") {
     const bMask = 255;
     var r = (color & rMask) >> 16;
     var g = (color & gMask) >> 8;
-    var b = (color & bMask);
+    var b = color & bMask;
     this.updateColor(this._rgbToHex(r, g, b));
 
     var colorpicker = document.getElementById("desktopColor");
-    colorpicker.color = this._backgroundColor;
+    colorpicker.value = this._backgroundColor;
   };
 
-  gSetBackground["updateColor"] = function (aColor)
-  {
+  gSetBackground.updateColor = function(aColor) {
     this._backgroundColor = aColor;
     this._canvas.style.backgroundColor = aColor;
   };
 
   // Converts a color string in the format "#RRGGBB" to an integer.
-  gSetBackground["_hexStringToLong"] = function (aString)
-  {
-    return parseInt(aString.substring(1, 3), 16) << 16 |
-           parseInt(aString.substring(3, 5), 16) << 8 |
-           parseInt(aString.substring(5, 7), 16);
+  gSetBackground._hexStringToLong = function(aString) {
+    return (
+      (parseInt(aString.substring(1, 3), 16) << 16) |
+      (parseInt(aString.substring(3, 5), 16) << 8) |
+      parseInt(aString.substring(5, 7), 16)
+    );
   };
 
-  gSetBackground["_rgbToHex"] = function (aR, aG, aB)
-  {
-    return "#" + [aR, aG, aB].map(aInt => aInt.toString(16).replace(/^(.)$/, "0$1"))
-                             .join("").toUpperCase();
+  gSetBackground._rgbToHex = function(aR, aG, aB) {
+    return (
+      "#" +
+      [aR, aG, aB]
+        .map(aInt => aInt.toString(16).replace(/^(.)$/, "0$1"))
+        .join("")
+        .toUpperCase()
+    );
   };
 } else {
-  gSetBackground["observe"] = function (aSubject, aTopic, aData)
-  {
+  gSetBackground.observe = function(aSubject, aTopic, aData) {
     if (aTopic == "shell:desktop-background-changed") {
       document.getElementById("setDesktopBackground").hidden = true;
       document.getElementById("showDesktopPreferences").hidden = false;
 
-      Components.classes["@mozilla.org/observer-service;1"]
-                .getService(Ci.nsIObserverService)
-                .removeObserver(this, "shell:desktop-background-changed");
+      Services.obs.removeObserver(this, "shell:desktop-background-changed");
     }
   };
 
-  gSetBackground["showDesktopPrefs"] = function()
-  {
-    this._shell.openApplication(Ci.nsIMacShellService.APPLICATION_DESKTOP);
+  gSetBackground.showDesktopPrefs = function() {
+    this._shell.QueryInterface(Ci.nsIMacShellService).showDesktopPreferences();
   };
 }

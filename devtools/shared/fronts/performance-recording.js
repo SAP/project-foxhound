@@ -3,27 +3,39 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Front, FrontClassWithSpec } = require("devtools/shared/protocol");
-const { performanceRecordingSpec } = require("devtools/shared/specs/performance-recording");
+const {
+  FrontClassWithSpec,
+  registerFront,
+} = require("devtools/shared/protocol");
+const {
+  performanceRecordingSpec,
+} = require("devtools/shared/specs/performance-recording");
 
-loader.lazyRequireGetter(this, "PerformanceIO",
-  "devtools/client/performance/modules/io");
-loader.lazyRequireGetter(this, "PerformanceRecordingCommon",
-  "devtools/shared/performance/recording-common", true);
-loader.lazyRequireGetter(this, "RecordingUtils",
-  "devtools/shared/performance/recording-utils");
-loader.lazyRequireGetter(this, "merge", "sdk/util/object", true);
+loader.lazyRequireGetter(
+  this,
+  "PerformanceIO",
+  "devtools/client/performance/modules/io"
+);
+loader.lazyRequireGetter(
+  this,
+  "PerformanceRecordingCommon",
+  "devtools/shared/performance/recording-common",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "RecordingUtils",
+  "devtools/shared/performance/recording-utils"
+);
 
 /**
  * This can be used on older Profiler implementations, but the methods cannot
  * be changed -- you must introduce a new method, and detect the server.
  */
-const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, merge({
-  form: function (form, detail) {
-    if (detail === "actorid") {
-      this.actorID = form;
-      return;
-    }
+class PerformanceRecordingFront extends FrontClassWithSpec(
+  performanceRecordingSpec
+) {
+  form(form) {
     this.actorID = form.actor;
     this._form = form;
     this._configuration = form.configuration;
@@ -46,40 +58,36 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
     // just finished. This is because GC/Compositing markers can come into the array out
     // of order with the other markers, leading to strange collapsing in waterfall view.
     if (this._completed && !this._markersSorted) {
-      this._markers = this._markers.sort((a, b) => (a.start > b.start));
+      this._markers = this._markers.sort((a, b) => a.start > b.start);
       this._markersSorted = true;
     }
-  },
+  }
 
-  initialize: function (client, form, config) {
-    Front.prototype.initialize.call(this, client, form);
+  constructor(client, targetFront, parentFront) {
+    super(client, targetFront, parentFront);
     this._markers = [];
     this._frames = [];
     this._memory = [];
     this._ticks = [];
     this._allocations = { sites: [], timestamps: [], frames: [], sizes: [] };
-  },
-
-  destroy: function () {
-    Front.prototype.destroy.call(this);
-  },
+  }
 
   /**
    * Saves the current recording to a file.
    *
-   * @param nsILocalFile file
+   * @param nsIFile file
    *        The file to stream the data into.
    */
-  exportRecording: function (file) {
-    let recordingData = this.getAllData();
+  exportRecording(file) {
+    const recordingData = this.getAllData();
     return PerformanceIO.saveRecordingToFile(recordingData, file);
-  },
+  }
 
   /**
    * Fired whenever the PerformanceFront emits markers, memory or ticks.
    */
-  _addTimelineData: function (eventName, data) {
-    let config = this.getConfiguration();
+  _addTimelineData(eventName, data) {
+    const config = this.getConfiguration();
 
     switch (eventName) {
       // Accumulate timeline markers into an array. Furthermore, the timestamps
@@ -88,7 +96,7 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         if (!config.withMarkers) {
           break;
         }
-        let { markers } = data;
+        const { markers } = data;
         RecordingUtils.offsetMarkerTimes(markers, this._startTime);
         RecordingUtils.pushAll(this._markers, markers);
         break;
@@ -98,7 +106,7 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         if (!config.withMarkers) {
           break;
         }
-        let { frames } = data;
+        const { frames } = data;
         RecordingUtils.pushAll(this._frames, frames);
         break;
       }
@@ -108,10 +116,10 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         if (!config.withMemory) {
           break;
         }
-        let { delta, measurement } = data;
+        const { delta, measurement } = data;
         this._memory.push({
           delta: delta - this._startTime,
-          value: measurement.total / 1024 / 1024
+          value: measurement.total / 1024 / 1024,
         });
         break;
       }
@@ -120,7 +128,7 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         if (!config.withTicks) {
           break;
         }
-        let { timestamps } = data;
+        const { timestamps } = data;
         this._ticks = timestamps;
         break;
       }
@@ -129,7 +137,7 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         if (!config.withAllocations) {
           break;
         }
-        let {
+        const {
           allocations: sites,
           allocationsTimestamps: timestamps,
           allocationSizes: sizes,
@@ -144,9 +152,20 @@ const PerformanceRecordingFront = FrontClassWithSpec(performanceRecordingSpec, m
         break;
       }
     }
-  },
+  }
 
-  toString: () => "[object PerformanceRecordingFront]"
-}, PerformanceRecordingCommon));
+  toString() {
+    return "[object PerformanceRecordingFront]";
+  }
+}
+
+// PerformanceRecordingFront also needs to inherit from PerformanceRecordingCommon
+// but as ES classes don't support multiple inheritance, we are overriding the
+// prototype with PerformanceRecordingCommon methods.
+Object.defineProperties(
+  PerformanceRecordingFront.prototype,
+  Object.getOwnPropertyDescriptors(PerformanceRecordingCommon)
+);
 
 exports.PerformanceRecordingFront = PerformanceRecordingFront;
+registerFront(PerformanceRecordingFront);

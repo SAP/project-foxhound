@@ -5,13 +5,16 @@
 function test() {
   // Add two new tabs after the original tab. Pin the first one.
   let originalTab = gBrowser.selectedTab;
-  let newTab1 = gBrowser.addTab();
-  let newTab2 = gBrowser.addTab();
+  let newTab1 = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.addTab(gBrowser);
   gBrowser.pinTab(newTab1);
 
   // Check that there is only one closable tab from originalTab to the end
-  is(gBrowser.getTabsToTheEndFrom(originalTab).length, 1,
-    "One unpinned tab to the right");
+  is(
+    gBrowser.getTabsToTheEndFrom(originalTab).length,
+    1,
+    "One unpinned tab to the right"
+  );
 
   // Remove tabs to the end
   gBrowser.removeTabsToTheEndFrom(originalTab);

@@ -7,63 +7,63 @@
 #ifndef mozilla_dom_SVGMaskElement_h
 #define mozilla_dom_SVGMaskElement_h
 
-#include "nsSVGEnum.h"
-#include "nsSVGLength2.h"
-#include "nsSVGElement.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedLength.h"
+#include "mozilla/dom/SVGElement.h"
 
 class nsSVGMaskFrame;
 
-nsresult NS_NewSVGMaskElement(nsIContent **aResult,
-                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGMaskElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
 //--------------------- Masks ------------------------
 
-typedef nsSVGElement SVGMaskElementBase;
+typedef SVGElement SVGMaskElementBase;
 
-class SVGMaskElement final : public SVGMaskElementBase
-{
+class SVGMaskElement final : public SVGMaskElementBase {
   friend class ::nsSVGMaskFrame;
 
-protected:
-  friend nsresult (::NS_NewSVGMaskElement(nsIContent **aResult,
-                                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGMaskElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  friend nsresult(::NS_NewSVGMaskElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGMaskElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
+ public:
   // nsIContent interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedEnumeration> MaskUnits();
-  already_AddRefed<SVGAnimatedEnumeration> MaskContentUnits();
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedEnumeration> MaskUnits();
+  already_AddRefed<DOMSVGAnimatedEnumeration> MaskContentUnits();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
 
-protected:
-
+ protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
   virtual EnumAttributesInfo GetEnumInfo() override;
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   enum { MASKUNITS, MASKCONTENTUNITS };
-  nsSVGEnum mEnumAttributes[2];
+  SVGAnimatedEnumeration mEnumAttributes[2];
   static EnumInfo sEnumInfo[2];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGMaskElement_h
+#endif  // mozilla_dom_SVGMaskElement_h

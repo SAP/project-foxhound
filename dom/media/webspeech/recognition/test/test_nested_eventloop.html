@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=650295
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 650295 -- Spin the event loop from inside a callback</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="head.js"></script>
 </head>
@@ -21,7 +21,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=650295
   SimpleTest.waitForExplicitFinish();
 
   /*
-   * window.showModalDialog() can be used to spin the event loop, causing
+   * SpecialPowers.spinEventLoop can be used to spin the event loop, causing
    * queued SpeechEvents (such as those created by calls to start(), stop()
    * or abort()) to be processed immediately.
    * When this is done from inside DOM event handlers, it is possible to
@@ -33,7 +33,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=650295
   }
   function doneFunc() {
     // Trigger gc now and wait some time to make sure this test gets the blame
-    // for any assertions caused by showModalDialog
+    // for any assertions caused by spinning the event loop.
     //
     // NB - The assertions should be gone, but this looks too scary to touch
     // during batch cleanup.
@@ -70,7 +70,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=650295
       "audioend": abortAndSpinEventLoop,
       "end": null
     },
-    doneFunc: doneFunc,
+    doneFunc,
     prefs: [["media.webspeech.test.fake_fsm_events", true],
             ["media.webspeech.test.fake_recognition_service", true]]
   });

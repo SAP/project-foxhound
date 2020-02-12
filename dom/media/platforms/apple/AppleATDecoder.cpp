@@ -4,38 +4,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "AppleATDecoder.h"
+#include "Adts.h"
 #include "AppleUtils.h"
 #include "MP4Decoder.h"
-#include "mp4_demuxer/Adts.h"
 #include "MediaInfo.h"
-#include "AppleATDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
-#define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define FourCC2Str(n) ((char[5]){(char)(n >> 24), (char)(n >> 16), (char)(n >> 8), (char)(n), 0})
+#define LOG(...) DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
+#define LOGEX(_this, ...) \
+  DDMOZ_LOGEX(_this, sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
+#define FourCC2Str(n) \
+  ((char[5]){(char)(n >> 24), (char)(n >> 16), (char)(n >> 8), (char)(n), 0})
 
 namespace mozilla {
 
-AppleATDecoder::AppleATDecoder(const AudioInfo& aConfig,
-                               TaskQueue* aTaskQueue,
-                               MediaDataDecoderCallback* aCallback)
-  : mConfig(aConfig)
-  , mFileStreamError(false)
-  , mTaskQueue(aTaskQueue)
-  , mCallback(aCallback)
-  , mConverter(nullptr)
-  , mStream(nullptr)
-  , mIsFlushing(false)
-  , mParsedFramesForAACMagicCookie(0)
-{
+AppleATDecoder::AppleATDecoder(const AudioInfo& aConfig, TaskQueue* aTaskQueue)
+    : mConfig(aConfig),
+      mFileStreamError(false),
+      mTaskQueue(aTaskQueue),
+      mConverter(nullptr),
+      mOutputFormat(),
+      mStream(nullptr),
+      mParsedFramesForAACMagicCookie(0),
+      mErrored(false) {
   MOZ_COUNT_CTOR(AppleATDecoder);
   LOG("Creating Apple AudioToolbox decoder");
   LOG("Audio Decoder configuration: %s %d Hz %d channels %d bits per channel",
-      mConfig.mMimeType.get(),
-      mConfig.mRate,
-      mConfig.mChannels,
+      mConfig.mMimeType.get(), mConfig.mRate, mConfig.mChannels,
       mConfig.mBitDepth);
 
   if (mConfig.mMimeType.EqualsLiteral("audio/mpeg")) {
@@ -47,97 +47,94 @@ AppleATDecoder::AppleATDecoder(const AudioInfo& aConfig,
   }
 }
 
-AppleATDecoder::~AppleATDecoder()
-{
+AppleATDecoder::~AppleATDecoder() {
   MOZ_COUNT_DTOR(AppleATDecoder);
   MOZ_ASSERT(!mConverter);
 }
 
-RefPtr<MediaDataDecoder::InitPromise>
-AppleATDecoder::Init()
-{
+RefPtr<MediaDataDecoder::InitPromise> AppleATDecoder::Init() {
   if (!mFormatID) {
-    NS_ERROR("Non recognised format");
-    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    RESULT_DETAIL("Non recognised format")),
+        __func__);
   }
 
   return InitPromise::CreateAndResolve(TrackType::kAudioTrack, __func__);
 }
 
-void
-AppleATDecoder::Input(MediaRawData* aSample)
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
-  LOG("mp4 input sample %p %lld us %lld pts%s %llu bytes audio",
-      aSample,
-      aSample->mDuration,
-      aSample->mTime,
+RefPtr<MediaDataDecoder::DecodePromise> AppleATDecoder::Decode(
+    MediaRawData* aSample) {
+  LOG("mp4 input sample %p %lld us %lld pts%s %llu bytes audio", aSample,
+      aSample->mDuration.ToMicroseconds(), aSample->mTime.ToMicroseconds(),
       aSample->mKeyframe ? " keyframe" : "",
       (unsigned long long)aSample->Size());
-
-  // Queue a task to perform the actual decoding on a separate thread.
-  nsCOMPtr<nsIRunnable> runnable =
-      NewRunnableMethod<RefPtr<MediaRawData>>(
-        this,
-        &AppleATDecoder::SubmitSample,
-        RefPtr<MediaRawData>(aSample));
-  mTaskQueue->Dispatch(runnable.forget());
+  RefPtr<AppleATDecoder> self = this;
+  RefPtr<MediaRawData> sample = aSample;
+  return InvokeAsync(mTaskQueue, __func__,
+                     [self, sample] { return self->ProcessDecode(sample); });
 }
 
-void
-AppleATDecoder::ProcessFlush()
-{
+RefPtr<MediaDataDecoder::FlushPromise> AppleATDecoder::ProcessFlush() {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   mQueuedSamples.Clear();
-  OSStatus rv = AudioConverterReset(mConverter);
-  if (rv) {
-    LOG("Error %d resetting AudioConverter", rv);
+  mDecodedSamples.Clear();
+
+  if (mConverter) {
+    OSStatus rv = AudioConverterReset(mConverter);
+    if (rv) {
+      LOG("Error %d resetting AudioConverter", static_cast<int>(rv));
+    }
   }
+  if (mErrored) {
+    mParsedFramesForAACMagicCookie = 0;
+    mMagicCookie.Clear();
+    ProcessShutdown();
+    mErrored = false;
+  }
+  return FlushPromise::CreateAndResolve(true, __func__);
 }
 
-void
-AppleATDecoder::Flush()
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
+RefPtr<MediaDataDecoder::FlushPromise> AppleATDecoder::Flush() {
   LOG("Flushing AudioToolbox AAC decoder");
-  mIsFlushing = true;
-  nsCOMPtr<nsIRunnable> runnable =
-    NewRunnableMethod(this, &AppleATDecoder::ProcessFlush);
-  SyncRunnable::DispatchToThread(mTaskQueue, runnable);
-  mIsFlushing = false;
+  return InvokeAsync(mTaskQueue, this, __func__, &AppleATDecoder::ProcessFlush);
 }
 
-void
-AppleATDecoder::Drain()
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
+RefPtr<MediaDataDecoder::DecodePromise> AppleATDecoder::Drain() {
   LOG("Draining AudioToolbox AAC decoder");
-  mTaskQueue->AwaitIdle();
-  mCallback->DrainComplete();
-  Flush();
+  RefPtr<AppleATDecoder> self = this;
+  return InvokeAsync(mTaskQueue, __func__, [] {
+    return DecodePromise::CreateAndResolve(DecodedData(), __func__);
+  });
 }
 
-void
-AppleATDecoder::Shutdown()
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
+RefPtr<ShutdownPromise> AppleATDecoder::Shutdown() {
+  RefPtr<AppleATDecoder> self = this;
+  return InvokeAsync(mTaskQueue, __func__, [self]() {
+    self->ProcessShutdown();
+    return ShutdownPromise::CreateAndResolve(true, __func__);
+  });
+}
 
-  LOG("Shutdown: Apple AudioToolbox AAC decoder");
-  mQueuedSamples.Clear();
-  OSStatus rv = AudioConverterDispose(mConverter);
-  if (rv) {
-    LOG("error %d disposing of AudioConverter", rv);
-    return;
-  }
-  mConverter = nullptr;
+void AppleATDecoder::ProcessShutdown() {
+  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
   if (mStream) {
-    rv = AudioFileStreamClose(mStream);
+    OSStatus rv = AudioFileStreamClose(mStream);
     if (rv) {
-      LOG("error %d disposing of AudioFileStream", rv);
+      LOG("error %d disposing of AudioFileStream", static_cast<int>(rv));
       return;
     }
     mStream = nullptr;
+  }
+
+  if (mConverter) {
+    LOG("Shutdown: Apple AudioToolbox AAC decoder");
+    OSStatus rv = AudioConverterDispose(mConverter);
+    if (rv) {
+      LOG("error %d disposing of AudioConverter", static_cast<int>(rv));
+    }
+    mConverter = nullptr;
   }
 }
 
@@ -152,13 +149,10 @@ struct PassthroughUserData {
 // has gone wrong during decoding and we're done processing the packet.
 const uint32_t kNoMoreDataErr = 'MOAR';
 
-static OSStatus
-_PassthroughInputDataCallback(AudioConverterRef aAudioConverter,
-                              UInt32* aNumDataPackets /* in/out */,
-                              AudioBufferList* aData /* in/out */,
-                              AudioStreamPacketDescription** aPacketDesc,
-                              void* aUserData)
-{
+static OSStatus _PassthroughInputDataCallback(
+    AudioConverterRef aAudioConverter, UInt32* aNumDataPackets /* in/out */,
+    AudioBufferList* aData /* in/out */,
+    AudioStreamPacketDescription** aPacketDesc, void* aUserData) {
   PassthroughUserData* userData = (PassthroughUserData*)aUserData;
   if (!userData->mDataSize) {
     *aNumDataPackets = 0;
@@ -182,22 +176,15 @@ _PassthroughInputDataCallback(AudioConverterRef aAudioConverter,
   return noErr;
 }
 
-void
-AppleATDecoder::SubmitSample(MediaRawData* aSample)
-{
+RefPtr<MediaDataDecoder::DecodePromise> AppleATDecoder::ProcessDecode(
+    MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
-  if (mIsFlushing) {
-    return;
-  }
-
-  nsresult rv = NS_OK;
+  MediaResult rv = NS_OK;
   if (!mConverter) {
     rv = SetupDecoder(aSample);
     if (rv != NS_OK && rv != NS_ERROR_NOT_INITIALIZED) {
-      mCallback->Error(
-        MediaResult(rv, RESULT_DETAIL("Unable to create decoder")));
-      return;
+      return DecodePromise::CreateAndReject(rv, __func__);
     }
   }
 
@@ -207,20 +194,19 @@ AppleATDecoder::SubmitSample(MediaRawData* aSample)
     for (size_t i = 0; i < mQueuedSamples.Length(); i++) {
       rv = DecodeSample(mQueuedSamples[i]);
       if (NS_FAILED(rv)) {
-        mQueuedSamples.Clear();
-        mCallback->Error(MediaResult(
-          rv, RESULT_DETAIL("Unable to decode sample %lld", aSample->mTime)));
-        return;
+        mErrored = true;
+        return DecodePromise::CreateAndReject(rv, __func__);
       }
     }
     mQueuedSamples.Clear();
   }
-  mCallback->InputExhausted();
+
+  DecodedData results = std::move(mDecodedSamples);
+  mDecodedSamples = DecodedData();
+  return DecodePromise::CreateAndResolve(std::move(results), __func__);
 }
 
-nsresult
-AppleATDecoder::DecodeSample(MediaRawData* aSample)
-{
+MediaResult AppleATDecoder::DecodeSample(MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
   // Array containing the queued decoded audio frames, about to be output.
@@ -236,8 +222,8 @@ AppleATDecoder::DecodeSample(MediaRawData* aSample)
 
   // This API insists on having packets spoon-fed to it from a callback.
   // This structure exists only to pass our state.
-  PassthroughUserData userData =
-    { channels, (UInt32)aSample->Size(), aSample->Data() };
+  PassthroughUserData userData = {channels, (UInt32)aSample->Size(),
+                                  aSample->Data()};
 
   // Decompressed audio buffer
   AlignedAudioBuffer decoded(maxDecodedSamples);
@@ -250,23 +236,23 @@ AppleATDecoder::DecodeSample(MediaRawData* aSample)
     decBuffer.mNumberBuffers = 1;
     decBuffer.mBuffers[0].mNumberChannels = channels;
     decBuffer.mBuffers[0].mDataByteSize =
-      maxDecodedSamples * sizeof(AudioDataValue);
+        maxDecodedSamples * sizeof(AudioDataValue);
     decBuffer.mBuffers[0].mData = decoded.get();
 
     // in: the max number of packets we can handle from the decoder.
     // out: the number of packets the decoder is actually returning.
     UInt32 numFrames = MAX_AUDIO_FRAMES;
 
-    OSStatus rv = AudioConverterFillComplexBuffer(mConverter,
-                                                  _PassthroughInputDataCallback,
-                                                  &userData,
-                                                  &numFrames /* in/out */,
-                                                  &decBuffer,
-                                                  packets.get());
+    OSStatus rv = AudioConverterFillComplexBuffer(
+        mConverter, _PassthroughInputDataCallback, &userData,
+        &numFrames /* in/out */, &decBuffer, packets.get());
 
     if (rv && rv != kNoMoreDataErr) {
-      LOG("Error decoding audio stream: %d\n", rv);
-      return NS_ERROR_DOM_MEDIA_DECODE_ERR;
+      LOG("Error decoding audio sample: %d\n", static_cast<int>(rv));
+      return MediaResult(
+          NS_ERROR_DOM_MEDIA_DECODE_ERR,
+          RESULT_DETAIL("Error decoding audio sample: %d @ %lld",
+                        static_cast<int>(rv), aSample->mTime.ToMicroseconds()));
     }
 
     if (numFrames) {
@@ -287,13 +273,16 @@ AppleATDecoder::DecodeSample(MediaRawData* aSample)
   media::TimeUnit duration = FramesToTimeUnit(numFrames, rate);
   if (!duration.IsValid()) {
     NS_WARNING("Invalid count of accumulated audio samples");
-    return NS_ERROR_DOM_MEDIA_OVERFLOW_ERR;
+    return MediaResult(
+        NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
+        RESULT_DETAIL(
+            "Invalid count of accumulated audio samples: num:%llu rate:%d",
+            uint64_t(numFrames), rate));
   }
 
 #ifdef LOG_SAMPLE_DECODE
   LOG("pushed audio at time %lfs; duration %lfs\n",
-      (double)aSample->mTime / USECS_PER_S,
-      duration.ToSeconds());
+      (double)aSample->mTime / USECS_PER_S, duration.ToSeconds());
 #endif
 
   AudioSampleBuffer data(outputData.Elements(), outputData.Length());
@@ -301,33 +290,28 @@ AppleATDecoder::DecodeSample(MediaRawData* aSample)
     return NS_ERROR_OUT_OF_MEMORY;
   }
   if (mChannelLayout && !mAudioConverter) {
-    AudioConfig in(*mChannelLayout.get(), rate);
-    AudioConfig out(channels, rate);
-    if (!in.IsValid() || !out.IsValid()) {
-      return NS_ERROR_DOM_MEDIA_DECODE_ERR;
-    }
+    AudioConfig in(*mChannelLayout, channels, rate);
+    AudioConfig out(AudioConfig::ChannelLayout::SMPTEDefault(*mChannelLayout),
+                    channels, rate);
     mAudioConverter = MakeUnique<AudioConverter>(in, out);
   }
-  if (mAudioConverter) {
+  if (mAudioConverter && mChannelLayout && mChannelLayout->IsValid()) {
     MOZ_ASSERT(mAudioConverter->CanWorkInPlace());
-    data = mAudioConverter->Process(Move(data));
+    data = mAudioConverter->Process(std::move(data));
   }
 
-  RefPtr<AudioData> audio = new AudioData(aSample->mOffset,
-                                          aSample->mTime,
-                                          duration.ToMicroseconds(),
-                                          numFrames,
-                                          data.Forget(),
-                                          channels,
-                                          rate);
-  mCallback->Output(audio);
+  RefPtr<AudioData> audio = new AudioData(
+      aSample->mOffset, aSample->mTime, data.Forget(), channels, rate,
+      mChannelLayout && mChannelLayout->IsValid()
+          ? mChannelLayout->Map()
+          : AudioConfig::ChannelLayout::UNKNOWN_MAP);
+  MOZ_DIAGNOSTIC_ASSERT(duration == audio->mDuration, "must be equal");
+  mDecodedSamples.AppendElement(std::move(audio));
   return NS_OK;
 }
 
-nsresult
-AppleATDecoder::GetInputAudioDescription(AudioStreamBasicDescription& aDesc,
-                                         const nsTArray<uint8_t>& aExtraData)
-{
+MediaResult AppleATDecoder::GetInputAudioDescription(
+    AudioStreamBasicDescription& aDesc, const nsTArray<uint8_t>& aExtraData) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
   // Request the properties from CoreAudio using the codec magic cookie
@@ -349,20 +333,18 @@ AppleATDecoder::GetInputAudioDescription(AudioStreamBasicDescription& aDesc,
   aDesc.mChannelsPerFrame = mConfig.mChannels;
   aDesc.mSampleRate = mConfig.mRate;
   UInt32 inputFormatSize = sizeof(aDesc);
-  OSStatus rv = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo,
-                                       0,
-                                       NULL,
-                                       &inputFormatSize,
-                                       &aDesc);
+  OSStatus rv = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL,
+                                       &inputFormatSize, &aDesc);
   if (NS_WARN_IF(rv)) {
-    return NS_ERROR_FAILURE;
+    return MediaResult(
+        NS_ERROR_FAILURE,
+        RESULT_DETAIL("Unable to get format info:%d", int32_t(rv)));
   }
 
   // If any of the methods below fail, we will return the default format as
   // created using kAudioFormatProperty_FormatInfo above.
   rv = AudioFormatGetPropertyInfo(kAudioFormatProperty_FormatList,
-                                  sizeof(formatInfo),
-                                  &formatInfo,
+                                  sizeof(formatInfo), &formatInfo,
                                   &formatListSize);
   if (rv || (formatListSize % sizeof(AudioFormatListItem))) {
     return NS_OK;
@@ -371,14 +353,12 @@ AppleATDecoder::GetInputAudioDescription(AudioStreamBasicDescription& aDesc,
   auto formatList = MakeUnique<AudioFormatListItem[]>(listCount);
 
   rv = AudioFormatGetProperty(kAudioFormatProperty_FormatList,
-                              sizeof(formatInfo),
-                              &formatInfo,
-                              &formatListSize,
+                              sizeof(formatInfo), &formatInfo, &formatListSize,
                               formatList.get());
   if (rv) {
     return NS_OK;
   }
-  LOG("found %u available audio stream(s)",
+  LOG("found %zu available audio stream(s)",
       formatListSize / sizeof(AudioFormatListItem));
   // Get the index number of the first playable format.
   // This index number will be for the highest quality layer the platform
@@ -386,9 +366,7 @@ AppleATDecoder::GetInputAudioDescription(AudioStreamBasicDescription& aDesc,
   UInt32 itemIndex;
   UInt32 indexSize = sizeof(itemIndex);
   rv = AudioFormatGetProperty(kAudioFormatProperty_FirstPlayableFormatFromList,
-                              formatListSize,
-                              formatList.get(),
-                              &indexSize,
+                              formatListSize, formatList.get(), &indexSize,
                               &itemIndex);
   if (rv) {
     return NS_OK;
@@ -399,30 +377,27 @@ AppleATDecoder::GetInputAudioDescription(AudioStreamBasicDescription& aDesc,
   return NS_OK;
 }
 
-AudioConfig::Channel
-ConvertChannelLabel(AudioChannelLabel id)
-{
+AudioConfig::Channel ConvertChannelLabel(AudioChannelLabel id) {
   switch (id) {
-    case kAudioChannelLabel_Mono:
-      return AudioConfig::CHANNEL_MONO;
     case kAudioChannelLabel_Left:
-      return AudioConfig::CHANNEL_LEFT;
+      return AudioConfig::CHANNEL_FRONT_LEFT;
     case kAudioChannelLabel_Right:
-      return AudioConfig::CHANNEL_RIGHT;
+      return AudioConfig::CHANNEL_FRONT_RIGHT;
+    case kAudioChannelLabel_Mono:
     case kAudioChannelLabel_Center:
-      return AudioConfig::CHANNEL_CENTER;
+      return AudioConfig::CHANNEL_FRONT_CENTER;
     case kAudioChannelLabel_LFEScreen:
       return AudioConfig::CHANNEL_LFE;
     case kAudioChannelLabel_LeftSurround:
-      return AudioConfig::CHANNEL_LS;
+      return AudioConfig::CHANNEL_SIDE_LEFT;
     case kAudioChannelLabel_RightSurround:
-      return AudioConfig::CHANNEL_RS;
+      return AudioConfig::CHANNEL_SIDE_RIGHT;
     case kAudioChannelLabel_CenterSurround:
-      return AudioConfig::CHANNEL_RCENTER;
+      return AudioConfig::CHANNEL_BACK_CENTER;
     case kAudioChannelLabel_RearSurroundLeft:
-      return AudioConfig::CHANNEL_RLS;
+      return AudioConfig::CHANNEL_BACK_LEFT;
     case kAudioChannelLabel_RearSurroundRight:
-      return AudioConfig::CHANNEL_RRS;
+      return AudioConfig::CHANNEL_BACK_RIGHT;
     default:
       return AudioConfig::CHANNEL_INVALID;
   }
@@ -430,18 +405,14 @@ ConvertChannelLabel(AudioChannelLabel id)
 
 // Will set mChannelLayout if a channel layout could properly be identified
 // and is supported.
-nsresult
-AppleATDecoder::SetupChannelLayout()
-{
+nsresult AppleATDecoder::SetupChannelLayout() {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
   // Determine the channel layout.
   UInt32 propertySize;
   UInt32 size;
-  OSStatus status =
-    AudioConverterGetPropertyInfo(mConverter,
-                                  kAudioConverterOutputChannelLayout,
-                                  &propertySize, NULL);
+  OSStatus status = AudioConverterGetPropertyInfo(
+      mConverter, kAudioConverterOutputChannelLayout, &propertySize, NULL);
   if (status || !propertySize) {
     LOG("Couldn't get channel layout property (%s)", FourCC2Str(status));
     return NS_ERROR_FAILURE;
@@ -449,17 +420,15 @@ AppleATDecoder::SetupChannelLayout()
 
   auto data = MakeUnique<uint8_t[]>(propertySize);
   size = propertySize;
-  status =
-    AudioConverterGetProperty(mConverter, kAudioConverterInputChannelLayout,
-                              &size, data.get());
+  status = AudioConverterGetProperty(
+      mConverter, kAudioConverterInputChannelLayout, &size, data.get());
   if (status || size != propertySize) {
-    LOG("Couldn't get channel layout property (%s)",
-        FourCC2Str(status));
+    LOG("Couldn't get channel layout property (%s)", FourCC2Str(status));
     return NS_ERROR_FAILURE;
   }
 
   AudioChannelLayout* layout =
-    reinterpret_cast<AudioChannelLayout*>(data.get());
+      reinterpret_cast<AudioChannelLayout*>(data.get());
   AudioChannelLayoutTag tag = layout->mChannelLayoutTag;
 
   // if tag is kAudioChannelLayoutTag_UseChannelDescriptions then the structure
@@ -470,20 +439,16 @@ AppleATDecoder::SetupChannelLayout()
   // Otherwise the tag itself describes the layout.
   if (tag != kAudioChannelLayoutTag_UseChannelDescriptions) {
     AudioFormatPropertyID property =
-      tag == kAudioChannelLayoutTag_UseChannelBitmap
-        ? kAudioFormatProperty_ChannelLayoutForBitmap
-        : kAudioFormatProperty_ChannelLayoutForTag;
+        tag == kAudioChannelLayoutTag_UseChannelBitmap
+            ? kAudioFormatProperty_ChannelLayoutForBitmap
+            : kAudioFormatProperty_ChannelLayoutForTag;
 
     if (property == kAudioFormatProperty_ChannelLayoutForBitmap) {
-      status =
-        AudioFormatGetPropertyInfo(property,
-                                   sizeof(UInt32), &layout->mChannelBitmap,
-                                   &propertySize);
+      status = AudioFormatGetPropertyInfo(
+          property, sizeof(UInt32), &layout->mChannelBitmap, &propertySize);
     } else {
-      status =
-        AudioFormatGetPropertyInfo(property,
-                                   sizeof(AudioChannelLayoutTag), &tag,
-                                   &propertySize);
+      status = AudioFormatGetPropertyInfo(
+          property, sizeof(AudioChannelLayoutTag), &tag, &propertySize);
     }
     if (status || !propertySize) {
       LOG("Couldn't get channel layout property info (%s:%s)",
@@ -495,17 +460,15 @@ AppleATDecoder::SetupChannelLayout()
     size = propertySize;
 
     if (property == kAudioFormatProperty_ChannelLayoutForBitmap) {
-      status = AudioFormatGetProperty(property,
-                                      sizeof(UInt32), &layout->mChannelBitmap,
-                                      &size, layout);
+      status = AudioFormatGetProperty(property, sizeof(UInt32),
+                                      &layout->mChannelBitmap, &size, layout);
     } else {
-      status = AudioFormatGetProperty(property,
-                                      sizeof(AudioChannelLayoutTag), &tag,
-                                      &size, layout);
+      status = AudioFormatGetProperty(property, sizeof(AudioChannelLayoutTag),
+                                      &tag, &size, layout);
     }
     if (status || size != propertySize) {
-      LOG("Couldn't get channel layout property (%s:%s)",
-          FourCC2Str(property), FourCC2Str(status));
+      LOG("Couldn't get channel layout property (%s:%s)", FourCC2Str(property),
+          FourCC2Str(status));
       return NS_ERROR_FAILURE;
     }
     // We have retrieved the channel layout from the tag or bitmap.
@@ -513,32 +476,28 @@ AppleATDecoder::SetupChannelLayout()
     layout->mChannelLayoutTag = kAudioChannelLayoutTag_UseChannelDescriptions;
   }
 
-  if (layout->mNumberChannelDescriptions > MAX_AUDIO_CHANNELS ||
-      layout->mNumberChannelDescriptions != mOutputFormat.mChannelsPerFrame) {
-    LOG("Nonsensical channel layout or not matching the original channel number");
+  if (layout->mNumberChannelDescriptions != mOutputFormat.mChannelsPerFrame) {
+    LOG("Not matching the original channel number");
     return NS_ERROR_FAILURE;
   }
 
-  AudioConfig::Channel channels[MAX_AUDIO_CHANNELS];
+  AutoTArray<AudioConfig::Channel, 8> channels;
+  channels.SetLength(layout->mNumberChannelDescriptions);
   for (uint32_t i = 0; i < layout->mNumberChannelDescriptions; i++) {
     AudioChannelLabel id = layout->mChannelDescriptions[i].mChannelLabel;
     AudioConfig::Channel channel = ConvertChannelLabel(id);
     channels[i] = channel;
   }
-  mChannelLayout =
-    MakeUnique<AudioConfig::ChannelLayout>(mOutputFormat.mChannelsPerFrame,
-                                           channels);
+  mChannelLayout = MakeUnique<AudioConfig::ChannelLayout>(
+      mOutputFormat.mChannelsPerFrame, channels.Elements());
   return NS_OK;
 }
 
-nsresult
-AppleATDecoder::SetupDecoder(MediaRawData* aSample)
-{
+MediaResult AppleATDecoder::SetupDecoder(MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   static const uint32_t MAX_FRAMES = 2;
 
-  if (mFormatID == kAudioFormatMPEG4AAC &&
-      mConfig.mExtendedProfile == 2 &&
+  if (mFormatID == kAudioFormatMPEG4AAC && mConfig.mExtendedProfile == 2 &&
       mParsedFramesForAACMagicCookie < MAX_FRAMES) {
     // Check for implicit SBR signalling if stream is AAC-LC
     // This will provide us with an updated magic cookie for use with
@@ -554,12 +513,12 @@ AppleATDecoder::SetupDecoder(MediaRawData* aSample)
 
   LOG("Initializing Apple AudioToolbox decoder");
 
+  nsTArray<uint8_t>& magicCookie =
+      mMagicCookie.Length() ? mMagicCookie : *mConfig.mExtraData;
   AudioStreamBasicDescription inputFormat;
   PodZero(&inputFormat);
-  nsresult rv =
-    GetInputAudioDescription(inputFormat,
-                             mMagicCookie.Length() ?
-                                 mMagicCookie : *mConfig.mExtraData);
+
+  MediaResult rv = GetInputAudioDescription(inputFormat, magicCookie);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -570,25 +529,40 @@ AppleATDecoder::SetupDecoder(MediaRawData* aSample)
   mOutputFormat.mChannelsPerFrame = inputFormat.mChannelsPerFrame;
 #if defined(MOZ_SAMPLE_TYPE_FLOAT32)
   mOutputFormat.mBitsPerChannel = 32;
-  mOutputFormat.mFormatFlags =
-    kLinearPCMFormatFlagIsFloat |
-    0;
+  mOutputFormat.mFormatFlags = kLinearPCMFormatFlagIsFloat | 0;
 #elif defined(MOZ_SAMPLE_TYPE_S16)
   mOutputFormat.mBitsPerChannel = 16;
   mOutputFormat.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | 0;
 #else
-# error Unknown audio sample type
+#  error Unknown audio sample type
 #endif
   // Set up the decoder so it gives us one sample per frame
   mOutputFormat.mFramesPerPacket = 1;
-  mOutputFormat.mBytesPerPacket = mOutputFormat.mBytesPerFrame
-        = mOutputFormat.mChannelsPerFrame * mOutputFormat.mBitsPerChannel / 8;
+  mOutputFormat.mBytesPerPacket = mOutputFormat.mBytesPerFrame =
+      mOutputFormat.mChannelsPerFrame * mOutputFormat.mBitsPerChannel / 8;
 
-  OSStatus status = AudioConverterNew(&inputFormat, &mOutputFormat, &mConverter);
+  OSStatus status =
+      AudioConverterNew(&inputFormat, &mOutputFormat, &mConverter);
   if (status) {
-    LOG("Error %d constructing AudioConverter", status);
+    LOG("Error %d constructing AudioConverter", int(status));
     mConverter = nullptr;
-    return NS_ERROR_FAILURE;
+    return MediaResult(
+        NS_ERROR_FAILURE,
+        RESULT_DETAIL("Error constructing AudioConverter:%d", int32_t(status)));
+  }
+
+  if (magicCookie.Length() && mFormatID == kAudioFormatMPEG4AAC) {
+    status = AudioConverterSetProperty(
+        mConverter, kAudioConverterDecompressionMagicCookie,
+        magicCookie.Length(), magicCookie.Elements());
+    if (status) {
+      LOG("Error setting AudioConverter AAC cookie:%d", int32_t(status));
+      ProcessShutdown();
+      return MediaResult(
+          NS_ERROR_FAILURE,
+          RESULT_DETAIL("Error setting AudioConverter AAC cookie:%d",
+                        int32_t(status)));
+    }
   }
 
   if (NS_FAILED(SetupChannelLayout())) {
@@ -598,33 +572,29 @@ AppleATDecoder::SetupDecoder(MediaRawData* aSample)
   return NS_OK;
 }
 
-static void
-_MetadataCallback(void* aAppleATDecoder,
-                  AudioFileStreamID aStream,
-                  AudioFileStreamPropertyID aProperty,
-                  UInt32* aFlags)
-{
+static void _MetadataCallback(void* aAppleATDecoder, AudioFileStreamID aStream,
+                              AudioFileStreamPropertyID aProperty,
+                              UInt32* aFlags) {
   AppleATDecoder* decoder = static_cast<AppleATDecoder*>(aAppleATDecoder);
-  LOG("MetadataCallback receiving: '%s'", FourCC2Str(aProperty));
+  MOZ_RELEASE_ASSERT(decoder->mTaskQueue->IsCurrentThreadIn());
+
+  LOGEX(decoder, "MetadataCallback receiving: '%s'", FourCC2Str(aProperty));
   if (aProperty == kAudioFileStreamProperty_MagicCookieData) {
     UInt32 size;
     Boolean writeable;
-    OSStatus rv = AudioFileStreamGetPropertyInfo(aStream,
-                                                 aProperty,
-                                                 &size,
-                                                 &writeable);
+    OSStatus rv =
+        AudioFileStreamGetPropertyInfo(aStream, aProperty, &size, &writeable);
     if (rv) {
-      LOG("Couldn't get property info for '%s' (%s)",
-          FourCC2Str(aProperty), FourCC2Str(rv));
+      LOGEX(decoder, "Couldn't get property info for '%s' (%s)",
+            FourCC2Str(aProperty), FourCC2Str(rv));
       decoder->mFileStreamError = true;
       return;
     }
     auto data = MakeUnique<uint8_t[]>(size);
-    rv = AudioFileStreamGetProperty(aStream, aProperty,
-                                    &size, data.get());
+    rv = AudioFileStreamGetProperty(aStream, aProperty, &size, data.get());
     if (rv) {
-      LOG("Couldn't get property '%s' (%s)",
-          FourCC2Str(aProperty), FourCC2Str(rv));
+      LOGEX(decoder, "Couldn't get property '%s' (%s)", FourCC2Str(aProperty),
+            FourCC2Str(rv));
       decoder->mFileStreamError = true;
       return;
     }
@@ -632,18 +602,12 @@ _MetadataCallback(void* aAppleATDecoder,
   }
 }
 
-static void
-_SampleCallback(void* aSBR,
-                UInt32 aNumBytes,
-                UInt32 aNumPackets,
-                const void* aData,
-                AudioStreamPacketDescription* aPackets)
-{
-}
+static void _SampleCallback(void* aSBR, UInt32 aNumBytes, UInt32 aNumPackets,
+                            const void* aData,
+                            AudioStreamPacketDescription* aPackets) {}
 
-nsresult
-AppleATDecoder::GetImplicitAACMagicCookie(const MediaRawData* aSample)
-{
+nsresult AppleATDecoder::GetImplicitAACMagicCookie(
+    const MediaRawData* aSample) {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
   // Prepend ADTS header to AAC audio.
@@ -651,33 +615,25 @@ AppleATDecoder::GetImplicitAACMagicCookie(const MediaRawData* aSample)
   if (!adtssample) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  int8_t frequency_index =
-    mp4_demuxer::Adts::GetFrequencyIndex(mConfig.mRate);
+  int8_t frequency_index = Adts::GetFrequencyIndex(mConfig.mRate);
 
-  bool rv = mp4_demuxer::Adts::ConvertSample(mConfig.mChannels,
-                                             frequency_index,
-                                             mConfig.mProfile,
-                                             adtssample);
+  bool rv = Adts::ConvertSample(mConfig.mChannels, frequency_index,
+                                mConfig.mProfile, adtssample);
   if (!rv) {
     NS_WARNING("Failed to apply ADTS header");
     return NS_ERROR_FAILURE;
   }
   if (!mStream) {
-    OSStatus rv = AudioFileStreamOpen(this,
-                                      _MetadataCallback,
-                                      _SampleCallback,
-                                      kAudioFileAAC_ADTSType,
-                                      &mStream);
+    OSStatus rv = AudioFileStreamOpen(this, _MetadataCallback, _SampleCallback,
+                                      kAudioFileAAC_ADTSType, &mStream);
     if (rv) {
       NS_WARNING("Couldn't open AudioFileStream");
       return NS_ERROR_FAILURE;
     }
   }
 
-  OSStatus status = AudioFileStreamParseBytes(mStream,
-                                              adtssample->Size(),
-                                              adtssample->Data(),
-                                              0 /* discontinuity */);
+  OSStatus status = AudioFileStreamParseBytes(
+      mStream, adtssample->Size(), adtssample->Data(), 0 /* discontinuity */);
   if (status) {
     NS_WARNING("Couldn't parse sample");
   }
@@ -692,4 +648,7 @@ AppleATDecoder::GetImplicitAACMagicCookie(const MediaRawData* aSample)
   return (mFileStreamError || status) ? NS_ERROR_FAILURE : NS_OK;
 }
 
-} // namespace mozilla
+}  // namespace mozilla
+
+#undef LOG
+#undef LOGEX

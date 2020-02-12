@@ -1,27 +1,26 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
-var Cu = Components.utils;
-
-const { require } =
-  Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 const Services = require("Services");
-const promise = require("promise");
 const defer = require("devtools/shared/defer");
 const EventEmitter = require("devtools/shared/event-emitter");
 const discovery = require("devtools/shared/discovery/discovery");
-const { setTimeout, clearTimeout } = require("sdk/timers");
+const { setTimeout, clearTimeout } = ChromeUtils.import(
+  "resource://gre/modules/Timer.jsm"
+);
 
 Services.prefs.setBoolPref("devtools.discovery.log", true);
 
-do_register_cleanup(() => {
+registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.discovery.log");
 });
 
 function log(msg) {
-  do_print("DISCOVERY: " + msg);
+  info("DISCOVERY: " + msg);
 }
 
 // Global map of actively listening ports to TestTransport instances
@@ -38,32 +37,30 @@ function TestTransport(port) {
 }
 
 TestTransport.prototype = {
-
-  send: function (object, port) {
+  send: function(object, port) {
     log("Send to " + port + ":\n" + JSON.stringify(object, null, 2));
     if (!gTestTransports[port]) {
       log("No listener on port " + port);
       return;
     }
-    let message = JSON.stringify(object);
+    const message = JSON.stringify(object);
     gTestTransports[port].onPacketReceived(null, message);
   },
 
-  destroy: function () {
+  destroy: function() {
     delete gTestTransports[this.port];
   },
 
   // nsIUDPSocketListener
 
-  onPacketReceived: function (socket, message) {
-    let object = JSON.parse(message);
+  onPacketReceived: function(socket, message) {
+    const object = JSON.parse(message);
     object.from = "localhost";
     log("Recv on " + this.port + ":\n" + JSON.stringify(object, null, 2));
     this.emit("message", object);
   },
 
-  onStopListening: function (socket, status) {}
-
+  onStopListening: function(socket, status) {},
 };
 
 // Use TestTransport instead of the usual Transport
@@ -71,16 +68,12 @@ discovery._factories.Transport = TestTransport;
 
 // Ignore name generation on b2g and force a fixed value
 Object.defineProperty(discovery.device, "name", {
-  get: function () {
+  get: function() {
     return "test-device";
-  }
+  },
 });
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
+add_task(async function() {
   // At startup, no remote devices are known
   deepEqual(discovery.getRemoteDevicesWithService("devtools"), []);
   deepEqual(discovery.getRemoteDevicesWithService("penguins"), []);
@@ -97,44 +90,48 @@ add_task(function* () {
   deepEqual(discovery.getRemoteDevicesWithService("devtools"), []);
   deepEqual(discovery.getRemoteDevicesWithService("penguins"), []);
 
-  yield scanForChange("devtools", "added");
+  await scanForChange("devtools", "added");
 
   // Now we see the new service
   deepEqual(discovery.getRemoteDevicesWithService("devtools"), ["test-device"]);
   deepEqual(discovery.getRemoteDevicesWithService("penguins"), []);
 
   discovery.addService("penguins", { tux: true });
-  yield scanForChange("penguins", "added");
+  await scanForChange("penguins", "added");
 
   deepEqual(discovery.getRemoteDevicesWithService("devtools"), ["test-device"]);
   deepEqual(discovery.getRemoteDevicesWithService("penguins"), ["test-device"]);
   deepEqual(discovery.getRemoteDevices(), ["test-device"]);
 
-  deepEqual(discovery.getRemoteService("devtools", "test-device"),
-            { port: 1234, host: "localhost" });
-  deepEqual(discovery.getRemoteService("penguins", "test-device"),
-            { tux: true, host: "localhost" });
+  deepEqual(discovery.getRemoteService("devtools", "test-device"), {
+    port: 1234,
+    host: "localhost",
+  });
+  deepEqual(discovery.getRemoteService("penguins", "test-device"), {
+    tux: true,
+    host: "localhost",
+  });
 
   discovery.removeService("devtools");
-  yield scanForChange("devtools", "removed");
+  await scanForChange("devtools", "removed");
 
   discovery.addService("penguins", { tux: false });
-  yield scanForChange("penguins", "updated");
+  await scanForChange("penguins", "updated");
 
   // Scan again, but nothing should be removed
-  yield scanForNoChange("penguins", "removed");
+  await scanForNoChange("penguins", "removed");
 
   // Split the scanning side from the service side to simulate the machine with
   // the service becoming unreachable
   gTestTransports = {};
 
   discovery.removeService("penguins");
-  yield scanForChange("penguins", "removed");
+  await scanForChange("penguins", "removed");
 });
 
 function scanForChange(service, changeType) {
-  let deferred = defer();
-  let timer = setTimeout(() => {
+  const deferred = defer();
+  const timer = setTimeout(() => {
     deferred.reject(new Error("Reply never arrived"));
   }, discovery.replyTimeout + 500);
   discovery.on(service + "-device-" + changeType, function onChange() {
@@ -147,8 +144,8 @@ function scanForChange(service, changeType) {
 }
 
 function scanForNoChange(service, changeType) {
-  let deferred = defer();
-  let timer = setTimeout(() => {
+  const deferred = defer();
+  const timer = setTimeout(() => {
     deferred.resolve();
   }, discovery.replyTimeout + 500);
   discovery.on(service + "-device-" + changeType, function onChange() {

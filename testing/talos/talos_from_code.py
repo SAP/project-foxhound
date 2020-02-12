@@ -9,13 +9,15 @@
 # Author(s):     Zambrano Gasparnian, Armen <armenzg@mozilla.com>
 # Target:        Python 2.5
 #
-from optparse import OptionParser
+from __future__ import absolute_import, print_function
+
 import json
+import os
 import re
+import sys
 import urllib2
 import urlparse
-import sys
-import os
+from optparse import OptionParser
 
 
 def main():
@@ -23,7 +25,7 @@ def main():
     This script downloads a talos.json file which indicates which files to download
     for a talos job.
     See a talos.json file for a better understand:
-    http://hg.mozilla.org/mozilla-central/raw-file/default/testing/talos/talos.json
+    https://hg.mozilla.org/mozilla-central/raw-file/default/testing/talos/talos.json
     '''
     parser = OptionParser()
     parser.add_option("--talos-json-url", dest="talos_json_url", type="string",
@@ -123,6 +125,7 @@ def get_value(json_filename, key):
     '''
     f = open(json_filename, 'r')
     return json.load(f)[key]
+
 
 if __name__ == '__main__':
     main()

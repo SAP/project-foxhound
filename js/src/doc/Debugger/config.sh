@@ -24,7 +24,6 @@ markdown Debugger.Environment.md Debugger-API/Debugger.Environment
 markdown Debugger.Frame.md Debugger-API/Debugger.Frame
   label 'frame'                                 "Debugger.Frame"
   label 'vf'            '#visible-frames'       "Debugger.Frame: Visible Frames"
-  label 'generator'     '#generator-frames'     "Debugger.Frame: Generator Frames"
   label 'inv fr'        '#invf'                 "Debugger.Frame: Invocation Frames"
   label 'fr eval'       '#eval'                 "Debugger.Frame: Eval"
 
@@ -49,6 +48,9 @@ markdown Debugger.Memory.md Debugger-API/Debugger.Memory
 markdown Tutorial-Debugger-Statement.md Debugger-API/Tutorial-Debugger-Statement
   label 'tut debugger'                          "Tutorial: the debugger; statement"
 
+markdown Tutorial-Breakpoint.md Debugger-API/Tutorial-Breakpoint
+  label 'tut breakpoint'                        "Tutorial: Evaluate an expression when a breakpoint is hit"
+
 markdown Tutorial-Alloc-Log-Tree.md Debugger-API/Tutorial-Allocation-Log-Tree
   label 'tut alloc log'                         "Tutorial: the allocation log"
 
@@ -58,10 +60,22 @@ resource 'img-shadows'            shadows.svg                        $RBASE/7225
 resource 'img-chrome-pref'        enable-chrome-devtools.png         $RBASE/7233/enable-chrome-devtools.png
 resource 'img-scratchpad-browser' scratchpad-browser-environment.png $RBASE/7229/scratchpad-browser-environment.png
 resource 'img-example-alert'      debugger-alert.png                 $RBASE/7231/debugger-alert.png
+resource 'img-example-console'    console.png                        $RBASE/15721/console.png
 resource 'img-alloc-plot'         alloc-plot-console.png             $RBASE/8461/alloc-plot-console.png
 
 # External links:
-absolute-label 'protocol' https://wiki.mozilla.org/Remote_Debugging_Protocol "Remote Debugging Protocol"
-absolute-label 'saved-frame' https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/SavedFrame "SavedFrame"
-absolute-label 'bernoulli-trial' https://en.wikipedia.org/wiki/Bernoulli_trial "Bernoulli Trial"
-absolute-label 'promise' https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise "Promise"
+absolute-label 'protocol' \
+    https://wiki.mozilla.org/Remote_Debugging_Protocol \
+    "Remote Debugging Protocol"
+absolute-label 'saved-frame' \
+    https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/SavedFrame \
+    "SavedFrame"
+absolute-label 'bernoulli-trial' \
+    https://en.wikipedia.org/wiki/Bernoulli_trial \
+    "Bernoulli Trial"
+absolute-label 'promise' \
+    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise \
+    "Promise"
+absolute-label 'browser-content-toolbox' \
+    https://developer.mozilla.org/en-US/Firefox/Multiprocess_Firefox/Debugging_frame_scripts \
+    "Browser Content Toolbox"

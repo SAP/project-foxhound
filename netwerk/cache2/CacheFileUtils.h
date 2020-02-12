@@ -13,35 +13,30 @@
 #include "mozilla/TimeStamp.h"
 
 class nsILoadContextInfo;
-class nsACString;
 
 namespace mozilla {
 namespace net {
 namespace CacheFileUtils {
 
-extern const char *kAltDataKey;
+extern const char* kAltDataKey;
 
-already_AddRefed<nsILoadContextInfo>
-ParseKey(const nsCSubstring &aKey,
-         nsCSubstring *aIdEnhance = nullptr,
-         nsCSubstring *aURISpec = nullptr);
+already_AddRefed<nsILoadContextInfo> ParseKey(const nsACString& aKey,
+                                              nsACString* aIdEnhance = nullptr,
+                                              nsACString* aURISpec = nullptr);
 
-void
-AppendKeyPrefix(nsILoadContextInfo *aInfo, nsACString &_retval);
+void AppendKeyPrefix(nsILoadContextInfo* aInfo, nsACString& _retval);
 
-void
-AppendTagWithValue(nsACString & aTarget, char const aTag, nsCSubstring const & aValue);
+void AppendTagWithValue(nsACString& aTarget, char const aTag,
+                        const nsACString& aValue);
 
-nsresult
-KeyMatchesLoadContextInfo(const nsACString &aKey,
-                          nsILoadContextInfo *aInfo,
-                          bool *_retval);
+nsresult KeyMatchesLoadContextInfo(const nsACString& aKey,
+                                   nsILoadContextInfo* aInfo, bool* _retval);
 
 class ValidityPair {
-public:
+ public:
   ValidityPair(uint32_t aOffset, uint32_t aLen);
 
-  ValidityPair& operator=(const ValidityPair& aOther);
+  ValidityPair& operator=(const ValidityPair& aOther) = default;
 
   // Returns true when two pairs can be merged, i.e. they do overlap or the one
   // ends exactly where the other begins.
@@ -60,15 +55,15 @@ public:
   void Merge(const ValidityPair& aOther);
 
   uint32_t Offset() const { return mOffset; }
-  uint32_t Len() const    { return mLen; }
+  uint32_t Len() const { return mLen; }
 
-private:
+ private:
   uint32_t mOffset;
   uint32_t mLen;
 };
 
 class ValidityMap {
-public:
+ public:
   // Prints pairs in the map into log.
   void Log() const;
 
@@ -86,33 +81,29 @@ public:
 
   ValidityPair& operator[](uint32_t aIdx);
 
-private:
+ private:
   nsTArray<ValidityPair> mMap;
 };
 
-
 class DetailedCacheHitTelemetry {
-public:
-  enum ERecType {
-    HIT  = 0,
-    MISS = 1
-  };
+ public:
+  enum ERecType { HIT = 0, MISS = 1 };
 
   static void AddRecord(ERecType aType, TimeStamp aLoadStart);
 
-private:
+ private:
   class HitRate {
-  public:
+   public:
     HitRate();
 
-    void     AddRecord(ERecType aType);
+    void AddRecord(ERecType aType);
     // Returns the bucket index that the current hit rate falls into according
     // to the given aNumOfBuckets.
     uint32_t GetHitRateBucket(uint32_t aNumOfBuckets) const;
     uint32_t Count();
-    void     Reset();
+    void Reset();
 
-  private:
+   private:
     uint32_t mHitCnt;
     uint32_t mMissCnt;
   };
@@ -143,22 +134,108 @@ private:
 
   // Counter of samples that is compared against kTotalSamplesReportLimit.
   static uint32_t sRecordCnt;
- 
+
   // Hit rate statistics for every cache size range.
   static HitRate sHRStats[kNumOfRanges];
 };
 
-void
-FreeBuffer(void *aBuf);
+class CachePerfStats {
+ public:
+  // perfStatTypes in displayRcwnStats() in toolkit/content/aboutNetworking.js
+  // must match EDataType
+  enum EDataType {
+    IO_OPEN = 0,
+    IO_READ = 1,
+    IO_WRITE = 2,
+    ENTRY_OPEN = 3,
+    LAST = 4
+  };
 
-nsresult
-ParseAlternativeDataInfo(const char *aInfo, int64_t *_offset, nsACString *_type);
+  static void AddValue(EDataType aType, uint32_t aValue, bool aShortOnly);
+  static uint32_t GetAverage(EDataType aType, bool aFiltered);
+  static uint32_t GetStdDev(EDataType aType, bool aFiltered);
+  static bool IsCacheSlow();
+  static void GetSlowStats(uint32_t* aSlow, uint32_t* aNotSlow);
 
-void
-BuildAlternativeDataInfo(const char *aInfo, int64_t aOffset, nsACString &_retval);
+ private:
+  // This class computes average and standard deviation, it returns an
+  // arithmetic avg and stddev until total number of values reaches mWeight.
+  // Then it returns modified moving average computed as follows:
+  //
+  //   avg = (1-a)*avg + a*value
+  //   avgsq = (1-a)*avgsq + a*value^2
+  //   stddev = sqrt(avgsq - avg^2)
+  //
+  //   where
+  //       avgsq is an average of the square of the values
+  //       a = 1 / weight
+  class MMA {
+   public:
+    MMA(uint32_t aTotalWeight, bool aFilter);
 
-} // namespace CacheFileUtils
-} // namespace net
-} // namespace mozilla
+    void AddValue(uint32_t aValue);
+    uint32_t GetAverage();
+    uint32_t GetStdDev();
+
+   private:
+    uint64_t mSum;
+    uint64_t mSumSq;
+    uint32_t mCnt;
+    uint32_t mWeight;
+    bool mFilter;
+  };
+
+  class PerfData {
+   public:
+    PerfData();
+
+    void AddValue(uint32_t aValue, bool aShortOnly);
+    uint32_t GetAverage(bool aFiltered);
+    uint32_t GetStdDev(bool aFiltered);
+
+   private:
+    // Contains filtered data (i.e. times when we think the cache and disk was
+    // not busy) for a longer time.
+    MMA mFilteredAvg;
+
+    // Contains unfiltered average of few recent values.
+    MMA mShortAvg;
+  };
+
+  static StaticMutex sLock;
+
+  static PerfData sData[LAST];
+  static uint32_t sCacheSlowCnt;
+  static uint32_t sCacheNotSlowCnt;
+};
+
+void FreeBuffer(void* aBuf);
+
+nsresult ParseAlternativeDataInfo(const char* aInfo, int64_t* _offset,
+                                  nsACString* _type);
+
+void BuildAlternativeDataInfo(const char* aInfo, int64_t aOffset,
+                              nsACString& _retval);
+
+// Parses base domain access info. If the info cannot be parsed (e.g. it's
+// corrupted or it's invalid because aTrID has changed) an error is thrown.
+// If aSearchSiteID is null, then the whole string is parsed and number of sites
+// in the info is returned in _count.
+// If aSearchSiteID is passed, then _count argument is ignored. It only searches
+// siteID in the info and returns the result in _found.
+nsresult ParseBaseDomainAccessInfo(const char* aInfo, uint32_t aTrID,
+                                   const uint32_t* aSearchSiteID, bool* _found,
+                                   uint16_t* _count);
+
+// If aOldInfo is null then new base domain access info containing aSiteID is
+// built. If an old base domain access info is passed in aOldInfo, then only
+// aSiteID is appended to it. Note that this function doesn't parse the old base
+// domain info, i.e. it assumes that it's valid and it doesn't contain aSiteID.
+void BuildOrAppendBaseDomainAccessInfo(const char* aOldInfo, uint32_t aTrID,
+                                       uint32_t aSiteID, nsACString& _retval);
+
+}  // namespace CacheFileUtils
+}  // namespace net
+}  // namespace mozilla
 
 #endif

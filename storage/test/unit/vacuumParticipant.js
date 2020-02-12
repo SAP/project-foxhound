@@ -4,18 +4,16 @@
 
 // This testing component is used in test_vacuum* tests.
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * Returns a new nsIFile reference for a profile database.
  * @param filename for the database, excluded the .sqlite extension.
  */
-function new_db_file(name)
-{
+function new_db_file(name) {
   let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
   file.append(name + ".sqlite");
   return file;
@@ -25,20 +23,16 @@ function new_db_file(name)
  * Opens and returns a connection to the provided database file.
  * @param nsIFile interface to the database file.
  */
-function getDatabase(aFile)
-{
-  return Cc["@mozilla.org/storage/service;1"].getService(Ci.mozIStorageService)
-                                             .openDatabase(aFile);
+function getDatabase(aFile) {
+  return Services.storage.openDatabase(aFile);
 }
 
-function vacuumParticipant()
-{
+function vacuumParticipant() {
   this._dbConn = getDatabase(new_db_file("testVacuum"));
-  Services.obs.addObserver(this, "test-options", false);
+  Services.obs.addObserver(this, "test-options");
 }
 
-vacuumParticipant.prototype =
-{
+vacuumParticipant.prototype = {
   classDescription: "vacuumParticipant",
   classID: Components.ID("{52aa0b22-b82f-4e38-992a-c3675a3355d2}"),
   contractID: "@unit.test.com/test-vacuum-participant;1",
@@ -51,37 +45,32 @@ vacuumParticipant.prototype =
   },
 
   _grant: true,
-  onBeginVacuum: function TVP_onBeginVacuum()
-  {
+  onBeginVacuum: function TVP_onBeginVacuum() {
     if (!this._grant) {
       this._grant = true;
       return false;
     }
-    Services.obs.notifyObservers(null, "test-begin-vacuum", null);
+    Services.obs.notifyObservers(null, "test-begin-vacuum");
     return true;
   },
-  onEndVacuum: function TVP_EndVacuum(aSucceeded)
-  {
+  onEndVacuum: function TVP_EndVacuum(aSucceeded) {
     if (this._stmt) {
       this._stmt.finalize();
     }
     Services.obs.notifyObservers(null, "test-end-vacuum", aSucceeded);
   },
 
-  observe: function TVP_observe(aSubject, aTopic, aData)
-  {
+  observe: function TVP_observe(aSubject, aTopic, aData) {
     if (aData == "opt-out") {
       this._grant = false;
-    }
-    else if (aData == "wal") {
+    } else if (aData == "wal") {
       try {
         this._dbConn.close();
       } catch (e) {
         // Do nothing.
       }
       this._dbConn = getDatabase(new_db_file("testVacuum2"));
-    }
-    else if (aData == "wal-fail") {
+    } else if (aData == "wal-fail") {
       try {
         this._dbConn.close();
       } catch (e) {
@@ -94,18 +83,14 @@ vacuumParticipant.prototype =
       this._stmt = this._dbConn.createStatement("SELECT :test");
       this._stmt.params.test = 1;
       this._stmt.executeStep();
-    }
-    else if (aData == "memory") {
+    } else if (aData == "memory") {
       try {
         this._dbConn.asyncClose();
       } catch (e) {
         // Do nothing.
       }
-      this._dbConn = Cc["@mozilla.org/storage/service;1"].
-                     getService(Ci.mozIStorageService).
-                     openSpecialDatabase("memory");
-    }
-    else if (aData == "dispose") {
+      this._dbConn = Services.storage.openSpecialDatabase("memory");
+    } else if (aData == "dispose") {
       Services.obs.removeObserver(this, "test-options");
       try {
         this._dbConn.asyncClose();
@@ -115,10 +100,10 @@ vacuumParticipant.prototype =
     }
   },
 
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.mozIStorageVacuumParticipant,
     Ci.nsIObserver,
-  ])
+  ]),
 };
 
 var gComponentsArray = [vacuumParticipant];

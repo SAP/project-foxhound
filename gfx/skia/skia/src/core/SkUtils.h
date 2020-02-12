@@ -8,96 +8,67 @@
 #ifndef SkUtils_DEFINED
 #define SkUtils_DEFINED
 
-#include "SkTypes.h"
+#include "SkOpts.h"
+#include "SkTypeface.h"
+#include "../utils/SkUTF.h"
 
-/** Similar to memset(), but it assigns a 16bit value into the buffer.
+/** Similar to memset(), but it assigns a 16, 32, or 64-bit value into the buffer.
     @param buffer   The memory to have value copied into it
-    @param value    The 16bit value to be copied into buffer
+    @param value    The value to be copied into buffer
     @param count    The number of times value should be copied into the buffer.
 */
 static inline void sk_memset16(uint16_t buffer[], uint16_t value, int count) {
-    for (int i = 0; i < count; i++) {
-        buffer[i] = value;
-    }
+    SkOpts::memset16(buffer, value, count);
 }
-
-/** Similar to memset(), but it assigns a 32bit value into the buffer.
-    @param buffer   The memory to have value copied into it
-    @param value    The 32bit value to be copied into buffer
-    @param count    The number of times value should be copied into the buffer.
-*/
 static inline void sk_memset32(uint32_t buffer[], uint32_t value, int count) {
-    for (int i = 0; i < count; i++) {
-        buffer[i] = value;
-    }
+    SkOpts::memset32(buffer, value, count);
 }
-
-/** Similar to memset(), but it assigns a 64bit value into the buffer.
-    @param buffer   The memory to have value copied into it
-    @param value    The 64bit value to be copied into buffer
-    @param count    The number of times value should be copied into the buffer.
-*/
 static inline void sk_memset64(uint64_t buffer[], uint64_t value, int count) {
-    for (int i = 0; i < count; i++) {
-        buffer[i] = value;
-    }
+    SkOpts::memset64(buffer, value, count);
 }
-///////////////////////////////////////////////////////////////////////////////
-
-#define kMaxBytesInUTF8Sequence     4
-
-#ifdef SK_DEBUG
-    int SkUTF8_LeadByteToCount(unsigned c);
-#else
-    #define SkUTF8_LeadByteToCount(c)   ((((0xE5 << 24) >> ((unsigned)c >> 4 << 1)) & 3) + 1)
-#endif
-
-inline int SkUTF8_CountUTF8Bytes(const char utf8[]) {
-    SkASSERT(utf8);
-    return SkUTF8_LeadByteToCount(*(const uint8_t*)utf8);
-}
-
-int         SkUTF8_CountUnichars(const char utf8[]);
-int         SkUTF8_CountUnichars(const char utf8[], size_t byteLength);
-SkUnichar   SkUTF8_ToUnichar(const char utf8[]);
-SkUnichar   SkUTF8_NextUnichar(const char**);
-SkUnichar   SkUTF8_PrevUnichar(const char**);
-
-/** Return the number of bytes need to convert a unichar
-    into a utf8 sequence. Will be 1..kMaxBytesInUTF8Sequence,
-    or 0 if uni is illegal.
-*/
-size_t      SkUTF8_FromUnichar(SkUnichar uni, char utf8[] = NULL);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#define SkUTF16_IsHighSurrogate(c)  (((c) & 0xFC00) == 0xD800)
-#define SkUTF16_IsLowSurrogate(c)   (((c) & 0xFC00) == 0xDC00)
-
-int SkUTF16_CountUnichars(const uint16_t utf16[]);
-int SkUTF16_CountUnichars(const uint16_t utf16[], int numberOf16BitValues);
-// returns the current unichar and then moves past it (*p++)
+// Unlike the functions in SkUTF.h, these two functions do not take an array
+// length parameter.  When possible, use SkUTF::NextUTF{8,16} instead.
+SkUnichar SkUTF8_NextUnichar(const char**);
 SkUnichar SkUTF16_NextUnichar(const uint16_t**);
-// this guy backs up to the previus unichar value, and returns it (*--p)
-SkUnichar SkUTF16_PrevUnichar(const uint16_t**);
-size_t SkUTF16_FromUnichar(SkUnichar uni, uint16_t utf16[] = NULL);
 
-size_t SkUTF16_ToUTF8(const uint16_t utf16[], int numberOf16BitValues,
-                      char utf8[] = NULL);
+///////////////////////////////////////////////////////////////////////////////
 
-inline bool SkUnichar_IsVariationSelector(SkUnichar uni) {
-/*  The 'true' ranges are:
- *      0x180B  <= uni <=  0x180D
- *      0xFE00  <= uni <=  0xFE0F
- *      0xE0100 <= uni <= 0xE01EF
- */
-    if (uni < 0x180B || uni > 0xE01EF) {
-        return false;
+static inline bool SkUTF16_IsLeadingSurrogate(uint16_t c) { return ((c) & 0xFC00) == 0xD800; }
+
+static inline bool SkUTF16_IsTrailingSurrogate (uint16_t c) { return ((c) & 0xFC00) == 0xDC00; }
+
+///////////////////////////////////////////////////////////////////////////////
+
+static inline int SkUTFN_CountUnichars(SkTypeface::Encoding enc, const void* utfN, size_t bytes) {
+    switch (enc) {
+        case SkTypeface::kUTF8_Encoding:  return SkUTF::CountUTF8((const char*)utfN, bytes);
+        case SkTypeface::kUTF16_Encoding: return SkUTF::CountUTF16((const uint16_t*)utfN, bytes);
+        case SkTypeface::kUTF32_Encoding: return SkUTF::CountUTF32((const int32_t*)utfN, bytes);
+        default: SkDEBUGFAIL("unknown text encoding"); return -1;
     }
-    if ((uni > 0x180D && uni < 0xFE00) || (uni > 0xFE0F && uni < 0xE0100)) {
-        return false;
+}
+
+static inline SkUnichar SkUTFN_Next(SkTypeface::Encoding enc,
+                                    const void** ptr, const void* stop) {
+    switch (enc) {
+        case SkTypeface::kUTF8_Encoding:
+            return SkUTF::NextUTF8((const char**)ptr, (const char*)stop);
+        case SkTypeface::kUTF16_Encoding:
+            return SkUTF::NextUTF16((const uint16_t**)ptr, (const uint16_t*)stop);
+        case SkTypeface::kUTF32_Encoding:
+            return SkUTF::NextUTF32((const int32_t**)ptr, (const int32_t*)stop);
+        default: SkDEBUGFAIL("unknown text encoding"); return -1;
     }
-    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+namespace SkHexadecimalDigits {
+    extern const char gUpper[16];  // 0-9A-F
+    extern const char gLower[16];  // 0-9a-f
 }
 
 #endif

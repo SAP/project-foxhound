@@ -1,6 +1,8 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
  **********************************************************************
- *   Copyright (C) 1997-2015, International Business Machines
+ *   Copyright (C) 1997-2016, International Business Machines
  *   Corporation and others.  All Rights Reserved.
  **********************************************************************
 *
@@ -29,8 +31,12 @@
 ******************************************************************************
 */
 
+#include <utility>
 
+#include "unicode/bytestream.h"
 #include "unicode/locid.h"
+#include "unicode/strenum.h"
+#include "unicode/stringpiece.h"
 #include "unicode/uloc.h"
 #include "putilimp.h"
 #include "mutex.h"
@@ -40,8 +46,11 @@
 #include "cstring.h"
 #include "uassert.h"
 #include "uhash.h"
+#include "ulocimp.h"
 #include "ucln_cmn.h"
 #include "ustr_imp.h"
+#include "charstr.h"
+#include "bytesinkutil.h"
 
 U_CDECL_BEGIN
 static UBool U_CALLCONV locale_cleanup(void);
@@ -53,9 +62,18 @@ static Locale   *gLocaleCache = NULL;
 static UInitOnce gLocaleCacheInitOnce = U_INITONCE_INITIALIZER;
 
 // gDefaultLocaleMutex protects all access to gDefaultLocalesHashT and gDefaultLocale.
-static UMutex gDefaultLocaleMutex = U_MUTEX_INITIALIZER;
+static UMutex *gDefaultLocaleMutex() {
+    static UMutex m = U_MUTEX_INITIALIZER;
+    return &m;
+}
 static UHashtable *gDefaultLocalesHashT = NULL;
 static Locale *gDefaultLocale = NULL;
+
+/**
+ * \def ULOC_STRING_LIMIT
+ * strings beyond this value crash in CharString
+ */
+#define ULOC_STRING_LIMIT 357913941
 
 U_NAMESPACE_END
 
@@ -156,7 +174,7 @@ U_NAMESPACE_BEGIN
 
 Locale *locale_set_default_internal(const char *id, UErrorCode& status) {
     // Synchronize this entire function.
-    Mutex lock(&gDefaultLocaleMutex);
+    Mutex lock(gDefaultLocaleMutex());
 
     UBool canonicalize = FALSE;
 
@@ -283,13 +301,12 @@ Locale::Locale( const   char * newLanguage,
     }
     else
     {
-        MaybeStackArray<char, ULOC_FULLNAME_CAPACITY> togo;
+        UErrorCode status = U_ZERO_ERROR;
         int32_t size = 0;
         int32_t lsize = 0;
         int32_t csize = 0;
         int32_t vsize = 0;
         int32_t ksize = 0;
-        char    *p;
 
         // Calculate the size of the resulting string.
 
@@ -297,13 +314,23 @@ Locale::Locale( const   char * newLanguage,
         if ( newLanguage != NULL )
         {
             lsize = (int32_t)uprv_strlen(newLanguage);
+            if ( lsize < 0 || lsize > ULOC_STRING_LIMIT ) { // int32 wrap
+                setToBogus();
+                return;
+            }
             size = lsize;
         }
+
+        CharString togo(newLanguage, lsize, status); // start with newLanguage
 
         // _Country
         if ( newCountry != NULL )
         {
             csize = (int32_t)uprv_strlen(newCountry);
+            if ( csize < 0 || csize > ULOC_STRING_LIMIT ) { // int32 wrap
+                setToBogus();
+                return;
+            }
             size += csize;
         }
 
@@ -318,6 +345,10 @@ Locale::Locale( const   char * newLanguage,
 
             // remove trailing _'s
             vsize = (int32_t)uprv_strlen(newVariant);
+            if ( vsize < 0 || vsize > ULOC_STRING_LIMIT ) { // int32 wrap
+                setToBogus();
+                return;
+            }
             while( (vsize>1) && (newVariant[vsize-1] == SEP_CHAR) )
             {
                 vsize--;
@@ -342,70 +373,56 @@ Locale::Locale( const   char * newLanguage,
         if ( newKeywords != NULL)
         {
             ksize = (int32_t)uprv_strlen(newKeywords);
+            if ( ksize < 0 || ksize > ULOC_STRING_LIMIT ) {
+              setToBogus();
+              return;
+            }
             size += ksize + 1;
         }
 
-
         //  NOW we have the full locale string..
-
-        /*if the whole string is longer than our internal limit, we need
-        to go to the heap for temporary buffers*/
-        if (size >= togo.getCapacity())
-        {
-            // If togo_heap could not be created, initialize with default settings.
-            if (togo.resize(size+1) == NULL) {
-                init(NULL, FALSE);
-            }
-        }
-
-        togo[0] = 0;
-
         // Now, copy it back.
-        p = togo.getAlias();
-        if ( lsize != 0 )
-        {
-            uprv_strcpy(p, newLanguage);
-            p += lsize;
-        }
+
+        // newLanguage is already copied
 
         if ( ( vsize != 0 ) || (csize != 0) )  // at least:  __v
         {                                      //            ^
-            *p++ = SEP_CHAR;
+            togo.append(SEP_CHAR, status);
         }
 
         if ( csize != 0 )
         {
-            uprv_strcpy(p, newCountry);
-            p += csize;
+            togo.append(newCountry, status);
         }
 
         if ( vsize != 0)
         {
-            *p++ = SEP_CHAR; // at least: __v
-
-            uprv_strncpy(p, newVariant, vsize);  // Must use strncpy because
-            p += vsize;                          // of trimming (above).
-            *p = 0; // terminate
+            togo.append(SEP_CHAR, status)
+                .append(newVariant, vsize, status);
         }
 
         if ( ksize != 0)
         {
             if (uprv_strchr(newKeywords, '=')) {
-                *p++ = '@'; /* keyword parsing */
+                togo.append('@', status); /* keyword parsing */
             }
             else {
-                *p++ = '_'; /* Variant parsing with a script */
+                togo.append('_', status); /* Variant parsing with a script */
                 if ( vsize == 0) {
-                    *p++ = '_'; /* No country found */
+                    togo.append('_', status); /* No country found */
                 }
             }
-            uprv_strcpy(p, newKeywords);
-            p += ksize;
+            togo.append(newKeywords, status);
         }
 
+        if (U_FAILURE(status)) {
+            // Something went wrong with appending, etc.
+            setToBogus();
+            return;
+        }
         // Parse it, because for example 'language' might really be a complete
         // string.
-        init(togo.getAlias(), FALSE);
+        init(togo.data(), FALSE);
     }
 }
 
@@ -415,49 +432,70 @@ Locale::Locale(const Locale &other)
     *this = other;
 }
 
-Locale &Locale::operator=(const Locale &other)
-{
+Locale::Locale(Locale&& other) U_NOEXCEPT
+    : UObject(other), fullName(fullNameBuffer), baseName(fullName) {
+  *this = std::move(other);
+}
+
+Locale& Locale::operator=(const Locale& other) {
     if (this == &other) {
         return *this;
     }
 
-    /* Free our current storage */
-    if (baseName != fullName) {
-        uprv_free(baseName);
-    }
-    baseName = NULL;
-    if(fullName != fullNameBuffer) {
-        uprv_free(fullName);
-        fullName = fullNameBuffer;
+    setToBogus();
+
+    if (other.fullName == other.fullNameBuffer) {
+        uprv_strcpy(fullNameBuffer, other.fullNameBuffer);
+    } else if (other.fullName == nullptr) {
+        fullName = nullptr;
+    } else {
+        fullName = uprv_strdup(other.fullName);
+        if (fullName == nullptr) return *this;
     }
 
-    /* Allocate the full name if necessary */
-    if(other.fullName != other.fullNameBuffer) {
-        fullName = (char *)uprv_malloc(sizeof(char)*(uprv_strlen(other.fullName)+1));
-        if (fullName == NULL) {
-            return *this;
-        }
-    }
-    /* Copy the full name */
-    uprv_strcpy(fullName, other.fullName);
-
-    /* Copy the baseName if it differs from fullName. */
     if (other.baseName == other.fullName) {
         baseName = fullName;
-    } else {
-        if (other.baseName) {
-            baseName = uprv_strdup(other.baseName);
-        }
+    } else if (other.baseName != nullptr) {
+        baseName = uprv_strdup(other.baseName);
+        if (baseName == nullptr) return *this;
     }
 
-    /* Copy the language and country fields */
     uprv_strcpy(language, other.language);
     uprv_strcpy(script, other.script);
     uprv_strcpy(country, other.country);
 
-    /* The variantBegin is an offset, just copy it */
     variantBegin = other.variantBegin;
     fIsBogus = other.fIsBogus;
+
+    return *this;
+}
+
+Locale& Locale::operator=(Locale&& other) U_NOEXCEPT {
+    if (baseName != fullName) uprv_free(baseName);
+    if (fullName != fullNameBuffer) uprv_free(fullName);
+
+    if (other.fullName == other.fullNameBuffer) {
+        uprv_strcpy(fullNameBuffer, other.fullNameBuffer);
+        fullName = fullNameBuffer;
+    } else {
+        fullName = other.fullName;
+    }
+
+    if (other.baseName == other.fullName) {
+        baseName = fullName;
+    } else {
+        baseName = other.baseName;
+    }
+
+    uprv_strcpy(language, other.language);
+    uprv_strcpy(script, other.script);
+    uprv_strcpy(country, other.country);
+
+    variantBegin = other.variantBegin;
+    fIsBogus = other.fIsBogus;
+
+    other.baseName = other.fullName = other.fullNameBuffer;
+
     return *this;
 }
 
@@ -534,9 +572,13 @@ Locale& Locale::init(const char* localeID, UBool canonicalize)
         variantBegin = length;
 
         /* after uloc_getName/canonicalize() we know that only '_' are separators */
+        /* But _ could also appeared in timezone such as "en@timezone=America/Los_Angeles" */
         separator = field[0] = fullName;
         fieldIdx = 1;
-        while ((separator = uprv_strchr(field[fieldIdx-1], SEP_CHAR)) && fieldIdx < (int32_t)(sizeof(field)/sizeof(field[0]))-1) {
+        char* at = uprv_strchr(fullName, '@');
+        while ((separator = uprv_strchr(field[fieldIdx-1], SEP_CHAR)) != 0 &&
+               fieldIdx < UPRV_LENGTHOF(field)-1 &&
+               (at == nullptr || separator < at)) {
             field[fieldIdx] = separator + 1;
             fieldLen[fieldIdx-1] = (int32_t)(separator - field[fieldIdx-1]);
             fieldIdx++;
@@ -643,7 +685,7 @@ Locale::initBaseName(UErrorCode &status) {
 int32_t
 Locale::hashCode() const
 {
-    return ustr_hashCharsN(fullName, uprv_strlen(fullName));
+    return ustr_hashCharsN(fullName, static_cast<int32_t>(uprv_strlen(fullName)));
 }
 
 void
@@ -662,13 +704,14 @@ Locale::setToBogus() {
     *script = 0;
     *country = 0;
     fIsBogus = TRUE;
+    variantBegin = 0;
 }
 
 const Locale& U_EXPORT2
 Locale::getDefault()
 {
     {
-        Mutex lock(&gDefaultLocaleMutex);
+        Mutex lock(gDefaultLocaleMutex());
         if (gDefaultLocale != NULL) {
             return *gDefaultLocale;
         }
@@ -692,6 +735,112 @@ Locale::setDefault( const   Locale&     newLocale,
      */
     const char *localeID = newLocale.getName();
     locale_set_default_internal(localeID, status);
+}
+
+void
+Locale::addLikelySubtags(UErrorCode& status) {
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    CharString maximizedLocaleID;
+    {
+        CharStringByteSink sink(&maximizedLocaleID);
+        ulocimp_addLikelySubtags(fullName, sink, &status);
+    }
+
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    init(maximizedLocaleID.data(), /*canonicalize=*/FALSE);
+    if (isBogus()) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+    }
+}
+
+void
+Locale::minimizeSubtags(UErrorCode& status) {
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    CharString minimizedLocaleID;
+    {
+        CharStringByteSink sink(&minimizedLocaleID);
+        ulocimp_minimizeSubtags(fullName, sink, &status);
+    }
+
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    init(minimizedLocaleID.data(), /*canonicalize=*/FALSE);
+    if (isBogus()) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+    }
+}
+
+Locale U_EXPORT2
+Locale::forLanguageTag(StringPiece tag, UErrorCode& status)
+{
+    Locale result(Locale::eBOGUS);
+
+    if (U_FAILURE(status)) {
+        return result;
+    }
+
+    // If a BCP-47 language tag is passed as the language parameter to the
+    // normal Locale constructor, it will actually fall back to invoking
+    // uloc_forLanguageTag() to parse it if it somehow is able to detect that
+    // the string actually is BCP-47. This works well for things like strings
+    // using BCP-47 extensions, but it does not at all work for things like
+    // BCP-47 grandfathered tags (eg. "en-GB-oed") which are possible to also
+    // interpret as ICU locale IDs and because of that won't trigger the BCP-47
+    // parsing. Therefore the code here explicitly calls uloc_forLanguageTag()
+    // and then Locale::init(), instead of just calling the normal constructor.
+
+    CharString localeID;
+    int32_t parsedLength;
+    {
+        CharStringByteSink sink(&localeID);
+        ulocimp_forLanguageTag(
+                tag.data(),
+                tag.length(),
+                sink,
+                &parsedLength,
+                &status);
+    }
+
+    if (U_FAILURE(status)) {
+        return result;
+    }
+
+    if (parsedLength != tag.size()) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return result;
+    }
+
+    result.init(localeID.data(), /*canonicalize=*/FALSE);
+    if (result.isBogus()) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+    }
+    return result;
+}
+
+void
+Locale::toLanguageTag(ByteSink& sink, UErrorCode& status) const
+{
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    if (fIsBogus) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+
+    ulocimp_toLanguageTag(fullName, sink, /*strict=*/FALSE, &status);
 }
 
 Locale U_EXPORT2
@@ -1000,20 +1149,84 @@ KeywordEnumeration::~KeywordEnumeration() {
     uprv_free(keywords);
 }
 
+// A wrapper around KeywordEnumeration that calls uloc_toUnicodeLocaleKey() in
+// the next() method for each keyword before returning it.
+class UnicodeKeywordEnumeration : public KeywordEnumeration {
+public:
+    using KeywordEnumeration::KeywordEnumeration;
+    virtual ~UnicodeKeywordEnumeration();
+
+    virtual const char* next(int32_t* resultLength, UErrorCode& status) {
+        const char* legacy_key = KeywordEnumeration::next(nullptr, status);
+        if (U_SUCCESS(status) && legacy_key != nullptr) {
+            const char* key = uloc_toUnicodeLocaleKey(legacy_key);
+            if (key == nullptr) {
+                status = U_ILLEGAL_ARGUMENT_ERROR;
+            } else {
+                if (resultLength != nullptr) {
+                    *resultLength = static_cast<int32_t>(uprv_strlen(key));
+                }
+                return key;
+            }
+        }
+        if (resultLength != nullptr) *resultLength = 0;
+        return nullptr;
+    }
+};
+
+// Out-of-line virtual destructor to serve as the "key function".
+UnicodeKeywordEnumeration::~UnicodeKeywordEnumeration() = default;
+
 StringEnumeration *
 Locale::createKeywords(UErrorCode &status) const
 {
     char keywords[256];
-    int32_t keywordCapacity = 256;
+    int32_t keywordCapacity = sizeof keywords;
     StringEnumeration *result = NULL;
+
+    if (U_FAILURE(status)) {
+        return result;
+    }
 
     const char* variantStart = uprv_strchr(fullName, '@');
     const char* assignment = uprv_strchr(fullName, '=');
     if(variantStart) {
         if(assignment > variantStart) {
             int32_t keyLen = locale_getKeywords(variantStart+1, '@', keywords, keywordCapacity, NULL, 0, NULL, FALSE, &status);
-            if(keyLen) {
+            if(U_SUCCESS(status) && keyLen) {
                 result = new KeywordEnumeration(keywords, keyLen, 0, status);
+                if (!result) {
+                    status = U_MEMORY_ALLOCATION_ERROR;
+                }
+            }
+        } else {
+            status = U_INVALID_FORMAT_ERROR;
+        }
+    }
+    return result;
+}
+
+StringEnumeration *
+Locale::createUnicodeKeywords(UErrorCode &status) const
+{
+    char keywords[256];
+    int32_t keywordCapacity = sizeof keywords;
+    StringEnumeration *result = NULL;
+
+    if (U_FAILURE(status)) {
+        return result;
+    }
+
+    const char* variantStart = uprv_strchr(fullName, '@');
+    const char* assignment = uprv_strchr(fullName, '=');
+    if(variantStart) {
+        if(assignment > variantStart) {
+            int32_t keyLen = locale_getKeywords(variantStart+1, '@', keywords, keywordCapacity, NULL, 0, NULL, FALSE, &status);
+            if(U_SUCCESS(status) && keyLen) {
+                result = new UnicodeKeywordEnumeration(keywords, keyLen, 0, status);
+                if (!result) {
+                    status = U_MEMORY_ALLOCATION_ERROR;
+                }
             }
         } else {
             status = U_INVALID_FORMAT_ERROR;
@@ -1029,6 +1242,105 @@ Locale::getKeywordValue(const char* keywordName, char *buffer, int32_t bufLen, U
 }
 
 void
+Locale::getKeywordValue(StringPiece keywordName, ByteSink& sink, UErrorCode& status) const {
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    if (fIsBogus) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+
+    // TODO: Remove the need for a const char* to a NUL terminated buffer.
+    const CharString keywordName_nul(keywordName, status);
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    LocalMemory<char> scratch;
+    int32_t scratch_capacity = 16;  // Arbitrarily chosen default size.
+
+    char* buffer;
+    int32_t result_capacity, reslen;
+
+    for (;;) {
+        if (scratch.allocateInsteadAndReset(scratch_capacity) == nullptr) {
+            status = U_MEMORY_ALLOCATION_ERROR;
+            return;
+        }
+
+        buffer = sink.GetAppendBuffer(
+                /*min_capacity=*/scratch_capacity,
+                /*desired_capacity_hint=*/scratch_capacity,
+                scratch.getAlias(),
+                scratch_capacity,
+                &result_capacity);
+
+        reslen = uloc_getKeywordValue(
+                fullName,
+                keywordName_nul.data(),
+                buffer,
+                result_capacity,
+                &status);
+
+        if (status != U_BUFFER_OVERFLOW_ERROR) {
+            break;
+        }
+
+        scratch_capacity = reslen;
+        status = U_ZERO_ERROR;
+    }
+
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    sink.Append(buffer, reslen);
+    if (status == U_STRING_NOT_TERMINATED_WARNING) {
+        status = U_ZERO_ERROR;  // Terminators not used.
+    }
+}
+
+void
+Locale::getUnicodeKeywordValue(StringPiece keywordName,
+                               ByteSink& sink,
+                               UErrorCode& status) const {
+    // TODO: Remove the need for a const char* to a NUL terminated buffer.
+    const CharString keywordName_nul(keywordName, status);
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    const char* legacy_key = uloc_toLegacyKey(keywordName_nul.data());
+
+    if (legacy_key == nullptr) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+
+    CharString legacy_value;
+    {
+        CharStringByteSink sink(&legacy_value);
+        getKeywordValue(legacy_key, sink, status);
+    }
+
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    const char* unicode_value = uloc_toUnicodeLocaleType(
+            keywordName_nul.data(), legacy_value.data());
+
+    if (unicode_value == nullptr) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+
+    sink.Append(unicode_value, static_cast<int32_t>(uprv_strlen(unicode_value)));
+}
+
+void
 Locale::setKeywordValue(const char* keywordName, const char* keywordValue, UErrorCode &status)
 {
     uloc_setKeywordValue(keywordName, keywordValue, fullName, ULOC_FULLNAME_CAPACITY, &status);
@@ -1036,6 +1348,50 @@ Locale::setKeywordValue(const char* keywordName, const char* keywordValue, UErro
         // May have added the first keyword, meaning that the fullName is no longer also the baseName.
         initBaseName(status);
     }
+}
+
+void
+Locale::setKeywordValue(StringPiece keywordName,
+                        StringPiece keywordValue,
+                        UErrorCode& status) {
+    // TODO: Remove the need for a const char* to a NUL terminated buffer.
+    const CharString keywordName_nul(keywordName, status);
+    const CharString keywordValue_nul(keywordValue, status);
+    setKeywordValue(keywordName_nul.data(), keywordValue_nul.data(), status);
+}
+
+void
+Locale::setUnicodeKeywordValue(StringPiece keywordName,
+                               StringPiece keywordValue,
+                               UErrorCode& status) {
+    // TODO: Remove the need for a const char* to a NUL terminated buffer.
+    const CharString keywordName_nul(keywordName, status);
+    const CharString keywordValue_nul(keywordValue, status);
+
+    if (U_FAILURE(status)) {
+        return;
+    }
+
+    const char* legacy_key = uloc_toLegacyKey(keywordName_nul.data());
+
+    if (legacy_key == nullptr) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+
+    const char* legacy_value = nullptr;
+
+    if (!keywordValue_nul.isEmpty()) {
+        legacy_value =
+            uloc_toLegacyType(keywordName_nul.data(), keywordValue_nul.data());
+
+        if (legacy_value == nullptr) {
+            status = U_ILLEGAL_ARGUMENT_ERROR;
+            return;
+        }
+    }
+
+    setKeywordValue(legacy_key, legacy_value, status);
 }
 
 const char *

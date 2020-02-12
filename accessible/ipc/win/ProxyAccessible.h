@@ -21,65 +21,43 @@
 namespace mozilla {
 namespace a11y {
 
-class ProxyAccessible : public ProxyAccessibleBase<ProxyAccessible>
-{
-public:
+class ProxyAccessible : public ProxyAccessibleBase<ProxyAccessible> {
+ public:
   ProxyAccessible(uint64_t aID, ProxyAccessible* aParent,
                   DocAccessibleParent* aDoc, role aRole, uint32_t aInterfaces)
-    : ProxyAccessibleBase(aID, aParent, aDoc, aRole, aInterfaces)
-  {
+      : ProxyAccessibleBase(aID, aParent, aDoc, aRole, aInterfaces),
+        mSafeToRecurse(true) {
     MOZ_COUNT_CTOR(ProxyAccessible);
   }
 
-  ~ProxyAccessible()
-  {
-    MOZ_COUNT_DTOR(ProxyAccessible);
-  }
+  ~ProxyAccessible() { MOZ_COUNT_DTOR(ProxyAccessible); }
 
-  /*
-   * Return the states for the proxied accessible.
-   */
-  uint64_t State() const;
-
-  /*
-   * Set aName to the name of the proxied accessible.
-   */
-  void Name(nsString& aName) const;
-
-  /*
-   * Set aValue to the value of the proxied accessible.
-   */
-  void Value(nsString& aValue) const;
-
-  /**
-   * Set aDesc to the description of the proxied accessible.
-   */
-  void Description(nsString& aDesc) const;
-
-  /**
-   * Get the set of attributes on the proxied accessible.
-   */
-  void Attributes(nsTArray<Attribute> *aAttrs) const;
-
-  nsIntRect Bounds();
-
-  void Language(nsString& aLocale);
+#include "mozilla/a11y/ProxyAccessibleShared.h"
 
   bool GetCOMInterface(void** aOutAccessible) const;
+  void SetCOMInterface(const RefPtr<IAccessible>& aIAccessible) {
+    if (aIAccessible) {
+      mCOMProxy = aIAccessible;
+    } else {
+      // If we were supposed to be receiving an interface (hence the call to
+      // this function), but the interface turns out to be null, then we're
+      // broken for some reason.
+      mSafeToRecurse = false;
+    }
+  }
 
-protected:
+ protected:
   explicit ProxyAccessible(DocAccessibleParent* aThisAsDoc)
-    : ProxyAccessibleBase(aThisAsDoc)
-  { MOZ_COUNT_CTOR(ProxyAccessibleBase); }
+      : ProxyAccessibleBase(aThisAsDoc) {
+    MOZ_COUNT_CTOR(ProxyAccessible);
+  }
 
-  void SetCOMInterface(const RefPtr<IAccessible>& aIAccessible)
-  { mCOMProxy = aIAccessible; }
-
-private:
+ private:
   RefPtr<IAccessible> mCOMProxy;
+  bool mSafeToRecurse;
 };
 
-}
-}
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

@@ -6,133 +6,85 @@
 // This test covers MozTrap test 6047
 // bug 880621
 
-var {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", null);
-
 var tmp = {};
 
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://browser/content/sanitize.js", tmp);
-
-var Sanitizer = tmp.Sanitizer;
+const { Sanitizer } = ChromeUtils.import("resource:///modules/Sanitizer.jsm");
 
 function test() {
-
   waitForExplicitFinish();
 
-  sanitizeCache();
+  Sanitizer.sanitize(["cache"], { ignoreTimespan: false });
 
-  let nrEntriesR1 = getStorageEntryCount("regular", function(nrEntriesR1) {
+  getStorageEntryCount("regular", function(nrEntriesR1) {
     is(nrEntriesR1, 0, "Disk cache reports 0KB and has no entries");
 
     get_cache_for_private_window();
   });
 }
 
-function cleanup() {
-  let prefs = Services.prefs.getBranch("privacy.cpd.");
-
-  prefs.clearUserPref("history");
-  prefs.clearUserPref("downloads");
-  prefs.clearUserPref("cache");
-  prefs.clearUserPref("cookies");
-  prefs.clearUserPref("formdata");
-  prefs.clearUserPref("offlineApps");
-  prefs.clearUserPref("passwords");
-  prefs.clearUserPref("sessions");
-  prefs.clearUserPref("siteSettings");
-}
-
-function sanitizeCache() {
-
-  let s = new Sanitizer();
-  s.ignoreTimespan = false;
-  s.prefDomain = "privacy.cpd.";
-
-  let prefs = gPrefService.getBranch(s.prefDomain);
-  prefs.setBoolPref("history", false);
-  prefs.setBoolPref("downloads", false);
-  prefs.setBoolPref("cache", true);
-  prefs.setBoolPref("cookies", false);
-  prefs.setBoolPref("formdata", false);
-  prefs.setBoolPref("offlineApps", false);
-  prefs.setBoolPref("passwords", false);
-  prefs.setBoolPref("sessions", false);
-  prefs.setBoolPref("siteSettings", false);
-
-  s.sanitize();
-}
-
-function get_cache_service() {
-  return Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                   .getService(Components.interfaces.nsICacheStorageService);
-}
-
 function getStorageEntryCount(device, goon) {
-  var cs = get_cache_service();
-
   var storage;
   switch (device) {
-  case "private":
-    storage = cs.diskCacheStorage(LoadContextInfo.private, false);
-    break;
-  case "regular":
-    storage = cs.diskCacheStorage(LoadContextInfo.default, false);
-    break;
-  default:
-    throw "Unknown device " + device + " at getStorageEntryCount";
+    case "private":
+      storage = Services.cache2.diskCacheStorage(
+        Services.loadContextInfo.private,
+        false
+      );
+      break;
+    case "regular":
+      storage = Services.cache2.diskCacheStorage(
+        Services.loadContextInfo.default,
+        false
+      );
+      break;
+    default:
+      throw new Error(`Unknown device ${device} at getStorageEntryCount`);
   }
 
   var visitor = {
     entryCount: 0,
-    onCacheStorageInfo: function (aEntryCount, aConsumption) {
-    },
-    onCacheEntryInfo: function(uri)
-    {
+    onCacheStorageInfo(aEntryCount, aConsumption) {},
+    onCacheEntryInfo(uri) {
       var urispec = uri.asciiSpec;
       info(device + ":" + urispec + "\n");
-      if (urispec.match(/^http:\/\/example.org\//))
+      if (urispec.match(/^http:\/\/example.org\//)) {
         ++this.entryCount;
+      }
     },
-    onCacheEntryVisitCompleted: function()
-    {
+    onCacheEntryVisitCompleted() {
       goon(this.entryCount);
-    }
+    },
   };
 
   storage.asyncVisitStorage(visitor, true);
 }
 
-function get_cache_for_private_window () {
-  let win = whenNewWindowLoaded({private: true}, function() {
-
+function get_cache_for_private_window() {
+  let win = whenNewWindowLoaded({ private: true }, function() {
     executeSoon(function() {
-
       ok(true, "The private window got loaded");
 
-      let tab = win.gBrowser.addTab("http://example.org");
+      let tab = BrowserTestUtils.addTab(win.gBrowser, "http://example.org");
       win.gBrowser.selectedTab = tab;
       let newTabBrowser = win.gBrowser.getBrowserForTab(tab);
 
-      newTabBrowser.addEventListener("load", function eventHandler() {
-        newTabBrowser.removeEventListener("load", eventHandler, true);
-
+      BrowserTestUtils.browserLoaded(newTabBrowser).then(function() {
         executeSoon(function() {
-
           getStorageEntryCount("private", function(nrEntriesP) {
-            ok(nrEntriesP >= 1, "Memory cache reports some entries from example.org domain");
+            ok(
+              nrEntriesP >= 1,
+              "Memory cache reports some entries from example.org domain"
+            );
 
             getStorageEntryCount("regular", function(nrEntriesR2) {
               is(nrEntriesR2, 0, "Disk cache reports 0KB and has no entries");
-
-              cleanup();
 
               win.close();
               finish();
             });
           });
         });
-      }, true);
+      });
     });
   });
 }

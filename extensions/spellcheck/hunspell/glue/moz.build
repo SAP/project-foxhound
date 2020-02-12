@@ -4,26 +4,27 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-SOURCES += [
+UNIFIED_SOURCES += [
     'mozHunspell.cpp',
-    'mozHunspellDirProvider.cpp',
+    'mozHunspellFileMgr.cpp',
     'RemoteSpellCheckEngineChild.cpp',
     'RemoteSpellCheckEngineParent.cpp',
 ]
 
+DEFINES['HUNSPELL_STATIC'] = True
+
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['MOZ_SYSTEM_HUNSPELL']:
-    CXXFLAGS += CONFIG['MOZ_HUNSPELL_CFLAGS']
-else:
-    LOCAL_INCLUDES += ['../src']
-
 LOCAL_INCLUDES += [
+    '../src',
     '/dom/base',
     '/extensions/spellcheck/src',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
+include('common.mozbuild')
+
+HunspellIncludes()
 
 IPDL_SOURCES = [
     'PRemoteSpellcheckEngine.ipdl',
@@ -33,7 +34,3 @@ EXPORTS.mozilla += [
      'RemoteSpellCheckEngineChild.h',
      'RemoteSpellCheckEngineParent.h',
 ]
-
-# This variable is referenced in configure.in.  Make sure to change that file
-# too if you need to change this variable.
-DEFINES['HUNSPELL_STATIC'] = True

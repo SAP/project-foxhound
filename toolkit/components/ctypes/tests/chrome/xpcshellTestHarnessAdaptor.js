@@ -7,39 +7,49 @@ var _WORKINGDIR_ = null;
 var _OS_ = null;
 
 var Components = {
-  classes: { },
-  interfaces: { },
+  classes: {},
+  interfaces: {},
   stack: {
-    caller: null
+    caller: null,
   },
   utils: {
-    import: function() { }
-  }
+    import() {},
+  },
 };
 
 function do_throw(message, stack) {
+  info("error: " + message);
+  info("stack: " + (stack ? stack : new Error().stack));
   throw message;
 }
 
-function do_check_neq(left, right, stack) {
-  if (left == right)
-    do_throw(text, stack);
-}
+var Assert = {
+  notEqual(left, right, stack) {
+    if (left == right) {
+      var text = "Assert.notEqual failed";
+      try {
+        text += ": " + left + " == " + right;
+      } catch (e) {}
+      do_throw(text, stack);
+    }
+  },
 
-function do_check_eq(left, right, stack) {
-  if (left != right)
-    do_throw(text, stack);
-}
+  equal(left, right, stack) {
+    if (left != right) {
+      var text = "Assert.equal failed";
+      try {
+        text += ": " + left + " != " + right;
+      } catch (e) {}
+      do_throw(text, stack);
+    }
+  },
 
-function do_check_true(condition, stack) {
-  do_check_eq(condition, true, stack);
-}
+  ok(condition, stack) {
+    this.equal(condition, true, stack);
+  },
+};
 
-function do_check_false(condition, stack) {
-  do_check_eq(condition, false, stack);
-}
-
-function do_print(text) {
+function info(text) {
   dump("INFO: " + text + "\n");
 }
 
@@ -58,9 +68,9 @@ FileFaker.prototype = {
     this._path = this._path.substring(0, lastSlash);
     return this;
   },
-  append: function(leaf) {
+  append(leaf) {
     this._path = this._path + "/" + leaf;
-  }
+  },
 };
 
 function do_get_file(path, allowNonexistent) {
@@ -72,10 +82,11 @@ function do_get_file(path, allowNonexistent) {
   let bits = path.split("/");
   for (let i = 0; i < bits.length; i++) {
     if (bits[i]) {
-      if (bits[i] == "..")
+      if (bits[i] == "..") {
         lf = lf.parent;
-      else
+      } else {
         lf.append(bits[i]);
+      }
     }
   }
   return lf;

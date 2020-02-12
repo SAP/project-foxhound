@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
 
 void WebRtcSpl_CrossCorrelation_mips(int32_t* cross_correlation,
                                      const int16_t* seq1,
                                      const int16_t* seq2,
-                                     int16_t dim_seq,
-                                     int16_t dim_cross_correlation,
-                                     int16_t right_shifts,
-                                     int16_t step_seq2) {
+                                     size_t dim_seq,
+                                     size_t dim_cross_correlation,
+                                     int right_shifts,
+                                     int step_seq2) {
 
   int32_t t0 = 0, t1 = 0, t2 = 0, t3 = 0, sum = 0;
   int16_t *pseq2 = NULL;

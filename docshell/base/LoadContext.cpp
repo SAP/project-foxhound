@@ -8,33 +8,10 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/dom/ScriptSettings.h" // for AutoJSAPI
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ScriptSettings.h"  // for AutoJSAPI
 #include "nsContentUtils.h"
 #include "xpcpublic.h"
-
-bool
-nsILoadContext::GetOriginAttributes(mozilla::DocShellOriginAttributes& aAttrs)
-{
-  mozilla::dom::AutoJSAPI jsapi;
-  bool ok = jsapi.Init(xpc::PrivilegedJunkScope());
-  NS_ENSURE_TRUE(ok, false);
-  JS::Rooted<JS::Value> v(jsapi.cx());
-  nsresult rv = GetOriginAttributes(&v);
-  NS_ENSURE_SUCCESS(rv, false);
-  NS_ENSURE_TRUE(v.isObject(), false);
-  JS::Rooted<JSObject*> obj(jsapi.cx(), &v.toObject());
-
-  // If we're JS-implemented, the object will be left in a different (System-Principaled)
-  // scope, so we may need to enter its compartment.
-  MOZ_ASSERT(nsContentUtils::IsSystemPrincipal(nsContentUtils::ObjectPrincipal(obj)));
-  JSAutoCompartment ac(jsapi.cx(), obj);
-
-  mozilla::DocShellOriginAttributes attrs;
-  ok = attrs.Init(jsapi.cx(), v);
-  NS_ENSURE_TRUE(ok, false);
-  aAttrs = attrs;
-  return true;
-}
 
 namespace mozilla {
 
@@ -42,22 +19,26 @@ NS_IMPL_ISUPPORTS(LoadContext, nsILoadContext, nsIInterfaceRequestor)
 
 LoadContext::LoadContext(nsIPrincipal* aPrincipal,
                          nsILoadContext* aOptionalBase)
-  : mTopFrameElement(nullptr)
-  , mNestedFrameId(0)
-  , mIsContent(true)
-  , mUseRemoteTabs(false)
+    : mTopFrameElement(nullptr),
+      mNestedFrameId(0),
+      mIsContent(true),
+      mUseRemoteTabs(false),
+      mUseRemoteSubframes(false),
+      mUseTrackingProtection(false),
 #ifdef DEBUG
-  , mIsNotNull(true)
+      mIsNotNull(true),
 #endif
-{
-  PrincipalOriginAttributes poa = BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
-  mOriginAttributes.InheritFromDocToChildDocShell(poa);
+      mOriginAttributes(aPrincipal->OriginAttributesRef()) {
   if (!aOptionalBase) {
     return;
   }
 
   MOZ_ALWAYS_SUCCEEDS(aOptionalBase->GetIsContent(&mIsContent));
   MOZ_ALWAYS_SUCCEEDS(aOptionalBase->GetUseRemoteTabs(&mUseRemoteTabs));
+  MOZ_ALWAYS_SUCCEEDS(
+      aOptionalBase->GetUseRemoteSubframes(&mUseRemoteSubframes));
+  MOZ_ALWAYS_SUCCEEDS(
+      aOptionalBase->GetUseTrackingProtection(&mUseTrackingProtection));
 }
 
 //-----------------------------------------------------------------------------
@@ -65,8 +46,7 @@ LoadContext::LoadContext(nsIPrincipal* aPrincipal,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-LoadContext::GetAssociatedWindow(mozIDOMWindowProxy**)
-{
+LoadContext::GetAssociatedWindow(mozIDOMWindowProxy**) {
   MOZ_ASSERT(mIsNotNull);
 
   // can't support this in the parent process
@@ -74,8 +54,7 @@ LoadContext::GetAssociatedWindow(mozIDOMWindowProxy**)
 }
 
 NS_IMETHODIMP
-LoadContext::GetTopWindow(mozIDOMWindowProxy**)
-{
+LoadContext::GetTopWindow(mozIDOMWindowProxy**) {
   MOZ_ASSERT(mIsNotNull);
 
   // can't support this in the parent process
@@ -83,33 +62,21 @@ LoadContext::GetTopWindow(mozIDOMWindowProxy**)
 }
 
 NS_IMETHODIMP
-LoadContext::GetTopFrameElement(nsIDOMElement** aElement)
-{
-  nsCOMPtr<nsIDOMElement> element = do_QueryReferent(mTopFrameElement);
+LoadContext::GetTopFrameElement(dom::Element** aElement) {
+  nsCOMPtr<dom::Element> element = do_QueryReferent(mTopFrameElement);
   element.forget(aElement);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-LoadContext::GetNestedFrameId(uint64_t* aId)
-{
+LoadContext::GetNestedFrameId(uint64_t* aId) {
   NS_ENSURE_ARG(aId);
   *aId = mNestedFrameId;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-LoadContext::IsAppOfType(uint32_t, bool*)
-{
-  MOZ_ASSERT(mIsNotNull);
-
-  // don't expect we need this in parent (Thunderbird/SeaMonkey specific?)
-  return NS_ERROR_UNEXPECTED;
-}
-
-NS_IMETHODIMP
-LoadContext::GetIsContent(bool* aIsContent)
-{
+LoadContext::GetIsContent(bool* aIsContent) {
   MOZ_ASSERT(mIsNotNull);
 
   NS_ENSURE_ARG_POINTER(aIsContent);
@@ -119,8 +86,7 @@ LoadContext::GetIsContent(bool* aIsContent)
 }
 
 NS_IMETHODIMP
-LoadContext::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing)
-{
+LoadContext::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing) {
   MOZ_ASSERT(mIsNotNull);
 
   NS_ENSURE_ARG_POINTER(aUsePrivateBrowsing);
@@ -130,8 +96,7 @@ LoadContext::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing)
 }
 
 NS_IMETHODIMP
-LoadContext::SetUsePrivateBrowsing(bool aUsePrivateBrowsing)
-{
+LoadContext::SetUsePrivateBrowsing(bool aUsePrivateBrowsing) {
   MOZ_ASSERT(mIsNotNull);
 
   // We shouldn't need this on parent...
@@ -139,8 +104,7 @@ LoadContext::SetUsePrivateBrowsing(bool aUsePrivateBrowsing)
 }
 
 NS_IMETHODIMP
-LoadContext::SetPrivateBrowsing(bool aUsePrivateBrowsing)
-{
+LoadContext::SetPrivateBrowsing(bool aUsePrivateBrowsing) {
   MOZ_ASSERT(mIsNotNull);
 
   // We shouldn't need this on parent...
@@ -148,8 +112,7 @@ LoadContext::SetPrivateBrowsing(bool aUsePrivateBrowsing)
 }
 
 NS_IMETHODIMP
-LoadContext::GetUseRemoteTabs(bool* aUseRemoteTabs)
-{
+LoadContext::GetUseRemoteTabs(bool* aUseRemoteTabs) {
   MOZ_ASSERT(mIsNotNull);
 
   NS_ENSURE_ARG_POINTER(aUseRemoteTabs);
@@ -159,8 +122,7 @@ LoadContext::GetUseRemoteTabs(bool* aUseRemoteTabs)
 }
 
 NS_IMETHODIMP
-LoadContext::SetRemoteTabs(bool aUseRemoteTabs)
-{
+LoadContext::SetRemoteTabs(bool aUseRemoteTabs) {
   MOZ_ASSERT(mIsNotNull);
 
   // We shouldn't need this on parent...
@@ -168,61 +130,58 @@ LoadContext::SetRemoteTabs(bool aUseRemoteTabs)
 }
 
 NS_IMETHODIMP
-LoadContext::GetIsInIsolatedMozBrowserElement(bool* aIsInIsolatedMozBrowserElement)
-{
+LoadContext::GetUseRemoteSubframes(bool* aUseRemoteSubframes) {
   MOZ_ASSERT(mIsNotNull);
 
-  NS_ENSURE_ARG_POINTER(aIsInIsolatedMozBrowserElement);
+  NS_ENSURE_ARG_POINTER(aUseRemoteSubframes);
 
-  *aIsInIsolatedMozBrowserElement = mOriginAttributes.mInIsolatedMozBrowser;
+  *aUseRemoteSubframes = mUseRemoteSubframes;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-LoadContext::GetAppId(uint32_t* aAppId)
-{
+LoadContext::SetRemoteSubframes(bool aUseRemoteSubframes) {
   MOZ_ASSERT(mIsNotNull);
 
-  NS_ENSURE_ARG_POINTER(aAppId);
-
-  *aAppId = mOriginAttributes.mAppId;
-  return NS_OK;
+  // We shouldn't need this on parent...
+  return NS_ERROR_UNEXPECTED;
 }
 
 NS_IMETHODIMP
-LoadContext::GetOriginAttributes(JS::MutableHandleValue aAttrs)
-{
-  JSContext* cx = nsContentUtils::GetCurrentJSContext();
-  MOZ_ASSERT(cx);
-
-  bool ok = ToJSValue(cx, mOriginAttributes, aAttrs);
+LoadContext::GetScriptableOriginAttributes(JSContext* aCx,
+                                           JS::MutableHandleValue aAttrs) {
+  bool ok = ToJSValue(aCx, mOriginAttributes, aAttrs);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
   return NS_OK;
 }
 
+NS_IMETHODIMP_(void)
+LoadContext::GetOriginAttributes(mozilla::OriginAttributes& aAttrs) {
+  aAttrs = mOriginAttributes;
+}
+
 NS_IMETHODIMP
-LoadContext::IsTrackingProtectionOn(bool* aIsTrackingProtectionOn)
-{
+LoadContext::GetUseTrackingProtection(bool* aUseTrackingProtection) {
   MOZ_ASSERT(mIsNotNull);
 
-  if (Preferences::GetBool("privacy.trackingprotection.enabled", false)) {
-    *aIsTrackingProtectionOn = true;
-  } else if ((mOriginAttributes.mPrivateBrowsingId > 0) &&
-             Preferences::GetBool("privacy.trackingprotection.pbmode.enabled", false)) {
-    *aIsTrackingProtectionOn = true;
-  } else {
-    *aIsTrackingProtectionOn = false;
-  }
+  NS_ENSURE_ARG_POINTER(aUseTrackingProtection);
 
+  *aUseTrackingProtection = mUseTrackingProtection;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadContext::SetUseTrackingProtection(bool aUseTrackingProtection) {
+  MOZ_ASSERT_UNREACHABLE("Should only be set through nsDocShell");
+
+  return NS_ERROR_UNEXPECTED;
 }
 
 //-----------------------------------------------------------------------------
 // LoadContext::nsIInterfaceRequestor
 //-----------------------------------------------------------------------------
 NS_IMETHODIMP
-LoadContext::GetInterface(const nsIID& aIID, void** aResult)
-{
+LoadContext::GetInterface(const nsIID& aIID, void** aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
   *aResult = nullptr;
 
@@ -235,4 +194,21 @@ LoadContext::GetInterface(const nsIID& aIID, void** aResult)
   return NS_NOINTERFACE;
 }
 
-} // namespace mozilla
+static already_AddRefed<nsILoadContext> CreateInstance(bool aPrivate) {
+  OriginAttributes oa;
+  oa.mPrivateBrowsingId = aPrivate ? 1 : 0;
+
+  nsCOMPtr<nsILoadContext> lc = new LoadContext(oa);
+
+  return lc.forget();
+}
+
+already_AddRefed<nsILoadContext> CreateLoadContext() {
+  return CreateInstance(false);
+}
+
+already_AddRefed<nsILoadContext> CreatePrivateLoadContext() {
+  return CreateInstance(true);
+}
+
+}  // namespace mozilla

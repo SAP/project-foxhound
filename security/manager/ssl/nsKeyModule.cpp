@@ -12,46 +12,15 @@ using namespace mozilla::psm;
 
 NS_IMPL_ISUPPORTS(nsKeyObject, nsIKeyObject)
 
-nsKeyObject::nsKeyObject()
-  : mSymKey(nullptr)
-{
-}
-
-nsKeyObject::~nsKeyObject()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return;
-  }
-  destructorSafeDestroyNSSReference();
-  shutdown(ShutdownCalledFrom::Object);
-}
-
-void
-nsKeyObject::virtualDestroyNSSReference()
-{
-  destructorSafeDestroyNSSReference();
-}
-
-void
-nsKeyObject::destructorSafeDestroyNSSReference()
-{
-  mSymKey = nullptr;
-}
+nsKeyObject::nsKeyObject() : mSymKey(nullptr) {}
 
 //////////////////////////////////////////////////////////////////////////////
 // nsIKeyObject
 
 NS_IMETHODIMP
-nsKeyObject::InitKey(int16_t aAlgorithm, PK11SymKey* aKey)
-{
+nsKeyObject::InitKey(int16_t aAlgorithm, PK11SymKey* aKey) {
   if (!aKey || aAlgorithm != nsIKeyObject::HMAC) {
     return NS_ERROR_INVALID_ARG;
-  }
-
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
   }
 
   mSymKey.reset(aKey);
@@ -59,18 +28,12 @@ nsKeyObject::InitKey(int16_t aAlgorithm, PK11SymKey* aKey)
 }
 
 NS_IMETHODIMP
-nsKeyObject::GetKeyObj(PK11SymKey** _retval)
-{
+nsKeyObject::GetKeyObj(PK11SymKey** _retval) {
   if (!_retval) {
     return NS_ERROR_INVALID_ARG;
   }
 
   *_retval = nullptr;
-
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
 
   if (!mSymKey) {
     return NS_ERROR_NOT_INITIALIZED;
@@ -81,8 +44,7 @@ nsKeyObject::GetKeyObj(PK11SymKey** _retval)
 }
 
 NS_IMETHODIMP
-nsKeyObject::GetType(int16_t *_retval)
-{
+nsKeyObject::GetType(int16_t* _retval) {
   if (!_retval) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -95,30 +57,11 @@ nsKeyObject::GetType(int16_t *_retval)
 
 NS_IMPL_ISUPPORTS(nsKeyObjectFactory, nsIKeyObjectFactory)
 
-nsKeyObjectFactory::nsKeyObjectFactory()
-{
-}
-
-nsKeyObjectFactory::~nsKeyObjectFactory()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return;
-  }
-  shutdown(ShutdownCalledFrom::Object);
-}
-
 NS_IMETHODIMP
 nsKeyObjectFactory::KeyFromString(int16_t aAlgorithm, const nsACString& aKey,
-                                  nsIKeyObject** _retval)
-{
+                                  nsIKeyObject** _retval) {
   if (!_retval || aAlgorithm != nsIKeyObject::HMAC) {
     return NS_ERROR_INVALID_ARG;
-  }
-
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return NS_ERROR_NOT_AVAILABLE;
   }
 
   CK_MECHANISM_TYPE cipherMech = CKM_GENERIC_SECRET_KEY_GEN;
@@ -126,7 +69,7 @@ nsKeyObjectFactory::KeyFromString(int16_t aAlgorithm, const nsACString& aKey,
 
   nsresult rv;
   nsCOMPtr<nsIKeyObject> key(
-    do_CreateInstance(NS_KEYMODULEOBJECT_CONTRACTID, &rv));
+      do_CreateInstance(NS_KEYMODULEOBJECT_CONTRACTID, &rv));
   if (NS_FAILED(rv)) {
     return rv;
   }

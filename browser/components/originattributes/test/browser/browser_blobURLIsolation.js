@@ -2,32 +2,35 @@
  * Bug 1264573 - A test case for blob url isolation.
  */
 
-const TEST_PAGE = "http://mochi.test:8888/browser/browser/components/" +
-                  "originattributes/test/browser/file_firstPartyBasic.html";
+const TEST_PAGE =
+  "http://mochi.test:8888/browser/browser/components/" +
+  "originattributes/test/browser/file_firstPartyBasic.html";
 const SCRIPT_WORKER_BLOBIFY = "worker_blobify.js";
 const SCRIPT_WORKER_DEBLOBIFY = "worker_deblobify.js";
 
 function page_blobify(browser, input) {
-  return ContentTask.spawn(browser, input, function(input) {
-    return { blobURL: content.URL.createObjectURL(new content.Blob([input])) };
+  return ContentTask.spawn(browser, input, function(contentInput) {
+    return {
+      blobURL: content.URL.createObjectURL(new content.Blob([contentInput])),
+    };
   });
 }
 
 function page_deblobify(browser, blobURL) {
-  return ContentTask.spawn(browser, blobURL, function* (blobURL) {
-    if ("error" in blobURL) {
-      return blobURL;
+  return ContentTask.spawn(browser, blobURL, async function(contentBlobURL) {
+    if ("error" in contentBlobURL) {
+      return contentBlobURL;
     }
-    blobURL = blobURL.blobURL;
+    contentBlobURL = contentBlobURL.blobURL;
 
-    function blobURLtoBlob(blobURL) {
-      return new content.Promise(function (resolve) {
+    function blobURLtoBlob(aBlobURL) {
+      return new content.Promise(function(resolve) {
         let xhr = new content.XMLHttpRequest();
-        xhr.open("GET", blobURL, true);
-        xhr.onload = function () {
+        xhr.open("GET", aBlobURL, true);
+        xhr.onload = function() {
           resolve(xhr.response);
         };
-        xhr.onerror = function () {
+        xhr.onerror = function() {
           resolve("xhr error");
         };
         xhr.responseType = "blob";
@@ -36,55 +39,57 @@ function page_deblobify(browser, blobURL) {
     }
 
     function blobToString(blob) {
-      return new content.Promise(function (resolve) {
+      return new content.Promise(function(resolve) {
         let fileReader = new content.FileReader();
-        fileReader.onload = function () {
+        fileReader.onload = function() {
           resolve(fileReader.result);
         };
         fileReader.readAsText(blob);
       });
     }
 
-    let blob = yield blobURLtoBlob(blobURL);
+    let blob = await blobURLtoBlob(contentBlobURL);
     if (blob == "xhr error") {
       return "xhr error";
     }
 
-    return yield blobToString(blob);
+    return blobToString(blob);
   });
 }
 
 function workerIO(browser, scriptFile, message) {
-  return ContentTask.spawn(browser, {scriptFile, message}, function* (args) {
+  return ContentTask.spawn(browser, { scriptFile, message }, function(args) {
     let worker = new content.Worker(args.scriptFile);
     let promise = new content.Promise(function(resolve) {
       let listenFunction = function(event) {
-        worker.removeEventListener("message", listenFunction, false);
+        worker.removeEventListener("message", listenFunction);
         worker.terminate();
         resolve(event.data);
       };
-      worker.addEventListener("message", listenFunction, false);
+      worker.addEventListener("message", listenFunction);
     });
     worker.postMessage(args.message);
-    return yield promise;
+    return promise;
   });
 }
 
-let worker_blobify = (browser, input) => workerIO(browser, SCRIPT_WORKER_BLOBIFY, input);
-let worker_deblobify = (browser, blobURL) => workerIO(browser, SCRIPT_WORKER_DEBLOBIFY, blobURL);
+let worker_blobify = (browser, input) =>
+  workerIO(browser, SCRIPT_WORKER_BLOBIFY, input);
+let worker_deblobify = (browser, blobURL) =>
+  workerIO(browser, SCRIPT_WORKER_DEBLOBIFY, blobURL);
 
 function doTest(blobify, deblobify) {
   let blobURL = null;
-  return function* (browser) {
+  return async function(browser) {
     if (blobURL === null) {
       let input = Math.random().toString();
-      blobURL = yield blobify(browser, input);
+      blobURL = await blobify(browser, input);
       return input;
     }
-    let result = yield deblobify(browser, blobURL);
+    let result = await deblobify(browser, blobURL);
     blobURL = null;
     return result;
-  }
+  };
 }
 
 let tests = [];

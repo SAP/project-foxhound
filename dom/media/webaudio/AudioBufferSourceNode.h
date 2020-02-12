@@ -7,102 +7,79 @@
 #ifndef AudioBufferSourceNode_h_
 #define AudioBufferSourceNode_h_
 
-#include "AudioNode.h"
+#include "AudioScheduledSourceNode.h"
 #include "AudioBuffer.h"
 
 namespace mozilla {
 namespace dom {
 
+struct AudioBufferSourceOptions;
 class AudioParam;
 
-class AudioBufferSourceNode final : public AudioNode,
-                                    public MainThreadMediaStreamListener
-{
-public:
-  explicit AudioBufferSourceNode(AudioContext* aContext);
+class AudioBufferSourceNode final : public AudioScheduledSourceNode,
+                                    public MainThreadMediaTrackListener {
+ public:
+  static already_AddRefed<AudioBufferSourceNode> Create(
+      JSContext* aCx, AudioContext& aAudioContext,
+      const AudioBufferSourceOptions& aOptions);
 
-  void DestroyMediaStream() override;
+  void DestroyMediaTrack() override;
 
-  uint16_t NumberOfInputs() const final override
-  {
-    return 0;
-  }
-  AudioBufferSourceNode* AsAudioBufferSourceNode() override
-  {
-    return this;
-  }
+  uint16_t NumberOfInputs() const final { return 0; }
+  AudioBufferSourceNode* AsAudioBufferSourceNode() override { return this; }
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioBufferSourceNode, AudioNode)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AudioBufferSourceNode,
+                                           AudioScheduledSourceNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  void Start(double aWhen, double aOffset,
-             const Optional<double>& aDuration, ErrorResult& aRv);
-  void Stop(double aWhen, ErrorResult& aRv);
-
-  AudioBuffer* GetBuffer(JSContext* aCx) const
-  {
-    return mBuffer;
+  static already_AddRefed<AudioBufferSourceNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const AudioBufferSourceOptions& aOptions) {
+    return Create(aGlobal.Context(), aAudioContext, aOptions);
   }
-  void SetBuffer(JSContext* aCx, AudioBuffer* aBuffer)
-  {
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  void Start(double aWhen, double aOffset, const Optional<double>& aDuration,
+             ErrorResult& aRv);
+
+  void Start(double aWhen, ErrorResult& aRv) override;
+  void Stop(double aWhen, ErrorResult& aRv) override;
+
+  AudioBuffer* GetBuffer(JSContext* aCx) const { return mBuffer; }
+  void SetBuffer(JSContext* aCx, AudioBuffer* aBuffer) {
     mBuffer = aBuffer;
-    SendBufferParameterToStream(aCx);
-    SendLoopParametersToStream();
+    SendBufferParameterToTrack(aCx);
+    SendLoopParametersToTrack();
   }
-  AudioParam* PlaybackRate() const
-  {
-    return mPlaybackRate;
-  }
-  AudioParam* Detune() const
-  {
-    return mDetune;
-  }
-  bool Loop() const
-  {
-    return mLoop;
-  }
-  void SetLoop(bool aLoop)
-  {
+  AudioParam* PlaybackRate() const { return mPlaybackRate; }
+  AudioParam* Detune() const { return mDetune; }
+  bool Loop() const { return mLoop; }
+  void SetLoop(bool aLoop) {
     mLoop = aLoop;
-    SendLoopParametersToStream();
+    SendLoopParametersToTrack();
   }
-  double LoopStart() const
-  {
-    return mLoopStart;
-  }
-  void SetLoopStart(double aStart)
-  {
+  double LoopStart() const { return mLoopStart; }
+  void SetLoopStart(double aStart) {
     mLoopStart = aStart;
-    SendLoopParametersToStream();
+    SendLoopParametersToTrack();
   }
-  double LoopEnd() const
-  {
-    return mLoopEnd;
-  }
-  void SetLoopEnd(double aEnd)
-  {
+  double LoopEnd() const { return mLoopEnd; }
+  void SetLoopEnd(double aEnd) {
     mLoopEnd = aEnd;
-    SendLoopParametersToStream();
+    SendLoopParametersToTrack();
   }
-  void SendDopplerShiftToStream(double aDopplerShift);
+  void NotifyMainThreadTrackEnded() override;
 
-  IMPL_EVENT_HANDLER(ended)
-
-  void NotifyMainThreadStreamFinished() override;
-
-  const char* NodeType() const override
-  {
-    return "AudioBufferSourceNode";
-  }
+  const char* NodeType() const override { return "AudioBufferSourceNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-protected:
-  virtual ~AudioBufferSourceNode();
+ private:
+  explicit AudioBufferSourceNode(AudioContext* aContext);
+  ~AudioBufferSourceNode() = default;
 
-private:
   friend class AudioBufferSourceNodeEngine;
   // START is sent during Start().
   // STOP is sent during Stop().
@@ -122,15 +99,13 @@ private:
     LOOPSTART,
     LOOPEND,
     PLAYBACKRATE,
-    DETUNE,
-    DOPPLERSHIFT
+    DETUNE
   };
 
-  void SendLoopParametersToStream();
-  void SendBufferParameterToStream(JSContext* aCx);
-  void SendOffsetAndDurationParametersToStream(AudioNodeStream* aStream);
+  void SendLoopParametersToTrack();
+  void SendBufferParameterToTrack(JSContext* aCx);
+  void SendOffsetAndDurationParametersToTrack(AudioNodeTrack* aTrack);
 
-private:
   double mLoopStart;
   double mLoopEnd;
   double mOffset;
@@ -142,8 +117,7 @@ private:
   bool mStartCalled;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

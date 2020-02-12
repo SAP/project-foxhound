@@ -8,15 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/audio_multi_vector.h"
+#include "modules/audio_coding/neteq/audio_multi_vector.h"
 
 #include <assert.h>
 #include <stdlib.h>
 
 #include <string>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/typedefs.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -51,7 +52,7 @@ class AudioMultiVectorTest : public ::testing::TestWithParam<size_t> {
     // And so on.
     for (size_t i = 0; i < array_length(); ++i) {
       for (size_t j = 1; j <= num_channels_; ++j) {
-        *ptr = j * 100 + i;
+        *ptr = rtc::checked_cast<int16_t>(j * 100 + i);
         ++ptr;
       }
     }
@@ -206,16 +207,6 @@ TEST_P(AudioMultiVectorTest, ReadInterleaved) {
             memcmp(array_interleaved_, output, read_samples * sizeof(int16_t)));
 
   delete [] output;
-}
-
-// Try to read to a NULL pointer. Expected to return 0.
-TEST_P(AudioMultiVectorTest, ReadInterleavedToNull) {
-  AudioMultiVector vec(num_channels_);
-  vec.PushBackInterleaved(array_interleaved_, interleaved_length_);
-  int16_t* output = NULL;
-  // Read 5 samples.
-  size_t read_samples = 5;
-  EXPECT_EQ(0u, vec.ReadInterleaved(read_samples, output));
 }
 
 // Test the PopFront method.

@@ -12,35 +12,33 @@
 class nsIContent;
 
 /**
-  * This file contains a number of classes that are used as base
-  *  classes for the different accessibility implementations of
-  *  the HTML and XUL widget sets.  --jgaunt
-  */
+ * This file contains a number of classes that are used as base
+ *  classes for the different accessibility implementations of
+ *  the HTML and XUL widget sets.  --jgaunt
+ */
 
 namespace mozilla {
 namespace a11y {
 
 /**
-  * Leaf version of DOM Accessible -- has no children
-  */
-class LeafAccessible : public AccessibleWrap
-{
-public:
-
+ * Leaf version of DOM Accessible -- has no children
+ */
+class LeafAccessible : public AccessibleWrap {
+ public:
   LeafAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(LeafAccessible, AccessibleWrap)
 
   // Accessible
   virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
                                    EWhichChildAtPoint aWhichChild) override;
-  virtual bool InsertChildAt(uint32_t aIndex, Accessible* aChild) override final;
-  virtual bool RemoveChild(Accessible* aChild) override final;
+  bool InsertChildAt(uint32_t aIndex, Accessible* aChild) final;
+  bool RemoveChild(Accessible* aChild) final;
 
   virtual bool IsAcceptableChild(nsIContent* aEl) const override;
 
-protected:
+ protected:
   virtual ~LeafAccessible() {}
 };
 
@@ -50,83 +48,78 @@ protected:
  * report the state of the host link (traveled or not) and can activate (click)
  * the host accessible programmatically.
  */
-class LinkableAccessible : public AccessibleWrap
-{
-public:
+class LinkableAccessible : public AccessibleWrap {
+ public:
   enum { eAction_Jump = 0 };
 
-  LinkableAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    AccessibleWrap(aContent, aDoc)
-  {
-  }
+  LinkableAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : AccessibleWrap(aContent, aDoc) {}
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(LinkableAccessible, AccessibleWrap)
 
   // Accessible
-  virtual void Value(nsString& aValue) override;
+  virtual void Value(nsString& aValue) const override;
   virtual uint64_t NativeLinkState() const override;
-  virtual void TakeFocus() override;
+  virtual void TakeFocus() const override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() override;
+  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t index) override;
+  virtual bool DoAction(uint8_t index) const override;
   virtual KeyBinding AccessKey() const override;
 
   // ActionAccessible helpers
-  Accessible* ActionWalk(bool* aIsLink = nullptr,
-                         bool* aIsOnclick = nullptr,
-                         bool* aIsLabelWithControl = nullptr);
+  const Accessible* ActionWalk(bool* aIsLink = nullptr,
+                               bool* aIsOnclick = nullptr,
+                               bool* aIsLabelWithControl = nullptr) const;
   // HyperLinkAccessible
-  virtual already_AddRefed<nsIURI> AnchorURIAt(uint32_t aAnchorIndex) override;
+  virtual already_AddRefed<nsIURI> AnchorURIAt(
+      uint32_t aAnchorIndex) const override;
 
-protected:
+ protected:
   virtual ~LinkableAccessible() {}
-
 };
 
 /**
  * A simple accessible that gets its enumerated role.
  */
-template<a11y::role R>
-class EnumRoleAccessible : public AccessibleWrap
-{
-public:
-  EnumRoleAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-    AccessibleWrap(aContent, aDoc) { }
+template <a11y::role R>
+class EnumRoleAccessible : public AccessibleWrap {
+ public:
+  EnumRoleAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : AccessibleWrap(aContent, aDoc) {}
 
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aPtr) override
-    { return Accessible::QueryInterface(aIID, aPtr); }
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aPtr) override {
+    return Accessible::QueryInterface(aIID, aPtr);
+  }
 
   // Accessible
-  virtual a11y::role NativeRole() override { return R; }
+  virtual a11y::role NativeRole() const override { return R; }
 
-protected:
-  virtual ~EnumRoleAccessible() { }
+ protected:
+  virtual ~EnumRoleAccessible() {}
 };
-
 
 /**
  * A wrapper accessible around native accessible to connect it with
  * crossplatform accessible tree.
  */
-class DummyAccessible : public AccessibleWrap
-{
-public:
-  explicit DummyAccessible(DocAccessible* aDocument = nullptr) :
-    AccessibleWrap(nullptr, aDocument) { }
+class DummyAccessible : public AccessibleWrap {
+ public:
+  explicit DummyAccessible(DocAccessible* aDocument = nullptr)
+      : AccessibleWrap(nullptr, aDocument) {}
 
-  virtual uint64_t NativeState() override final;
-  virtual uint64_t NativeInteractiveState() const override final;
-  virtual uint64_t NativeLinkState() const override final;
-  virtual bool NativelyUnavailable() const override final;
-  virtual void ApplyARIAState(uint64_t* aState) const override final;
+  uint64_t NativeState() const final;
+  uint64_t NativeInteractiveState() const final;
+  uint64_t NativeLinkState() const final;
+  bool NativelyUnavailable() const final;
+  void ApplyARIAState(uint64_t* aState) const final;
 
-protected:
-  virtual ~DummyAccessible() { }
+ protected:
+  virtual ~DummyAccessible() {}
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

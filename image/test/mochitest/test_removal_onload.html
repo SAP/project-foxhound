@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=841579
 -->
 <head>
   <title>Test for Bug 841579</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <script type="application/javascript" src="imgutils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=841579
 <div id="content">
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 /** Test for Bug 841579**/
 
 SimpleTest.requestFlakyTimeout("Early failure timeout");
@@ -34,8 +34,10 @@ var gIsTestFinished = false;
 var gFiles;
 var gNotifications = 0;
 var gLoads = 0;
+var gRemovals = 0;
+var gExpected = 5;
 
-function fileToLoad() {
+function* fileToLoad() {
   yield "red.png";
   yield "invalid.jpg";
   yield "lime100x100.svg";
@@ -47,13 +49,15 @@ function onSizeAvailable(aRequest) {
   ok(true, "AfterLoad.onSizeAvailable called for " + gImg.src);
 }
 function onLoadComplete(aRequest) {
-  ok(true, "AfterLoad.onLoadComplete called for " + gImg.src);
+  ok(gExpected > gLoads, "AfterLoad.onLoadComplete called for " + gImg.src);
   gLoads++;
   SimpleTest.executeSoon(function() {
     try {
       gContent.removeChild(gImg);
     } 
-    catch (e) {} 
+    catch (e) {}
+    gRemovals++;
+    maybeAdvance();
   });
 }
 function onDecodeComplete(aRequest) {
@@ -69,12 +73,22 @@ function failTest() {
 function onNotification()
 {
   gNotifications++;
-  try {
-    gImg.src = gFiles.next();
-    gContent.appendChild(gImg);
-  } catch(e) {
-    cleanUpAndFinish();
+  maybeAdvance();
+}
+
+function maybeAdvance()
+{
+  if (gRemovals != gNotifications) {
+    return;
   }
+
+  let {done, value} = gFiles.next();
+  if (done) {
+    cleanUpAndFinish();
+    return;
+  }
+  gImg.src = value;
+  gContent.appendChild(gImg);
 }
 
 function cleanUpAndFinish() {
@@ -83,7 +97,7 @@ function cleanUpAndFinish() {
   if (gIsTestFinished) {
     return;
   }
-  let imgLoadingContent = SpecialPowers.wrap(gImg).QueryInterface(Ci.nsIImageLoadingContent);
+  let imgLoadingContent = SpecialPowers.wrap(gImg);
   imgLoadingContent.removeObserver(gMyDecoderObserver);
   // TODO: this isn't the case until post-bug 716140's refactorings
   // ok(gNotifications == gLoads, "Should be notified the same number of times as loads");
@@ -98,14 +112,14 @@ function main() {
   gImg.onerror = onNotification;
 
   // Create, customize & attach decoder observer
-  observer = new ImageDecoderObserverStub();
+  var observer = new ImageDecoderObserverStub();
   observer.sizeAvailable = onSizeAvailable;
   observer.loadComplete = onLoadComplete;
   observer.decodeComplete = onDecodeComplete;
   gMyDecoderObserver =
     Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
       .createScriptedObserver(SpecialPowers.wrapCallbackObject(observer));
-  let imgLoadingContent = SpecialPowers.wrap(gImg).QueryInterface(Ci.nsIImageLoadingContent);
+  let imgLoadingContent = SpecialPowers.wrap(gImg);
   imgLoadingContent.addObserver(gMyDecoderObserver);
 
   // We want to test the cold loading behavior, so clear cache in case an

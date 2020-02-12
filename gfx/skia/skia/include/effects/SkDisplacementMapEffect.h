@@ -9,7 +9,6 @@
 #define SkDisplacementMapEffect_DEFINED
 
 #include "SkImageFilter.h"
-#include "SkBitmap.h"
 
 class SK_API SkDisplacementMapEffect : public SkImageFilter {
 public:
@@ -18,46 +17,41 @@ public:
         kR_ChannelSelectorType,
         kG_ChannelSelectorType,
         kB_ChannelSelectorType,
-        kA_ChannelSelectorType
+        kA_ChannelSelectorType,
+
+        kLast_ChannelSelectorType = kA_ChannelSelectorType
     };
 
-    ~SkDisplacementMapEffect();
+    ~SkDisplacementMapEffect() override;
 
-    static SkImageFilter* Create(ChannelSelectorType xChannelSelector,
-                                 ChannelSelectorType yChannelSelector,
-                                 SkScalar scale, SkImageFilter* displacement,
-                                 SkImageFilter* color = NULL,
-                                 const CropRect* cropRect = NULL);
+    static sk_sp<SkImageFilter> Make(ChannelSelectorType xChannelSelector,
+                                     ChannelSelectorType yChannelSelector,
+                                     SkScalar scale,
+                                     sk_sp<SkImageFilter> displacement,
+                                     sk_sp<SkImageFilter> color,
+                                     const CropRect* cropRect = nullptr);
 
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDisplacementMapEffect)
-
-    bool onFilterImageDeprecated(Proxy* proxy,
-                                 const SkBitmap& src,
-                                 const Context& ctx,
-                                 SkBitmap* dst,
-                                 SkIPoint* offset) const override;
     SkRect computeFastBounds(const SkRect& src) const override;
 
-    virtual SkIRect onFilterBounds(const SkIRect& src, const SkMatrix&,
-                                   MapDirection) const override;
-    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
-
-#if SK_SUPPORT_GPU
-    bool canFilterImageGPU() const override { return true; }
-    bool filterImageGPUDeprecated(Proxy* proxy, const SkBitmap& src, const Context& ctx,
-                                SkBitmap* result, SkIPoint* offset) const override;
-#endif
-
-    SK_TO_STRING_OVERRIDE()
+    virtual SkIRect onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
+                                   MapDirection, const SkIRect* inputRect) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
+    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
 
 protected:
+    sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
+                                        SkIPoint* offset) const override;
+
     SkDisplacementMapEffect(ChannelSelectorType xChannelSelector,
                             ChannelSelectorType yChannelSelector,
-                            SkScalar scale, SkImageFilter* inputs[2],
+                            SkScalar scale, sk_sp<SkImageFilter> inputs[2],
                             const CropRect* cropRect);
     void flatten(SkWriteBuffer&) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkDisplacementMapEffect)
+
     ChannelSelectorType fXChannelSelector;
     ChannelSelectorType fYChannelSelector;
     SkScalar fScale;

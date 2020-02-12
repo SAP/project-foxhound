@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,48 +18,32 @@ namespace mozilla {
  */
 struct Sides final {
   Sides() : mBits(0) {}
-  explicit Sides(SideBits aSideBits)
-  {
+  explicit Sides(SideBits aSideBits) {
     MOZ_ASSERT((aSideBits & ~eSideBitsAll) == 0, "illegal side bits");
     mBits = aSideBits;
   }
   bool IsEmpty() const { return mBits == 0; }
-  bool Top()     const { return (mBits & eSideBitsTop) != 0; }
-  bool Right()   const { return (mBits & eSideBitsRight) != 0; }
-  bool Bottom()  const { return (mBits & eSideBitsBottom) != 0; }
-  bool Left()    const { return (mBits & eSideBitsLeft) != 0; }
-  bool Contains(SideBits aSideBits) const
-  {
+  bool Top() const { return (mBits & eSideBitsTop) != 0; }
+  bool Right() const { return (mBits & eSideBitsRight) != 0; }
+  bool Bottom() const { return (mBits & eSideBitsBottom) != 0; }
+  bool Left() const { return (mBits & eSideBitsLeft) != 0; }
+  bool Contains(SideBits aSideBits) const {
     MOZ_ASSERT((aSideBits & ~eSideBitsAll) == 0, "illegal side bits");
     return (mBits & aSideBits) == aSideBits;
   }
-  Sides operator|(Sides aOther) const
-  {
+  Sides operator|(Sides aOther) const {
     return Sides(SideBits(mBits | aOther.mBits));
   }
-  Sides operator|(SideBits aSideBits) const
-  {
-    return *this | Sides(aSideBits);
-  }
-  Sides& operator|=(Sides aOther)
-  {
+  Sides operator|(SideBits aSideBits) const { return *this | Sides(aSideBits); }
+  Sides& operator|=(Sides aOther) {
     mBits |= aOther.mBits;
     return *this;
   }
-  Sides& operator|=(SideBits aSideBits)
-  {
-    return *this |= Sides(aSideBits);
-  }
-  bool operator==(Sides aOther) const
-  {
-    return mBits == aOther.mBits;
-  }
-  bool operator!=(Sides aOther) const
-  {
-    return !(*this == aOther);
-  }
+  Sides& operator|=(SideBits aSideBits) { return *this |= Sides(aSideBits); }
+  bool operator==(Sides aOther) const { return mBits == aOther.mBits; }
+  bool operator!=(Sides aOther) const { return !(*this == aOther); }
 
-private:
+ private:
   uint8_t mBits;
 };
 
@@ -70,7 +55,7 @@ namespace gfx {
  */
 template <class T, class Sub>
 struct BaseMargin {
-  typedef mozilla::Side SideT; // because we have a method named Side
+  typedef mozilla::Side SideT;  // because we have a method named Side
 
   // Do not change the layout of these members; the Side() methods below
   // depend on this order.
@@ -78,12 +63,14 @@ struct BaseMargin {
 
   // Constructors
   BaseMargin() : top(0), right(0), bottom(0), left(0) {}
-  BaseMargin(T aTop, T aRight, T aBottom, T aLeft) :
-      top(aTop), right(aRight), bottom(aBottom), left(aLeft) {}
+  BaseMargin(T aTop, T aRight, T aBottom, T aLeft)
+      : top(aTop), right(aRight), bottom(aBottom), left(aLeft) {}
 
-  void SizeTo(T aTop, T aRight, T aBottom, T aLeft)
-  {
-    top = aTop; right = aRight; bottom = aBottom; left = aLeft;
+  void SizeTo(T aTop, T aRight, T aBottom, T aLeft) {
+    top = aTop;
+    right = aRight;
+    bottom = aBottom;
+    left = aLeft;
   }
 
   T LeftRight() const { return left + right; }
@@ -98,8 +85,7 @@ struct BaseMargin {
     return *(&top + int(aSide));
   }
 
-  void ApplySkipSides(Sides aSkipSides)
-  {
+  void ApplySkipSides(Sides aSkipSides) {
     if (aSkipSides.Top()) {
       top = 0;
     }
@@ -120,9 +106,7 @@ struct BaseMargin {
     return top == aMargin.top && right == aMargin.right &&
            bottom == aMargin.bottom && left == aMargin.left;
   }
-  bool operator!=(const Sub& aMargin) const {
-    return !(*this == aMargin);
-  }
+  bool operator!=(const Sub& aMargin) const { return !(*this == aMargin); }
   Sub operator+(const Sub& aMargin) const {
     return Sub(top + aMargin.top, right + aMargin.right,
                bottom + aMargin.bottom, left + aMargin.left);
@@ -140,13 +124,13 @@ struct BaseMargin {
   }
 
   friend std::ostream& operator<<(std::ostream& aStream,
-      const BaseMargin& aMargin) {
+                                  const BaseMargin& aMargin) {
     return aStream << '(' << aMargin.top << ',' << aMargin.right << ','
-                  << aMargin.bottom << ',' << aMargin.left << ')';
+                   << aMargin.bottom << ',' << aMargin.left << ')';
   }
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_BASEMARGIN_H_ */

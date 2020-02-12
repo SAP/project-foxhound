@@ -5,65 +5,40 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PermissionMessageUtils.h"
-#include "nsISerializable.h"
-#include "nsSerializationHelper.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 
-namespace IPC {
+namespace mozilla {
+namespace ipc {
 
-void
-ParamTraits<Principal>::Write(Message* aMsg, const paramType& aParam) {
-  bool isNull = !aParam.mPrincipal;
-  WriteParam(aMsg, isNull);
-  if (isNull) {
-    return;
+void IPDLParamTraits<nsIPrincipal*>::Write(IPC::Message* aMsg,
+                                           IProtocol* aActor,
+                                           nsIPrincipal* aParam) {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+
+  Maybe<PrincipalInfo> info;
+  if (aParam) {
+    info.emplace();
+    nsresult rv = PrincipalToPrincipalInfo(aParam, info.ptr());
+    MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  bool isSerialized = false;
-  nsCString principalString;
-  nsCOMPtr<nsISerializable> serializable = do_QueryInterface(aParam.mPrincipal);
-  if (serializable) {
-    nsresult rv = NS_SerializeToString(serializable, principalString);
-    if (NS_SUCCEEDED(rv)) {
-      isSerialized = true;
-    }
-  }
-
-  if (!isSerialized) {
-    NS_RUNTIMEABORT("Unable to serialize principal.");
-    return;
-  }
-
-  WriteParam(aMsg, principalString);
+  WriteIPDLParam(aMsg, aActor, info);
 }
 
-bool
-ParamTraits<Principal>::Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-{
-  bool isNull;
-  if (!ReadParam(aMsg, aIter, &isNull)) {
+bool IPDLParamTraits<nsIPrincipal*>::Read(const IPC::Message* aMsg,
+                                          PickleIterator* aIter,
+                                          IProtocol* aActor,
+                                          RefPtr<nsIPrincipal>* aResult) {
+  Maybe<PrincipalInfo> info;
+  if (!ReadIPDLParam(aMsg, aIter, aActor, &info)) {
     return false;
   }
 
-  if (isNull) {
-    aResult->mPrincipal = nullptr;
-    return true;
-  }
-
-  nsCString principalString;
-  if (!ReadParam(aMsg, aIter, &principalString)) {
-    return false;
-  }
-
-  nsCOMPtr<nsISupports> iSupports;
-  nsresult rv = NS_DeserializeObject(principalString, getter_AddRefs(iSupports));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(iSupports);
-  NS_ENSURE_TRUE(principal, false);
-
-  principal.swap(aResult->mPrincipal);
-  return true;
+  nsresult rv = NS_OK;
+  *aResult = info ? PrincipalInfoToPrincipal(info.ref(), &rv) : nullptr;
+  return NS_SUCCEEDED(rv);
 }
 
-} // namespace IPC
-
+}  // namespace ipc
+}  // namespace mozilla

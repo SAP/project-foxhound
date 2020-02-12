@@ -11,15 +11,5 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
-   localeswitching
-   uitelemetry
-   adjust
-   defaultdomains
-   bouncer
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   gradle
+   testcoverage

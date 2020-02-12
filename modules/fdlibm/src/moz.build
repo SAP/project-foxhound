@@ -8,28 +8,30 @@ EXPORTS += [
     'fdlibm.h',
 ]
 
-FINAL_LIBRARY = 'fdlibm'
+FINAL_LIBRARY = 'js'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-parentheses',
         '-Wno-sign-compare',
     ]
 
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] == 'clang':
     CXXFLAGS += [
         '-Wno-dangling-else',
     ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     CXXFLAGS += [
-        '-wd4018', # signed/unsigned mismatch
+        '-Wno-sign-compare',
         '-wd4146', # unary minus operator applied to unsigned type
         '-wd4305', # truncation from 'double' to 'const float'
         '-wd4723', # potential divide by 0
         '-wd4756', # overflow in constant arithmetic
     ]
 
+# These sources can't be unified because there are too many conflicting global
+# variables (e.g. almost every source file defines a `one` and a `huge`).
 SOURCES += [
     'e_acos.cpp',
     'e_acosh.cpp',
@@ -44,7 +46,6 @@ SOURCES += [
     'e_log2.cpp',
     'e_pow.cpp',
     'e_sinh.cpp',
-    'e_sqrt.cpp',
     'k_exp.cpp',
     's_asinh.cpp',
     's_atan.cpp',
@@ -57,6 +58,9 @@ SOURCES += [
     's_floor.cpp',
     's_floorf.cpp',
     's_log1p.cpp',
+    's_nearbyint.cpp',
+    's_rint.cpp',
+    's_rintf.cpp',
     's_scalbn.cpp',
     's_tanh.cpp',
     's_trunc.cpp',

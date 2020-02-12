@@ -4,4 +4,4 @@
 # flake8: noqa
 
 from .roller import LintRoller
-from .result import ResultContainer
+from .result import Issue

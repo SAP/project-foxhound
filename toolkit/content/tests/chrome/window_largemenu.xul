@@ -4,8 +4,7 @@
 <window title="Large Menu Tests"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <!--
   This test checks that a large menu is displayed with arrow buttons
@@ -74,7 +73,7 @@ function nextTest()
     // add some more menuitems so that scrolling will be necessary
     var moreItemCount = Math.round(screen.height / popup.firstChild.getBoundingClientRect().height);
     for (var t = 1; t <= moreItemCount; t++) {
-      var menu = document.createElement("menuitem");
+      var menu = document.createXULElement("menuitem");
       menu.setAttribute("label", "More" + t);
       popup.appendChild(menu);
     }
@@ -103,7 +102,7 @@ function popupShown()
 
   var popup = document.getElementById("popup");
   var rect = popup.getBoundingClientRect();
-  var sbo = document.getAnonymousNodes(popup)[0].scrollBoxObject;
+  var scrollbox = popup.scrollBox.scrollbox;
   var expectedScrollPos = 0;
 
   if (gTestIndex == 0) {
@@ -141,7 +140,7 @@ function popupShown()
     ok(Math.round(rect.bottom) + gScreenY <= screen.height, gTests[gTestIndex] + " bottom");
     ok(gOverflowed && !gUnderflowed, gTests[gTestIndex] + " overflow")
 
-    sbo.scrollTo(0, 40);
+    scrollbox.scrollTo(0, 40);
     expectedScrollPos = 40;
   }
   else if (gTestIndex == 3) {
@@ -157,13 +156,13 @@ function popupShown()
     ok(!gOverflowed && gUnderflowed, gTests[gTestIndex] + " overflow");
   }
 
-  is(sbo.positionY, expectedScrollPos, "menu scroll position");
+  is(scrollbox.scrollTop, expectedScrollPos, "menu scroll position")
 
   hidePopup();
 }
 
-function is(l, r, n) { window.opener.wrappedJSObject.SimpleTest.is(l,r,n); }
-function ok(v, n) { window.opener.wrappedJSObject.SimpleTest.ok(v,n); }
+function is(l, r, n) { window.arguments[0].SimpleTest.is(l,r,n); }
+function ok(v, n) { window.arguments[0].SimpleTest.ok(v,n); }
 
 var oldx, oldy, waitSteps = 0;
 function moveWindowTo(x, y, callback, arg)
@@ -181,7 +180,7 @@ function moveWindowTo(x, y, callback, arg)
   if (window.screenX == oldx && window.screenY == oldy) {
     if (waitSteps++ > 10) {
       ok(false, "Window never moved properly to " + x + "," + y);
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
       window.close();
     }
 
@@ -197,7 +196,7 @@ function popupHidden()
 {
   gTestIndex++;
   if (gTestIndex == gTests.length) {
-    window.opener.wrappedJSObject.SimpleTest.finish();
+    window.arguments[0].SimpleTest.finish();
     window.close();
   }
   else if (gTests[gTestIndex] == "context menu enough space below") {
@@ -300,7 +299,7 @@ function nextContextMenuTest(desiredHeight)
     var height = popup.getBoundingClientRect().height;
     var itemheight = document.getElementById("firstitem").getBoundingClientRect().height;
     while (height < desiredHeight) {
-      var menu = document.createElement("menuitem");
+      var menu = document.createXULElement("menuitem");
       menu.setAttribute("label", "Item");
       popup.appendChild(menu);
       height += itemheight;
@@ -324,7 +323,7 @@ function testPopupMovement()
   [screenX, screenY] = getScreenXY(popup);
 
   var expectedx = 1, expectedy = 1;
-  if (!isPanelTest && !overlapOSChrome) {
+  if (!overlapOSChrome) {
     if (screen.availLeft >= 1) expectedx = screen.availLeft;
     if (screen.availTop >= 1) expectedy = screen.availTop;
   }
@@ -393,7 +392,7 @@ function platformIsMac()
   return navigator.platform.indexOf("Mac") > -1;
 }
 
-window.opener.wrappedJSObject.SimpleTest.waitForFocus(runTests, window);
+window.arguments[0].SimpleTest.waitForFocus(runTests, window);
 
 ]]>
 </script>

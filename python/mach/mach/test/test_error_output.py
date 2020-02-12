@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 from __future__ import unicode_literals
 
 from mach.main import (
@@ -20,7 +21,7 @@ class TestErrorOutput(TestBase):
 
     def test_command_error(self):
         result, stdout, stderr = self._run_mach(['throw', '--message',
-            'Command Error'])
+                                                'Command Error'])
 
         self.assertEqual(result, 1)
 
@@ -28,7 +29,7 @@ class TestErrorOutput(TestBase):
 
     def test_invoked_error(self):
         result, stdout, stderr = self._run_mach(['throw_deep', '--message',
-            'Deep stack'])
+                                                'Deep stack'])
 
         self.assertEqual(result, 1)
 

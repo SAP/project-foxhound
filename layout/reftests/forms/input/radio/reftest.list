@@ -1,8 +1,10 @@
 == label-dynamic.html label-dynamic-ref.html
-!= checked.html checked-notref.html
 != checked-native.html checked-native-notref.html
-!= checked.html about:blank
-!= checked-notref.html about:blank
+== checked-appearance-none.html about:blank
+== unchecked-appearance-none.html about:blank
 != checked-native.html about:blank
 != checked-native-notref.html about:blank
-skip-if(!gtkWidget||Mulet) == gtk-theme-width-height.html gtk-theme-width-height-ref.html # bug 1141511: Disable some gtkWidget-dependant reftests on Mulet
+skip-if(!gtkWidget) == gtk-theme-width-height.html gtk-theme-width-height-ref.html
+skip-if(gtkWidget) fails-if(geckoview&&webrender) == radio-clamp-01.html radio-clamp-01-ref.html
+skip-if(OSX||winWidget) == radio-clamp-02.html radio-clamp-02-ref.html
+fails-if(OSX) == radio-minimum-size.html radio-minimum-size-ref.html

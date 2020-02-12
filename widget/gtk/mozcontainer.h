@@ -1,4 +1,4 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -9,18 +9,18 @@
 #define __MOZ_CONTAINER_H__
 
 #include <gtk/gtk.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
+#include <functional>
 
 /*
  * MozContainer
  *
- * This class serves two purposes in the nsIWidget implementation.
+ * This class serves three purposes in the nsIWidget implementation.
  *
  *   - It provides objects to receive signals from GTK for events on native
  *     windows.
+ *
+ *   - It provides GdkWindow to draw content on Wayland or when Gtk+ renders
+ *     client side decorations to mShell.
  *
  *   - It provides a container parent for GtkWidgets.  The only GtkWidgets
  *     that need this in Mozilla are the GtkSockets for windowed plugins (Xt
@@ -44,43 +44,73 @@ extern "C" {
  * gtk_widget_set_parent_window should be called on the child GtkWidget before
  * it is realized.
  */
- 
-#define MOZ_CONTAINER_TYPE            (moz_container_get_type())
-#define MOZ_CONTAINER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), MOZ_CONTAINER_TYPE, MozContainer))
-#define MOZ_CONTAINER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), MOZ_CONTAINER_TYPE, MozContainerClass))
-#define IS_MOZ_CONTAINER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), MOZ_CONTAINER_TYPE))
-#define IS_MOZ_CONTAINER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), MOZ_CONTAINER_TYPE))
-#define MOZ_CONAINTER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj), MOZ_CONTAINER_TYPE, MozContainerClass))
 
-typedef struct _MozContainer      MozContainer;
+#define MOZ_CONTAINER_TYPE (moz_container_get_type())
+#define MOZ_CONTAINER(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj), MOZ_CONTAINER_TYPE, MozContainer))
+#define MOZ_CONTAINER_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass), MOZ_CONTAINER_TYPE, MozContainerClass))
+#define IS_MOZ_CONTAINER(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj), MOZ_CONTAINER_TYPE))
+#define IS_MOZ_CONTAINER_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass), MOZ_CONTAINER_TYPE))
+#define MOZ_CONTAINER_GET_CLASS(obj) \
+  (G_TYPE_INSTANCE_GET_CLASS((obj), MOZ_CONTAINER_TYPE, MozContainerClass))
+
+typedef struct _MozContainer MozContainer;
 typedef struct _MozContainerClass MozContainerClass;
 
-struct _MozContainer
-{
-    GtkContainer   container;
-    GList         *children;
+/* Workaround for bug at wayland-util.h,
+ * present in wayland-devel < 1.12
+ */
+#ifdef MOZ_WAYLAND
+struct wl_surface;
+struct wl_subsurface;
+#endif
+
+struct _MozContainer {
+  GtkContainer container;
+  GList* children;
+
+#ifdef MOZ_WAYLAND
+  struct wl_surface* surface;
+  struct wl_subsurface* subsurface;
+  int subsurface_dx, subsurface_dy;
+  struct wl_egl_window* eglwindow;
+  struct wl_callback* frame_callback_handler;
+  int frame_callback_handler_surface_id;
+  gboolean surface_position_update;
+  gboolean surface_needs_clear;
+  gboolean ready_to_draw;
+  std::function<void(void)> inital_draw_cb;
+#endif
+  gboolean force_default_visual;
 };
 
-struct _MozContainerClass
-{
-    GtkContainerClass parent_class;
+struct _MozContainerClass {
+  GtkContainerClass parent_class;
 };
 
-GType      moz_container_get_type (void);
-GtkWidget *moz_container_new      (void);
-void       moz_container_put      (MozContainer *container,
-                                   GtkWidget    *child_widget,
-                                   gint          x,
-                                   gint          y);
-void       moz_container_move          (MozContainer *container,
-                                        GtkWidget    *child_widget,
-                                        gint          x,
-                                        gint          y,
-                                        gint          width,
-                                        gint          height);
+GType moz_container_get_type(void);
+GtkWidget* moz_container_new(void);
+void moz_container_put(MozContainer* container, GtkWidget* child_widget, gint x,
+                       gint y);
+void moz_container_force_default_visual(MozContainer* container);
 
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
+#ifdef MOZ_WAYLAND
+struct wl_surface* moz_container_get_wl_surface(MozContainer* container);
+struct wl_egl_window* moz_container_get_wl_egl_window(MozContainer* container);
+
+gboolean moz_container_has_wl_egl_window(MozContainer* container);
+gboolean moz_container_surface_needs_clear(MozContainer* container);
+void moz_container_scale_changed(MozContainer* container,
+                                 GtkAllocation* aAllocation);
+void moz_container_set_initial_draw_callback(
+    MozContainer* container, std::function<void(void)> inital_draw_cb);
+void moz_container_move_resize(MozContainer* container, int dx, int dy,
+                               int width, int height);
+void moz_container_egl_window_set_size(MozContainer* container, int width,
+                                       int height);
+#endif
 
 #endif /* __MOZ_CONTAINER_H__ */

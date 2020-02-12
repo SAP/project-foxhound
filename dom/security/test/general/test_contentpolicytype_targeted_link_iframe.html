@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Bug 1255240 - Test content policy types within content policies for targeted links in iframes</title>
   <!-- Including SimpleTest.js so we can use waitForExplicitFinish !-->
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
 
 /* Description of the test:
  * Let's load a link into a targeted iframe and make sure the content policy
- * type used for content policy checks is of TYPE_SUBDOCUMENT both times.
+ * type used for content policy checks is of TYPE_SUBDOCUMENT.
  */
 
 const Cc = SpecialPowers.Cc;
@@ -26,10 +26,6 @@ const EXPECTED_URL =
 const TEST_FRAME_URL =
   "file_contentpolicytype_targeted_link_iframe.sjs?testframe";
 
-// we should get two content policy chcks with the same content policy type
-const EXPECTED_RESULTS = 2;
-var testCounter = 0;
-
 // -----  START Content Policy implementation for the test
 var categoryManager = Cc["@mozilla.org/categorymanager;1"].getService(Ci.nsICategoryManager);
 
@@ -39,7 +35,7 @@ const POLICYID = SpecialPowers.wrap(SpecialPowers.Components)
 
 var policy = {
   // nsISupports implementation
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     iid = SpecialPowers.wrap(iid);
     if (iid.equals(Ci.nsISupports) ||
         iid.equals(Ci.nsIFactory) ||
@@ -50,31 +46,28 @@ var policy = {
   },
 
   // nsIFactory implementation
-  createInstance: function(outer, iid) {
+  createInstance(outer, iid) {
     return this.QueryInterface(iid);
   },
 
   // nsIContentPolicy implementation
-  shouldLoad: function(contentType, contentLocation, requestOrigin,
-                       context, mimeTypeGuess, extra) {
+  shouldLoad(contentLocation, loadInfo, mimeTypeGuess) {
+    let contentType = loadInfo.externalContentPolicyType;
 
     // make sure we get the right amount of content policy calls
     // e.g. about:blank also gets chrcked by content policies
     if (contentLocation.asciiSpec === EXPECTED_URL) {
       is(contentType, EXPECTED_CONTENT_TYPE,
          "content policy type should TYPESUBDOCUMENT");
-      testCounter++;
-      
-      if (testCounter === EXPECTED_RESULTS) {
-        categoryManager.deleteCategoryEntry("content-policy", POLICYNAME, false);
-        SimpleTest.finish();
-      }
+      categoryManager.deleteCategoryEntry("content-policy", POLICYNAME, false);
+      componentManager.unregisterFactory(POLICYID, policy);
+      SimpleTest.finish();
+      return Ci.nsIContentPolicy.REJECT_REQUEST;
     }
     return Ci.nsIContentPolicy.ACCEPT;
   },
 
-  shouldProcess: function(contentType, contentLocation, requestOrigin,
-                          context, mimeTypeGuess, extra) {
+  shouldProcess(contentLocation, loadInfo, mimeTypeGuess) {
     return Ci.nsIContentPolicy.ACCEPT;
   }
 }

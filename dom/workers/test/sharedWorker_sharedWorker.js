@@ -25,7 +25,7 @@ var propsToCheck = [
   "clearInterval",
   "dump",
   "atob",
-  "btoa"
+  "btoa",
 ];
 
 for (var index = 0; index < propsToCheck.length; index++) {
@@ -55,15 +55,19 @@ onconnect = function(event) {
     throw new Error("'connect' event doesn't have a 'ports' property!");
   }
   if (event.ports.length != 1) {
-    throw new Error("'connect' event has a 'ports' property with length '" +
-                    event.ports.length + "'!");
+    throw new Error(
+      "'connect' event has a 'ports' property with length '" +
+        event.ports.length +
+        "'!"
+    );
   }
   if (!event.ports[0]) {
     throw new Error("'connect' event has a null 'ports[0]' property!");
   }
   if (!(event.ports[0] instanceof MessagePort)) {
-    throw new Error("'connect' event has a 'ports[0]' property that isn't a " +
-                    "MessagePort!");
+    throw new Error(
+      "'connect' event has a 'ports[0]' property that isn't a " + "MessagePort!"
+    );
   }
   if (!(event.ports[0] == event.source)) {
     throw new Error("'connect' event source property is incorrect!");
@@ -72,22 +76,24 @@ onconnect = function(event) {
     throw new Error("'connect' event has data: " + event.data);
   }
 
-  // The expression closures should trigger a warning in debug builds, but NOT
-  // fire error events at us. If we ever actually remove expression closures
-  // (in bug 1083458), we'll need something else to test this case.
-  (function() "Expected console warning: expression closures are deprecated");
+  // Statement after return should trigger a warning, but NOT fire error events
+  // at us.
+  (function() {
+    return;
+    1;
+  });
 
-  event.ports[0].onmessage = function(event) {
-    if (!(event instanceof MessageEvent)) {
+  event.ports[0].onmessage = function(msg) {
+    if (!(msg instanceof MessageEvent)) {
       throw new Error("'message' event is not a MessageEvent!");
     }
-    if (!("ports" in event)) {
+    if (!("ports" in msg)) {
       throw new Error("'message' event doesn't have a 'ports' property!");
     }
-    if (event.ports === null) {
+    if (msg.ports === null) {
       throw new Error("'message' event has a null 'ports' property!");
     }
-    event.target.postMessage(event.data);
-    throw new Error(event.data);
+    msg.target.postMessage(msg.data);
+    throw new Error(msg.data);
   };
 };

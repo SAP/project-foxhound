@@ -5,23 +5,31 @@ function test() {
   waitForExplicitFinish();
 
   var triggers = encodeURIComponent(JSON.stringify(TESTROOT + "amosigned.xpi"));
-  gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
   ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
     return new Promise(resolve => {
-      addEventListener("load", () => {
-        content.addEventListener("InstallTriggered", () => {
-          resolve(content.document.getElementById("return").textContent);
-        });
-      }, true);
+      addEventListener(
+        "load",
+        () => {
+          content.addEventListener("InstallTriggered", () => {
+            resolve(content.document.getElementById("return").textContent);
+          });
+        },
+        true
+      );
     });
   }).then(page_loaded);
 
   // In non-e10s the exception in the content page would trigger a test failure
-  if (!gMultiProcessBrowser)
+  if (!gMultiProcessBrowser) {
     expectUncaughtException();
+  }
 
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  BrowserTestUtils.loadURI(
+    gBrowser,
+    TESTROOT + "installtrigger.html?" + triggers
+  );
 }
 
 function page_loaded(result) {

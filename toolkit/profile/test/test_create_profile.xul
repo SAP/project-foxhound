@@ -6,8 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=543854
 -->
 <window title="Mozilla Bug 543854"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-   src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
    
     <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -22,9 +21,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=543854
   /** Test for Bug 543854 **/
 
   SimpleTest.waitForExplicitFinish();
-
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
 
   const ASCIIName = "myprofile";
   const UnicodeName = "\u09A0\u09BE\u0995\u09C1\u09B0"; // A Bengali name
@@ -60,7 +56,7 @@ function readFile(file) {
   let fstream = Cc["@mozilla.org/network/file-input-stream;1"].
     createInstance(Ci.nsIFileInputStream);
   let sstream = Cc["@mozilla.org/scriptableinputstream;1"].
-    createInstance(Components.interfaces.nsIScriptableInputStream);
+    createInstance(Ci.nsIScriptableInputStream);
 
   const RO = 0x01;
   const READ_OTHERS = 4;

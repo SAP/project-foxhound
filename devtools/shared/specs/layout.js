@@ -1,32 +1,71 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
-const {Arg, generateActorSpec} = require("devtools/shared/protocol");
+const { Arg, generateActorSpec, RetVal } = require("devtools/shared/protocol");
 
-const reflowSpec = generateActorSpec({
-  typeName: "reflow",
-
-  events: {
-    /**
-     * The reflows event is emitted when reflows have been detected. The event
-     * is sent with an array of reflows that occured. Each item has the
-     * following properties:
-     * - start {Number}
-     * - end {Number}
-     * - isInterruptible {Boolean}
-     */
-    reflows: {
-      type: "reflows",
-      reflows: Arg(0, "array:json")
-    }
-  },
+const flexboxSpec = generateActorSpec({
+  typeName: "flexbox",
 
   methods: {
-    start: {oneway: true},
-    stop: {oneway: true},
+    getFlexItems: {
+      request: {},
+      response: {
+        flexitems: RetVal("array:flexitem"),
+      },
+    },
   },
 });
 
-exports.reflowSpec = reflowSpec;
+const flexItemSpec = generateActorSpec({
+  typeName: "flexitem",
+
+  methods: {},
+});
+
+const gridSpec = generateActorSpec({
+  typeName: "grid",
+
+  methods: {},
+});
+
+const layoutSpec = generateActorSpec({
+  typeName: "layout",
+
+  methods: {
+    getCurrentFlexbox: {
+      request: {
+        node: Arg(0, "domnode"),
+        onlyLookAtParents: Arg(1, "nullable:boolean"),
+      },
+      response: {
+        flexbox: RetVal("nullable:flexbox"),
+      },
+    },
+
+    getCurrentGrid: {
+      request: {
+        node: Arg(0, "domnode"),
+      },
+      response: {
+        grid: RetVal("nullable:grid"),
+      },
+    },
+
+    getGrids: {
+      request: {
+        rootNode: Arg(0, "domnode"),
+      },
+      response: {
+        grids: RetVal("array:grid"),
+      },
+    },
+  },
+});
+
+exports.flexboxSpec = flexboxSpec;
+exports.flexItemSpec = flexItemSpec;
+exports.gridSpec = gridSpec;
+exports.layoutSpec = layoutSpec;

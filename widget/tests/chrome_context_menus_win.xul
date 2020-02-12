@@ -12,10 +12,8 @@
         height="300"
         title="Chrome Context Menu Test w/Plugin Focus">
 
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+<script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <popupset>
   <menupopup id="testmenu" onpopupshown="menuDisplayed()">
@@ -33,18 +31,17 @@
 <script type="application/javascript"><![CDATA[
 
 function ok(condition, message) {
-    window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+    window.arguments[0].SimpleTest.ok(condition, message);
 }
 
 function onTestsFinished() {
     window.close();
-    window.opener.wrappedJSObject.SimpleTest.finish();
+    window.arguments[0].SimpleTest.finish();
 }
 
 function openContextMenuFor(element) {
 
-    var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                       getInterface(Components.interfaces.nsIDOMWindowUtils);
+    var utils = window.windowUtils;
 
     var tbX = (window.mozInnerScreenX + 10) * utils.screenPixelsPerCSSPixel;
     var tbY = (window.mozInnerScreenY + 10) * utils.screenPixelsPerCSSPixel;
@@ -70,7 +67,7 @@ function onFocus() {
 
         plugin.focus();
 
-        tid = setTimeout("menuTimeout()", 5000);
+        tid = setTimeout(menuTimeout, 5000);
 
         openContextMenuFor(toolbar);
     }
@@ -88,7 +85,7 @@ function menuDisplayed() {
     onTestsFinished();
 }
 
-window.opener.wrappedJSObject.SimpleTest.waitForFocus(onFocus, window);
+window.arguments[0].SimpleTest.waitForFocus(onFocus, window);
 
 
 ]]></script>

@@ -4,6 +4,8 @@
 
 "use strict";
 
+/* global worker, DebuggerNotificationObserver */
+
 // A CommonJS module loader that is designed to run inside a worker debugger.
 // We can't simply use the SDK module loader, because it relies heavily on
 // Components, which isn't available in workers.
@@ -16,6 +18,9 @@
 // the use of Components, and for which the worker debugger doesn't provide an
 // alternative API, will be replaced by vacuous objects. Consequently, they can
 // still be required, but any attempts to use them will lead to an exception.
+//
+// Note: to see dump output when running inside the worker thread, you might
+// need to enable the browser.dom.window.dump.enabled pref.
 
 this.EXPORTED_SYMBOLS = ["WorkerDebuggerLoader", "worker"];
 
@@ -57,10 +62,10 @@ function normalizeId(id) {
   // An id consists of an optional root and a path. A root consists of either
   // a scheme name followed by 2 or 3 slashes, or a single slash. Slashes in the
   // root are not used as separators, so only normalize the path.
-  let [_, root, path] = id.match(/^(\w+:\/\/\/?|\/)?(.*)/);
+  const [, root, path] = id.match(/^(\w+:\/\/\/?|\/)?(.*)/);
 
-  let stack = [];
-  path.split("/").forEach(function (component) {
+  const stack = [];
+  path.split("/").forEach(function(component) {
     switch (component) {
       case "":
       case ".":
@@ -72,12 +77,10 @@ function normalizeId(id) {
           } else {
             stack.push("..");
           }
+        } else if (stack[stack.length - 1] == "..") {
+          stack.push("..");
         } else {
-          if (stack[stack.length - 1] == "..") {
-            stack.push("..");
-          } else {
-            stack.pop();
-          }
+          stack.pop();
         }
         break;
       default:
@@ -106,7 +109,7 @@ function createModule(id) {
       configurable: false,
       enumerable: true,
       value: id,
-      writable: false
+      writable: false,
     },
 
     // CommonJS does not specify an exports property, so follow the NodeJS
@@ -115,9 +118,82 @@ function createModule(id) {
       configurable: false,
       enumerable: true,
       value: Object.create(null),
-      writable: true
-    }
+      writable: true,
+    },
   });
+}
+
+function defineLazyGetter(object, prop, getter) {
+  const redefine = (obj, value) => {
+    Object.defineProperty(obj, prop, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+    return value;
+  };
+
+  Object.defineProperty(object, prop, {
+    configurable: true,
+    get() {
+      return redefine(this, getter.call(this));
+    },
+    set(value) {
+      redefine(this, value);
+    },
+  });
+}
+
+/**
+ * Defines lazy getters on the given object, which lazily require the
+ * given module the first time they are accessed, and then resolve that
+ * module's exported properties.
+ *
+ * @param {object} obj
+ *        The target object on which to define the lazy getters.
+ * @param {string} moduleId
+ *        The ID of the module to require, as passed to require().
+ * @param {Array<string | object>} args
+ *        Any number of properties to import from the module. A string
+ *        will cause the property to be defined which resolves to the
+ *        same property in the module's exports. An object will define a
+ *        lazy getter for every value in the object which corresponds to
+ *        the given key in the module's exports, as in an ordinary
+ *        destructuring assignment.
+ */
+function lazyRequire(obj, moduleId, ...args) {
+  let module;
+  const getModule = () => {
+    if (!module) {
+      module = this.require(moduleId);
+    }
+    return module;
+  };
+
+  for (let props of args) {
+    if (typeof props !== "object") {
+      props = { [props]: props };
+    }
+
+    for (const [fromName, toName] of Object.entries(props)) {
+      defineLazyGetter(obj, toName, () => getModule()[fromName]);
+    }
+  }
+}
+
+/**
+ * Defines a lazy getter on the given object which causes a module to be
+ * lazily imported the first time it is accessed.
+ *
+ * @param {object} obj
+ *        The target object on which to define the lazy getter.
+ * @param {string} moduleId
+ *        The ID of the module to require, as passed to require().
+ * @param {string} [prop = moduleId]
+ *        The name of the lazy getter property to define.
+ */
+function lazyRequireModule(obj, moduleId, prop = moduleId) {
+  defineLazyGetter(obj, prop, () => this.require(moduleId));
 }
 
 /**
@@ -158,7 +234,7 @@ function WorkerDebuggerLoader(options) {
    */
   function resolveURL(url) {
     let found = false;
-    for (let [path, baseURL] of paths) {
+    for (const [path, baseURL] of paths) {
       if (url.startsWith(path)) {
         found = true;
         url = url.replace(path, baseURL);
@@ -186,19 +262,20 @@ function WorkerDebuggerLoader(options) {
     // must be exposed to every module, so define these as properties on the
     // sandbox prototype. Additional built-in globals are exposed by making
     // the map of built-in globals the prototype of the sandbox prototype.
-    let prototype = Object.create(globals);
+    const prototype = Object.create(globals);
     prototype.Components = {};
     prototype.require = createRequire(module);
     prototype.exports = module.exports;
     prototype.module = module;
 
-    let sandbox = createSandbox(url, prototype);
+    const sandbox = createSandbox(url, prototype);
     try {
       loadSubScript(url, sandbox);
     } catch (error) {
       if (/^Error opening input stream/.test(String(error))) {
-        throw new Error("Can't load module '" + module.id + "' with url '" +
-                        url + "'!");
+        throw new Error(
+          "Can't load module '" + module.id + "' with url '" + url + "'!"
+        );
       }
       throw error;
     }
@@ -237,8 +314,12 @@ function WorkerDebuggerLoader(options) {
         // If the id is relative, convert it to an absolute id.
         if (id.startsWith(".")) {
           if (requirer === undefined) {
-            throw new Error("Can't require top-level module with relative id " +
-                            "'" + id + "'!");
+            throw new Error(
+              "Can't require top-level module with relative id " +
+                "'" +
+                id +
+                "'!"
+            );
           }
           id = resolve(id, requirer.id);
         }
@@ -284,16 +365,16 @@ function WorkerDebuggerLoader(options) {
     };
   }
 
-  let createSandbox = options.createSandbox;
-  let globals = options.globals || Object.create(null);
-  let loadSubScript = options.loadSubScript;
+  const createSandbox = options.createSandbox;
+  const globals = options.globals || Object.create(null);
+  const loadSubScript = options.loadSubScript;
 
   // Create the module cache, by converting each entry in the map from
   // normalized ids to built-in modules to a module object, with the exports
   // property of each module set to a frozen version of the original entry.
-  let modules = options.modules || {};
-  for (let id in modules) {
-    let module = createModule(id);
+  const modules = options.modules || {};
+  for (const id in modules) {
+    const module = createModule(id);
     module.exports = Object.freeze(modules[id]);
     modules[id] = module;
   }
@@ -303,10 +384,10 @@ function WorkerDebuggerLoader(options) {
   // longest path is always the first to be found.
   let paths = options.paths || Object.create(null);
   paths = Object.keys(paths)
-                .sort((a, b) => b.length - a.length)
-                .map(path => [path, paths[path]]);
+    .sort((a, b) => b.length - a.length)
+    .map(path => [path, paths[path]]);
 
-  let resolve = options.resolve || resolveId;
+  const resolve = options.resolve || resolveId;
 
   this.require = createRequire();
 }
@@ -325,32 +406,35 @@ var chrome = {
   Ci: undefined,
   Cu: undefined,
   Cr: undefined,
-  components: undefined
+  components: undefined,
 };
 
 var loader = {
-  lazyGetter: function (object, name, lambda) {
+  lazyGetter: function(object, name, lambda) {
     Object.defineProperty(object, name, {
-      get: function () {
+      get: function() {
         delete object[name];
-        return object[name] = lambda.apply(object);
+        object[name] = lambda.apply(object);
+        return object[name];
       },
       configurable: true,
-      enumerable: true
+      enumerable: true,
     });
   },
-  lazyImporter: function () {
+  lazyImporter: function() {
     throw new Error("Can't import JSM from worker thread!");
   },
-  lazyServiceGetter: function () {
+  lazyServiceGetter: function() {
     throw new Error("Can't import XPCOM service from worker thread!");
   },
-  lazyRequireGetter: function (obj, property, module, destructure) {
+  lazyRequireGetter: function(obj, property, module, destructure) {
     Object.defineProperty(obj, property, {
-      get: () => destructure ? worker.require(module)[property]
-                             : worker.require(module || property)
+      get: () =>
+        destructure
+          ? worker.require(module)[property]
+          : worker.require(module || property),
     });
-  }
+  },
 };
 
 // The following APIs are defined differently depending on whether we are on the
@@ -358,6 +442,7 @@ var loader = {
 // object to implement them. On worker threads, we use the APIs provided by
 // the worker debugger.
 
+/* eslint-disable no-shadow */
 var {
   Debugger,
   URL,
@@ -367,59 +452,56 @@ var {
   loadSubScript,
   reportError,
   setImmediate,
-  xpcInspector
-} = (function () {
-  if (typeof Components === "object") { // Main thread
-    let {
-      Constructor: CC,
-      classes: Cc,
-      manager: Cm,
-      interfaces: Ci,
-      results: Cr,
-      utils: Cu
-    } = Components;
+  xpcInspector,
+} = function() {
+  // Main thread
+  if (typeof Components === "object") {
+    const { Constructor: CC } = Components;
 
-    let principal = CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")();
+    const principal = CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")();
 
     // To ensure that the this passed to addDebuggerToGlobal is a global, the
     // Debugger object needs to be defined in a sandbox.
-    let sandbox = Cu.Sandbox(principal, {});
+    const sandbox = Cu.Sandbox(principal, {});
     Cu.evalInSandbox(
       "Components.utils.import('resource://gre/modules/jsdebugger.jsm');" +
-      "addDebuggerToGlobal(this);",
+        "addDebuggerToGlobal(this);",
       sandbox
     );
-    let Debugger = sandbox.Debugger;
+    const Debugger = sandbox.Debugger;
 
-    let createSandbox = function (name, prototype) {
+    const createSandbox = function(name, prototype) {
       return Cu.Sandbox(principal, {
         invisibleToDebugger: true,
         sandboxName: name,
         sandboxPrototype: prototype,
         wantComponents: false,
-        wantXrays: false
+        wantXrays: false,
       });
     };
 
-    let rpc = undefined;
+    const rpc = undefined;
 
-    let subScriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                 getService(Ci.mozIJSSubScriptLoader);
+    // eslint-disable-next-line mozilla/use-services
+    const subScriptLoader = Cc[
+      "@mozilla.org/moz/jssubscript-loader;1"
+    ].getService(Ci.mozIJSSubScriptLoader);
 
-    let loadSubScript = function (url, sandbox) {
-      subScriptLoader.loadSubScript(url, sandbox, "UTF-8");
+    const loadSubScript = function(url, sandbox) {
+      subScriptLoader.loadSubScript(url, sandbox);
     };
 
-    let reportError = Cu.reportError;
+    const reportError = Cu.reportError;
 
-    let Timer = Cu.import("resource://gre/modules/Timer.jsm", {});
+    const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
-    let setImmediate = function (callback) {
+    const setImmediate = function(callback) {
       Timer.setTimeout(callback, 0);
     };
 
-    let xpcInspector = Cc["@mozilla.org/jsinspector;1"].
-                       getService(Ci.nsIJSInspector);
+    const xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(
+      Ci.nsIJSInspector
+    );
 
     return {
       Debugger,
@@ -430,48 +512,49 @@ var {
       loadSubScript,
       reportError,
       setImmediate,
-      xpcInspector
-    };
-  } else { // Worker thread
-    let requestors = [];
-
-    let scope = this;
-
-    let xpcInspector = {
-      get eventLoopNestLevel() {
-        return requestors.length;
-      },
-
-      get lastNestRequestor() {
-        return requestors.length === 0 ? null : requestors[requestors.length - 1];
-      },
-
-      enterNestedEventLoop: function (requestor) {
-        requestors.push(requestor);
-        scope.enterEventLoop();
-        return requestors.length;
-      },
-
-      exitNestedEventLoop: function () {
-        requestors.pop();
-        scope.leaveEventLoop();
-        return requestors.length;
-      }
-    };
-
-    return {
-      Debugger: this.Debugger,
-      URL: this.URL,
-      createSandbox: this.createSandbox,
-      dump: this.dump,
-      rpc: this.rpc,
-      loadSubScript: this.loadSubScript,
-      reportError: this.reportError,
-      setImmediate: this.setImmediate,
-      xpcInspector: xpcInspector
+      xpcInspector,
     };
   }
-}).call(this);
+  // Worker thread
+  const requestors = [];
+
+  const scope = this;
+
+  const xpcInspector = {
+    get eventLoopNestLevel() {
+      return requestors.length;
+    },
+
+    get lastNestRequestor() {
+      return requestors.length === 0 ? null : requestors[requestors.length - 1];
+    },
+
+    enterNestedEventLoop: function(requestor) {
+      requestors.push(requestor);
+      scope.enterEventLoop();
+      return requestors.length;
+    },
+
+    exitNestedEventLoop: function() {
+      requestors.pop();
+      scope.leaveEventLoop();
+      return requestors.length;
+    },
+  };
+
+  return {
+    Debugger: this.Debugger,
+    URL: this.URL,
+    createSandbox: this.createSandbox,
+    dump: this.dump,
+    rpc: this.rpc,
+    loadSubScript: this.loadSubScript,
+    reportError: this.reportError,
+    setImmediate: this.setImmediate,
+    xpcInspector: xpcInspector,
+  };
+}.call(this);
+/* eslint-enable no-shadow */
 
 // Create the default instance of the worker loader, using the APIs we defined
 // above.
@@ -479,39 +562,38 @@ var {
 this.worker = new WorkerDebuggerLoader({
   createSandbox: createSandbox,
   globals: {
-    "isWorker": true,
-    "dump": dump,
-    "loader": loader,
-    "reportError": reportError,
-    "rpc": rpc,
-    "setImmediate": setImmediate,
-    "URL": URL,
+    isWorker: true,
+    isReplaying: false,
+    dump: dump,
+    loader: loader,
+    reportError: reportError,
+    rpc: rpc,
+    URL: URL,
+    setImmediate: setImmediate,
+    lazyRequire: lazyRequire,
+    lazyRequireModule: lazyRequireModule,
+    retrieveConsoleEvents: this.retrieveConsoleEvents,
+    setConsoleEventHandler: this.setConsoleEventHandler,
+    console: console,
+    btoa: this.btoa,
+    atob: this.atob,
   },
   loadSubScript: loadSubScript,
   modules: {
-    "Debugger": Debugger,
-    "Services": Object.create(null),
-    "chrome": chrome,
-    "xpcInspector": xpcInspector
+    Debugger: Debugger,
+    Services: Object.create(null),
+    chrome: chrome,
+    xpcInspector: xpcInspector,
+    ChromeUtils: ChromeUtils,
+    DebuggerNotificationObserver: DebuggerNotificationObserver,
   },
   paths: {
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "": "resource://gre/modules/commonjs/",
+    devtools: "resource://devtools",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    // Modules here are intended to have one implementation for
-    // chrome, and a separate implementation for content.  Here we
-    // map the directory to the chrome subdirectory, but the content
-    // loader will map to the content subdirectory.  See the
-    // README.md in devtools/shared/platform.
-    "devtools/shared/platform": "resource://devtools/shared/platform/chrome",
+    promise: "resource://gre/modules/Promise-backend.js",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "devtools": "resource://devtools",
+    "xpcshell-test": "resource://test",
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "promise": "resource://gre/modules/Promise-backend.js",
-    // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "source-map": "resource://devtools/shared/sourcemap/source-map.js",
-    // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-    "xpcshell-test": "resource://test"
-    // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-  }
+  },
 });

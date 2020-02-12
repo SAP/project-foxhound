@@ -25,7 +25,7 @@
 #include "pkim.h"
 #include "pki3hack.h"
 #include "base.h"
-#include "keyhi.h"
+#include "keyi.h"
 
 /*
  * Check the validity times of a certificate
@@ -37,7 +37,7 @@ CERT_CertTimesValid(CERTCertificate *c)
     return (valid == secCertTimeValid) ? SECSuccess : SECFailure;
 }
 
-SECStatus
+static SECStatus
 checkKeyParams(const SECAlgorithmID *sigAlgorithm, const SECKEYPublicKey *key)
 {
     SECStatus rv;
@@ -73,12 +73,38 @@ checkKeyParams(const SECAlgorithmID *sigAlgorithm, const SECKEYPublicKey *key)
                 return SECFailure;
             }
             return SECSuccess;
+
+        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE: {
+            PORTCheapArenaPool tmpArena;
+            SECOidTag hashAlg;
+            SECOidTag maskHashAlg;
+
+            PORT_InitCheapArena(&tmpArena, DER_DEFAULT_CHUNKSIZE);
+            rv = sec_DecodeRSAPSSParams(&tmpArena.arena,
+                                        &sigAlgorithm->parameters,
+                                        &hashAlg, &maskHashAlg, NULL);
+            PORT_DestroyCheapArena(&tmpArena);
+            if (rv != SECSuccess) {
+                return SECFailure;
+            }
+
+            if (NSS_GetAlgorithmPolicy(hashAlg, &policyFlags) == SECSuccess &&
+                !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
+                PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+                return SECFailure;
+            }
+            if (NSS_GetAlgorithmPolicy(maskHashAlg, &policyFlags) == SECSuccess &&
+                !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
+                PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+                return SECFailure;
+            }
+        }
+        /* fall through to RSA key checking */
         case SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION:
         case SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION:
         case SEC_OID_PKCS1_SHA256_WITH_RSA_ENCRYPTION:
         case SEC_OID_PKCS1_SHA384_WITH_RSA_ENCRYPTION:
         case SEC_OID_PKCS1_SHA512_WITH_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
         case SEC_OID_ISO_SHA_WITH_RSA_SIGNATURE:
         case SEC_OID_ISO_SHA1_WITH_RSA_SIGNATURE:
             if (key->keyType != rsaKey && key->keyType != rsaPssKey) {
@@ -136,36 +162,62 @@ CERT_VerifySignedDataWithPublicKey(const CERTSignedData *sd,
 {
     SECStatus rv;
     SECItem sig;
-    SECOidTag hashAlg = SEC_OID_UNKNOWN;
+    SECOidTag sigAlg;
+    SECOidTag encAlg;
+    SECOidTag hashAlg;
+    PRUint32 policyFlags;
 
     if (!pubKey || !sd) {
         PORT_SetError(PR_INVALID_ARGUMENT_ERROR);
         return SECFailure;
     }
+
+    /* Can we use this algorithm for signature verification?  */
+    sigAlg = SECOID_GetAlgorithmTag(&sd->signatureAlgorithm);
+    rv = sec_DecodeSigAlg(pubKey, sigAlg,
+                          &sd->signatureAlgorithm.parameters,
+                          &encAlg, &hashAlg);
+    if (rv != SECSuccess) {
+        return SECFailure; /* error is set */
+    }
+    rv = NSS_GetAlgorithmPolicy(encAlg, &policyFlags);
+    if (rv == SECSuccess &&
+        !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
+        PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+        return SECFailure;
+    }
+    rv = NSS_GetAlgorithmPolicy(hashAlg, &policyFlags);
+    if (rv == SECSuccess &&
+        !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
+        PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+        return SECFailure;
+    }
+    rv = checkKeyParams(&sd->signatureAlgorithm, pubKey);
+    if (rv != SECSuccess) {
+        PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+        return SECFailure;
+    }
+
     /* check the signature */
     sig = sd->signature;
     /* convert sig->len from bit counts to byte count. */
     DER_ConvertBitString(&sig);
 
     rv = VFY_VerifyDataWithAlgorithmID(sd->data.data, sd->data.len, pubKey,
-                                       &sig, &sd->signatureAlgorithm, &hashAlg, wincx);
-    if (rv == SECSuccess) {
-        /* Are we honoring signatures for this algorithm?  */
-        PRUint32 policyFlags = 0;
-        rv = checkKeyParams(&sd->signatureAlgorithm, pubKey);
-        if (rv != SECSuccess) {
-            PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
-            return SECFailure;
-        }
-
-        rv = NSS_GetAlgorithmPolicy(hashAlg, &policyFlags);
-        if (rv == SECSuccess &&
-            !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
-            PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
-            return SECFailure;
-        }
+                                       &sig, &sd->signatureAlgorithm,
+                                       &hashAlg, wincx);
+    if (rv != SECSuccess) {
+        return SECFailure; /* error is set */
     }
-    return rv;
+
+    /* for some algorithms, hash algorithm is only known after verification */
+    rv = NSS_GetAlgorithmPolicy(hashAlg, &policyFlags);
+    if (rv == SECSuccess &&
+        !(policyFlags & NSS_USE_ALG_IN_CERT_SIGNATURE)) {
+        PORT_SetError(SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED);
+        return SECFailure;
+    }
+    return SECSuccess;
 }
 
 /*
@@ -286,6 +338,10 @@ CERT_TrustFlagsForCACertUsage(SECCertUsage usage,
             break;
         case certUsageSSLServer:
         case certUsageSSLCA:
+            requiredFlags = CERTDB_TRUSTED_CA;
+            trustType = trustSSL;
+            break;
+        case certUsageIPsec:
             requiredFlags = CERTDB_TRUSTED_CA;
             trustType = trustSSL;
             break;
@@ -579,6 +635,7 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
     switch (certUsage) {
         case certUsageSSLClient:
         case certUsageSSLServer:
+        case certUsageIPsec:
         case certUsageSSLCA:
         case certUsageSSLServerWithStepUp:
         case certUsageEmailSigner:
@@ -645,7 +702,8 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
             CERTGeneralName *subjectNameList;
             int subjectNameListLen;
             int i;
-            PRBool getSubjectCN = (!count && certUsage == certUsageSSLServer);
+            PRBool getSubjectCN = (!count &&
+                                   (certUsage == certUsageSSLServer || certUsage == certUsageIPsec));
             subjectNameList =
                 CERT_GetConstrainedCertificateNames(subjectCert, arena,
                                                     getSubjectCN);
@@ -986,6 +1044,7 @@ CERT_VerifyCACertForUsage(CERTCertDBHandle *handle, CERTCertificate *cert,
     switch (certUsage) {
         case certUsageSSLClient:
         case certUsageSSLServer:
+        case certUsageIPsec:
         case certUsageSSLCA:
         case certUsageSSLServerWithStepUp:
         case certUsageEmailSigner:
@@ -1171,6 +1230,7 @@ cert_CheckLeafTrust(CERTCertificate *cert, SECCertUsage certUsage,
         switch (certUsage) {
             case certUsageSSLClient:
             case certUsageSSLServer:
+            case certUsageIPsec:
                 flags = trust.sslFlags;
 
                 /* is the cert directly trusted or not trusted ? */
@@ -1347,7 +1407,8 @@ CERT_VerifyCertificate(CERTCertDBHandle *handle, CERTCertificate *cert,
 
     /* make sure that the cert is valid at time t */
     allowOverride = (PRBool)((requiredUsages & certificateUsageSSLServer) ||
-                             (requiredUsages & certificateUsageSSLServerWithStepUp));
+                             (requiredUsages & certificateUsageSSLServerWithStepUp) ||
+                             (requiredUsages & certificateUsageIPsec));
     validity = CERT_CheckCertValidTimes(cert, t, allowOverride);
     if (validity != secCertTimeValid) {
         valid = SECFailure;
@@ -1376,6 +1437,7 @@ CERT_VerifyCertificate(CERTCertDBHandle *handle, CERTCertificate *cert,
             case certUsageEmailRecipient:
             case certUsageObjectSigner:
             case certUsageStatusResponder:
+            case certUsageIPsec:
                 rv = CERT_KeyUsageAndTypeForCertUsage(certUsage, PR_FALSE,
                                                       &requiredKeyUsage,
                                                       &requiredCertType);
@@ -1508,7 +1570,8 @@ cert_VerifyCertWithFlags(CERTCertDBHandle *handle, CERTCertificate *cert,
 
     /* make sure that the cert is valid at time t */
     allowOverride = (PRBool)((certUsage == certUsageSSLServer) ||
-                             (certUsage == certUsageSSLServerWithStepUp));
+                             (certUsage == certUsageSSLServerWithStepUp) ||
+                             (certUsage == certUsageIPsec));
     validity = CERT_CheckCertValidTimes(cert, t, allowOverride);
     if (validity != secCertTimeValid) {
         LOG_ERROR_OR_EXIT(log, cert, 0, validity);
@@ -1521,6 +1584,7 @@ cert_VerifyCertWithFlags(CERTCertDBHandle *handle, CERTCertificate *cert,
         case certUsageSSLClient:
         case certUsageSSLServer:
         case certUsageSSLServerWithStepUp:
+        case certUsageIPsec:
         case certUsageSSLCA:
         case certUsageEmailSigner:
         case certUsageEmailRecipient:
@@ -1633,6 +1697,7 @@ CERT_VerifyCertNow(CERTCertDBHandle *handle, CERTCertificate *cert,
  *  certUsageSSLClient
  *  certUsageSSLServer
  *  certUsageSSLServerWithStepUp
+ *  certUsageIPsec
  *  certUsageEmailSigner
  *  certUsageEmailRecipient
  *  certUsageObjectSigner

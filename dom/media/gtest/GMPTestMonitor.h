@@ -3,45 +3,38 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "nsThreadUtils.h"
-
 #ifndef __GMPTestMonitor_h__
 #define __GMPTestMonitor_h__
 
-class GMPTestMonitor
-{
-public:
-  GMPTestMonitor()
-    : mFinished(false)
-  {
-  }
+#include "nsThreadUtils.h"
+#include "mozilla/SystemGroup.h"
 
-  void AwaitFinished()
-  {
+class GMPTestMonitor {
+ public:
+  GMPTestMonitor() : mFinished(false) {}
+
+  void AwaitFinished() {
     MOZ_ASSERT(NS_IsMainThread());
-    while (!mFinished) {
-      NS_ProcessNextEvent(nullptr, true);
-    }
+    mozilla::SpinEventLoopUntil([&]() { return mFinished; });
     mFinished = false;
   }
 
-private:
-  void MarkFinished()
-  {
+ private:
+  void MarkFinished() {
     MOZ_ASSERT(NS_IsMainThread());
     mFinished = true;
   }
 
-public:
-  void SetFinished()
-  {
-    NS_DispatchToMainThread(mozilla::NewNonOwningRunnableMethod(this,
-                                                                &GMPTestMonitor::MarkFinished));
+ public:
+  void SetFinished() {
+    mozilla::SystemGroup::Dispatch(mozilla::TaskCategory::Other,
+                                   mozilla::NewNonOwningRunnableMethod(
+                                       "GMPTestMonitor::MarkFinished", this,
+                                       &GMPTestMonitor::MarkFinished));
   }
 
-private:
+ private:
   bool mFinished;
 };
 
-#endif // __GMPTestMonitor_h__
+#endif  // __GMPTestMonitor_h__

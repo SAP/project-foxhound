@@ -33,6 +33,30 @@ enum MediaSourceEnum {
     // If values are added, adjust n_values in Histograms.json (2 places)
 };
 
+dictionary ConstrainLongRange {
+    long min;
+    long max;
+    long exact;
+    long ideal;
+};
+
+dictionary ConstrainDoubleRange {
+    double min;
+    double max;
+    double exact;
+    double ideal;
+};
+
+dictionary ConstrainBooleanParameters {
+    boolean exact;
+    boolean ideal;
+};
+
+dictionary ConstrainDOMStringParameters {
+    (DOMString or sequence<DOMString>) exact;
+    (DOMString or sequence<DOMString>) ideal;
+};
+
 typedef (long or ConstrainLongRange) ConstrainLong;
 typedef (double or ConstrainDoubleRange) ConstrainDouble;
 typedef (boolean or ConstrainBooleanParameters) ConstrainBoolean;
@@ -46,17 +70,19 @@ dictionary MediaTrackConstraintSet {
     ConstrainLong height;
     ConstrainDouble frameRate;
     ConstrainDOMString facingMode;
-    DOMString mediaSource = "camera";
+    DOMString mediaSource;
     long long browserWindow;
     boolean scrollWithPage;
     ConstrainDOMString deviceId;
+    ConstrainDOMString groupId;
     ConstrainLong viewportOffsetX;
     ConstrainLong viewportOffsetY;
     ConstrainLong viewportWidth;
     ConstrainLong viewportHeight;
     ConstrainBoolean echoCancellation;
-    ConstrainBoolean mozNoiseSuppression;
-    ConstrainBoolean mozAutoGainControl;
+    ConstrainBoolean noiseSuppression;
+    ConstrainBoolean autoGainControl;
+    ConstrainLong channelCount;
 };
 
 dictionary MediaTrackConstraints : MediaTrackConstraintSet {
@@ -72,22 +98,22 @@ enum MediaStreamTrackState {
 interface MediaStreamTrack : EventTarget {
     readonly    attribute DOMString             kind;
     readonly    attribute DOMString             id;
+    [NeedsCallerType]
     readonly    attribute DOMString             label;
                 attribute boolean               enabled;
-//  readonly    attribute boolean               muted;
-//              attribute EventHandler          onmute;
-//              attribute EventHandler          onunmute;
-//  readonly    attribute boolean               _readonly;
-//  readonly    attribute boolean               remote;
+    readonly    attribute boolean               muted;
+                attribute EventHandler          onmute;
+                attribute EventHandler          onunmute;
     readonly    attribute MediaStreamTrackState readyState;
                 attribute EventHandler          onended;
     MediaStreamTrack       clone ();
     void                   stop ();
 //  MediaTrackCapabilities getCapabilities ();
     MediaTrackConstraints  getConstraints ();
+    [NeedsCallerType]
     MediaTrackSettings     getSettings ();
 
-    [Throws]
-    Promise<void>          applyConstraints (optional MediaTrackConstraints constraints);
+    [Throws, NeedsCallerType]
+    Promise<void>          applyConstraints (optional MediaTrackConstraints constraints = {});
 //              attribute EventHandler          onoverconstrained;
 };

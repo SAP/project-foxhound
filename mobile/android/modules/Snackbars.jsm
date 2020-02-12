@@ -4,13 +4,13 @@
 
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+var EXPORTED_SYMBOLS = ["Snackbars"];
 
-this.EXPORTED_SYMBOLS = ["Snackbars"];
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Messaging", "resource://gre/modules/Messaging.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "EventDispatcher",
+  "resource://gre/modules/Messaging.jsm"
+);
 
 const LENGTH_INDEFINITE = -2;
 const LENGTH_LONG = 0;
@@ -22,14 +22,13 @@ var Snackbars = {
   LENGTH_SHORT: LENGTH_SHORT,
 
   show: function(aMessage, aDuration, aOptions) {
-
     // Takes care of the deprecated toast calls
     if (typeof aDuration === "string") {
       [aDuration, aOptions] = migrateToastIfNeeded(aDuration, aOptions);
     }
 
     let msg = {
-      type: 'Snackbar:Show',
+      type: "Snackbar:Show",
       message: aMessage,
       duration: aDuration,
     };
@@ -45,19 +44,29 @@ var Snackbars = {
         msg.action.label = aOptions.action.label;
       }
 
-      Messaging.sendRequestForResult(msg).then(result => aOptions.action.callback());
+      EventDispatcher.instance
+        .sendRequestForResult(msg)
+        .then(result => aOptions.action.callback())
+        .catch(result => {
+          if (aOptions.action.rejection) {
+            aOptions.action.rejection(result);
+          } else if (result === null) {
+            /* The snackbar was dismissed without executing the callback, nothing to do here. */
+          } else {
+            Cu.reportError(result);
+          }
+        });
     } else {
-      Messaging.sendRequest(msg);
+      EventDispatcher.instance.sendRequest(msg);
     }
-  }
+  },
 };
 
 function migrateToastIfNeeded(aDuration, aOptions) {
   let duration;
   if (aDuration === "long") {
     duration = LENGTH_LONG;
-  }
-  else {
+  } else {
     duration = LENGTH_SHORT;
   }
 

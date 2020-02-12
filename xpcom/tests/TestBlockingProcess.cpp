@@ -1,6 +1,8 @@
-#include <prthread.h>
+#include <stdio.h>
+#include "mozilla/Unused.h"
 
-int main()
-{
-   while(1) PR_Sleep(PR_SecondsToInterval(10));
+int main() {
+  char tmp;
+  mozilla::Unused << fread(&tmp, sizeof(tmp), 1, stdin);
+  return 0;
 }

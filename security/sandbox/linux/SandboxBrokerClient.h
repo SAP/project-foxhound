@@ -8,6 +8,7 @@
 #define mozilla_SandboxBrokerClient_h
 
 #include "broker/SandboxBrokerCommon.h"
+#include "broker/SandboxBrokerUtils.h"
 
 #include "mozilla/Attributes.h"
 
@@ -21,6 +22,7 @@
 // replace those syscalls, but they could also be used directly.
 
 struct stat;
+struct sockaddr_un;
 
 namespace mozilla {
 
@@ -31,16 +33,25 @@ class SandboxBrokerClient final : private SandboxBrokerCommon {
 
   int Open(const char* aPath, int aFlags);
   int Access(const char* aPath, int aMode);
-  int Stat(const char* aPath, struct stat* aStat);
-  int LStat(const char* aPath, struct stat* aStat);
+  int Stat(const char* aPath, statstruct* aStat);
+  int LStat(const char* aPath, statstruct* aStat);
+  int Chmod(const char* aPath, int aMode);
+  int Link(const char* aPath, const char* aPath2);
+  int Mkdir(const char* aPath, int aMode);
+  int Symlink(const char* aOldPath, const char* aNewPath);
+  int Rename(const char* aOldPath, const char* aNewPath);
+  int Unlink(const char* aPath);
+  int Rmdir(const char* aPath);
+  int Readlink(const char* aPath, void* aBuf, size_t aBufSize);
+  int Connect(const struct sockaddr_un* aAddr, size_t aLen, int aType);
 
  private:
   int mFileDesc;
 
-  int DoCall(const Request* aReq, const char* aPath, struct stat* aStat,
-             bool expectFd);
+  int DoCall(const Request* aReq, const char* aPath, const char* aPath2,
+             void* aReponseBuff, bool expectFd);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxBrokerClient_h
+#endif  // mozilla_SandboxBrokerClient_h

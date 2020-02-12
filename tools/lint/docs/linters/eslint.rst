@@ -28,11 +28,29 @@ overridden by including an ``.eslintrc`` in the appropriate subdirectory. For an
 supported configuration, see `ESLint's documentation`_.
 
 
+Autofix
+-------
+
+The eslint linter provides a ``--fix`` option. It is based on the upstream option.
+
+Sources
+-------
+
+* `Configuration <https://searchfox.org/mozilla-central/source/tools/lint/eslint.yml>`_
+* `Source <https://searchfox.org/mozilla-central/source/tools/lint/eslint/__init__.py>`_
+
+
 ESLint Plugin Mozilla
 ---------------------
 
 In addition to default ESLint rules, there are several Mozilla-specific rules that are defined in
 the :doc:`Mozilla ESLint Plugin <eslint-plugin-mozilla>`.
+
+ESLint Plugin SpiderMonkey JS
+-----------------------------
+
+In addition to default ESLint rules, there is an extra processor for SpiderMonkey
+code :doc:`Mozilla ESLint SpiderMonkey JS <eslint-plugin-spidermonkey-js>`.
 
 
 .. _ESLint: http://eslint.org/
@@ -43,3 +61,4 @@ the :doc:`Mozilla ESLint Plugin <eslint-plugin-mozilla>`.
    :hidden:
 
    eslint-plugin-mozilla
+   eslint-plugin-spidermonkey-js

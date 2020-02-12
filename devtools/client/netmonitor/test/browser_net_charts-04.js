@@ -8,66 +8,110 @@
  * initialized with empty data.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+
+  const { monitor, tab } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, L10N, Chart } = monitor.panelWin;
+  const { document, windowRequire } = monitor.panelWin;
+  const { Chart } = windowRequire("devtools/client/shared/widgets/Chart");
 
-  let table = Chart.Table(document, {
+  const wait = waitForNetworkEvents(monitor, 1);
+  BrowserTestUtils.loadURI(tab.linkedBrowser, SIMPLE_URL);
+  await wait;
+
+  const table = Chart.Table(document, {
     title: "Table title",
     data: null,
     totals: {
       label1: value => "Hello " + L10N.numberWithDecimals(value, 2),
-      label2: value => "World " + L10N.numberWithDecimals(value, 2)
-    }
+      label2: value => "World " + L10N.numberWithDecimals(value, 2),
+    },
+    header: {
+      label1: "",
+      label2: "",
+    },
   });
 
-  let node = table.node;
-  let title = node.querySelector(".table-chart-title");
-  let grid = node.querySelector(".table-chart-grid");
-  let totals = node.querySelector(".table-chart-totals");
-  let rows = grid.querySelectorAll(".table-chart-row");
-  let sums = node.querySelectorAll(".table-chart-summary-label");
+  const node = table.node;
+  const title = node.querySelector(".table-chart-title");
+  const grid = node.querySelector(".table-chart-grid");
+  const totals = node.querySelector(".table-chart-totals");
+  const rows = grid.querySelectorAll(".table-chart-row");
+  const sums = node.querySelectorAll(".table-chart-summary-label");
 
-  ok(node.classList.contains("table-chart-container") &&
-     node.classList.contains("generic-chart-container"),
-    "A table chart container was created successfully.");
+  ok(
+    node.classList.contains("table-chart-container") &&
+      node.classList.contains("generic-chart-container"),
+    "A table chart container was created successfully."
+  );
 
   ok(title, "A title node was created successfully.");
-  is(title.getAttribute("value"), "Table title",
-    "The title node displays the correct text.");
+  is(
+    title.textContent,
+    "Table title",
+    "The title node displays the correct text."
+  );
 
-  is(rows.length, 1, "There should be 1 table chart row created.");
+  is(
+    rows.length,
+    2,
+    "There should be 1 table chart row and a 1 header created."
+  );
 
-  ok(rows[0].querySelector(".table-chart-row-box.chart-colored-blob"),
-    "A colored blob exists for the firt row.");
-  is(rows[0].querySelectorAll("label")[0].getAttribute("name"), "size",
-    "The first column of the first row exists.");
-  is(rows[0].querySelectorAll("label")[1].getAttribute("name"), "label",
-    "The second column of the first row exists.");
-  is(rows[0].querySelectorAll("label")[0].getAttribute("value"), "",
-    "The first column of the first row displays the correct text.");
-  is(rows[0].querySelectorAll("label")[1].getAttribute("value"),
+  ok(
+    rows[1].querySelector(".table-chart-row-box.chart-colored-blob"),
+    "A colored blob exists for the first row."
+  );
+  is(
+    rows[1].querySelectorAll("span")[0].getAttribute("name"),
+    "size",
+    "The first column of the first row exists."
+  );
+  is(
+    rows[1].querySelectorAll("span")[1].getAttribute("name"),
+    "label",
+    "The second column of the first row exists."
+  );
+  is(
+    rows[1].querySelectorAll("span")[0].textContent,
+    "",
+    "The first column of the first row displays the correct text."
+  );
+  is(
+    rows[1].querySelectorAll("span")[1].textContent,
     L10N.getStr("tableChart.loading"),
-    "The second column of the first row displays the correct text.");
+    "The second column of the first row displays the correct text."
+  );
 
-  is(sums.length, 2,
-    "There should be 2 total summaries created.");
+  is(sums.length, 2, "There should be 2 total summaries created.");
 
-  is(totals.querySelectorAll(".table-chart-summary-label")[0].getAttribute("name"),
+  is(
+    totals
+      .querySelectorAll(".table-chart-summary-label")[0]
+      .getAttribute("name"),
     "label1",
-    "The first sum's type is correct.");
-  is(totals.querySelectorAll(".table-chart-summary-label")[0].getAttribute("value"),
+    "The first sum's type is correct."
+  );
+  is(
+    totals.querySelectorAll(".table-chart-summary-label")[0].textContent,
     "Hello 0",
-    "The first sum's value is correct.");
+    "The first sum's value is correct."
+  );
 
-  is(totals.querySelectorAll(".table-chart-summary-label")[1].getAttribute("name"),
+  is(
+    totals
+      .querySelectorAll(".table-chart-summary-label")[1]
+      .getAttribute("name"),
     "label2",
-    "The second sum's type is correct.");
-  is(totals.querySelectorAll(".table-chart-summary-label")[1].getAttribute("value"),
+    "The second sum's type is correct."
+  );
+  is(
+    totals.querySelectorAll(".table-chart-summary-label")[1].textContent,
     "World 0",
-    "The second sum's value is correct.");
+    "The second sum's value is correct."
+  );
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

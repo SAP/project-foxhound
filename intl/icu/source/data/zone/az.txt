@@ -1,13 +1,7 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/az.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 az{
-    Version{"2.1.19.83"}
+    Version{"2.1.49.82"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abican"}
@@ -309,6 +303,9 @@ az{
         "America:El_Salvador"{
             ec{"Salvador"}
         }
+        "America:Fort_Nelson"{
+            ec{"Fort Nelson"}
+        }
         "America:Fortaleza"{
             ec{"Fortaleza"}
         }
@@ -510,6 +507,9 @@ az{
         "America:Puerto_Rico"{
             ec{"Puerto Riko"}
         }
+        "America:Punta_Arenas"{
+            ec{"Punta Arenas"}
+        }
         "America:Rainy_River"{
             ec{"Reyni Çayı"}
         }
@@ -550,7 +550,7 @@ az{
             ec{"Sitka"}
         }
         "America:St_Barthelemy"{
-            ec{"San Bartolomey"}
+            ec{"Sent-Bartelemi"}
         }
         "America:St_Johns"{
             ec{"Sent Cons"}
@@ -601,7 +601,7 @@ az{
             ec{"Yakutat"}
         }
         "America:Yellowknife"{
-            ec{"Yelounayf"}
+            ec{"Yellounayf"}
         }
         "Antarctica:Casey"{
             ec{"Keysi"}
@@ -660,6 +660,9 @@ az{
         "Asia:Ashgabat"{
             ec{"Aşqabat"}
         }
+        "Asia:Atyrau"{
+            ec{"Atırau"}
+        }
         "Asia:Baghdad"{
             ec{"Bağdad"}
         }
@@ -671,6 +674,9 @@ az{
         }
         "Asia:Bangkok"{
             ec{"Banqkok"}
+        }
+        "Asia:Barnaul"{
+            ec{"Barnaul"}
         }
         "Asia:Beirut"{
             ec{"Beyrut"}
@@ -707,6 +713,9 @@ az{
         }
         "Asia:Dushanbe"{
             ec{"Düşənbə"}
+        }
+        "Asia:Famagusta"{
+            ec{"Famaqusta"}
         }
         "Asia:Gaza"{
             ec{"Qəza"}
@@ -849,6 +858,9 @@ az{
         "Asia:Tokyo"{
             ec{"Tokyo"}
         }
+        "Asia:Tomsk"{
+            ec{"Tomsk"}
+        }
         "Asia:Ulaanbaatar"{
             ec{"Ulanbator"}
         }
@@ -877,7 +889,7 @@ az{
             ec{"Azor"}
         }
         "Atlantic:Bermuda"{
-            ec{"Bermuda"}
+            ec{"Bermud adaları"}
         }
         "Atlantic:Canary"{
             ec{"Kanar"}
@@ -939,6 +951,9 @@ az{
         "Australia:Sydney"{
             ec{"Sidney"}
         }
+        "Etc:UTC"{
+            ls{"Koordinasiya edilmiş ümumdünya vaxtı"}
+        }
         "Etc:Unknown"{
             ec{"Naməlum Şəhər"}
         }
@@ -947,6 +962,9 @@ az{
         }
         "Europe:Andorra"{
             ec{"Andorra"}
+        }
+        "Europe:Astrakhan"{
+            ec{"Həştərxan"}
         }
         "Europe:Athens"{
             ec{"Afina"}
@@ -995,7 +1013,7 @@ az{
             ec{"Men Adası"}
         }
         "Europe:Istanbul"{
-            ec{"Istanbul"}
+            ec{"İstanbul"}
         }
         "Europe:Jersey"{
             ec{"Cersi"}
@@ -1005,6 +1023,9 @@ az{
         }
         "Europe:Kiev"{
             ec{"Kiyev"}
+        }
+        "Europe:Kirov"{
+            ec{"Kirov"}
         }
         "Europe:Lisbon"{
             ec{"Lissabon"}
@@ -1064,6 +1085,9 @@ az{
         "Europe:Sarajevo"{
             ec{"Sarayevo"}
         }
+        "Europe:Saratov"{
+            ec{"Saratov"}
+        }
         "Europe:Simferopol"{
             ec{"Simferopol"}
         }
@@ -1082,8 +1106,11 @@ az{
         "Europe:Tirane"{
             ec{"Tirana"}
         }
+        "Europe:Ulyanovsk"{
+            ec{"Ulyanovsk"}
+        }
         "Europe:Uzhgorod"{
-            ec{"Ujgorod"}
+            ec{"Ujqorod"}
         }
         "Europe:Vaduz"{
             ec{"Vaduts"}
@@ -1727,15 +1754,18 @@ az{
             ls{"Feniks Adaları Vaxtı"}
         }
         "meta:Pierre_Miquelon"{
-            ld{"San Pier və Mikelon Yay Vaxtı"}
-            lg{"San Pier və Mikelon Vaxtı"}
-            ls{"San Pier və Mikelon Standart Vaxtı"}
+            ld{"Müqəddəs Pyer və Mikelon Yay Vaxtı"}
+            lg{"Müqəddəs Pyer və Mikelon Vaxtı"}
+            ls{"Müqəddəs Pyer və Mikelon Standart Vaxtı"}
         }
         "meta:Pitcairn"{
             ls{"Pitkern Vaxtı"}
         }
         "meta:Ponape"{
             ls{"Ponape Vaxtı"}
+        }
+        "meta:Pyongyang"{
+            ls{"Pxenyan Vaxtı"}
         }
         "meta:Reunion"{
             ls{"Reunion Vaxtı"}

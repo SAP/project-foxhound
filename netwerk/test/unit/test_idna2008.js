@@ -1,3 +1,9 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+"use strict";
+
 const kTransitionalProcessing = false;
 
 // Four characters map differently under non-transitional processing:
@@ -13,9 +19,9 @@ const labels = [
 
   // But CONTEXTJ rules prohibit ZWJ and ZWNJ in non-Arabic or Indic scripts
   // U+200C ZERO WIDTH NON-JOINER in Latin script
-  "m\200cn",
+  "m\u200cn",
   // U+200D ZERO WIDTH JOINER in Latin script
-  "p\200dq",
+  "p\u200dq",
 ];
 
 const transitionalExpected = [
@@ -24,7 +30,7 @@ const transitionalExpected = [
   "xn--mgba3gch31f",
   "xn--10cl1a0b",
   "",
-  ""
+  "",
 ];
 
 const nonTransitionalExpected = [
@@ -33,22 +39,21 @@ const nonTransitionalExpected = [
   "xn--mgba3gch31f060k",
   "xn--10cl1a0b660p",
   "",
-  ""
+  "",
 ];
 
 // Test options for converting IDN URLs under IDNA2008
-function run_test()
-{
-  var idnService = Components.classes["@mozilla.org/network/idn-service;1"]
-                             .getService(Components.interfaces.nsIIDNService);
-
+function run_test() {
+  var idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
+    Ci.nsIIDNService
+  );
 
   for (var i = 0; i < labels.length; ++i) {
     var result;
     try {
-        result = idnService.convertUTF8toACE(labels[i]);
-    } catch(e) {
-        result = "";
+      result = idnService.convertUTF8toACE(labels[i]);
+    } catch (e) {
+      result = "";
     }
 
     if (kTransitionalProcessing) {

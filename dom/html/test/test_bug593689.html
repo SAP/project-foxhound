@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=593689
 -->
 <head>
   <title>Test for Bug 593689</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -29,7 +29,7 @@ testWidth("xxx");
 testWidth(null);
 testWidth(undefined);
 testWidth({});
-testWidth({ valueOf: function() { return 10; } });
+testWidth({ valueOf() { return 10; } });
 
 function testHeight(h) {
   var img = new Image(100, h);
@@ -42,7 +42,7 @@ testHeight("xxx");
 testHeight(null);
 testHeight(undefined);
 testHeight({});
-testHeight({ valueOf: function() { return 10; } });
+testHeight({ valueOf() { return 10; } });
 
 </script>
 </pre>

@@ -11,20 +11,25 @@ dictionary TestInterfaceJSUnionableDictionary {
 
 [JSImplementation="@mozilla.org/dom/test-interface-js;1",
  Pref="dom.expose_test_interfaces",
- Constructor(optional any anyArg, optional object objectArg, optional TestInterfaceJSDictionary dictionaryArg)]
+ Exposed=Window]
 interface TestInterfaceJS : EventTarget {
+  [Throws]
+  constructor(optional any anyArg, optional object objectArg,
+              optional TestInterfaceJSDictionary dictionaryArg = {});
+
   readonly attribute any anyArg;
   readonly attribute object objectArg;
-  [Cached, Pure] readonly attribute TestInterfaceJSDictionary dictionaryArg;
+  TestInterfaceJSDictionary getDictionaryArg();
   attribute any anyAttr;
   attribute object objectAttr;
-  [Cached, Pure] attribute TestInterfaceJSDictionary dictionaryAttr;
+  TestInterfaceJSDictionary getDictionaryAttr();
+  void setDictionaryAttr(optional TestInterfaceJSDictionary dict = {});
   any pingPongAny(any arg);
   object pingPongObject(object obj);
   any pingPongObjectOrString((object or DOMString) objOrString);
-  TestInterfaceJSDictionary pingPongDictionary(optional TestInterfaceJSDictionary dict);
-  long pingPongDictionaryOrLong(optional (TestInterfaceJSUnionableDictionary or long) dictOrLong);
-  DOMString pingPongMap(MozMap<any> map);
+  TestInterfaceJSDictionary pingPongDictionary(optional TestInterfaceJSDictionary dict = {});
+  long pingPongDictionaryOrLong(optional (TestInterfaceJSUnionableDictionary or long) dictOrLong = {});
+  DOMString pingPongRecord(record<DOMString, any> rec);
   long objectSequenceLength(sequence<object> seq);
   long anySequenceLength(sequence<any> seq);
 
@@ -37,11 +42,6 @@ interface TestInterfaceJS : EventTarget {
   (DOMString or TestInterfaceJS?) pingPongUnionContainingNull((TestInterfaceJS? or DOMString) something);
   (TestInterfaceJS or long)? pingPongNullableUnion((TestInterfaceJS or long)? something);
   (Location or TestInterfaceJS) returnBadUnion();
-
-  [Cached, Pure]
-  readonly attribute short cachedAttr;
-  void setCachedAttr(short n);
-  void clearCachedAttrCache();
 
   // Test for sequence overloading and union behavior
   void testSequenceOverload(sequence<DOMString> arg);
@@ -70,7 +70,7 @@ interface TestInterfaceJS : EventTarget {
 
   // Tests for promise-rejection behavior
   Promise<void> testPromiseWithThrowingChromePromiseInit();
-  Promise<void> testPromiseWithThrowingContentPromiseInit(PromiseInit func);
+  Promise<void> testPromiseWithThrowingContentPromiseInit(Function func);
   Promise<void> testPromiseWithDOMExceptionThrowingPromiseInit();
   Promise<void> testPromiseWithThrowingChromeThenFunction();
   Promise<void> testPromiseWithThrowingContentThenFunction(AnyCallback func);

@@ -4,9 +4,13 @@
 
 include protocol PBackgroundIDBDatabaseFile;
 include protocol PBackgroundMutableFile;
-include protocol PBlob;
+include protocol PChildToParentStream; // FIXME: bug 792908
+include protocol PFileDescriptorSet; // FIXME: bug 792908
+include protocol PIPCBlobInputStream; // FIXME: bug 792908
+include protocol PParentToChildStream; // FIXME: bug 792908
 
 include DOMTypes;
+include IPCBlob;
 include ProtocolTypes;
 
 include "mozilla/dom/indexedDB/SerializationHelpers.h";
@@ -20,6 +24,9 @@ using struct mozilla::void_t
 
 using mozilla::dom::IDBCursor::Direction
   from "mozilla/dom/IDBCursor.h";
+
+using mozilla::dom::indexedDB::StructuredCloneFile::FileType
+  from "mozilla/dom/IndexedDatabase.h";
 
 using class mozilla::dom::indexedDB::Key
   from "mozilla/dom/indexedDB/Key.h";
@@ -46,22 +53,24 @@ struct SerializedKeyRange
   bool isOnly;
 };
 
-union NullableMutableFile
+union BlobOrMutableFile
 {
   null_t;
+  IPCBlob;
   PBackgroundMutableFile;
 };
 
-union BlobOrMutableFile
+struct SerializedStructuredCloneFile
 {
-  PBlob;
-  NullableMutableFile;
+  BlobOrMutableFile file;
+  FileType type;
 };
 
 struct SerializedStructuredCloneReadInfo
 {
   SerializedStructuredCloneBuffer data;
-  BlobOrMutableFile[] blobs;
+  SerializedStructuredCloneFile[] files;
+  bool hasPreprocessInfo;
 };
 
 struct SerializedStructuredCloneWriteInfo
@@ -75,12 +84,6 @@ struct IndexUpdateInfo
   int64_t indexId;
   Key value;
   Key localizedValue;
-};
-
-union OptionalKeyRange
-{
-  SerializedKeyRange;
-  void_t;
 };
 
 struct DatabaseMetadata
@@ -121,36 +124,43 @@ struct ObjectStoreSpec
   IndexMetadata[] indexes;
 };
 
-struct ObjectStoreOpenCursorParams
+struct CommonOpenCursorParams
 {
   int64_t objectStoreId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
   Direction direction;
+};
+
+struct ObjectStoreOpenCursorParams
+{
+  CommonOpenCursorParams commonParams;
 };
 
 struct ObjectStoreOpenKeyCursorParams
 {
-  int64_t objectStoreId;
-  OptionalKeyRange optionalKeyRange;
-  Direction direction;
+  CommonOpenCursorParams commonParams;
+};
+
+struct CommonIndexOpenCursorParams
+{
+  CommonOpenCursorParams commonParams;
+  int64_t indexId;
 };
 
 struct IndexOpenCursorParams
 {
-  int64_t objectStoreId;
-  int64_t indexId;
-  OptionalKeyRange optionalKeyRange;
-  Direction direction;
+  CommonIndexOpenCursorParams commonIndexParams;
 };
 
 struct IndexOpenKeyCursorParams
 {
-  int64_t objectStoreId;
-  int64_t indexId;
-  OptionalKeyRange optionalKeyRange;
-  Direction direction;
+  CommonIndexOpenCursorParams commonIndexParams;
 };
 
+// TODO: Actually, using a union here is not very nice, unless IPDL supported
+// struct inheritance. Alternatively, if IPDL supported enums, we could merge
+// the subtypes into one. Using a plain integer for discriminating the
+// subtypes would be too error-prone.
 union OpenCursorParams
 {
   ObjectStoreOpenCursorParams;
@@ -165,13 +175,19 @@ union DatabaseOrMutableFile
   PBackgroundMutableFile;
 };
 
+struct FileAddInfo
+{
+  DatabaseOrMutableFile file;
+  FileType type;
+};
+
 struct ObjectStoreAddPutParams
 {
   int64_t objectStoreId;
   SerializedStructuredCloneWriteInfo cloneInfo;
   Key key;
   IndexUpdateInfo[] indexUpdateInfos;
-  DatabaseOrMutableFile[] files;
+  FileAddInfo[] fileAddInfos;
 };
 
 struct ObjectStoreAddParams
@@ -199,14 +215,14 @@ struct ObjectStoreGetKeyParams
 struct ObjectStoreGetAllParams
 {
   int64_t objectStoreId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
   uint32_t limit;
 };
 
 struct ObjectStoreGetAllKeysParams
 {
   int64_t objectStoreId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
   uint32_t limit;
 };
 
@@ -224,7 +240,7 @@ struct ObjectStoreClearParams
 struct ObjectStoreCountParams
 {
   int64_t objectStoreId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
 };
 
 struct IndexGetParams
@@ -245,7 +261,7 @@ struct IndexGetAllParams
 {
   int64_t objectStoreId;
   int64_t indexId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
   uint32_t limit;
 };
 
@@ -253,7 +269,7 @@ struct IndexGetAllKeysParams
 {
   int64_t objectStoreId;
   int64_t indexId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
   uint32_t limit;
 };
 
@@ -261,7 +277,7 @@ struct IndexCountParams
 {
   int64_t objectStoreId;
   int64_t indexId;
-  OptionalKeyRange optionalKeyRange;
+  SerializedKeyRange? optionalKeyRange;
 };
 
 union RequestParams

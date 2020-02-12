@@ -5,15 +5,9 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         width="600"
         height="600"
-        onload="setTimeout(nextTest,0);"
+        onload="setTimeout(nextTest, 0);"
         title="bug 396649 test">
 
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/specialpowersAPI.js"/>
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SpecialPowersObserverAPI.js"/>
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/ChromePowers.js"/>
   <script type="application/javascript" src= "chrome://mochikit/content/chrome-harness.js" />
   <script type="application/javascript" src="docshell_helpers.js" />
   <script type="application/javascript"><![CDATA[
@@ -40,7 +34,7 @@
     // viewers should be evicted from bfcache when going back if more
     // than MAX_BFCACHE_PAGES from the current index.
     //
-    function testIterator()
+    function* testIterator()
     {
       // Make sure bfcache is on.
       enableBFCache(true);
@@ -110,13 +104,11 @@
         yield undefined;
       }
       
-      // Tell the framework the test is finished.  Include the final 'yield' 
-      // statement to prevent a StopIteration exception from being thrown.
+      // Tell the framework the test is finished.
       finish();
-      yield undefined;
     }
     
   ]]></script>
 
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
 </window>

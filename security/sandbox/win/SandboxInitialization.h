@@ -10,7 +10,7 @@
 namespace sandbox {
 class BrokerServices;
 class TargetServices;
-}
+}  // namespace sandbox
 
 // Things that use this file will probably want access to the IsSandboxedProcess
 // function defined in one of the Chromium sandbox cc files.
@@ -20,6 +20,8 @@ namespace mozilla {
 // Note the Chromium code just uses a bare sandbox namespace, which makes using
 // sandbox for our namespace painful.
 namespace sandboxing {
+
+class PermissionsService;
 
 /**
  * Initializes (if required) and returns the Chromium sandbox TargetServices.
@@ -41,7 +43,9 @@ void LowerSandbox();
  */
 sandbox::BrokerServices* GetInitializedBrokerServices();
 
-} // sandboxing
-} // mozilla
+PermissionsService* GetPermissionsService();
 
-#endif // mozilla_sandboxing_SandboxInitialization_h
+}  // namespace sandboxing
+}  // namespace mozilla
+
+#endif  // mozilla_sandboxing_SandboxInitialization_h

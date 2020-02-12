@@ -9,7 +9,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "mozIPersonalDictionary.h"
-#include "nsIUnicodeEncoder.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 #include "nsTHashtable.h"
@@ -18,30 +17,31 @@
 #include "nsHashKeys.h"
 #include <mozilla/Monitor.h>
 
-#define MOZ_PERSONALDICTIONARY_CONTRACTID "@mozilla.org/spellchecker/personaldictionary;1"
-#define MOZ_PERSONALDICTIONARY_CID         \
-{ /* 7EF52EAF-B7E1-462B-87E2-5D1DBACA9048 */  \
-0X7EF52EAF, 0XB7E1, 0X462B, \
-  { 0X87, 0XE2, 0X5D, 0X1D, 0XBA, 0XCA, 0X90, 0X48 } }
+#define MOZ_PERSONALDICTIONARY_CONTRACTID \
+  "@mozilla.org/spellchecker/personaldictionary;1"
+#define MOZ_PERSONALDICTIONARY_CID                   \
+  { /* 7EF52EAF-B7E1-462B-87E2-5D1DBACA9048 */       \
+    0X7EF52EAF, 0XB7E1, 0X462B, {                    \
+      0X87, 0XE2, 0X5D, 0X1D, 0XBA, 0XCA, 0X90, 0X48 \
+    }                                                \
+  }
 
 class mozPersonalDictionaryLoader;
 class mozPersonalDictionarySave;
 
 class mozPersonalDictionary final : public mozIPersonalDictionary,
                                     public nsIObserver,
-                                    public nsSupportsWeakReference
-{
-public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+                                    public nsSupportsWeakReference {
+ public:
+  NS_DECL_ISUPPORTS
   NS_DECL_MOZIPERSONALDICTIONARY
   NS_DECL_NSIOBSERVER
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(mozPersonalDictionary, mozIPersonalDictionary)
 
   mozPersonalDictionary();
 
   nsresult Init();
 
-protected:
+ protected:
   virtual ~mozPersonalDictionary();
 
   /* true if the dictionary has been loaded from disk */
@@ -53,13 +53,10 @@ protected:
   nsCOMPtr<nsIFile> mFile;
   mozilla::Monitor mMonitor;
   mozilla::Monitor mMonitorSave;
-  nsTHashtable<nsUnicharPtrHashKey> mDictionaryTable;
-  nsTHashtable<nsUnicharPtrHashKey> mIgnoreTable;
+  nsTHashtable<nsStringHashKey> mDictionaryTable;
+  nsTHashtable<nsStringHashKey> mIgnoreTable;
 
-  /*Encoder to use to compare with spellchecker word */
-  nsCOMPtr<nsIUnicodeEncoder>  mEncoder;
-
-private:
+ private:
   /* wait for the asynchronous load of the dictionary to be completed */
   void WaitForLoad();
 

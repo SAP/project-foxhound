@@ -8,7 +8,8 @@
 // that should be masked) to go unnoticed, there is a limit after which the
 // caller will nonetheless see an EINTR in Debug builds.
 //
-// On Windows, this wrapper macro does nothing.
+// On Windows and Fuchsia, this wrapper macro does nothing because there are no
+// signals.
 //
 // Don't wrap close calls in HANDLE_EINTR. Use IGNORE_EINTR if the return
 // value of close is significant. See http://crbug.com/269623.
@@ -57,11 +58,11 @@
   eintr_wrapper_result; \
 })
 
-#else
+#else  // !OS_POSIX
 
 #define HANDLE_EINTR(x) (x)
 #define IGNORE_EINTR(x) (x)
 
-#endif  // OS_POSIX
+#endif  // !OS_POSIX
 
 #endif  // BASE_POSIX_EINTR_WRAPPER_H_

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for BroadcastChannel.postMessage invalid State</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -14,10 +14,10 @@
 
 let c = new BroadcastChannel("foo");
 
-try  {
+try {
   c.postMessage(Symbol());
   ok(false, "This should throw!");
-} catch(e) {
+} catch (e) {
   ok(true, "This should throw!");
   is(e.name, "DataCloneError", "Correct DataCloneError exception thrown");
 }

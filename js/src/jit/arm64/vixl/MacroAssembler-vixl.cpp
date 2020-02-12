@@ -48,7 +48,7 @@ int MacroAssembler::MoveImmediateHelper(MacroAssembler* masm,
                                         const Register &rd,
                                         uint64_t imm) {
   bool emit_code = (masm != NULL);
-  VIXL_ASSERT(is_uint32(imm) || is_int32(imm) || rd.Is64Bits());
+  VIXL_ASSERT(IsUint32(imm) || IsInt32(imm) || rd.Is64Bits());
   // The worst case for size is mov 64-bit immediate to sp:
   //  * up to 4 instructions to materialise the constant
   //  * 1 instruction to move to sp
@@ -208,9 +208,6 @@ void MacroAssembler::B(Label* label, Condition cond) {
     b(label);
     bind(&done);
   } else {
-    // TODO: Need to register a slot in a literal pool, so that we can
-    // write a branch instruction there and use that to branch in case
-    // the unbound label winds up being out of range.
     b(label, cond);
   }
 }
@@ -226,9 +223,6 @@ void MacroAssembler::Cbnz(const Register& rt, Label* label) {
     b(label);
     bind(&done);
   } else {
-    // TODO: Need to register a slot in a literal pool, so that we can
-    // write a branch instruction there and use that to branch in case
-    // the unbound label winds up being out of range.
     cbnz(rt, label);
   }
 }
@@ -244,9 +238,6 @@ void MacroAssembler::Cbz(const Register& rt, Label* label) {
     b(label);
     bind(&done);
   } else {
-    // TODO: Nede to register a slot in a literal pool, so that we can
-    // write a branch instruction there and use that to branch in case
-    // the unbound label winds up being out of range.
     cbz(rt, label);
   }
 }
@@ -262,9 +253,6 @@ void MacroAssembler::Tbnz(const Register& rt, unsigned bit_pos, Label* label) {
     b(label);
     bind(&done);
   } else {
-    // TODO: Nede to register a slot in a literal pool, so that we can
-    // write a branch instruction there and use that to branch in case
-    // the unbound label winds up being out of range.
     tbnz(rt, bit_pos, label);
   }
 }
@@ -280,9 +268,6 @@ void MacroAssembler::Tbz(const Register& rt, unsigned bit_pos, Label* label) {
     b(label);
     bind(&done);
   } else {
-    // TODO: Nede to register a slot in a literal pool, so that we can
-    // write a branch instruction there and use that to branch in case
-    // the unbound label winds up being out of range.
     tbz(rt, bit_pos, label);
   }
 }
@@ -379,7 +364,7 @@ void MacroAssembler::LogicalMacro(const Register& rd,
       immediate &= kWRegMask;
     }
 
-    VIXL_ASSERT(rd.Is64Bits() || is_uint32(immediate));
+    VIXL_ASSERT(rd.Is64Bits() || IsUint32(immediate));
 
     // Special cases for all set or all clear immediates.
     if (immediate == 0) {
@@ -427,7 +412,11 @@ void MacroAssembler::LogicalMacro(const Register& rd,
     } else {
       // Immediate can't be encoded: synthesize using move immediate.
       Register temp = temps.AcquireSameSizeAs(rn);
-      Operand imm_operand = MoveImmediateForShiftedOp(temp, immediate);
+
+      // If the left-hand input is the stack pointer, we can't pre-shift the
+      // immediate, as the encoding won't allow the subsequent post shift.
+      PreShiftImmMode mode = rn.IsSP() ? kNoShift : kAnyShift;
+      Operand imm_operand = MoveImmediateForShiftedOp(temp, immediate, mode);
 
       // VIXL can acquire temp registers. Assert that the caller is aware.
       VIXL_ASSERT(!temp.Is(rd) && !temp.Is(rn));
@@ -506,7 +495,7 @@ void MacroAssembler::Mov(const Register& rd,
 
 
 void MacroAssembler::Movi16bitHelper(const VRegister& vd, uint64_t imm) {
-  VIXL_ASSERT(is_uint16(imm));
+  VIXL_ASSERT(IsUint16(imm));
   int byte1 = (imm & 0xff);
   int byte2 = ((imm >> 8) & 0xff);
   if (byte1 == byte2) {
@@ -529,7 +518,7 @@ void MacroAssembler::Movi16bitHelper(const VRegister& vd, uint64_t imm) {
 
 
 void MacroAssembler::Movi32bitHelper(const VRegister& vd, uint64_t imm) {
-  VIXL_ASSERT(is_uint32(imm));
+  VIXL_ASSERT(IsUint32(imm));
 
   uint8_t bytes[sizeof(imm)];
   memcpy(bytes, &imm, sizeof(imm));
@@ -652,7 +641,7 @@ void MacroAssembler::Movi(const VRegister& vd,
     movi(vd, imm, shift, shift_amount);
   } else if (vd.Is8B() || vd.Is16B()) {
     // 8-bit immediate.
-    VIXL_ASSERT(is_uint8(imm));
+    VIXL_ASSERT(IsUint8(imm));
     movi(vd, imm);
   } else if (vd.Is4H() || vd.Is8H()) {
     // 16-bit immediate.
@@ -898,7 +887,7 @@ void MacroAssembler::Fmov(VRegister vd, double imm) {
   if (IsImmFP64(imm)) {
     fmov(vd, imm);
   } else {
-    uint64_t rawbits = double_to_rawbits(imm);
+    uint64_t rawbits = DoubleToRawbits(imm);
     if (vd.IsScalar()) {
       if (rawbits == 0) {
         fmov(vd, xzr);
@@ -926,7 +915,7 @@ void MacroAssembler::Fmov(VRegister vd, float imm) {
   if (IsImmFP32(imm)) {
     fmov(vd, imm);
   } else {
-    uint32_t rawbits = float_to_rawbits(imm);
+    uint32_t rawbits = FloatToRawbits(imm);
     if (vd.IsScalar()) {
       if (rawbits == 0) {
         fmov(vd, wzr);
@@ -965,7 +954,8 @@ bool MacroAssembler::TryOneInstrMoveImmediate(const Register& dst,
 
 
 Operand MacroAssembler::MoveImmediateForShiftedOp(const Register& dst,
-                                                  int64_t imm) {
+                                                  int64_t imm,
+                                                  PreShiftImmMode mode) {
   int reg_size = dst.size();
 
   // Encode the immediate in a single move instruction, if possible.
@@ -974,6 +964,14 @@ Operand MacroAssembler::MoveImmediateForShiftedOp(const Register& dst,
   } else {
     // Pre-shift the immediate to the least-significant bits of the register.
     int shift_low = CountTrailingZeros(imm, reg_size);
+    if (mode == kLimitShiftForSP) {
+      // When applied to the stack pointer, the subsequent arithmetic operation
+      // can use the extend form to shift left by a maximum of four bits. Right
+      // shifts are not allowed, so we filter them out later before the new
+      // immediate is tested.
+      shift_low = std::min(shift_low, 4);
+    }
+
     int64_t imm_low = imm >> shift_low;
 
     // Pre-shift the immediate to the most-significant bits of the register,
@@ -981,11 +979,11 @@ Operand MacroAssembler::MoveImmediateForShiftedOp(const Register& dst,
     int shift_high = CountLeadingZeros(imm, reg_size);
     int64_t imm_high = (imm << shift_high) | ((INT64_C(1) << shift_high) - 1);
 
-    if (TryOneInstrMoveImmediate(dst, imm_low)) {
+    if ((mode != kNoShift) && TryOneInstrMoveImmediate(dst, imm_low)) {
       // The new immediate has been moved into the destination's low bits:
       // return a new leftward-shifting operand.
       return Operand(dst, LSL, shift_low);
-    } else if (TryOneInstrMoveImmediate(dst, imm_high)) {
+    } else if ((mode == kAnyShift) && TryOneInstrMoveImmediate(dst, imm_high)) {
       // The new immediate has been moved into the destination's high bits:
       // return a new rightward-shifting operand.
       return Operand(dst, LSR, shift_high);
@@ -1037,19 +1035,27 @@ void MacroAssembler::AddSubMacro(const Register& rd,
   }
 
   if ((operand.IsImmediate() && !IsImmAddSub(operand.immediate())) ||
-      (rn.IsZero() && !operand.IsShiftedRegister())                ||
+      (rn.IsZero() && !operand.IsShiftedRegister()) ||
       (operand.IsShiftedRegister() && (operand.shift() == ROR))) {
     UseScratchRegisterScope temps(this);
     Register temp = temps.AcquireSameSizeAs(rn);
-
-    // VIXL can acquire temp registers. Assert that the caller is aware.
-    VIXL_ASSERT(!temp.Is(rd) && !temp.Is(rn));
-    VIXL_ASSERT(!temp.Is(operand.maybeReg()));
-
     if (operand.IsImmediate()) {
+      PreShiftImmMode mode = kAnyShift;
+
+      // If the destination or source register is the stack pointer, we can
+      // only pre-shift the immediate right by values supported in the add/sub
+      // extend encoding.
+      if (rd.IsSP()) {
+        // If the destination is SP and flags will be set, we can't pre-shift
+        // the immediate at all. 
+        mode = (S == SetFlags) ? kNoShift : kLimitShiftForSP;
+      } else if (rn.IsSP()) {
+        mode = kLimitShiftForSP;
+      } 
+
       Operand imm_operand =
-          MoveImmediateForShiftedOp(temp, operand.immediate());
-      AddSub(rd, rn, imm_operand, S, op);
+          MoveImmediateForShiftedOp(temp, operand.immediate(), mode);
+      AddSub(rd, rn, imm_operand, S, op); 
     } else {
       Mov(temp, operand);
       AddSub(rd, rn, temp, S, op);
@@ -1125,7 +1131,7 @@ void MacroAssembler::AddSubWithCarryMacro(const Register& rd,
     // Add/sub with carry (shifted register).
     VIXL_ASSERT(operand.reg().size() == rd.size());
     VIXL_ASSERT(operand.shift() != ROR);
-    VIXL_ASSERT(is_uintn(rd.size() == kXRegSize ? kXRegSizeLog2 : kWRegSizeLog2,
+    VIXL_ASSERT(IsUintN(rd.size() == kXRegSize ? kXRegSizeLog2 : kWRegSizeLog2,
                     operand.shift_amount()));
     temps.Exclude(operand.reg());
     Register temp = temps.AcquireSameSizeAs(rn);

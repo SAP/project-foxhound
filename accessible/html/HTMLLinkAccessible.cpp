@@ -21,35 +21,22 @@ using namespace mozilla::a11y;
 // HTMLLinkAccessible
 ////////////////////////////////////////////////////////////////////////////////
 
-HTMLLinkAccessible::
-  HTMLLinkAccessible(nsIContent* aContent, DocAccessible* aDoc) :
-  HyperTextAccessibleWrap(aContent, aDoc)
-{
-}
-
-NS_IMPL_ISUPPORTS_INHERITED0(HTMLLinkAccessible, HyperTextAccessible)
+HTMLLinkAccessible::HTMLLinkAccessible(nsIContent* aContent,
+                                       DocAccessible* aDoc)
+    : HyperTextAccessibleWrap(aContent, aDoc) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsIAccessible
 
-role
-HTMLLinkAccessible::NativeRole()
-{
-  return roles::LINK;
-}
+role HTMLLinkAccessible::NativeRole() const { return roles::LINK; }
 
-uint64_t
-HTMLLinkAccessible::NativeState()
-{
+uint64_t HTMLLinkAccessible::NativeState() const {
   return HyperTextAccessibleWrap::NativeState() & ~states::READONLY;
 }
 
-uint64_t
-HTMLLinkAccessible::NativeLinkState() const
-{
+uint64_t HTMLLinkAccessible::NativeLinkState() const {
   EventStates eventState = mContent->AsElement()->State();
-  if (eventState.HasState(NS_EVENT_STATE_UNVISITED))
-    return states::LINKED;
+  if (eventState.HasState(NS_EVENT_STATE_UNVISITED)) return states::LINKED;
 
   if (eventState.HasState(NS_EVENT_STATE_VISITED))
     return states::LINKED | states::TRAVERSED;
@@ -60,23 +47,19 @@ HTMLLinkAccessible::NativeLinkState() const
   return nsCoreUtils::HasClickListener(mContent) ? states::LINKED : 0;
 }
 
-uint64_t
-HTMLLinkAccessible::NativeInteractiveState() const
-{
+uint64_t HTMLLinkAccessible::NativeInteractiveState() const {
   uint64_t state = HyperTextAccessibleWrap::NativeInteractiveState();
 
   // This is how we indicate it is a named anchor. In other words, this anchor
   // can be selected as a location :) There is no other better state to use to
   // indicate this.
-  if (mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::name))
+  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::name))
     state |= states::SELECTABLE;
 
   return state;
 }
 
-void
-HTMLLinkAccessible::Value(nsString& aValue)
-{
+void HTMLLinkAccessible::Value(nsString& aValue) const {
   aValue.Truncate();
 
   HyperTextAccessible::Value(aValue);
@@ -84,15 +67,11 @@ HTMLLinkAccessible::Value(nsString& aValue)
     nsContentUtils::GetLinkLocation(mContent->AsElement(), aValue);
 }
 
-uint8_t
-HTMLLinkAccessible::ActionCount()
-{
+uint8_t HTMLLinkAccessible::ActionCount() const {
   return IsLinked() ? 1 : HyperTextAccessible::ActionCount();
 }
 
-void
-HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName)
-{
+void HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   aName.Truncate();
 
   if (!IsLinked()) {
@@ -101,19 +80,14 @@ HTMLLinkAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName)
   }
 
   // Action 0 (default action): Jump to link
-  if (aIndex == eAction_Jump)
-    aName.AssignLiteral("jump");
+  if (aIndex == eAction_Jump) aName.AssignLiteral("jump");
 }
 
-bool
-HTMLLinkAccessible::DoAction(uint8_t aIndex)
-{
-  if (!IsLinked())
-    return HyperTextAccessible::DoAction(aIndex);
+bool HTMLLinkAccessible::DoAction(uint8_t aIndex) const {
+  if (!IsLinked()) return HyperTextAccessible::DoAction(aIndex);
 
   // Action 0 (default action): Jump to link
-  if (aIndex != eAction_Jump)
-    return false;
+  if (aIndex != eAction_Jump) return false;
 
   DoCommand();
   return true;
@@ -122,25 +96,20 @@ HTMLLinkAccessible::DoAction(uint8_t aIndex)
 ////////////////////////////////////////////////////////////////////////////////
 // HyperLinkAccessible
 
-bool
-HTMLLinkAccessible::IsLink()
-{
+bool HTMLLinkAccessible::IsLink() const {
   // Expose HyperLinkAccessible unconditionally.
   return true;
 }
 
-already_AddRefed<nsIURI>
-HTMLLinkAccessible::AnchorURIAt(uint32_t aAnchorIndex)
-{
+already_AddRefed<nsIURI> HTMLLinkAccessible::AnchorURIAt(
+    uint32_t aAnchorIndex) const {
   return aAnchorIndex == 0 ? mContent->GetHrefURI() : nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Protected members
 
-bool
-HTMLLinkAccessible::IsLinked() const
-{
+bool HTMLLinkAccessible::IsLinked() const {
   EventStates state = mContent->AsElement()->State();
   return state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED |
                                      NS_EVENT_STATE_UNVISITED);

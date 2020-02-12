@@ -4,13 +4,11 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+let { EventEmitter } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/EventEmitter.jsm"
+);
 
-let { EventEmitter } = Cu.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
-
-this.EXPORTED_SYMBOLS = [
-  "SyncedTabsDeckStore"
-];
+var EXPORTED_SYMBOLS = ["SyncedTabsDeckStore"];
 
 /**
  * SyncedTabsDeckStore
@@ -29,9 +27,9 @@ function SyncedTabsDeckStore() {
 Object.assign(SyncedTabsDeckStore.prototype, EventEmitter.prototype, {
   _change(isUpdatable = false) {
     let panels = this._panels.map(panel => {
-      return {id: panel, selected: panel === this._selectedPanel};
+      return { id: panel, selected: panel === this._selectedPanel };
     });
-    this.emit("change", {panels, isUpdatable: isUpdatable});
+    this.emit("change", { panels, isUpdatable });
   },
 
   /**
@@ -39,7 +37,7 @@ Object.assign(SyncedTabsDeckStore.prototype, EventEmitter.prototype, {
    * @param {String} panelId - ID of the panel to select.
    */
   selectPanel(panelId) {
-    if (this._panels.indexOf(panelId) === -1 || this._selectedPanel === panelId) {
+    if (!this._panels.includes(panelId) || this._selectedPanel === panelId) {
       return;
     }
     this._selectedPanel = panelId;
@@ -56,5 +54,5 @@ Object.assign(SyncedTabsDeckStore.prototype, EventEmitter.prototype, {
     }
     this._panels = panels || [];
     this._change();
-  }
+  },
 });

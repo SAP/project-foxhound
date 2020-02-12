@@ -14,31 +14,26 @@ namespace gmp {
 
 class GMPChild;
 
-class GMPContentChild : public PGMPContentChild
-                      , public GMPSharedMem
-{
-public:
+class GMPContentChild : public PGMPContentChild, public GMPSharedMem {
+ public:
   explicit GMPContentChild(GMPChild* aChild);
   virtual ~GMPContentChild();
 
   MessageLoop* GMPMessageLoop();
 
-  bool RecvPGMPAudioDecoderConstructor(PGMPAudioDecoderChild* aActor) override;
-  bool RecvPGMPDecryptorConstructor(PGMPDecryptorChild* aActor) override;
-  bool RecvPGMPVideoDecoderConstructor(PGMPVideoDecoderChild* aActor, const uint32_t& aDecryptorId) override;
-  bool RecvPGMPVideoEncoderConstructor(PGMPVideoEncoderChild* aActor) override;
+  mozilla::ipc::IPCResult RecvPGMPVideoDecoderConstructor(
+      PGMPVideoDecoderChild* aActor, const uint32_t& aDecryptorId) override;
+  mozilla::ipc::IPCResult RecvPGMPVideoEncoderConstructor(
+      PGMPVideoEncoderChild* aActor) override;
+  mozilla::ipc::IPCResult RecvPChromiumCDMConstructor(
+      PChromiumCDMChild* aActor) override;
 
-  PGMPAudioDecoderChild* AllocPGMPAudioDecoderChild() override;
-  bool DeallocPGMPAudioDecoderChild(PGMPAudioDecoderChild* aActor) override;
+  already_AddRefed<PGMPVideoDecoderChild> AllocPGMPVideoDecoderChild(
+      const uint32_t& aDecryptorId);
 
-  PGMPDecryptorChild* AllocPGMPDecryptorChild() override;
-  bool DeallocPGMPDecryptorChild(PGMPDecryptorChild* aActor) override;
+  already_AddRefed<PGMPVideoEncoderChild> AllocPGMPVideoEncoderChild();
 
-  PGMPVideoDecoderChild* AllocPGMPVideoDecoderChild(const uint32_t& aDecryptorId) override;
-  bool DeallocPGMPVideoDecoderChild(PGMPVideoDecoderChild* aActor) override;
-
-  PGMPVideoEncoderChild* AllocPGMPVideoEncoderChild() override;
-  bool DeallocPGMPVideoEncoderChild(PGMPVideoEncoderChild* aActor) override;
+  already_AddRefed<PChromiumCDMChild> AllocPChromiumCDMChild();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   void ProcessingError(Result aCode, const char* aReason) override;
@@ -52,7 +47,7 @@ public:
   GMPChild* mGMPChild;
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPContentChild_h_
+#endif  // GMPContentChild_h_

@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Pretty-printers for InterpreterRegs.
 
 import gdb
@@ -7,8 +11,9 @@ prettyprinters.clear_module_printers(__name__)
 
 from mozilla.prettyprinters import pretty_printer
 
-# Cache information about the Interpreter types for this objfile.
+
 class InterpreterTypeCache(object):
+    # Cache information about the Interpreter types for this objfile.
     def __init__(self):
         self.tValue = gdb.lookup_type('JS::Value')
         self.tJSOp = gdb.lookup_type('JSOp')
@@ -16,6 +21,8 @@ class InterpreterTypeCache(object):
         self.tInterpreterFrame = gdb.lookup_type('js::InterpreterFrame')
         self.tBaselineFrame = gdb.lookup_type('js::jit::BaselineFrame')
         self.tRematerializedFrame = gdb.lookup_type('js::jit::RematerializedFrame')
+        self.tDebugFrame = gdb.lookup_type('js::wasm::DebugFrame')
+
 
 @pretty_printer('js::InterpreterRegs')
 class InterpreterRegs(object):
@@ -36,10 +43,11 @@ class InterpreterRegs(object):
         pc = self.value['pc']
         try:
             opcode = pc.dereference().cast(self.itc.tJSOp)
-        except:
+        except Exception:
             opcode = 'bad pc'
         pc = 'pc = {} ({})'.format(pc.cast(self.cache.void_ptr_t), opcode)
         return '{{ {}, {}, {} }}'.format(fp_, sp, pc)
+
 
 @pretty_printer('js::AbstractFramePtr')
 class AbstractFramePtr(object):
@@ -47,7 +55,8 @@ class AbstractFramePtr(object):
     Tag_InterpreterFrame = 0x1
     Tag_BaselineFrame = 0x2
     Tag_RematerializedFrame = 0x3
-    TagMask = 0x3
+    Tag_WasmDebugFrame = 0x4
+    TagMask = 0x7
 
     def __init__(self, value, cache):
         self.value = value
@@ -72,6 +81,9 @@ class AbstractFramePtr(object):
         if tag == AbstractFramePtr.Tag_RematerializedFrame:
             label = 'js::jit::RematerializedFrame'
             ptr = ptr.cast(self.itc.tRematerializedFrame.pointer())
+        if tag == AbstractFramePtr.Tag_WasmDebugFrame:
+            label = 'js::wasm::DebugFrame'
+            ptr = ptr.cast(self.itc.tDebugFrame.pointer())
         return 'AbstractFramePtr (({} *) {})'.format(label, ptr)
 
     # Provide the ptr_ field as a child, so it prints after the pretty string

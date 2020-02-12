@@ -4,17 +4,21 @@
   <meta charset="utf-8">
   <title>Test for Bug 341604</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <script type="application/javascript">
+
+function navigateAway() {
+  document.getElementById("anchor").click();
+}
+
 function doTest() {
-  // this should fail the first time, but work the second
   try {
+    // this should fail the first time, but work the second
     window.parent.ok_wrapper(true, "a document that was loaded, navigated to another document, had 'allow-same-origin' added and then was" +
       " navigated back should be same-origin with its parent");
-  } 
-  catch (e) {
-    sendMouseEvent({type:'click'}, 'anchor');
+  } catch (e) {
+    navigateAway();
   }
 }
 

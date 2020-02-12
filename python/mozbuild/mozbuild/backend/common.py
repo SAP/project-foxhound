@@ -2,11 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import itertools
 import json
 import os
+
+from collections import defaultdict
 
 import mozpack.path as mozpath
 
@@ -14,6 +16,7 @@ from mozbuild.backend.base import BuildBackend
 
 from mozbuild.frontend.context import (
     Context,
+    ObjDirPath,
     Path,
     RenamedSourcePath,
     VARIABLES,
@@ -22,20 +25,23 @@ from mozbuild.frontend.data import (
     BaseProgram,
     ChromeManifestEntry,
     ConfigFileSubstitution,
-    ExampleWebIDLInterface,
-    IPDLFile,
+    Exports,
     FinalTargetPreprocessedFiles,
     FinalTargetFiles,
-    GeneratedEventWebIDLFile,
-    GeneratedWebIDLFile,
-    PreprocessedTestWebIDLFile,
-    PreprocessedWebIDLFile,
+    GeneratedFile,
+    GeneratedSources,
+    GnProjectData,
+    HostLibrary,
+    HostGeneratedSources,
+    IPDLCollection,
+    LocalizedPreprocessedFiles,
+    LocalizedFiles,
     SharedLibrary,
-    TestManifest,
-    TestWebIDLFile,
+    StaticLibrary,
     UnifiedSources,
-    XPIDLFile,
-    WebIDLFile,
+    XPIDLModule,
+    XPCOMComponentManifests,
+    WebIDLCollection,
 )
 from mozbuild.jar import (
     DeprecatedJarManifest,
@@ -44,172 +50,55 @@ from mozbuild.jar import (
 from mozbuild.preprocessor import Preprocessor
 from mozpack.chrome.manifest import parse_manifest_line
 
-from collections import defaultdict
+from mozbuild.util import (
+    mkdir,
+)
 
-from mozbuild.util import group_unified_files
 
 class XPIDLManager(object):
     """Helps manage XPCOM IDLs in the context of the build system."""
+
+    class Module(object):
+        def __init__(self):
+            self.idl_files = set()
+            self.directories = set()
+            self._stems = set()
+
+        def add_idls(self, idls):
+            self.idl_files.update(idl.full_path for idl in idls)
+            self.directories.update(mozpath.dirname(idl.full_path)
+                                    for idl in idls)
+            self._stems.update(mozpath.splitext(mozpath.basename(idl))[0]
+                               for idl in idls)
+
+        def stems(self):
+            return iter(self._stems)
+
     def __init__(self, config):
         self.config = config
         self.topsrcdir = config.topsrcdir
         self.topobjdir = config.topobjdir
 
-        self.idls = {}
-        self.modules = {}
-        self.interface_manifests = {}
-        self.chrome_manifests = set()
+        self._idls = set()
+        self.modules = defaultdict(self.Module)
 
-    def register_idl(self, idl, allow_existing=False):
-        """Registers an IDL file with this instance.
+    def link_module(self, module):
+        """Links an XPIDL module with with this instance."""
+        for idl in module.idl_files:
+            basename = mozpath.basename(idl.full_path)
 
-        The IDL file will be built, installed, etc.
+            if basename in self._idls:
+                raise Exception('IDL already registered: %s' % basename)
+            self._idls.add(basename)
+
+        self.modules[module.name].add_idls(module.idl_files)
+
+    def idl_stems(self):
+        """Return an iterator of stems of the managed IDL files.
+
+        The stem of an IDL file is the basename of the file with no .idl extension.
         """
-        basename = mozpath.basename(idl.source_path)
-        root = mozpath.splitext(basename)[0]
-        xpt = '%s.xpt' % idl.module
-        manifest = mozpath.join(idl.install_target, 'components', 'interfaces.manifest')
-        chrome_manifest = mozpath.join(idl.install_target, 'chrome.manifest')
-
-        entry = {
-            'source': idl.source_path,
-            'module': idl.module,
-            'basename': basename,
-            'root': root,
-            'manifest': manifest,
-        }
-
-        if not allow_existing and entry['basename'] in self.idls:
-            raise Exception('IDL already registered: %s' % entry['basename'])
-
-        self.idls[entry['basename']] = entry
-        t = self.modules.setdefault(entry['module'], (idl.install_target, set()))
-        t[1].add(entry['root'])
-
-        if idl.add_to_manifest:
-            self.interface_manifests.setdefault(manifest, set()).add(xpt)
-            self.chrome_manifests.add(chrome_manifest)
-
-
-class WebIDLCollection(object):
-    """Collects WebIDL info referenced during the build."""
-
-    def __init__(self):
-        self.sources = set()
-        self.generated_sources = set()
-        self.generated_events_sources = set()
-        self.preprocessed_sources = set()
-        self.test_sources = set()
-        self.preprocessed_test_sources = set()
-        self.example_interfaces = set()
-
-    def all_regular_sources(self):
-        return self.sources | self.generated_sources | \
-            self.generated_events_sources | self.preprocessed_sources
-
-    def all_regular_basenames(self):
-        return [os.path.basename(source) for source in self.all_regular_sources()]
-
-    def all_regular_stems(self):
-        return [os.path.splitext(b)[0] for b in self.all_regular_basenames()]
-
-    def all_regular_bindinggen_stems(self):
-        for stem in self.all_regular_stems():
-            yield '%sBinding' % stem
-
-        for source in self.generated_events_sources:
-            yield os.path.splitext(os.path.basename(source))[0]
-
-    def all_regular_cpp_basenames(self):
-        for stem in self.all_regular_bindinggen_stems():
-            yield '%s.cpp' % stem
-
-    def all_test_sources(self):
-        return self.test_sources | self.preprocessed_test_sources
-
-    def all_test_basenames(self):
-        return [os.path.basename(source) for source in self.all_test_sources()]
-
-    def all_test_stems(self):
-        return [os.path.splitext(b)[0] for b in self.all_test_basenames()]
-
-    def all_test_cpp_basenames(self):
-        return ['%sBinding.cpp' % s for s in self.all_test_stems()]
-
-    def all_static_sources(self):
-        return self.sources | self.generated_events_sources | \
-            self.test_sources
-
-    def all_non_static_sources(self):
-        return self.generated_sources | self.all_preprocessed_sources()
-
-    def all_non_static_basenames(self):
-        return [os.path.basename(s) for s in self.all_non_static_sources()]
-
-    def all_preprocessed_sources(self):
-        return self.preprocessed_sources | self.preprocessed_test_sources
-
-    def all_sources(self):
-        return set(self.all_regular_sources()) | set(self.all_test_sources())
-
-    def all_basenames(self):
-        return [os.path.basename(source) for source in self.all_sources()]
-
-    def all_stems(self):
-        return [os.path.splitext(b)[0] for b in self.all_basenames()]
-
-    def generated_events_basenames(self):
-        return [os.path.basename(s) for s in self.generated_events_sources]
-
-    def generated_events_stems(self):
-        return [os.path.splitext(b)[0] for b in self.generated_events_basenames()]
-
-
-class TestManager(object):
-    """Helps hold state related to tests."""
-
-    def __init__(self, config):
-        self.config = config
-        self.topsrcdir = mozpath.normpath(config.topsrcdir)
-
-        self.tests_by_path = defaultdict(list)
-        self.installs_by_path = defaultdict(list)
-        self.deferred_installs = set()
-        self.manifest_default_support_files = {}
-
-    def add(self, t, flavor, topsrcdir, default_supp_files):
-        t = dict(t)
-        t['flavor'] = flavor
-
-        path = mozpath.normpath(t['path'])
-        assert mozpath.basedir(path, [topsrcdir])
-
-        key = path[len(topsrcdir)+1:]
-        t['file_relpath'] = key
-        t['dir_relpath'] = mozpath.dirname(key)
-
-        # Support files are propagated from the default section to individual
-        # tests by the manifest parser, but we end up storing a lot of
-        # redundant data due to the huge number of support files.
-        # So if we have support files that are the same as the manifest default
-        # we track that separately, per-manifest instead of per-test, to save
-        # space.
-        supp_files = t.get('support-files')
-        if supp_files and supp_files == default_supp_files:
-            self.manifest_default_support_files[t['manifest']] = default_supp_files
-            del t['support-files']
-
-        self.tests_by_path[key].append(t)
-
-    def add_installs(self, obj, topsrcdir):
-        for src, (dest, _) in obj.installs.iteritems():
-            key = src[len(topsrcdir)+1:]
-            self.installs_by_path[key].append((src, dest))
-        for src, pat, dest in obj.pattern_installs:
-            key = mozpath.join(src[len(topsrcdir)+1:], pat)
-            self.installs_by_path[key].append((src, pat, dest))
-        for path in obj.deferred_installs:
-            self.deferred_installs.add(path[2:])
+        return itertools.chain(*[m.stems() for m in self.modules.itervalues()])
 
 
 class BinariesCollection(object):
@@ -225,25 +114,17 @@ class CommonBackend(BuildBackend):
 
     def _init(self):
         self._idl_manager = XPIDLManager(self.environment)
-        self._test_manager = TestManager(self.environment)
-        self._webidls = WebIDLCollection()
         self._binaries = BinariesCollection()
         self._configs = set()
-        self._ipdl_sources = set()
+        self._generated_sources = set()
 
     def consume_object(self, obj):
         self._configs.add(obj.config)
 
-        if isinstance(obj, TestManifest):
-            for test in obj.tests:
-                self._test_manager.add(test, obj.flavor, obj.topsrcdir,
-                                       obj.default_support_files)
-            self._test_manager.add_installs(obj, obj.topsrcdir)
-
-        elif isinstance(obj, XPIDLFile):
+        if isinstance(obj, XPIDLModule):
             # TODO bug 1240134 tracks not processing XPIDL files during
             # artifact builds.
-            self._idl_manager.register_idl(obj)
+            self._idl_manager.link_module(obj)
 
         elif isinstance(obj, ConfigFileSubstitution):
             # Do not handle ConfigFileSubstitution for Makefiles. Leave that
@@ -254,67 +135,22 @@ class CommonBackend(BuildBackend):
                 pp.do_include(obj.input_path)
             self.backend_input_files.add(obj.input_path)
 
-        # We should consider aggregating WebIDL types in emitter.py.
-        elif isinstance(obj, WebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
+        elif isinstance(obj, WebIDLCollection):
+            self._handle_webidl_collection(obj)
 
-            self._webidls.sources.add(mozpath.join(obj.srcdir, obj.basename))
+        elif isinstance(obj, IPDLCollection):
+            self._handle_generated_sources(mozpath.join(obj.objdir, f)
+                                           for f in obj.all_generated_sources())
+            self._write_unified_files(obj.unified_source_mapping, obj.objdir,
+                                      poison_windows_h=False)
+            self._handle_ipdl_sources(obj.objdir,
+                                      list(sorted(obj.all_sources())),
+                                      list(sorted(obj.all_preprocessed_sources())),
+                                      list(sorted(obj.all_regular_sources())),
+                                      obj.unified_source_mapping)
 
-        elif isinstance(obj, GeneratedEventWebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.generated_events_sources.add(mozpath.join(
-                obj.srcdir, obj.basename))
-
-        elif isinstance(obj, TestWebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.test_sources.add(mozpath.join(obj.srcdir,
-                obj.basename))
-
-        elif isinstance(obj, PreprocessedTestWebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.preprocessed_test_sources.add(mozpath.join(
-                obj.srcdir, obj.basename))
-
-        elif isinstance(obj, GeneratedWebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.generated_sources.add(mozpath.join(obj.srcdir,
-                obj.basename))
-
-        elif isinstance(obj, PreprocessedWebIDLFile):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.preprocessed_sources.add(mozpath.join(
-                obj.srcdir, obj.basename))
-
-        elif isinstance(obj, ExampleWebIDLInterface):
-            # WebIDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._webidls.example_interfaces.add(obj.name)
-
-        elif isinstance(obj, IPDLFile):
-            # IPDL isn't relevant to artifact builds.
-            if self.environment.is_artifact_build:
-                return True
-
-            self._ipdl_sources.add(mozpath.join(obj.srcdir, obj.basename))
+        elif isinstance(obj, XPCOMComponentManifests):
+            self._handle_xpcom_collection(obj)
 
         elif isinstance(obj, UnifiedSources):
             # Unified sources aren't relevant to artifact builds.
@@ -334,60 +170,46 @@ class CommonBackend(BuildBackend):
             self._binaries.shared_libraries.append(obj)
             return False
 
+        elif isinstance(obj, (GeneratedSources, HostGeneratedSources)):
+            self._handle_generated_sources(obj.files)
+            return False
+
+        elif isinstance(obj, GeneratedFile):
+            if obj.required_during_compile or obj.required_before_compile:
+                for f in itertools.chain(obj.required_before_compile,
+                                         obj.required_during_compile):
+                    fullpath = ObjDirPath(obj._context, '!' + f).full_path
+                    self._handle_generated_sources([fullpath])
+            return False
+
+        elif isinstance(obj, Exports):
+            objdir_files = [f.full_path for path, files in obj.files.walk()
+                            for f in files if isinstance(f, ObjDirPath)]
+            if objdir_files:
+                self._handle_generated_sources(objdir_files)
+            return False
+
+        elif isinstance(obj, GnProjectData):
+            # These are only handled by special purpose build backends,
+            # ignore them here.
+            return True
+
         else:
             return False
 
         return True
 
     def consume_finished(self):
-        if len(self._idl_manager.idls):
+        if len(self._idl_manager.modules):
+            self._write_rust_xpidl_summary(self._idl_manager)
             self._handle_idl_manager(self._idl_manager)
-
-        self._handle_webidl_collection(self._webidls)
-
-        sorted_ipdl_sources = list(sorted(self._ipdl_sources))
-
-        def files_from(ipdl):
-            base = mozpath.basename(ipdl)
-            root, ext = mozpath.splitext(base)
-
-            # Both .ipdl and .ipdlh become .cpp files
-            files = ['%s.cpp' % root]
-            if ext == '.ipdl':
-                # .ipdl also becomes Child/Parent.cpp files
-                files.extend(['%sChild.cpp' % root,
-                              '%sParent.cpp' % root])
-            return files
-
-        ipdl_dir = mozpath.join(self.environment.topobjdir, 'ipc', 'ipdl')
-
-        ipdl_cppsrcs = list(itertools.chain(*[files_from(p) for p in sorted_ipdl_sources]))
-        unified_source_mapping = list(group_unified_files(ipdl_cppsrcs,
-                                                          unified_prefix='UnifiedProtocols',
-                                                          unified_suffix='cpp',
-                                                          files_per_unified_file=16))
-
-        self._write_unified_files(unified_source_mapping, ipdl_dir, poison_windows_h=False)
-        self._handle_ipdl_sources(ipdl_dir, sorted_ipdl_sources, unified_source_mapping)
+            self._handle_xpidl_sources()
 
         for config in self._configs:
             self.backend_input_files.add(config.source)
 
-        # Write out a machine-readable file describing every test.
-        topobjdir = self.environment.topobjdir
-        with self._write_file(mozpath.join(topobjdir, 'all-tests.json')) as fh:
-            json.dump([self._test_manager.tests_by_path,
-                       self._test_manager.manifest_default_support_files], fh)
-
-        path = mozpath.join(self.environment.topobjdir, 'test-installs.json')
-        with self._write_file(path) as fh:
-            json.dump({k: v for k, v in self._test_manager.installs_by_path.items()
-                       if k in self._test_manager.deferred_installs},
-                      fh,
-                      sort_keys=True,
-                      indent=4)
-
         # Write out a machine-readable file describing binaries.
+        topobjdir = self.environment.topobjdir
         with self._write_file(mozpath.join(topobjdir, 'binaries.json')) as fh:
             d = {
                 'shared_libraries': [s.to_dict() for s in self._binaries.shared_libraries],
@@ -395,9 +217,131 @@ class CommonBackend(BuildBackend):
             }
             json.dump(d, fh, sort_keys=True, indent=4)
 
+        # Write out a file listing generated sources.
+        with self._write_file(mozpath.join(topobjdir, 'generated-sources.json')) as fh:
+            d = {
+                'sources': sorted(self._generated_sources),
+            }
+            json.dump(d, fh, sort_keys=True, indent=4)
+
+    def _expand_libs(self, input_bin):
+        os_libs = []
+        shared_libs = []
+        static_libs = []
+        objs = []
+        no_pgo_objs = []
+
+        seen_objs = set()
+        seen_libs = set()
+
+        def add_objs(lib):
+            for o in lib.objs:
+                if o in seen_objs:
+                    continue
+
+                seen_objs.add(o)
+                objs.append(o)
+                # This is slightly odd, but for consistency with the
+                # recursivemake backend we don't replace OBJ_SUFFIX if any
+                # object in a library has `no_pgo` set.
+                if lib.no_pgo_objs or lib.no_pgo:
+                    no_pgo_objs.append(o)
+
+        def expand(lib, recurse_objs, system_libs):
+            if isinstance(lib, (HostLibrary, StaticLibrary)):
+                if lib.no_expand_lib:
+                    static_libs.append(lib)
+                    recurse_objs = False
+                elif recurse_objs:
+                    add_objs(lib)
+
+                for l in lib.linked_libraries:
+                    expand(l, recurse_objs, system_libs)
+
+                if system_libs:
+                    for l in lib.linked_system_libs:
+                        if l not in seen_libs:
+                            seen_libs.add(l)
+                            os_libs.append(l)
+
+            elif isinstance(lib, SharedLibrary):
+                if lib not in seen_libs:
+                    seen_libs.add(lib)
+                    shared_libs.append(lib)
+
+        add_objs(input_bin)
+
+        system_libs = not isinstance(input_bin, (HostLibrary, StaticLibrary))
+        for lib in input_bin.linked_libraries:
+            if isinstance(lib, (HostLibrary, StaticLibrary)):
+                expand(lib, True, system_libs)
+            elif isinstance(lib, SharedLibrary):
+                if lib not in seen_libs:
+                    seen_libs.add(lib)
+                    shared_libs.append(lib)
+
+        for lib in input_bin.linked_system_libs:
+            if lib not in seen_libs:
+                seen_libs.add(lib)
+                os_libs.append(lib)
+
+        return (objs, no_pgo_objs, shared_libs, os_libs, static_libs)
+
+    def _make_list_file(self, kind, objdir, objs, name):
+        if not objs:
+            return None
+        if kind == 'target':
+            list_style = self.environment.substs.get('EXPAND_LIBS_LIST_STYLE')
+        else:
+            # The host compiler is not necessarily the same kind as the target
+            # compiler, so we can't be sure EXPAND_LIBS_LIST_STYLE is the right
+            # style to use ; however, all compilers support the `list` type, so
+            # use that. That doesn't cause any practical problem because where
+            # it really matters to use something else than `list` is when
+            # linking tons of objects (because of command line argument limits),
+            # which only really happens for libxul.
+            list_style = 'list'
+        list_file_path = mozpath.join(objdir, name)
+        objs = [os.path.relpath(o, objdir) for o in objs]
+        if list_style == 'linkerscript':
+            ref = list_file_path
+            content = '\n'.join('INPUT("%s")' % o for o in objs)
+        elif list_style == 'filelist':
+            ref = "-Wl,-filelist," + list_file_path
+            content = '\n'.join(objs)
+        elif list_style == 'list':
+            ref = "@" + list_file_path
+            content = '\n'.join(objs)
+        else:
+            return None
+
+        mkdir(objdir)
+        with self._write_file(list_file_path) as fh:
+            fh.write(content)
+
+        return ref
+
+    def _handle_generated_sources(self, files):
+        self._generated_sources.update(mozpath.relpath(
+            f, self.environment.topobjdir) for f in files)
+
+    def _handle_xpidl_sources(self):
+        bindings_rt_dir = mozpath.join(self.environment.topobjdir, 'dist', 'xpcrs', 'rt')
+        bindings_bt_dir = mozpath.join(self.environment.topobjdir, 'dist', 'xpcrs', 'bt')
+        include_dir = mozpath.join(self.environment.topobjdir, 'dist', 'include')
+
+        self._handle_generated_sources(
+            itertools.chain.from_iterable(
+                (
+                    mozpath.join(include_dir, '%s.h' % stem),
+                    mozpath.join(bindings_rt_dir, '%s.rs' % stem),
+                    mozpath.join(bindings_bt_dir, '%s.rs' % stem),
+                )
+                for stem in self._idl_manager.idl_stems()
+            )
+        )
+
     def _handle_webidl_collection(self, webidls):
-        if not webidls.all_stems():
-            return
 
         bindings_dir = mozpath.join(self.environment.topobjdir, 'dom', 'bindings')
 
@@ -428,20 +372,27 @@ class CommonBackend(BuildBackend):
             self.environment.topobjdir,
             mozpath.join(self.environment.topobjdir, 'dist')
         )
-
-        # Bindings are compiled in unified mode to speed up compilation and
-        # to reduce linker memory size. Note that test bindings are separated
-        # from regular ones so tests bindings aren't shipped.
-        unified_source_mapping = list(group_unified_files(webidls.all_regular_cpp_basenames(),
-                                                          unified_prefix='UnifiedBindings',
-                                                          unified_suffix='cpp',
-                                                          files_per_unified_file=32))
-        self._write_unified_files(unified_source_mapping, bindings_dir,
+        self._handle_generated_sources(manager.expected_build_output_files())
+        self._write_unified_files(webidls.unified_source_mapping, bindings_dir,
                                   poison_windows_h=True)
-        self._handle_webidl_build(bindings_dir, unified_source_mapping,
+        self._handle_webidl_build(bindings_dir, webidls.unified_source_mapping,
                                   webidls,
                                   manager.expected_build_output_files(),
                                   manager.GLOBAL_DEFINE_FILES)
+
+    def _handle_xpcom_collection(self, manifests):
+        components_dir = mozpath.join(manifests.topobjdir,
+                                      'xpcom', 'components')
+
+        # The code generators read their configuration from this file, so it
+        # needs to be written early.
+        o = dict(
+            manifests=sorted(manifests.all_sources()),
+        )
+
+        conf_file = mozpath.join(components_dir, 'manifest-lists.json')
+        with self._write_file(conf_file) as fh:
+            json.dump(o, fh, sort_keys=True, indent=2)
 
     def _write_unified_file(self, unified_file, source_filenames,
                             output_directory, poison_windows_h=False):
@@ -451,8 +402,9 @@ class CommonBackend(BuildBackend):
             if poison_windows_h:
                 includeTemplate += (
                     '\n'
-                    '#ifdef _WINDOWS_\n'
-                    '#error "%(cppfile)s included windows.h"\n'
+                    '#if defined(_WINDOWS_) && !defined(MOZ_WRAPPED_WINDOWS_H)\n'
+                    '#pragma message("wrapper failure reason: " MOZ_WINDOWS_WRAPPER_DISABLED_REASON)\n'  # noqa
+                    '#error "%(cppfile)s included unwrapped windows.h"\n'
                     "#endif")
             includeTemplate += (
                 '\n'
@@ -466,7 +418,7 @@ class CommonBackend(BuildBackend):
                 'so it cannot be built in unified mode."\n'
                 '#undef INITGUID\n'
                 '#endif')
-            f.write('\n'.join(includeTemplate % { "cppfile": s } for
+            f.write('\n'.join(includeTemplate % {"cppfile": s} for
                               s in source_filenames))
 
     def _write_unified_files(self, unified_source_mapping, output_directory,
@@ -475,6 +427,27 @@ class CommonBackend(BuildBackend):
             self._write_unified_file(unified_file, source_filenames,
                                      output_directory, poison_windows_h)
 
+    def localized_path(self, relativesrcdir, filename):
+        '''Return the localized path for a file.
+
+        Given ``relativesrcdir``, a path relative to the topsrcdir, return a path to ``filename``
+        from the current locale as specified by ``MOZ_UI_LOCALE``, using ``L10NBASEDIR`` as the
+        parent directory for non-en-US locales.
+        '''
+        ab_cd = self.environment.substs['MOZ_UI_LOCALE'][0]
+        l10nbase = mozpath.join(self.environment.substs['L10NBASEDIR'], ab_cd)
+        # Filenames from LOCALIZED_FILES will start with en-US/.
+        if filename.startswith('en-US/'):
+            e, filename = filename.split('en-US/')
+            assert(not e)
+        if ab_cd == 'en-US':
+            return mozpath.join(self.environment.topsrcdir, relativesrcdir, 'en-US', filename)
+        if mozpath.basename(relativesrcdir) == 'locales':
+            l10nrelsrcdir = mozpath.dirname(relativesrcdir)
+        else:
+            l10nrelsrcdir = relativesrcdir
+        return mozpath.join(l10nbase, l10nrelsrcdir, filename)
+
     def _consume_jar_manifest(self, obj):
         # Ideally, this would all be handled somehow in the emitter, but
         # this would require all the magic surrounding l10n and addons in
@@ -482,16 +455,15 @@ class CommonBackend(BuildBackend):
         # any time soon enough.
         # Notably missing:
         # - DEFINES from config/config.mk
-        # - L10n support
         # - The equivalent of -e when USE_EXTENSION_MANIFEST is set in
         #   moz.build, but it doesn't matter in dist/bin.
         pp = Preprocessor()
         if obj.defines:
             pp.context.update(obj.defines.defines)
         pp.context.update(self.environment.defines)
+        ab_cd = obj.config.substs['MOZ_UI_LOCALE'][0]
         pp.context.update(
-            AB_CD='en-US',
-            BUILD_FASTER=1,
+            AB_CD=ab_cd,
         )
         pp.out = JarManifestParser()
         try:
@@ -516,6 +488,8 @@ class CommonBackend(BuildBackend):
                 jar_context['DEFINES'] = obj.defines.defines
             files = jar_context['FINAL_TARGET_FILES']
             files_pp = jar_context['FINAL_TARGET_PP_FILES']
+            localized_files = jar_context['LOCALIZED_FILES']
+            localized_files_pp = jar_context['LOCALIZED_PP_FILES']
 
             for e in jarinfo.entries:
                 if e.is_locale:
@@ -532,7 +506,7 @@ class CommonBackend(BuildBackend):
                 if '*' not in e.source and not os.path.exists(src.full_path):
                     if e.is_locale:
                         raise Exception(
-                            '%s: Cannot find %s' % (obj.path, e.source))
+                            '%s: Cannot find %s (tried %s)' % (obj.path, e.source, src.full_path))
                     if e.source.startswith('/'):
                         src = Path(jar_context, '!' + e.source)
                     else:
@@ -552,15 +526,26 @@ class CommonBackend(BuildBackend):
                     if '*' in e.source:
                         raise Exception('%s: Wildcards are not supported with '
                                         'preprocessing' % obj.path)
-                    files_pp[path] += [src]
+                    if e.is_locale:
+                        localized_files_pp[path] += [src]
+                    else:
+                        files_pp[path] += [src]
                 else:
-                    files[path] += [src]
+                    if e.is_locale:
+                        localized_files[path] += [src]
+                    else:
+                        files[path] += [src]
 
             if files:
                 self.consume_object(FinalTargetFiles(jar_context, files))
             if files_pp:
                 self.consume_object(
                     FinalTargetPreprocessedFiles(jar_context, files_pp))
+            if localized_files:
+                self.consume_object(LocalizedFiles(jar_context, localized_files))
+            if localized_files_pp:
+                self.consume_object(
+                    LocalizedPreprocessedFiles(jar_context, localized_files_pp))
 
             for m in jarinfo.chrome_manifests:
                 entry = parse_manifest_line(
@@ -568,3 +553,26 @@ class CommonBackend(BuildBackend):
                     m.replace('%', mozpath.basename(jarinfo.name) + '/'))
                 self.consume_object(ChromeManifestEntry(
                     jar_context, '%s.manifest' % jarinfo.name, entry))
+
+    def _write_rust_xpidl_summary(self, manager):
+        """Write out a rust file which includes the generated xpcom rust modules"""
+        topobjdir = self.environment.topobjdir
+
+        include_tmpl = "include!(concat!(env!(\"MOZ_TOPOBJDIR\"), \"/dist/xpcrs/%s/%s.rs\"))"
+
+        # Ensure deterministic output files.
+        stems = sorted(manager.idl_stems())
+
+        with self._write_file(mozpath.join(topobjdir, 'dist', 'xpcrs', 'rt', 'all.rs')) as fh:
+            fh.write("// THIS FILE IS GENERATED - DO NOT EDIT\n\n")
+            for stem in stems:
+                fh.write(include_tmpl % ("rt", stem))
+                fh.write(";\n")
+
+        with self._write_file(mozpath.join(topobjdir, 'dist', 'xpcrs', 'bt', 'all.rs')) as fh:
+            fh.write("// THIS FILE IS GENERATED - DO NOT EDIT\n\n")
+            fh.write("&[\n")
+            for stem in stems:
+                fh.write(include_tmpl % ("bt", stem))
+                fh.write(",\n")
+            fh.write("]\n")

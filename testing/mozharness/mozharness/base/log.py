@@ -24,10 +24,13 @@ TODO:
 - log rotation config
 """
 
+from __future__ import print_function
+
 from datetime import datetime
 import logging
 import os
 import sys
+import time
 import traceback
 
 # Define our own FATAL_LEVEL
@@ -50,6 +53,9 @@ LOG_LEVELS = {
 
 # mozharness root logger
 ROOT_LOGGER = logging.getLogger()
+
+# Force logging to use UTC timestamps
+logging.Formatter.converter = time.gmtime
 
 
 # LogMixin {{{1
@@ -91,9 +97,9 @@ class LogMixin(object):
         """
         if not hasattr(self, 'config') or self.config.get('log_to_console', True):
             if stderr:
-                print >> sys.stderr, message
+                print(message, file=sys.stderr)
             else:
-                print message
+                print(message)
 
     def log(self, message, level=INFO, exit_code=-1):
         """ log the message passed to it according to level, exit if level == FATAL
@@ -263,7 +269,7 @@ class OutputParser(LogMixin):
     pre-context-line setting in error_list.)
     """
 
-    def __init__(self, config=None, log_obj=None, error_list=None, log_output=True):
+    def __init__(self, config=None, log_obj=None, error_list=None, log_output=True, **kwargs):
         """Initialization method for the OutputParser class
 
         Args:
@@ -296,6 +302,10 @@ class OutputParser(LogMixin):
 
         Args:
             line (str): command line output to parse.
+
+        Returns:
+            If the line hits a match in the error_list, the new log level the line was
+            (or should be) logged at is returned. Otherwise, returns None.
         """
         for error_check in self.error_list:
             # TODO buffer for context_lines.
@@ -325,10 +335,10 @@ class OutputParser(LogMixin):
                     self.num_warnings += 1
                 self.worst_log_level = self.worst_level(log_level,
                                                         self.worst_log_level)
-                break
-        else:
-            if self.log_output:
-                self.info(' %s' % line)
+                return log_level
+
+        if self.log_output:
+            self.info(' %s' % line)
 
     def add_lines(self, output):
         """ process a string or list of strings, decode them to utf-8,strip
@@ -442,7 +452,7 @@ class BaseLogger(object):
         if not name:
             name = self.__class__.__name__
         self.log_message("%s online at %s in %s" %
-                         (name, datetime.now().strftime("%Y%m%d %H:%M:%S"),
+                         (name, datetime.utcnow().strftime("%Y%m%d %H:%M:%SZ"),
                           os.getcwd()))
 
     def get_logger_level(self, level=None):
@@ -675,6 +685,44 @@ class MultiFileLogger(BaseLogger):
                                       log_level=level)
 
 
+# ConsoleLogger {{{1
+class ConsoleLogger(BaseLogger):
+    """Subclass of the BaseLogger.
+
+    Output logs to stderr.
+    """
+
+    def __init__(self,
+                 log_format='%(levelname)8s - %(message)s',
+                 log_date_format='%H:%M:%S',
+                 logger_name='Console', **kwargs):
+        """ ConsoleLogger constructor. Calls its superclass constructor,
+        creates a new logger instance and log an init message.
+
+        Args:
+            log_format (str, optional): message format string to instantiate a
+                                       `logging.Formatter`. Defaults to
+                                       '%(levelname)8s - %(message)s'
+            **kwargs: Arbitrary keyword arguments passed to the BaseLogger
+                      constructor
+        """
+
+        BaseLogger.__init__(self, logger_name=logger_name,
+                            log_format=log_format, **kwargs)
+        self.new_logger()
+        self.init_message()
+
+    def new_logger(self):
+        """ Create a new logger based on the ROOT_LOGGER instance. By default
+        there are no handlers.  The new logger becomes a member variable of the
+        current instance as `self.logger`.
+        """
+        self.logger = ROOT_LOGGER
+        self.logger.setLevel(self.get_logger_level())
+        self._clear_handlers()
+        self.add_console_handler()
+
+
 def numeric_log_level(level):
     """Converts a mozharness log level (string) to the corresponding logger
     level (number). This function makes possible to set the log level
@@ -687,6 +735,7 @@ def numeric_log_level(level):
         int: numeric value of the log level name.
     """
     return LOG_LEVELS[level]
+
 
 # __main__ {{{1
 if __name__ == '__main__':

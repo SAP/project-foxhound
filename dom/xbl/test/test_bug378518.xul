@@ -7,13 +7,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378518
 <window title="Mozilla Bug 378518"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
     
-  <script type="application/javascript"
-    src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <bindings xmlns="http://www.mozilla.org/xbl"
     xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-      <binding id="mybinding" extends="xul:checkbox">
+      <binding id="mybinding">
           <content>
           </content>
       </binding>
@@ -45,16 +44,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378518
   <!-- test code goes here -->
   <script type="application/javascript"> <![CDATA[
 
-    SimpleTest.expectAssertions(1);
-
     var myBoxClicked = false;
     var myCheckBoxClicked = false;
     var myExtendedBoxClicked = false;
 
     function testClick(elemName) {
-      var wu  =
-        window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-              .getInterface(Components.interfaces.nsIDOMWindowUtils);
+      var wu = window.windowUtils;
 
       var a = document.getElementById(elemName).getBoundingClientRect();
       wu.sendMouseEvent('mousedown',  a.left + 1, a.top + 1, 0, 1, 0);

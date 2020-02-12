@@ -11,8 +11,9 @@
  * children of inside containers are sorted accordingly.
  */
 
-var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
-         getService(Ci.nsINavHistoryService);
+var hs = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
+  Ci.nsINavHistoryService
+);
 
 // Will be inserted in this order, so last one will be the newest visit.
 var pages = [
@@ -26,22 +27,14 @@ var pages = [
   "http://b.mozilla.org/8/",
 ];
 
-function run_test()
-{
-  run_next_test();
-}
-
-add_task(function* test_initialize()
-{
-  var noon = new Date();
-  noon.setHours(12);
-
+add_task(async function test_initialize() {
   // Add visits.
+  let now = new Date();
   for (let pageIndex = 0; pageIndex < pages.length; ++pageIndex) {
     let page = pages[pageIndex];
-    yield PlacesTestUtils.addVisits({
+    await PlacesTestUtils.addVisits({
       uri: uri(page),
-      visitDate: noon - (pages.length - pageIndex) * 1000
+      visitDate: new Date(now - (pages.length - pageIndex)),
     });
   }
 });
@@ -58,14 +51,16 @@ add_task(function() {
   var result = hs.executeQuery(query, options);
   var root = result.root;
   root.containerOpen = true;
-  var dayContainer = root.getChild(0).QueryInterface(Ci.nsINavHistoryContainerResultNode);
+  var dayContainer = root
+    .getChild(0)
+    .QueryInterface(Ci.nsINavHistoryContainerResultNode);
   dayContainer.containerOpen = true;
 
   var cc = dayContainer.childCount;
-  do_check_eq(cc, pages.length);
+  Assert.equal(cc, pages.length);
   for (var i = 0; i < cc; i++) {
     var node = dayContainer.getChild(i);
-    do_check_eq(pages[i], node.uri);
+    Assert.equal(pages[i], node.uri);
   }
 
   dayContainer.containerOpen = false;
@@ -84,14 +79,16 @@ add_task(function() {
   var result = hs.executeQuery(query, options);
   var root = result.root;
   root.containerOpen = true;
-  var dayContainer = root.getChild(0).QueryInterface(Ci.nsINavHistoryContainerResultNode);
+  var dayContainer = root
+    .getChild(0)
+    .QueryInterface(Ci.nsINavHistoryContainerResultNode);
   dayContainer.containerOpen = true;
 
   var cc = dayContainer.childCount;
-  do_check_eq(cc, pages.length);
+  Assert.equal(cc, pages.length);
   for (var i = 0; i < cc; i++) {
     var node = dayContainer.getChild(i);
-    do_check_eq(pages[pages.length - i - 1], node.uri);
+    Assert.equal(pages[pages.length - i - 1], node.uri);
   }
 
   dayContainer.containerOpen = false;
@@ -110,17 +107,21 @@ add_task(function() {
   var result = hs.executeQuery(query, options);
   var root = result.root;
   root.containerOpen = true;
-  var dayContainer = root.getChild(0).QueryInterface(Ci.nsINavHistoryContainerResultNode);
+  var dayContainer = root
+    .getChild(0)
+    .QueryInterface(Ci.nsINavHistoryContainerResultNode);
   dayContainer.containerOpen = true;
-  var siteContainer = dayContainer.getChild(0).QueryInterface(Ci.nsINavHistoryContainerResultNode);
-  do_check_eq(siteContainer.title, "a.mozilla.org");
+  var siteContainer = dayContainer
+    .getChild(0)
+    .QueryInterface(Ci.nsINavHistoryContainerResultNode);
+  Assert.equal(siteContainer.title, "a.mozilla.org");
   siteContainer.containerOpen = true;
 
   var cc = siteContainer.childCount;
-  do_check_eq(cc, pages.length / 2);
+  Assert.equal(cc, pages.length / 2);
   for (var i = 0; i < cc / 2; i++) {
     var node = siteContainer.getChild(i);
-    do_check_eq(pages[i], node.uri);
+    Assert.equal(pages[i], node.uri);
   }
 
   siteContainer.containerOpen = false;

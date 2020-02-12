@@ -8,6 +8,7 @@
 #ifndef SkPaintImageFilter_DEFINED
 #define SkPaintImageFilter_DEFINED
 
+#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkPaint.h"
 
@@ -22,27 +23,19 @@ public:
      *                not specified, the source primitive's bounds are used
      *                instead.
      */
-    static sk_sp<SkImageFilter> Make(const SkPaint& paint, const CropRect* cropRect = nullptr) {
-        return sk_sp<SkImageFilter>(new SkPaintImageFilter(paint, cropRect));
-    }
+    static sk_sp<SkImageFilter> Make(const SkPaint& paint, const CropRect* cropRect = nullptr);
 
     bool affectsTransparentBlack() const override;
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPaintImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(const SkPaint& paint, const CropRect* rect = nullptr) {
-        return Make(paint, rect).release();
-    }
-#endif
 
 protected:
     void flatten(SkWriteBuffer&) const override;
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
                                         SkIPoint* offset) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer* xformer) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkPaintImageFilter)
+
     SkPaintImageFilter(const SkPaint& paint, const CropRect* rect);
 
     SkPaint fPaint;

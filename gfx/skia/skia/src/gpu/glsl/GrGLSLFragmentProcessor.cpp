@@ -14,10 +14,6 @@
 void GrGLSLFragmentProcessor::setData(const GrGLSLProgramDataManager& pdman,
                                       const GrFragmentProcessor& processor) {
     this->onSetData(pdman, processor);
-    SkASSERT(fChildProcessors.count() == processor.numChildProcessors());
-    for (int i = 0; i < fChildProcessors.count(); ++i) {
-        fChildProcessors[i]->setData(pdman, processor.childProcessor(i));
-    }
 }
 
 void GrGLSLFragmentProcessor::emitChild(int childIndex, const char* inputColor, EmitArgs& args) {
@@ -26,11 +22,10 @@ void GrGLSLFragmentProcessor::emitChild(int childIndex, const char* inputColor, 
 
 void GrGLSLFragmentProcessor::emitChild(int childIndex, const char* inputColor,
                                         SkString* outputColor, EmitArgs& args) {
-
     SkASSERT(outputColor);
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     outputColor->append(fragBuilder->getMangleString());
-    fragBuilder->codeAppendf("vec4 %s;", outputColor->c_str());
+    fragBuilder->codeAppendf("half4 %s;", outputColor->c_str());
     this->internalEmitChild(childIndex, inputColor, outputColor->c_str(), args);
 }
 
@@ -40,69 +35,51 @@ void GrGLSLFragmentProcessor::internalEmitChild(int childIndex, const char* inpu
 
     fragBuilder->onBeforeChildProcEmitCode();  // call first so mangleString is updated
 
-    const GrFragmentProcessor& childProc = args.fFp.childProcessor(childIndex);
+    // Prepare a mangled input color variable if the default is not used,
+    // inputName remains the empty string if no variable is needed.
+    SkString inputName;
+    if (inputColor&& strcmp("half4(1.0)", inputColor) != 0 && strcmp("half4(1)", inputColor) != 0) {
+        // The input name is based off of the current mangle string, and
+        // since this is called after onBeforeChildProcEmitCode(), it will be
+        // unique to the child processor (exactly what we want for its input).
+        inputName.appendf("_childInput%s", fragBuilder->getMangleString().c_str());
+        fragBuilder->codeAppendf("half4 %s = %s;", inputName.c_str(), inputColor);
+    }
 
-    /*
-     * We now want to find the subset of coords and samplers that belong to the child and its
-     * descendants and put that into childCoords and childSamplers. To do so, we'll do a forwards
-     * linear search.
-     *
-     * Explanation:
-     * Each GrFragmentProcessor has a copy of all the transforms and textures of itself and
-     * all procs in its subtree. For example, suppose we have frag proc A, who has two children B
-     * and D. B has a child C, and D has two children E and F. Each frag proc's transforms array
-     * contains its own transforms, followed by the transforms of all its descendants (i.e. preorder
-     * traversal). Suppose procs A, B, C, D, E, F have 1, 2, 1, 1, 3, 2 transforms respectively.
-     *
-     *                                   (A)
-     *                        [a1,b1,b2,c1,d1,e1,e2,e3,f1,f2]
-     *                                  /    \
-     *                                /        \
-     *                            (B)           (D)
-     *                        [b1,b2,c1]   [d1,e1,e2,e3,f1,f2]
-     *                          /             /    \
-     *                        /             /        \
-     *                      (C)          (E)          (F)
-     *                     [c1]      [e1,e2,e3]      [f1,f2]
-     *
-     * So if we're inside proc A's emitCode, and A is about to call emitCode on proc D, we want the
-     * EmitArgs that's passed onto D to only contain its and its descendants' coords. The
-     * EmitArgs given to A would contain the transforms [a1,b1,b2,c1,d1,e1,e2,e3,f1,f2], and we want
-     * to extract the subset [d1,e1,e2,e3,f1,f2] to pass on to D. We can do this with a linear
-     * search since we know that A has 1 transform (using A.numTransformsExclChildren()), and B's
-     * subtree has 3 transforms (using B.numTransforms()), so we know the start of D's transforms is
-     * 4 after the start of A's transforms.
-     * Textures work the same way as transforms.
-     */
-    int firstCoordAt = args.fFp.numTransformsExclChildren();
-    int firstSamplerAt = args.fFp.numTexturesExclChildren();
-    for (int i = 0; i < childIndex; ++i) {
-        firstCoordAt += args.fFp.childProcessor(i).numTransforms();
-        firstSamplerAt += args.fFp.childProcessor(i).numTextures();
-    }
-    GrGLSLTransformedCoordsArray childCoords;
-    TextureSamplerArray childSamplers;
-    if (childProc.numTransforms() > 0) {
-        childCoords.push_back_n(childProc.numTransforms(), &args.fCoords[firstCoordAt]);
-    }
-    if (childProc.numTextures() > 0) {
-        childSamplers.push_back_n(childProc.numTextures(), &args.fSamplers[firstSamplerAt]);
-    }
+    const GrFragmentProcessor& childProc = args.fFp.childProcessor(childIndex);
 
     // emit the code for the child in its own scope
     fragBuilder->codeAppend("{\n");
     fragBuilder->codeAppendf("// Child Index %d (mangle: %s): %s\n", childIndex,
                              fragBuilder->getMangleString().c_str(), childProc.name());
+    TransformedCoordVars coordVars = args.fTransformedCoords.childInputs(childIndex);
+    TextureSamplers textureSamplers = args.fTexSamplers.childInputs(childIndex);
+
+    // EmitArgs properly updates inputColor to half4(1) if it was null
     EmitArgs childArgs(fragBuilder,
                        args.fUniformHandler,
-                       args.fGLSLCaps,
+                       args.fShaderCaps,
                        childProc,
                        outputColor,
-                       inputColor,
-                       childCoords,
-                       childSamplers);
+                       inputName.size() > 0 ? inputName.c_str() : nullptr,
+                       coordVars,
+                       textureSamplers);
     this->childProcessor(childIndex)->emitCode(childArgs);
     fragBuilder->codeAppend("}\n");
 
     fragBuilder->onAfterChildProcEmitCode();
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+GrGLSLFragmentProcessor* GrGLSLFragmentProcessor::Iter::next() {
+    if (fFPStack.empty()) {
+        return nullptr;
+    }
+    GrGLSLFragmentProcessor* back = fFPStack.back();
+    fFPStack.pop_back();
+    for (int i = back->numChildProcessors() - 1; i >= 0; --i) {
+        fFPStack.push_back(back->childProcessor(i));
+    }
+    return back;
 }

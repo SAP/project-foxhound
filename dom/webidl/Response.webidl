@@ -7,9 +7,15 @@
  * https://fetch.spec.whatwg.org/#response-class
  */
 
-[Constructor(optional BodyInit body, optional ResponseInit init),
- Exposed=(Window,Worker)]
+[Exposed=(Window,Worker)]
 interface Response {
+  // This should be constructor(optional BodyInit... but BodyInit doesn't
+  // include ReadableStream yet because we don't want to expose Streams API to
+  // Request.
+  [Throws]
+  constructor(optional (Blob or BufferSource or FormData or URLSearchParams or ReadableStream or USVString)? body = null,
+              optional ResponseInit init = {});
+
   [NewObject] static Response error();
   [Throws,
    NewObject] static Response redirect(USVString url, optional unsigned short status = 302);
@@ -21,18 +27,28 @@ interface Response {
   readonly attribute unsigned short status;
   readonly attribute boolean ok;
   readonly attribute ByteString statusText;
-  [SameObject] readonly attribute Headers headers;
+  [SameObject, BinaryName="headers_"] readonly attribute Headers headers;
 
   [Throws,
    NewObject] Response clone();
 
   [ChromeOnly, NewObject, Throws] Response cloneUnfiltered();
+
+  // For testing only.
+  [ChromeOnly] readonly attribute boolean hasCacheInfoChannel;
 };
-Response implements Body;
+Response includes Body;
+
+// This should be part of Body but we don't want to expose body to request yet.
+// See bug 1387483.
+partial interface Response {
+  [GetterThrows, Pref="javascript.options.streams"]
+  readonly attribute ReadableStream? body;
+};
 
 dictionary ResponseInit {
   unsigned short status = 200;
-  ByteString statusText = "OK";
+  ByteString statusText = "";
   HeadersInit headers;
 };
 

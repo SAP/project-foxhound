@@ -1,8 +1,7 @@
 // This file ensures that suspending a channel directly after opening it
 // suspends future notifications correctly.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -15,15 +14,12 @@ var listener = {
   _lastEvent: 0,
   _gotData: false,
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
-      return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([
+    "nsIStreamListener",
+    "nsIRequestObserver",
+  ]),
 
-  onStartRequest: function(request, ctx) {
+  onStartRequest(request) {
     this._lastEvent = Date.now();
     request.QueryInterface(Ci.nsIRequest);
 
@@ -31,12 +27,16 @@ var listener = {
     // works correctly
     request.suspend();
     request.suspend();
-    do_timeout(RESUME_DELAY, function() { request.resume(); });
-    do_timeout(RESUME_DELAY + 1000, function() { request.resume(); });
+    do_timeout(RESUME_DELAY, function() {
+      request.resume();
+    });
+    do_timeout(RESUME_DELAY + 1000, function() {
+      request.resume();
+    });
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
-    do_check_true(Date.now() - this._lastEvent >= MIN_TIME_DIFFERENCE);
+  onDataAvailable(request, stream, offset, count) {
+    Assert.ok(Date.now() - this._lastEvent >= MIN_TIME_DIFFERENCE);
     read_stream(stream, count);
 
     // Ensure that suspending and resuming inside a callback works correctly
@@ -48,15 +48,17 @@ var listener = {
     this._gotData = true;
   },
 
-  onStopRequest: function(request, ctx, status) {
-    do_check_true(this._gotData);
+  onStopRequest(request, status) {
+    Assert.ok(this._gotData);
     httpserv.stop(do_test_finished);
-  }
+  },
 };
 
 function makeChan(url) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true})
-                .QueryInterface(Ci.nsIHttpChannel);
+  return NetUtil.newChannel({
+    uri: url,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
 }
 
 var httpserv = null;
@@ -68,7 +70,7 @@ function run_test() {
 
   var chan = makeChan(URL + "/woo");
   chan.QueryInterface(Ci.nsIRequest);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 
   do_test_pending();
 }

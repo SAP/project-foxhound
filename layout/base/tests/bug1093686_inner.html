@@ -2,8 +2,8 @@
 <html id="html" style="height:100%">
 <head>
   <title>Testing effect of listener on body</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
   .target { position:absolute; left:200px; top:200px; width:200px; height:200px; background:blue; }
@@ -11,7 +11,6 @@
 </head>
 <body id="body" onload="setTimeout(runTest, 0)" style="margin:0; width:100%; height:100%; overflow:hidden">
 <div id="content">
-  <div id="ruler" style="position:absolute; left:0; top:0; width:1mozmm; height:0;"></div>
   <div class="target" id="t"></div>
 </div>
 <pre id="test">
@@ -22,7 +21,7 @@ window.onmousedown = function(event) { eventTarget = event.target; };
 // Make sure the target div is "clickable" by adding a click listener on it.
 document.getElementById('t').addEventListener('click', function(e) {
   parent.ok(true, "target was clicked on");
-}, false);
+});
 
 // Helper functions
 
@@ -43,16 +42,16 @@ function testWithAndWithoutBodyListener(aX, aY, aExpectedId, aMsg) {
     parent.ok(true, "body was clicked on");
   };
   testMouseClick(aX, aY, aExpectedId, aMsg + " without listener on body");
-  document.body.addEventListener("click", func, false);
+  document.body.addEventListener("click", func);
   testMouseClick(aX, aY, aExpectedId, aMsg + " with listener on body");
-  document.body.removeEventListener("click", func, false);
+  document.body.removeEventListener("click", func);
 }
 
 // Main tests
 
 var mm;
 function runTest() {
-  mm = document.getElementById("ruler").getBoundingClientRect().width;
+  mm = SpecialPowers.getDOMWindowUtils(parent).physicalMillimeterInCSSPixels;
   parent.ok(4*mm >= 10, "WARNING: mm " + mm + " too small in this configuration. Test results will be bogus");
 
   // Test near the target, check it hits the target

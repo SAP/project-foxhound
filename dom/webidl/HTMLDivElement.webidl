@@ -11,9 +11,12 @@
  * and create derivative works of this document.
  */
 
-interface HTMLDivElement : HTMLElement {};
+[Exposed=Window]
+interface HTMLDivElement : HTMLElement {
+  [HTMLConstructor] constructor();
+};
 
 partial interface HTMLDivElement {
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute DOMString align;
 };

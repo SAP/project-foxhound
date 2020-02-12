@@ -3,8 +3,6 @@
 
 "use strict";
 
-Cu.import("resource://services-common/utils.js");
-
 const EMPTY = new Set();
 const A = new Set(["a"]);
 const ABC = new Set(["a", "b", "c"]);
@@ -20,15 +18,11 @@ var intersection = CommonUtils.intersection;
 var setEqual = CommonUtils.setEqual;
 
 function do_check_setEqual(a, b) {
-  do_check_true(setEqual(a, b));
+  Assert.ok(setEqual(a, b));
 }
 
 function do_check_not_setEqual(a, b) {
-  do_check_false(setEqual(a, b));
-}
-
-function run_test() {
-  run_next_test();
+  Assert.ok(!setEqual(a, b));
 }
 
 add_test(function test_setEqual() {

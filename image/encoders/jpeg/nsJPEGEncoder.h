@@ -13,29 +13,26 @@
 
 #include "nsCOMPtr.h"
 
-// needed for JPEG library
-#include <stdio.h>
+struct jpeg_compress_struct;
+struct jpeg_common_struct;
 
-extern "C" {
-#include "jpeglib.h"
-}
-
-#define NS_JPEGENCODER_CID \
-{                                                    \
-  /* ac2bb8fe-eeeb-4572-b40f-be03932b56e0 */         \
-     0xac2bb8fe,                                     \
-     0xeeeb,                                         \
-     0x4572,                                         \
-    {0xb4, 0x0f, 0xbe, 0x03, 0x93, 0x2b, 0x56, 0xe0} \
-}
+#define NS_JPEGENCODER_CID                           \
+  {                                                  \
+    /* ac2bb8fe-eeeb-4572-b40f-be03932b56e0 */       \
+    0xac2bb8fe, 0xeeeb, 0x4572, {                    \
+      0xb4, 0x0f, 0xbe, 0x03, 0x93, 0x2b, 0x56, 0xe0 \
+    }                                                \
+  }
 
 // Provides JPEG encoding functionality. Use InitFromData() to do the
 // encoding. See that function definition for encoding options.
+class nsJPEGEncoderInternal;
 
-class nsJPEGEncoder final : public imgIEncoder
-{
+class nsJPEGEncoder final : public imgIEncoder {
+  friend class nsJPEGEncoderInternal;
   typedef mozilla::ReentrantMonitor ReentrantMonitor;
-public:
+
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_IMGIENCODER
   NS_DECL_NSIINPUTSTREAM
@@ -43,21 +40,14 @@ public:
 
   nsJPEGEncoder();
 
-private:
+ private:
   ~nsJPEGEncoder();
 
-protected:
-
+ protected:
   void ConvertHostARGBRow(const uint8_t* aSrc, uint8_t* aDest,
                           uint32_t aPixelWidth);
   void ConvertRGBARow(const uint8_t* aSrc, uint8_t* aDest,
                       uint32_t aPixelWidth);
-
-  static void initDestination(jpeg_compress_struct* cinfo);
-  static boolean emptyOutputBuffer(jpeg_compress_struct* cinfo);
-  static void termDestination(jpeg_compress_struct* cinfo);
-
-  static void errorExit(jpeg_common_struct* cinfo);
 
   void NotifyListener();
 
@@ -81,4 +71,4 @@ protected:
   ReentrantMonitor mReentrantMonitor;
 };
 
-#endif // mozilla_image_encoders_jpeg_nsJPEGEncoder_h
+#endif  // mozilla_image_encoders_jpeg_nsJPEGEncoder_h

@@ -3,10 +3,13 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://gre/modules/ForgetAboutSite.jsm");
+let { ForgetAboutSite } = ChromeUtils.import(
+  "resource://gre/modules/ForgetAboutSite.jsm"
+);
 
 // Test clearing plugin data by domain using ForgetAboutSite.
-const testURL = "http://mochi.test:8888/browser/toolkit/forgetaboutsite/test/browser/browser_clearplugindata.html";
+const testURL =
+  "http://mochi.test:8888/browser/toolkit/forgetaboutsite/test/browser/browser_clearplugindata.html";
 
 const pluginHostIface = Ci.nsIPluginHost;
 var pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
@@ -16,15 +19,18 @@ var pluginTag;
 
 function stored(needles) {
   var something = pluginHost.siteHasData(this.pluginTag, null);
-  if (!needles)
+  if (!needles) {
     return something;
+  }
 
-  if (!something)
+  if (!something) {
     return false;
+  }
 
   for (var i = 0; i < needles.length; ++i) {
-    if (!pluginHost.siteHasData(this.pluginTag, needles[i]))
+    if (!pluginHost.siteHasData(this.pluginTag, needles[i])) {
       return false;
+    }
   }
   return true;
 }
@@ -37,55 +43,56 @@ function setTestPluginEnabledState(newEnabledState, plugin) {
   });
 }
 
-add_task(function* setup() {
+add_task(async function() {
   var tags = pluginHost.getPluginTags();
 
   // Find the test plugin
-  for (var i = 0; i < tags.length; i++)
-  {
-    if (tags[i].name == "Test Plug-in")
-    {
+  for (var i = 0; i < tags.length; i++) {
+    if (tags[i].name == "Test Plug-in") {
       pluginTag = tags[i];
     }
   }
   if (!pluginTag) {
     ok(false, "Test Plug-in not available, can't run test");
-    finish();
+    return;
   }
   setTestPluginEnabledState(Ci.nsIPluginTag.STATE_ENABLED, pluginTag);
-});
-
-add_task(function* () {
-  yield BrowserTestUtils.openNewForegroundTab(gBrowser, testURL);
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, testURL);
 
   // Set data for the plugin after the page load.
-  yield ContentTask.spawn(gBrowser.selectedBrowser, null, function*() {
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
     content.wrappedJSObject.testSteps();
   });
 
-  ok(stored(["192.168.1.1", "foo.com", "nonexistent.foo.com", "bar.com", "localhost"]),
-    "Data stored for sites");
+  ok(
+    stored([
+      "192.168.1.1",
+      "foo.com",
+      "nonexistent.foo.com",
+      "bar.com",
+      "localhost",
+    ]),
+    "Data stored for sites"
+  );
 
   // Clear data for "foo.com" and its subdomains.
-  yield ForgetAboutSite.removeDataFromDomain("foo.com");
+  await ForgetAboutSite.removeDataFromDomain("foo.com");
 
   ok(stored(["bar.com", "192.168.1.1", "localhost"]), "Data stored for sites");
   ok(!stored(["foo.com"]), "Data cleared for foo.com");
   ok(!stored(["bar.foo.com"]), "Data cleared for subdomains of foo.com");
 
-    // Clear data for "bar.com" using a subdomain.
-  yield ForgetAboutSite.removeDataFromDomain("foo.bar.com");
+  // Clear data for "bar.com" using a subdomain.
+  await ForgetAboutSite.removeDataFromDomain("foo.bar.com");
   ok(!stored(["bar.com"]), "Data cleared for bar.com");
 
   // Clear data for "192.168.1.1".
-  yield ForgetAboutSite.removeDataFromDomain("192.168.1.1");
+  await ForgetAboutSite.removeDataFromDomain("192.168.1.1");
   ok(!stored(["192.168.1.1"]), "Data cleared for 192.168.1.1");
 
   // Clear data for "localhost".
-  yield ForgetAboutSite.removeDataFromDomain("localhost");
+  await ForgetAboutSite.removeDataFromDomain("localhost");
   ok(!stored(null), "All data cleared");
 
   gBrowser.removeCurrentTab();
 });
-
-

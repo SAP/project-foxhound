@@ -3,20 +3,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[LegacyUnenumerableNamedProperties]
+[LegacyUnenumerableNamedProperties,
+ Exposed=Window]
 interface NamedNodeMap {
   getter Attr? getNamedItem(DOMString name);
-  [Throws, BinaryName="setNamedItemNS"]
+  [CEReactions, Throws, BinaryName="setNamedItemNS"]
   Attr? setNamedItem(Attr arg);
-  [Throws]
+  [CEReactions, Throws]
   Attr removeNamedItem(DOMString name);
 
   getter Attr? item(unsigned long index);
   readonly attribute unsigned long length;
 
   Attr? getNamedItemNS(DOMString? namespaceURI, DOMString localName);
-  [Throws]
+  [CEReactions, Throws]
   Attr? setNamedItemNS(Attr arg);
-  [Throws]
+  [CEReactions, Throws]
   Attr removeNamedItemNS(DOMString? namespaceURI, DOMString localName);
 };

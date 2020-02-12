@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Unused.h"
+#include "mozilla/layers/PImageBridgeParent.h"
 
 #include "MediaSystemResourceManagerParent.h"
 
@@ -13,65 +14,63 @@ namespace media {
 using namespace ipc;
 
 MediaSystemResourceManagerParent::MediaSystemResourceManagerParent()
-  : mDestroyed(false)
-{
+    : mDestroyed(false) {
   mMediaSystemResourceService = MediaSystemResourceService::Get();
 }
 
-MediaSystemResourceManagerParent::~MediaSystemResourceManagerParent()
-{
+MediaSystemResourceManagerParent::~MediaSystemResourceManagerParent() {
   MOZ_ASSERT(mDestroyed);
 }
 
-bool
-MediaSystemResourceManagerParent::RecvAcquire(const uint32_t& aId,
-                                              const MediaSystemResourceType& aResourceType,
-                                              const bool& aWillWait)
-{
+mozilla::ipc::IPCResult MediaSystemResourceManagerParent::RecvAcquire(
+    const uint32_t& aId, const MediaSystemResourceType& aResourceType,
+    const bool& aWillWait) {
   MediaSystemResourceRequest* request = mResourceRequests.Get(aId);
   MOZ_ASSERT(!request);
   if (request) {
     // Send fail response
     mozilla::Unused << SendResponse(aId, false /* fail */);
-    return true;
+    return IPC_OK();
   }
 
   request = new MediaSystemResourceRequest(aId, aResourceType);
   mResourceRequests.Put(aId, request);
   mMediaSystemResourceService->Acquire(this, aId, aResourceType, aWillWait);
-  return true;
+  return IPC_OK();
 }
 
-bool
-MediaSystemResourceManagerParent::RecvRelease(const uint32_t& aId)
-{
+mozilla::ipc::IPCResult MediaSystemResourceManagerParent::RecvRelease(
+    const uint32_t& aId) {
   MediaSystemResourceRequest* request = mResourceRequests.Get(aId);
   if (!request) {
-    return true;
+    return IPC_OK();
   }
 
-  mMediaSystemResourceService->ReleaseResource(this, aId, request->mResourceType);
+  mMediaSystemResourceService->ReleaseResource(this, aId,
+                                               request->mResourceType);
   mResourceRequests.Remove(aId);
-  return true;
+  return IPC_OK();
 }
 
-bool
-MediaSystemResourceManagerParent::RecvRemoveResourceManager()
-{
-  return PMediaSystemResourceManagerParent::Send__delete__(this);
+mozilla::ipc::IPCResult
+MediaSystemResourceManagerParent::RecvRemoveResourceManager() {
+  IProtocol* mgr = Manager();
+  if (!PMediaSystemResourceManagerParent::Send__delete__(this)) {
+    return IPC_FAIL_NO_REASON(mgr);
+  }
+  return IPC_OK();
 }
 
-void
-MediaSystemResourceManagerParent::ActorDestroy(ActorDestroyReason aReason)
-{
+void MediaSystemResourceManagerParent::ActorDestroy(
+    ActorDestroyReason aReason) {
   MOZ_ASSERT(!mDestroyed);
 
   // Release all resource requests of the MediaSystemResourceManagerParent.
-  // Clears all remaining pointers to this object. 
+  // Clears all remaining pointers to this object.
   mMediaSystemResourceService->ReleaseResource(this);
 
   mDestroyed = true;
 }
 
-} // namespace media
-} // namespace mozilla
+}  // namespace media
+}  // namespace mozilla

@@ -2,96 +2,96 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// For js::jit::IsIonEnabled().
-#include "jit/Ion.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "jit/Ion.h"                      // js::jit::IsIonEnabled
+#include "js/CompilationAndEvaluation.h"  // JS::CompileFunction
+#include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
+
+#include "vm/JSObject-inl.h"
+#include "vm/JSScript-inl.h"
 
 using namespace JS;
 
-static void
-ScriptCallback(JSRuntime* rt, void* data, JSScript* script)
-{
-    unsigned& count = *static_cast<unsigned*>(data);
-    if (script->hasIonScript())
-        ++count;
+static void ScriptCallback(JSRuntime* rt, void* data, JSScript* script,
+                           const JS::AutoRequireNoGC& nogc) {
+  unsigned& count = *static_cast<unsigned*>(data);
+  if (script->hasIonScript()) {
+    ++count;
+  }
 }
 
-BEGIN_TEST(test_PreserveJitCode)
-{
-    CHECK(testPreserveJitCode(false, 0));
-    CHECK(testPreserveJitCode(true, 1));
-    return true;
+BEGIN_TEST(test_PreserveJitCode) {
+  CHECK(testPreserveJitCode(false, 0));
+  CHECK(testPreserveJitCode(true, 1));
+  return true;
 }
 
-unsigned
-countIonScripts(JSObject* global)
-{
-    unsigned count = 0;
-    js::IterateScripts(cx, global->compartment(), &count, ScriptCallback);
-    return count;
+unsigned countIonScripts(JSObject* global) {
+  unsigned count = 0;
+  js::IterateScripts(cx, global->nonCCWRealm(), &count, ScriptCallback);
+  return count;
 }
 
-bool
-testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts)
-{
-    cx->options().setBaseline(true);
-    cx->options().setIon(true);
-    cx->setOffthreadIonCompilationEnabled(false);
+bool testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts) {
+  cx->runtime()->setOffthreadIonCompilationEnabled(false);
 
-    RootedObject global(cx, createTestGlobal(preserveJitCode));
-    CHECK(global);
-    JSAutoCompartment ac(cx, global);
+  RootedObject global(cx, createTestGlobal(preserveJitCode));
+  CHECK(global);
+  JSAutoRealm ar(cx, global);
 
-#ifdef JS_CODEGEN_ARM64
-    // The ARM64 Ion JIT is not yet enabled, so this test will fail with
-    // countIonScripts(global) == 0. Once Ion is enabled for ARM64, this test
-    // should be passing again, and this code can be deleted.
-    // Bug 1208526 - ARM64: Reenable jsapi-tests/testPreserveJitCode once Ion is enabled
-    if (!js::jit::IsIonEnabled(cx))
-        knownFail = true;
-#endif
+  // The Ion JIT may be unavailable due to --disable-ion or lack of support
+  // for this platform.
+  if (!js::jit::IsIonEnabled()) {
+    knownFail = true;
+  }
 
-    CHECK_EQUAL(countIonScripts(global), 0u);
+  CHECK_EQUAL(countIonScripts(global), 0u);
 
-    const char* source =
-        "var i = 0;\n"
-        "var sum = 0;\n"
-        "while (i < 10) {\n"
-        "    sum += i;\n"
-        "    ++i;\n"
-        "}\n"
-        "return sum;\n";
-    unsigned length = strlen(source);
+  static const char source[] =
+      "var i = 0;\n"
+      "var sum = 0;\n"
+      "while (i < 10) {\n"
+      "    sum += i;\n"
+      "    ++i;\n"
+      "}\n"
+      "return sum;\n";
+  constexpr unsigned length = mozilla::ArrayLength(source) - 1;
 
-    JS::RootedFunction fun(cx);
-    JS::CompileOptions options(cx);
-    options.setFileAndLine(__FILE__, 1);
-    JS::AutoObjectVector emptyScopeChain(cx);
-    CHECK(JS::CompileFunction(cx, emptyScopeChain, options, "f", 0, nullptr,
-			      source, length, &fun));
+  JS::SourceText<mozilla::Utf8Unit> srcBuf;
+  CHECK(srcBuf.init(cx, source, length, JS::SourceOwnership::Borrowed));
 
-    RootedValue value(cx);
-    for (unsigned i = 0; i < 1500; ++i)
-        CHECK(JS_CallFunction(cx, global, fun, JS::HandleValueArray::empty(), &value));
-    CHECK_EQUAL(value.toInt32(), 45);
-    CHECK_EQUAL(countIonScripts(global), 1u);
+  JS::CompileOptions options(cx);
+  options.setFileAndLine(__FILE__, 1);
 
-    GCForReason(cx, GC_NORMAL, gcreason::API);
-    CHECK_EQUAL(countIonScripts(global), remainingIonScripts);
+  JS::RootedFunction fun(cx);
+  JS::RootedObjectVector emptyScopeChain(cx);
+  fun = JS::CompileFunction(cx, emptyScopeChain, options, "f", 0, nullptr,
+                            srcBuf);
+  CHECK(fun);
 
-    GCForReason(cx, GC_SHRINK, gcreason::API);
-    CHECK_EQUAL(countIonScripts(global), 0u);
+  RootedValue value(cx);
+  for (unsigned i = 0; i < 1500; ++i) {
+    CHECK(JS_CallFunction(cx, global, fun, JS::HandleValueArray::empty(),
+                          &value));
+  }
+  CHECK_EQUAL(value.toInt32(), 45);
+  CHECK_EQUAL(countIonScripts(global), 1u);
 
-    return true;
+  NonIncrementalGC(cx, GC_NORMAL, GCReason::API);
+  CHECK_EQUAL(countIonScripts(global), remainingIonScripts);
+
+  NonIncrementalGC(cx, GC_SHRINK, GCReason::API);
+  CHECK_EQUAL(countIonScripts(global), 0u);
+
+  return true;
 }
 
-JSObject*
-createTestGlobal(bool preserveJitCode)
-{
-    JS::CompartmentOptions options;
-    options.creationOptions().setPreserveJitCode(preserveJitCode);
-    options.behaviors().setVersion(JSVERSION_LATEST);
-    return JS_NewGlobalObject(cx, getGlobalClass(), nullptr, JS::FireOnNewGlobalHook, options);
+JSObject* createTestGlobal(bool preserveJitCode) {
+  JS::RealmOptions options;
+  options.creationOptions().setPreserveJitCode(preserveJitCode);
+  return JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
+                            JS::FireOnNewGlobalHook, options);
 }
 END_TEST(test_PreserveJitCode)

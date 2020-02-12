@@ -11,11 +11,6 @@
  * on machines with several LSPs.
  */
 
-#if _WIN32_WINNT < 0x0600
-// Redefining _WIN32_WINNT for some Vista APIs that we call
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
 #include "nsICrashReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsServiceManagerUtils.h"
@@ -29,12 +24,11 @@
 namespace mozilla {
 namespace crashreporter {
 
-class LSPAnnotationGatherer : public Runnable
-{
+class LSPAnnotationGatherer : public Runnable {
   ~LSPAnnotationGatherer() {}
 
-public:
-  NS_DECL_THREADSAFE_ISUPPORTS
+ public:
+  LSPAnnotationGatherer() : Runnable("crashreporter::LSPAnnotationGatherer") {}
   NS_DECL_NSIRUNNABLE
 
   void Annotate();
@@ -42,13 +36,9 @@ public:
   nsCOMPtr<nsIThread> mThread;
 };
 
-NS_IMPL_ISUPPORTS(LSPAnnotationGatherer, nsIRunnable)
-
-void
-LSPAnnotationGatherer::Annotate()
-{
+void LSPAnnotationGatherer::Annotate() {
   nsCOMPtr<nsICrashReporter> cr =
-    do_GetService("@mozilla.org/toolkit/crash-reporter;1");
+      do_GetService("@mozilla.org/toolkit/crash-reporter;1");
   bool enabled;
   if (cr && NS_SUCCEEDED(cr->GetEnabled(&enabled)) && enabled) {
     cr->AnnotateCrashReport(NS_LITERAL_CSTRING("Winsock_LSP"), mString);
@@ -57,9 +47,8 @@ LSPAnnotationGatherer::Annotate()
 }
 
 NS_IMETHODIMP
-LSPAnnotationGatherer::Run()
-{
-  PR_SetCurrentThreadName("LSP Annotator");
+LSPAnnotationGatherer::Run() {
+  NS_SetCurrentThreadName("LSP Annotator");
 
   mThread = NS_GetCurrentThread();
 
@@ -69,13 +58,15 @@ LSPAnnotationGatherer::Run()
   if (SOCKET_ERROR != WSCEnumProtocols(nullptr, nullptr, &size, &err) ||
       err != WSAENOBUFS) {
     // Er, what?
-    NS_NOTREACHED("WSCEnumProtocols suceeded when it should have failed ...");
+    MOZ_ASSERT_UNREACHABLE(
+        "WSCEnumProtocols succeeded when it should have "
+        "failed");
     return NS_ERROR_FAILURE;
   }
 
   auto byteArray = MakeUnique<char[]>(size);
   WSAPROTOCOL_INFOW* providers =
-    reinterpret_cast<WSAPROTOCOL_INFOW*>(byteArray.get());
+      reinterpret_cast<WSAPROTOCOL_INFOW*>(byteArray.get());
 
   int n = WSCEnumProtocols(nullptr, providers, &size, &err);
   if (n == SOCKET_ERROR) {
@@ -114,15 +105,14 @@ LSPAnnotationGatherer::Run()
     nsModuleHandle ws2_32(LoadLibraryW(L"ws2_32.dll"));
     if (ws2_32) {
       decltype(WSCGetProviderInfo)* pWSCGetProviderInfo =
-        reinterpret_cast<decltype(WSCGetProviderInfo)*>(
-            GetProcAddress(ws2_32, "WSCGetProviderInfo"));
+          reinterpret_cast<decltype(WSCGetProviderInfo)*>(
+              GetProcAddress(ws2_32, "WSCGetProviderInfo"));
       if (pWSCGetProviderInfo) {
         DWORD categoryInfo;
         size_t categoryInfoSize = sizeof(categoryInfo);
-        if (!pWSCGetProviderInfo(&providers[i].ProviderId,
-                                 ProviderInfoLspCategories,
-                                 (PBYTE)&categoryInfo, &categoryInfoSize, 0,
-                                 &err)) {
+        if (!pWSCGetProviderInfo(
+                &providers[i].ProviderId, ProviderInfoLspCategories,
+                (PBYTE)&categoryInfo, &categoryInfoSize, 0, &err)) {
           str.AppendPrintf("0x%x", categoryInfo);
         }
       }
@@ -145,17 +135,17 @@ LSPAnnotationGatherer::Run()
   }
 
   mString = str;
-  NS_DispatchToMainThread(NewRunnableMethod(this, &LSPAnnotationGatherer::Annotate));
+  NS_DispatchToMainThread(
+      NewRunnableMethod("crashreporter::LSPAnnotationGatherer::Annotate", this,
+                        &LSPAnnotationGatherer::Annotate));
   return NS_OK;
 }
 
-void LSPAnnotate()
-{
+void LSPAnnotate() {
   nsCOMPtr<nsIThread> thread;
-  nsCOMPtr<nsIRunnable> runnable =
-    do_QueryObject(new LSPAnnotationGatherer());
-  NS_NewThread(getter_AddRefs(thread), runnable);
+  nsCOMPtr<nsIRunnable> runnable = do_QueryObject(new LSPAnnotationGatherer());
+  NS_NewNamedThread("LSP Annotate", getter_AddRefs(thread), runnable);
 }
 
-} // namespace crashreporter
-} // namespace mozilla
+}  // namespace crashreporter
+}  // namespace mozilla

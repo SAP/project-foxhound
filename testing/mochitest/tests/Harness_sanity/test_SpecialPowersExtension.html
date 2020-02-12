@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for SpecialPowers extension</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="starttest();">
@@ -31,26 +31,26 @@ function dispatchTestEvent() {
 dump("\nSPECIALPTEST:::Test script loaded " + (new Date).getTime() + "\n");
 SimpleTest.waitForExplicitFinish();
 var startTime = new Date();
-function starttest(){
+async function starttest(){
   dump("\nSPECIALPTEST:::Test script running after load " + (new Date).getTime() + "\n");
 
   /** Test for SpecialPowers extension **/
   is(SpecialPowers.sanityCheck(), "foo", "check to see whether the Special Powers extension is installed.");
 
   // Test a sync call into chrome
-  SpecialPowers.setBoolPref('extensions.checkCompatibility', true);
+  await SpecialPowers.setBoolPref('extensions.checkCompatibility', true);
   is(SpecialPowers.getBoolPref('extensions.checkCompatibility'), true, "Check to see if we can set a preference properly");
-  SpecialPowers.clearUserPref('extensions.checkCompatibility');
+  await SpecialPowers.clearUserPref('extensions.checkCompatibility');
 
   // Test a int pref
-  SpecialPowers.setIntPref('extensions.foobar', 42);
+  await SpecialPowers.setIntPref('extensions.foobar', 42);
   is(SpecialPowers.getIntPref('extensions.foobar'), 42, "Check int pref");
-  SpecialPowers.clearUserPref('extensions.foobar');
+  await SpecialPowers.clearUserPref('extensions.foobar');
 
   // Test a string pref
-  SpecialPowers.setCharPref("extensions.foobaz", "hi there");
+  await SpecialPowers.setCharPref("extensions.foobaz", "hi there");
   is(SpecialPowers.getCharPref("extensions.foobaz"), "hi there", "Check string pref");
-  SpecialPowers.clearUserPref("extensions.foobaz");
+  await SpecialPowers.clearUserPref("extensions.foobaz");
 
   // Test an invalid pref
   var retVal = null;
@@ -59,7 +59,8 @@ function starttest(){
   } catch (ex) {
     retVal = ex;
   }
-  is(retVal, "Error getting pref 'extensions.checkCompat0123456789'", "received an exception trying to get an unset preference value");
+  is(retVal.result, SpecialPowers.Cr.NS_ERROR_UNEXPECTED,
+     "received an exception trying to get an unset preference value");
 
   SpecialPowers.addChromeEventListener("TestEvent", testEventListener, true, true);
   SpecialPowers.addChromeEventListener("TestEvent", testEventListener2, true, false);
@@ -81,9 +82,15 @@ function starttest(){
   
   // QueryInterface and getPrivilegedProps tests
   is(SpecialPowers.can_QI(SpecialPowers), false);
-  ok(SpecialPowers.can_QI(window));
-  ok(SpecialPowers.do_QueryInterface(window, "nsIDOMWindow"));
-  is(SpecialPowers.getPrivilegedProps(SpecialPowers.do_QueryInterface(window, "nsIDOMWindow"), "document.nodeName"), "#document");
+  let doc = SpecialPowers.wrap(document);
+  is(SpecialPowers.getPrivilegedProps(doc, "baseURIObject.fileName"), null,
+     "Should not have a fileName property yet");
+  let uri = SpecialPowers.getPrivilegedProps(doc, "baseURIObject");
+  ok(SpecialPowers.can_QI(uri));
+  ok(SpecialPowers.do_QueryInterface(uri, "nsIURL"));
+  is(SpecialPowers.getPrivilegedProps(doc, "baseURIObject.fileName"),
+     "test_SpecialPowersExtension.html",
+     "Should have a fileName property now");
   
   //try to run garbage collection
   SpecialPowers.gc();
@@ -92,20 +99,18 @@ function starttest(){
   // Test the SpecialPowers wrapper.
   //
 
-  // Try some basic stuff with XHR.
-  var xhr2 = SpecialPowers.Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(SpecialPowers.Ci.nsIXMLHttpRequest);
-  is(xhr2.readyState, XMLHttpRequest.UNSENT, "Should be able to get props off privileged objects");
-  var testURI = SpecialPowers.Cc['@mozilla.org/network/standard-url;1']
-                                              .createInstance(SpecialPowers.Ci.nsIURI);
-  testURI.spec = "http://www.foobar.org/";
+  let fp = SpecialPowers.Cc["@mozilla.org/filepicker;1"].createInstance(SpecialPowers.Ci.nsIFilePicker);
+  is(fp.mode, SpecialPowers.Ci.nsIFilePicker.modeOpen, "Should be able to get props off privileged objects");
+  var testURI = SpecialPowers.Cc['@mozilla.org/network/standard-url-mutator;1']
+                             .createInstance(SpecialPowers.Ci.nsIURIMutator)
+                             .setSpec("http://www.foobar.org/")
+                             .finalize();
   is(testURI.spec, "http://www.foobar.org/", "Getters/Setters should work correctly");
   is(SpecialPowers.wrap(document).getElementsByTagName('details').length, 0, "Should work with proxy-based DOM bindings.");
 
   // Play with the window object.
-  var webnav = SpecialPowers.wrap(window).QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                                         .getInterface(SpecialPowers.Ci.nsIWebNavigation);
-  webnav.QueryInterface(SpecialPowers.Ci.nsIDocShell);
-  ok(webnav.allowJavascript, "Able to pull properties off of docshell!");
+  var docShell = SpecialPowers.wrap(window).docShell;
+  ok(docShell.allowJavascript, "Able to pull properties off of docshell!");
 
   // Make sure Xray-wrapped functions work.
   try {

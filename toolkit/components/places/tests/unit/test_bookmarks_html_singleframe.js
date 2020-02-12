@@ -7,26 +7,25 @@
 // Test for bug #801450
 
 // Get Services
-Cu.import("resource://gre/modules/BookmarkHTMLUtils.jsm");
+const { BookmarkHTMLUtils } = ChromeUtils.import(
+  "resource://gre/modules/BookmarkHTMLUtils.jsm"
+);
 
-function run_test()
-{
-  run_next_test();
-}
+add_task(async function test_bookmarks_html_singleframe() {
+  let bookmarksFile = OS.Path.join(
+    do_get_cwd().path,
+    "bookmarks_html_singleframe.html"
+  );
+  await BookmarkHTMLUtils.importFromFile(bookmarksFile, { replace: true });
 
-add_task(function* test_bookmarks_html_singleframe()
-{
-  let bookmarksFile = OS.Path.join(do_get_cwd().path, "bookmarks_html_singleframe.html");
-  yield BookmarkHTMLUtils.importFromFile(bookmarksFile, true);
-
-  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarksMenuFolderId).root;
-  do_check_eq(root.childCount, 1);
+  let root = PlacesUtils.getFolderContents(PlacesUtils.bookmarks.menuGuid).root;
+  Assert.equal(root.childCount, 1);
   let folder = root.getChild(0);
   PlacesUtils.asContainer(folder).containerOpen = true;
-  do_check_eq(folder.title, "Subtitle");
-  do_check_eq(folder.childCount, 1);
+  Assert.equal(folder.title, "Subtitle");
+  Assert.equal(folder.childCount, 1);
   let bookmark = folder.getChild(0);
-  do_check_eq(bookmark.uri, "http://www.mozilla.org/");
-  do_check_eq(bookmark.title, "Mozilla");
+  Assert.equal(bookmark.uri, "http://www.mozilla.org/");
+  Assert.equal(bookmark.title, "Mozilla");
   folder.containerOpen = false;
 });

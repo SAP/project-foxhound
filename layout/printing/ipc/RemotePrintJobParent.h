@@ -8,61 +8,62 @@
 #define mozilla_layout_RemotePrintJobParent_h
 
 #include "mozilla/layout/PRemotePrintJobParent.h"
+#include "mozilla/layout/printing/DrawEventRecorder.h"
 
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/RecordedEvent.h"
 
 class nsDeviceContext;
 class nsIPrintSettings;
 class nsIWebProgressListener;
-class PrintTranslator;
 
 namespace mozilla {
 namespace layout {
 
-class RemotePrintJobParent final : public PRemotePrintJobParent
-{
-public:
+class PrintTranslator;
+
+class RemotePrintJobParent final : public PRemotePrintJobParent {
+ public:
   explicit RemotePrintJobParent(nsIPrintSettings* aPrintSettings);
 
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
-  bool RecvInitializePrint(const nsString& aDocumentTitle,
-                           const nsString& aPrintToFile,
-                           const int32_t& aStartPage,
-                           const int32_t& aEndPage) final;
+  mozilla::ipc::IPCResult RecvInitializePrint(const nsString& aDocumentTitle,
+                                              const nsString& aPrintToFile,
+                                              const int32_t& aStartPage,
+                                              const int32_t& aEndPage) final;
 
-  bool RecvProcessPage(const nsCString& aPageFileName) final;
+  mozilla::ipc::IPCResult RecvProcessPage() final;
 
-  bool RecvFinalizePrint() final;
+  mozilla::ipc::IPCResult RecvFinalizePrint() final;
 
-  bool RecvAbortPrint(const nsresult& aRv) final;
+  mozilla::ipc::IPCResult RecvAbortPrint(const nsresult& aRv) final;
 
-  bool RecvStateChange(const long& aStateFlags,
-                       const nsresult& aStatus) final;
+  mozilla::ipc::IPCResult RecvStateChange(const long& aStateFlags,
+                                          const nsresult& aStatus) final;
 
-  bool RecvProgressChange(const long& aCurSelfProgress,
-                          const long& aMaxSelfProgress,
-                          const long& aCurTotalProgress,
-                          const long& aMaxTotalProgress) final;
+  mozilla::ipc::IPCResult RecvProgressChange(
+      const long& aCurSelfProgress, const long& aMaxSelfProgress,
+      const long& aCurTotalProgress, const long& aMaxTotalProgress) final;
 
-  bool RecvStatusChange(const nsresult& aStatus) final;
+  mozilla::ipc::IPCResult RecvStatusChange(const nsresult& aStatus) final;
 
   /**
-    * Register a progress listener to receive print progress updates.
-    *
-    * @param aListener the progress listener to register. Must not be null.
-    */
+   * Register a progress listener to receive print progress updates.
+   *
+   * @param aListener the progress listener to register. Must not be null.
+   */
   void RegisterListener(nsIWebProgressListener* aListener);
 
   /**
-    * @return the print settings for this remote print job.
-    */
+   * @return the print settings for this remote print job.
+   */
   already_AddRefed<nsIPrintSettings> GetPrintSettings();
 
-private:
+ private:
   ~RemotePrintJobParent() final;
 
   nsresult InitializePrintDevice(const nsString& aDocumentTitle,
@@ -70,15 +71,25 @@ private:
                                  const int32_t& aStartPage,
                                  const int32_t& aEndPage);
 
-  nsresult PrintPage(const nsCString& aPageFileName);
+  nsresult PrepareNextPageFD(FileDescriptor* aFd);
+
+  nsresult PrintPage(PRFileDescStream& aRecording);
+
+  /**
+   * Called to notify our corresponding RemotePrintJobChild once we've
+   * finished printing a page.
+   */
+  void PageDone(nsresult aResult);
 
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
   RefPtr<nsDeviceContext> mPrintDeviceContext;
   UniquePtr<PrintTranslator> mPrintTranslator;
   nsCOMArray<nsIWebProgressListener> mPrintProgressListeners;
+  PRFileDescStream mCurrentPageStream;
+  bool mIsDoingPrinting;
 };
 
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla
 
-#endif // mozilla_layout_RemotePrintJobParent_h
+#endif  // mozilla_layout_RemotePrintJobParent_h

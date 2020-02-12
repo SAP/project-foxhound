@@ -8,61 +8,107 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPanelInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
-const { times, once } = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  initPanelInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  times,
+  once,
+} = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  getRecordingsCount,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { panel } = yield initPanelInNewTab({
+add_task(async function() {
+  const { panel } = await initPanelInNewTab({
     tool: "performance",
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, PerformanceController, PerformanceView, RecordingsView } = panel.panelWin;
+  const { EVENTS, PerformanceController, PerformanceView } = panel.panelWin;
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  is(RecordingsView.itemCount, 1,
-    "RecordingsView should have one recording.");
-  isnot(PerformanceView.getState(), "empty",
-    "PerformanceView should not be in an empty state.");
-  isnot(PerformanceController.getCurrentRecording(), null,
-    "There should be a current recording.");
+  is(
+    getRecordingsCount(panel),
+    1,
+    "The recordings list should have one recording."
+  );
+  isnot(
+    PerformanceView.getState(),
+    "empty",
+    "PerformanceView should not be in an empty state."
+  );
+  isnot(
+    PerformanceController.getCurrentRecording(),
+    null,
+    "There should be a current recording."
+  );
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  is(RecordingsView.itemCount, 2,
-    "RecordingsView should have two recordings.");
-  isnot(PerformanceView.getState(), "empty",
-    "PerformanceView should not be in an empty state.");
-  isnot(PerformanceController.getCurrentRecording(), null,
-    "There should be a current recording.");
+  is(
+    getRecordingsCount(panel),
+    2,
+    "The recordings list should have two recordings."
+  );
+  isnot(
+    PerformanceView.getState(),
+    "empty",
+    "PerformanceView should not be in an empty state."
+  );
+  isnot(
+    PerformanceController.getCurrentRecording(),
+    null,
+    "There should be a current recording."
+  );
 
-  let recordingDeleted = times(PerformanceController, EVENTS.RECORDING_DELETED, 2);
-  let recordingStopped = once(PerformanceController, EVENTS.RECORDING_STATE_CHANGE, {
-    expectedArgs: { "1": "recording-stopped" }
-  });
+  const recordingDeleted = times(
+    PerformanceController,
+    EVENTS.RECORDING_DELETED,
+    2
+  );
+  const recordingStopped = once(
+    PerformanceController,
+    EVENTS.RECORDING_STATE_CHANGE,
+    {
+      expectedArgs: ["recording-stopped"],
+    }
+  );
 
   PerformanceController.clearRecordings();
 
-  yield recordingDeleted;
-  yield recordingStopped;
+  await recordingDeleted;
+  await recordingStopped;
 
-  is(RecordingsView.itemCount, 0,
-    "RecordingsView should be empty.");
-  is(PerformanceView.getState(), "empty",
-    "PerformanceView should be in an empty state.");
-  is(PerformanceController.getCurrentRecording(), null,
-    "There should be no current recording.");
+  is(getRecordingsCount(panel), 0, "The recordings list should be empty.");
+  is(
+    PerformanceView.getState(),
+    "empty",
+    "PerformanceView should be in an empty state."
+  );
+  is(
+    PerformanceController.getCurrentRecording(),
+    null,
+    "There should be no current recording."
+  );
 
   // Bug 1169146: Try another recording after clearing mid-recording.
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  is(RecordingsView.itemCount, 1,
-    "RecordingsView should have one recording.");
+  is(
+    getRecordingsCount(panel),
+    1,
+    "The recordings list should have one recording."
+  );
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

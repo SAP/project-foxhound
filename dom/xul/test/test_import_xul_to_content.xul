@@ -3,7 +3,7 @@
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 <window title="Mozilla Importing XUL into Content"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -17,7 +17,7 @@
   <script type="application/javascript">
   <![CDATA[
 
-  Components.utils.import("resource://gre/modules/Services.jsm");
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   SimpleTest.waitForExplicitFinish();
 
@@ -30,7 +30,7 @@
     var msgs = Services.console.getMessageArray();
     for (var i = 0; i < msgs.length; i++) {
       var msg = msgs[i];
-      if (!msg || !(msg instanceof Components.interfaces.nsIScriptError)) {
+      if (!msg || !(msg instanceof Ci.nsIScriptError)) {
         continue;
       }
 
@@ -55,7 +55,7 @@
     });
 
     // We add some XUL to a content document. This should generate a warning.
-    var elt = document.createElement("label");
+    var elt = document.createXULElement("label");
     var newElt = doc.importNode(elt, false);
     expectWarning(true, "appending XUL", function() {
       doc.documentElement.appendChild(newElt);

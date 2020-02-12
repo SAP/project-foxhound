@@ -1,171 +1,88 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VRManagerParent.h"
+
 #include "ipc/VRLayerParent.h"
 #include "mozilla/gfx/PVRManagerParent.h"
 #include "mozilla/ipc/ProtocolTypes.h"
-#include "mozilla/ipc/ProtocolUtils.h"       // for IToplevelProtocol
-#include "mozilla/TimeStamp.h"               // for TimeStamp
-#include "mozilla/layers/CompositorThread.h"
+#include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
+#include "mozilla/TimeStamp.h"          // for TimeStamp
 #include "mozilla/Unused.h"
 #include "VRManager.h"
+#include "VRThread.h"
 
 namespace mozilla {
 using namespace layers;
 namespace gfx {
 
-VRManagerParent::VRManagerParent(ProcessId aChildProcessId)
-  : HostIPCAllocator()
-  , mHaveEventListener(false)
-{
+VRManagerParent::VRManagerParent(ProcessId aChildProcessId,
+                                 bool aIsContentChild)
+    : mHaveEventListener(false),
+      mHaveControllerListener(false),
+      mIsContentChild(aIsContentChild),
+      mVRActiveStatus(true) {
   MOZ_COUNT_CTOR(VRManagerParent);
   MOZ_ASSERT(NS_IsMainThread());
 
   SetOtherProcessId(aChildProcessId);
 }
 
-VRManagerParent::~VRManagerParent()
-{
+VRManagerParent::~VRManagerParent() {
   MOZ_ASSERT(!mVRManagerHolder);
 
   MOZ_COUNT_DTOR(VRManagerParent);
 }
 
-PTextureParent*
-VRManagerParent::AllocPTextureParent(const SurfaceDescriptor& aSharedData,
-                                     const LayersBackend& aLayersBackend,
-                                     const TextureFlags& aFlags,
-                                     const uint64_t& aSerial)
-{
-  return layers::TextureHost::CreateIPDLActor(this, aSharedData, aLayersBackend, aFlags, aSerial);
-}
-
-bool
-VRManagerParent::DeallocPTextureParent(PTextureParent* actor)
-{
-  return layers::TextureHost::DestroyIPDLActor(actor);
-}
-
-PVRLayerParent*
-VRManagerParent::AllocPVRLayerParent(const uint32_t& aDisplayID,
-                                     const float& aLeftEyeX,
-                                     const float& aLeftEyeY,
-                                     const float& aLeftEyeWidth,
-                                     const float& aLeftEyeHeight,
-                                     const float& aRightEyeX,
-                                     const float& aRightEyeY,
-                                     const float& aRightEyeWidth,
-                                     const float& aRightEyeHeight)
-{
+PVRLayerParent* VRManagerParent::AllocPVRLayerParent(const uint32_t& aDisplayID,
+                                                     const uint32_t& aGroup) {
   RefPtr<VRLayerParent> layer;
-  layer = new VRLayerParent(aDisplayID,
-                            Rect(aLeftEyeX, aLeftEyeY, aLeftEyeWidth, aLeftEyeHeight),
-                            Rect(aRightEyeX, aRightEyeY, aRightEyeWidth, aRightEyeHeight));
+  layer = new VRLayerParent(aDisplayID, aGroup);
   VRManager* vm = VRManager::Get();
-  RefPtr<gfx::VRDisplayHost> display = vm->GetDisplay(aDisplayID);
-  if (display) {
-    display->AddLayer(layer);
-  }
+  vm->AddLayer(layer);
   return layer.forget().take();
 }
 
-bool
-VRManagerParent::DeallocPVRLayerParent(PVRLayerParent* actor)
-{
-  gfx::VRLayerParent* layer = static_cast<gfx::VRLayerParent*>(actor);
-
-  VRManager* vm = VRManager::Get();
-  RefPtr<gfx::VRDisplayHost> display = vm->GetDisplay(layer->GetDisplayID());
-  if (display) {
-    display->RemoveLayer(layer);
-  }
-
+bool VRManagerParent::DeallocPVRLayerParent(PVRLayerParent* actor) {
   delete actor;
   return true;
 }
 
-bool
-VRManagerParent::AllocShmem(size_t aSize,
-  ipc::SharedMemory::SharedMemoryType aType,
-  ipc::Shmem* aShmem)
-{
-  return PVRManagerParent::AllocShmem(aSize, aType, aShmem);
-}
-
-bool
-VRManagerParent::AllocUnsafeShmem(size_t aSize,
-  ipc::SharedMemory::SharedMemoryType aType,
-  ipc::Shmem* aShmem)
-{
-  return PVRManagerParent::AllocUnsafeShmem(aSize, aType, aShmem);
-}
-
-void
-VRManagerParent::DeallocShmem(ipc::Shmem& aShmem)
-{
-  PVRManagerParent::DeallocShmem(aShmem);
-}
-
-bool
-VRManagerParent::IsSameProcess() const
-{
+bool VRManagerParent::IsSameProcess() const {
   return OtherPid() == base::GetCurrentProcId();
 }
 
-void
-VRManagerParent::NotifyNotUsed(PTextureParent* aTexture, uint64_t aTransactionId)
-{
-  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-}
-
-void
-VRManagerParent::SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage)
-{
-  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-}
-
-base::ProcessId
-VRManagerParent::GetChildProcessId()
-{
-  return OtherPid();
-}
-
-void
-VRManagerParent::RegisterWithManager()
-{
+void VRManagerParent::RegisterWithManager() {
   VRManager* vm = VRManager::Get();
   vm->AddVRManagerParent(this);
   mVRManagerHolder = vm;
 }
 
-void
-VRManagerParent::UnregisterFromManager()
-{
+void VRManagerParent::UnregisterFromManager() {
   VRManager* vm = VRManager::Get();
   vm->RemoveVRManagerParent(this);
   mVRManagerHolder = nullptr;
 }
 
-/* static */ bool
-VRManagerParent::CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint)
-{
-  MessageLoop* loop = layers::CompositorThreadHolder::Loop();
+/* static */
+bool VRManagerParent::CreateForContent(Endpoint<PVRManagerParent>&& aEndpoint) {
+  MessageLoop* loop = CompositorThreadHolder::Loop();
+  if (!loop) {
+    return false;
+  }
 
-  RefPtr<VRManagerParent> vmp = new VRManagerParent(aEndpoint.OtherPid());
+  RefPtr<VRManagerParent> vmp = new VRManagerParent(aEndpoint.OtherPid(), true);
   loop->PostTask(NewRunnableMethod<Endpoint<PVRManagerParent>&&>(
-    vmp, &VRManagerParent::Bind, Move(aEndpoint)));
+      "gfx::VRManagerParent::Bind", vmp, &VRManagerParent::Bind,
+      std::move(aEndpoint)));
 
   return true;
 }
 
-void
-VRManagerParent::Bind(Endpoint<PVRManagerParent>&& aEndpoint)
-{
+void VRManagerParent::Bind(Endpoint<PVRManagerParent>&& aEndpoint) {
   if (!aEndpoint.Bind(this)) {
     return;
   }
@@ -174,58 +91,56 @@ VRManagerParent::Bind(Endpoint<PVRManagerParent>&& aEndpoint)
   RegisterWithManager();
 }
 
-/*static*/ void
-VRManagerParent::RegisterVRManagerInCompositorThread(VRManagerParent* aVRManager)
-{
+/*static*/
+void VRManagerParent::RegisterVRManagerInCompositorThread(
+    VRManagerParent* aVRManager) {
   aVRManager->RegisterWithManager();
 }
 
-/*static*/ VRManagerParent*
-VRManagerParent::CreateSameProcess()
-{
-  MessageLoop* loop = mozilla::layers::CompositorThreadHolder::Loop();
-  RefPtr<VRManagerParent> vmp = new VRManagerParent(base::GetCurrentProcId());
-  vmp->mCompositorThreadHolder = layers::CompositorThreadHolder::GetSingleton();
+/*static*/
+VRManagerParent* VRManagerParent::CreateSameProcess() {
+  MessageLoop* loop = CompositorThreadHolder::Loop();
+  RefPtr<VRManagerParent> vmp =
+      new VRManagerParent(base::GetCurrentProcId(), false);
+  vmp->mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
   vmp->mSelfRef = vmp;
-  loop->PostTask(NewRunnableFunction(RegisterVRManagerInCompositorThread, vmp.get()));
+  loop->PostTask(
+      NewRunnableFunction("RegisterVRManagerIncompositorThreadRunnable",
+                          RegisterVRManagerInCompositorThread, vmp.get()));
   return vmp.get();
 }
 
-bool
-VRManagerParent::CreateForGPUProcess(Endpoint<PVRManagerParent>&& aEndpoint)
-{
-  MessageLoop* loop = mozilla::layers::CompositorThreadHolder::Loop();
+bool VRManagerParent::CreateForGPUProcess(
+    Endpoint<PVRManagerParent>&& aEndpoint) {
+  MessageLoop* loop = CompositorThreadHolder::Loop();
 
-  RefPtr<VRManagerParent> vmp = new VRManagerParent(aEndpoint.OtherPid());
-  vmp->mCompositorThreadHolder = layers::CompositorThreadHolder::GetSingleton();
+  RefPtr<VRManagerParent> vmp =
+      new VRManagerParent(aEndpoint.OtherPid(), false);
+  vmp->mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
+  vmp->mSelfRef = vmp;
   loop->PostTask(NewRunnableMethod<Endpoint<PVRManagerParent>&&>(
-    vmp, &VRManagerParent::Bind, Move(aEndpoint)));
+      "gfx::VRManagerParent::Bind", vmp, &VRManagerParent::Bind,
+      std::move(aEndpoint)));
   return true;
 }
 
-void
-VRManagerParent::DeferredDestroy()
-{
+void VRManagerParent::DeferredDestroy() {
   mCompositorThreadHolder = nullptr;
   mSelfRef = nullptr;
 }
 
-void
-VRManagerParent::ActorDestroy(ActorDestroyReason why)
-{
+void VRManagerParent::ActorDestroy(ActorDestroyReason why) {
   UnregisterFromManager();
-  MessageLoop::current()->PostTask(NewRunnableMethod(this, &VRManagerParent::DeferredDestroy));
+  MessageLoop::current()->PostTask(
+      NewRunnableMethod("gfx::VRManagerParent::DeferredDestroy", this,
+                        &VRManagerParent::DeferredDestroy));
 }
 
-void
-VRManagerParent::OnChannelConnected(int32_t aPid)
-{
-  mCompositorThreadHolder = layers::CompositorThreadHolder::GetSingleton();
+void VRManagerParent::OnChannelConnected(int32_t aPid) {
+  mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
 }
 
-bool
-VRManagerParent::RecvRefreshDisplays()
-{
+mozilla::ipc::IPCResult VRManagerParent::RecvRefreshDisplays() {
   // This is called to refresh the VR Displays for Navigator.GetVRDevices().
   // We must pass "true" to VRManager::RefreshVRDisplays()
   // to ensure that the promise returned by Navigator.GetVRDevices
@@ -233,63 +148,126 @@ VRManagerParent::RecvRefreshDisplays()
   VRManager* vm = VRManager::Get();
   vm->RefreshVRDisplays(true);
 
-  return true;
+  return IPC_OK();
 }
 
-bool
-VRManagerParent::RecvGetDisplays(nsTArray<VRDisplayInfo> *aDisplays)
-{
+mozilla::ipc::IPCResult VRManagerParent::RecvSetGroupMask(
+    const uint32_t& aDisplayID, const uint32_t& aGroupMask) {
   VRManager* vm = VRManager::Get();
-  vm->GetVRDisplayInfo(*aDisplays);
-  return true;
+  vm->SetGroupMask(aGroupMask);
+  return IPC_OK();
 }
 
-bool
-VRManagerParent::RecvResetSensor(const uint32_t& aDisplayID)
-{
-  VRManager* vm = VRManager::Get();
-  RefPtr<gfx::VRDisplayHost> display = vm->GetDisplay(aDisplayID);
-  if (display != nullptr) {
-    display->ZeroSensor();
-  }
+bool VRManagerParent::HaveEventListener() { return mHaveEventListener; }
 
-  return true;
+bool VRManagerParent::HaveControllerListener() {
+  return mHaveControllerListener;
 }
 
-bool
-VRManagerParent::RecvGetSensorState(const uint32_t& aDisplayID, VRHMDSensorState* aState)
-{
-  VRManager* vm = VRManager::Get();
-  RefPtr<gfx::VRDisplayHost> display = vm->GetDisplay(aDisplayID);
-  if (display != nullptr) {
-    *aState = display->GetSensorState();
-  }
-  return true;
-}
+bool VRManagerParent::GetVRActiveStatus() { return mVRActiveStatus; }
 
-bool
-VRManagerParent::RecvGetImmediateSensorState(const uint32_t& aDisplayID, VRHMDSensorState* aState)
-{
-  VRManager* vm = VRManager::Get();
-  RefPtr<gfx::VRDisplayHost> display = vm->GetDisplay(aDisplayID);
-  if (display != nullptr) {
-    *aState = display->GetImmediateSensorState();
-  }
-  return true;
-}
-
-bool
-VRManagerParent::HaveEventListener()
-{
-  return mHaveEventListener;
-}
-
-bool
-VRManagerParent::RecvSetHaveEventListener(const bool& aHaveEventListener)
-{
+mozilla::ipc::IPCResult VRManagerParent::RecvSetHaveEventListener(
+    const bool& aHaveEventListener) {
   mHaveEventListener = aHaveEventListener;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvControllerListenerAdded() {
+  // Force update the available controllers for GamepadManager,
+  VRManager* vm = VRManager::Get();
+  vm->StopAllHaptics();
+  mHaveControllerListener = true;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvControllerListenerRemoved() {
+  mHaveControllerListener = false;
+  VRManager* vm = VRManager::Get();
+  vm->StopAllHaptics();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvRunPuppet(
+    const nsTArray<uint64_t>& aBuffer) {
+#if defined(MOZ_WIDGET_ANDROID)
+  // Not yet implemented for Android / GeckoView
+  // See Bug 1555192
+  Unused << SendNotifyPuppetCommandBufferCompleted(false);
+#else
+  VRManager* vm = VRManager::Get();
+  if (!vm->RunPuppet(aBuffer, this)) {
+    // We have immediately failed, need to resolve the
+    // promise right away
+    Unused << SendNotifyPuppetCommandBufferCompleted(false);
+  }
+#endif  // defined(MOZ_WIDGET_ANDROID)
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvResetPuppet() {
+#if defined(MOZ_WIDGET_ANDROID)
+  // Not yet implemented for Android / GeckoView
+  // See Bug 1555192
+#else
+  VRManager* vm = VRManager::Get();
+  vm->ResetPuppet(this);
+#endif  // defined(MOZ_WIDGET_ANDROID)
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvVibrateHaptic(
+    const uint32_t& aControllerIdx, const uint32_t& aHapticIndex,
+    const double& aIntensity, const double& aDuration,
+    const uint32_t& aPromiseID) {
+  VRManager* vm = VRManager::Get();
+  VRManagerPromise promise(this, aPromiseID);
+
+  vm->VibrateHaptic(aControllerIdx, aHapticIndex, aIntensity, aDuration,
+                    promise);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvStopVibrateHaptic(
+    const uint32_t& aControllerIdx) {
+  VRManager* vm = VRManager::Get();
+  vm->StopVibrateHaptic(aControllerIdx);
+  return IPC_OK();
+}
+
+bool VRManagerParent::SendReplyGamepadVibrateHaptic(
+    const uint32_t& aPromiseID) {
+  // GamepadManager only exists at the content process
+  // or the same process in non-e10s mode.
+  if (mHaveControllerListener && (mIsContentChild || IsSameProcess())) {
+    return PVRManagerParent::SendReplyGamepadVibrateHaptic(aPromiseID);
+  }
+
   return true;
 }
 
-} // namespace gfx
-} // namespace mozilla
+mozilla::ipc::IPCResult VRManagerParent::RecvStartVRNavigation(
+    const uint32_t& aDeviceID) {
+  VRManager* vm = VRManager::Get();
+  vm->StartVRNavigation(aDeviceID);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvStopVRNavigation(
+    const uint32_t& aDeviceID, const TimeDuration& aTimeout) {
+  VRManager* vm = VRManager::Get();
+  vm->StopVRNavigation(aDeviceID, aTimeout);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvStartActivity() {
+  mVRActiveStatus = true;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvStopActivity() {
+  mVRActiveStatus = false;
+  return IPC_OK();
+}
+
+}  // namespace gfx
+}  // namespace mozilla

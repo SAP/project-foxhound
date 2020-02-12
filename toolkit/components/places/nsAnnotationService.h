@@ -12,7 +12,6 @@
 #include "nsCOMPtr.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWeakReference.h"
-#include "nsToolkitCompsCID.h"
 #include "Database.h"
 #include "nsString.h"
 #include "mozilla/Attributes.h"
@@ -20,37 +19,18 @@
 namespace mozilla {
 namespace places {
 
-class AnnotatedResult final : public mozIAnnotatedResult
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_MOZIANNOTATEDRESULT
+struct BookmarkData;
 
-  AnnotatedResult(const nsCString& aGUID, nsIURI* aURI, int64_t aItemd,
-                  const nsACString& aAnnotationName,
-                  nsIVariant* aAnnotationValue);
+}  // namespace places
+}  // namespace mozilla
 
-private:
-  ~AnnotatedResult();
+class nsAnnotationService final : public nsIAnnotationService,
+                                  public nsSupportsWeakReference {
+  using BookmarkData = mozilla::places::BookmarkData;
 
-  const nsCString mGUID;
-  nsCOMPtr<nsIURI> mURI;
-  const int64_t mItemId;
-  const nsCString mAnnotationName;
-  nsCOMPtr<nsIVariant> mAnnotationValue;
-};
-
-} // namespace places
-} // namespace mozilla
-
-class nsAnnotationService final : public nsIAnnotationService
-                                , public nsIObserver
-                                , public nsSupportsWeakReference
-{
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIANNOTATIONSERVICE
-  NS_DECL_NSIOBSERVER
 
   nsAnnotationService();
 
@@ -68,11 +48,10 @@ public:
    * Returns a cached pointer to the annotation service for consumers in the
    * places directory.
    */
-  static nsAnnotationService* GetAnnotationService()
-  {
+  static nsAnnotationService* GetAnnotationService() {
     if (!gAnnotationService) {
       nsCOMPtr<nsIAnnotationService> serv =
-        do_GetService(NS_ANNOTATIONSERVICE_CONTRACTID);
+          do_GetService(NS_ANNOTATIONSERVICE_CONTRACTID);
       NS_ENSURE_TRUE(serv, nullptr);
       NS_ASSERTION(gAnnotationService,
                    "Should have static instance pointer now");
@@ -80,14 +59,11 @@ public:
     return gAnnotationService;
   }
 
-private:
+ private:
   ~nsAnnotationService();
 
-protected:
+ protected:
   RefPtr<mozilla::places::Database> mDB;
-
-  nsCOMArray<nsIAnnotationObserver> mObservers;
-  bool mHasSessionAnnotations;
 
   static nsAnnotationService* gAnnotationService;
 
@@ -101,61 +77,36 @@ protected:
   static const int kAnnoIndex_DateAdded;
   static const int kAnnoIndex_LastModified;
 
-  nsresult HasAnnotationInternal(nsIURI* aURI,
-                                 int64_t aItemId,
-                                 const nsACString& aName,
-                                 bool* _hasAnno);
-
-  nsresult StartGetAnnotation(nsIURI* aURI,
-                              int64_t aItemId,
-                              const nsACString& aName,
+  nsresult StartGetAnnotation(int64_t aItemId, const nsACString& aName,
                               nsCOMPtr<mozIStorageStatement>& aStatement);
 
-  nsresult StartSetAnnotation(nsIURI* aURI,
-                              int64_t aItemId,
-                              const nsACString& aName,
-                              int32_t aFlags,
-                              uint16_t aExpiration,
-                              uint16_t aType,
+  nsresult StartSetAnnotation(int64_t aItemId, BookmarkData* aBookmark,
+                              const nsACString& aName, int32_t aFlags,
+                              uint16_t aExpiration, uint16_t aType,
                               nsCOMPtr<mozIStorageStatement>& aStatement);
 
-  nsresult SetAnnotationStringInternal(nsIURI* aURI,
-                                       int64_t aItemId,
+  nsresult SetAnnotationStringInternal(int64_t aItemId, BookmarkData* aBookmark,
                                        const nsACString& aName,
-                                       const nsAString& aValue,
-                                       int32_t aFlags,
+                                       const nsAString& aValue, int32_t aFlags,
                                        uint16_t aExpiration);
-  nsresult SetAnnotationInt32Internal(nsIURI* aURI,
-                                      int64_t aItemId,
-                                      const nsACString& aName,
-                                      int32_t aValue,
-                                      int32_t aFlags,
-                                      uint16_t aExpiration);
-  nsresult SetAnnotationInt64Internal(nsIURI* aURI,
-                                      int64_t aItemId,
-                                      const nsACString& aName,
-                                      int64_t aValue,
-                                      int32_t aFlags,
-                                      uint16_t aExpiration);
-  nsresult SetAnnotationDoubleInternal(nsIURI* aURI,
-                                       int64_t aItemId,
-                                       const nsACString& aName,
-                                       double aValue,
-                                       int32_t aFlags,
-                                       uint16_t aExpiration);
+  nsresult SetAnnotationInt32Internal(int64_t aItemId, BookmarkData* aBookmark,
+                                      const nsACString& aName, int32_t aValue,
+                                      int32_t aFlags, uint16_t aExpiration);
+  nsresult SetAnnotationInt64Internal(int64_t aItemId, BookmarkData* aBookmark,
+                                      const nsACString& aName, int64_t aValue,
+                                      int32_t aFlags, uint16_t aExpiration);
+  nsresult SetAnnotationDoubleInternal(int64_t aItemId, BookmarkData* aBookmark,
+                                       const nsACString& aName, double aValue,
+                                       int32_t aFlags, uint16_t aExpiration);
 
-  nsresult RemoveAnnotationInternal(nsIURI* aURI,
-                                    int64_t aItemId,
+  nsresult RemoveAnnotationInternal(int64_t aItemId, BookmarkData* aBookmark,
                                     const nsACString& aName);
 
-public:
-  nsresult GetPagesWithAnnotationCOMArray(const nsACString& aName,
-                                          nsCOMArray<nsIURI>* _results);
-  nsresult GetItemsWithAnnotationTArray(const nsACString& aName,
-                                        nsTArray<int64_t>* _result);
-  nsresult GetAnnotationNamesTArray(nsIURI* aURI,
-                                    int64_t aItemId,
-                                    nsTArray<nsCString>* _result);
+  nsresult GetValueFromStatement(nsCOMPtr<mozIStorageStatement>& aStatement,
+                                 nsIVariant** _retval);
+
+ public:
+  nsresult RemoveItemAnnotations(int64_t aItemId);
 };
 
 #endif /* nsAnnotationService_h___ */

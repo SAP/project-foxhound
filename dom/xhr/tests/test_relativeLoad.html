@@ -9,7 +9,7 @@ Tests of DOM Worker Threads relative load
 -->
 <head>
   <title>Test for DOM Worker Threads</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -34,8 +34,8 @@ Tests of DOM Worker Threads relative load
 
     var worker = new Worker(urls[++index]);
     worker.onmessage = messageHandler;
-    worker.onerror = function(event) {
-      ok(false, "Worker had an error: " + event.message);
+    worker.onerror = function(e) {
+      ok(false, "Worker had an error: " + e.message);
       SimpleTest.finish();
     };
     worker.postMessage("start");

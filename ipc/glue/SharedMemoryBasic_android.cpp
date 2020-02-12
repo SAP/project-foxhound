@@ -27,35 +27,27 @@
 namespace mozilla {
 namespace ipc {
 
-static void
-LogError(const char* what)
-{
-  __android_log_print(ANDROID_LOG_ERROR, "Gecko",
-                      "%s: %s (%d)", what, strerror(errno), errno);
+static void LogError(const char* what) {
+  __android_log_print(ANDROID_LOG_ERROR, "Gecko", "%s: %s (%d)", what,
+                      strerror(errno), errno);
 }
 
 SharedMemoryBasic::SharedMemoryBasic()
-  : mShmFd(-1)
-  , mMemory(nullptr)
-{ }
+    : mShmFd(-1), mMemory(nullptr), mOpenRights(RightsReadWrite) {}
 
-SharedMemoryBasic::~SharedMemoryBasic()
-{
+SharedMemoryBasic::~SharedMemoryBasic() {
   Unmap();
   CloseHandle();
 }
 
-bool
-SharedMemoryBasic::SetHandle(const Handle& aHandle)
-{
+bool SharedMemoryBasic::SetHandle(const Handle& aHandle, OpenRights aRights) {
   MOZ_ASSERT(-1 == mShmFd, "Already Create()d");
   mShmFd = aHandle.fd;
+  mOpenRights = aRights;
   return true;
 }
 
-bool
-SharedMemoryBasic::Create(size_t aNbytes)
-{
+bool SharedMemoryBasic::Create(size_t aNbytes) {
   MOZ_ASSERT(-1 == mShmFd, "Already Create()d");
 
   // Carve a new instance off of /dev/ashmem
@@ -76,30 +68,47 @@ SharedMemoryBasic::Create(size_t aNbytes)
   return true;
 }
 
-bool
-SharedMemoryBasic::Map(size_t nBytes)
-{
+bool SharedMemoryBasic::Map(size_t nBytes, void* fixed_address) {
   MOZ_ASSERT(nullptr == mMemory, "Already Map()d");
 
-  mMemory = mmap(nullptr, nBytes,
-                 PROT_READ | PROT_WRITE,
-                 MAP_SHARED,
-                 mShmFd,
-                 0);
+  int prot = PROT_READ;
+  if (mOpenRights == RightsReadWrite) {
+    prot |= PROT_WRITE;
+  }
+
+  // Don't use MAP_FIXED when a fixed_address was specified, since that can
+  // replace pages that are alread mapped at that address.
+  mMemory = mmap(fixed_address, nBytes, prot, MAP_SHARED, mShmFd, 0);
+
   if (MAP_FAILED == mMemory) {
-    LogError("ShmemAndroid::Map()");
+    if (!fixed_address) {
+      LogError("ShmemAndroid::Map()");
+    }
     mMemory = nullptr;
     return false;
+  }
+
+  if (fixed_address && mMemory != fixed_address) {
+    if (munmap(mMemory, nBytes)) {
+      LogError("ShmemAndroid::Map():unmap");
+      mMemory = nullptr;
+      return false;
+    }
   }
 
   Mapped(nBytes);
   return true;
 }
 
-bool
-SharedMemoryBasic::ShareToProcess(base::ProcessId/*unused*/,
-                                  Handle* aNewHandle)
-{
+void* SharedMemoryBasic::FindFreeAddressSpace(size_t size) {
+  void* memory =
+      mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  munmap(memory, size);
+  return memory != (void*)-1 ? memory : NULL;
+}
+
+bool SharedMemoryBasic::ShareToProcess(base::ProcessId /*unused*/,
+                                       Handle* aNewHandle) {
   MOZ_ASSERT(mShmFd >= 0, "Should have been Create()d by now");
 
   int shmfdDup = dup(mShmFd);
@@ -113,9 +122,7 @@ SharedMemoryBasic::ShareToProcess(base::ProcessId/*unused*/,
   return true;
 }
 
-void
-SharedMemoryBasic::Unmap()
-{
+void SharedMemoryBasic::Unmap() {
   if (!mMemory) {
     return;
   }
@@ -126,14 +133,13 @@ SharedMemoryBasic::Unmap()
   mMemory = nullptr;
 }
 
-void
-SharedMemoryBasic::CloseHandle()
-{
+void SharedMemoryBasic::CloseHandle() {
   if (mShmFd != -1) {
     close(mShmFd);
     mShmFd = -1;
+    mOpenRights = RightsReadWrite;
   }
 }
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla

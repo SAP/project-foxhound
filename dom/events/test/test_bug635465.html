@@ -6,8 +6,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635465
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 635465</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style type="text/css">
       #item {
@@ -34,17 +34,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635465
   </div>
 </div>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 
 /** Test for Bug 635465 **/
 function showSubmenu(event) {
   var item = document.getElementById('item');
 
   var width = item.offsetWidth;   // IT WORKS IF YOU REMOVE THIS LINE
-  
+
   item.className='open';
 }
 
@@ -56,13 +56,13 @@ SimpleTest.waitForExplicitFinish();
 
 function executeTests() {
   // First flush out layout of firsthover
-  ok($("firsthover").getBoundingClientRect().height > 0, true,
+  ok($("firsthover").getBoundingClientRect().height > 0,
      "Should have a nonzero height before hover");
 
   // Now trigger a mouseover on firsthover
   synthesizeMouseAtCenter($("firsthover"), { type: "mousemove" });
 
-  ok($("secondhover").getBoundingClientRect().height > 0, true,
+  ok($("secondhover").getBoundingClientRect().height > 0,
      "Should have a nonzero height for submenu after hover");
 
   // Now determine where secondhover is hanging out
@@ -74,7 +74,7 @@ function executeTests() {
                          rect.top + rect.height/2,
                          { type: "mousemove" });
 
-  ok($("secondhover").getBoundingClientRect().height > 0, true,
+  ok($("secondhover").getBoundingClientRect().height > 0,
      "Should have a nonzero height for submenu after second hover");
 
   // And check computed display of the menu

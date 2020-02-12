@@ -11,11 +11,14 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLFrameSetElement : HTMLElement {
-  [SetterThrows]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterThrows]
   attribute DOMString cols;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
   attribute DOMString rows;
 };
 
-HTMLFrameSetElement implements WindowEventHandlers;
+HTMLFrameSetElement includes WindowEventHandlers;

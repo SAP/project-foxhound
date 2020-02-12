@@ -1,27 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 const { RootActor } = require("devtools/server/actors/root");
-const { DebuggerServer } = require("devtools/server/main");
+const {
+  ActorRegistry,
+} = require("devtools/server/actors/utils/actor-registry");
 
 /**
  * Root actor that doesn't have the bulk trait.
  */
-function createRootActor(aConnection) {
-  let root = new RootActor(aConnection, {
-    globalActorFactories: DebuggerServer.globalActorFactories
+exports.createRootActor = function createRootActor(connection) {
+  const root = new RootActor(connection, {
+    globalActorFactories: ActorRegistry.globalActorFactories,
   });
   root.applicationType = "xpcshell-tests";
   root.traits = {
-    bulk: false
+    bulk: false,
   };
   return root;
-}
-
-exports.register = function (handle) {
-  handle.setRootActor(createRootActor);
-};
-
-exports.unregister = function (handle) {
-  handle.setRootActor(null);
 };

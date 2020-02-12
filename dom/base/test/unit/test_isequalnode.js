@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-function run_test()
-{
+function run_test() {
   /*
    * NOTE: [i] is not allowed in this test, since it's done via classinfo and
    * we don't have that in xpcshell; the workaround is item(i).  Suck.
@@ -20,22 +19,19 @@ function run_test()
   test_isEqualNode_wholeDoc();
 
   // XXX should Node.isEqualNode(null) throw or return false?
-  //test_isEqualNode_null();
-
+  // test_isEqualNode_null();
 }
 
 // TEST CODE
 
 var doc, root; // cache for use in all tests
 
-function init()
-{
+function init() {
   doc = ParseFile("isequalnode_data.xml");
   root = doc.documentElement;
 }
 
-function test_isEqualNode_setAttribute()
-{
+function test_isEqualNode_setAttribute() {
   // NOTE: 0, 2 are whitespace
   var test1 = doc.getElementById("test_setAttribute");
   var node1 = test1.childNodes.item(1);
@@ -43,13 +39,11 @@ function test_isEqualNode_setAttribute()
 
   check_eq_nodes(node1, node2);
 
-
-  el(node1).setAttribute("bar", "baz");
+  node1.setAttribute("bar", "baz");
   check_neq_nodes(node1, node2);
 
-  el(node2).setAttribute("bar", "baz");
+  node2.setAttribute("bar", "baz");
   check_eq_nodes(node1, node2);
-
 
   // the null namespace is equivalent to no namespace -- section 1.3.3
   // (XML Namespaces) of DOM 3 Core
@@ -58,7 +52,6 @@ function test_isEqualNode_setAttribute()
 
   node2.setAttribute("quux", "17");
   check_eq_nodes(node1, node2);
-
 
   node2.setAttributeNS("http://mozilla.org/", "seamonkey", "rheet");
   check_neq_nodes(node1, node2);
@@ -77,18 +70,15 @@ function test_isEqualNode_setAttribute()
   check_neq_nodes(node1, node2);
 }
 
-function test_isEqualNode_clones()
-{
+function test_isEqualNode_clones() {
   // tests all elements and attributes in the document
   var all_elts = doc.getElementsByTagName("*");
-  for (var i = 0; i < all_elts.length; i++)
-  {
-    var elt = el(all_elts.item(i));
+  for (var i = 0; i < all_elts.length; i++) {
+    var elt = all_elts.item(i);
     check_eq_nodes(elt, elt.cloneNode(true));
 
     var attrs = elt.attributes;
-    for (var j = 0; j < attrs.length; j++)
-    {
+    for (var j = 0; j < attrs.length; j++) {
       var attr = attrs.item(j);
       check_eq_nodes(attr, attr.cloneNode(true));
     }
@@ -125,40 +115,36 @@ function test_isEqualNode_clones()
   check_eq_nodes(att, att.cloneNode(false));
 }
 
-function test_isEqualNode_variety()
-{
-  const nodes =
-    [
-      doc.createElement("foo"),
-      doc.createElementNS("http://example.com/", "foo"),
-      doc.createElementNS("http://example.org/", "foo"),
-      doc.createElementNS("http://example.com/", "FOO"),
-      doc.createAttribute("foo", "href='biz'"),
-      doc.createAttributeNS("http://example.com/", "foo", "href='biz'"),
-      doc.createTextNode("foo"),
-      doc.createTextNode("   "),
-      doc.createTextNode("    "),
-      doc.createComment("foo"),
-      doc.createProcessingInstruction("foo", "href='biz'"),
-      doc.implementation.createDocumentType("foo", "href='biz'", ""),
-      doc.implementation.createDocument("http://example.com/", "foo", null),
-      doc.createDocumentFragment()
-    ];
+function test_isEqualNode_variety() {
+  const nodes = [
+    doc.createElement("foo"),
+    doc.createElementNS("http://example.com/", "foo"),
+    doc.createElementNS("http://example.org/", "foo"),
+    doc.createElementNS("http://example.com/", "FOO"),
+    doc.createAttribute("foo", "href='biz'"),
+    doc.createAttributeNS("http://example.com/", "foo", "href='biz'"),
+    doc.createTextNode("foo"),
+    doc.createTextNode("   "),
+    doc.createTextNode("    "),
+    doc.createComment("foo"),
+    doc.createProcessingInstruction("foo", "href='biz'"),
+    doc.implementation.createDocumentType("foo", "href='biz'", ""),
+    doc.implementation.createDocument("http://example.com/", "foo", null),
+    doc.createDocumentFragment(),
+  ];
 
-  for (var i = 0; i < nodes.length; i++)
-  {
-    for (var j = i; j < nodes.length; j++)
-    {
-      if (i == j)
+  for (var i = 0; i < nodes.length; i++) {
+    for (var j = i; j < nodes.length; j++) {
+      if (i == j) {
         check_eq_nodes(nodes[i], nodes[j]);
-      else
+      } else {
         check_neq_nodes(nodes[i], nodes[j]);
+      }
     }
   }
 }
 
-function test_isEqualNode_normalization()
-{
+function test_isEqualNode_normalization() {
   var norm = doc.getElementById("test_normalization");
   var node1 = norm.childNodes.item(1);
   var node2 = norm.childNodes.item(3);
@@ -183,10 +169,12 @@ function test_isEqualNode_normalization()
   check_eq_nodes(node1, node2);
 
   // reset
-  while (node1.hasChildNodes())
+  while (node1.hasChildNodes()) {
     node1.removeChild(node1.childNodes.item(0));
-  while (node2.hasChildNodes())
+  }
+  while (node2.hasChildNodes()) {
     node2.removeChild(node2.childNodes.item(0));
+  }
 
   // attribute normalization testing
 
@@ -195,8 +183,7 @@ function test_isEqualNode_normalization()
   check_eq_nodes(at1, at2);
 
   // Attr.appendChild isn't implemented yet (bug 56758), so don't run this yet
-  if (false)
-  {
+  if (false) {
     at1.appendChild(doc.createTextNode("rasp"));
     at2.appendChild(doc.createTextNode("rasp"));
     check_eq_nodes(at1, at2);
@@ -306,8 +293,7 @@ function test_isEqualNode_normalization()
   check_eq_nodes(node1, node2);
 }
 
-function test_isEqualNode_whitespace()
-{
+function test_isEqualNode_whitespace() {
   equality_check_kids("test_pi1", true);
   equality_check_kids("test_pi2", true);
   equality_check_kids("test_pi3", false);
@@ -336,60 +322,43 @@ function test_isEqualNode_whitespace()
   equality_check_kids("test_cdata5", false);
 }
 
-function test_isEqualNode_namespaces()
-{
+function test_isEqualNode_namespaces() {
   equality_check_kids("test_ns1", false);
   equality_check_kids("test_ns2", false);
 
   // XXX want more tests here!
 }
 
-function test_isEqualNode_null()
-{
+function test_isEqualNode_null() {
   check_neq_nodes(doc, null);
 
   var elts = doc.getElementsByTagName("*");
-  for (var i = 0; i < elts.length; i++)
-  {
+  for (var i = 0; i < elts.length; i++) {
     var elt = elts.item(i);
     check_neq_nodes(elt, null);
 
     var attrs = elt.attributes;
-    for (var j = 0; j < attrs.length; j++)
-    {
+    for (var j = 0; j < attrs.length; j++) {
       var att = attrs.item(j);
       check_neq_nodes(att, null);
 
-      for (var k = 0; k < att.childNodes.length; k++)
-      {
+      for (var k = 0; k < att.childNodes.length; k++) {
         check_neq_nodes(att.childNodes.item(k), null);
       }
     }
   }
 }
 
-function test_isEqualNode_wholeDoc()
-{
+function test_isEqualNode_wholeDoc() {
   doc = ParseFile("isequalnode_data.xml");
   var doc2 = ParseFile("isequalnode_data.xml");
-  var tw1 =
-    doc.createTreeWalker(doc, Components.interfaces.nsIDOMNodeFilter.SHOW_ALL,
-                         null);
-  var tw2 =
-    doc2.createTreeWalker(doc2, Components.interfaces.nsIDOMNodeFilter.SHOW_ALL,
-                          null);
+  var tw1 = doc.createTreeWalker(doc, NodeFilter.SHOW_ALL, null);
+  var tw2 = doc2.createTreeWalker(doc2, NodeFilter.SHOW_ALL, null);
   do {
     check_eq_nodes(tw1.currentNode, tw2.currentNode);
     tw1.nextNode();
-  } while(tw2.nextNode());
+  } while (tw2.nextNode());
 }
-
-// UTILITY FUNCTIONS
-
-function n(node)  { return node ? node.QueryInterface(nsIDOMNode) : null; }
-function el(node) { return node ? node.QueryInterface(nsIDOMElement) : null; }
-function at(node) { return node ? node.QueryInterface(nsIDOMAttr) : null; }
-
 
 // TESTING FUNCTIONS
 
@@ -402,34 +371,38 @@ function at(node) { return node ? node.QueryInterface(nsIDOMAttr) : null; }
  * are whitespace-sensitive, and a stray space introduced during an edit to the
  * file could result in a correct but unexpected (in)equality failure.
  */
-function equality_check_kids(parentId, areEqual)
-{
+function equality_check_kids(parentId, areEqual) {
   var parent = doc.getElementById(parentId);
   var kid1 = parent.childNodes.item(1);
   var kid2 = parent.childNodes.item(3);
 
-  if (areEqual)
+  if (areEqual) {
     check_eq_nodes(kid1, kid2);
-  else
+  } else {
     check_neq_nodes(kid1, kid2);
+  }
 }
 
-function check_eq_nodes(n1, n2)
-{
-  if (n1 && !n1.isEqualNode(n2))
+function check_eq_nodes(n1, n2) {
+  if (n1 && !n1.isEqualNode(n2)) {
     do_throw(n1 + " should be equal to " + n2);
-  if (n2 && !n2.isEqualNode(n1))
+  }
+  if (n2 && !n2.isEqualNode(n1)) {
     do_throw(n2 + " should be equal to " + n1);
-  if (!n1 && !n2)
+  }
+  if (!n1 && !n2) {
     do_throw("nodes both null!");
+  }
 }
 
-function check_neq_nodes(n1, n2)
-{
-  if (n1 && n1.isEqualNode(n2))
+function check_neq_nodes(n1, n2) {
+  if (n1 && n1.isEqualNode(n2)) {
     do_throw(n1 + " should not be equal to " + n2);
-  if (n2 && n2.isEqualNode(n1))
+  }
+  if (n2 && n2.isEqualNode(n1)) {
     do_throw(n2 + " should not be equal to " + n1);
-  if (!n1 && !n2)
+  }
+  if (!n1 && !n2) {
     do_throw("n1 and n2 both null!");
+  }
 }

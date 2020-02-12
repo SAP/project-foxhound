@@ -2,179 +2,464 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["LightweightThemeConsumer"];
+var EXPORTED_SYMBOLS = ["LightweightThemeConsumer"];
 
-const {utils: Cu} = Components;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
+const DEFAULT_THEME_ID = "default-theme@mozilla.org";
 
-XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeImageOptimizer",
-  "resource://gre/modules/addons/LightweightThemeImageOptimizer.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "AppConstants",
+  "resource://gre/modules/AppConstants.jsm"
+);
+// Get the theme variables from the app resource directory.
+// This allows per-app variables.
+ChromeUtils.defineModuleGetter(
+  this,
+  "ThemeContentPropertyList",
+  "resource:///modules/ThemeVariableMap.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ThemeVariableMap",
+  "resource:///modules/ThemeVariableMap.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm");
+const toolkitVariableMap = [
+  [
+    "--lwt-accent-color",
+    {
+      lwtProperty: "accentcolor",
+      processColor(rgbaChannels, element) {
+        if (!rgbaChannels || rgbaChannels.a == 0) {
+          return "white";
+        }
+        // Remove the alpha channel
+        const { r, g, b } = rgbaChannels;
+        return `rgb(${r}, ${g}, ${b})`;
+      },
+    },
+  ],
+  [
+    "--lwt-text-color",
+    {
+      lwtProperty: "textcolor",
+      processColor(rgbaChannels, element) {
+        if (!rgbaChannels) {
+          rgbaChannels = { r: 0, g: 0, b: 0 };
+        }
+        // Remove the alpha channel
+        const { r, g, b } = rgbaChannels;
+        element.setAttribute(
+          "lwthemetextcolor",
+          _isTextColorDark(r, g, b) ? "dark" : "bright"
+        );
+        return `rgba(${r}, ${g}, ${b})`;
+      },
+    },
+  ],
+  [
+    "--arrowpanel-background",
+    {
+      lwtProperty: "popup",
+    },
+  ],
+  [
+    "--arrowpanel-color",
+    {
+      lwtProperty: "popup_text",
+      processColor(rgbaChannels, element) {
+        const disabledColorVariable = "--panel-disabled-color";
 
-this.LightweightThemeConsumer =
- function LightweightThemeConsumer(aDocument) {
+        if (!rgbaChannels) {
+          element.removeAttribute("lwt-popup-brighttext");
+          element.removeAttribute("lwt-popup-darktext");
+          element.style.removeProperty(disabledColorVariable);
+          return null;
+        }
+
+        let { r, g, b, a } = rgbaChannels;
+
+        if (_isTextColorDark(r, g, b)) {
+          element.removeAttribute("lwt-popup-brighttext");
+          element.setAttribute("lwt-popup-darktext", "true");
+        } else {
+          element.removeAttribute("lwt-popup-darktext");
+          element.setAttribute("lwt-popup-brighttext", "true");
+        }
+
+        element.style.setProperty(
+          disabledColorVariable,
+          `rgba(${r}, ${g}, ${b}, 0.5)`
+        );
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+      },
+    },
+  ],
+  [
+    "--arrowpanel-border-color",
+    {
+      lwtProperty: "popup_border",
+    },
+  ],
+  [
+    "--lwt-toolbar-field-background-color",
+    {
+      lwtProperty: "toolbar_field",
+    },
+  ],
+  [
+    "--lwt-toolbar-field-color",
+    {
+      lwtProperty: "toolbar_field_text",
+      processColor(rgbaChannels, element) {
+        if (!rgbaChannels) {
+          element.removeAttribute("lwt-toolbar-field-brighttext");
+          return null;
+        }
+        const { r, g, b, a } = rgbaChannels;
+        if (_isTextColorDark(r, g, b)) {
+          element.removeAttribute("lwt-toolbar-field-brighttext");
+        } else {
+          element.setAttribute("lwt-toolbar-field-brighttext", "true");
+        }
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+      },
+    },
+  ],
+  [
+    "--lwt-toolbar-field-border-color",
+    {
+      lwtProperty: "toolbar_field_border",
+    },
+  ],
+  [
+    "--lwt-toolbar-field-focus",
+    {
+      lwtProperty: "toolbar_field_focus",
+    },
+  ],
+  [
+    "--lwt-toolbar-field-focus-color",
+    {
+      lwtProperty: "toolbar_field_text_focus",
+    },
+  ],
+  [
+    "--toolbar-field-focus-border-color",
+    {
+      lwtProperty: "toolbar_field_border_focus",
+    },
+  ],
+  [
+    "--lwt-toolbar-field-highlight",
+    {
+      lwtProperty: "toolbar_field_highlight",
+      processColor(rgbaChannels, element) {
+        if (!rgbaChannels) {
+          element.removeAttribute("lwt-selection");
+          return null;
+        }
+        element.setAttribute("lwt-selection", "true");
+        const { r, g, b, a } = rgbaChannels;
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+      },
+    },
+  ],
+  [
+    "--lwt-toolbar-field-highlight-text",
+    {
+      lwtProperty: "toolbar_field_highlight_text",
+    },
+  ],
+];
+
+function LightweightThemeConsumer(aDocument) {
   this._doc = aDocument;
   this._win = aDocument.defaultView;
-  this._footerId = aDocument.documentElement.getAttribute("lightweightthemesfooter");
+  this._winId = this._win.windowUtils.outerWindowID;
 
-  if (PrivateBrowsingUtils.isWindowPrivate(this._win) &&
-      !PrivateBrowsingUtils.permanentPrivateBrowsing) {
-    return;
+  Services.obs.addObserver(this, "lightweight-theme-styling-update");
+
+  // We're responsible for notifying LightweightThemeManager when the OS is in
+  // dark mode so it can activate the dark theme. We don't want this on Linux
+  // as the default theme picks up the right colors from dark GTK themes.
+  if (AppConstants.platform != "linux") {
+    this.darkThemeMediaQuery = this._win.matchMedia("(-moz-system-dark-theme)");
+    this.darkThemeMediaQuery.addListener(this);
   }
 
-  let screen = this._win.screen;
-  this._lastScreenWidth = screen.width;
-  this._lastScreenHeight = screen.height;
+  const { LightweightThemeManager } = ChromeUtils.import(
+    "resource://gre/modules/LightweightThemeManager.jsm"
+  );
+  this._update(LightweightThemeManager.themeData);
 
-  Services.obs.addObserver(this, "lightweight-theme-styling-update", false);
-
-  var temp = {};
-  Cu.import("resource://gre/modules/LightweightThemeManager.jsm", temp);
-  this._update(temp.LightweightThemeManager.currentThemeForDisplay);
-  this._win.addEventListener("resize", this);
+  this._win.addEventListener("resolutionchange", this);
+  this._win.addEventListener("unload", this, { once: true });
 }
 
 LightweightThemeConsumer.prototype = {
   _lastData: null,
-  _lastScreenWidth: null,
-  _lastScreenHeight: null,
-  // Whether the active lightweight theme should be shown on the window.
-  _enabled: true,
-  // Whether a lightweight theme is enabled.
-  _active: false,
 
-  enable: function() {
-    this._enabled = true;
-    this._update(this._lastData);
-  },
-
-  disable: function() {
-    // Dance to keep the data, but reset the applied styles:
-    let lastData = this._lastData
-    this._update(null);
-    this._enabled = false;
-    this._lastData = lastData;
-  },
-
-  getData: function() {
-    return this._enabled ? Cu.cloneInto(this._lastData, this._win) : null;
-  },
-
-  observe: function (aSubject, aTopic, aData) {
-    if (aTopic != "lightweight-theme-styling-update")
+  observe(aSubject, aTopic, aData) {
+    if (aTopic != "lightweight-theme-styling-update") {
       return;
+    }
 
-    this._update(JSON.parse(aData));
+    let data = aSubject.wrappedJSObject;
+    if (data.window && data.window !== this._winId) {
+      return;
+    }
+
+    this._update(data);
   },
 
-  handleEvent: function (aEvent) {
-    let {width, height} = this._win.screen;
-
-    if (this._lastScreenWidth != width || this._lastScreenHeight != height) {
-      this._lastScreenWidth = width;
-      this._lastScreenHeight = height;
-      if (!this._active)
-        return;
+  handleEvent(aEvent) {
+    if (aEvent.target == this.darkThemeMediaQuery) {
       this._update(this._lastData);
-      Services.obs.notifyObservers(this._win, "lightweight-theme-optimized",
-                                   JSON.stringify(this._lastData));
-    }
-  },
-
-  destroy: function () {
-    if (!PrivateBrowsingUtils.isWindowPrivate(this._win) ||
-        PrivateBrowsingUtils.permanentPrivateBrowsing) {
-      Services.obs.removeObserver(this, "lightweight-theme-styling-update");
-
-      this._win.removeEventListener("resize", this);
-    }
-
-    this._win = this._doc = null;
-  },
-
-  _update: function (aData) {
-    if (!aData) {
-      aData = { headerURL: "", footerURL: "", textcolor: "", accentcolor: "" };
-      this._lastData = aData;
-    } else {
-      this._lastData = aData;
-      aData = LightweightThemeImageOptimizer.optimize(aData, this._win.screen);
-    }
-    if (!this._enabled)
       return;
+    }
+
+    switch (aEvent.type) {
+      case "resolutionchange":
+        this._update(this._lastData);
+        break;
+      case "unload":
+        Services.obs.removeObserver(this, "lightweight-theme-styling-update");
+        Services.ppmm.sharedData.delete(`theme/${this._winId}`);
+        this._win.removeEventListener("resolutionchange", this);
+        this._win = this._doc = null;
+        if (this.darkThemeMediaQuery) {
+          this.darkThemeMediaQuery.removeListener(this);
+          this.darkThemeMediaQuery = null;
+        }
+        break;
+    }
+  },
+
+  get darkMode() {
+    return this.darkThemeMediaQuery && this.darkThemeMediaQuery.matches;
+  },
+
+  _update(themeData) {
+    this._lastData = themeData;
+
+    let theme = themeData.theme;
+    if (themeData.darkTheme && this.darkMode) {
+      theme = themeData.darkTheme;
+    }
+    if (!theme) {
+      theme = { id: DEFAULT_THEME_ID };
+    }
+
+    let active = (this._active = Object.keys(theme).length);
 
     let root = this._doc.documentElement;
-    let active = !!aData.headerURL;
-    let stateChanging = (active != this._active);
 
-    // We need to clear these either way: either because the theme is being removed,
-    // or because we are applying a new theme and the data might be bogus CSS,
-    // so if we don't reset first, it'll keep the old value.
-    root.style.removeProperty("color");
-    root.style.removeProperty("background-color");
-    if (active) {
-      root.style.color = aData.textcolor || "black";
-      root.style.backgroundColor = aData.accentcolor || "white";
-      let [r, g, b] = _parseRGB(this._doc.defaultView.getComputedStyle(root, "").color);
-      let luminance = 0.2125 * r + 0.7154 * g + 0.0721 * b;
-      root.setAttribute("lwthemetextcolor", luminance <= 110 ? "dark" : "bright");
+    if (active && theme.headerURL) {
+      root.setAttribute("lwtheme-image", "true");
+    } else {
+      root.removeAttribute("lwtheme-image");
+    }
+
+    this._setExperiment(active, themeData.experiment, theme.experimental);
+    _setImage(root, active, "--lwt-header-image", theme.headerURL);
+    _setImage(
+      root,
+      active,
+      "--lwt-additional-images",
+      theme.additionalBackgrounds
+    );
+    _setProperties(root, active, theme);
+
+    if (theme.id != DEFAULT_THEME_ID || this.darkMode) {
       root.setAttribute("lwtheme", "true");
     } else {
-      root.removeAttribute("lwthemetextcolor");
       root.removeAttribute("lwtheme");
+      root.removeAttribute("lwthemetextcolor");
+    }
+    if (theme.id == DEFAULT_THEME_ID && this.darkMode) {
+      root.setAttribute("lwt-default-theme-in-dark-mode", "true");
+    } else {
+      root.removeAttribute("lwt-default-theme-in-dark-mode");
     }
 
-    this._active = active;
+    let contentThemeData = _getContentProperties(this._doc, active, theme);
+    Services.ppmm.sharedData.set(`theme/${this._winId}`, contentThemeData);
 
-    _setImage(root, active, aData.headerURL);
-    if (this._footerId) {
-      let footer = this._doc.getElementById(this._footerId);
-      footer.style.backgroundColor = active ? aData.accentcolor || "white" : "";
-      _setImage(footer, active, aData.footerURL);
-      if (active && aData.footerURL)
-        footer.setAttribute("lwthemefooter", "true");
-      else
-        footer.removeAttribute("lwthemefooter");
-    }
+    this._win.dispatchEvent(new CustomEvent("windowlwthemeupdate"));
+  },
 
-    // On OS X, we extend the lightweight theme into the titlebar, which means setting
-    // the chromemargin attribute. Some XUL applications already draw in the titlebar,
-    // so we need to save the chromemargin value before we overwrite it with the value
-    // that lets us draw in the titlebar. We stash this value on the root attribute so
-    // that XUL applications have the ability to invalidate the saved value.
-    if (AppConstants.platform == "macosx" && stateChanging) {
-      if (!root.hasAttribute("chromemargin-nonlwtheme")) {
-        root.setAttribute("chromemargin-nonlwtheme", root.getAttribute("chromemargin"));
+  _setExperiment(active, experiment, properties) {
+    const root = this._doc.documentElement;
+    if (this._lastExperimentData) {
+      const { stylesheet, usedVariables } = this._lastExperimentData;
+      if (stylesheet) {
+        stylesheet.remove();
       }
-
-      if (active) {
-        root.setAttribute("chromemargin", "0,-1,-1,-1");
-      } else {
-        let defaultChromemargin = root.getAttribute("chromemargin-nonlwtheme");
-        if (defaultChromemargin) {
-          root.setAttribute("chromemargin", defaultChromemargin);
-        } else {
-          root.removeAttribute("chromemargin");
+      if (usedVariables) {
+        for (const [variable] of usedVariables) {
+          _setProperty(root, false, variable);
         }
       }
     }
-    Services.obs.notifyObservers(this._win, "lightweight-theme-window-updated",
-                                 JSON.stringify(aData));
+
+    this._lastExperimentData = {};
+
+    if (!active || !experiment) {
+      return;
+    }
+
+    let usedVariables = [];
+    if (properties.colors) {
+      for (const property in properties.colors) {
+        const cssVariable = experiment.colors[property];
+        const value = _sanitizeCSSColor(
+          root.ownerDocument,
+          properties.colors[property]
+        );
+        usedVariables.push([cssVariable, value]);
+      }
+    }
+
+    if (properties.images) {
+      for (const property in properties.images) {
+        const cssVariable = experiment.images[property];
+        usedVariables.push([
+          cssVariable,
+          `url(${properties.images[property]})`,
+        ]);
+      }
+    }
+    if (properties.properties) {
+      for (const property in properties.properties) {
+        const cssVariable = experiment.properties[property];
+        usedVariables.push([cssVariable, properties.properties[property]]);
+      }
+    }
+    for (const [variable, value] of usedVariables) {
+      _setProperty(root, true, variable, value);
+    }
+    this._lastExperimentData.usedVariables = usedVariables;
+
+    if (experiment.stylesheet) {
+      /* Stylesheet URLs are validated using WebExtension schemas */
+      let stylesheetAttr = `href="${experiment.stylesheet}" type="text/css"`;
+      let stylesheet = this._doc.createProcessingInstruction(
+        "xml-stylesheet",
+        stylesheetAttr
+      );
+      this._doc.insertBefore(stylesheet, root);
+      this._lastExperimentData.stylesheet = stylesheet;
+    }
+  },
+};
+
+function _getContentProperties(doc, active, data) {
+  if (!active) {
+    return {};
+  }
+  let properties = {};
+  for (let property in data) {
+    if (ThemeContentPropertyList.includes(property)) {
+      properties[property] = _parseRGBA(_sanitizeCSSColor(doc, data[property]));
+    }
+  }
+  return properties;
+}
+
+function _setImage(aRoot, aActive, aVariableName, aURLs) {
+  if (aURLs && !Array.isArray(aURLs)) {
+    aURLs = [aURLs];
+  }
+  _setProperty(
+    aRoot,
+    aActive,
+    aVariableName,
+    aURLs && aURLs.map(v => `url("${v.replace(/"/g, '\\"')}")`).join(",")
+  );
+}
+
+function _setProperty(elem, active, variableName, value) {
+  if (active && value) {
+    elem.style.setProperty(variableName, value);
+  } else {
+    elem.style.removeProperty(variableName);
   }
 }
 
-function _setImage(aElement, aActive, aURL) {
-  aElement.style.backgroundImage =
-    (aActive && aURL) ? 'url("' + aURL.replace(/"/g, '\\"') + '")' : "";
+function _setProperties(root, active, themeData) {
+  let properties = [];
+
+  for (let map of [toolkitVariableMap, ThemeVariableMap]) {
+    for (let [cssVarName, definition] of map) {
+      const {
+        lwtProperty,
+        optionalElementID,
+        processColor,
+        isColor = true,
+      } = definition;
+      let elem = optionalElementID
+        ? root.ownerDocument.getElementById(optionalElementID)
+        : root;
+      let val = themeData[lwtProperty];
+      if (isColor) {
+        val = _sanitizeCSSColor(root.ownerDocument, val);
+        if (processColor) {
+          val = processColor(_parseRGBA(val), elem);
+        }
+      }
+      properties.push([elem, cssVarName, val]);
+    }
+  }
+
+  // Set all the properties together, since _sanitizeCSSColor flushes.
+  for (const [elem, cssVarName, val] of properties) {
+    _setProperty(elem, active, cssVarName, val);
+  }
 }
 
-function _parseRGB(aColorString) {
-  var rgb = aColorString.match(/^rgba?\((\d+), (\d+), (\d+)/);
-  rgb.shift();
-  return rgb.map(x => parseInt(x));
+function _sanitizeCSSColor(doc, cssColor) {
+  if (!cssColor) {
+    return null;
+  }
+  const HTML_NS = "http://www.w3.org/1999/xhtml";
+  // style.color normalizes color values and makes invalid ones black, so a
+  // simple round trip gets us a sanitized color value.
+  // Use !important so that the theme's stylesheets cannot override us.
+  let div = doc.createElementNS(HTML_NS, "div");
+  div.style.setProperty("color", "black", "important");
+  div.style.setProperty("display", "none", "important");
+  let span = doc.createElementNS(HTML_NS, "span");
+  span.style.setProperty("color", cssColor, "important");
+
+  // CSS variables are not allowed and should compute to black.
+  if (span.style.color.includes("var(")) {
+    span.style.color = "";
+  }
+
+  div.appendChild(span);
+  doc.documentElement.appendChild(div);
+  cssColor = doc.defaultView.getComputedStyle(span).color;
+  div.remove();
+  return cssColor;
+}
+
+function _parseRGBA(aColorString) {
+  if (!aColorString) {
+    return null;
+  }
+  var rgba = aColorString.replace(/(rgba?\()|(\)$)/g, "").split(",");
+  rgba = rgba.map(x => parseFloat(x));
+  return {
+    r: rgba[0],
+    g: rgba[1],
+    b: rgba[2],
+    a: 3 in rgba ? rgba[3] : 1,
+  };
+}
+
+function _isTextColorDark(r, g, b) {
+  return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
 }

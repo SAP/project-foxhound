@@ -5,41 +5,41 @@
 
 #include "CompositorWidgetChild.h"
 #include "mozilla/Unused.h"
+#include "gfxPlatform.h"
 
 namespace mozilla {
 namespace widget {
 
-CompositorWidgetChild::CompositorWidgetChild(RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
-                                             RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver)
-  : mVsyncDispatcher(aVsyncDispatcher)
-  , mVsyncObserver(aVsyncObserver)
-{
+CompositorWidgetChild::CompositorWidgetChild(
+    RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
+    RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver)
+    : mVsyncDispatcher(aVsyncDispatcher), mVsyncObserver(aVsyncObserver) {
   MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(!gfxPlatform::IsHeadless());
 }
 
-CompositorWidgetChild::~CompositorWidgetChild()
-{
-}
+CompositorWidgetChild::~CompositorWidgetChild() {}
 
-bool
-CompositorWidgetChild::RecvObserveVsync()
-{
+mozilla::ipc::IPCResult CompositorWidgetChild::RecvObserveVsync() {
   mVsyncDispatcher->SetCompositorVsyncObserver(mVsyncObserver);
-  return true;
+  return IPC_OK();
 }
 
-bool
-CompositorWidgetChild::RecvUnobserveVsync()
-{
+mozilla::ipc::IPCResult CompositorWidgetChild::RecvUnobserveVsync() {
   mVsyncDispatcher->SetCompositorVsyncObserver(nullptr);
-  return true;
+  return IPC_OK();
 }
 
-void
-CompositorWidgetChild::NotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize)
-{
+void CompositorWidgetChild::NotifyClientSizeChanged(
+    const LayoutDeviceIntSize& aClientSize) {
   Unused << SendNotifyClientSizeChanged(aClientSize);
 }
 
-} // namespace widget
-} // namespace mozilla
+#ifdef MOZ_WAYLAND
+void CompositorWidgetChild::RequestsUpdatingEGLSurface() {
+  Unused << SendRequestsUpdatingEGLSurface();
+}
+#endif
+
+}  // namespace widget
+}  // namespace mozilla

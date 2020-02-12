@@ -10,6 +10,7 @@
 
 #include "gtest/gtest.h"
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
@@ -17,6 +18,7 @@
 #include "gfxColor.h"
 #include "imgITools.h"
 #include "nsCOMPtr.h"
+#include "SurfaceFlags.h"
 #include "SurfacePipe.h"
 #include "SurfacePipeFactory.h"
 
@@ -29,72 +31,84 @@ namespace image {
 // Types
 ///////////////////////////////////////////////////////////////////////////////
 
-enum TestCaseFlags
-{
-  TEST_CASE_DEFAULT_FLAGS   = 0,
-  TEST_CASE_IS_FUZZY        = 1 << 0,
-  TEST_CASE_HAS_ERROR       = 1 << 1,
-  TEST_CASE_IS_TRANSPARENT  = 1 << 2,
-  TEST_CASE_IS_ANIMATED     = 1 << 3,
-  TEST_CASE_IGNORE_OUTPUT   = 1 << 4,
+struct BGRAColor {
+  BGRAColor() : BGRAColor(0, 0, 0, 0) {}
+
+  BGRAColor(uint8_t aBlue, uint8_t aGreen, uint8_t aRed, uint8_t aAlpha,
+            bool aPremultiplied = false)
+      : mBlue(aBlue),
+        mGreen(aGreen),
+        mRed(aRed),
+        mAlpha(aAlpha),
+        mPremultiplied(aPremultiplied) {}
+
+  static BGRAColor Green() { return BGRAColor(0x00, 0xFF, 0x00, 0xFF); }
+  static BGRAColor Red() { return BGRAColor(0x00, 0x00, 0xFF, 0xFF); }
+  static BGRAColor Blue() { return BGRAColor(0xFF, 0x00, 0x00, 0xFF); }
+  static BGRAColor Transparent() { return BGRAColor(0x00, 0x00, 0x00, 0x00); }
+
+  BGRAColor Premultiply() const {
+    if (!mPremultiplied) {
+      return BGRAColor(gfxPreMultiply(mBlue, mAlpha),
+                       gfxPreMultiply(mGreen, mAlpha),
+                       gfxPreMultiply(mRed, mAlpha), mAlpha, true);
+    }
+    return *this;
+  }
+
+  uint32_t AsPixel() const {
+    if (!mPremultiplied) {
+      return gfxPackedPixel(mAlpha, mRed, mGreen, mBlue);
+    }
+    return gfxPackedPixelNoPreMultiply(mAlpha, mRed, mGreen, mBlue);
+  }
+
+  uint8_t mBlue;
+  uint8_t mGreen;
+  uint8_t mRed;
+  uint8_t mAlpha;
+  bool mPremultiplied;
 };
 
-struct ImageTestCase
-{
-  ImageTestCase(const char* aPath,
-                const char* aMimeType,
-                gfx::IntSize aSize,
-                uint32_t aFlags = TEST_CASE_DEFAULT_FLAGS)
-    : mPath(aPath)
-    , mMimeType(aMimeType)
-    , mSize(aSize)
-    , mOutputSize(aSize)
-    , mFlags(aFlags)
-  { }
+enum TestCaseFlags {
+  TEST_CASE_DEFAULT_FLAGS = 0,
+  TEST_CASE_IS_FUZZY = 1 << 0,
+  TEST_CASE_HAS_ERROR = 1 << 1,
+  TEST_CASE_IS_TRANSPARENT = 1 << 2,
+  TEST_CASE_IS_ANIMATED = 1 << 3,
+  TEST_CASE_IGNORE_OUTPUT = 1 << 4,
+};
 
-  ImageTestCase(const char* aPath,
-                const char* aMimeType,
-                gfx::IntSize aSize,
+struct ImageTestCase {
+  ImageTestCase(const char* aPath, const char* aMimeType, gfx::IntSize aSize,
+                uint32_t aFlags = TEST_CASE_DEFAULT_FLAGS)
+      : mPath(aPath),
+        mMimeType(aMimeType),
+        mSize(aSize),
+        mOutputSize(aSize),
+        mFlags(aFlags),
+        mSurfaceFlags(DefaultSurfaceFlags()),
+        mColor(BGRAColor::Green()) {}
+
+  ImageTestCase(const char* aPath, const char* aMimeType, gfx::IntSize aSize,
                 gfx::IntSize aOutputSize,
                 uint32_t aFlags = TEST_CASE_DEFAULT_FLAGS)
-    : mPath(aPath)
-    , mMimeType(aMimeType)
-    , mSize(aSize)
-    , mOutputSize(aOutputSize)
-    , mFlags(aFlags)
-  { }
+      : mPath(aPath),
+        mMimeType(aMimeType),
+        mSize(aSize),
+        mOutputSize(aOutputSize),
+        mFlags(aFlags),
+        mSurfaceFlags(DefaultSurfaceFlags()),
+        mColor(BGRAColor::Green()) {}
 
   const char* mPath;
   const char* mMimeType;
   gfx::IntSize mSize;
   gfx::IntSize mOutputSize;
   uint32_t mFlags;
+  SurfaceFlags mSurfaceFlags;
+  BGRAColor mColor;
 };
-
-struct BGRAColor
-{
-  BGRAColor() : BGRAColor(0, 0, 0, 0) { }
-
-  BGRAColor(uint8_t aBlue, uint8_t aGreen, uint8_t aRed, uint8_t aAlpha)
-    : mBlue(aBlue)
-    , mGreen(aGreen)
-    , mRed(aRed)
-    , mAlpha(aAlpha)
-  { }
-
-  static BGRAColor Green() { return BGRAColor(0x00, 0xFF, 0x00, 0xFF); }
-  static BGRAColor Red()   { return BGRAColor(0x00, 0x00, 0xFF, 0xFF); }
-  static BGRAColor Blue()   { return BGRAColor(0xFF, 0x00, 0x00, 0xFF); }
-  static BGRAColor Transparent() { return BGRAColor(0x00, 0x00, 0x00, 0x00); }
-
-  uint32_t AsPixel() const { return gfxPackedPixel(mAlpha, mRed, mGreen, mBlue); }
-
-  uint8_t mBlue;
-  uint8_t mGreen;
-  uint8_t mRed;
-  uint8_t mAlpha;
-};
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // General Helpers
@@ -107,35 +121,42 @@ struct BGRAColor
  * use this class to ensure that ImageLib services are available. Failure to do
  * so can result in strange, non-deterministic failures.
  */
-struct AutoInitializeImageLib
-{
-  AutoInitializeImageLib()
-  {
-    // Ensure that ImageLib services are initialized.
-    nsCOMPtr<imgITools> imgTools = do_CreateInstance("@mozilla.org/image/tools;1");
-    EXPECT_TRUE(imgTools != nullptr);
-  }
+class AutoInitializeImageLib {
+ public:
+  AutoInitializeImageLib();
 };
+
+/**
+ * A test fixture class used for benchmark tests. It preloads the image data
+ * from disk to avoid including that in the timing.
+ */
+class ImageBenchmarkBase : public ::testing::Test {
+ protected:
+  ImageBenchmarkBase(const ImageTestCase& aTestCase) : mTestCase(aTestCase) {}
+
+  void SetUp() override;
+  void TearDown() override;
+
+  AutoInitializeImageLib mInit;
+  ImageTestCase mTestCase;
+  RefPtr<SourceBuffer> mSourceBuffer;
+};
+
+/// Spins on the main thread to process any pending events.
+void SpinPendingEvents();
 
 /// Loads a file from the current directory. @return an nsIInputStream for it.
 already_AddRefed<nsIInputStream> LoadFile(const char* aRelativePath);
 
 /**
  * @returns true if every pixel of @aSurface is @aColor.
- * 
+ *
  * If @aFuzz is nonzero, a tolerance of @aFuzz is allowed in each color
  * component. This may be necessary for tests that involve JPEG images or
  * downscaling.
  */
-bool IsSolidColor(gfx::SourceSurface* aSurface,
-                  BGRAColor aColor,
+bool IsSolidColor(gfx::SourceSurface* aSurface, BGRAColor aColor,
                   uint8_t aFuzz = 0);
-
-/**
- * @returns true if every pixel of @aDecoder's surface has the palette index
- * specified by @aColor.
- */
-bool IsSolidPalettedColor(Decoder* aDecoder, uint8_t aColor);
 
 /**
  * @returns true if every pixel in the range of rows specified by @aStartRow and
@@ -145,20 +166,8 @@ bool IsSolidPalettedColor(Decoder* aDecoder, uint8_t aColor);
  * component. This may be necessary for tests that involve JPEG images or
  * downscaling.
  */
-bool RowsAreSolidColor(gfx::SourceSurface* aSurface,
-                       int32_t aStartRow,
-                       int32_t aRowCount,
-                       BGRAColor aColor,
-                       uint8_t aFuzz = 0);
-
-/**
- * @returns true if every pixel in the range of rows specified by @aStartRow and
- * @aRowCount of @aDecoder's surface has the palette index specified by @aColor.
- */
-bool PalettedRowsAreSolidColor(Decoder* aDecoder,
-                               int32_t aStartRow,
-                               int32_t aRowCount,
-                               uint8_t aColor);
+bool RowsAreSolidColor(gfx::SourceSurface* aSurface, int32_t aStartRow,
+                       int32_t aRowCount, BGRAColor aColor, uint8_t aFuzz = 0);
 
 /**
  * @returns true if every pixel in the rect specified by @aRect is @aColor.
@@ -167,58 +176,44 @@ bool PalettedRowsAreSolidColor(Decoder* aDecoder,
  * component. This may be necessary for tests that involve JPEG images or
  * downscaling.
  */
-bool RectIsSolidColor(gfx::SourceSurface* aSurface,
-                      const gfx::IntRect& aRect,
-                      BGRAColor aColor,
-                      uint8_t aFuzz = 0);
-
-/**
- * @returns true if every pixel in the rect specified by @aRect has the palette
- * index specified by @aColor.
- */
-bool PalettedRectIsSolidColor(Decoder* aDecoder,
-                              const gfx::IntRect& aRect,
-                              uint8_t aColor);
+bool RectIsSolidColor(gfx::SourceSurface* aSurface, const gfx::IntRect& aRect,
+                      BGRAColor aColor, uint8_t aFuzz = 0);
 
 /**
  * @returns true if the pixels in @aRow of @aSurface match the pixels given in
  * @aPixels.
  */
-bool RowHasPixels(gfx::SourceSurface* aSurface,
-                  int32_t aRow,
+bool RowHasPixels(gfx::SourceSurface* aSurface, int32_t aRow,
                   const std::vector<BGRAColor>& aPixels);
 
 // ExpectNoResume is an IResumable implementation for use by tests that expect
 // Resume() to never get called.
-class ExpectNoResume final : public IResumable
-{
-public:
+class ExpectNoResume final : public IResumable {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ExpectNoResume, override)
 
   void Resume() override { FAIL() << "Resume() should not get called"; }
 
-private:
-  ~ExpectNoResume() override { }
+ private:
+  ~ExpectNoResume() override {}
 };
 
 // CountResumes is an IResumable implementation for use by tests that expect
 // Resume() to get called a certain number of times.
-class CountResumes : public IResumable
-{
-public:
+class CountResumes : public IResumable {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CountResumes, override)
 
-  CountResumes() : mCount(0) { }
+  CountResumes() : mCount(0) {}
 
   void Resume() override { mCount++; }
   uint32_t Count() const { return mCount; }
 
-private:
-  ~CountResumes() override { }
+ private:
+  ~CountResumes() override {}
 
   uint32_t mCount;
 };
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // SurfacePipe Helpers
@@ -229,9 +224,9 @@ private:
  * that requires a decoder to initialize or to allocate surfaces but doesn't
  * actually need the decoder to do any decoding.
  *
- * XXX(seth): We only need this because SurfaceSink and PalettedSurfaceSink
- * defer to the decoder for surface allocation. Once all decoders use
- * SurfacePipe we won't need to do that anymore and we can remove this function.
+ * XXX(seth): We only need this because SurfaceSink defer to the decoder for
+ * surface allocation. Once all decoders use SurfacePipe we won't need to do
+ * that anymore and we can remove this function.
  */
 already_AddRefed<Decoder> CreateTrivialDecoder();
 
@@ -245,18 +240,26 @@ already_AddRefed<Decoder> CreateTrivialDecoder();
  * @param aConfigs The configuration for the pipeline.
  */
 template <typename Func, typename... Configs>
-void WithFilterPipeline(Decoder* aDecoder, Func aFunc, Configs... aConfigs)
-{
+void WithFilterPipeline(Decoder* aDecoder, Func aFunc, bool aFinish,
+                        const Configs&... aConfigs) {
   auto pipe = MakeUnique<typename detail::FilterPipeline<Configs...>::Type>();
   nsresult rv = pipe->Configure(aConfigs...);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   aFunc(aDecoder, pipe.get());
 
-  RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
-  if (currentFrame) {
-    currentFrame->Finish();
+  if (aFinish) {
+    RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
+    if (currentFrame) {
+      currentFrame->Finish();
+    }
   }
+}
+
+template <typename Func, typename... Configs>
+void WithFilterPipeline(Decoder* aDecoder, Func aFunc,
+                        const Configs&... aConfigs) {
+  WithFilterPipeline(aDecoder, aFunc, true, aConfigs...);
 }
 
 /**
@@ -268,8 +271,8 @@ void WithFilterPipeline(Decoder* aDecoder, Func aFunc, Configs... aConfigs)
  * @param aConfigs The configuration for the pipeline.
  */
 template <typename... Configs>
-void AssertConfiguringPipelineFails(Decoder* aDecoder, Configs... aConfigs)
-{
+void AssertConfiguringPipelineFails(Decoder* aDecoder,
+                                    const Configs&... aConfigs) {
   auto pipe = MakeUnique<typename detail::FilterPipeline<Configs...>::Type>();
   nsresult rv = pipe->Configure(aConfigs...);
 
@@ -307,22 +310,24 @@ void AssertCorrectPipelineFinalState(SurfaceFilter* aFilter,
  *              transparent.
  * @param aFuzz The amount of fuzz to use in pixel comparisons.
  */
-void CheckGeneratedImage(Decoder* aDecoder,
-                         const gfx::IntRect& aRect,
+void CheckGeneratedImage(Decoder* aDecoder, const gfx::IntRect& aRect,
                          uint8_t aFuzz = 0);
 
 /**
- * Checks a generated paletted image for correctness. Reports any unexpected
- * deviation from the expected image as GTest failures.
+ * Checks a generated surface for correctness. Reports any unexpected deviation
+ * from the expected image as GTest failures.
  *
- * @param aDecoder The decoder which contains the image. The decoder's current
- *                 frame will be checked.
+ * @param aSurface The surface to check.
  * @param aRect The region in the space of the output surface that the filter
- *              pipeline will actually write to. It's expected that pixels in
- *              this region have a palette index of 255, while pixels outside
- *              this region have a palette index of 0.
+ *              pipeline will actually write to.
+ * @param aInnerColor Check that pixels inside of aRect are this color.
+ * @param aOuterColor Check that pixels outside of aRect are this color.
+ * @param aFuzz The amount of fuzz to use in pixel comparisons.
  */
-void CheckGeneratedPalettedImage(Decoder* aDecoder, const gfx::IntRect& aRect);
+void CheckGeneratedSurface(gfx::SourceSurface* aSurface,
+                           const gfx::IntRect& aRect,
+                           const BGRAColor& aInnerColor,
+                           const BGRAColor& aOuterColor, uint8_t aFuzz = 0);
 
 /**
  * Tests the result of calling WritePixels() using the provided SurfaceFilter
@@ -344,35 +349,53 @@ void CheckGeneratedPalettedImage(Decoder* aDecoder, const gfx::IntRect& aRect);
  *                        difference from @aInputRect: @aInputRect is the actual
  *                        region invalidated, while @aInputWriteRect is the
  *                        region that is written to. These can differ in cases
- *                        where the input is not clipped to the size of the image.
- *                        Defaults to the entire input rect.
+ *                        where the input is not clipped to the size of the
+ * image. Defaults to the entire input rect.
  * @param aOutputWriteRect The region in the space of the output surface that
  *                         the filter pipeline will actually write to. It's
  *                         expected that pixels in this region are green, while
  *                         pixels outside this region are transparent. Defaults
  *                         to the entire output rect.
  */
-void CheckWritePixels(Decoder* aDecoder,
-                      SurfaceFilter* aFilter,
-                      Maybe<gfx::IntRect> aOutputRect = Nothing(),
-                      Maybe<gfx::IntRect> aInputRect = Nothing(),
-                      Maybe<gfx::IntRect> aInputWriteRect = Nothing(),
-                      Maybe<gfx::IntRect> aOutputWriteRect = Nothing(),
+void CheckWritePixels(Decoder* aDecoder, SurfaceFilter* aFilter,
+                      const Maybe<gfx::IntRect>& aOutputRect = Nothing(),
+                      const Maybe<gfx::IntRect>& aInputRect = Nothing(),
+                      const Maybe<gfx::IntRect>& aInputWriteRect = Nothing(),
+                      const Maybe<gfx::IntRect>& aOutputWriteRect = Nothing(),
                       uint8_t aFuzz = 0);
 
 /**
  * Tests the result of calling WritePixels() using the provided SurfaceFilter
- * pipeline. The pipeline must be a paletted pipeline.
+ * pipeline. Allows for control over the input color to write, and the expected
+ * output color.
  * @see CheckWritePixels() for documentation of the arguments.
  */
-void CheckPalettedWritePixels(Decoder* aDecoder,
-                              SurfaceFilter* aFilter,
-                              Maybe<gfx::IntRect> aOutputRect = Nothing(),
-                              Maybe<gfx::IntRect> aInputRect = Nothing(),
-                              Maybe<gfx::IntRect> aInputWriteRect = Nothing(),
-                              Maybe<gfx::IntRect> aOutputWriteRect = Nothing(),
-                              uint8_t aFuzz = 0);
+void CheckTransformedWritePixels(
+    Decoder* aDecoder, SurfaceFilter* aFilter, const BGRAColor& aInputColor,
+    const BGRAColor& aOutputColor,
+    const Maybe<gfx::IntRect>& aOutputRect = Nothing(),
+    const Maybe<gfx::IntRect>& aInputRect = Nothing(),
+    const Maybe<gfx::IntRect>& aInputWriteRect = Nothing(),
+    const Maybe<gfx::IntRect>& aOutputWriteRect = Nothing(), uint8_t aFuzz = 0);
 
+///////////////////////////////////////////////////////////////////////////////
+// Decoder Helpers
+///////////////////////////////////////////////////////////////////////////////
+
+// Friend class of Decoder to access internals for tests.
+class MOZ_STACK_CLASS DecoderTestHelper final {
+ public:
+  explicit DecoderTestHelper(Decoder* aDecoder) : mDecoder(aDecoder) {}
+
+  void PostIsAnimated(FrameTimeout aTimeout) {
+    mDecoder->PostIsAnimated(aTimeout);
+  }
+
+  void PostFrameStop(Opacity aOpacity) { mDecoder->PostFrameStop(aOpacity); }
+
+ private:
+  Decoder* mDecoder;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test Data
@@ -384,18 +407,31 @@ ImageTestCase GreenJPGTestCase();
 ImageTestCase GreenBMPTestCase();
 ImageTestCase GreenICOTestCase();
 ImageTestCase GreenIconTestCase();
+ImageTestCase GreenWebPTestCase();
+
+ImageTestCase LargeWebPTestCase();
+ImageTestCase GreenWebPIccSrgbTestCase();
 
 ImageTestCase GreenFirstFrameAnimatedGIFTestCase();
 ImageTestCase GreenFirstFrameAnimatedPNGTestCase();
+ImageTestCase GreenFirstFrameAnimatedWebPTestCase();
+
+ImageTestCase BlendAnimatedGIFTestCase();
+ImageTestCase BlendAnimatedPNGTestCase();
+ImageTestCase BlendAnimatedWebPTestCase();
 
 ImageTestCase CorruptTestCase();
 ImageTestCase CorruptBMPWithTruncatedHeader();
 ImageTestCase CorruptICOWithBadBMPWidthTestCase();
 ImageTestCase CorruptICOWithBadBMPHeightTestCase();
+ImageTestCase CorruptICOWithBadBppTestCase();
 
 ImageTestCase TransparentPNGTestCase();
 ImageTestCase TransparentGIFTestCase();
+ImageTestCase TransparentWebPTestCase();
+ImageTestCase TransparentNoAlphaHeaderWebPTestCase();
 ImageTestCase FirstFramePaddingGIFTestCase();
+ImageTestCase TransparentIfWithinICOBMPTestCase(TestCaseFlags aFlags);
 ImageTestCase NoFrameDelayGIFTestCase();
 ImageTestCase ExtraImageSubBlocksAnimatedGIFTestCase();
 
@@ -409,9 +445,29 @@ ImageTestCase DownscaledJPGTestCase();
 ImageTestCase DownscaledBMPTestCase();
 ImageTestCase DownscaledICOTestCase();
 ImageTestCase DownscaledIconTestCase();
+ImageTestCase DownscaledWebPTestCase();
 ImageTestCase DownscaledTransparentICOWithANDMaskTestCase();
 
-} // namespace image
-} // namespace mozilla
+ImageTestCase TruncatedSmallGIFTestCase();
 
-#endif // mozilla_image_test_gtest_Common_h
+ImageTestCase LargeICOWithBMPTestCase();
+ImageTestCase LargeICOWithPNGTestCase();
+ImageTestCase GreenMultipleSizesICOTestCase();
+
+ImageTestCase PerfGrayJPGTestCase();
+ImageTestCase PerfCmykJPGTestCase();
+ImageTestCase PerfYCbCrJPGTestCase();
+ImageTestCase PerfRgbPNGTestCase();
+ImageTestCase PerfRgbAlphaPNGTestCase();
+ImageTestCase PerfGrayPNGTestCase();
+ImageTestCase PerfGrayAlphaPNGTestCase();
+ImageTestCase PerfRgbLosslessWebPTestCase();
+ImageTestCase PerfRgbAlphaLosslessWebPTestCase();
+ImageTestCase PerfRgbLossyWebPTestCase();
+ImageTestCase PerfRgbAlphaLossyWebPTestCase();
+ImageTestCase PerfRgbGIFTestCase();
+
+}  // namespace image
+}  // namespace mozilla
+
+#endif  // mozilla_image_test_gtest_Common_h

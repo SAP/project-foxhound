@@ -4,23 +4,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_queue_h__
-#define mozilla_dom_workers_queue_h__
+#ifndef mozilla_dom_workerinternal_Queue_h
+#define mozilla_dom_workerinternal_Queue_h
 
-#include "Workers.h"
+#include "mozilla/dom/WorkerCommon.h"
 
 #include "mozilla/Mutex.h"
 #include "nsTArray.h"
 
-BEGIN_WORKERS_NAMESPACE
+namespace mozilla {
+namespace dom {
+namespace workerinternals {
 
 template <typename T, int TCount>
-struct StorageWithTArray
-{
+struct StorageWithTArray {
   typedef AutoTArray<T, TCount> StorageType;
 
-  static void Reverse(StorageType& aStorage)
-  {
+  static void Reverse(StorageType& aStorage) {
     uint32_t length = aStorage.Length();
     for (uint32_t index = 0; index < length / 2; index++) {
       uint32_t reverseIndex = length - 1 - index;
@@ -33,18 +33,15 @@ struct StorageWithTArray
     }
   }
 
-  static bool IsEmpty(const StorageType& aStorage)
-  {
+  static bool IsEmpty(const StorageType& aStorage) {
     return !!aStorage.IsEmpty();
   }
 
-  static bool Push(StorageType& aStorage, const T& aEntry)
-  {
+  static bool Push(StorageType& aStorage, const T& aEntry) {
     return !!aStorage.AppendElement(aEntry);
   }
 
-  static bool Pop(StorageType& aStorage, T& aEntry)
-  {
+  static bool Pop(StorageType& aStorage, T& aEntry) {
     if (IsEmpty(aStorage)) {
       return false;
     }
@@ -55,84 +52,51 @@ struct StorageWithTArray
     return true;
   }
 
-  static void Clear(StorageType& aStorage)
-  {
-    aStorage.Clear();
-  }
+  static void Clear(StorageType& aStorage) { aStorage.Clear(); }
 
-  static void Compact(StorageType& aStorage)
-  {
-    aStorage.Compact();
-  }
+  static void Compact(StorageType& aStorage) { aStorage.Compact(); }
 };
 
-class LockingWithMutex
-{
+class LockingWithMutex {
   mozilla::Mutex mMutex;
 
-protected:
-  LockingWithMutex()
-  : mMutex("LockingWithMutex::mMutex")
-  { }
+ protected:
+  LockingWithMutex() : mMutex("LockingWithMutex::mMutex") {}
 
-  void Lock()
-  {
-    mMutex.Lock();
-  }
+  void Lock() { mMutex.Lock(); }
 
-  void Unlock()
-  {
-    mMutex.Unlock();
-  }
+  void Unlock() { mMutex.Unlock(); }
 
-  class AutoLock
-  {
+  class AutoLock {
     LockingWithMutex& mHost;
 
-  public:
-    explicit AutoLock(LockingWithMutex& aHost)
-    : mHost(aHost)
-    {
-      mHost.Lock();
-    }
+   public:
+    explicit AutoLock(LockingWithMutex& aHost) : mHost(aHost) { mHost.Lock(); }
 
-    ~AutoLock()
-    {
-      mHost.Unlock();
-    }
+    ~AutoLock() { mHost.Unlock(); }
   };
 
   friend class AutoLock;
 };
 
-class NoLocking
-{
-protected:
-  void Lock()
-  { }
+class NoLocking {
+ protected:
+  void Lock() {}
 
-  void Unlock()
-  { }
+  void Unlock() {}
 
-  class AutoLock
-  {
-  public:
-    explicit AutoLock(NoLocking& aHost)
-    { }
+  class AutoLock {
+   public:
+    explicit AutoLock(NoLocking& aHost) {}
 
-    ~AutoLock()
-    { }
+    ~AutoLock() {}
   };
 };
 
-template <typename T,
-          int TCount = 256,
-          class LockingPolicy = NoLocking,
-          class StoragePolicy = StorageWithTArray<T, TCount % 2 ?
-                                                     TCount / 2 + 1 :
-                                                     TCount / 2> >
-class Queue : public LockingPolicy
-{
+template <typename T, int TCount = 256, class LockingPolicy = NoLocking,
+          class StoragePolicy =
+              StorageWithTArray<T, TCount % 2 ? TCount / 2 + 1 : TCount / 2> >
+class Queue : public LockingPolicy {
   typedef typename StoragePolicy::StorageType StorageType;
   typedef typename LockingPolicy::AutoLock AutoLock;
 
@@ -142,26 +106,20 @@ class Queue : public LockingPolicy
   StorageType* mFront;
   StorageType* mBack;
 
-public:
-  Queue()
-  : mFront(&mStorage1), mBack(&mStorage2)
-  { }
+ public:
+  Queue() : mFront(&mStorage1), mBack(&mStorage2) {}
 
-  bool IsEmpty()
-  {
+  bool IsEmpty() {
     AutoLock lock(*this);
-    return StoragePolicy::IsEmpty(*mFront) &&
-           StoragePolicy::IsEmpty(*mBack);
+    return StoragePolicy::IsEmpty(*mFront) && StoragePolicy::IsEmpty(*mBack);
   }
 
-  bool Push(const T& aEntry)
-  {
+  bool Push(const T& aEntry) {
     AutoLock lock(*this);
     return StoragePolicy::Push(*mBack, aEntry);
   }
 
-  bool Pop(T& aEntry)
-  {
+  bool Pop(T& aEntry) {
     AutoLock lock(*this);
     if (StoragePolicy::IsEmpty(*mFront)) {
       StoragePolicy::Compact(*mFront);
@@ -173,31 +131,26 @@ public:
     return StoragePolicy::Pop(*mFront, aEntry);
   }
 
-  void Clear()
-  {
+  void Clear() {
     AutoLock lock(*this);
     StoragePolicy::Clear(*mFront);
     StoragePolicy::Clear(*mBack);
   }
 
   // XXX Do we need this?
-  void Lock()
-  {
-    LockingPolicy::Lock();
-  }
+  void Lock() { LockingPolicy::Lock(); }
 
   // XXX Do we need this?
-  void Unlock()
-  {
-    LockingPolicy::Unlock();
-  }
+  void Unlock() { LockingPolicy::Unlock(); }
 
-private:
+ private:
   // Queue is not copyable.
   Queue(const Queue&);
-  Queue & operator=(const Queue&);
+  Queue& operator=(const Queue&);
 };
 
-END_WORKERS_NAMESPACE
+}  // namespace workerinternals
+}  // namespace dom
+}  // namespace mozilla
 
-#endif /* mozilla_dom_workers_queue_h__ */
+#endif /* mozilla_dom_workerinternals_Queue_h*/

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,743 +9,810 @@
 #ifndef frontend_BytecodeEmitter_h
 #define frontend_BytecodeEmitter_h
 
-#include "jscntxt.h"
-#include "jsopcode.h"
-#include "jsscript.h"
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
+#include "mozilla/Attributes.h"  // MOZ_STACK_CLASS, MOZ_MUST_USE, MOZ_ALWAYS_INLINE, MOZ_NEVER_INLINE, MOZ_RAII
+#include "mozilla/Maybe.h"  // mozilla::Maybe, mozilla::Some
+#include "mozilla/Span.h"   // mozilla::Span
 
-#include "ds/InlineTable.h"
-#include "frontend/Parser.h"
-#include "frontend/SharedContext.h"
-#include "frontend/SourceNotes.h"
-#include "vm/Interpreter.h"
+#include <stddef.h>  // ptrdiff_t
+#include <stdint.h>  // uint16_t, uint32_t
+
+#include "jsapi.h"  // CompletionKind
+
+#include "frontend/BCEParserHandle.h"            // BCEParserHandle
+#include "frontend/BytecodeControlStructures.h"  // NestableControl
+#include "frontend/BytecodeOffset.h"             // BytecodeOffset
+#include "frontend/BytecodeSection.h"  // BytecodeSection, PerScriptData, CGScopeList
+#include "frontend/DestructuringFlavor.h"  // DestructuringFlavor
+#include "frontend/EitherParser.h"         // EitherParser
+#include "frontend/ErrorReporter.h"        // ErrorReporter
+#include "frontend/FullParseHandler.h"     // FullParseHandler
+#include "frontend/JumpList.h"             // JumpList, JumpTarget
+#include "frontend/NameAnalysisTypes.h"    // NameLocation
+#include "frontend/NameCollections.h"      // AtomIndexMap
+#include "frontend/ParseNode.h"      // ParseNode and subclasses, ObjectBox
+#include "frontend/Parser.h"         // Parser, PropListType
+#include "frontend/SharedContext.h"  // SharedContext
+#include "frontend/SourceNotes.h"    // SrcNoteType
+#include "frontend/TokenStream.h"    // TokenPos
+#include "frontend/ValueUsage.h"     // ValueUsage
+#include "js/RootingAPI.h"           // JS::Rooted, JS::Handle
+#include "js/TypeDecls.h"            // jsbytecode
+#include "vm/BigIntType.h"           // BigInt
+#include "vm/BytecodeUtil.h"         // JSOp
+#include "vm/Instrumentation.h"      // InstrumentationKind
+#include "vm/Interpreter.h"          // CheckIsObjectKind, CheckIsCallableKind
+#include "vm/Iteration.h"            // IteratorKind
+#include "vm/JSFunction.h"           // JSFunction, FunctionPrefixKind
+#include "vm/JSScript.h"  // JSScript, LazyScript, FieldInitializers, JSTryNoteKind
+#include "vm/Runtime.h"     // ReportOutOfMemory
+#include "vm/StringType.h"  // JSAtom
 
 namespace js {
 namespace frontend {
 
-class FullParseHandler;
-class ObjectBox;
-class ParseNode;
-template <typename ParseHandler> class Parser;
-class SharedContext;
-class TokenStream;
-
-class CGConstList {
-    Vector<Value> list;
-  public:
-    explicit CGConstList(ExclusiveContext* cx) : list(cx) {}
-    MOZ_MUST_USE bool append(Value v) {
-        MOZ_ASSERT_IF(v.isString(), v.toString()->isAtom());
-        return list.append(v);
-    }
-    size_t length() const { return list.length(); }
-    void finish(ConstArray* array);
-};
-
-struct CGObjectList {
-    uint32_t            length;     /* number of emitted so far objects */
-    ObjectBox*          lastbox;   /* last emitted object */
-
-    CGObjectList() : length(0), lastbox(nullptr) {}
-
-    unsigned add(ObjectBox* objbox);
-    unsigned indexOf(JSObject* obj);
-    void finish(ObjectArray* array);
-    ObjectBox* find(uint32_t index);
-};
-
-struct MOZ_STACK_CLASS CGScopeList {
-    Rooted<GCVector<Scope*>> vector;
-
-    explicit CGScopeList(ExclusiveContext* cx)
-      : vector(cx, GCVector<Scope*>(cx))
-    { }
-
-    bool append(Scope* scope) { return vector.append(scope); }
-    uint32_t length() const { return vector.length(); }
-    void finish(ScopeArray* array);
-};
-
-struct CGTryNoteList {
-    Vector<JSTryNote> list;
-    explicit CGTryNoteList(ExclusiveContext* cx) : list(cx) {}
-
-    MOZ_MUST_USE bool append(JSTryNoteKind kind, uint32_t stackDepth, size_t start, size_t end);
-    size_t length() const { return list.length(); }
-    void finish(TryNoteArray* array);
-};
-
-struct CGScopeNote : public ScopeNote
-{
-    // The end offset. Used to compute the length; may need adjusting first if
-    // in the prologue.
-    uint32_t end;
-
-    // Is the start offset in the prologue?
-    bool startInPrologue;
-
-    // Is the end offset in the prologue?
-    bool endInPrologue;
-};
-
-struct CGScopeNoteList {
-    Vector<CGScopeNote> list;
-    explicit CGScopeNoteList(ExclusiveContext* cx) : list(cx) {}
-
-    MOZ_MUST_USE bool append(uint32_t scopeIndex, uint32_t offset, bool inPrologue,
-                             uint32_t parent);
-    void recordEnd(uint32_t index, uint32_t offset, bool inPrologue);
-    size_t length() const { return list.length(); }
-    void finish(ScopeNoteArray* array, uint32_t prologueLength);
-};
-
-struct CGYieldOffsetList {
-    Vector<uint32_t> list;
-    explicit CGYieldOffsetList(ExclusiveContext* cx) : list(cx) {}
-
-    MOZ_MUST_USE bool append(uint32_t offset) { return list.append(offset); }
-    size_t length() const { return list.length(); }
-    void finish(YieldOffsetArray& array, uint32_t prologueLength);
-};
-
-// Use zero inline elements because these go on the stack and affect how many
-// nested functions are possible.
-typedef Vector<jsbytecode, 0> BytecodeVector;
-typedef Vector<jssrcnote, 0> SrcNotesVector;
-
-// Linked list of jump instructions that need to be patched. The linked list is
-// stored in the bytes of the incomplete bytecode that will be patched, so no
-// extra memory is needed, and patching the instructions destroys the list.
-//
-// Example:
-//
-//     JumpList brList;
-//     if (!emitJump(JSOP_IFEQ, &brList))
-//         return false;
-//     ...
-//     JumpTarget label;
-//     if (!emitJumpTarget(&label))
-//         return false;
-//     ...
-//     if (!emitJump(JSOP_GOTO, &brList))
-//         return false;
-//     ...
-//     patchJumpsToTarget(brList, label);
-//
-//                 +-> -1
-//                 |
-//                 |
-//    ifeq ..   <+ +                +-+   ifeq ..
-//    ..         |                  |     ..
-//  label:       |                  +-> label:
-//    jumptarget |                  |     jumptarget
-//    ..         |                  |     ..
-//    goto .. <+ +                  +-+   goto .. <+
-//             |                                   |
-//             |                                   |
-//             +                                   +
-//           brList                              brList
-//
-//       |                                  ^
-//       +------- patchJumpsToTarget -------+
-//
-
-// Offset of a jump target instruction, used for patching jump instructions.
-struct JumpTarget {
-    ptrdiff_t offset;
-};
-
-struct JumpList {
-    // -1 is used to mark the end of jump lists.
-    JumpList() : offset(-1) {}
-    ptrdiff_t offset;
-
-    // Add a jump instruction to the list.
-    void push(jsbytecode* code, ptrdiff_t jumpOffset);
-
-    // Patch all jump instructions in this list to jump to `target`.  This
-    // clobbers the list.
-    void patchAll(jsbytecode* code, JumpTarget target);
-};
-
-struct MOZ_STACK_CLASS BytecodeEmitter
-{
-    class TDZCheckCache;
-    class NestableControl;
-    class EmitterScope;
-
-    SharedContext* const sc;      /* context shared between parsing and bytecode generation */
-
-    ExclusiveContext* const cx;
-
-    BytecodeEmitter* const parent;  /* enclosing function or global context */
-
-    Rooted<JSScript*> script;       /* the JSScript we're ultimately producing */
-
-    Rooted<LazyScript*> lazyScript; /* the lazy script if mode is LazyFunction,
-                                        nullptr otherwise. */
-
-    struct EmitSection {
-        BytecodeVector code;        /* bytecode */
-        SrcNotesVector notes;       /* source notes, see below */
-        ptrdiff_t   lastNoteOffset; /* code offset for last source note */
-        uint32_t    currentLine;    /* line number for tree-based srcnote gen */
-        uint32_t    lastColumn;     /* zero-based column index on currentLine of
-                                       last SRC_COLSPAN-annotated opcode */
-        JumpTarget lastTarget;      // Last jump target emitted.
-
-        EmitSection(ExclusiveContext* cx, uint32_t lineNum)
-          : code(cx), notes(cx), lastNoteOffset(0), currentLine(lineNum), lastColumn(0),
-            lastTarget{ -1 - ptrdiff_t(JSOP_JUMPTARGET_LENGTH) }
-        {}
-    };
-    EmitSection prologue, main, *current;
-
-    Parser<FullParseHandler>* const parser;
-
-    PooledMapPtr<AtomIndexMap> atomIndices; /* literals indexed for mapping */
-    unsigned        firstLine;      /* first line, for JSScript::initFromEmitter */
-
-    uint32_t        maxFixedSlots;  /* maximum number of fixed frame slots so far */
-    uint32_t        maxStackDepth;  /* maximum number of expression stack slots so far */
-
-    int32_t         stackDepth;     /* current stack depth in script frame */
-
-    uint32_t        arrayCompDepth; /* stack depth of array in comprehension */
-
-    unsigned        emitLevel;      /* emitTree recursion level */
-
-    uint32_t        bodyScopeIndex; /* index into scopeList of the body scope */
-
-    EmitterScope*    varEmitterScope;
-    NestableControl* innermostNestableControl;
-    EmitterScope*    innermostEmitterScope;
-    TDZCheckCache*   innermostTDZCheckCache;
-
-    CGConstList      constList;      /* constants to be included with the script */
-    CGObjectList     objectList;     /* list of emitted objects */
-    CGScopeList      scopeList;      /* list of emitted scopes */
-    CGTryNoteList    tryNoteList;    /* list of emitted try notes */
-    CGScopeNoteList  scopeNoteList;  /* list of emitted block scope notes */
-
-    /*
-     * For each yield op, map the yield index (stored as bytecode operand) to
-     * the offset of the next op.
-     */
-    CGYieldOffsetList yieldOffsetList;
-
-    uint16_t        typesetCount;   /* Number of JOF_TYPESET opcodes generated */
-
-    bool            hasSingletons:1;    /* script contains singleton initializer JSOP_OBJECT */
-
-    bool            hasTryFinally:1;    /* script contains finally block */
-
-    bool            emittingRunOnceLambda:1; /* true while emitting a lambda which is only
-                                                expected to run once. */
-
-    bool isRunOnceLambda();
-
-    enum EmitterMode {
-        Normal,
-
-        /*
-         * Emit JSOP_GETINTRINSIC instead of JSOP_GETNAME and assert that
-         * JSOP_GETNAME and JSOP_*GNAME don't ever get emitted. See the comment
-         * for the field |selfHostingMode| in Parser.h for details.
-         */
-        SelfHosting,
-
-        /*
-         * Check the static scope chain of the root function for resolving free
-         * variable accesses in the script.
-         */
-        LazyFunction
-    };
-
-    const EmitterMode emitterMode;
-
-    // The end location of a function body that is being emitted.
-    uint32_t functionBodyEndPos;
-    // Whether functionBodyEndPos was set.
-    bool functionBodyEndPosSet;
-
-    /*
-     * Note that BytecodeEmitters are magic: they own the arena "top-of-stack"
-     * space above their tempMark points. This means that you cannot alloc from
-     * tempLifoAlloc and save the pointer beyond the next BytecodeEmitter
-     * destruction.
-     */
-    BytecodeEmitter(BytecodeEmitter* parent, Parser<FullParseHandler>* parser, SharedContext* sc,
-                    HandleScript script, Handle<LazyScript*> lazyScript, uint32_t lineNum,
-                    EmitterMode emitterMode = Normal);
-
-    // An alternate constructor that uses a TokenPos for the starting
-    // line and that sets functionBodyEndPos as well.
-    BytecodeEmitter(BytecodeEmitter* parent, Parser<FullParseHandler>* parser, SharedContext* sc,
-                    HandleScript script, Handle<LazyScript*> lazyScript,
-                    TokenPos bodyPosition, EmitterMode emitterMode = Normal);
-
-    MOZ_MUST_USE bool init();
-
-    template <typename Predicate /* (NestableControl*) -> bool */>
-    NestableControl* findInnermostNestableControl(Predicate predicate) const;
-
-    template <typename T>
-    T* findInnermostNestableControl() const;
-
-    template <typename T, typename Predicate /* (T*) -> bool */>
-    T* findInnermostNestableControl(Predicate predicate) const;
-
-    NameLocation lookupName(JSAtom* name);
-
-    // To implement Annex B and the formal parameter defaults scope semantics
-    // requires accessing names that would otherwise be shadowed. This method
-    // returns the access location of a name that is known to be bound in a
-    // target scope.
-    mozilla::Maybe<NameLocation> locationOfNameBoundInScope(JSAtom* name, EmitterScope* target);
-
-    // Get the location of a name known to be bound in the function scope,
-    // starting at the source scope.
-    mozilla::Maybe<NameLocation> locationOfNameBoundInFunctionScope(JSAtom* name,
-                                                                    EmitterScope* source);
-
-    mozilla::Maybe<NameLocation> locationOfNameBoundInFunctionScope(JSAtom* name) {
-        return locationOfNameBoundInFunctionScope(name, innermostEmitterScope);
-    }
-
-    void setVarEmitterScope(EmitterScope* emitterScope) {
-        MOZ_ASSERT(emitterScope);
-        MOZ_ASSERT(!varEmitterScope);
-        varEmitterScope = emitterScope;
-    }
-
-    Scope* bodyScope() const { return scopeList.vector[bodyScopeIndex]; }
-    Scope* outermostScope() const { return scopeList.vector[0]; }
-    Scope* innermostScope() const;
-
-    MOZ_ALWAYS_INLINE
-    MOZ_MUST_USE bool makeAtomIndex(JSAtom* atom, uint32_t* indexp) {
-        MOZ_ASSERT(atomIndices);
-        AtomIndexMap::AddPtr p = atomIndices->lookupForAdd(atom);
-        if (p) {
-            *indexp = p->value();
-            return true;
-        }
-
-        uint32_t index = atomIndices->count();
-        if (!atomIndices->add(p, atom, index))
-            return false;
-
-        *indexp = index;
-        return true;
-    }
-
-    bool isInLoop();
-    MOZ_MUST_USE bool checkSingletonContext();
-
-    // Check whether our function is in a run-once context (a toplevel
-    // run-one script or a run-once lambda).
-    MOZ_MUST_USE bool checkRunOnceContext();
-
-    bool needsImplicitThis();
-
-    MOZ_MUST_USE bool maybeSetDisplayURL();
-    MOZ_MUST_USE bool maybeSetSourceMap();
-    void tellDebuggerAboutCompiledScript(ExclusiveContext* cx);
-
-    inline TokenStream* tokenStream();
-
-    BytecodeVector& code() const { return current->code; }
-    jsbytecode* code(ptrdiff_t offset) const { return current->code.begin() + offset; }
-    ptrdiff_t offset() const { return current->code.end() - current->code.begin(); }
-    ptrdiff_t prologueOffset() const { return prologue.code.end() - prologue.code.begin(); }
-    void switchToMain() { current = &main; }
-    void switchToPrologue() { current = &prologue; }
-    bool inPrologue() const { return current == &prologue; }
-
-    SrcNotesVector& notes() const { return current->notes; }
-    ptrdiff_t lastNoteOffset() const { return current->lastNoteOffset; }
-    unsigned currentLine() const { return current->currentLine; }
-    unsigned lastColumn() const { return current->lastColumn; }
-
-    // Check if the last emitted opcode is a jump target.
-    bool lastOpcodeIsJumpTarget() const {
-        return offset() - current->lastTarget.offset == ptrdiff_t(JSOP_JUMPTARGET_LENGTH);
-    }
-
-    // JumpTarget should not be part of the emitted statement, as they can be
-    // aliased by multiple statements. If we included the jump target as part of
-    // the statement we might have issues where the enclosing statement might
-    // not contain all the opcodes of the enclosed statements.
-    ptrdiff_t lastNonJumpTargetOffset() const {
-        return lastOpcodeIsJumpTarget() ? current->lastTarget.offset : offset();
-    }
-
-    void setFunctionBodyEndPos(TokenPos pos) {
-        functionBodyEndPos = pos.end;
-        functionBodyEndPosSet = true;
-    }
-
-    bool reportError(ParseNode* pn, unsigned errorNumber, ...);
-    bool reportStrictWarning(ParseNode* pn, unsigned errorNumber, ...);
-    bool reportStrictModeError(ParseNode* pn, unsigned errorNumber, ...);
-
-    // If pn contains a useful expression, return true with *answer set to true.
-    // If pn contains a useless expression, return true with *answer set to
-    // false. Return false on error.
-    //
-    // The caller should initialize *answer to false and invoke this function on
-    // an expression statement or similar subtree to decide whether the tree
-    // could produce code that has any side effects.  For an expression
-    // statement, we define useless code as code with no side effects, because
-    // the main effect, the value left on the stack after the code executes,
-    // will be discarded by a pop bytecode.
-    MOZ_MUST_USE bool checkSideEffects(ParseNode* pn, bool* answer);
+class CallOrNewEmitter;
+class ClassEmitter;
+class ElemOpEmitter;
+class EmitterScope;
+class NestableControl;
+class PropertyEmitter;
+class TDZCheckCache;
+class TryEmitter;
+
+struct MOZ_STACK_CLASS BytecodeEmitter {
+  // Context shared between parsing and bytecode generation.
+  SharedContext* const sc = nullptr;
+
+  JSContext* const cx = nullptr;
+
+  // Enclosing function or global context.
+  BytecodeEmitter* const parent = nullptr;
+
+  // The JSScript we're ultimately producing.
+  JS::Rooted<JSScript*> script;
+
+  // The lazy script if mode is LazyFunction, nullptr otherwise.
+  JS::Rooted<LazyScript*> lazyScript;
+
+ private:
+  BytecodeSection bytecodeSection_;
+
+ public:
+  BytecodeSection& bytecodeSection() { return bytecodeSection_; }
+  const BytecodeSection& bytecodeSection() const { return bytecodeSection_; }
+
+ private:
+  PerScriptData perScriptData_;
+
+ public:
+  PerScriptData& perScriptData() { return perScriptData_; }
+  const PerScriptData& perScriptData() const { return perScriptData_; }
+
+ private:
+  // switchToMain sets this to the bytecode offset of the main section.
+  mozilla::Maybe<uint32_t> mainOffset_ = {};
+
+  /* field info for enclosing class */
+  const FieldInitializers fieldInitializers_;
+
+ public:
+  // Private storage for parser wrapper. DO NOT REFERENCE INTERNALLY. May not be
+  // initialized. Use |parser| instead.
+  mozilla::Maybe<EitherParser> ep_ = {};
+  BCEParserHandle* parser = nullptr;
+
+  // First line and column, for JSScript::initFromEmitter.
+  unsigned firstLine = 0;
+  unsigned firstColumn = 0;
+
+  uint32_t maxFixedSlots = 0; /* maximum number of fixed frame slots so far */
+
+  uint32_t bodyScopeIndex =
+      UINT32_MAX; /* index into scopeList of the body scope */
+
+  EmitterScope* varEmitterScope = nullptr;
+  NestableControl* innermostNestableControl = nullptr;
+  EmitterScope* innermostEmitterScope_ = nullptr;
+  TDZCheckCache* innermostTDZCheckCache = nullptr;
+
+  const FieldInitializers& getFieldInitializers() { return fieldInitializers_; }
 
 #ifdef DEBUG
-    MOZ_MUST_USE bool checkStrictOrSloppy(JSOp op);
+  bool unstableEmitterScope = false;
+
+  friend class AutoCheckUnstableEmitterScope;
 #endif
 
-    // Append a new source note of the given type (and therefore size) to the
-    // notes dynamic array, updating noteCount. Return the new note's index
-    // within the array pointed at by current->notes as outparam.
-    MOZ_MUST_USE bool newSrcNote(SrcNoteType type, unsigned* indexp = nullptr);
-    MOZ_MUST_USE bool newSrcNote2(SrcNoteType type, ptrdiff_t offset, unsigned* indexp = nullptr);
-    MOZ_MUST_USE bool newSrcNote3(SrcNoteType type, ptrdiff_t offset1, ptrdiff_t offset2,
-                                  unsigned* indexp = nullptr);
+  EmitterScope* innermostEmitterScope() const {
+    MOZ_ASSERT(!unstableEmitterScope);
+    return innermostEmitterScopeNoCheck();
+  }
+  EmitterScope* innermostEmitterScopeNoCheck() const {
+    return innermostEmitterScope_;
+  }
 
-    void copySrcNotes(jssrcnote* destination, uint32_t nsrcnotes);
-    MOZ_MUST_USE bool setSrcNoteOffset(unsigned index, unsigned which, ptrdiff_t offset);
+  // Script contains JSOP_CALLSITEOBJ.
+  bool hasCallSiteObj = false;
 
-    // NB: this function can add at most one extra extended delta note.
-    MOZ_MUST_USE bool addToSrcNoteDelta(jssrcnote* sn, ptrdiff_t delta);
+  // Script contains finally block.
+  bool hasTryFinally = false;
 
-    // Finish taking source notes in cx's notePool. If successful, the final
-    // source note count is stored in the out outparam.
-    MOZ_MUST_USE bool finishTakingSrcNotes(uint32_t* out);
+  // True while emitting a lambda which is only expected to run once.
+  bool emittingRunOnceLambda = false;
 
-    // Control whether emitTree emits a line number note.
-    enum EmitLineNumberNote {
-        EMIT_LINENOTE,
-        SUPPRESS_LINENOTE
-    };
+  bool isRunOnceLambda();
 
-    // Emit code for the tree rooted at pn.
-    MOZ_MUST_USE bool emitTree(ParseNode* pn, EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
+  enum EmitterMode {
+    Normal,
 
-    // Emit code for the tree rooted at pn with its own TDZ cache.
-    MOZ_MUST_USE bool emitConditionallyExecutedTree(ParseNode* pn);
+    // Emit JSOP_GETINTRINSIC instead of JSOP_GETNAME and assert that
+    // JSOP_GETNAME and JSOP_*GNAME don't ever get emitted. See the comment for
+    // the field |selfHostingMode| in Parser.h for details.
+    SelfHosting,
 
-    // Emit global, eval, or module code for tree rooted at body. Always
-    // encompasses the entire source.
-    MOZ_MUST_USE bool emitScript(ParseNode* body);
+    // Check the static scope chain of the root function for resolving free
+    // variable accesses in the script.
+    LazyFunction
+  };
 
-    // Emit function code for the tree rooted at body.
-    MOZ_MUST_USE bool emitFunctionScript(ParseNode* body);
+  const EmitterMode emitterMode = Normal;
 
-    // If op is JOF_TYPESET (see the type barriers comment in TypeInference.h),
-    // reserve a type set to store its result.
-    void checkTypeSet(JSOp op);
+  mozilla::Maybe<uint32_t> scriptStartOffset = {};
 
-    void updateDepth(ptrdiff_t target);
-    MOZ_MUST_USE bool updateLineNumberNotes(uint32_t offset);
-    MOZ_MUST_USE bool updateSourceCoordNotes(uint32_t offset);
+  // The end location of a function body that is being emitted.
+  mozilla::Maybe<uint32_t> functionBodyEndPos = {};
 
-    JSOp strictifySetNameOp(JSOp op);
+  // Mask of operation kinds which need instrumentation. This is obtained from
+  // the compile options and copied here for efficiency.
+  uint32_t instrumentationKinds = 0;
 
-    MOZ_MUST_USE bool flushPops(int* npops);
+  /*
+   * Note that BytecodeEmitters are magic: they own the arena "top-of-stack"
+   * space above their tempMark points. This means that you cannot alloc from
+   * tempLifoAlloc and save the pointer beyond the next BytecodeEmitter
+   * destruction.
+   */
+ private:
+  // Internal constructor, for delegation use only.
+  BytecodeEmitter(
+      BytecodeEmitter* parent, SharedContext* sc, JS::Handle<JSScript*> script,
+      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
+      EmitterMode emitterMode,
+      FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
-    MOZ_MUST_USE bool emitCheck(ptrdiff_t delta, ptrdiff_t* offset);
+  void initFromBodyPosition(TokenPos bodyPosition);
 
-    // Emit one bytecode.
-    MOZ_MUST_USE bool emit1(JSOp op);
+  /*
+   * Helper for reporting that we have insufficient args.  pluralizer
+   * should be "s" if requiredArgs is anything other than "1" and ""
+   * if requiredArgs is "1".
+   */
+  void reportNeedMoreArgsError(ParseNode* pn, const char* errorName,
+                               const char* requiredArgs, const char* pluralizer,
+                               const ListNode* argsList);
 
-    // Emit two bytecodes, an opcode (op) with a byte of immediate operand
-    // (op1).
-    MOZ_MUST_USE bool emit2(JSOp op, uint8_t op1);
+ public:
+  BytecodeEmitter(
+      BytecodeEmitter* parent, BCEParserHandle* parser, SharedContext* sc,
+      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
+      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
+      FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
-    // Emit three bytecodes, an opcode with two bytes of immediate operands.
-    MOZ_MUST_USE bool emit3(JSOp op, jsbytecode op1, jsbytecode op2);
+  BytecodeEmitter(
+      BytecodeEmitter* parent, const EitherParser& parser, SharedContext* sc,
+      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
+      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
+      FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
-    // Helper to emit JSOP_DUPAT. The argument is the value's depth on the
-    // JS stack, as measured from the top.
-    MOZ_MUST_USE bool emitDupAt(unsigned slotFromTop);
+  template <typename Unit>
+  BytecodeEmitter(
+      BytecodeEmitter* parent, Parser<FullParseHandler, Unit>* parser,
+      SharedContext* sc, JS::Handle<JSScript*> script,
+      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
+      EmitterMode emitterMode = Normal,
+      FieldInitializers fieldInitializers = FieldInitializers::Invalid())
+      : BytecodeEmitter(parent, EitherParser(parser), sc, script, lazyScript,
+                        line, column, emitterMode, fieldInitializers) {}
 
-    // Helper to emit JSOP_CHECKISOBJ.
-    MOZ_MUST_USE bool emitCheckIsObj(CheckIsObjectKind kind);
+  MOZ_MUST_USE bool init();
+  MOZ_MUST_USE bool init(TokenPos bodyPosition);
 
-    // Emit a bytecode followed by an uint16 immediate operand stored in
-    // big-endian order.
-    MOZ_MUST_USE bool emitUint16Operand(JSOp op, uint32_t operand);
+  template <typename T>
+  T* findInnermostNestableControl() const;
 
-    // Emit a bytecode followed by an uint32 immediate operand.
-    MOZ_MUST_USE bool emitUint32Operand(JSOp op, uint32_t operand);
+  template <typename T, typename Predicate /* (T*) -> bool */>
+  T* findInnermostNestableControl(Predicate predicate) const;
 
-    // Emit (1 + extra) bytecodes, for N bytes of op and its immediate operand.
-    MOZ_MUST_USE bool emitN(JSOp op, size_t extra, ptrdiff_t* offset = nullptr);
+  NameLocation lookupName(JSAtom* name);
 
-    MOZ_MUST_USE bool emitNumberOp(double dval);
+  // To implement Annex B and the formal parameter defaults scope semantics
+  // requires accessing names that would otherwise be shadowed. This method
+  // returns the access location of a name that is known to be bound in a
+  // target scope.
+  mozilla::Maybe<NameLocation> locationOfNameBoundInScope(JSAtom* name,
+                                                          EmitterScope* target);
 
-    MOZ_MUST_USE bool emitThisLiteral(ParseNode* pn);
-    MOZ_MUST_USE bool emitGetFunctionThis(ParseNode* pn);
-    MOZ_MUST_USE bool emitGetThisForSuperBase(ParseNode* pn);
-    MOZ_MUST_USE bool emitSetThis(ParseNode* pn);
-    MOZ_MUST_USE bool emitCheckDerivedClassConstructorReturn();
+  // Get the location of a name known to be bound in the function scope,
+  // starting at the source scope.
+  mozilla::Maybe<NameLocation> locationOfNameBoundInFunctionScope(
+      JSAtom* name, EmitterScope* source);
 
-    // Handle jump opcodes and jump targets.
-    MOZ_MUST_USE bool emitJumpTarget(JumpTarget* target);
-    MOZ_MUST_USE bool emitJumpNoFallthrough(JSOp op, JumpList* jump);
-    MOZ_MUST_USE bool emitJump(JSOp op, JumpList* jump);
-    MOZ_MUST_USE bool emitBackwardJump(JSOp op, JumpTarget target, JumpList* jump,
-                                       JumpTarget* fallthrough);
-    void patchJumpsToTarget(JumpList jump, JumpTarget target);
-    MOZ_MUST_USE bool emitJumpTargetAndPatch(JumpList jump);
+  mozilla::Maybe<NameLocation> locationOfNameBoundInFunctionScope(
+      JSAtom* name) {
+    return locationOfNameBoundInFunctionScope(name, innermostEmitterScope());
+  }
 
-    MOZ_MUST_USE bool emitCall(JSOp op, uint16_t argc, ParseNode* pn = nullptr);
-    MOZ_MUST_USE bool emitCallIncDec(ParseNode* incDec);
+  void setVarEmitterScope(EmitterScope* emitterScope) {
+    MOZ_ASSERT(emitterScope);
+    MOZ_ASSERT(!varEmitterScope);
+    varEmitterScope = emitterScope;
+  }
 
-    MOZ_MUST_USE bool emitLoopHead(ParseNode* nextpn, JumpTarget* top);
-    MOZ_MUST_USE bool emitLoopEntry(ParseNode* nextpn, JumpList entryJump);
+  Scope* outermostScope() const {
+    return perScriptData().gcThingList().firstScope();
+  }
+  Scope* innermostScope() const;
+  Scope* bodyScope() const {
+    return perScriptData().gcThingList().getScope(bodyScopeIndex);
+  }
 
-    MOZ_MUST_USE bool emitGoto(NestableControl* target, JumpList* jumplist,
-                               SrcNoteType noteType = SRC_NULL);
-
-    MOZ_MUST_USE bool emitIndex32(JSOp op, uint32_t index);
-    MOZ_MUST_USE bool emitIndexOp(JSOp op, uint32_t index);
-
-    MOZ_MUST_USE bool emitAtomOp(JSAtom* atom, JSOp op);
-    MOZ_MUST_USE bool emitAtomOp(ParseNode* pn, JSOp op);
-
-    MOZ_MUST_USE bool emitArrayLiteral(ParseNode* pn);
-    MOZ_MUST_USE bool emitArray(ParseNode* pn, uint32_t count, JSOp op);
-    MOZ_MUST_USE bool emitArrayComp(ParseNode* pn);
-
-    MOZ_MUST_USE bool emitInternedScopeOp(uint32_t index, JSOp op);
-    MOZ_MUST_USE bool emitInternedObjectOp(uint32_t index, JSOp op);
-    MOZ_MUST_USE bool emitObjectOp(ObjectBox* objbox, JSOp op);
-    MOZ_MUST_USE bool emitObjectPairOp(ObjectBox* objbox1, ObjectBox* objbox2, JSOp op);
-    MOZ_MUST_USE bool emitRegExp(uint32_t index);
-
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitFunction(ParseNode* pn, bool needsProto = false);
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitObject(ParseNode* pn);
-
-    MOZ_MUST_USE bool emitHoistedFunctionsInList(ParseNode* pn);
-
-    MOZ_MUST_USE bool emitPropertyList(ParseNode* pn, MutableHandlePlainObject objp,
-                                       PropListType type);
-
-    // To catch accidental misuse, emitUint16Operand/emit3 assert that they are
-    // not used to unconditionally emit JSOP_GETLOCAL. Variable access should
-    // instead be emitted using EmitVarOp. In special cases, when the caller
-    // definitely knows that a given local slot is unaliased, this function may be
-    // used as a non-asserting version of emitUint16Operand.
-    MOZ_MUST_USE bool emitLocalOp(JSOp op, uint32_t slot);
-
-    MOZ_MUST_USE bool emitArgOp(JSOp op, uint16_t slot);
-    MOZ_MUST_USE bool emitEnvCoordOp(JSOp op, EnvironmentCoordinate ec);
-
-    MOZ_MUST_USE bool emitGetNameAtLocation(JSAtom* name, const NameLocation& loc,
-                                            bool callContext = false);
-    MOZ_MUST_USE bool emitGetName(JSAtom* name, bool callContext = false) {
-        return emitGetNameAtLocation(name, lookupName(name), callContext);
-    }
-    MOZ_MUST_USE bool emitGetName(ParseNode* pn, bool callContext = false);
-
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitSetOrInitializeNameAtLocation(HandleAtom name, const NameLocation& loc,
-                                                        RHSEmitter emitRhs, bool initialize);
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitSetOrInitializeName(HandleAtom name, RHSEmitter emitRhs,
-                                              bool initialize)
-    {
-        return emitSetOrInitializeNameAtLocation(name, lookupName(name), emitRhs, initialize);
-    }
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitSetName(ParseNode* pn, RHSEmitter emitRhs) {
-        RootedAtom name(cx, pn->name());
-        return emitSetName(name, emitRhs);
-    }
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitSetName(HandleAtom name, RHSEmitter emitRhs) {
-        return emitSetOrInitializeName(name, emitRhs, false);
-    }
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitInitializeName(ParseNode* pn, RHSEmitter emitRhs) {
-        RootedAtom name(cx, pn->name());
-        return emitInitializeName(name, emitRhs);
-    }
-    template <typename RHSEmitter>
-    MOZ_MUST_USE bool emitInitializeName(HandleAtom name, RHSEmitter emitRhs) {
-        return emitSetOrInitializeName(name, emitRhs, true);
+  MOZ_ALWAYS_INLINE
+  MOZ_MUST_USE bool makeAtomIndex(JSAtom* atom, uint32_t* indexp) {
+    MOZ_ASSERT(perScriptData().atomIndices());
+    AtomIndexMap::AddPtr p = perScriptData().atomIndices()->lookupForAdd(atom);
+    if (p) {
+      *indexp = p->value();
+      return true;
     }
 
-    MOZ_MUST_USE bool emitTDZCheckIfNeeded(JSAtom* name, const NameLocation& loc);
+    uint32_t index = perScriptData().atomIndices()->count();
+    if (!perScriptData().atomIndices()->add(p, atom, index)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
 
-    MOZ_MUST_USE bool emitNameIncDec(ParseNode* pn);
+    *indexp = index;
+    return true;
+  }
 
-    MOZ_MUST_USE bool emitDeclarationList(ParseNode* decls);
-    MOZ_MUST_USE bool emitSingleDeclaration(ParseNode* decls, ParseNode* decl,
-                                            ParseNode* initializer);
+  bool isInLoop();
+  MOZ_MUST_USE bool checkSingletonContext();
 
-    MOZ_MUST_USE bool emitNewInit(JSProtoKey key);
-    MOZ_MUST_USE bool emitSingletonInitialiser(ParseNode* pn);
+  // Check whether our function is in a run-once context (a toplevel
+  // run-one script or a run-once lambda).
+  MOZ_MUST_USE bool checkRunOnceContext();
 
-    MOZ_MUST_USE bool emitPrepareIteratorResult();
-    MOZ_MUST_USE bool emitFinishIteratorResult(bool done);
-    MOZ_MUST_USE bool iteratorResultShape(unsigned* shape);
+  bool needsImplicitThis();
 
-    MOZ_MUST_USE bool emitYield(ParseNode* pn);
-    MOZ_MUST_USE bool emitYieldOp(JSOp op);
-    MOZ_MUST_USE bool emitYieldStar(ParseNode* iter, ParseNode* gen);
+  MOZ_MUST_USE bool emitThisEnvironmentCallee();
+  MOZ_MUST_USE bool emitSuperBase();
 
-    MOZ_MUST_USE bool emitPropLHS(ParseNode* pn);
-    MOZ_MUST_USE bool emitPropOp(ParseNode* pn, JSOp op);
-    MOZ_MUST_USE bool emitPropIncDec(ParseNode* pn);
+  void tellDebuggerAboutCompiledScript(JSContext* cx);
 
-    MOZ_MUST_USE bool emitComputedPropertyName(ParseNode* computedPropName);
+  uint32_t mainOffset() const { return *mainOffset_; }
 
-    // Emit bytecode to put operands for a JSOP_GETELEM/CALLELEM/SETELEM/DELELEM
-    // opcode onto the stack in the right order. In the case of SETELEM, the
-    // value to be assigned must already be pushed.
-    enum class EmitElemOption { Get, Set, Call, IncDec, CompoundAssign };
-    MOZ_MUST_USE bool emitElemOperands(ParseNode* pn, EmitElemOption opts);
+  bool inPrologue() const { return mainOffset_.isNothing(); }
 
-    MOZ_MUST_USE bool emitElemOpBase(JSOp op);
-    MOZ_MUST_USE bool emitElemOp(ParseNode* pn, JSOp op);
-    MOZ_MUST_USE bool emitElemIncDec(ParseNode* pn);
+  MOZ_MUST_USE bool switchToMain() {
+    MOZ_ASSERT(inPrologue());
+    mainOffset_.emplace(bytecodeSection().code().length());
 
-    MOZ_MUST_USE bool emitCatch(ParseNode* pn);
-    MOZ_MUST_USE bool emitIf(ParseNode* pn);
-    MOZ_MUST_USE bool emitWith(ParseNode* pn);
+    return emitInstrumentation(InstrumentationKind::Main);
+  }
 
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitLabeledStatement(const LabeledStatement* pn);
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitLexicalScope(ParseNode* pn);
-    MOZ_MUST_USE bool emitLexicalScopeBody(ParseNode* body,
-                                           EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitSwitch(ParseNode* pn);
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitTry(ParseNode* pn);
+  void setFunctionBodyEndPos(uint32_t pos) {
+    functionBodyEndPos = mozilla::Some(pos);
+  }
 
-    enum DestructuringFlavor {
-        // Destructuring into a declaration.
-        DestructuringDeclaration,
+  void setScriptStartOffsetIfUnset(uint32_t pos) {
+    if (scriptStartOffset.isNothing()) {
+      scriptStartOffset = mozilla::Some(pos);
+    }
+  }
 
-        // Destructuring into a formal parameter, when the formal parameters
-        // contain an expression that might be evaluated, and thus require
-        // this destructuring to assign not into the innermost scope that
-        // contains the function body's vars, but into its enclosing scope for
-        // parameter expressions.
-        DestructuringFormalParameterInVarScope,
+  void reportError(ParseNode* pn, unsigned errorNumber, ...);
+  void reportError(const mozilla::Maybe<uint32_t>& maybeOffset,
+                   unsigned errorNumber, ...);
+  bool reportExtraWarning(ParseNode* pn, unsigned errorNumber, ...);
+  bool reportExtraWarning(const mozilla::Maybe<uint32_t>& maybeOffset,
+                          unsigned errorNumber, ...);
 
-        // Destructuring as part of an AssignmentExpression.
-        DestructuringAssignment
-    };
+  // If pn contains a useful expression, return true with *answer set to true.
+  // If pn contains a useless expression, return true with *answer set to
+  // false. Return false on error.
+  //
+  // The caller should initialize *answer to false and invoke this function on
+  // an expression statement or similar subtree to decide whether the tree
+  // could produce code that has any side effects.  For an expression
+  // statement, we define useless code as code with no side effects, because
+  // the main effect, the value left on the stack after the code executes,
+  // will be discarded by a pop bytecode.
+  MOZ_MUST_USE bool checkSideEffects(ParseNode* pn, bool* answer);
 
-    // EmitDestructuringLHS assumes the to-be-destructured value has been pushed on
-    // the stack and emits code to destructure a single lhs expression (either a
-    // name or a compound []/{} expression).
-    MOZ_MUST_USE bool emitDestructuringLHS(ParseNode* target, DestructuringFlavor flav);
+#ifdef DEBUG
+  MOZ_MUST_USE bool checkStrictOrSloppy(JSOp op);
+#endif
 
-    MOZ_MUST_USE bool emitDestructuringOps(ParseNode* pattern, DestructuringFlavor flav);
-    MOZ_MUST_USE bool emitDestructuringOpsHelper(ParseNode* pattern, DestructuringFlavor flav);
-    MOZ_MUST_USE bool emitDestructuringOpsArrayHelper(ParseNode* pattern, DestructuringFlavor flav);
-    MOZ_MUST_USE bool emitDestructuringOpsObjectHelper(ParseNode* pattern, DestructuringFlavor flav);
+  // Add TryNote to the tryNoteList array. The start and end offset are
+  // relative to current section.
+  MOZ_MUST_USE bool addTryNote(JSTryNoteKind kind, uint32_t stackDepth,
+                               BytecodeOffset start, BytecodeOffset end);
 
-    typedef bool
-    (*DestructuringDeclEmitter)(BytecodeEmitter* bce, ParseNode* pn);
+  // Append a new source note of the given type (and therefore size) to the
+  // notes dynamic array, updating noteCount. Return the new note's index
+  // within the array pointed at by current->notes as outparam.
+  MOZ_MUST_USE bool newSrcNote(SrcNoteType type, unsigned* indexp = nullptr);
+  MOZ_MUST_USE bool newSrcNote2(SrcNoteType type, ptrdiff_t offset,
+                                unsigned* indexp = nullptr);
+  MOZ_MUST_USE bool newSrcNote3(SrcNoteType type, ptrdiff_t offset1,
+                                ptrdiff_t offset2, unsigned* indexp = nullptr);
 
-    template <typename NameEmitter>
-    MOZ_MUST_USE bool emitDestructuringDeclsWithEmitter(ParseNode* pattern, NameEmitter emitName);
+  MOZ_MUST_USE bool setSrcNoteOffset(unsigned index, unsigned which,
+                                     BytecodeOffsetDiff offset);
 
-    // Throw a TypeError if the value atop the stack isn't convertible to an
-    // object, with no overall effect on the stack.
-    MOZ_MUST_USE bool emitRequireObjectCoercible();
+  // Control whether emitTree emits a line number note.
+  enum EmitLineNumberNote { EMIT_LINENOTE, SUPPRESS_LINENOTE };
 
-    // emitIterator expects the iterable to already be on the stack.
-    // It will replace that stack value with the corresponding iterator
-    MOZ_MUST_USE bool emitIterator();
+  // Emit code for the tree rooted at pn.
+  MOZ_MUST_USE bool emitTree(ParseNode* pn,
+                             ValueUsage valueUsage = ValueUsage::WantValue,
+                             EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
 
-    // Pops iterator from the top of the stack. Pushes the result of |.next()|
-    // onto the stack.
-    MOZ_MUST_USE bool emitIteratorNext(ParseNode* pn, bool allowSelfHosted = false);
+  // Emit global, eval, or module code for tree rooted at body. Always
+  // encompasses the entire source.
+  MOZ_MUST_USE bool emitScript(ParseNode* body);
 
-    // Check if the value on top of the stack is "undefined". If so, replace
-    // that value on the stack with the value defined by |defaultExpr|.
-    MOZ_MUST_USE bool emitDefault(ParseNode* defaultExpr);
+  // Emit function code for the tree rooted at body.
+  enum class TopLevelFunction { No, Yes };
+  MOZ_MUST_USE bool emitFunctionScript(FunctionNode* funNode,
+                                       TopLevelFunction isTopLevel);
 
-    MOZ_MUST_USE bool emitCallSiteObject(ParseNode* pn);
-    MOZ_MUST_USE bool emitTemplateString(ParseNode* pn);
-    MOZ_MUST_USE bool emitAssignment(ParseNode* lhs, JSOp op, ParseNode* rhs);
+  MOZ_MUST_USE bool markStepBreakpoint();
+  MOZ_MUST_USE bool markSimpleBreakpoint();
+  MOZ_MUST_USE bool updateLineNumberNotes(uint32_t offset);
+  MOZ_MUST_USE bool updateSourceCoordNotes(uint32_t offset);
 
-    MOZ_MUST_USE bool emitReturn(ParseNode* pn);
-    MOZ_MUST_USE bool emitStatement(ParseNode* pn);
-    MOZ_MUST_USE bool emitStatementList(ParseNode* pn);
+  JSOp strictifySetNameOp(JSOp op);
 
-    MOZ_MUST_USE bool emitDeleteName(ParseNode* pn);
-    MOZ_MUST_USE bool emitDeleteProperty(ParseNode* pn);
-    MOZ_MUST_USE bool emitDeleteElement(ParseNode* pn);
-    MOZ_MUST_USE bool emitDeleteExpression(ParseNode* pn);
+  MOZ_MUST_USE bool emitCheck(JSOp op, ptrdiff_t delta, BytecodeOffset* offset);
 
-    // |op| must be JSOP_TYPEOF or JSOP_TYPEOFEXPR.
-    MOZ_MUST_USE bool emitTypeof(ParseNode* node, JSOp op);
+  // Emit one bytecode.
+  MOZ_MUST_USE bool emit1(JSOp op);
 
-    MOZ_MUST_USE bool emitUnary(ParseNode* pn);
-    MOZ_MUST_USE bool emitRightAssociative(ParseNode* pn);
-    MOZ_MUST_USE bool emitLeftAssociative(ParseNode* pn);
-    MOZ_MUST_USE bool emitLogical(ParseNode* pn);
-    MOZ_MUST_USE bool emitSequenceExpr(ParseNode* pn);
+  // Emit two bytecodes, an opcode (op) with a byte of immediate operand
+  // (op1).
+  MOZ_MUST_USE bool emit2(JSOp op, uint8_t op1);
 
-    MOZ_NEVER_INLINE MOZ_MUST_USE bool emitIncOrDec(ParseNode* pn);
+  // Emit three bytecodes, an opcode with two bytes of immediate operands.
+  MOZ_MUST_USE bool emit3(JSOp op, jsbytecode op1, jsbytecode op2);
 
-    MOZ_MUST_USE bool emitConditionalExpression(ConditionalExpression& conditional);
+  // Helper to duplicate one or more stack values. |slotFromTop| is the value's
+  // depth on the JS stack, as measured from the top. |count| is the number of
+  // values to duplicate, in theiro original order.
+  MOZ_MUST_USE bool emitDupAt(unsigned slotFromTop, unsigned count = 1);
 
-    MOZ_MUST_USE bool isRestParameter(ParseNode* pn, bool* result);
-    MOZ_MUST_USE bool emitOptimizeSpread(ParseNode* arg0, JumpList* jmp, bool* emitted);
+  // Helper to emit JSOP_POP or JSOP_POPN.
+  MOZ_MUST_USE bool emitPopN(unsigned n);
 
-    MOZ_MUST_USE bool emitCallOrNew(ParseNode* pn);
-    MOZ_MUST_USE bool emitSelfHostedCallFunction(ParseNode* pn);
-    MOZ_MUST_USE bool emitSelfHostedResumeGenerator(ParseNode* pn);
-    MOZ_MUST_USE bool emitSelfHostedForceInterpreter(ParseNode* pn);
-    MOZ_MUST_USE bool emitSelfHostedAllowContentSpread(ParseNode* pn);
+  // Helper to emit JSOP_CHECKISOBJ.
+  MOZ_MUST_USE bool emitCheckIsObj(CheckIsObjectKind kind);
 
-    MOZ_MUST_USE bool emitComprehensionFor(ParseNode* compFor);
-    MOZ_MUST_USE bool emitComprehensionForIn(ParseNode* pn);
-    MOZ_MUST_USE bool emitComprehensionForInOrOfVariables(ParseNode* pn, bool* lexicalScope);
-    MOZ_MUST_USE bool emitComprehensionForOf(ParseNode* pn);
+  // Helper to emit JSOP_CHECKISCALLABLE.
+  MOZ_MUST_USE bool emitCheckIsCallable(CheckIsCallableKind kind);
 
-    MOZ_MUST_USE bool emitDo(ParseNode* pn);
-    MOZ_MUST_USE bool emitWhile(ParseNode* pn);
+  // Push whether the value atop of the stack is non-undefined and non-null.
+  MOZ_MUST_USE bool emitPushNotUndefinedOrNull();
 
-    MOZ_MUST_USE bool emitFor(ParseNode* pn, EmitterScope* headLexicalEmitterScope = nullptr);
-    MOZ_MUST_USE bool emitCStyleFor(ParseNode* pn, EmitterScope* headLexicalEmitterScope);
-    MOZ_MUST_USE bool emitForIn(ParseNode* pn, EmitterScope* headLexicalEmitterScope);
-    MOZ_MUST_USE bool emitForOf(ParseNode* pn, EmitterScope* headLexicalEmitterScope);
+  // Emit a bytecode followed by an uint16 immediate operand stored in
+  // big-endian order.
+  MOZ_MUST_USE bool emitUint16Operand(JSOp op, uint32_t operand);
 
-    MOZ_MUST_USE bool emitInitializeForInOrOfTarget(ParseNode* forHead);
+  // Emit a bytecode followed by an uint32 immediate operand.
+  MOZ_MUST_USE bool emitUint32Operand(JSOp op, uint32_t operand);
 
-    MOZ_MUST_USE bool emitBreak(PropertyName* label);
-    MOZ_MUST_USE bool emitContinue(PropertyName* label);
+  // Emit (1 + extra) bytecodes, for N bytes of op and its immediate operand.
+  MOZ_MUST_USE bool emitN(JSOp op, size_t extra,
+                          BytecodeOffset* offset = nullptr);
 
-    MOZ_MUST_USE bool emitFunctionFormalParametersAndBody(ParseNode* pn);
-    MOZ_MUST_USE bool emitFunctionFormalParameters(ParseNode* pn);
-    MOZ_MUST_USE bool emitInitializeFunctionSpecialNames();
-    MOZ_MUST_USE bool emitFunctionBody(ParseNode* pn);
-    MOZ_MUST_USE bool emitLexicalInitialization(ParseNode* pn);
+  MOZ_MUST_USE bool emitDouble(double dval);
+  MOZ_MUST_USE bool emitNumberOp(double dval);
 
-    // Emit bytecode for the spread operator.
-    //
-    // emitSpread expects the current index (I) of the array, the array itself
-    // and the iterator to be on the stack in that order (iterator on the bottom).
-    // It will pop the iterator and I, then iterate over the iterator by calling
-    // |.next()| and put the results into the I-th element of array with
-    // incrementing I, then push the result I (it will be original I +
-    // iteration count). The stack after iteration will look like |ARRAY INDEX|.
-    MOZ_MUST_USE bool emitSpread(bool allowSelfHosted = false);
+  MOZ_MUST_USE bool emitBigIntOp(BigIntLiteral* bigint);
 
-    MOZ_MUST_USE bool emitClass(ParseNode* pn);
-    MOZ_MUST_USE bool emitSuperPropLHS(ParseNode* superBase, bool isCall = false);
-    MOZ_MUST_USE bool emitSuperPropOp(ParseNode* pn, JSOp op, bool isCall = false);
-    MOZ_MUST_USE bool emitSuperElemOperands(ParseNode* pn,
-                                            EmitElemOption opts = EmitElemOption::Get);
-    MOZ_MUST_USE bool emitSuperElemOp(ParseNode* pn, JSOp op, bool isCall = false);
+  MOZ_MUST_USE bool emitThisLiteral(ThisLiteral* pn);
+  MOZ_MUST_USE bool emitGetFunctionThis(NameNode* thisName);
+  MOZ_MUST_USE bool emitGetFunctionThis(const mozilla::Maybe<uint32_t>& offset);
+  MOZ_MUST_USE bool emitGetThisForSuperBase(UnaryNode* superBase);
+  MOZ_MUST_USE bool emitSetThis(BinaryNode* setThisNode);
+  MOZ_MUST_USE bool emitCheckDerivedClassConstructorReturn();
+
+  // Handle jump opcodes and jump targets.
+  MOZ_MUST_USE bool emitJumpTargetOp(JSOp op, BytecodeOffset* off);
+  MOZ_MUST_USE bool emitJumpTarget(JumpTarget* target);
+  MOZ_MUST_USE bool emitJumpNoFallthrough(JSOp op, JumpList* jump);
+  MOZ_MUST_USE bool emitJump(JSOp op, JumpList* jump);
+  MOZ_MUST_USE bool emitBackwardJump(JSOp op, JumpTarget target, JumpList* jump,
+                                     JumpTarget* fallthrough);
+  void patchJumpsToTarget(JumpList jump, JumpTarget target);
+  MOZ_MUST_USE bool emitJumpTargetAndPatch(JumpList jump);
+
+  MOZ_MUST_USE bool emitCall(JSOp op, uint16_t argc,
+                             const mozilla::Maybe<uint32_t>& sourceCoordOffset);
+  MOZ_MUST_USE bool emitCall(JSOp op, uint16_t argc, ParseNode* pn = nullptr);
+  MOZ_MUST_USE bool emitCallIncDec(UnaryNode* incDec);
+
+  mozilla::Maybe<uint32_t> getOffsetForLoop(ParseNode* nextpn);
+
+  MOZ_MUST_USE bool emitGoto(NestableControl* target, JumpList* jumplist,
+                             SrcNoteType noteType = SRC_NULL);
+
+  MOZ_MUST_USE bool emitIndex32(JSOp op, uint32_t index);
+  MOZ_MUST_USE bool emitIndexOp(JSOp op, uint32_t index);
+
+  MOZ_MUST_USE bool emitAtomOp(
+      JSAtom* atom, JSOp op,
+      ShouldInstrument shouldInstrument = ShouldInstrument::No);
+  MOZ_MUST_USE bool emitAtomOp(
+      uint32_t atomIndex, JSOp op,
+      ShouldInstrument shouldInstrument = ShouldInstrument::No);
+
+  MOZ_MUST_USE bool emitArrayLiteral(ListNode* array);
+  MOZ_MUST_USE bool emitArray(ParseNode* arrayHead, uint32_t count);
+
+  MOZ_MUST_USE bool emitInternedScopeOp(uint32_t index, JSOp op);
+  MOZ_MUST_USE bool emitInternedObjectOp(uint32_t index, JSOp op);
+  MOZ_MUST_USE bool emitObjectOp(ObjectBox* objbox, JSOp op);
+  MOZ_MUST_USE bool emitObjectPairOp(ObjectBox* objbox1, ObjectBox* objbox2,
+                                     JSOp op);
+  MOZ_MUST_USE bool emitRegExp(uint32_t index);
+
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitFunction(
+      FunctionNode* funNode, bool needsProto = false,
+      ListNode* classContentsIfConstructor = nullptr);
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitObject(ListNode* objNode);
+
+  MOZ_MUST_USE bool replaceNewInitWithNewObject(JSObject* obj,
+                                                BytecodeOffset offset);
+
+  MOZ_MUST_USE bool emitHoistedFunctionsInList(ListNode* stmtList);
+
+  MOZ_MUST_USE bool emitPropertyList(ListNode* obj, PropertyEmitter& pe,
+                                     PropListType type);
+
+  FieldInitializers setupFieldInitializers(ListNode* classMembers);
+  MOZ_MUST_USE bool emitCreateFieldKeys(ListNode* obj);
+  MOZ_MUST_USE bool emitCreateFieldInitializers(ClassEmitter& ce,
+                                                ListNode* obj);
+  const FieldInitializers& findFieldInitializersForCall();
+  MOZ_MUST_USE bool emitInitializeInstanceFields();
+
+  // To catch accidental misuse, emitUint16Operand/emit3 assert that they are
+  // not used to unconditionally emit JSOP_GETLOCAL. Variable access should
+  // instead be emitted using EmitVarOp. In special cases, when the caller
+  // definitely knows that a given local slot is unaliased, this function may be
+  // used as a non-asserting version of emitUint16Operand.
+  MOZ_MUST_USE bool emitLocalOp(JSOp op, uint32_t slot);
+
+  MOZ_MUST_USE bool emitArgOp(JSOp op, uint16_t slot);
+  MOZ_MUST_USE bool emitEnvCoordOp(JSOp op, EnvironmentCoordinate ec);
+
+  MOZ_MUST_USE bool emitGetNameAtLocation(Handle<JSAtom*> name,
+                                          const NameLocation& loc);
+  MOZ_MUST_USE bool emitGetNameAtLocation(ImmutablePropertyNamePtr name,
+                                          const NameLocation& loc) {
+    return emitGetNameAtLocation(name.toHandle(), loc);
+  }
+  MOZ_MUST_USE bool emitGetName(Handle<JSAtom*> name) {
+    return emitGetNameAtLocation(name, lookupName(name));
+  }
+  MOZ_MUST_USE bool emitGetName(ImmutablePropertyNamePtr name) {
+    return emitGetNameAtLocation(name, lookupName(name));
+  }
+  MOZ_MUST_USE bool emitGetName(NameNode* name);
+
+  MOZ_MUST_USE bool emitTDZCheckIfNeeded(HandleAtom name,
+                                         const NameLocation& loc);
+
+  MOZ_MUST_USE bool emitNameIncDec(UnaryNode* incDec);
+
+  MOZ_MUST_USE bool emitDeclarationList(ListNode* declList);
+  MOZ_MUST_USE bool emitSingleDeclaration(ListNode* declList, NameNode* decl,
+                                          ParseNode* initializer);
+  MOZ_MUST_USE bool emitAssignmentRhs(ParseNode* rhs,
+                                      HandleAtom anonFunctionName);
+  MOZ_MUST_USE bool emitAssignmentRhs(uint8_t offset);
+
+  MOZ_MUST_USE bool emitNewInit();
+  MOZ_MUST_USE bool emitSingletonInitialiser(ListNode* objOrArray);
+
+  MOZ_MUST_USE bool emitPrepareIteratorResult();
+  MOZ_MUST_USE bool emitFinishIteratorResult(bool done);
+  MOZ_MUST_USE bool iteratorResultShape(uint32_t* shape);
+
+  MOZ_MUST_USE bool emitGetDotGeneratorInInnermostScope() {
+    return emitGetDotGeneratorInScope(*innermostEmitterScope());
+  }
+  MOZ_MUST_USE bool emitGetDotGeneratorInScope(EmitterScope& currentScope);
+
+  MOZ_MUST_USE bool allocateResumeIndex(BytecodeOffset offset,
+                                        uint32_t* resumeIndex);
+  MOZ_MUST_USE bool allocateResumeIndexRange(
+      mozilla::Span<BytecodeOffset> offsets, uint32_t* firstResumeIndex);
+
+  MOZ_MUST_USE bool emitInitialYield(UnaryNode* yieldNode);
+  MOZ_MUST_USE bool emitYield(UnaryNode* yieldNode);
+  MOZ_MUST_USE bool emitYieldOp(JSOp op);
+  MOZ_MUST_USE bool emitYieldStar(ParseNode* iter);
+  MOZ_MUST_USE bool emitAwaitInInnermostScope() {
+    return emitAwaitInScope(*innermostEmitterScope());
+  }
+  MOZ_MUST_USE bool emitAwaitInInnermostScope(UnaryNode* awaitNode);
+  MOZ_MUST_USE bool emitAwaitInScope(EmitterScope& currentScope);
+
+  MOZ_MUST_USE bool emitPropLHS(PropertyAccess* prop);
+  MOZ_MUST_USE bool emitPropIncDec(UnaryNode* incDec);
+
+  MOZ_MUST_USE bool emitComputedPropertyName(UnaryNode* computedPropName);
+
+  // Emit bytecode to put operands for a JSOP_GETELEM/CALLELEM/SETELEM/DELELEM
+  // opcode onto the stack in the right order. In the case of SETELEM, the
+  // value to be assigned must already be pushed.
+  enum class EmitElemOption { Get, Call, IncDec, CompoundAssign, Ref };
+  MOZ_MUST_USE bool emitElemOperands(PropertyByValue* elem,
+                                     EmitElemOption opts);
+
+  MOZ_MUST_USE bool emitElemObjAndKey(PropertyByValue* elem, bool isSuper,
+                                      ElemOpEmitter& eoe);
+  MOZ_MUST_USE bool emitElemOpBase(
+      JSOp op, ShouldInstrument shouldInstrument = ShouldInstrument::No);
+  MOZ_MUST_USE bool emitElemOp(PropertyByValue* elem, JSOp op);
+  MOZ_MUST_USE bool emitElemIncDec(UnaryNode* incDec);
+
+  MOZ_MUST_USE bool emitCatch(BinaryNode* catchClause);
+  MOZ_MUST_USE bool emitIf(TernaryNode* ifNode);
+  MOZ_MUST_USE bool emitWith(BinaryNode* withNode);
+
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitLabeledStatement(
+      const LabeledStatement* labeledStmt);
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitLexicalScope(
+      LexicalScopeNode* lexicalScope);
+  MOZ_MUST_USE bool emitLexicalScopeBody(
+      ParseNode* body, EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitSwitch(SwitchStatement* switchStmt);
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitTry(TryNode* tryNode);
+
+  MOZ_MUST_USE bool emitGoSub(JumpList* jump);
+
+  // emitDestructuringLHSRef emits the lhs expression's reference.
+  // If the lhs expression is object property |OBJ.prop|, it emits |OBJ|.
+  // If it's object element |OBJ[ELEM]|, it emits |OBJ| and |ELEM|.
+  // If there's nothing to evaluate for the reference, it emits nothing.
+  // |emitted| parameter receives the number of values pushed onto the stack.
+  MOZ_MUST_USE bool emitDestructuringLHSRef(ParseNode* target, size_t* emitted);
+
+  // emitSetOrInitializeDestructuring assumes the lhs expression's reference
+  // and the to-be-destructured value has been pushed on the stack.  It emits
+  // code to destructure a single lhs expression (either a name or a compound
+  // []/{} expression).
+  MOZ_MUST_USE bool emitSetOrInitializeDestructuring(ParseNode* target,
+                                                     DestructuringFlavor flav);
+
+  // emitDestructuringObjRestExclusionSet emits the property exclusion set
+  // for the rest-property in an object pattern.
+  MOZ_MUST_USE bool emitDestructuringObjRestExclusionSet(ListNode* pattern);
+
+  // emitDestructuringOps assumes the to-be-destructured value has been
+  // pushed on the stack and emits code to destructure each part of a [] or
+  // {} lhs expression.
+  MOZ_MUST_USE bool emitDestructuringOps(ListNode* pattern,
+                                         DestructuringFlavor flav);
+  MOZ_MUST_USE bool emitDestructuringOpsArray(ListNode* pattern,
+                                              DestructuringFlavor flav);
+  MOZ_MUST_USE bool emitDestructuringOpsObject(ListNode* pattern,
+                                               DestructuringFlavor flav);
+
+  enum class CopyOption { Filtered, Unfiltered };
+
+  // Calls either the |CopyDataProperties| or the
+  // |CopyDataPropertiesUnfiltered| intrinsic function, consumes three (or
+  // two in the latter case) elements from the stack.
+  MOZ_MUST_USE bool emitCopyDataProperties(CopyOption option);
+
+  // emitIterator expects the iterable to already be on the stack.
+  // It will replace that stack value with the corresponding iterator
+  MOZ_MUST_USE bool emitIterator();
+
+  MOZ_MUST_USE bool emitAsyncIterator();
+
+  // Pops iterator from the top of the stack. Pushes the result of |.next()|
+  // onto the stack.
+  MOZ_MUST_USE bool emitIteratorNext(
+      const mozilla::Maybe<uint32_t>& callSourceCoordOffset,
+      IteratorKind kind = IteratorKind::Sync, bool allowSelfHosted = false);
+  MOZ_MUST_USE bool emitIteratorCloseInScope(
+      EmitterScope& currentScope, IteratorKind iterKind = IteratorKind::Sync,
+      CompletionKind completionKind = CompletionKind::Normal,
+      bool allowSelfHosted = false);
+  MOZ_MUST_USE bool emitIteratorCloseInInnermostScope(
+      IteratorKind iterKind = IteratorKind::Sync,
+      CompletionKind completionKind = CompletionKind::Normal,
+      bool allowSelfHosted = false) {
+    return emitIteratorCloseInScope(*innermostEmitterScope(), iterKind,
+                                    completionKind, allowSelfHosted);
+  }
+
+  template <typename InnerEmitter>
+  MOZ_MUST_USE bool wrapWithDestructuringTryNote(int32_t iterDepth,
+                                                 InnerEmitter emitter);
+
+  MOZ_MUST_USE bool defineHoistedTopLevelFunctions(ParseNode* body);
+
+  // Check if the value on top of the stack is "undefined". If so, replace
+  // that value on the stack with the value defined by |defaultExpr|.
+  // |pattern| is a lhs node of the default expression.  If it's an
+  // identifier and |defaultExpr| is an anonymous function, |SetFunctionName|
+  // is called at compile time.
+  MOZ_MUST_USE bool emitDefault(ParseNode* defaultExpr, ParseNode* pattern);
+
+  MOZ_MUST_USE bool emitAnonymousFunctionWithName(ParseNode* node,
+                                                  JS::Handle<JSAtom*> name);
+
+  MOZ_MUST_USE bool emitAnonymousFunctionWithComputedName(
+      ParseNode* node, FunctionPrefixKind prefixKind);
+
+  MOZ_MUST_USE bool setFunName(JSFunction* fun, JSAtom* name);
+  MOZ_MUST_USE bool emitInitializer(ParseNode* initializer, ParseNode* pattern);
+
+  MOZ_MUST_USE bool emitCallSiteObject(CallSiteNode* callSiteObj);
+  MOZ_MUST_USE bool emitTemplateString(ListNode* templateString);
+  MOZ_MUST_USE bool emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
+                                         ParseNode* rhs);
+
+  MOZ_MUST_USE bool emitReturn(UnaryNode* returnNode);
+  MOZ_MUST_USE bool emitExpressionStatement(UnaryNode* exprStmt);
+  MOZ_MUST_USE bool emitStatementList(ListNode* stmtList);
+
+  MOZ_MUST_USE bool emitDeleteName(UnaryNode* deleteNode);
+  MOZ_MUST_USE bool emitDeleteProperty(UnaryNode* deleteNode);
+  MOZ_MUST_USE bool emitDeleteElement(UnaryNode* deleteNode);
+  MOZ_MUST_USE bool emitDeleteExpression(UnaryNode* deleteNode);
+
+  // |op| must be JSOP_TYPEOF or JSOP_TYPEOFEXPR.
+  MOZ_MUST_USE bool emitTypeof(UnaryNode* typeofNode, JSOp op);
+
+  MOZ_MUST_USE bool emitUnary(UnaryNode* unaryNode);
+  MOZ_MUST_USE bool emitRightAssociative(ListNode* node);
+  MOZ_MUST_USE bool emitLeftAssociative(ListNode* node);
+  MOZ_MUST_USE bool emitLogical(ListNode* node);
+  MOZ_MUST_USE bool emitSequenceExpr(
+      ListNode* node, ValueUsage valueUsage = ValueUsage::WantValue);
+
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitIncOrDec(UnaryNode* incDec);
+
+  MOZ_MUST_USE bool emitConditionalExpression(
+      ConditionalExpression& conditional,
+      ValueUsage valueUsage = ValueUsage::WantValue);
+
+  bool isRestParameter(ParseNode* expr);
+
+  MOZ_MUST_USE bool emitArguments(ListNode* argsList, bool isCall,
+                                  bool isSpread, CallOrNewEmitter& cone);
+  MOZ_MUST_USE bool emitCallOrNew(
+      CallNode* callNode, ValueUsage valueUsage = ValueUsage::WantValue);
+  MOZ_MUST_USE bool emitSelfHostedCallFunction(CallNode* callNode);
+  MOZ_MUST_USE bool emitSelfHostedResumeGenerator(BinaryNode* callNode);
+  MOZ_MUST_USE bool emitSelfHostedForceInterpreter();
+  MOZ_MUST_USE bool emitSelfHostedAllowContentIter(BinaryNode* callNode);
+  MOZ_MUST_USE bool emitSelfHostedDefineDataProperty(BinaryNode* callNode);
+  MOZ_MUST_USE bool emitSelfHostedGetPropertySuper(BinaryNode* callNode);
+  MOZ_MUST_USE bool emitSelfHostedHasOwn(BinaryNode* callNode);
+
+  MOZ_MUST_USE bool emitDo(BinaryNode* doNode);
+  MOZ_MUST_USE bool emitWhile(BinaryNode* whileNode);
+
+  MOZ_MUST_USE bool emitFor(
+      ForNode* forNode, const EmitterScope* headLexicalEmitterScope = nullptr);
+  MOZ_MUST_USE bool emitCStyleFor(ForNode* forNode,
+                                  const EmitterScope* headLexicalEmitterScope);
+  MOZ_MUST_USE bool emitForIn(ForNode* forNode,
+                              const EmitterScope* headLexicalEmitterScope);
+  MOZ_MUST_USE bool emitForOf(ForNode* forNode,
+                              const EmitterScope* headLexicalEmitterScope);
+
+  MOZ_MUST_USE bool emitInitializeForInOrOfTarget(TernaryNode* forHead);
+
+  MOZ_MUST_USE bool emitBreak(PropertyName* label);
+  MOZ_MUST_USE bool emitContinue(PropertyName* label);
+
+  MOZ_MUST_USE bool emitFunctionFormalParameters(ListNode* paramsBody);
+  MOZ_MUST_USE bool emitInitializeFunctionSpecialNames();
+  MOZ_MUST_USE bool emitLexicalInitialization(NameNode* name);
+  MOZ_MUST_USE bool emitLexicalInitialization(Handle<JSAtom*> name);
+
+  // Emit bytecode for the spread operator.
+  //
+  // emitSpread expects the current index (I) of the array, the array itself
+  // and the iterator to be on the stack in that order (iterator on the bottom).
+  // It will pop the iterator and I, then iterate over the iterator by calling
+  // |.next()| and put the results into the I-th element of array with
+  // incrementing I, then push the result I (it will be original I +
+  // iteration count). The stack after iteration will look like |ARRAY INDEX|.
+  MOZ_MUST_USE bool emitSpread(bool allowSelfHosted = false);
+
+  enum class ClassNameKind {
+    // The class name is defined through its BindingIdentifier, if present.
+    BindingName,
+
+    // The class is anonymous and has a statically inferred name.
+    InferredName,
+
+    // The class is anonymous and has a dynamically computed name.
+    ComputedName
+  };
+
+  MOZ_MUST_USE bool emitClass(
+      ClassNode* classNode, ClassNameKind nameKind = ClassNameKind::BindingName,
+      JS::Handle<JSAtom*> nameForAnonymousClass = nullptr);
+  MOZ_MUST_USE bool emitSuperElemOperands(
+      PropertyByValue* elem, EmitElemOption opts = EmitElemOption::Get);
+  MOZ_MUST_USE bool emitSuperGetElem(PropertyByValue* elem,
+                                     bool isCall = false);
+
+  MOZ_MUST_USE bool emitCalleeAndThis(ParseNode* callee, ParseNode* call,
+                                      CallOrNewEmitter& cone);
+
+  MOZ_MUST_USE bool emitPipeline(ListNode* node);
+
+  MOZ_MUST_USE bool emitExportDefault(BinaryNode* exportNode);
+
+  MOZ_MUST_USE bool emitReturnRval() {
+    return emitInstrumentation(InstrumentationKind::Exit) &&
+           emit1(JSOP_RETRVAL);
+  }
+
+  MOZ_MUST_USE bool emitInstrumentation(InstrumentationKind kind,
+                                        uint32_t npopped = 0) {
+    return MOZ_LIKELY(!instrumentationKinds) ||
+           emitInstrumentationSlow(kind, std::function<bool(uint32_t)>());
+  }
+
+  MOZ_MUST_USE bool emitInstrumentationForOpcode(JSOp op, uint32_t atomIndex) {
+    return MOZ_LIKELY(!instrumentationKinds) ||
+           emitInstrumentationForOpcodeSlow(op, atomIndex);
+  }
+
+ private:
+  MOZ_MUST_USE bool emitInstrumentationSlow(
+      InstrumentationKind kind,
+      const std::function<bool(uint32_t)>& pushOperandsCallback);
+  MOZ_MUST_USE bool emitInstrumentationForOpcodeSlow(JSOp op,
+                                                     uint32_t atomIndex);
+};
+
+class MOZ_RAII AutoCheckUnstableEmitterScope {
+#ifdef DEBUG
+  bool prev_;
+  BytecodeEmitter* bce_;
+#endif
+
+ public:
+  AutoCheckUnstableEmitterScope() = delete;
+  explicit AutoCheckUnstableEmitterScope(BytecodeEmitter* bce)
+#ifdef DEBUG
+      : bce_(bce)
+#endif
+  {
+#ifdef DEBUG
+    prev_ = bce_->unstableEmitterScope;
+    bce_->unstableEmitterScope = true;
+#endif
+  }
+  ~AutoCheckUnstableEmitterScope() {
+#ifdef DEBUG
+    bce_->unstableEmitterScope = prev_;
+#endif
+  }
 };
 
 } /* namespace frontend */

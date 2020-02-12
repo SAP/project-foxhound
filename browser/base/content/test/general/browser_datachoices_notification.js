@@ -6,28 +6,40 @@
 
 // Pass an empty scope object to the import to prevent "leaked window property"
 // errors in tests.
-var Preferences = Cu.import("resource://gre/modules/Preferences.jsm", {}).Preferences;
-var TelemetryReportingPolicy =
-  Cu.import("resource://gre/modules/TelemetryReportingPolicy.jsm", {}).TelemetryReportingPolicy;
+var Preferences = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm",
+  {}
+).Preferences;
+var TelemetryReportingPolicy = ChromeUtils.import(
+  "resource://gre/modules/TelemetryReportingPolicy.jsm",
+  {}
+).TelemetryReportingPolicy;
 
 const PREF_BRANCH = "datareporting.policy.";
-const PREF_BYPASS_NOTIFICATION = PREF_BRANCH + "dataSubmissionPolicyBypassNotification";
+const PREF_BYPASS_NOTIFICATION =
+  PREF_BRANCH + "dataSubmissionPolicyBypassNotification";
 const PREF_CURRENT_POLICY_VERSION = PREF_BRANCH + "currentPolicyVersion";
-const PREF_ACCEPTED_POLICY_VERSION = PREF_BRANCH + "dataSubmissionPolicyAcceptedVersion";
-const PREF_ACCEPTED_POLICY_DATE = PREF_BRANCH + "dataSubmissionPolicyNotifiedTime";
+const PREF_ACCEPTED_POLICY_VERSION =
+  PREF_BRANCH + "dataSubmissionPolicyAcceptedVersion";
+const PREF_ACCEPTED_POLICY_DATE =
+  PREF_BRANCH + "dataSubmissionPolicyNotifiedTime";
 
 const TEST_POLICY_VERSION = 37;
 
 function fakeShowPolicyTimeout(set, clear) {
-  let reportingPolicy =
-    Cu.import("resource://gre/modules/TelemetryReportingPolicy.jsm", {}).Policy;
+  let reportingPolicy = ChromeUtils.import(
+    "resource://gre/modules/TelemetryReportingPolicy.jsm",
+    null
+  ).Policy;
   reportingPolicy.setShowInfobarTimeout = set;
   reportingPolicy.clearShowInfobarTimeout = clear;
 }
 
 function sendSessionRestoredNotification() {
-  let reportingPolicyImpl =
-    Cu.import("resource://gre/modules/TelemetryReportingPolicy.jsm", {}).TelemetryReportingPolicyImpl;
+  let reportingPolicyImpl = ChromeUtils.import(
+    "resource://gre/modules/TelemetryReportingPolicy.jsm",
+    null
+  ).TelemetryReportingPolicyImpl;
   reportingPolicyImpl.observe(null, "sessionstore-windows-restored", null);
 }
 
@@ -45,10 +57,13 @@ function promiseNextTick() {
  */
 function promiseWaitForAlertActive(aNotificationBox) {
   let deferred = PromiseUtils.defer();
-  aNotificationBox.addEventListener("AlertActive", function onActive() {
-    aNotificationBox.removeEventListener("AlertActive", onActive, true);
-    deferred.resolve();
-  });
+  aNotificationBox.stack.addEventListener(
+    "AlertActive",
+    function() {
+      deferred.resolve();
+    },
+    { once: true }
+  );
   return deferred.promise;
 }
 
@@ -66,10 +81,13 @@ function promiseWaitForNotificationClose(aNotification) {
 function triggerInfoBar(expectedTimeoutMs) {
   let showInfobarCallback = null;
   let timeoutMs = null;
-  fakeShowPolicyTimeout((callback, timeout) => {
-    showInfobarCallback = callback;
-    timeoutMs = timeout;
-  }, () => {});
+  fakeShowPolicyTimeout(
+    (callback, timeout) => {
+      showInfobarCallback = callback;
+      timeoutMs = timeout;
+    },
+    () => {}
+  );
   sendSessionRestoredNotification();
   Assert.ok(!!showInfobarCallback, "Must have a timer callback.");
   if (expectedTimeoutMs !== undefined) {
@@ -78,25 +96,24 @@ function triggerInfoBar(expectedTimeoutMs) {
   showInfobarCallback();
 }
 
-var checkInfobarButton = Task.async(function* (aNotification) {
+var checkInfobarButton = async function(aNotification) {
   // Check that the button on the data choices infobar does the right thing.
   let buttons = aNotification.getElementsByTagName("button");
-  Assert.equal(buttons.length, 1, "There is 1 button in the data reporting notification.");
+  Assert.equal(
+    buttons.length,
+    1,
+    "There is 1 button in the data reporting notification."
+  );
   let button = buttons[0];
-
-  // Add an observer to ensure the "advanced" pane opened (but don't bother
-  // closing it - we close the entire window when done.)
-  let paneLoadedPromise = promiseTopicObserved("advanced-pane-loaded");
 
   // Click on the button.
   button.click();
 
   // Wait for the preferences panel to open.
-  let preferenceWindow = yield paneLoadedPromise;
-  yield promiseNextTick();
-});
+  await promiseNextTick();
+};
 
-add_task(function* setup() {
+add_task(async function setup() {
   const bypassNotification = Preferences.get(PREF_BYPASS_NOTIFICATION, true);
   const currentPolicyVersion = Preferences.get(PREF_CURRENT_POLICY_VERSION, 1);
 
@@ -120,102 +137,156 @@ function clearAcceptedPolicy() {
   Preferences.reset(PREF_ACCEPTED_POLICY_DATE);
 }
 
-add_task(function* test_single_window() {
+add_task(async function test_single_window() {
   clearAcceptedPolicy();
 
   // Close all the notifications, then try to trigger the data choices infobar.
-  yield closeAllNotifications();
-
-  let notificationBox = document.getElementById("global-notificationbox");
+  await closeAllNotifications();
 
   // Make sure that we have a coherent initial state.
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0), 0,
-               "No version should be set on init.");
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_DATE, 0), 0,
-               "No date should be set on init.");
-  Assert.ok(!TelemetryReportingPolicy.testIsUserNotified(),
-            "User not notified about datareporting policy.");
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    0,
+    "No version should be set on init."
+  );
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_DATE, 0),
+    0,
+    "No date should be set on init."
+  );
+  Assert.ok(
+    !TelemetryReportingPolicy.testIsUserNotified(),
+    "User not notified about datareporting policy."
+  );
 
-  let alertShownPromise = promiseWaitForAlertActive(notificationBox);
-  Assert.ok(!TelemetryReportingPolicy.canUpload(),
-            "User should not be allowed to upload.");
+  let alertShownPromise = promiseWaitForAlertActive(gNotificationBox);
+  Assert.ok(
+    !TelemetryReportingPolicy.canUpload(),
+    "User should not be allowed to upload."
+  );
 
   // Wait for the infobar to be displayed.
   triggerInfoBar(10 * 1000);
-  yield alertShownPromise;
+  await alertShownPromise;
 
-  Assert.equal(notificationBox.allNotifications.length, 1, "Notification Displayed.");
-  Assert.ok(TelemetryReportingPolicy.canUpload(), "User should be allowed to upload now.");
+  Assert.equal(
+    gNotificationBox.allNotifications.length,
+    1,
+    "Notification Displayed."
+  );
+  Assert.ok(
+    TelemetryReportingPolicy.canUpload(),
+    "User should be allowed to upload now."
+  );
 
-  yield promiseNextTick();
-  let promiseClosed = promiseWaitForNotificationClose(notificationBox.currentNotification);
-  yield checkInfobarButton(notificationBox.currentNotification);
-  yield promiseClosed;
+  await promiseNextTick();
+  let promiseClosed = promiseWaitForNotificationClose(
+    gNotificationBox.currentNotification
+  );
+  await checkInfobarButton(gNotificationBox.currentNotification);
+  await promiseClosed;
 
-  Assert.equal(notificationBox.allNotifications.length, 0, "No notifications remain.");
+  Assert.equal(
+    gNotificationBox.allNotifications.length,
+    0,
+    "No notifications remain."
+  );
 
   // Check that we are still clear to upload and that the policy data is saved.
   Assert.ok(TelemetryReportingPolicy.canUpload());
-  Assert.equal(TelemetryReportingPolicy.testIsUserNotified(), true,
-               "User notified about datareporting policy.");
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0), TEST_POLICY_VERSION,
-               "Version pref set.");
-  Assert.greater(parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10), -1,
-                 "Date pref set.");
+  Assert.equal(
+    TelemetryReportingPolicy.testIsUserNotified(),
+    true,
+    "User notified about datareporting policy."
+  );
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    TEST_POLICY_VERSION,
+    "Version pref set."
+  );
+  Assert.greater(
+    parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10),
+    -1,
+    "Date pref set."
+  );
 });
 
-add_task(function* test_multiple_windows() {
+add_task(async function test_multiple_windows() {
   clearAcceptedPolicy();
 
   // Close all the notifications, then try to trigger the data choices infobar.
-  yield closeAllNotifications();
+  await closeAllNotifications();
 
   // Ensure we see the notification on all windows and that action on one window
   // results in dismiss on every window.
-  let otherWindow = yield BrowserTestUtils.openNewBrowserWindow();
+  let otherWindow = await BrowserTestUtils.openNewBrowserWindow();
 
-  // Get the notification box for both windows.
-  let notificationBoxes = [
-    document.getElementById("global-notificationbox"),
-    otherWindow.document.getElementById("global-notificationbox")
-  ];
-
-  Assert.ok(notificationBoxes[1], "2nd window has a global notification box.");
+  Assert.ok(
+    otherWindow.gNotificationBox,
+    "2nd window has a global notification box."
+  );
 
   // Make sure that we have a coherent initial state.
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0), 0, "No version should be set on init.");
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_DATE, 0), 0, "No date should be set on init.");
-  Assert.ok(!TelemetryReportingPolicy.testIsUserNotified(), "User not notified about datareporting policy.");
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    0,
+    "No version should be set on init."
+  );
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_DATE, 0),
+    0,
+    "No date should be set on init."
+  );
+  Assert.ok(
+    !TelemetryReportingPolicy.testIsUserNotified(),
+    "User not notified about datareporting policy."
+  );
 
   let showAlertPromises = [
-    promiseWaitForAlertActive(notificationBoxes[0]),
-    promiseWaitForAlertActive(notificationBoxes[1])
+    promiseWaitForAlertActive(gNotificationBox),
+    promiseWaitForAlertActive(otherWindow.gNotificationBox),
   ];
 
-  Assert.ok(!TelemetryReportingPolicy.canUpload(),
-            "User should not be allowed to upload.");
+  Assert.ok(
+    !TelemetryReportingPolicy.canUpload(),
+    "User should not be allowed to upload."
+  );
 
   // Wait for the infobars.
   triggerInfoBar(10 * 1000);
-  yield Promise.all(showAlertPromises);
+  await Promise.all(showAlertPromises);
 
   // Both notification were displayed. Close one and check that both gets closed.
   let closeAlertPromises = [
-    promiseWaitForNotificationClose(notificationBoxes[0].currentNotification),
-    promiseWaitForNotificationClose(notificationBoxes[1].currentNotification)
+    promiseWaitForNotificationClose(gNotificationBox.currentNotification),
+    promiseWaitForNotificationClose(
+      otherWindow.gNotificationBox.currentNotification
+    ),
   ];
-  notificationBoxes[0].currentNotification.close();
-  yield Promise.all(closeAlertPromises);
+  gNotificationBox.currentNotification.close();
+  await Promise.all(closeAlertPromises);
 
   // Close the second window we opened.
-  yield BrowserTestUtils.closeWindow(otherWindow);
+  await BrowserTestUtils.closeWindow(otherWindow);
 
   // Check that we are clear to upload and that the policy data us saved.
-  Assert.ok(TelemetryReportingPolicy.canUpload(), "User should be allowed to upload now.");
-  Assert.equal(TelemetryReportingPolicy.testIsUserNotified(), true,
-               "User notified about datareporting policy.");
-  Assert.equal(Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0), TEST_POLICY_VERSION,
-               "Version pref set.");
-  Assert.greater(parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10), -1,
-                 "Date pref set.");
+  Assert.ok(
+    TelemetryReportingPolicy.canUpload(),
+    "User should be allowed to upload now."
+  );
+  Assert.equal(
+    TelemetryReportingPolicy.testIsUserNotified(),
+    true,
+    "User notified about datareporting policy."
+  );
+  Assert.equal(
+    Preferences.get(PREF_ACCEPTED_POLICY_VERSION, 0),
+    TEST_POLICY_VERSION,
+    "Version pref set."
+  );
+  Assert.greater(
+    parseInt(Preferences.get(PREF_ACCEPTED_POLICY_DATE, null), 10),
+    -1,
+    "Date pref set."
+  );
 });

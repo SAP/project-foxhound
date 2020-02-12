@@ -1,40 +1,60 @@
 /* Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this file,
-* You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Ci = Components.interfaces, Cc = Components.classes, Cu = Components.utils;
+ChromeUtils.import(
+  "resource://services-common/utils.js"
+); /* global: CommonUtils */
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Accounts } = ChromeUtils.import("resource://gre/modules/Accounts.jsm");
 
-Cu.import("resource://services-common/utils.js"); /*global: CommonUtils */
-Cu.import("resource://gre/modules/Messaging.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/TelemetryStopwatch.jsm");
+XPCOMUtils.defineLazyGetter(
+  window,
+  "gChromeWin",
+  () => window.docShell.rootTreeItem.domWindow
+);
 
-XPCOMUtils.defineLazyGetter(window, "gChromeWin", () =>
-  window.QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIDocShellTreeItem)
-    .rootTreeItem
-    .QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIDOMWindow)
-    .QueryInterface(Ci.nsIDOMChromeWindow));
+ChromeUtils.defineModuleGetter(
+  this,
+  "EventDispatcher",
+  "resource://gre/modules/Messaging.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Snackbars",
+  "resource://gre/modules/Snackbars.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Prompt",
+  "resource://gre/modules/Prompt.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
-                                  "resource://gre/modules/Prompt.jsm");
+var debug = ChromeUtils.import(
+  "resource://gre/modules/AndroidLog.jsm",
+  {}
+).AndroidLog.d.bind(null, "AboutLogins");
 
-var debug = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.d.bind(null, "AboutLogins");
-
-var gStringBundle = Services.strings.createBundle("chrome://browser/locale/aboutLogins.properties");
+var gStringBundle = Services.strings.createBundle(
+  "chrome://browser/locale/aboutLogins.properties"
+);
 
 function copyStringShowSnackbar(string, notifyString) {
   try {
-    let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
+    let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
+      Ci.nsIClipboardHelper
+    );
     clipboard.copyString(string);
     Snackbars.show(notifyString, Snackbars.LENGTH_LONG);
   } catch (e) {
     debug("Error copying from about:logins");
-    Snackbars.show(gStringBundle.GetStringFromName("loginsDetails.copyFailed"), Snackbars.LENGTH_LONG);
+    Snackbars.show(
+      gStringBundle.GetStringFromName("loginsDetails.copyFailed"),
+      Snackbars.LENGTH_LONG
+    );
   }
 }
 
@@ -52,7 +72,7 @@ var Logins = {
   // modifying it!
   //
   // Returns a Promise that resolves to the list of logins, ordered by
-  // hostname.
+  // origin.
   _promiseLogins: function() {
     let contentBody = document.getElementById("content-body");
     let emptyBody = document.getElementById("empty-body");
@@ -67,18 +87,20 @@ var Logins = {
       let logins = [];
       try {
         logins = Services.logins.getAllLogins();
-      } catch(e) {
+      } catch (e) {
         // It's likely that the Master Password was not entered; give
         // a hint to the next person.
-        throw new Error("Possible Master Password permissions error: " + e.toString());
+        throw new Error(
+          "Possible Master Password permissions error: " + e.toString()
+        );
       }
 
-      logins.sort((a, b) => a.hostname.localeCompare(b.hostname));
+      logins.sort((a, b) => a.origin.localeCompare(b.origin));
 
       return logins;
     };
 
-    let hideSpinner = (logins) => {
+    let hideSpinner = logins => {
       this._toggleListBody(false);
 
       if (!logins.length) {
@@ -124,11 +146,11 @@ var Logins = {
   // Update the stored and displayed list upon completion.
   _reloadList: function() {
     this._promiseLogins()
-      .then((logins) => {
+      .then(logins => {
         this._logins = logins;
         this._loadList(logins);
       })
-      .catch((e) => {
+      .catch(e => {
         // There's no way to recover from errors, sadly.  Log and make
         // it obvious that something is up.
         this._logins = [];
@@ -150,17 +172,21 @@ var Logins = {
     }
   },
 
-  init: function () {
-    window.addEventListener("popstate", this , false);
+  init: function() {
+    window.addEventListener("popstate", this);
 
-    Services.obs.addObserver(this, "passwordmgr-storage-changed", false);
-    document.getElementById("update-btn").addEventListener("click", this._onSaveEditLogin.bind(this), false);
-    document.getElementById("password-btn").addEventListener("click", this._onPasswordBtn.bind(this), false);
+    Services.obs.addObserver(this, "passwordmgr-storage-changed");
+    document
+      .getElementById("update-btn")
+      .addEventListener("click", this._onSaveEditLogin.bind(this));
+    document
+      .getElementById("password-btn")
+      .addEventListener("click", this._onPasswordBtn.bind(this));
 
     let filterInput = document.getElementById("filter-input");
     let filterContainer = document.getElementById("filter-input-container");
 
-    filterInput.addEventListener("input", (event) => {
+    filterInput.addEventListener("input", event => {
       // Stop any in-progress filter timer
       if (this._filterTimer) {
         clearTimeout(this._filterTimer);
@@ -171,18 +197,20 @@ var Logins = {
       this._filterTimer = setTimeout(() => {
         this._filter(event);
       }, FILTER_DELAY);
-    }, false);
+    });
 
-    filterInput.addEventListener("blur", (event) => {
+    filterInput.addEventListener("blur", event => {
       filterContainer.setAttribute("hidden", true);
     });
 
-    document.getElementById("filter-button").addEventListener("click", (event) => {
-      filterContainer.removeAttribute("hidden");
-      filterInput.focus();
-    }, false);
+    document
+      .getElementById("filter-button")
+      .addEventListener("click", event => {
+        filterContainer.removeAttribute("hidden");
+        filterInput.focus();
+      });
 
-    document.getElementById("filter-clear").addEventListener("click", (event) => {
+    document.getElementById("filter-clear").addEventListener("click", event => {
       // Stop any in-progress filter timer
       if (this._filterTimer) {
         clearTimeout(this._filterTimer);
@@ -192,7 +220,7 @@ var Logins = {
       filterInput.blur();
       filterInput.value = "";
       this._loadList(this._logins);
-    }, false);
+    });
 
     this._showList();
 
@@ -201,12 +229,12 @@ var Logins = {
     this._reloadList();
   },
 
-  uninit: function () {
+  uninit: function() {
     Services.obs.removeObserver(this, "passwordmgr-storage-changed");
-    window.removeEventListener("popstate", this, false);
+    window.removeEventListener("popstate", this);
   },
 
-  _loadList: function (logins) {
+  _loadList: function(logins) {
     let list = document.getElementById("logins-list");
     let newList = list.cloneNode(false);
 
@@ -218,7 +246,7 @@ var Logins = {
     list.parentNode.replaceChild(newList, list);
   },
 
-  _showList: function () {
+  _showList: function() {
     let loginsListPage = document.getElementById("logins-list-page");
     loginsListPage.classList.remove("hidden");
 
@@ -231,7 +259,7 @@ var Logins = {
     }
   },
 
-  _onPopState: function (event) {
+  _onPopState: function(event) {
     // Called when back/forward is used to change the state of the page
     if (event.state) {
       this._showEditLoginDialog(event.state.id);
@@ -240,7 +268,7 @@ var Logins = {
       this._showList();
     }
   },
-  _showEditLoginDialog: function (login) {
+  _showEditLoginDialog: function(login) {
     let listPage = document.getElementById("logins-list-page");
     listPage.classList.add("hidden");
 
@@ -251,77 +279,94 @@ var Logins = {
     usernameField.value = login.username;
     let passwordField = document.getElementById("password");
     passwordField.value = login.password;
-    let domainField = document.getElementById("hostname");
-    domainField.value = login.hostname;
+    let domainField = document.getElementById("origin");
+    domainField.value = login.origin;
 
     let img = document.getElementById("favicon");
-    this._loadFavicon(img, login.hostname);
+    this._loadFavicon(img, login.origin);
 
     let headerText = document.getElementById("edit-login-header-text");
-    if (login.hostname && (login.hostname != "")) {
-      headerText.textContent = login.hostname;
-    }
-    else {
-      headerText.textContent = gStringBundle.GetStringFromName("editLogin.fallbackTitle");
+    if (login.origin && login.origin != "") {
+      headerText.textContent = login.origin;
+    } else {
+      headerText.textContent = gStringBundle.GetStringFromName(
+        "editLogin.fallbackTitle"
+      );
     }
 
-    passwordField.addEventListener("input", (event) => {
+    passwordField.addEventListener("input", event => {
       let newPassword = passwordField.value;
       let updateBtn = document.getElementById("update-btn");
 
       if (newPassword === "") {
         updateBtn.disabled = true;
         updateBtn.classList.add("disabled-btn");
-      } else if ((newPassword !== "") && (updateBtn.disabled === true)) {
+      } else if (newPassword !== "" && updateBtn.disabled === true) {
         updateBtn.disabled = false;
         updateBtn.classList.remove("disabled-btn");
       }
-    }, false);
+    });
   },
 
   _onSaveEditLogin: function() {
     let newUsername = document.getElementById("username").value;
     let newPassword = document.getElementById("password").value;
-    let newDomain  = document.getElementById("hostname").value;
     let origUsername = this._selectedLogin.username;
     let origPassword = this._selectedLogin.password;
-    let origDomain = this._selectedLogin.hostname;
 
     try {
-      if ((newUsername === origUsername) &&
-          (newPassword === origPassword) &&
-          (newDomain === origDomain) ) {
-        Snackbars.show(gStringBundle.GetStringFromName("editLogin.saved1"), Snackbars.LENGTH_LONG);
+      if (newUsername === origUsername && newPassword === origPassword) {
+        Snackbars.show(
+          gStringBundle.GetStringFromName("editLogin.saved1"),
+          Snackbars.LENGTH_LONG
+        );
         this._showList();
         return;
       }
 
-      let logins = Services.logins.findLogins({}, origDomain, origDomain, null);
+      let logins = Services.logins.findLogins(
+        this._selectedLogin.origin,
+        this._selectedLogin.formActionOrigin,
+        this._selectedLogin.httpRealm
+      );
 
       for (let i = 0; i < logins.length; i++) {
         if (logins[i].username == origUsername) {
-          let clone = logins[i].clone();
-          clone.username = newUsername;
-          clone.password = newPassword;
-          clone.hostname = newDomain;
-          Services.logins.removeLogin(logins[i]);
-          Services.logins.addLogin(clone);
+          let propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+            Ci.nsIWritablePropertyBag
+          );
+          if (newUsername !== origUsername) {
+            propBag.setProperty("username", newUsername);
+          }
+          if (newPassword !== origPassword) {
+            propBag.setProperty("password", newPassword);
+          }
+          // Sync relies on timePasswordChanged to decide whether
+          // or not to sync a login, so touch it.
+          propBag.setProperty("timePasswordChanged", Date.now());
+          Services.logins.modifyLogin(logins[i], propBag);
           break;
         }
       }
     } catch (e) {
-      Snackbars.show(gStringBundle.GetStringFromName("editLogin.couldNotSave"), Snackbars.LENGTH_LONG);
+      Snackbars.show(
+        gStringBundle.GetStringFromName("editLogin.couldNotSave"),
+        Snackbars.LENGTH_LONG
+      );
       return;
     }
-    Snackbars.show(gStringBundle.GetStringFromName("editLogin.saved1"), Snackbars.LENGTH_LONG);
+    Snackbars.show(
+      gStringBundle.GetStringFromName("editLogin.saved1"),
+      Snackbars.LENGTH_LONG
+    );
     this._showList();
   },
 
-  _onPasswordBtn: function () {
+  _onPasswordBtn: function() {
     this._updatePasswordBtn(this._isPasswordBtnInHideMode());
   },
 
-  _updatePasswordBtn: function (aShouldShow) {
+  _updatePasswordBtn: function(aShouldShow) {
     let passwordField = document.getElementById("password");
     let button = document.getElementById("password-btn");
     let show = gStringBundle.GetStringFromName("password-btn.show");
@@ -332,12 +377,12 @@ var Logins = {
       button.classList.remove("password-btn-hide");
     } else {
       passwordField.type = "text";
-      button.textContent= hide;
+      button.textContent = hide;
       button.classList.add("password-btn-hide");
     }
   },
 
-  _isPasswordBtnInHideMode: function () {
+  _isPasswordBtnInHideMode: function() {
     let button = document.getElementById("password-btn");
     return button.classList.contains("password-btn-hide");
   },
@@ -348,17 +393,21 @@ var Logins = {
       message: password,
       buttons: [
         gStringBundle.GetStringFromName("loginsDialog.copy"),
-        gStringBundle.GetStringFromName("loginsDialog.cancel") ]
-      }).show((data) => {
-        switch (data.button) {
-          case 0:
+        gStringBundle.GetStringFromName("loginsDialog.cancel"),
+      ],
+    }).show(data => {
+      switch (data.button) {
+        case 0:
           // Corresponds to "Copy password" button.
-          copyStringShowSnackbar(password, gStringBundle.GetStringFromName("loginsDetails.passwordCopied"));
-        }
-     });
+          copyStringShowSnackbar(
+            password,
+            gStringBundle.GetStringFromName("loginsDetails.passwordCopied")
+          );
+      }
+    });
   },
 
-  _onLoginClick: function (event) {
+  _onLoginClick: function(event) {
     let loginItem = event.currentTarget;
     let login = loginItem.login;
     if (!login) {
@@ -374,21 +423,28 @@ var Logins = {
       { label: gStringBundle.GetStringFromName("loginsMenu.copyPassword") },
       { label: gStringBundle.GetStringFromName("loginsMenu.copyUsername") },
       { label: gStringBundle.GetStringFromName("loginsMenu.editLogin") },
-      { label: gStringBundle.GetStringFromName("loginsMenu.delete") }
+      { label: gStringBundle.GetStringFromName("loginsMenu.delete") },
+      { label: gStringBundle.GetStringFromName("loginsMenu.deleteAll") },
     ];
 
     prompt.setSingleChoiceItems(menuItems);
-    prompt.show((data) => {
+    prompt.show(data => {
       // Switch on indices of buttons, as they were added when creating login item.
       switch (data.button) {
         case 0:
           this._showPassword(login.password);
           break;
         case 1:
-          copyStringShowSnackbar(login.password, gStringBundle.GetStringFromName("loginsDetails.passwordCopied"));
+          copyStringShowSnackbar(
+            login.password,
+            gStringBundle.GetStringFromName("loginsDetails.passwordCopied")
+          );
           break;
         case 2:
-          copyStringShowSnackbar(login.username, gStringBundle.GetStringFromName("loginsDetails.usernameCopied"));
+          copyStringShowSnackbar(
+            login.username,
+            gStringBundle.GetStringFromName("loginsDetails.usernameCopied")
+          );
           break;
         case 3:
           this._selectedLogin = login;
@@ -396,51 +452,106 @@ var Logins = {
           history.pushState({ id: login.guid }, document.title);
           break;
         case 4:
-          let confirmPrompt = new Prompt({
-            window: window,
-            message: gStringBundle.GetStringFromName("loginsDialog.confirmDelete"),
-            buttons: [
-              gStringBundle.GetStringFromName("loginsDialog.confirm"),
-              gStringBundle.GetStringFromName("loginsDialog.cancel") ]
+          Accounts.getFirefoxAccount().then(user => {
+            const promptMessage = user
+              ? gStringBundle.GetStringFromName(
+                  "loginsDialog.confirmDeleteForFxaUser"
+                )
+              : gStringBundle.GetStringFromName("loginsDialog.confirmDelete");
+            const confirmationMessage = gStringBundle.GetStringFromName(
+              "loginsDetails.deleted"
+            );
+
+            this._showConfirmationPrompt(
+              promptMessage,
+              confirmationMessage,
+              () => Services.logins.removeLogin(login)
+            );
           });
-          confirmPrompt.show((data) => {
-            switch (data.button) {
-              case 0:
-                // Corresponds to "confirm" button.
-                Services.logins.removeLogin(login);
-            }
+          break;
+        case 5:
+          Accounts.getFirefoxAccount().then(user => {
+            const promptMessage = user
+              ? gStringBundle.GetStringFromName(
+                  "loginsDialog.confirmDeleteAllForFxaUser"
+                )
+              : gStringBundle.GetStringFromName(
+                  "loginsDialog.confirmDeleteAll"
+                );
+            const confirmationMessage = gStringBundle.GetStringFromName(
+              "loginsDetails.deletedAll"
+            );
+
+            this._showConfirmationPrompt(
+              promptMessage,
+              confirmationMessage,
+              () => Services.logins.removeAllLogins()
+            );
           });
+          break;
       }
     });
   },
 
-  _loadFavicon: function (aImg, aHostname) {
-    // Load favicon from cache.
-    Messaging.sendRequestForResult({
-      type: "Favicon:CacheLoad",
-      url: aHostname,
-    }).then(function(faviconUrl) {
-      aImg.style.backgroundImage= "url('" + faviconUrl + "')";
-      aImg.style.visibility = "visible";
-    }, function(data) {
-      debug("Favicon cache failure : " + data);
-      aImg.style.visibility = "visible";
+  _showConfirmationPrompt: function(
+    promptMessage,
+    confirmationMessage,
+    actionToPerform
+  ) {
+    new Prompt({
+      window: window,
+      message: promptMessage,
+      buttons: [
+        // Use default, generic values
+        gStringBundle.GetStringFromName("loginsDialog.confirm"),
+        gStringBundle.GetStringFromName("loginsDialog.cancel"),
+      ],
+    }).show(data => {
+      switch (data.button) {
+        case 0:
+          // Corresponds to "confirm" button.
+
+          actionToPerform();
+
+          Snackbars.show(confirmationMessage, Snackbars.LENGTH_LONG);
+      }
     });
   },
 
-  _createItemForLogin: function (login) {
+  _loadFavicon: function(aImg, aOrigin) {
+    // Load favicon from cache.
+    EventDispatcher.instance
+      .sendRequestForResult({
+        type: "Favicon:Request",
+        url: aOrigin,
+        skipNetwork: true,
+      })
+      .then(
+        function(faviconUrl) {
+          aImg.style.backgroundImage = "url('" + faviconUrl + "')";
+          aImg.style.visibility = "visible";
+        },
+        function(data) {
+          debug("Favicon cache failure : " + data);
+          aImg.style.visibility = "visible";
+        }
+      );
+  },
+
+  _createItemForLogin: function(login) {
     let loginItem = document.createElement("div");
 
     loginItem.setAttribute("loginID", login.guid);
     loginItem.className = "login-item list-item";
 
     loginItem.addEventListener("click", this, true);
+    loginItem.addEventListener("contextmenu", this, true);
 
     // Create item icon.
     let img = document.createElement("div");
     img.className = "icon";
 
-    this._loadFavicon(img, login.hostname);
+    this._loadFavicon(img, login.origin);
     loginItem.appendChild(img);
 
     // Create item details.
@@ -452,8 +563,8 @@ var Logins = {
     inner.appendChild(details);
 
     let titlePart = document.createElement("div");
-    titlePart.className = "hostname";
-    titlePart.textContent = login.hostname;
+    titlePart.className = "origin";
+    titlePart.textContent = login.origin;
     details.appendChild(titlePart);
 
     let versionPart = document.createElement("div");
@@ -471,12 +582,13 @@ var Logins = {
     return loginItem;
   },
 
-  handleEvent: function (event) {
+  handleEvent: function(event) {
     switch (event.type) {
       case "popstate": {
         this._onPopState(event);
         break;
       }
+      case "contextmenu":
       case "click": {
         this._onLoginClick(event);
         break;
@@ -484,8 +596,8 @@ var Logins = {
     }
   },
 
-  observe: function (subject, topic, data) {
-    switch(topic) {
+  observe: function(subject, topic, data) {
+    switch (topic) {
       case "passwordmgr-storage-changed": {
         this._reloadList();
         break;
@@ -495,24 +607,22 @@ var Logins = {
 
   _filter: function(event) {
     let value = event.target.value.toLowerCase();
-    let logins = this._logins.filter((login) => {
-      if (login.hostname.toLowerCase().indexOf(value) != -1) {
+    let logins = this._logins.filter(login => {
+      if (login.origin.toLowerCase().includes(value)) {
         return true;
       }
-      if (login.username &&
-          login.username.toLowerCase().indexOf(value) != -1) {
+      if (login.username && login.username.toLowerCase().includes(value)) {
         return true;
       }
-      if (login.httpRealm &&
-          login.httpRealm.toLowerCase().indexOf(value) != -1) {
+      if (login.httpRealm && login.httpRealm.toLowerCase().includes(value)) {
         return true;
       }
       return false;
     });
 
     this._loadList(logins);
-  }
+  },
 };
 
-window.addEventListener("load", Logins.init.bind(Logins), false);
-window.addEventListener("unload", Logins.uninit.bind(Logins), false);
+window.addEventListener("load", Logins.init.bind(Logins));
+window.addEventListener("unload", Logins.uninit.bind(Logins));

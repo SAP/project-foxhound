@@ -15,17 +15,20 @@ class mozIStorageError;
 namespace mozilla {
 namespace storage {
 
-#define ISTORAGEBINDINGPARAMSINTERNAL_IID \
-  {0x4c43d33a, 0xc620, 0x41b8, {0xba, 0x1d, 0x50, 0xc5, 0xb1, 0xe9, 0x1a, 0x04}}
+#define ISTORAGEBINDINGPARAMSINTERNAL_IID            \
+  {                                                  \
+    0x4c43d33a, 0xc620, 0x41b8, {                    \
+      0xba, 0x1d, 0x50, 0xc5, 0xb1, 0xe9, 0x1a, 0x04 \
+    }                                                \
+  }
 
 /**
  * Implementation-only interface for mozIStorageBindingParams.  This defines the
  * set of methods required by the asynchronous execution code in order to
  * consume the contents stored in mozIStorageBindingParams instances.
  */
-class IStorageBindingParamsInternal : public nsISupports
-{
-public:
+class IStorageBindingParamsInternal : public nsISupports {
+ public:
   NS_DECLARE_STATIC_IID_ACCESSOR(ISTORAGEBINDINGPARAMSINTERNAL_IID)
 
   /**
@@ -36,16 +39,16 @@ public:
    * @return nullptr on success, or a mozIStorageError object if an error
    *         occurred.
    */
-  virtual already_AddRefed<mozIStorageError> bind(sqlite3_stmt *aStatement) = 0;
+  virtual already_AddRefed<mozIStorageError> bind(sqlite3_stmt* aStatement) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(IStorageBindingParamsInternal,
                               ISTORAGEBINDINGPARAMSINTERNAL_IID)
 
 #define NS_DECL_ISTORAGEBINDINGPARAMSINTERNAL \
-  already_AddRefed<mozIStorageError> bind(sqlite3_stmt *aStatement) override;
+  already_AddRefed<mozIStorageError> bind(sqlite3_stmt* aStatement) override;
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // mozilla_storage_IStorageBindingParamsInternal_h_
+#endif  // mozilla_storage_IStorageBindingParamsInternal_h_

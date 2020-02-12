@@ -12,17 +12,16 @@
 
 <dialog id="commonDialog"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        aria-describedby="info.body"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        aria-describedby="infoBody"
         onunload="commonDialogOnUnload();"
-        ondialogaccept="Dialog.onButton0(); return true;"
-        ondialogcancel="Dialog.onButton1(); return true;"
-        ondialogextra1="Dialog.onButton2(); window.close();"
-        ondialogextra2="Dialog.onButton3(); window.close();"
         buttonpack="center">
 
-  <script type="application/javascript" src="chrome://global/content/commonDialog.js"/>
-  <script type="application/javascript" src="chrome://global/content/globalOverlay.js"/>
-  <script type="application/javascript">
+  <script src="chrome://global/content/commonDialog.js"/>
+  <script src="chrome://global/content/globalOverlay.js"/>
+  <script src="chrome://global/content/editMenuOverlay.js"/>
+  <script src="chrome://global/content/customElements.js"/>
+  <script>
     document.addEventListener("DOMContentLoaded", function() {
       commonDialogOnLoad();
     });
@@ -61,7 +60,7 @@
     <rows>
       <row>
         <hbox id="iconContainer" align="start">
-          <image id="info.icon" class="spaced"/>
+          <image id="infoIcon"/>
         </hbox>
         <vbox id="infoContainer"
 #ifndef XP_MACOSX
@@ -69,23 +68,23 @@
 #endif
         >
           <!-- Only shown on OS X, since it has no dialog title -->
-          <description id="info.title"
+          <description id="infoTitle"
 #ifndef XP_MACOSX
             hidden="true"
 #else
             style="margin-bottom: 1em"
 #endif
           />
-          <description id="info.body" context="contentAreaContextMenu" noinitialfocus="true"/>
+          <description id="infoBody" context="contentAreaContextMenu" noinitialfocus="true"/>
         </vbox>
       </row>
       <row id="loginContainer" hidden="true" align="center">
         <label id="loginLabel" value="&editfield0.label;" control="loginTextbox"/>
-        <textbox id="loginTextbox"/>
+        <html:input id="loginTextbox"/>
       </row>
       <row id ="password1Container" hidden="true" align="center">
         <label id="password1Label" value="&editfield1.label;" control="password1Textbox"/>
-        <textbox type="password" id="password1Textbox"/>
+        <html:input type="password" id="password1Textbox"/>
       </row>
       <row id="checkboxContainer" hidden="true">
         <spacer/>

@@ -9,57 +9,66 @@
 
 var time = 1;
 
-var gThread = synthesizeProfileForTest([{
-  time: time++,
-  frames: [
-    { location: "(root)" },
-    { location: "A" },
-    { location: "B" },
-    { location: "C" }
-  ]
-}, {
-  time: time++,
-  frames: [
-    { location: "(root)" },
-    { location: "A" },
-    { location: "D" },
-    { location: "C" }
-  ]
-}, {
-  time: time++,
-  frames: [
-    { location: "(root)" },
-    { location: "A" },
-    { location: "E" },
-    { location: "C" }
-  ],
-}, {
-  time: time++,
-  frames: [
-    { location: "(root)" },
-    { location: "A" },
-    { location: "B" },
-    { location: "F" }
-  ]
-}]);
-
-function run_test() {
-  run_next_test();
-}
+var gThread = synthesizeProfileForTest([
+  {
+    time: time++,
+    frames: [
+      { location: "(root)" },
+      { location: "A" },
+      { location: "B" },
+      { location: "C" },
+    ],
+  },
+  {
+    time: time++,
+    frames: [
+      { location: "(root)" },
+      { location: "A" },
+      { location: "D" },
+      { location: "C" },
+    ],
+  },
+  {
+    time: time++,
+    frames: [
+      { location: "(root)" },
+      { location: "A" },
+      { location: "E" },
+      { location: "C" },
+    ],
+  },
+  {
+    time: time++,
+    frames: [
+      { location: "(root)" },
+      { location: "A" },
+      { location: "B" },
+      { location: "F" },
+    ],
+  },
+]);
 
 add_task(function test() {
-  let { ThreadNode } = require("devtools/client/performance/modules/logic/tree-model");
+  const {
+    ThreadNode,
+  } = require("devtools/client/performance/modules/logic/tree-model");
 
-  let root = new ThreadNode(gThread, { invertTree: true, startTime: 0, endTime: 4 });
+  const root = new ThreadNode(gThread, {
+    invertTree: true,
+    startTime: 0,
+    endTime: 4,
+  });
 
-  equal(root.calls.length, 2,
-     "Should get the 2 youngest frames, not the 1 oldest frame");
+  equal(
+    root.calls.length,
+    2,
+    "Should get the 2 youngest frames, not the 1 oldest frame"
+  );
 
-  let C = getFrameNodePath(root, "C");
+  const C = getFrameNodePath(root, "C");
   ok(C, "Should have C as a child of the root.");
 
-  equal(C.calls.length, 3,
-     "Should have 3 frames that called C.");
+  equal(C.calls.length, 3, "Should have 3 frames that called C.");
   ok(getFrameNodePath(C, "B"), "B called C.");
   ok(getFrameNodePath(C, "D"), "D called C.");
   ok(getFrameNodePath(C, "E"), "E called C.");
@@ -71,7 +80,7 @@ add_task(function test() {
   equal(getFrameNodePath(C, "E").calls.length, 1);
   ok(getFrameNodePath(C, "E > A"), "A called E called C");
 
-  let F = getFrameNodePath(root, "F");
+  const F = getFrameNodePath(root, "F");
   ok(F, "Should have F as a child of the root.");
 
   equal(F.calls.length, 1);

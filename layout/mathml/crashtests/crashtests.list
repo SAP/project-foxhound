@@ -51,16 +51,19 @@ load 443089-1.xhtml
 load 463763-1.xhtml
 load 463763-2.xhtml
 load 476547-1.xhtml
-load 477740-1.xhtml
+skip-if(!xbl) load 477740-1.xhtml
 load 541620-1.xhtml
 load 557474-1.html
 load 654928-1.html
 load 655451-1.xhtml
 load 713606-1.html
 load 716349-1.html
+load 767251.xhtml
 load 848725-1.html
 load 848725-2.html
 load 947557-1.html
 load 973322-1.xhtml
 load 1028521-1.xhtml
 load 1061027.html
+load 1373767-1.html
+load 1376158.html

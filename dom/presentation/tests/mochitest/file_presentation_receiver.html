@@ -6,28 +6,28 @@
 </head>
 <body>
 <div id="content"></div>
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 "use strict";
 
 function is(a, b, msg) {
-  alert((a === b ? 'OK ' : 'KO ') + msg);
+  alert((a === b ? "OK " : "KO ") + msg);
 }
 
 function ok(a, msg) {
-  alert((a ? 'OK ' : 'KO ') + msg);
+  alert((a ? "OK " : "KO ") + msg);
 }
 
 function info(msg) {
-  alert('INFO ' + msg);
+  alert("INFO " + msg);
 }
 
 function command(msg) {
-  alert('COMMAND ' + JSON.stringify(msg));
+  alert("COMMAND " + JSON.stringify(msg));
 }
 
 function finish() {
-  alert('DONE');
+  alert("DONE");
 }
 
 var connection;
@@ -51,28 +51,21 @@ function testConnectionAvailable() {
         aReject();
       }
     );
-    command({ name: 'trigger-incoming-offer' });
+    command({ name: "trigger-incoming-offer" });
   });
 }
 
-function testDefauleRequestIsNull() {
+function testDefaultRequestIsUndefined() {
   return new Promise(function(aResolve, aReject) {
-    navigator.presentation.defaultRequest = new PresentationRequest("http://example.com");
-    if (navigator.presentation.defaultRequest === null) {
-      ok(true, "defaultRequest should be null.");
-      aResolve();
-    }
-    else {
-      ok(false, "defaultRequest should be null.");
-      aReject();
-    }
+    is(navigator.presentation.defaultRequest, undefined, "navigator.presentation.defaultRequest should not be available in receiving UA");
+    aResolve();
   });
 }
 
 function testConnectionAvailableSameOriginInnerIframe() {
   return new Promise(function(aResolve, aReject) {
-    var iframe = document.createElement('iframe');
-    iframe.setAttribute('src', './file_presentation_receiver_inner_iframe.html');
+    var iframe = document.createElement("iframe");
+    iframe.setAttribute("src", "./file_presentation_receiver_inner_iframe.html");
     document.body.appendChild(iframe);
 
     aResolve();
@@ -81,8 +74,8 @@ function testConnectionAvailableSameOriginInnerIframe() {
 
 function testConnectionUnavailableDiffOriginInnerIframe() {
   return new Promise(function(aResolve, aReject) {
-    var iframe = document.createElement('iframe');
-    iframe.setAttribute('src', 'http://example.com/tests/dom/presentation/tests/mochitest/file_presentation_non_receiver_inner_iframe.html');
+    var iframe = document.createElement("iframe");
+    iframe.setAttribute("src", "http://example.com/tests/dom/presentation/tests/mochitest/file_presentation_non_receiver_inner_iframe.html");
     document.body.appendChild(iframe);
 
     aResolve();
@@ -92,7 +85,7 @@ function testConnectionUnavailableDiffOriginInnerIframe() {
 function testConnectionListSameObject() {
   return new Promise(function(aResolve, aReject) {
     is(navigator.presentation.receiver.connectionList, navigator.presentation.receiver.connectionList, "The promise should be the same object.");
-    var promise = navigator.presentation.receiver.connectionList.then(
+    navigator.presentation.receiver.connectionList.then(
       function(aList) {
         is(connection, aList.connections[0], "The connection from list and the one from |connectionavailable| event should be the same.");
         aResolve();
@@ -110,13 +103,12 @@ function testIncomingMessage() {
   return new Promise(function(aResolve, aReject) {
     const incomingMessage = "test incoming message";
 
-    connection.addEventListener('message', function messageHandler(aEvent) {
-      connection.removeEventListener('message', messageHandler);
+    connection.addEventListener("message", function(aEvent) {
       is(aEvent.data, incomingMessage, "An incoming message should be received.");
       aResolve();
-    });
+    }, {once: true});
 
-    command({ name: 'trigger-incoming-message',
+    command({ name: "trigger-incoming-message",
               data: incomingMessage });
   });
 }
@@ -134,7 +126,7 @@ function testCloseConnection() {
 }
 
 testConnectionAvailable().
-then(testDefauleRequestIsNull).
+then(testDefaultRequestIsUndefined).
 then(testConnectionAvailableSameOriginInnerIframe).
 then(testConnectionUnavailableDiffOriginInnerIframe).
 then(testConnectionListSameObject).

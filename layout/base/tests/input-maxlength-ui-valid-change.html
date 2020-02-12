@@ -7,15 +7,16 @@
       :-moz-ui-invalid { background-color:red; }
       * { background-color:white; }
     </style>
-    <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
     <script>
       function runTest() {
         var input = document.getElementById('input');
+        input.setSelectionRange(input.value.length, input.value.length)
         input.focus();
-        synthesizeKey('VK_BACK_SPACE', {}); // so that it becomes invalid first
+        synthesizeKey("KEY_Backspace"); // so that it becomes invalid first
         input.blur();
         input.focus();
-        synthesizeKey('VK_BACK_SPACE', {});
+        synthesizeKey("KEY_Backspace");
         input.blur(); // to hide the caret
         document.documentElement.className='';
       }
@@ -25,4 +26,3 @@
     <input id="input" maxlength="3" value="foooo">
   </body>
 </html>
-

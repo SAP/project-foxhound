@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +8,7 @@
 #define vm_Probes_h
 
 #ifdef INCLUDE_MOZILLA_DTRACE
-#include "javascript-trace.h"
+#  include "javascript-trace.h"
 #endif
 
 #include "vm/Stack.h"
@@ -63,7 +63,7 @@ bool CallTrackingActive(JSContext*);
 bool EnterScript(JSContext*, JSScript*, JSFunction*, InterpreterFrame*);
 
 /* About to leave a JS function */
-void ExitScript(JSContext*, JSScript*, JSFunction*, bool popSPSFrame);
+void ExitScript(JSContext*, JSScript*, JSFunction*, bool popProfilerFrame);
 
 /* Executing a script */
 bool StartExecution(JSScript* script);
@@ -74,7 +74,7 @@ bool StopExecution(JSScript* script);
 /*
  * Object has been created. |obj| must exist (its class and size are read)
  */
-bool CreateObject(ExclusiveContext* cx, JSObject* obj);
+bool CreateObject(JSContext* cx, JSObject* obj);
 
 /*
  * Object is about to be finalized. |obj| must still exist (its class is
@@ -91,51 +91,50 @@ bool FinalizeObject(JSObject* obj);
 void DTraceEnterJSFun(JSContext* cx, JSFunction* fun, JSScript* script);
 void DTraceExitJSFun(JSContext* cx, JSFunction* fun, JSScript* script);
 
-} // namespace probes
-
+}  // namespace probes
 
 #ifdef INCLUDE_MOZILLA_DTRACE
 static const char* ObjectClassname(JSObject* obj) {
-    if (!obj)
-        return "(null object)";
-    const Class* clasp = obj->getClass();
-    if (!clasp)
-        return "(null)";
-    const char* class_name = clasp->name;
-    if (!class_name)
-        return "(null class name)";
-    return class_name;
+  if (!obj) {
+    return "(null object)";
+  }
+  const JSClass* clasp = obj->getClass();
+  if (!clasp) {
+    return "(null)";
+  }
+  const char* class_name = clasp->name;
+  if (!class_name) {
+    return "(null class name)";
+  }
+  return class_name;
 }
 #endif
 
-inline bool
-probes::CreateObject(ExclusiveContext* cx, JSObject* obj)
-{
-    bool ok = true;
+inline bool probes::CreateObject(JSContext* cx, JSObject* obj) {
+  bool ok = true;
 
 #ifdef INCLUDE_MOZILLA_DTRACE
-    if (JAVASCRIPT_OBJECT_CREATE_ENABLED())
-        JAVASCRIPT_OBJECT_CREATE(ObjectClassname(obj), (uintptr_t)obj);
+  if (JAVASCRIPT_OBJECT_CREATE_ENABLED()) {
+    JAVASCRIPT_OBJECT_CREATE(ObjectClassname(obj), (uintptr_t)obj);
+  }
 #endif
 
-    return ok;
+  return ok;
 }
 
-inline bool
-probes::FinalizeObject(JSObject* obj)
-{
-    bool ok = true;
+inline bool probes::FinalizeObject(JSObject* obj) {
+  bool ok = true;
 
 #ifdef INCLUDE_MOZILLA_DTRACE
-    if (JAVASCRIPT_OBJECT_FINALIZE_ENABLED()) {
-        const Class* clasp = obj->getClass();
+  if (JAVASCRIPT_OBJECT_FINALIZE_ENABLED()) {
+    const JSClass* clasp = obj->getClass();
 
-        /* the first arg is nullptr - reserved for future use (filename?) */
-        JAVASCRIPT_OBJECT_FINALIZE(nullptr, (char*)clasp->name, (uintptr_t)obj);
-    }
+    /* the first arg is nullptr - reserved for future use (filename?) */
+    JAVASCRIPT_OBJECT_FINALIZE(nullptr, (char*)clasp->name, (uintptr_t)obj);
+  }
 #endif
 
-    return ok;
+  return ok;
 }
 
 } /* namespace js */

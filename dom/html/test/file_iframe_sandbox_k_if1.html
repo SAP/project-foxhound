@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 766282</title>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <script type="text/javascript">
@@ -18,7 +18,7 @@
   }
 
   // Add message listener to forward messages on to parent
-  window.addEventListener("message", receiveMessage, false);
+  window.addEventListener("message", receiveMessage);
 
   function receiveMessage(event) {
     switch (event.data.type) {
@@ -41,7 +41,7 @@
   This was opened in an iframe with "allow-scripts allow-popups allow-same-origin".
   However allow-same-origin was removed from the iframe before navigating to me,
   so I should only have "allow-scripts allow-popups" in force.
-  <a href="file_iframe_sandbox_k_if2.html" target="_blank" id="target_blank_if2">open window</a>
+  <a href="file_iframe_sandbox_k_if2.html" target="_blank" id="target_blank_if2" rel="opener">open window</a>
   <a href="file_iframe_sandbox_k_if2.html" target="BC766282_if2" id="target_BC766282_if2">open window</a>
 </body>
 </html>

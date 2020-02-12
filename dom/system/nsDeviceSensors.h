@@ -21,15 +21,17 @@ class nsIDOMWindow;
 
 namespace mozilla {
 namespace dom {
+class Document;
 class EventTarget;
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-class nsDeviceSensors : public nsIDeviceSensors, public mozilla::hal::ISensorObserver
-{
+class nsDeviceSensors : public nsIDeviceSensors,
+                        public mozilla::hal::ISensorObserver {
   typedef mozilla::dom::DeviceAccelerationInit DeviceAccelerationInit;
   typedef mozilla::dom::DeviceRotationRateInit DeviceRotationRateInit;
-public:
+
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDEVICESENSORS
 
@@ -37,42 +39,32 @@ public:
 
   void Notify(const mozilla::hal::SensorData& aSensorData) override;
 
-private:
+ private:
   virtual ~nsDeviceSensors();
 
   // sensor -> window listener
-  nsTArray<nsTArray<nsIDOMWindow*>* > mWindowListeners;
+  nsTArray<nsTArray<nsIDOMWindow*>*> mWindowListeners;
 
-  void FireDOMLightEvent(mozilla::dom::EventTarget* aTarget,
-                         double value);
+  void FireDOMLightEvent(mozilla::dom::EventTarget* aTarget, double value);
 
-  void FireDOMProximityEvent(mozilla::dom::EventTarget* aTarget,
-                             double aValue,
-                             double aMin,
-                             double aMax);
+  void FireDOMProximityEvent(mozilla::dom::EventTarget* aTarget, double aValue,
+                             double aMin, double aMax);
 
   void FireDOMUserProximityEvent(mozilla::dom::EventTarget* aTarget,
                                  bool aNear);
 
-  void FireDOMOrientationEvent(mozilla::dom::EventTarget* target,
-                               double aAlpha,
-                               double aBeta,
-                               double aGamma,
-                               bool aIsAbsolute);
+  void FireDOMOrientationEvent(mozilla::dom::EventTarget* target, double aAlpha,
+                               double aBeta, double aGamma, bool aIsAbsolute);
 
-  void FireDOMMotionEvent(class nsIDOMDocument *domDoc,
-                          mozilla::dom::EventTarget* target,
-                          uint32_t type,
-                          PRTime timestamp,
-                          double x,
-                          double y,
-                          double z);
-
-  bool mEnabled;
+  void FireDOMMotionEvent(mozilla::dom::Document* domDoc,
+                          mozilla::dom::EventTarget* target, uint32_t type,
+                          PRTime timestamp, double x, double y, double z);
 
   inline bool IsSensorEnabled(uint32_t aType) {
     return mWindowListeners[aType]->Length() > 0;
   }
+
+  bool IsSensorAllowedByPref(uint32_t aType, nsIDOMWindow* aWindow);
 
   mozilla::TimeStamp mLastDOMMotionEventTime;
   bool mIsUserProximityNear;

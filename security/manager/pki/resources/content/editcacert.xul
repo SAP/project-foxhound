@@ -5,31 +5,31 @@
 
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 
-<!DOCTYPE dialog SYSTEM "chrome://pippki/locale/certManager.dtd">
+<!DOCTYPE dialog>
 
-<dialog id="editCaCert" 
-        title="&certmgr.editcacert.title;"
+<dialog id="editCaCert"
+        data-l10n-id="certmgr-edit-ca-cert"
+        data-l10n-attrs="style"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         buttons="accept,cancel"
-        ondialogaccept="return doOK();"
-        onload="setWindowName();"
->
+        onload="onLoad();">
 
-  <stringbundle id="pippki_bundle" src="chrome://pippki/locale/pippki.properties"/>
+  <linkset>
+    <html:link rel="localization" href="security/certificates/certManager.ftl"/>
+  </linkset>
 
-  <script type="application/javascript" src="chrome://pippki/content/pippki.js"/>
-  <script type="application/javascript" src="chrome://pippki/content/editcerts.js"/>
+  <script src="chrome://pippki/content/pippki.js"/>
+  <script src="chrome://pippki/content/editcacert.js"/>
 
   <description id="certmsg"/>
   <separator/>
-  <description>&certmgr.editcert.edittrust;</description>
+  <description data-l10n-id="certmgr-edit-cert-edit-trust"></description>
   <vbox align="start">
-    <checkbox label="&certmgr.editcert.trustssl;"
+    <checkbox data-l10n-id="certmgr-edit-cert-trust-ssl"
               id="trustSSL"/>
-    <checkbox label="&certmgr.editcert.trustemail;"
+    <checkbox data-l10n-id="certmgr-edit-cert-trust-email"
               id="trustEmail"/>
-    <checkbox label="&certmgr.editcert.trustobjsign;"
-              id="trustObjSign"/>
   </vbox>
 
 </dialog>

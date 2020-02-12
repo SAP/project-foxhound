@@ -6,7 +6,7 @@
 <body>
 
 <img src="image_anim-gr.gif" id="image" class="resource">
-<video width="320" height="240" src="http://example.com/tests/dom/canvas/test/crossorigin/video.sjs?name=tests/dom/media/test/320x240.ogv&type=video/ogg&cors=anonymous" id="video" crossOrigin="anonymous" autoplay></video>
+<video width="320" height="240" src="http://example.com/tests/dom/canvas/test/crossorigin/video.sjs?name=tests/dom/canvas/test/320x240.ogv&type=video/ogg&cors=anonymous" id="video" crossOrigin="anonymous" autoplay></video>
 
 <canvas id="c1" class="output" width="128" height="128"></canvas>
 <canvas id="c2" width="128" height="128"></canvas>
@@ -226,7 +226,7 @@ function testSecurityErrors() {
         reject();
       }
 
-      uncleanVideo.src = "http://example.com/tests/dom/canvas/test/crossorigin/video.sjs?name=tests/dom/media/test/320x240.ogv&type=video/ogg";
+      uncleanVideo.src = "http://example.com/tests/dom/canvas/test/crossorigin/video.sjs?name=tests/dom/canvas/test/320x240.ogv&type=video/ogg";
       uncleanVideo.play();
     });
   }
@@ -270,13 +270,22 @@ function testSecurityErrors() {
   }
 
   function checkPromiseFailedWithSecurityError(p) {
-    return p.then( function(reason) { ok(false, "Did not get SecurityError with unclean source. ImageBitmap was created successfully."); },
-                   function(reason) { if (reason == "SecurityError: The operation is insecure.") {
-                                        ok(true, reason);
-                                      }
-                                      else {
-                                        ok(false, "Did not get SecurityError with unclean source. Error Message: " + reason);
-                                      }});
+    return p.then(imageBitmap => {
+      ok(!!imageBitmap, "ImageBitmaps are always created");
+      const context = document.createElement("canvas").getContext("2d");
+      context.drawImage(imageBitmap, 0, 0);
+      try {
+        context.getImageData(0, 0, 1, 1);
+        ok(false, "Did not get SecurityError with unclean source. ImageBitmap was created successfully.");
+      } catch (ex) {
+        if (ex == "SecurityError: The operation is insecure.") {
+          ok(true, ex);
+        }
+        else {
+          ok(false, "Did not get SecurityError with unclean source. Error Message: " + ex);
+        }
+      }
+    });
   }
 
   return Promise.all([
@@ -299,27 +308,27 @@ function testCreatePattern() {
     [0,   384, [0, 255, 0, 255], 1],
   ];
 
-  var canvas = document.createElement('canvas');
-  canvas.width = "512";
-  canvas.height = "512";
-  var ctx = canvas.getContext('2d');
+  var patternCanvas = document.createElement('canvas');
+  patternCanvas.width = "512";
+  patternCanvas.height = "512";
+  var patternCtx = patternCanvas.getContext('2d');
 
   var image = new Image();
   image.src = 'image_rgrg-256x256.png';
   image.onload = function() {
     var p = createImageBitmap(image);
     p.then(function(bitmap) {
-      ctx.rect(0, 0, 512, 512);
-      ctx.fillStyle = ctx.createPattern(bitmap, "repeat");
-      ctx.fill();
-      document.body.appendChild(canvas);
+      patternCtx.rect(0, 0, 512, 512);
+      patternCtx.fillStyle = patternCtx.createPattern(bitmap, "repeat");
+      patternCtx.fill();
+      document.body.appendChild(patternCanvas);
     });
     resolve(p);
   }
 
   return promise.then(function() {
     TEST_PATTERN.forEach(function(test) {
-      isPixel(ctx, test[0], test[1], test[2], test[3]);
+      isPixel(patternCtx, test[0], test[1], test[2], test[3]);
     });
   });
 }

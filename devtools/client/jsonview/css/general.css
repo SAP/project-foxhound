@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,20 +5,19 @@
 /******************************************************************************/
 /* General */
 
+html, body, #content {
+  height: 100%;
+}
+
 body {
   color: var(--theme-body-color);
   background-color: var(--theme-body-background);
   padding: 0;
   margin: 0;
-  overflow-x: hidden;
 }
 
 *:focus {
   outline: none !important;
-}
-
-#content {
-  height: 100%;
 }
 
 pre {
@@ -28,9 +26,13 @@ pre {
   font-family: var(--monospace-font-family);
 }
 
-#json,
-#headers {
-  display: none;
+#content {
+  display: flow-root;
+}
+
+#json {
+  margin: 8px;
+  white-space: pre-wrap;
 }
 
 /******************************************************************************/

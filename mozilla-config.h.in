@@ -13,7 +13,7 @@
 #endif
 #endif
 
-// Expands to all the defines from configure.
+/* Expands to all the defines from configure. */
 #undef ALLDEFINES
 
 /*
@@ -38,28 +38,6 @@
 #endif
 
 /*
- * Force-include Char16.h in order to define PRUnichar as char16_t everywhere.
- * Note that this should be the first #include to make sure that prtypes.h does
- * not attempt to define PRUnichar.  This includes the following hunspell-specific
- * includes.
- */
-#if !defined(__ASSEMBLER__)
-#include "mozilla/Char16.h"
-#endif
-
-/*
- * Force-include hunspell_alloc_hooks.h and hunspell_fopen_hooks.h for hunspell,
- * so that we don't need to modify them directly.
- *
- * HUNSPELL_STATIC is defined in extensions/spellcheck/hunspell/src/Makefile.in,
- * unless --enable-system-hunspell is defined.
- */
-#if defined(HUNSPELL_STATIC)
-#include "hunspell_alloc_hooks.h"
-#include "hunspell_fopen_hooks.h"
-#endif
-
-/*
  * Force-include sdkdecls.h for building the chromium sandbox code.
  *
  * CHROMIUM_SANDBOX_BUILD is defined in security/sandbox/moz.build.
@@ -67,6 +45,21 @@
  */
 #if defined(CHROMIUM_SANDBOX_BUILD) && defined(XP_WIN)
 #include "base/win/sdkdecls.h"
+
+#ifdef __MINGW32__
+/*
+ * MinGW doesn't support __try / __except. There are a few mechanisms available
+ * to hack around it and pseudo-support it, but these are untested in Firefox.
+ * What is tested (and works) is replacing them with if(true) and else.
+ */
+#define __try if(true)
+#define __except(x) else
+#ifdef GetExceptionCode
+#undef GetExceptionCode
 #endif
+#define GetExceptionCode() 0
+
+#endif /* __MINGW32__ */
+#endif /* defined(CHROMIUM_SANDBOX_BUILD) && defined(XP_WIN) */
 
 #endif /* MOZILLA_CONFIG_H */

@@ -35,6 +35,7 @@ t('startOffsetTime'); // added in r5310, replaced with startDate in r7045.
 t('initialTime'); // added in r5310, removed in r7046.
 t('audio', 'video'); // added in r5636, replaced with muted in r5991.
 t('startDate'); // added in r7045, replaced with getStartDate() in r8113.
+t('mozSrcObject'); // never in the spec
 
 // TextTrackCue constructor: added in r5723, removed in r7742.
 test(function() {
@@ -42,4 +43,12 @@ test(function() {
     new TextTrackCue(0, 0, '');
   });
 }, 'TextTrackCue constructor should not be supported');
+
+// added in https://github.com/whatwg/html/commit/66c5b32240c202c74f475872e7ea2cd163777b4a
+// removed in https://github.com/whatwg/html/commit/634698e70ea4586d58c989fa7d2cbfcad20d33e6
+t('mediaGroup');
+t('controller');
+test(function() {
+  assert_false('MediaController' in window);
+}, 'MediaController constructor should not be supported');
 </script>

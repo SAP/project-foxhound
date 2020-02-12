@@ -9,63 +9,57 @@
 #include "mozilla/gfx/2D.h"
 #include "SVGContentUtils.h"
 
-using namespace mozilla;
 using namespace mozilla::gfx;
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Polygon)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Polygon)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGPolygonElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGPolygonElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGPolygonElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return SVGPolygonElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGPolygonElement::SVGPolygonElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGPolygonElementBase(aNodeInfo)
-{
-}
+SVGPolygonElement::SVGPolygonElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGPolygonElementBase(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGPolygonElement)
 
 //----------------------------------------------------------------------
-// nsSVGPathGeometryElement methods
+// SVGGeometryElement methods
 
-void
-SVGPolygonElement::GetMarkPoints(nsTArray<nsSVGMark> *aMarks)
-{
-  nsSVGPolyElement::GetMarkPoints(aMarks);
+void SVGPolygonElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {
+  SVGPolyElement::GetMarkPoints(aMarks);
 
-  if (aMarks->IsEmpty() || aMarks->LastElement().type != nsSVGMark::eEnd) {
+  if (aMarks->IsEmpty() || aMarks->LastElement().type != SVGMark::eEnd) {
     return;
   }
 
-  nsSVGMark *endMark = &aMarks->LastElement();
-  nsSVGMark *startMark = &aMarks->ElementAt(0);
-  float angle = atan2(startMark->y - endMark->y, startMark->x - endMark->x);
+  SVGMark* endMark = &aMarks->LastElement();
+  SVGMark* startMark = &aMarks->ElementAt(0);
+  float angle =
+      std::atan2(startMark->y - endMark->y, startMark->x - endMark->x);
 
-  endMark->type = nsSVGMark::eMid;
+  endMark->type = SVGMark::eMid;
   endMark->angle = SVGContentUtils::AngleBisect(angle, endMark->angle);
   startMark->angle = SVGContentUtils::AngleBisect(angle, startMark->angle);
   // for a polygon (as opposed to a polyline) there's an implicit extra point
-  // co-located with the start point that nsSVGPolyElement::GetMarkPoints
+  // co-located with the start point that SVGPolyElement::GetMarkPoints
   // doesn't return
-  aMarks->AppendElement(nsSVGMark(startMark->x, startMark->y, startMark->angle,
-                                  nsSVGMark::eEnd));
+  aMarks->AppendElement(
+      SVGMark(startMark->x, startMark->y, startMark->angle, SVGMark::eEnd));
 }
 
-already_AddRefed<Path>
-SVGPolygonElement::BuildPath(PathBuilder* aBuilder)
-{
-  const SVGPointList &points = mPoints.GetAnimValue();
+already_AddRefed<Path> SVGPolygonElement::BuildPath(PathBuilder* aBuilder) {
+  const SVGPointList& points = mPoints.GetAnimValue();
 
   if (points.IsEmpty()) {
     return nullptr;
@@ -81,5 +75,5 @@ SVGPolygonElement::BuildPath(PathBuilder* aBuilder)
   return aBuilder->Finish();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -9,27 +9,33 @@
 #include "mozilla/RefPtr.h"
 #include "Units.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/NativeLayer.h"
 
 class nsIWidget;
 class nsBaseWidget;
 
 namespace mozilla {
 class VsyncObserver;
+namespace gl {
+class GLContext;
+}  // namespace gl
 namespace layers {
 class Compositor;
+class LayerManager;
 class LayerManagerComposite;
 class Compositor;
-class Composer2D;
-} // namespace layers
+}  // namespace layers
 namespace gfx {
 class DrawTarget;
 class SourceSurface;
-} // namespace gfx
+}  // namespace gfx
 namespace widget {
 
 class WinCompositorWidget;
-class X11CompositorWidget;
+class GtkCompositorWidget;
+class AndroidCompositorWidget;
 class CompositorWidgetInitData;
 
 // Gecko widgets usually need to communicate with the CompositorWidget with
@@ -37,7 +43,21 @@ class CompositorWidgetInitData;
 // transparency). This functionality is controlled through a "host". Since
 // this functionality is platform-dependent, it is only forward declared
 // here.
-class CompositorWidgetDelegate;
+class PlatformCompositorWidgetDelegate;
+
+// Headless mode uses its own, singular CompositorWidget implementation.
+class HeadlessCompositorWidget;
+
+class CompositorWidgetDelegate {
+ public:
+  virtual PlatformCompositorWidgetDelegate* AsPlatformSpecificDelegate() {
+    return nullptr;
+  }
+
+  virtual HeadlessCompositorWidget* AsHeadlessCompositorWidget() {
+    return nullptr;
+  }
+};
 
 // Platforms that support out-of-process widgets.
 #if defined(XP_WIN) || defined(MOZ_X11)
@@ -49,22 +69,35 @@ class CompositorWidgetParent;
 // PCompositorWidgetChild.
 class CompositorWidgetChild;
 
-# define MOZ_WIDGET_SUPPORTS_OOP_COMPOSITING
+#  define MOZ_WIDGET_SUPPORTS_OOP_COMPOSITING
 #endif
+
+class WidgetRenderingContext {
+ public:
+#if defined(XP_MACOSX)
+  WidgetRenderingContext() : mLayerManager(nullptr), mGL(nullptr) {}
+  layers::LayerManagerComposite* mLayerManager;
+  gl::GLContext* mGL;
+#elif defined(MOZ_WIDGET_ANDROID)
+  WidgetRenderingContext() : mCompositor(nullptr) {}
+  layers::Compositor* mCompositor;
+#endif
+};
 
 /**
  * Access to a widget from the compositor is restricted to these methods.
  */
-class CompositorWidget
-{
-public:
-  NS_INLINE_DECL_REFCOUNTING(mozilla::widget::CompositorWidget)
+class CompositorWidget {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::widget::CompositorWidget)
 
   /**
    * Create an in-process compositor widget. aWidget may be ignored if the
    * platform does not require it.
    */
-  static RefPtr<CompositorWidget> CreateLocal(const CompositorWidgetInitData& aInitData, nsIWidget* aWidget);
+  static RefPtr<CompositorWidget> CreateLocal(
+      const CompositorWidgetInitData& aInitData,
+      const layers::CompositorOptions& aOptions, nsIWidget* aWidget);
 
   /**
    * Called before rendering using OMTC. Returns false when the widget is
@@ -73,9 +106,7 @@ public:
    * Always called from the compositing thread, which may be the main-thread if
    * OMTC is not enabled.
    */
-  virtual bool PreRender(layers::LayerManagerComposite* aManager) {
-    return true;
-  }
+  virtual bool PreRender(WidgetRenderingContext* aContext) { return true; }
 
   /**
    * Called after rendering using OMTC. Not called when rendering was
@@ -84,41 +115,39 @@ public:
    * Always called from the compositing thread, which may be the main-thread if
    * OMTC is not enabled.
    */
-  virtual void PostRender(layers::LayerManagerComposite* aManager)
-  {}
+  virtual void PostRender(WidgetRenderingContext* aContext) {}
 
   /**
-   * Called before the LayerManager draws the layer tree.
-   *
-   * Always called from the compositing thread.
+   * Called before the first composite. If the result is non-null, one or more
+   * native layers will be placed on the window and used for compositing.
+   * When native layers are used, StartRemoteDrawing(InRegion) and
+   * EndRemoteDrawing(InRegion) will not be called.
    */
-  virtual void DrawWindowUnderlay(layers::LayerManagerComposite* aManager,
-                                  LayoutDeviceIntRect aRect)
-  {}
+  virtual RefPtr<layers::NativeLayerRoot> GetNativeLayerRoot() {
+    return nullptr;
+  }
 
   /**
    * Called after the LayerManager draws the layer tree
    *
    * Always called from the compositing thread.
    */
-  virtual void DrawWindowOverlay(layers::LayerManagerComposite* aManager,
-                                 LayoutDeviceIntRect aRect)
-  {}
+  virtual void DrawWindowOverlay(WidgetRenderingContext* aContext,
+                                 LayoutDeviceIntRect aRect) {}
 
   /**
    * Return a DrawTarget for the window which can be composited into.
    *
+   * Only called if GetNativeLayerRoot() returns nullptr.
    * Called by BasicCompositor on the compositor thread for OMTC drawing
-   * before each composition.
+   * before each composition (unless there's a native layer root).
    *
    * The window may specify its buffer mode. If unspecified, it is assumed
    * to require double-buffering.
    */
   virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawing();
-  virtual already_AddRefed<gfx::DrawTarget>
-  StartRemoteDrawingInRegion(LayoutDeviceIntRegion& aInvalidRegion,
-                             layers::BufferMode* aBufferMode)
-  {
+  virtual already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
+      LayoutDeviceIntRegion& aInvalidRegion, layers::BufferMode* aBufferMode) {
     return StartRemoteDrawing();
   }
 
@@ -127,13 +156,12 @@ public:
    * StartRemoteDrawing reaches the screen.
    *
    * Called by BasicCompositor on the compositor thread for OMTC drawing
-   * after each composition.
+   * after each composition for which StartRemoteDrawing(InRegion) was called.
    */
-  virtual void EndRemoteDrawing()
-  {}
-  virtual void EndRemoteDrawingInRegion(gfx::DrawTarget* aDrawTarget,
-                                        LayoutDeviceIntRegion& aInvalidRegion)
-  {
+  virtual void EndRemoteDrawing() {}
+  virtual void EndRemoteDrawingInRegion(
+      gfx::DrawTarget* aDrawTarget,
+      const LayoutDeviceIntRegion& aInvalidRegion) {
     EndRemoteDrawing();
   }
 
@@ -143,20 +171,19 @@ public:
    * Called by BasicCompositor on the compositor thread for OMTC drawing
    * after each composition.
    */
-  virtual bool NeedsToDeferEndRemoteDrawing() {
-    return false;
-  }
+  virtual bool NeedsToDeferEndRemoteDrawing() { return false; }
 
   /**
-   * Called when shutting down the LayerManager to clean-up any cached resources.
+   * Called when shutting down the LayerManager to clean-up any cached
+   * resources.
    *
    * Always called from the compositing thread.
    */
-  virtual void CleanupWindowEffects()
-  {}
+  virtual void CleanupWindowEffects() {}
 
   /**
-   * A hook for the widget to prepare a Compositor, during the latter's initialization.
+   * A hook for the widget to prepare a Compositor, during the latter's
+   * initialization.
    *
    * If this method returns true, it means that the widget will be able to
    * present frames from the compoositor.
@@ -164,9 +191,7 @@ public:
    * Returning false will cause the compositor's initialization to fail, and
    * a different compositor backend will be used (if any).
    */
-  virtual bool InitCompositor(layers::Compositor* aCompositor) {
-    return true;
-  }
+  virtual bool InitCompositor(layers::Compositor* aCompositor) { return true; }
 
   /**
    * Return the size of the drawable area of the widget.
@@ -179,20 +204,9 @@ public:
    */
   virtual uint32_t GetGLFrameBufferFormat();
 
-  /**
-   * If this widget has a more efficient composer available for its
-   * native framebuffer, return it.
-   *
-   * This can be called from a non-main thread, but that thread must
-   * hold a strong reference to this.
-   */
-  virtual layers::Composer2D* GetComposer2D() {
-    return nullptr;
-  }
-
   /*
-   * Access the underlying nsIWidget. This method will be removed when the compositor no longer
-   * depends on nsIWidget on any platform.
+   * Access the underlying nsIWidget. This method will be removed when the
+   * compositor no longer depends on nsIWidget on any platform.
    */
   virtual nsIWidget* RealWidget() = 0;
 
@@ -213,17 +227,14 @@ public:
    * CompositorBridgeChild::RecvHideAllPlugins and
    * CompositorBridgeParent::SendHideAllPlugins.
    */
-  virtual uintptr_t GetWidgetKey() {
-    return 0;
-  }
+  virtual uintptr_t GetWidgetKey() { return 0; }
 
   /**
    * Create a backbuffer for the software compositor.
    */
-  virtual already_AddRefed<gfx::DrawTarget>
-  GetBackBufferDrawTarget(gfx::DrawTarget* aScreenTarget,
-                          const LayoutDeviceIntRect& aRect,
-                          const LayoutDeviceIntRect& aClearRect);
+  virtual already_AddRefed<gfx::DrawTarget> GetBackBufferDrawTarget(
+      gfx::DrawTarget* aScreenTarget, const gfx::IntRect& aRect,
+      bool* aOutIsCleared);
 
   /**
    * Ensure end of composition to back buffer.
@@ -233,38 +244,65 @@ public:
    */
   virtual already_AddRefed<gfx::SourceSurface> EndBackBufferDrawing();
 
+#ifdef XP_MACOSX
+  /**
+   * Return the opaque region of the widget. This is racy and can only be used
+   * on macOS, where the widget works around the raciness.
+   * Bug 1576491 tracks fixing this properly.
+   * The problem with this method is that it can return values "from the future"
+   * - the compositor might be working on frame N but the widget will return its
+   * opaque region from frame N + 1.
+   * It is believed that this won't lead to visible glitches on macOS due to the
+   * SuspendAsyncCATransactions call when the vibrant region changes or when the
+   * window resizes. Whenever the compositor uses an opaque region that's a
+   * frame ahead, the result it renders won't be shown on the screen; instead,
+   * the next composite will happen with the correct display list, and that's
+   * what's shown on the screen once the FlushRendering call completes.
+   */
+  virtual LayoutDeviceIntRegion GetOpaqueWidgetRegion() { return {}; }
+#endif
+
   /**
    * Observe or unobserve vsync.
    */
   virtual void ObserveVsync(VsyncObserver* aObserver) = 0;
 
   /**
+   * Get the compositor options for the compositor associated with this
+   * CompositorWidget.
+   */
+  const layers::CompositorOptions& GetCompositorOptions() { return mOptions; }
+
+  /**
+   * Return true if the window is hidden and should not be composited.
+   */
+  virtual bool IsHidden() const { return false; }
+
+  /**
    * This is only used by out-of-process compositors.
    */
   virtual RefPtr<VsyncObserver> GetVsyncObserver() const;
 
-  virtual WinCompositorWidget* AsWindows() {
-    return nullptr;
-  }
-  virtual X11CompositorWidget* AsX11() {
-    return nullptr;
-  }
+  virtual WinCompositorWidget* AsWindows() { return nullptr; }
+  virtual GtkCompositorWidget* AsX11() { return nullptr; }
+  virtual AndroidCompositorWidget* AsAndroid() { return nullptr; }
 
   /**
    * Return the platform-specific delegate for the widget, if any.
    */
-  virtual CompositorWidgetDelegate* AsDelegate() {
-    return nullptr;
-  }
+  virtual CompositorWidgetDelegate* AsDelegate() { return nullptr; }
 
-protected:
+ protected:
+  explicit CompositorWidget(const layers::CompositorOptions& aOptions);
   virtual ~CompositorWidget();
 
   // Back buffer of BasicCompositor
   RefPtr<gfx::DrawTarget> mLastBackBuffer;
+
+  layers::CompositorOptions mOptions;
 };
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
 #endif

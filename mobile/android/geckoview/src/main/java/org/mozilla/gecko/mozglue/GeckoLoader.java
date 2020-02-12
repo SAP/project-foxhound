@@ -5,29 +5,28 @@
 
 package org.mozilla.gecko.mozglue;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.text.NumberFormat;
-import java.util.Locale;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.annotation.JNITarget;
+import org.mozilla.gecko.annotation.RobocopTarget;
+import org.mozilla.gecko.util.HardwareUtils;
 
 import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
 import android.util.Log;
 
-import org.mozilla.gecko.annotation.JNITarget;
-import org.mozilla.gecko.annotation.RobocopTarget;
-import org.mozilla.gecko.AppConstants;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.Collection;
+import java.util.Locale;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 public final class GeckoLoader {
     private static final String LOGTAG = "GeckoLoader";
 
-    private static volatile SafeIntent sIntent;
     private static File sCacheFile;
     private static File sGREDir;
 
@@ -40,46 +39,18 @@ public final class GeckoLoader {
         // prevent instantiation
     }
 
-    public static File getCacheDir(Context context) {
+    public static File getCacheDir(final Context context) {
         if (sCacheFile == null) {
             sCacheFile = context.getCacheDir();
         }
         return sCacheFile;
     }
 
-    public static File getGREDir(Context context) {
+    public static File getGREDir(final Context context) {
         if (sGREDir == null) {
             sGREDir = new File(context.getApplicationInfo().dataDir);
         }
         return sGREDir;
-    }
-
-    private static void setupPluginEnvironment(Context context, String[] pluginDirs) {
-        // setup plugin path directories
-        try {
-            // Check to see if plugins were blocked.
-            if (pluginDirs == null) {
-                putenv("MOZ_PLUGINS_BLOCKED=1");
-                putenv("MOZ_PLUGIN_PATH=");
-                return;
-            }
-
-            StringBuilder pluginSearchPath = new StringBuilder();
-            for (int i = 0; i < pluginDirs.length; i++) {
-                pluginSearchPath.append(pluginDirs[i]);
-                pluginSearchPath.append(":");
-            }
-            putenv("MOZ_PLUGIN_PATH=" + pluginSearchPath);
-
-            File pluginDataDir = context.getDir("plugins", 0);
-            putenv("ANDROID_PLUGIN_DATADIR=" + pluginDataDir.getPath());
-
-            File pluginPrivateDataDir = context.getDir("plugins_private", 0);
-            putenv("ANDROID_PLUGIN_DATADIR_PRIVATE=" + pluginPrivateDataDir.getPath());
-
-        } catch (Exception ex) {
-            Log.w(LOGTAG, "Caught exception getting plugin dirs.", ex);
-        }
     }
 
     private static void setupDownloadEnvironment(final Context context) {
@@ -99,7 +70,7 @@ public final class GeckoLoader {
         }
     }
 
-    private static void delTree(File file) {
+    private static void delTree(final File file) {
         if (file.isDirectory()) {
             File children[] = file.listFiles();
             for (File child : children) {
@@ -109,7 +80,7 @@ public final class GeckoLoader {
         file.delete();
     }
 
-    private static File getTmpDir(Context context) {
+    private static File getTmpDir(final Context context) {
         File tmpDir = context.getDir("tmpdir", Context.MODE_PRIVATE);
         // check if the old tmp dir is there
         File oldDir = new File(tmpDir.getParentFile(), "app_tmp");
@@ -119,27 +90,49 @@ public final class GeckoLoader {
         return tmpDir;
     }
 
-    public static void setLastIntent(SafeIntent intent) {
-        sIntent = intent;
+    private static String escapeDoubleQuotes(final String str) {
+        return str.replaceAll("\"", "\\\"");
     }
 
-    public static void setupGeckoEnvironment(Context context, String[] pluginDirs, String profilePath) {
-        // if we have an intent (we're being launched by an activity)
-        // read in any environmental variables from it here
-        final SafeIntent intent = sIntent;
-        if (intent != null) {
-            String env = intent.getStringExtra("env0");
-            Log.d(LOGTAG, "Gecko environment env0: " + env);
-            for (int c = 1; env != null; c++) {
-                putenv(env);
-                env = intent.getStringExtra("env" + c);
-                Log.d(LOGTAG, "env" + c + ": " + env);
+    private static void setupInitialPrefs(final Map<String, Object> prefs) {
+        if (prefs != null) {
+            final StringBuilder prefsEnv = new StringBuilder("MOZ_DEFAULT_PREFS=");
+            for (final String key : prefs.keySet()) {
+                prefsEnv.append(String.format("pref(\"%s\",", escapeDoubleQuotes(key)));
+                final Object value = prefs.get(key);
+                if (value instanceof String) {
+                    prefsEnv.append(String.format("\"%s\"", escapeDoubleQuotes(value.toString())));
+                } else if (value instanceof Boolean) {
+                    prefsEnv.append((Boolean)value ? "true" : "false");
+                } else {
+                    prefsEnv.append(value.toString());
+                }
+
+                prefsEnv.append(");\n");
             }
+
+            putenv(prefsEnv.toString());
+        }
+    }
+
+    @SuppressWarnings("deprecation") // for Build.CPU_ABI
+    public synchronized static void setupGeckoEnvironment(final Context context,
+                                                          final String profilePath,
+                                                          final Collection<String> env,
+                                                          final Map<String, Object> prefs) {
+        for (final String e : env) {
+            putenv(e);
+        }
+
+        try {
+            final File dataDir = new File(context.getApplicationInfo().dataDir);
+            putenv("MOZ_ANDROID_DATA_DIR=" + dataDir.getCanonicalPath());
+        } catch (final java.io.IOException e) {
+            Log.e(LOGTAG, "Failed to resolve app data directory");
         }
 
         putenv("MOZ_ANDROID_PACKAGE_NAME=" + context.getPackageName());
 
-        setupPluginEnvironment(context, pluginDirs);
         setupDownloadEnvironment(context);
 
         // profile home path
@@ -160,7 +153,12 @@ public final class GeckoLoader {
         f = context.getCacheDir();
         putenv("CACHE_DIRECTORY=" + f.getPath());
 
-        if (AppConstants.Versions.feature17Plus) {
+        f = context.getExternalFilesDir(null);
+        if (f != null) {
+            putenv("PUBLIC_STORAGE=" + f.getPath());
+        }
+
+        if (Build.VERSION.SDK_INT >= 17) {
             android.os.UserManager um = (android.os.UserManager)context.getSystemService(Context.USER_SERVICE);
             if (um != null) {
                 putenv("MOZ_ANDROID_USER_SERIAL_NUMBER=" + um.getSerialNumberForUser(android.os.Process.myUserHandle()));
@@ -168,74 +166,54 @@ public final class GeckoLoader {
                 Log.d(LOGTAG, "Unable to obtain user manager service on a device with SDK version " + Build.VERSION.SDK_INT);
             }
         }
-        setupLocaleEnvironment();
 
-        // We don't need this any more.
-        sIntent = null;
+        putenv("LANG=" + Locale.getDefault().toString());
+
+        final Class<?> crashHandler = GeckoAppShell.getCrashHandlerService();
+        if (crashHandler != null) {
+            putenv("MOZ_ANDROID_CRASH_HANDLER=" +
+                    context.getPackageName() + "/" + crashHandler.getName());
+        }
+
+        putenv("MOZ_ANDROID_DEVICE_SDK_VERSION=" + Build.VERSION.SDK_INT);
+        putenv("MOZ_ANDROID_CPU_ABI=" + Build.CPU_ABI);
+
+        setupInitialPrefs(prefs);
+
+        // env from extras could have reset out linker flags; set them again.
+        loadLibsSetupLocked(context);
     }
 
-    private static void loadLibsSetupLocked(Context context) {
-        // The package data lib directory isn't placed in ld.so's
-        // search path, so we have to manually load libraries that
-        // libxul will depend on.  Not ideal.
-
-        File cacheFile = getCacheDir(context);
+    private static void loadLibsSetupLocked(final Context context) {
         putenv("GRE_HOME=" + getGREDir(context).getPath());
-
-        // setup the libs cache
-        String linkerCache = System.getenv("MOZ_LINKER_CACHE");
-        if (linkerCache == null) {
-            linkerCache = cacheFile.getPath();
-            putenv("MOZ_LINKER_CACHE=" + linkerCache);
-        }
-
-        // Disable on-demand decompression of the linker on devices where it
-        // is known to cause crashes.
-        String forced_ondemand = System.getenv("MOZ_LINKER_ONDEMAND");
-        if (forced_ondemand == null) {
-            if ("HTC".equals(android.os.Build.MANUFACTURER) &&
-                "HTC Vision".equals(android.os.Build.MODEL)) {
-                putenv("MOZ_LINKER_ONDEMAND=0");
-            }
-        }
-
-        if (AppConstants.MOZ_LINKER_EXTRACT) {
-            putenv("MOZ_LINKER_EXTRACT=1");
-            // Ensure that the cache dir is world-writable
-            File cacheDir = new File(linkerCache);
-            if (cacheDir.isDirectory()) {
-                cacheDir.setWritable(true, false);
-                cacheDir.setExecutable(true, false);
-                cacheDir.setReadable(true, false);
-            }
-        }
+        putenv("MOZ_ANDROID_LIBDIR=" + context.getApplicationInfo().nativeLibraryDir);
     }
 
     @RobocopTarget
-    public synchronized static void loadSQLiteLibs(final Context context, final String apkName) {
+    public synchronized static void loadSQLiteLibs(final Context context) {
         if (sSQLiteLibsLoaded) {
             return;
         }
 
         loadMozGlue(context);
         loadLibsSetupLocked(context);
-        loadSQLiteLibsNative(apkName);
+        loadSQLiteLibsNative();
         sSQLiteLibsLoaded = true;
     }
 
-    public synchronized static void loadNSSLibs(final Context context, final String apkName) {
+    public synchronized static void loadNSSLibs(final Context context) {
         if (sNSSLibsLoaded) {
             return;
         }
 
         loadMozGlue(context);
         loadLibsSetupLocked(context);
-        loadNSSLibsNative(apkName);
+        loadNSSLibsNative();
         sNSSLibsLoaded = true;
     }
 
     @SuppressWarnings("deprecation")
-    private static final String getCPUABI() {
+    private static String getCPUABI() {
         return android.os.Build.CPU_ABI;
     }
 
@@ -247,7 +225,8 @@ public final class GeckoLoader {
      * @param outDir the output directory for the .so. No trailing slash.
      * @return true on success, false on failure.
      */
-    private static boolean extractLibrary(final Context context, final String lib, final String outDir) {
+    private static boolean extractLibrary(final Context context, final String lib,
+                                          final String outDir) {
         final String apkPath = context.getApplicationInfo().sourceDir;
 
         // Sanity check.
@@ -265,7 +244,7 @@ public final class GeckoLoader {
             }
         }
 
-        if (AppConstants.Versions.feature21Plus) {
+        if (Build.VERSION.SDK_INT >= 21) {
             String[] abis = Build.SUPPORTED_ABIS;
             for (String abi : abis) {
                 if (tryLoadWithABI(lib, outDir, apkPath, abi)) {
@@ -279,7 +258,8 @@ public final class GeckoLoader {
         }
     }
 
-    private static boolean tryLoadWithABI(String lib, String outDir, String apkPath, String abi) {
+    private static boolean tryLoadWithABI(final String lib, final String outDir,
+                                          final String apkPath, final String abi) {
         try {
             final ZipFile zipFile = new ZipFile(new File(apkPath));
             try {
@@ -343,8 +323,10 @@ public final class GeckoLoader {
         message.append(lib);
 
         // These might differ. If so, we know why the library won't load!
-        message.append(": ABI: " + AppConstants.MOZ_APP_ABI + ", " + getCPUABI());
+        HardwareUtils.init(context);
+        message.append(": ABI: " + HardwareUtils.getLibrariesABI() + ", " + getCPUABI());
         message.append(": Data: " + context.getApplicationInfo().dataDir);
+
         try {
             final boolean appLibExists = new File("/data/app-lib/" + androidPackageName + "/lib" + lib + ".so").exists();
             final boolean dataDataExists = new File("/data/data/" + androidPackageName + "/lib/lib" + lib + ".so").exists();
@@ -366,17 +348,13 @@ public final class GeckoLoader {
         }
 
         try {
-            if (Build.VERSION.SDK_INT >= 9) {
-                final String nativeLibPath = context.getApplicationInfo().nativeLibraryDir;
-                final boolean nativeLibDirExists = new File(nativeLibPath).exists();
-                final boolean nativeLibLibExists = new File(nativeLibPath + "/lib" + lib + ".so").exists();
+            final String nativeLibPath = context.getApplicationInfo().nativeLibraryDir;
+            final boolean nativeLibDirExists = new File(nativeLibPath).exists();
+            final boolean nativeLibLibExists = new File(nativeLibPath + "/lib" + lib + ".so").exists();
 
-                message.append(", nativeLib: " + nativeLibPath);
-                message.append(", dirx=" + nativeLibDirExists);
-                message.append(", libx=" + nativeLibLibExists);
-            } else {
-                message.append(", <pre-9>");
-            }
+            message.append(", nativeLib: " + nativeLibPath);
+            message.append(", dirx=" + nativeLibDirExists);
+            message.append(", libx=" + nativeLibLibExists);
         } catch (Throwable e) {
             message.append(", nativeLib fail.");
         }
@@ -384,7 +362,7 @@ public final class GeckoLoader {
         return message.toString();
     }
 
-    private static final boolean attemptLoad(final String path) {
+    private static boolean attemptLoad(final String path) {
         try {
             System.load(path);
             return true;
@@ -401,18 +379,13 @@ public final class GeckoLoader {
      *
      * Returns null or the cause exception.
      */
-    private static final Throwable doLoadLibraryExpected(final Context context, final String lib) {
+    private static Throwable doLoadLibraryExpected(final Context context, final String lib) {
         try {
             // Attempt 1: the way that should work.
             System.loadLibrary(lib);
             return null;
         } catch (Throwable e) {
             Log.wtf(LOGTAG, "Couldn't load " + lib + ". Trying native library dir.");
-
-            if (Build.VERSION.SDK_INT < 9) {
-                // We can't use nativeLibraryDir.
-                return e;
-            }
 
             // Attempt 2: use nativeLibraryDir, which should also work.
             final String libDir = context.getApplicationInfo().nativeLibraryDir;
@@ -443,11 +416,9 @@ public final class GeckoLoader {
 
         // If we're in a mismatched UID state (Bug 1042935 Comment 16) there's really
         // nothing we can do.
-        if (Build.VERSION.SDK_INT >= 9) {
-            final String nativeLibPath = context.getApplicationInfo().nativeLibraryDir;
-            if (nativeLibPath.contains("mismatched_uid")) {
-                throw new RuntimeException("Fatal: mismatched UID: cannot load.");
-            }
+        final String nativeLibPath = context.getApplicationInfo().nativeLibraryDir;
+        if (nativeLibPath.contains("mismatched_uid")) {
+            throw new RuntimeException("Fatal: mismatched UID: cannot load.");
         }
 
         // Attempt 3: try finding the path the pseudo-supported way using .dataDir.
@@ -502,27 +473,14 @@ public final class GeckoLoader {
         sMozGlueLoaded = true;
     }
 
-    public synchronized static void loadGeckoLibs(final Context context, final String apkName) {
+    public synchronized static void loadGeckoLibs(final Context context) {
         loadLibsSetupLocked(context);
-        loadGeckoLibsNative(apkName);
-    }
-
-    private static void setupLocaleEnvironment() {
-        putenv("LANG=" + Locale.getDefault().toString());
-        NumberFormat nf = NumberFormat.getInstance();
-        if (nf instanceof DecimalFormat) {
-            DecimalFormat df = (DecimalFormat)nf;
-            DecimalFormatSymbols dfs = df.getDecimalFormatSymbols();
-
-            putenv("LOCALE_DECIMAL_POINT=" + dfs.getDecimalSeparator());
-            putenv("LOCALE_THOUSANDS_SEP=" + dfs.getGroupingSeparator());
-            putenv("LOCALE_GROUPING=" + (char)df.getGroupingSize());
-        }
+        loadGeckoLibsNative();
     }
 
     @SuppressWarnings("serial")
     public static class AbortException extends Exception {
-        public AbortException(String msg) {
+        public AbortException(final String msg) {
             super(msg);
         }
     }
@@ -539,10 +497,13 @@ public final class GeckoLoader {
 
     // These methods are implemented in mozglue/android/nsGeckoUtils.cpp
     private static native void putenv(String map);
+    public static native boolean verifyCRCs(String apkName);
 
     // These methods are implemented in mozglue/android/APKOpen.cpp
-    public static native void nativeRun(String args);
-    private static native void loadGeckoLibsNative(String apkName);
-    private static native void loadSQLiteLibsNative(String apkName);
-    private static native void loadNSSLibsNative(String apkName);
+    public static native void nativeRun(String[] args, int prefsFd, int prefMapFd, int ipcFd, int crashFd, int crashAnnotationFd);
+    private static native void loadGeckoLibsNative();
+    private static native void loadSQLiteLibsNative();
+    private static native void loadNSSLibsNative();
+    public static native boolean neonCompatible();
+    public static native void suppressCrashDialog();
 }

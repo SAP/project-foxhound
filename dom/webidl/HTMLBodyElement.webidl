@@ -11,16 +11,25 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLBodyElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
 };
 
 partial interface HTMLBodyElement {
-  [TreatNullAs=EmptyString, SetterThrows] attribute DOMString text;
-  [TreatNullAs=EmptyString, SetterThrows] attribute DOMString link;
-  [TreatNullAs=EmptyString, SetterThrows] attribute DOMString vLink;
-  [TreatNullAs=EmptyString, SetterThrows] attribute DOMString aLink;
-  [TreatNullAs=EmptyString, SetterThrows] attribute DOMString bgColor;
-  [SetterThrows]                          attribute DOMString background;
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString text;
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString link;
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString vLink;
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString aLink;
+  [CEReactions, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString bgColor;
+  [CEReactions, SetterThrows]
+  attribute DOMString background;
 };
 
-HTMLBodyElement implements WindowEventHandlers;
+HTMLBodyElement includes WindowEventHandlers;

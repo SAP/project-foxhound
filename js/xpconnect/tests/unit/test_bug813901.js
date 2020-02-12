@@ -4,14 +4,12 @@
 
 /* See https://bugzilla.mozilla.org/show_bug.cgi?id=813901 */
 
-const Cu = Components.utils;
-
 // Make sure that we can't inject __exposedProps__ via the proto of a COW-ed object.
 
 function checkThrows(expression, sb, regexp) {
   var result = Cu.evalInSandbox('(function() { try { ' + expression + '; return "allowed"; } catch (e) { return e.toString(); }})();', sb);
   dump('result: ' + result + '\n\n\n');
-  do_check_true(!!regexp.exec(result));
+  Assert.ok(!!regexp.exec(result));
 }
 
 function run_test() {
@@ -21,5 +19,5 @@ function run_test() {
   checkThrows('obj.foo = 3;', sb, /denied/);
   Cu.evalInSandbox("var p = {__exposedProps__: {foo: 'rw'}};", sb);
   sb.obj.__proto__ = sb.p;
-  checkThrows('obj.foo = 4;', sb, /__exposedProps__/);
+  checkThrows('obj.foo = 4;', sb, /denied/);
 }

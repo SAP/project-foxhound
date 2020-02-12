@@ -2,7 +2,7 @@
 
 load(libdir + "asserts.js");
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = Debugger(g);
 var hits = 0;
 dbg.onDebuggerStatement = function (frame) {
@@ -12,5 +12,5 @@ dbg.onDebuggerStatement = function (frame) {
     assertThrowsInstanceOf(function () { env.setVariable("f", frame.callee) }, TypeError);
     hits++;
 };
-g.eval("(function f() { debugger; })();");
+g.eval("(function f() { eval(\"\"); debugger; })();");
 assertEq(hits, 1);

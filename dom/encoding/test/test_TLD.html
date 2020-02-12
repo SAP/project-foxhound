@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=910211
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 910211</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=910211
 
   var tlds = [
     {'tld': 'tw', 'encoding': 'Big5'},
-    {'tld': 'cn', 'encoding': 'gbk'},
+    {'tld': 'cn', 'encoding': 'GBK'},
     {'tld': 'co.jp', 'encoding': 'Shift_JIS'},
     {'tld': 'fi', 'encoding': 'windows-1252'},
   ];
@@ -33,14 +33,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=910211
 
   function next(event) {
     if (event) {
-      is(event.data, current['encoding'], "Got bad encoding for " + current["tld"]);
+      is(event.data, current.encoding, "Got bad encoding for " + current.tld);
     }
     current = tlds.shift();
     if (!current) {
       SimpleTest.finish();
       return;
     }
-    iframe.src = "http://example." + current["tld"] + "/tests/dom/encoding/test/file_TLD.html";
+    iframe.src = "http://example." + current.tld + "/tests/dom/encoding/test/file_TLD.html";
   }
 
   </script>

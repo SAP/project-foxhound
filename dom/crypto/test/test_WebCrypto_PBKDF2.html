@@ -19,7 +19,7 @@
 <!-- General testing framework -->
 <script src="./test-array.js"></script>
 
-<script>/*<![CDATA[*/
+<script>/* <![CDATA[*/
 "use strict";
 
 // -----------------------------------------------------------------------------
@@ -73,16 +73,16 @@ TestArray.addTest(
 
     function doDerive(x) {
       if (!hasKeyFields(x)) {
-        throw "Invalid key; missing field(s)";
+        throw new Error("Invalid key; missing field(s)");
       }
 
-      var alg = {
+      var algo = {
         name: "PBKDF2",
         hash: "SHA-1",
         salt: tv.pbkdf2_sha1.salt,
-        iterations: tv.pbkdf2_sha1.iterations
+        iterations: tv.pbkdf2_sha1.iterations,
       };
-      return crypto.subtle.deriveBits(alg, x, tv.pbkdf2_sha1.length);
+      return crypto.subtle.deriveBits(algo, x, tv.pbkdf2_sha1.length);
     }
     function fail(x) { console.log("failing"); error(that)(x); }
 
@@ -101,16 +101,16 @@ TestArray.addTest(
 
     function doDerive(x) {
       if (!hasKeyFields(x)) {
-        throw "Invalid key; missing field(s)";
+        throw new Error("Invalid key; missing field(s)");
       }
 
-      var alg = {
+      var algo = {
         name: "PBKDF2",
         hash: "SHA-1",
         salt: tv.pbkdf2_sha1.salt,
-        iterations: tv.pbkdf2_sha1.iterations
+        iterations: tv.pbkdf2_sha1.iterations,
       };
-      return crypto.subtle.deriveBits(alg, x, tv.pbkdf2_sha1.length);
+      return crypto.subtle.deriveBits(algo, x, tv.pbkdf2_sha1.length);
     }
     function fail(x) { console.log("failing"); error(that)(x); }
 
@@ -130,32 +130,32 @@ TestArray.addTest(
 
     function doDerive(x) {
       if (!hasKeyFields(x)) {
-        throw "Invalid key; missing field(s)";
+        throw new Error("Invalid key; missing field(s)");
       }
 
-      var alg = {
+      var algo = {
         name: "PBKDF2",
         hash: "SHA-1",
         salt: tv.pbkdf2_sha1.salt,
-        iterations: tv.pbkdf2_sha1.iterations
+        iterations: tv.pbkdf2_sha1.iterations,
       };
 
       var algDerived = {
         name: "HMAC",
-        hash: {name: "SHA-1"}
+        hash: {name: "SHA-1"},
       };
 
-      return crypto.subtle.deriveKey(alg, x, algDerived, false, ["sign", "verify"])
-        .then(function (x) {
-          if (!hasKeyFields(x)) {
-            throw "Invalid key; missing field(s)";
+      return crypto.subtle.deriveKey(algo, x, algDerived, false, ["sign", "verify"])
+        .then(function(y) {
+          if (!hasKeyFields(y)) {
+            throw new Error("Invalid key; missing field(s)");
           }
 
-          if (x.algorithm.length != 512) {
-            throw "Invalid key; incorrect length";
+          if (y.algorithm.length != 512) {
+            throw new Error("Invalid key; incorrect length");
           }
 
-          return x;
+          return y;
         });
     }
 
@@ -163,7 +163,7 @@ TestArray.addTest(
       var data = new Uint8Array(1024);
 
       return crypto.subtle.sign("HMAC", x, data)
-        .then(function (sig) {
+        .then(function(sig) {
           return crypto.subtle.verify("HMAC", x, sig, data);
         });
     }
@@ -188,7 +188,7 @@ TestArray.addTest(
         name: "PBKDF2",
         hash: "SHA-1",
         salt: tv.pbkdf2_sha1.salt,
-        iterations: tv.pbkdf2_sha1.iterations
+        iterations: tv.pbkdf2_sha1.iterations,
       };
 
       var algDerived = {name: "HMAC", hash: "SHA-1", length: 128};
@@ -198,7 +198,7 @@ TestArray.addTest(
     var password = crypto.getRandomValues(new Uint8Array(8));
     crypto.subtle.importKey("raw", password, "PBKDF2", false, ["deriveKey"])
       .then(doDerive)
-      .then(complete(that, function (x) {
+      .then(complete(that, function(x) {
         return hasKeyFields(x) && x.algorithm.length == 128;
       }), error(that));
   }
@@ -214,22 +214,51 @@ TestArray.addTest(
 
     function doDerive(x) {
       if (!hasKeyFields(x)) {
-        throw "Invalid key; missing field(s)";
+        throw new Error("Invalid key; missing field(s)");
       }
 
-      var alg = {
+      var algo = {
         name: "PBKDF2",
         hash: "SHA-256",
         salt: tv.pbkdf2_sha256.salt,
-        iterations: tv.pbkdf2_sha256.iterations
+        iterations: tv.pbkdf2_sha256.iterations,
       };
-      return crypto.subtle.deriveBits(alg, x, tv.pbkdf2_sha256.length);
+      return crypto.subtle.deriveBits(algo, x, tv.pbkdf2_sha256.length);
     }
     function fail(x) { console.log("failing"); error(that)(x); }
 
     crypto.subtle.importKey("raw", key, alg, false, ["deriveBits"])
       .then( doDerive, fail )
       .then( memcmp_complete(that, tv.pbkdf2_sha256.derived), fail );
+  }
+);
+
+// -----------------------------------------------------------------------------
+TestArray.addTest(
+  "Import raw PBKDF2 zero-length key and derive bits using HMAC-SHA-256",
+  function() {
+    var that = this;
+    var alg = "PBKDF2";
+    var key = tv.pbkdf2_sha256_no_pwd.password;
+
+    function doDerive(x) {
+      if (!hasKeyFields(x)) {
+        throw new Error("Invalid key; missing field(s)");
+      }
+
+      var algo = {
+        name: "PBKDF2",
+        hash: "SHA-256",
+        salt: tv.pbkdf2_sha256_no_pwd.salt,
+        iterations: tv.pbkdf2_sha256_no_pwd.iterations,
+      };
+      return crypto.subtle.deriveBits(algo, x, tv.pbkdf2_sha256_no_pwd.length);
+    }
+    function fail(x) { console.log("failing"); error(that)(x); }
+
+    crypto.subtle.importKey("raw", key, alg, false, ["deriveBits"])
+      .then( doDerive, fail )
+      .then( memcmp_complete(that, tv.pbkdf2_sha256_no_pwd.derived), fail );
   }
 );
 
@@ -243,14 +272,14 @@ TestArray.addTest(
 
     function doDerive(x) {
       if (!hasKeyFields(x)) {
-        throw "Invalid key; missing field(s)";
+        throw new Error("Invalid key; missing field(s)");
       }
 
       var deriveAlg = {
         name: "PBKDF2",
         hash: "SHA-256",
         salt: new Uint8Array(0),
-        iterations: tv.pbkdf2_sha256_no_salt.iterations
+        iterations: tv.pbkdf2_sha256_no_salt.iterations,
       };
       return crypto.subtle.deriveBits(deriveAlg, x, tv.pbkdf2_sha256_no_salt.length);
     }
@@ -261,7 +290,7 @@ TestArray.addTest(
       .then( memcmp_complete(that, tv.pbkdf2_sha256_no_salt.derived), fail );
   }
 );
-/*]]>*/</script>
+/* ]]>*/</script>
 </head>
 
 <body>

@@ -6,8 +6,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=903715
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 903715</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -52,14 +52,14 @@ function runTests()
     var input = document.getElementById("input-text");
     input.focus();
     input.select();
-  }, false);
+  });
 
   select.focus();
 
   select.addEventListener("popupshowing", function (aEvent) {
     setTimeout(function () {
-      synthesizeKey("VK_DOWN", { });
-      select.addEventListener("popuphiding", function (aEvent) {
+      synthesizeKey("KEY_ArrowDown");
+      select.addEventListener("popuphiding", function (aEventInner) {
         setTimeout(function () {
           // Enter key should cause closing the dropdown of the select element
           // and keypress event shouldn't be fired on the input element because
@@ -67,14 +67,14 @@ function runTests()
           ok(true, "Test passes if there is no error");
           SimpleTest.finish();
         }, 100);
-      }, false);
+      });
       // Close dropdown.
-      synthesizeKey("VK_RETURN", { });
+      synthesizeKey("KEY_Enter");
     }, 100);
-  }, false);
+  });
 
   // Open dropdown.
-  synthesizeKey("VK_DOWN", { altKey: true });
+  synthesizeKey("KEY_ArrowDown", { altKey: true });
 }
 </script>
 </body>

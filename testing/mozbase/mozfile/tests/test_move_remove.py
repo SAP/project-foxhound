@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
+
 import os
 import stat
 import shutil
@@ -8,6 +10,8 @@ import time
 import unittest
 import errno
 from contextlib import contextmanager
+
+import mozunit
 
 import mozfile
 import mozinfo
@@ -26,6 +30,7 @@ def mark_readonly(path):
 
 class FileOpenCloseThread(threading.Thread):
     """Helper thread for asynchronous file handling"""
+
     def __init__(self, path, delay, delete=False):
         threading.Thread.__init__(self)
         self.file_opened = threading.Event()
@@ -40,7 +45,7 @@ class FileOpenCloseThread(threading.Thread):
         if self.delete:
             try:
                 os.remove(self.path)
-            except:
+            except Exception:
                 pass
 
 
@@ -76,7 +81,7 @@ class MozfileRemoveTestCase(unittest.TestCase):
         """Test removing a directory with an open file"""
         # Open a file in the generated stub
         filepath = os.path.join(self.tempdir, *stubs.files[1])
-        f = file(filepath, 'w')
+        f = open(filepath, 'w')
         f.write('foo-bar')
 
         # keep file open and then try removing the dir-tree
@@ -201,6 +206,7 @@ class MozfileRemoveTestCase(unittest.TestCase):
 
 
 class MozFileMoveTestCase(unittest.TestCase):
+
     def setUp(self):
         # Generate a stub
         self.tempdir = stubs.create_stub()
@@ -227,4 +233,4 @@ class MozFileMoveTestCase(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    mozunit.main()

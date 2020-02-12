@@ -24,15 +24,15 @@ class nsIWebSocketChannel;
 
 namespace IPC {
 
-class SerializedLoadContext
-{
-public:
+class SerializedLoadContext {
+ public:
   SerializedLoadContext()
-    : mIsNotNull(false)
-    , mIsPrivateBitValid(false)
-    , mIsContent(false)
-    , mUseRemoteTabs(false)
-  {
+      : mIsNotNull(false),
+        mIsPrivateBitValid(false),
+        mIsContent(false),
+        mUseRemoteTabs(false),
+        mUseRemoteSubframes(false),
+        mUseTrackingProtection(false) {
     Init(nullptr);
   }
 
@@ -52,17 +52,17 @@ public:
   bool mIsPrivateBitValid;
   bool mIsContent;
   bool mUseRemoteTabs;
-  mozilla::DocShellOriginAttributes mOriginAttributes;
+  bool mUseRemoteSubframes;
+  bool mUseTrackingProtection;
+  mozilla::OriginAttributes mOriginAttributes;
 };
 
 // Function to serialize over IPDL
-template<>
-struct ParamTraits<SerializedLoadContext>
-{
+template <>
+struct ParamTraits<SerializedLoadContext> {
   typedef SerializedLoadContext paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     nsAutoCString suffix;
     aParam.mOriginAttributes.CreateSuffix(suffix);
 
@@ -70,16 +70,20 @@ struct ParamTraits<SerializedLoadContext>
     WriteParam(aMsg, aParam.mIsContent);
     WriteParam(aMsg, aParam.mIsPrivateBitValid);
     WriteParam(aMsg, aParam.mUseRemoteTabs);
+    WriteParam(aMsg, aParam.mUseRemoteSubframes);
+    WriteParam(aMsg, aParam.mUseTrackingProtection);
     WriteParam(aMsg, suffix);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     nsAutoCString suffix;
     if (!ReadParam(aMsg, aIter, &aResult->mIsNotNull) ||
         !ReadParam(aMsg, aIter, &aResult->mIsContent) ||
         !ReadParam(aMsg, aIter, &aResult->mIsPrivateBitValid) ||
         !ReadParam(aMsg, aIter, &aResult->mUseRemoteTabs) ||
+        !ReadParam(aMsg, aIter, &aResult->mUseRemoteSubframes) ||
+        !ReadParam(aMsg, aIter, &aResult->mUseTrackingProtection) ||
         !ReadParam(aMsg, aIter, &suffix)) {
       return false;
     }
@@ -87,6 +91,6 @@ struct ParamTraits<SerializedLoadContext>
   }
 };
 
-} // namespace IPC
+}  // namespace IPC
 
-#endif // SerializedLoadContext_h
+#endif  // SerializedLoadContext_h

@@ -5,9 +5,10 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMKeyEvent;
 interface mozIDOMWindow;
 interface nsITextInputProcessorCallback;
+
+webidl Event;
 
 /**
  * An nsITextInputProcessor instance is associated with a top level widget which
@@ -305,13 +306,17 @@ interface nsITextInputProcessor : nsISupports
    *                        If its type value is "keydown", this method
    *                        dispatches only keydown event first.  Otherwise,
    *                        dispatches keydown first and keyup at last.
+   *                        key value and keyCode values of keydown event
+   *                        are set to "Process" and DOM_VK_PROCESSKEY
+   *                        automatically.  You can prevent this behavior
+   *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    * @return                Returns true if composition starts normally.
    *                        Otherwise, returns false because it might be
    *                        canceled by the web application.
    */
   [optional_argc]
-    boolean startComposition([optional] in nsIDOMKeyEvent aKeyboardEvent,
+    boolean startComposition([optional] in Event aKeyboardEvent,
                              [optional] in unsigned long aKeyFlags);
 
   /**
@@ -322,7 +327,7 @@ interface nsITextInputProcessor : nsISupports
    * Note that if you need to commit or cancel composition, use
    * commitComposition(), commitCompositionWith() or cancelComposition().
    */
-  void setPendingCompositionString(in DOMString aString);
+  void setPendingCompositionString(in AString aString);
 
   // ATTR_RAW_CLAUSE means that the clause hasn't been selected nor converted
   // yet.
@@ -393,6 +398,10 @@ interface nsITextInputProcessor : nsISupports
    *                        If its type value is "keydown", this method
    *                        dispatches only keydown event first.  Otherwise,
    *                        dispatches keydown first and keyup at last.
+   *                        key value and keyCode values of keydown event
+   *                        are set to "Process" and DOM_VK_PROCESSKEY
+   *                        automatically.  You can prevent this behavior
+   *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    * @return                Returns true if there is a composition already or
    *                        starting composition automatically.
@@ -402,7 +411,7 @@ interface nsITextInputProcessor : nsISupports
    */
   [optional_argc]
     boolean flushPendingComposition(
-      [optional] in nsIDOMKeyEvent aKeyboardEvent,
+      [optional] in Event aKeyboardEvent,
       [optional] in unsigned long aKeyFlags);
 
   /**
@@ -413,10 +422,14 @@ interface nsITextInputProcessor : nsISupports
    *                        If its type value is "keydown", this method
    *                        dispatches only keydown event first.  Otherwise,
    *                        dispatches keydown first and keyup at last.
+   *                        key value and keyCode values of keydown event
+   *                        are set to "Process" and DOM_VK_PROCESSKEY
+   *                        automatically.  You can prevent this behavior
+   *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    */
   [optional_argc]
-    void commitComposition([optional] in nsIDOMKeyEvent aKeyboardEvent,
+    void commitComposition([optional] in Event aKeyboardEvent,
                            [optional] in unsigned long aKeyFlags);
 
   /**
@@ -429,6 +442,10 @@ interface nsITextInputProcessor : nsISupports
    *                        If its type value is "keydown", this method
    *                        dispatches only keydown event first.  Otherwise,
    *                        dispatches keydown first and keyup at last.
+   *                        key value and keyCode values of keydown event
+   *                        are set to "Process" and DOM_VK_PROCESSKEY
+   *                        automatically.  You can prevent this behavior
+   *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    * @return                Returns true if there is a composition already or
    *                        starting composition automatically.
@@ -437,8 +454,8 @@ interface nsITextInputProcessor : nsISupports
    *                        false.
    */
   [optional_argc]
-    boolean commitCompositionWith(in DOMString aCommitString,
-                                  [optional] in nsIDOMKeyEvent aKeyboardEvent,
+    boolean commitCompositionWith(in AString aCommitString,
+                                  [optional] in Event aKeyboardEvent,
                                   [optional] in unsigned long aKeyFlags);
 
   /**
@@ -454,10 +471,14 @@ interface nsITextInputProcessor : nsISupports
    *                        If its type value is "keydown", this method
    *                        dispatches only keydown event first.  Otherwise,
    *                        dispatches keydown first and keyup at last.
+   *                        key value and keyCode values of keydown event
+   *                        are set to "Process" and DOM_VK_PROCESSKEY
+   *                        automatically.  You can prevent this behavior
+   *                        with KEY_DONT_MARK_KEYDOWN_AS_PROCESSED.
    * @param aKeyFlags       See KEY_* constants.
    */
   [optional_argc]
-    void cancelComposition([optional] in nsIDOMKeyEvent aKeyboardEvent,
+    void cancelComposition([optional] in Event aKeyboardEvent,
                            [optional] in unsigned long aKeyFlags);
 
   // Specifying KEY_DEFAULT_PREVENTED can dispatch key events whose
@@ -488,6 +509,12 @@ interface nsITextInputProcessor : nsISupports
   // without dispatching key events.  This is useful for testing odd behavior
   // or emulating legacy API behavior.
   const unsigned long KEY_DONT_DISPATCH_MODIFIER_KEY_EVENT         = 0x00000020;
+  // If KEY_DONT_MARK_KEYDOWN_AS_PROCESSED is specified, key value and keyCode
+  // value of keydown event are not changed to "Process" and DOM_VK_PROCESSKEY.
+  const unsigned long KEY_DONT_MARK_KEYDOWN_AS_PROCESSED           = 0x00000040;
+  // If KEY_MARK_KEYUP_AS_PROCESSED is specified, key value and keyCode value
+  // of keyup event are changed to "Process" and DOM_VK_PROCESSKEY.
+  const unsigned long KEY_MARK_KEYUP_AS_PROCESSED                  = 0x00000080;
 
   // These values can be used to do bitwise operation with the return value of
   // the keydown() method.
@@ -547,14 +574,14 @@ interface nsITextInputProcessor : nsISupports
    *                        default action has been taken).
    */
   [optional_argc]
-    unsigned long keydown(in nsIDOMKeyEvent aKeyboardEvent,
+    unsigned long keydown(in Event aKeyboardEvent,
                           [optional] in unsigned long aKeyFlags);
 
   /**
    * Similar to keydown(), but this dispatches only a keyup event.
    */
   [optional_argc]
-    boolean keyup(in nsIDOMKeyEvent aKeyboardEvent,
+    boolean keyup(in Event aKeyboardEvent,
                   [optional] in unsigned long aKeyFlags);
 
   /**
@@ -565,7 +592,7 @@ interface nsITextInputProcessor : nsISupports
    * @return                true if the modifier key is active.  Otherwise,
    *                        false.
    */
-  boolean getModifierState(in DOMString aModifierKey);
+  boolean getModifierState(in AString aModifierKey);
 
   /**
    * shareModifierStateOf() makes the instance shares modifier state of
@@ -578,6 +605,64 @@ interface nsITextInputProcessor : nsISupports
    *                        to manage modifier state independently.
    */
   void shareModifierStateOf(in nsITextInputProcessor aOther);
+
+  /**
+   * Helper method to get usual |.code| value of non-printable keys.
+   *
+   * @param aKeyValue       A predefined key value such as "Enter".
+   *                        If this is not a proper non-printable key value
+   *                        or a proper key value but not in usual keyboard of
+   *                        the platform, this returns empty string.
+   * @param aLocation       The |.location| value.  This is important if
+   *                        the key may be in different location.
+   *                        E.g., Left vs. Right or Standard vs. Numpad.
+   *                        If this is undefined or null, it'll be treated
+   *                        as Standard or Left.
+   * @return                One of a code value of well-known key on usual
+   *                        keyboard on the platform, or empty string.
+   */
+  [optional_argc]
+    AString computeCodeValueOfNonPrintableKey(
+              in AString aKeyValue,
+              [optional] in jsval aLocation);
+
+  /**
+   * Helper method to guess |.code| value of a printable key which is in usual
+   * keyboard of the platform and when active keyboard layout is US-English.
+   * Note that this is not aware of option key mapping on macOS.
+   *
+   * @param aKeyValue          The key value. Must be a character which can
+   *                           be inputted with US-English keyboard layout.
+   * @param aLocation          The location of the key.  This is important
+   *                           to distinguish whether the key is in Standard
+   *                           or Numpad. If this is undefined or null, will
+   *                           be treated as Standard.
+   * @return                   Returns empty string if there is no proper key.
+   */
+  [optional_argc]
+    AString guessCodeValueOfPrintableKeyInUSEnglishKeyboardLayout(
+              in AString aKeyValue,
+              [optional] in jsval aLocation);
+
+  /**
+   * Helper method to guess |.keyCode| value of a printable key which is in
+   * usual keyboard of the platform and when active keyboard layout is
+   * US-English.
+   * Note that this is not aware of option key mapping on macOS.
+   *
+   * @param aKeyValue          The key value.  Must be a character which can
+   *                           be inputted with US-English keyboard layout.
+   * @param aLocation          The location of the key.  This is important
+   *                           to distinguish whether the key is in Standard
+   *                           our Numpad.  If this is undefined or null,
+   *                           will be treated as Standard.
+   * @return                   Returns 0 if there is no proper key to input
+   *                           aKeyValue with US-English keyboard layout.
+   */
+  [optional_argc]
+    unsigned long guessKeyCodeValueOfPrintableKeyInUSEnglishKeyboardLayout(
+                    in AString aKeyValue,
+                    [optional] in jsval aLocation);
 };
 
 %{C++

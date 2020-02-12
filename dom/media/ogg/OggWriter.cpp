@@ -6,34 +6,25 @@
 #include "prtime.h"
 #include "GeckoProfiler.h"
 
-#undef LOG
-#ifdef MOZ_WIDGET_GONK
-#include <android/log.h>
-#define LOG(args...) __android_log_print(ANDROID_LOG_INFO, "MediaEncoder", ## args);
-#else
 #define LOG(args, ...)
-#endif
 
 namespace mozilla {
 
-OggWriter::OggWriter() : ContainerWriter()
-{
+OggWriter::OggWriter()
+    : ContainerWriter(), mOggStreamState(), mOggPage(), mPacket() {
   if (NS_FAILED(Init())) {
     LOG("ERROR! Fail to initialize the OggWriter.");
   }
 }
 
-OggWriter::~OggWriter()
-{
+OggWriter::~OggWriter() {
   if (mInitialized) {
     ogg_stream_clear(&mOggStreamState);
   }
   // mPacket's data was always owned by us, no need to ogg_packet_clear.
 }
 
-nsresult
-OggWriter::Init()
-{
+nsresult OggWriter::Init() {
   MOZ_ASSERT(!mInitialized);
 
   // The serial number (serialno) should be a random number, for the current
@@ -54,25 +45,21 @@ OggWriter::Init()
   return (rc == 0) ? NS_OK : NS_ERROR_NOT_INITIALIZED;
 }
 
-nsresult
-OggWriter::WriteEncodedTrack(const EncodedFrameContainer& aData,
-                             uint32_t aFlags)
-{
-  PROFILER_LABEL("OggWriter", "WriteEncodedTrack",
-    js::ProfileEntry::Category::OTHER);
+nsresult OggWriter::WriteEncodedTrack(
+    const nsTArray<RefPtr<EncodedFrame>>& aData, uint32_t aFlags) {
+  AUTO_PROFILER_LABEL("OggWriter::WriteEncodedTrack", OTHER);
 
-  uint32_t len = aData.GetEncodedFrames().Length();
+  uint32_t len = aData.Length();
   for (uint32_t i = 0; i < len; i++) {
-    if (aData.GetEncodedFrames()[i]->GetFrameType() != EncodedFrame::OPUS_AUDIO_FRAME) {
+    if (aData[i]->mFrameType != EncodedFrame::OPUS_AUDIO_FRAME) {
       LOG("[OggWriter] wrong encoded data type!");
       return NS_ERROR_FAILURE;
     }
 
     // only pass END_OF_STREAM on the last frame!
-    nsresult rv = WriteEncodedData(aData.GetEncodedFrames()[i]->GetFrameData(),
-                                   aData.GetEncodedFrames()[i]->GetDuration(),
-                                   i < len-1 ? (aFlags & ~ContainerWriter::END_OF_STREAM) :
-                                   aFlags);
+    nsresult rv = WriteEncodedData(
+        aData[i]->GetFrameData(), aData[i]->mDuration,
+        i < len - 1 ? (aFlags & ~ContainerWriter::END_OF_STREAM) : aFlags);
     if (NS_FAILED(rv)) {
       LOG("%p Failed to WriteEncodedTrack!", this);
       return rv;
@@ -81,10 +68,8 @@ OggWriter::WriteEncodedTrack(const EncodedFrameContainer& aData,
   return NS_OK;
 }
 
-nsresult
-OggWriter::WriteEncodedData(const nsTArray<uint8_t>& aBuffer, int aDuration,
-                            uint32_t aFlags)
-{
+nsresult OggWriter::WriteEncodedData(const nsTArray<uint8_t>& aBuffer,
+                                     int aDuration, uint32_t aFlags) {
   if (!mInitialized) {
     LOG("[OggWriter] OggWriter has not initialized!");
     return NS_ERROR_FAILURE;
@@ -123,25 +108,19 @@ OggWriter::WriteEncodedData(const nsTArray<uint8_t>& aBuffer, int aDuration,
   return NS_OK;
 }
 
-void
-OggWriter::ProduceOggPage(nsTArray<nsTArray<uint8_t> >* aOutputBufs)
-{
+void OggWriter::ProduceOggPage(nsTArray<nsTArray<uint8_t>>* aOutputBufs) {
   aOutputBufs->AppendElement();
-  aOutputBufs->LastElement().SetLength(mOggPage.header_len +
-                                       mOggPage.body_len);
+  aOutputBufs->LastElement().SetLength(mOggPage.header_len + mOggPage.body_len);
   memcpy(aOutputBufs->LastElement().Elements(), mOggPage.header,
          mOggPage.header_len);
   memcpy(aOutputBufs->LastElement().Elements() + mOggPage.header_len,
          mOggPage.body, mOggPage.body_len);
 }
 
-nsresult
-OggWriter::GetContainerData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
-                            uint32_t aFlags)
-{
+nsresult OggWriter::GetContainerData(nsTArray<nsTArray<uint8_t>>* aOutputBufs,
+                                     uint32_t aFlags) {
   int rc = -1;
-  PROFILER_LABEL("OggWriter", "GetContainerData",
-    js::ProfileEntry::Category::OTHER);
+  AUTO_PROFILER_LABEL("OggWriter::GetContainerData", OTHER);
   // Generate the oggOpus Header
   if (aFlags & ContainerWriter::GET_HEADER) {
     OpusMetadata* meta = static_cast<OpusMetadata*>(mMetadata.get());
@@ -162,12 +141,13 @@ OggWriter::GetContainerData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
     rc = ogg_stream_flush(&mOggStreamState, &mOggPage);
     NS_ENSURE_TRUE(rc > 0, NS_ERROR_FAILURE);
 
-    ProduceOggPage(aOutputBufs);
-    return NS_OK;
+    // Force generate a page even if the amount of packet data is not enough.
+    // Usually do so after a header packet.
 
-  // Force generate a page even if the amount of packet data is not enough.
-  // Usually do so after a header packet.
-  } else if (aFlags & ContainerWriter::FLUSH_NEEDED) {
+    ProduceOggPage(aOutputBufs);
+  }
+
+  if (aFlags & ContainerWriter::FLUSH_NEEDED) {
     // rc = 0 means no packet to put into a page, or an internal error.
     rc = ogg_stream_flush(&mOggStreamState, &mOggPage);
   } else {
@@ -182,23 +162,25 @@ OggWriter::GetContainerData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
   if (aFlags & ContainerWriter::FLUSH_NEEDED) {
     mIsWritingComplete = true;
   }
-  return (rc > 0) ? NS_OK : NS_ERROR_FAILURE;
+  // We always return NS_OK here since it's OK to call this without having
+  // enough data to fill a page. It's the more common case compared to internal
+  // errors, and we cannot distinguish the two.
+  return NS_OK;
 }
 
-nsresult
-OggWriter::SetMetadata(TrackMetadataBase* aMetadata)
-{
-  MOZ_ASSERT(aMetadata);
+nsresult OggWriter::SetMetadata(
+    const nsTArray<RefPtr<TrackMetadataBase>>& aMetadata) {
+  MOZ_ASSERT(aMetadata.Length() == 1);
+  MOZ_ASSERT(aMetadata[0]);
 
-  PROFILER_LABEL("OggWriter", "SetMetadata",
-    js::ProfileEntry::Category::OTHER);
+  AUTO_PROFILER_LABEL("OggWriter::SetMetadata", OTHER);
 
-  if (aMetadata->GetKind() != TrackMetadataBase::METADATA_OPUS) {
+  if (aMetadata[0]->GetKind() != TrackMetadataBase::METADATA_OPUS) {
     LOG("wrong meta data type!");
     return NS_ERROR_FAILURE;
   }
   // Validate each field of METADATA
-  mMetadata = static_cast<OpusMetadata*>(aMetadata);
+  mMetadata = static_cast<OpusMetadata*>(aMetadata[0].get());
   if (mMetadata->mIdHeader.Length() == 0) {
     LOG("miss mIdHeader!");
     return NS_ERROR_FAILURE;
@@ -211,4 +193,6 @@ OggWriter::SetMetadata(TrackMetadataBase* aMetadata)
   return NS_OK;
 }
 
-} // namespace mozilla
+}  // namespace mozilla
+
+#undef LOG

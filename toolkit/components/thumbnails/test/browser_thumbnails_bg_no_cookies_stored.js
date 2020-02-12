@@ -5,12 +5,12 @@
 // that cookie is not saved for subsequent requests.
 function* runTests() {
   yield SpecialPowers.pushPrefEnv({
-    set: [["privacy.usercontext.about_newtab_segregation.enabled", true]]
+    set: [["privacy.usercontext.about_newtab_segregation.enabled", true]],
   });
   let url = bgTestPageURL({
     setRedCookie: true,
-    iframe: bgTestPageURL({ setRedCookie: true}),
-    xhr: bgTestPageURL({ setRedCookie: true})
+    iframe: bgTestPageURL({ setRedCookie: true }),
+    xhr: bgTestPageURL({ setRedCookie: true }),
   });
   ok(!thumbnailExists(url), "Thumbnail file should not exist before capture.");
   yield bgCapture(url);
@@ -23,9 +23,11 @@ function* runTests() {
 
   // The root element of the page shouldn't be red.
   yield ContentTask.spawn(browser, null, function() {
-    Assert.notEqual(content.document.documentElement.style.backgroundColor,
-                    "rgb(255, 0, 0)",
-                    "The page shouldn't be red.");
+    Assert.notEqual(
+      content.document.documentElement.style.backgroundColor,
+      "rgb(255, 0, 0)",
+      "The page shouldn't be red."
+    );
   });
 
   gBrowser.removeTab(tab);

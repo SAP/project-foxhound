@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Test for mochitest harness sanity</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -33,13 +33,13 @@ isnot(undefined, null, "Undefined must not be null");
 
 var press1 = false;
 $("testKeyEvent1").focus();
-synthesizeKey("x", {});
+sendString("x");
 is($("testKeyEvent1").value, "x", "synthesizeKey should work");
 is(press1, true, "synthesizeKey should dispatch keyPress");
 
 var press2 = false;
 $("testKeyEvent2").focus();
-synthesizeKey("x", {});
+sendString("x");
 is($("testKeyEvent2").value, "", "synthesizeKey should respect keydown preventDefault");
 is(press2, false, "synthesizeKey should not dispatch keyPress with default prevented");
 

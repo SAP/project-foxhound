@@ -10,16 +10,16 @@
 #include "base/basictypes.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
+#  include <windows.h>
 #endif
 
 #if defined(OS_POSIX)
-#include <list>
-#include <utility>
-#include "base/condition_variable.h"
-#include "base/lock.h"
-#include "nsISupportsImpl.h"
-#include "nsAutoPtr.h"
+#  include <list>
+#  include <utility>
+#  include "base/condition_variable.h"
+#  include "base/lock.h"
+#  include "nsISupportsImpl.h"
+#  include "nsAutoPtr.h"
 #endif
 
 #include "base/message_loop.h"
@@ -137,9 +137,7 @@ class WaitableEvent {
    public:
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WaitableEventKernel)
     WaitableEventKernel(bool manual_reset, bool initially_signaled)
-        : manual_reset_(manual_reset),
-          signaled_(initially_signaled) {
-    }
+        : manual_reset_(manual_reset), signaled_(initially_signaled) {}
 
     bool Dequeue(Waiter* waiter, void* tag);
 
@@ -147,6 +145,7 @@ class WaitableEvent {
     const bool manual_reset_;
     bool signaled_;
     std::list<Waiter*> waiters_;
+
    protected:
     ~WaitableEventKernel() {}
   };
@@ -163,8 +162,8 @@ class WaitableEvent {
   // second element is the index of the WaitableEvent in the original,
   // unsorted, array.
   typedef std::pair<WaitableEvent*, size_t> WaiterAndIndex;
-  static size_t EnqueueMany(WaiterAndIndex* waitables,
-                            size_t count, Waiter* waiter);
+  static size_t EnqueueMany(WaiterAndIndex* waitables, size_t count,
+                            Waiter* waiter);
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(WaitableEvent);

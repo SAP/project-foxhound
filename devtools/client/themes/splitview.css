@@ -1,24 +1,24 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 .theme-dark {
-  --sidemenu-selected-arrow: url(images/itemArrow-dark-ltr.svg);
-  --sidemenu-selected-arrow-rtl: url(images/itemArrow-dark-rtl.svg);
+  --sidemenu-selected-arrow: url(images/item-arrow-dark-ltr.svg);
+  --sidemenu-selected-arrow-rtl: url(images/item-arrow-dark-rtl.svg);
 }
 .theme-light {
-  --sidemenu-selected-arrow: url(images/itemArrow-ltr.svg);
-  --sidemenu-selected-arrow-rtl: url(images/itemArrow-rtl.svg);
+  --sidemenu-selected-arrow: url(images/item-arrow-ltr.svg);
+  --sidemenu-selected-arrow-rtl: url(images/item-arrow-rtl.svg);
 }
 
-.splitview-nav-container .devtools-throbber {
-  display: none;
-  text-align: center;
-}
-
-.loading .splitview-nav-container .devtools-throbber {
-  display: block;
+/* Loading animation */
+@keyframes item-load {
+  0% {
+    transform: scaleY(0) translateY(-100%);
+  }
+  100% {
+    transform: none;
+  }
 }
 
 .splitview-nav {
@@ -29,11 +29,13 @@
 }
 
 .splitview-nav > li {
+  animation: item-load .5s var(--animation-curve);
   padding-inline-end: 8px;
   -moz-box-align: center;
   outline: 0;
   vertical-align: bottom;
   border-bottom: 1px solid rgba(128,128,128,0.15);
+  background: inherit;
 }
 
 .placeholder {

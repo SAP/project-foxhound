@@ -7,407 +7,284 @@
 #include "mozilla/BasePrincipal.h"
 
 #include "nsDocShell.h"
-#ifdef MOZ_CRASHREPORTER
-#include "nsExceptionHandler.h"
-#endif
-#include "nsIAddonPolicyService.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsIEffectiveTLDService.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "nsIStandardURL.h"
 
-#include "nsPrincipal.h"
+#include "ExpandedPrincipal.h"
 #include "nsNetUtil.h"
-#include "nsIURIWithPrincipal.h"
-#include "nsNullPrincipal.h"
+#include "nsContentUtils.h"
+#include "nsIURIWithSpecialOrigin.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
-
+#include "nsAboutProtocolUtils.h"
+#include "ThirdPartyUtil.h"
+#include "mozilla/ContentPrincipal.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/dom/CSPDictionariesBinding.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/URLSearchParams.h"
+
+#include "json/json.h"
+#include "nsSerializationHelper.h"
 
 namespace mozilla {
 
-using dom::URLParams;
+BasePrincipal::BasePrincipal(PrincipalKind aKind)
+    : mKind(aKind), mHasExplicitDomain(false), mInitialized(false) {}
 
-void
-PrincipalOriginAttributes::InheritFromDocShellToDoc(const DocShellOriginAttributes& aAttrs,
-                                                    const nsIURI* aURI)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-
-  // addonId is computed from the principal URI and never propagated
-  mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225349 - PrincipalOriginAttributes should inherit mSignedPkg
-  // accordingly by URI
-  mSignedPkg = aAttrs.mSignedPkg;
-
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-}
-
-void
-PrincipalOriginAttributes::InheritFromNecko(const NeckoOriginAttributes& aAttrs)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-
-  // addonId is computed from the principal URI and never propagated
-  mUserContextId = aAttrs.mUserContextId;
-  mSignedPkg = aAttrs.mSignedPkg;
-
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-}
-
-void
-DocShellOriginAttributes::InheritFromDocToChildDocShell(const PrincipalOriginAttributes& aAttrs)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-
-  // addonId is computed from the principal URI and never propagated
-  mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
-  mSignedPkg = aAttrs.mSignedPkg;
-
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-}
-
-void
-NeckoOriginAttributes::InheritFromDocToNecko(const PrincipalOriginAttributes& aAttrs)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-
-  // addonId is computed from the principal URI and never propagated
-  mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
-
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-}
-
-void
-NeckoOriginAttributes::InheritFromDocShellToNecko(const DocShellOriginAttributes& aAttrs,
-                                                  const bool aIsTopLevelDocument,
-                                                  nsIURI* aURI)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-
-  // addonId is computed from the principal URI and never propagated
-  mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
-
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-
-  bool isFirstPartyEnabled = IsFirstPartyEnabled();
-
-  // When the pref is on, we also compute the firstPartyDomain attribute
-  // if this is for top-level document.
-  if (isFirstPartyEnabled && aIsTopLevelDocument) {
-    nsCOMPtr<nsIEffectiveTLDService> tldService = do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
-    MOZ_ASSERT(tldService);
-    if (!tldService) {
-      return;
-    }
-
-    nsAutoCString baseDomain;
-    tldService->GetBaseDomain(aURI, 0, baseDomain);
-    mFirstPartyDomain = NS_ConvertUTF8toUTF16(baseDomain);
-  } else {
-    mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-  }
-}
-
-void
-OriginAttributes::CreateSuffix(nsACString& aStr) const
-{
-  UniquePtr<URLParams> params(new URLParams());
-  nsAutoString value;
-
-  //
-  // Important: While serializing any string-valued attributes, perform a
-  // release-mode assertion to make sure that they don't contain characters that
-  // will break the quota manager when it uses the serialization for file
-  // naming (see addonId below).
-  //
-
-  if (mAppId != nsIScriptSecurityManager::NO_APP_ID) {
-    value.AppendInt(mAppId);
-    params->Set(NS_LITERAL_STRING("appId"), value);
-  }
-
-  if (mInIsolatedMozBrowser) {
-    params->Set(NS_LITERAL_STRING("inBrowser"), NS_LITERAL_STRING("1"));
-  }
-
-  if (!mAddonId.IsEmpty()) {
-    if (mAddonId.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) != kNotFound) {
-#ifdef MOZ_CRASHREPORTER
-      CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("Crash_AddonId"),
-                                         NS_ConvertUTF16toUTF8(mAddonId));
-#endif
-      MOZ_CRASH();
-    }
-    params->Set(NS_LITERAL_STRING("addonId"), mAddonId);
-  }
-
-  if (mUserContextId != nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
-    value.Truncate();
-    value.AppendInt(mUserContextId);
-    params->Set(NS_LITERAL_STRING("userContextId"), value);
-  }
-
-  if (!mSignedPkg.IsEmpty()) {
-    MOZ_RELEASE_ASSERT(mSignedPkg.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
-    params->Set(NS_LITERAL_STRING("signedPkg"), mSignedPkg);
-  }
-
-  if (mPrivateBrowsingId) {
-    value.Truncate();
-    value.AppendInt(mPrivateBrowsingId);
-    params->Set(NS_LITERAL_STRING("privateBrowsingId"), value);
-  }
-
-  if (!mFirstPartyDomain.IsEmpty()) {
-    MOZ_RELEASE_ASSERT(mFirstPartyDomain.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
-    params->Set(NS_LITERAL_STRING("firstPartyDomain"), mFirstPartyDomain);
-  }
-
-  aStr.Truncate();
-
-  params->Serialize(value);
-  if (!value.IsEmpty()) {
-    aStr.AppendLiteral("^");
-    aStr.Append(NS_ConvertUTF16toUTF8(value));
-  }
-
-// In debug builds, check the whole string for illegal characters too (just in case).
-#ifdef DEBUG
-  nsAutoCString str;
-  str.Assign(aStr);
-  MOZ_ASSERT(str.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
-#endif
-}
-
-void
-OriginAttributes::CreateAnonymizedSuffix(nsACString& aStr) const
-{
-  OriginAttributes attrs = *this;
-
-  if (!attrs.mFirstPartyDomain.IsEmpty()) {
-    attrs.mFirstPartyDomain.AssignLiteral("_anonymizedFirstPartyDomain_");
-  }
-
-  attrs.CreateSuffix(aStr);
-}
-
-namespace {
-
-class MOZ_STACK_CLASS PopulateFromSuffixIterator final
-  : public URLParams::ForEachIterator
-{
-public:
-  explicit PopulateFromSuffixIterator(OriginAttributes* aOriginAttributes)
-    : mOriginAttributes(aOriginAttributes)
-  {
-    MOZ_ASSERT(aOriginAttributes);
-    // If mPrivateBrowsingId is passed in as >0 and is not present in the suffix,
-    // then it will remain >0 when it should be 0 according to the suffix. Set to 0 before
-    // iterating to fix this.
-    mOriginAttributes->mPrivateBrowsingId = 0;
-  }
-
-  bool URLParamsIterator(const nsString& aName,
-                         const nsString& aValue) override
-  {
-    if (aName.EqualsLiteral("appId")) {
-      nsresult rv;
-      int64_t val  = aValue.ToInteger64(&rv);
-      NS_ENSURE_SUCCESS(rv, false);
-      NS_ENSURE_TRUE(val <= UINT32_MAX, false);
-      mOriginAttributes->mAppId = static_cast<uint32_t>(val);
-
-      return true;
-    }
-
-    if (aName.EqualsLiteral("inBrowser")) {
-      if (!aValue.EqualsLiteral("1")) {
-        return false;
-      }
-
-      mOriginAttributes->mInIsolatedMozBrowser = true;
-      return true;
-    }
-
-    if (aName.EqualsLiteral("addonId")) {
-      MOZ_RELEASE_ASSERT(mOriginAttributes->mAddonId.IsEmpty());
-      mOriginAttributes->mAddonId.Assign(aValue);
-      return true;
-    }
-
-    if (aName.EqualsLiteral("userContextId")) {
-      nsresult rv;
-      int64_t val  = aValue.ToInteger64(&rv);
-      NS_ENSURE_SUCCESS(rv, false);
-      NS_ENSURE_TRUE(val <= UINT32_MAX, false);
-      mOriginAttributes->mUserContextId  = static_cast<uint32_t>(val);
-
-      return true;
-    }
-
-    if (aName.EqualsLiteral("signedPkg")) {
-      MOZ_RELEASE_ASSERT(mOriginAttributes->mSignedPkg.IsEmpty());
-      mOriginAttributes->mSignedPkg.Assign(aValue);
-      return true;
-    }
-
-    if (aName.EqualsLiteral("privateBrowsingId")) {
-      nsresult rv;
-      int64_t val = aValue.ToInteger64(&rv);
-      NS_ENSURE_SUCCESS(rv, false);
-      NS_ENSURE_TRUE(val >= 0 && val <= UINT32_MAX, false);
-      mOriginAttributes->mPrivateBrowsingId = static_cast<uint32_t>(val);
-
-      return true;
-    }
-
-    if (aName.EqualsLiteral("firstPartyDomain")) {
-      MOZ_RELEASE_ASSERT(mOriginAttributes->mFirstPartyDomain.IsEmpty());
-      mOriginAttributes->mFirstPartyDomain.Assign(aValue);
-      return true;
-    }
-
-    // No other attributes are supported.
-    return false;
-  }
-
-private:
-  OriginAttributes* mOriginAttributes;
-};
-
-} // namespace
-
-bool
-OriginAttributes::PopulateFromSuffix(const nsACString& aStr)
-{
-  if (aStr.IsEmpty()) {
-    return true;
-  }
-
-  if (aStr[0] != '^') {
-    return false;
-  }
-
-  UniquePtr<URLParams> params(new URLParams());
-  params->ParseInput(Substring(aStr, 1, aStr.Length() - 1));
-
-  PopulateFromSuffixIterator iterator(this);
-  return params->ForEach(iterator);
-}
-
-bool
-OriginAttributes::PopulateFromOrigin(const nsACString& aOrigin,
-                                     nsACString& aOriginNoSuffix)
-{
-  // RFindChar is only available on nsCString.
-  nsCString origin(aOrigin);
-  int32_t pos = origin.RFindChar('^');
-
-  if (pos == kNotFound) {
-    aOriginNoSuffix = origin;
-    return true;
-  }
-
-  aOriginNoSuffix = Substring(origin, 0, pos);
-  return PopulateFromSuffix(Substring(origin, pos));
-}
-
-void
-OriginAttributes::SyncAttributesWithPrivateBrowsing(bool aInPrivateBrowsing)
-{
-  mPrivateBrowsingId = aInPrivateBrowsing ? 1 : 0;
-}
-
-void
-OriginAttributes::SetFromGenericAttributes(const GenericOriginAttributes& aAttrs)
-{
-  mAppId = aAttrs.mAppId;
-  mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
-  mAddonId = aAttrs.mAddonId;
-  mUserContextId = aAttrs.mUserContextId;
-  mSignedPkg = aAttrs.mSignedPkg;
-  mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
-  mFirstPartyDomain = aAttrs.mFirstPartyDomain;
-}
-
-bool
-OriginAttributes::IsFirstPartyEnabled()
-{
-  // Cache the privacy.firstparty.isolate pref.
-  static bool sFirstPartyIsolation = false;
-  static bool sCachedFirstPartyPref = false;
-  if (!sCachedFirstPartyPref) {
-    sCachedFirstPartyPref = true;
-    Preferences::AddBoolVarCache(&sFirstPartyIsolation, "privacy.firstparty.isolate");
-  }
-
-  return sFirstPartyIsolation;
-}
-
-BasePrincipal::BasePrincipal()
-{}
-
-BasePrincipal::~BasePrincipal()
-{}
+BasePrincipal::~BasePrincipal() {}
 
 NS_IMETHODIMP
-BasePrincipal::GetOrigin(nsACString& aOrigin)
-{
-  nsresult rv = GetOriginInternal(aOrigin);
+BasePrincipal::GetOrigin(nsACString& aOrigin) {
+  MOZ_ASSERT(mInitialized);
+
+  nsresult rv = GetOriginNoSuffix(aOrigin);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString suffix;
-  mOriginAttributes.CreateSuffix(suffix);
+  rv = GetOriginSuffix(suffix);
+  NS_ENSURE_SUCCESS(rv, rv);
   aOrigin.Append(suffix);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetOriginNoSuffix(nsACString& aOrigin)
-{
-  return GetOriginInternal(aOrigin);
+BasePrincipal::GetOriginNoSuffix(nsACString& aOrigin) {
+  MOZ_ASSERT(mInitialized);
+  mOriginNoSuffix->ToUTF8String(aOrigin);
+  return NS_OK;
 }
 
-bool
-BasePrincipal::Subsumes(nsIPrincipal* aOther, DocumentDomainConsideration aConsideration)
-{
+NS_IMETHODIMP
+BasePrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
+  MOZ_ASSERT(mInitialized);
+  return GetOrigin(aSiteOrigin);
+}
+
+// Returns the inner Json::value of the serialized principal
+// Example input and return values:
+// Null principal:
+// {"0":{"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}} ->
+// {"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}
+//
+// Content principal:
+// {"1":{"0":"https://mozilla.com"}} -> {"0":"https://mozilla.com"}
+//
+// Expanded principal:
+// {"2":{"0":"<base64principal1>,<base64principal2>"}} ->
+// {"0":"<base64principal1>,<base64principal2>"}
+//
+// System principal:
+// {"3":{}} -> {}
+// The aKey passed in also returns the corresponding PrincipalKind enum
+//
+// Warning: The Json::Value* pointer is into the aRoot object
+static const Json::Value* GetPrincipalObject(const Json::Value& aRoot,
+                                             int& aOutPrincipalKind) {
+  const Json::Value::Members members = aRoot.getMemberNames();
+  // We only support one top level key in the object
+  if (members.size() != 1) {
+    return nullptr;
+  }
+  // members[0] here is the "0", "1", "2", "3" principalKind
+  // that is the top level of the serialized JSON principal
+  const std::string stringPrincipalKind = members[0];
+
+  // Next we take the string value from the JSON
+  // and convert it into the int for the BasePrincipal::PrincipalKind enum
+
+  // Verify that the key is within the valid range
+  int principalKind = std::stoi(stringPrincipalKind);
+  MOZ_ASSERT(BasePrincipal::eNullPrincipal == 0,
+             "We need to rely on 0 being a bounds check for the first "
+             "principal kind.");
+  if (principalKind < 0 || principalKind > BasePrincipal::eKindMax) {
+    return nullptr;
+  }
+  MOZ_ASSERT(principalKind == BasePrincipal::eNullPrincipal ||
+             principalKind == BasePrincipal::eContentPrincipal ||
+             principalKind == BasePrincipal::eExpandedPrincipal ||
+             principalKind == BasePrincipal::eSystemPrincipal);
+  aOutPrincipalKind = principalKind;
+
+  if (!aRoot[stringPrincipalKind].isObject()) {
+    return nullptr;
+  }
+
+  // Return the inner value of the principal object
+  return &aRoot[stringPrincipalKind];
+}
+
+// Accepts the JSON inner object without the wrapping principalKind
+// (See GetPrincipalObject for the inner object response examples)
+// Creates an array of KeyVal objects that are all defined on the principal
+// Each principal type (null, content, expanded) has a KeyVal that stores the
+// fields of the JSON
+//
+// This simplifies deserializing elsewhere as we do the checking for presence
+// and string values here for the complete set of serializable keys that the
+// corresponding principal supports.
+//
+// The KeyVal object has the following fields:
+// - valueWasSerialized: is true if the deserialized JSON contained a string
+// value
+// - value: The string that was serialized for this key
+// - key: an SerializableKeys enum value specific to the principal.
+//        For example content principal is an enum of: eURI, eDomain,
+//        eSuffix, eCSP
+//
+//
+//  Given an inner content principal:
+//  {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}
+//    |                |          |         |
+//    -----------------------------         |
+//         |           |                    |
+//        Key          ----------------------
+//                                |
+//                              Value
+//
+// They Key "0" corresponds to ContentPrincipal::eURI
+// They Key "1" corresponds to ContentPrincipal::eSuffix
+template <typename T>
+static nsTArray<typename T::KeyVal> GetJSONKeys(const Json::Value* aInput) {
+  int size = T::eMax + 1;
+  nsTArray<typename T::KeyVal> fields;
+  for (int i = 0; i != size; i++) {
+    typename T::KeyVal field;
+    // field.valueWasSerialized returns if the field was found in the
+    // deserialized code. This simplifies the consumers from having to check
+    // length.
+    field.valueWasSerialized = false;
+    field.key = static_cast<typename T::SerializableKeys>(i);
+    const std::string key = std::to_string(field.key);
+    if (aInput->isMember(key) && (*aInput)[key].isString()) {
+      field.value.Append(nsDependentCString((*aInput)[key].asCString()));
+      field.valueWasSerialized = true;
+    }
+    fields.AppendElement(field);
+  }
+  return fields;
+}
+
+// Takes a JSON string and parses it turning it into a principal of the
+// corresponding type
+//
+// Given a content principal:
+//
+//                               inner JSON object
+//                                      |
+//       ---------------------------------------------------------
+//       |                                                       |
+// {"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}
+//   |     |             |             |            |
+//   |     -----------------------------            |
+//   |              |    |                          |
+// PrincipalKind    |    |                          |
+//                  |    ----------------------------
+//           SerializableKeys           |
+//                                    Value
+//
+// The string is first deserialized with jsoncpp to get the Json::Value of the
+// object. The inner JSON object is parsed with GetPrincipalObject which returns
+// a KeyVal array of the inner object's fields. PrincipalKind is returned by
+// GetPrincipalObject which is then used to decide which principal
+// implementation of FromProperties to call. The corresponding FromProperties
+// call takes the KeyVal fields and turns it into a principal.
+already_AddRefed<BasePrincipal> BasePrincipal::FromJSON(
+    const nsACString& aJSON) {
+  Json::Value root;
+  Json::CharReaderBuilder builder;
+  std::unique_ptr<Json::CharReader> const reader(builder.newCharReader());
+  bool parseSuccess =
+      reader->parse(aJSON.BeginReading(), aJSON.EndReading(), &root, nullptr);
+  if (!parseSuccess) {
+    MOZ_ASSERT(false,
+               "Unable to parse string as JSON to deserialize as a principal");
+    return nullptr;
+  }
+
+  int principalKind = -1;
+  const Json::Value* value = GetPrincipalObject(root, principalKind);
+  if (!value) {
+#ifdef DEBUG
+    fprintf(stderr, "Unexpected JSON principal %s\n",
+            root.toStyledString().c_str());
+#endif
+    MOZ_ASSERT(false, "Unexpected JSON to deserialize as a principal");
+
+    return nullptr;
+  }
+  MOZ_ASSERT(principalKind != -1,
+             "PrincipalKind should always be >=0 by this point");
+
+  if (principalKind == eSystemPrincipal) {
+    RefPtr<BasePrincipal> principal =
+        BasePrincipal::Cast(nsContentUtils::GetSystemPrincipal());
+    return principal.forget();
+  }
+
+  if (principalKind == eNullPrincipal) {
+    nsTArray<NullPrincipal::KeyVal> res = GetJSONKeys<NullPrincipal>(value);
+    return NullPrincipal::FromProperties(res);
+  }
+
+  if (principalKind == eContentPrincipal) {
+    nsTArray<ContentPrincipal::KeyVal> res =
+        GetJSONKeys<ContentPrincipal>(value);
+    return ContentPrincipal::FromProperties(res);
+  }
+
+  if (principalKind == eExpandedPrincipal) {
+    nsTArray<ExpandedPrincipal::KeyVal> res =
+        GetJSONKeys<ExpandedPrincipal>(value);
+    return ExpandedPrincipal::FromProperties(res);
+  }
+
+  MOZ_RELEASE_ASSERT(false, "Unexpected enum to deserialize as a principal");
+}
+
+nsresult BasePrincipal::PopulateJSONObject(Json::Value& aObject) {
+  return NS_OK;
+}
+
+// Returns a JSON representation of the principal.
+// Calling BasePrincipal::FromJSON will deserialize the JSON into
+// the corresponding principal type.
+nsresult BasePrincipal::ToJSON(nsACString& aResult) {
+  MOZ_ASSERT(aResult.IsEmpty(), "ToJSON only supports an empty result input");
+  aResult.Truncate();
+
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "";
+  Json::Value innerJSONObject = Json::objectValue;
+
+  nsresult rv = PopulateJSONObject(innerJSONObject);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  Json::Value root = Json::objectValue;
+  std::string key = std::to_string(Kind());
+  root[key] = innerJSONObject;
+  std::string result = Json::writeString(builder, root);
+  aResult.Append(result);
+  if (aResult.Length() == 0) {
+    MOZ_ASSERT(false, "JSON writer failed to output a principal serialization");
+    return NS_ERROR_UNEXPECTED;
+  }
+  return NS_OK;
+}
+
+bool BasePrincipal::Subsumes(nsIPrincipal* aOther,
+                             DocumentDomainConsideration aConsideration) {
   MOZ_ASSERT(aOther);
+  MOZ_ASSERT_IF(Kind() == eContentPrincipal, mOriginSuffix);
 
   // Expanded principals handle origin attributes for each of their
   // sub-principals individually, null principals do only simple checks for
   // pointer equality, and system principals are immune to origin attributes
-  // checks, so only do this check for codebase principals.
-  if (Kind() == eCodebasePrincipal &&
-      OriginAttributesRef() != Cast(aOther)->OriginAttributesRef()) {
+  // checks, so only do this check for content principals.
+  if (Kind() == eContentPrincipal &&
+      mOriginSuffix != Cast(aOther)->mOriginSuffix) {
     return false;
   }
 
@@ -415,58 +292,56 @@ BasePrincipal::Subsumes(nsIPrincipal* aOther, DocumentDomainConsideration aConsi
 }
 
 NS_IMETHODIMP
-BasePrincipal::Equals(nsIPrincipal *aOther, bool *aResult)
-{
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
-  *aResult = Subsumes(aOther, DontConsiderDocumentDomain) &&
-             Cast(aOther)->Subsumes(this, DontConsiderDocumentDomain);
+BasePrincipal::Equals(nsIPrincipal* aOther, bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aOther);
+
+  *aResult = FastEquals(aOther);
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::EqualsConsideringDomain(nsIPrincipal *aOther, bool *aResult)
-{
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
-  *aResult = Subsumes(aOther, ConsiderDocumentDomain) &&
-             Cast(aOther)->Subsumes(this, ConsiderDocumentDomain);
-  return NS_OK;
-}
+BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aOther);
 
-bool
-BasePrincipal::EqualsIgnoringAddonId(nsIPrincipal *aOther)
-{
-  MOZ_ASSERT(aOther);
+  *aResult = FastEqualsConsideringDomain(aOther);
 
-  // Note that this will not work for expanded principals, nor is it intended
-  // to.
-  if (!dom::ChromeUtils::IsOriginAttributesEqualIgnoringAddonId(
-          OriginAttributesRef(), Cast(aOther)->OriginAttributesRef())) {
-    return false;
-  }
-
-  return SubsumesInternal(aOther, DontConsiderDocumentDomain) &&
-         Cast(aOther)->SubsumesInternal(this, DontConsiderDocumentDomain);
-}
-
-NS_IMETHODIMP
-BasePrincipal::Subsumes(nsIPrincipal *aOther, bool *aResult)
-{
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
-  *aResult = Subsumes(aOther, DontConsiderDocumentDomain);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::SubsumesConsideringDomain(nsIPrincipal *aOther, bool *aResult)
-{
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
-  *aResult = Subsumes(aOther, ConsiderDocumentDomain);
+BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aOther);
+
+  *aResult = FastSubsumes(aOther);
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPrincipal)
-{
+BasePrincipal::SubsumesConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aOther);
+
+  *aResult = FastSubsumesConsideringDomain(aOther);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
+                                                    bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aOther);
+
+  *aResult = FastSubsumesConsideringDomainIgnoringFPD(aOther);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
+                            bool aAllowIfInheritsPrincipal) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
   // Check the internal method first, which allows us to quickly approve loads
   // for the System Principal.
   if (MayLoadInternal(aURI)) {
@@ -478,7 +353,8 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPri
     // If the caller specified to allow loads of URIs that inherit
     // our principal, allow the load if this URI inherits its principal.
     bool doesInheritSecurityContext;
-    rv = NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
+    rv = NS_URIChainHasFlags(aURI,
+                             nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
                              &doesInheritSecurityContext);
     if (NS_SUCCEEDED(rv) && doesInheritSecurityContext) {
       return NS_OK;
@@ -486,7 +362,8 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPri
   }
 
   bool fetchableByAnyone;
-  rv = NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_FETCHABLE_BY_ANYONE, &fetchableByAnyone);
+  rv = NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_FETCHABLE_BY_ANYONE,
+                           &fetchableByAnyone);
   if (NS_SUCCEEDED(rv) && fetchableByAnyone) {
     return NS_OK;
   }
@@ -495,7 +372,9 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPri
     nsCOMPtr<nsIURI> prinURI;
     rv = GetURI(getter_AddRefs(prinURI));
     if (NS_SUCCEEDED(rv) && prinURI) {
-      nsScriptSecurityManager::ReportError(nullptr, NS_LITERAL_STRING("CheckSameOriginError"), prinURI, aURI);
+      nsScriptSecurityManager::ReportError(
+          "CheckSameOriginError", prinURI, aURI,
+          mOriginAttributes.mPrivateBrowsingId > 0);
     }
   }
 
@@ -503,116 +382,94 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport, bool aAllowIfInheritsPri
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetCsp(nsIContentSecurityPolicy** aCsp)
-{
-  NS_IF_ADDREF(*aCsp = mCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsureCSP(nsIDOMDocument* aDocument,
-                         nsIContentSecurityPolicy** aCSP)
-{
-  if (mCSP) {
-    // if there is a CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aCSP = mCSP);
+BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
+  *aRes = true;
+  // If we do not have a URI its always 3rd party.
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
     return NS_OK;
   }
-
-  nsresult rv = NS_OK;
-  mCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mCSP->SetRequestContext(aDocument, nullptr)
-                 : mCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aCSP = mCSP);
-  return NS_OK;
+  ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+  return thirdPartyUtil->IsThirdPartyURI(prinURI, aURI, aRes);
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP)
-{
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsurePreloadCSP(nsIDOMDocument* aDocument,
-                                nsIContentSecurityPolicy** aPreloadCSP)
-{
-  if (mPreloadCSP) {
-    // if there is a speculative CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
+BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
+  *aRes = true;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
     return NS_OK;
   }
-
-  nsresult rv = NS_OK;
-  mPreloadCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mPreloadCSP->SetRequestContext(aDocument, nullptr)
-                 : mPreloadCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
+  return aPrin->IsThirdPartyURI(prinURI, aRes);
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetCspJSON(nsAString& outCSPinJSON)
-{
-  outCSPinJSON.Truncate();
-  dom::CSPPolicies jsonPolicies;
-
-  if (!mCSP) {
-    jsonPolicies.ToJSON(outCSPinJSON);
-    return NS_OK;
-  }
-  return mCSP->ToJSON(outCSPinJSON);
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetIsNullPrincipal(bool* aResult)
-{
+BasePrincipal::GetIsNullPrincipal(bool* aResult) {
   *aResult = Kind() == eNullPrincipal;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetIsCodebasePrincipal(bool* aResult)
-{
-  *aResult = Kind() == eCodebasePrincipal;
+BasePrincipal::GetIsContentPrincipal(bool* aResult) {
+  *aResult = Kind() == eContentPrincipal;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetIsExpandedPrincipal(bool* aResult)
-{
+BasePrincipal::GetIsExpandedPrincipal(bool* aResult) {
   *aResult = Kind() == eExpandedPrincipal;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetIsSystemPrincipal(bool* aResult)
-{
-  *aResult = Kind() == eSystemPrincipal;
+BasePrincipal::GetIsSystemPrincipal(bool* aResult) {
+  *aResult = IsSystemPrincipal();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetJarPrefix(nsACString& aJarPrefix)
-{
-  mozilla::GetJarPrefix(mOriginAttributes.mAppId, mOriginAttributes.mInIsolatedMozBrowser, aJarPrefix);
+BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
+  *aResult = AddonPolicy() || ContentScriptAddonPolicy();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetOriginAttributes(JSContext* aCx, JS::MutableHandle<JS::Value> aVal)
-{
+BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
+  *aResult = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  *aResult = prinURI->SchemeIs(aScheme);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetAboutModuleFlags(uint32_t* flags) {
+  *flags = 0;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (!prinURI->SchemeIs("about")) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIAboutModule> aboutModule;
+  rv = NS_GetAboutModule(prinURI, getter_AddRefs(aboutModule));
+  if (NS_FAILED(rv) || !aboutModule) {
+    return rv;
+  }
+  return aboutModule->GetURIFlags(prinURI, flags);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetOriginAttributes(JSContext* aCx,
+                                   JS::MutableHandle<JS::Value> aVal) {
   if (NS_WARN_IF(!ToJSValue(aCx, mOriginAttributes, aVal))) {
     return NS_ERROR_FAILURE;
   }
@@ -620,131 +477,134 @@ BasePrincipal::GetOriginAttributes(JSContext* aCx, JS::MutableHandle<JS::Value> 
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetOriginSuffix(nsACString& aOriginAttributes)
-{
-  mOriginAttributes.CreateSuffix(aOriginAttributes);
+BasePrincipal::GetOriginSuffix(nsACString& aOriginAttributes) {
+  MOZ_ASSERT(mOriginSuffix);
+  mOriginSuffix->ToUTF8String(aOriginAttributes);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetAppStatus(uint16_t* aAppStatus)
-{
-  if (AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-    NS_WARNING("Asking for app status on a principal with an unknown app id");
-    *aAppStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
-    return NS_OK;
-  }
-
-  *aAppStatus = nsScriptSecurityManager::AppStatusForPrincipal(this);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetAppId(uint32_t* aAppId)
-{
-  if (AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-    MOZ_ASSERT(false);
-    *aAppId = nsIScriptSecurityManager::NO_APP_ID;
-    return NS_OK;
-  }
-
-  *aAppId = AppId();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetAddonId(nsAString& aAddonId)
-{
-  aAddonId.Assign(mOriginAttributes.mAddonId);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetUserContextId(uint32_t* aUserContextId)
-{
+BasePrincipal::GetUserContextId(uint32_t* aUserContextId) {
   *aUserContextId = UserContextId();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId)
-{
+BasePrincipal::GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId) {
   *aPrivateBrowsingId = PrivateBrowsingId();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetIsInIsolatedMozBrowserElement(bool* aIsInIsolatedMozBrowserElement)
-{
+BasePrincipal::GetIsInIsolatedMozBrowserElement(
+    bool* aIsInIsolatedMozBrowserElement) {
   *aIsInIsolatedMozBrowserElement = IsInIsolatedMozBrowserElement();
   return NS_OK;
 }
 
-NS_IMETHODIMP
-BasePrincipal::GetUnknownAppId(bool* aUnknownAppId)
-{
-  *aUnknownAppId = AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID;
+nsresult BasePrincipal::GetAddonPolicy(nsISupports** aResult) {
+  RefPtr<extensions::WebExtensionPolicy> policy(AddonPolicy());
+  policy.forget(aResult);
   return NS_OK;
 }
 
-bool
-BasePrincipal::AddonHasPermission(const nsAString& aPerm)
-{
-  if (mOriginAttributes.mAddonId.IsEmpty()) {
-    return false;
+extensions::WebExtensionPolicy* BasePrincipal::AddonPolicy() {
+  if (Is<ContentPrincipal>()) {
+    return As<ContentPrincipal>()->AddonPolicy();
   }
-  nsCOMPtr<nsIAddonPolicyService> aps =
-    do_GetService("@mozilla.org/addons/policy-service;1");
-  NS_ENSURE_TRUE(aps, false);
-
-  bool retval = false;
-  nsresult rv = aps->AddonHasPermission(mOriginAttributes.mAddonId, aPerm, &retval);
-  NS_ENSURE_SUCCESS(rv, false);
-  return retval;
+  return nullptr;
 }
 
-already_AddRefed<BasePrincipal>
-BasePrincipal::CreateCodebasePrincipal(nsIURI* aURI, const PrincipalOriginAttributes& aAttrs)
-{
+bool BasePrincipal::AddonHasPermission(const nsAtom* aPerm) {
+  if (auto policy = AddonPolicy()) {
+    return policy->HasPermission(aPerm);
+  }
+  return false;
+}
+
+nsIPrincipal* BasePrincipal::PrincipalToInherit(nsIURI* aRequestedURI) {
+  if (Is<ExpandedPrincipal>()) {
+    return As<ExpandedPrincipal>()->PrincipalToInherit(aRequestedURI);
+  }
+  return this;
+}
+
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
+    nsIURI* aURI, const OriginAttributes& aAttrs) {
+  MOZ_ASSERT(aURI);
+
+  nsAutoCString originNoSuffix;
+  nsresult rv =
+      ContentPrincipal::GenerateOriginNoSuffixFromURI(aURI, originNoSuffix);
+  if (NS_FAILED(rv)) {
+    // If the generation of the origin fails, we still want to have a valid
+    // principal. Better to return a null principal here.
+    return NullPrincipal::Create(aAttrs);
+  }
+
+  return CreateContentPrincipal(aURI, aAttrs, originNoSuffix);
+}
+
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
+    nsIURI* aURI, const OriginAttributes& aAttrs,
+    const nsACString& aOriginNoSuffix) {
+  MOZ_ASSERT(aURI);
+  MOZ_ASSERT(!aOriginNoSuffix.IsEmpty());
+
   // If the URI is supposed to inherit the security context of whoever loads it,
-  // we shouldn't make a codebase principal for it.
+  // we shouldn't make a content principal for it.
   bool inheritsPrincipal;
-  nsresult rv = NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
-                                    &inheritsPrincipal);
+  nsresult rv = NS_URIChainHasFlags(
+      aURI, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
+      &inheritsPrincipal);
   if (NS_FAILED(rv) || inheritsPrincipal) {
-    return nsNullPrincipal::Create(aAttrs);
+    return NullPrincipal::Create(aAttrs);
   }
 
   // Check whether the URI knows what its principal is supposed to be.
-  nsCOMPtr<nsIURIWithPrincipal> uriPrinc = do_QueryInterface(aURI);
-  if (uriPrinc) {
-    nsCOMPtr<nsIPrincipal> principal;
-    uriPrinc->GetPrincipal(getter_AddRefs(principal));
-    if (!principal) {
-      return nsNullPrincipal::Create(aAttrs);
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+  nsCOMPtr<nsIURIWithSpecialOrigin> uriWithSpecialOrigin =
+      do_QueryInterface(aURI);
+  if (uriWithSpecialOrigin) {
+    nsCOMPtr<nsIURI> origin;
+    rv = uriWithSpecialOrigin->GetOrigin(getter_AddRefs(origin));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nullptr;
     }
-    RefPtr<BasePrincipal> concrete = Cast(principal);
-    return concrete.forget();
+    MOZ_ASSERT(origin);
+    OriginAttributes attrs;
+    RefPtr<BasePrincipal> principal = CreateContentPrincipal(origin, attrs);
+    return principal.forget();
+  }
+#endif
+
+  nsCOMPtr<nsIPrincipal> blobPrincipal;
+  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
+          aURI, getter_AddRefs(blobPrincipal))) {
+    MOZ_ASSERT(blobPrincipal);
+    RefPtr<BasePrincipal> principal = Cast(blobPrincipal);
+    return principal.forget();
   }
 
-  // Mint a codebase principal.
-  RefPtr<nsPrincipal> codebase = new nsPrincipal();
-  rv = codebase->Init(aURI, aAttrs);
+  // Mint a content principal.
+  RefPtr<ContentPrincipal> principal = new ContentPrincipal();
+  rv = principal->Init(aURI, aAttrs, aOriginNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
-  return codebase.forget();
+  return principal.forget();
 }
 
-already_AddRefed<BasePrincipal>
-BasePrincipal::CreateCodebasePrincipal(const nsACString& aOrigin)
-{
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
+    const nsACString& aOrigin) {
   MOZ_ASSERT(!StringBeginsWith(aOrigin, NS_LITERAL_CSTRING("[")),
-             "CreateCodebasePrincipal does not support System and Expanded principals");
+             "CreateContentPrincipal does not support System and Expanded "
+             "principals");
 
-  MOZ_ASSERT(!StringBeginsWith(aOrigin, NS_LITERAL_CSTRING(NS_NULLPRINCIPAL_SCHEME ":")),
-             "CreateCodebasePrincipal does not support nsNullPrincipal");
+  MOZ_ASSERT(!StringBeginsWith(aOrigin,
+                               NS_LITERAL_CSTRING(NS_NULLPRINCIPAL_SCHEME ":")),
+             "CreateContentPrincipal does not support NullPrincipal");
 
   nsAutoCString originNoSuffix;
-  mozilla::PrincipalOriginAttributes attrs;
+  OriginAttributes attrs;
   if (!attrs.PopulateFromOrigin(aOrigin, originNoSuffix)) {
     return nullptr;
   }
@@ -753,22 +613,85 @@ BasePrincipal::CreateCodebasePrincipal(const nsACString& aOrigin)
   nsresult rv = NS_NewURI(getter_AddRefs(uri), originNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  return BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+  return BasePrincipal::CreateContentPrincipal(uri, attrs);
 }
 
-bool
-BasePrincipal::AddonAllowsLoad(nsIURI* aURI)
-{
-  if (mOriginAttributes.mAddonId.IsEmpty()) {
-    return false;
+already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
+    const OriginAttributes& aOriginAttributes) {
+  if (NS_WARN_IF(!IsContentPrincipal())) {
+    return nullptr;
   }
 
-  nsCOMPtr<nsIAddonPolicyService> aps = do_GetService("@mozilla.org/addons/policy-service;1");
-  NS_ENSURE_TRUE(aps, false);
+  nsAutoCString originNoSuffix;
+  nsresult rv = GetOriginNoSuffix(originNoSuffix);
+  NS_ENSURE_SUCCESS(rv, nullptr);
 
-  bool allowed = false;
-  nsresult rv = aps->AddonMayLoadURI(mOriginAttributes.mAddonId, aURI, &allowed);
-  return NS_SUCCEEDED(rv) && allowed;
+  nsIURI* uri = static_cast<ContentPrincipal*>(this)->mURI;
+  RefPtr<ContentPrincipal> copy = new ContentPrincipal();
+  rv = copy->Init(uri, aOriginAttributes, originNoSuffix);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+
+  return copy.forget();
 }
 
-} // namespace mozilla
+extensions::WebExtensionPolicy* BasePrincipal::ContentScriptAddonPolicy() {
+  if (!Is<ExpandedPrincipal>()) {
+    return nullptr;
+  }
+
+  auto expanded = As<ExpandedPrincipal>();
+  for (auto& prin : expanded->AllowList()) {
+    if (auto policy = BasePrincipal::Cast(prin)->AddonPolicy()) {
+      return policy;
+    }
+  }
+
+  return nullptr;
+}
+
+bool BasePrincipal::AddonAllowsLoad(nsIURI* aURI,
+                                    bool aExplicit /* = false */) {
+  if (Is<ExpandedPrincipal>()) {
+    return As<ExpandedPrincipal>()->AddonAllowsLoad(aURI, aExplicit);
+  }
+  if (auto policy = AddonPolicy()) {
+    return policy->CanAccessURI(aURI, aExplicit);
+  }
+  return false;
+}
+
+void BasePrincipal::FinishInit(const nsACString& aOriginNoSuffix,
+                               const OriginAttributes& aOriginAttributes) {
+  mInitialized = true;
+  mOriginAttributes = aOriginAttributes;
+
+  // First compute the origin suffix since it's infallible.
+  nsAutoCString originSuffix;
+  mOriginAttributes.CreateSuffix(originSuffix);
+  mOriginSuffix = NS_Atomize(originSuffix);
+
+  MOZ_ASSERT(!aOriginNoSuffix.IsEmpty());
+  mOriginNoSuffix = NS_Atomize(aOriginNoSuffix);
+}
+
+void BasePrincipal::FinishInit(BasePrincipal* aOther,
+                               const OriginAttributes& aOriginAttributes) {
+  mInitialized = true;
+  mOriginAttributes = aOriginAttributes;
+
+  // First compute the origin suffix since it's infallible.
+  nsAutoCString originSuffix;
+  mOriginAttributes.CreateSuffix(originSuffix);
+  mOriginSuffix = NS_Atomize(originSuffix);
+
+  mOriginNoSuffix = aOther->mOriginNoSuffix;
+  mHasExplicitDomain = aOther->mHasExplicitDomain;
+}
+
+bool SiteIdentifier::Equals(const SiteIdentifier& aOther) const {
+  MOZ_ASSERT(IsInitialized());
+  MOZ_ASSERT(aOther.IsInitialized());
+  return mPrincipal->FastEquals(aOther.mPrincipal);
+}
+
+}  // namespace mozilla

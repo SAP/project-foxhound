@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Test for Bug 743198</title>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
 </head>
 <body>
   <div id="fullscreen"></div>
@@ -103,7 +103,7 @@ class TestCase {
         }
       };
       this.changeListeners("add", eventType, handleEvent);
-      actionCallback();
+      SimpleTest.waitForFocus(() => actionCallback());
     });
   }
 

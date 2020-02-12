@@ -13,12 +13,20 @@
  * notification through the global observer service.
  */
 
+%{C++
+#include "LiveResizeListener.h"
+#include "nsTArray.h"
+%}
+
 interface nsIDocShell;
 interface nsIDocShellTreeItem;
 interface nsIXULBrowserWindow;
-interface nsITabParent;
+interface nsIRemoteTab;
+interface mozIDOMWindowProxy;
 
-[scriptable, uuid(d6d7a014-e28d-4c9d-8727-1cf6d870619b)]
+native LiveResizeListenerArray(nsTArray<RefPtr<mozilla::LiveResizeListener>>);
+
+[builtinclass, scriptable, uuid(d6d7a014-e28d-4c9d-8727-1cf6d870619b)]
 interface nsIXULWindow : nsISupports
 {
   /**
@@ -27,12 +35,12 @@ interface nsIXULWindow : nsISupports
   readonly attribute nsIDocShell docShell;
 
   /**
-   * Indicates if this window is instrinsically sized.	
+   * Indicates if this window is instrinsically sized.
    */
   attribute boolean intrinsicallySized;
 
   /**
-   * The primary content shell.  
+   * The primary content shell.
    *
    * Note that this is a docshell tree item and therefore can not be assured of
    * what object it is. It could be an editor, a docshell, or a browser object.
@@ -43,28 +51,27 @@ interface nsIXULWindow : nsISupports
 
   /**
    * In multiprocess case we may not have primaryContentShell but
-   * primaryTabParent.
+   * primaryRemoteTab.
    */
-  readonly attribute nsITabParent primaryTabParent;
+  readonly attribute nsIRemoteTab primaryRemoteTab;
 
-  void tabParentAdded(in nsITabParent aTab, in boolean aPrimary);
-  void tabParentRemoved(in nsITabParent aTab);
+  void remoteTabAdded(in nsIRemoteTab aTab, in boolean aPrimary);
+  void remoteTabRemoved(in nsIRemoteTab aTab);
 
-  /**
-   * The content shell specified by the supplied id.
-   *
-   * Note that this is a docshell tree item and therefore can not be assured of
-   * what object it is.  It could be an editor, a docshell, or a browser object.
-   * Or down the road any other object that supports being a DocShellTreeItem
-   * Query accordingly to determine the capabilities.
-   */
-  nsIDocShellTreeItem getContentShellById(in wstring ID);
+  [noscript,notxpcom] LiveResizeListenerArray getLiveResizeListeners();
 
   /**
    * Tell this window that it has picked up a child XUL window
    * @param aChild the child window being added
    */
   void addChildWindow(in nsIXULWindow aChild);
+
+  /**
+   * Returns the difference between the inner window size (client size) and the
+   * outer window size, in CSS pixels.
+   */
+  [infallible] readonly attribute unsigned long outerToInnerHeightDifferenceInCSSPixels;
+  [infallible] readonly attribute unsigned long outerToInnerWidthDifferenceInCSSPixels;
 
   /**
    * Tell this window that it has lost a child XUL window
@@ -94,6 +101,12 @@ interface nsIXULWindow : nsISupports
    */
   void showModal();
 
+  /**
+   * Locks the aspect ratio for a window.
+   * @param aShouldLock boolean
+   */
+  void lockAspectRatio(in bool aShouldLock);
+
   const unsigned long lowestZ = 0;
   const unsigned long loweredZ = 4;  /* "alwaysLowered" attribute */
   const unsigned long normalZ = 5;
@@ -101,11 +114,6 @@ interface nsIXULWindow : nsISupports
   const unsigned long highestZ = 9;
 
   attribute unsigned long zLevel;
-
-  /**
-   * contextFlags are from nsIWindowCreator2
-   */
-  attribute uint32_t contextFlags;
 
   attribute uint32_t chromeFlags;
 
@@ -118,22 +126,29 @@ interface nsIXULWindow : nsISupports
   /**
    * Create a new window.
    * @param aChromeFlags see nsIWebBrowserChrome
-   * @param aOpeningTab the TabParent that requested this new window be opened.
+   * @param aOpeningTab the RemoteTab that requested this new window be opened.
    *                    Can be left null.
+   * @param aOpener The window which is requesting that this new window be opened.
+   * @param aNextRemoteTabId The integer ID of the next remote tab actor to use.
+   *        0 means there is no next remote tab actor to use.
    * @return the newly minted window
    */
   nsIXULWindow createNewWindow(in int32_t aChromeFlags,
-                               in nsITabParent aOpeningTab);
+                               in nsIRemoteTab aOpeningTab,
+                               in mozIDOMWindowProxy aOpener,
+                               in unsigned long long aNextRemoteTabId);
 
   attribute nsIXULBrowserWindow XULBrowserWindow;
 
   /**
-   * Back-door method to force application of chrome flags at a particular
-   * time.  Do NOT call this unless you know what you're doing!  In particular,
+   * Back-door method to make sure some stuff is done when the document is
+   * ready for layout, that would cause expensive computation otherwise later.
+   *
+   * Do NOT call this unless you know what you're doing!  In particular,
    * calling this when this XUL window doesn't yet have a document in its
    * docshell could cause problems.
    */
-  [noscript] void applyChromeFlags();
+  [noscript] void beforeStartLayout();
 
   /**
    * Given the dimensions of some content area held within this
@@ -162,4 +177,11 @@ interface nsIXULWindow : nsISupports
                                                  in int32_t aDesiredHeight,
                                                  in int32_t shellItemWidth,
                                                  in int32_t shellItemHeight);
+
+  /**
+   * If the window was opened as a content window by script, this will return the
+   * integer ID of the next RemoteTab actor to use.
+   */
+  [noscript]
+  readonly attribute unsigned long long nextRemoteTabId;
 };

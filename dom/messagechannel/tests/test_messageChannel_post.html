@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=677638
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 677638 - port cloning</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=677638
     var a = new MessageChannel();
     ok(a, "MessageChannel created");
 
-    window.addEventListener('message', receiveMessage, false);
+    window.addEventListener('message', receiveMessage);
     function receiveMessage(evt) {
       if (evt.data.status == 'READY') {
         runTest();
@@ -33,7 +33,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=677638
     ok(div, "Parent exists");
 
     var ifr = document.createElement("iframe");
-    ifr.addEventListener("load", iframeLoaded, false);
+    ifr.addEventListener("load", iframeLoaded);
     ifr.setAttribute('src', "iframe_messageChannel_post.html");
     div.appendChild(ifr);
 

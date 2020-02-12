@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+var EXPORTED_SYMBOLS = ["CommonUtils"];
 
-this.EXPORTED_SYMBOLS = ["CommonUtils"];
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm")
-Cu.import("resource://gre/modules/Log.jsm");
-
-this.CommonUtils = {
+var CommonUtils = {
   /*
    * Set manipulation methods. These should be lifted into toolkit, or added to
    * `Set` itself.
@@ -21,7 +20,7 @@ this.CommonUtils = {
   /**
    * Return elements of `a` or `b`.
    */
-  union: function (a, b) {
+  union(a, b) {
     let out = new Set(a);
     for (let x of b) {
       out.add(x);
@@ -32,7 +31,7 @@ this.CommonUtils = {
   /**
    * Return elements of `a` that are not present in `b`.
    */
-  difference: function (a, b) {
+  difference(a, b) {
     let out = new Set(a);
     for (let x of b) {
       out.delete(x);
@@ -43,7 +42,7 @@ this.CommonUtils = {
   /**
    * Return elements of `a` that are also in `b`.
    */
-  intersection: function (a, b) {
+  intersection(a, b) {
     let out = new Set();
     for (let x of a) {
       if (b.has(x)) {
@@ -57,12 +56,29 @@ this.CommonUtils = {
    * Return true if `a` and `b` are the same size, and
    * every element of `a` is in `b`.
    */
-  setEqual: function (a, b) {
+  setEqual(a, b) {
     if (a.size != b.size) {
       return false;
     }
     for (let x of a) {
       if (!b.has(x)) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Checks elements in two arrays for equality, as determined by the `===`
+   * operator. This function does not perform a deep comparison; see Sync's
+   * `Util.deepEquals` for that.
+   */
+  arrayEqual(a, b) {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
         return false;
       }
     }
@@ -78,8 +94,10 @@ this.CommonUtils = {
    *        (bool) Whether to include padding characters (=). Defaults
    *        to true for historical reasons.
    */
-  encodeBase64URL: function encodeBase64URL(bytes, pad=true) {
-    let s = btoa(bytes).replace(/\+/g, "-").replace(/\//g, "_");
+  encodeBase64URL: function encodeBase64URL(bytes, pad = true) {
+    let s = btoa(bytes)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
 
     if (!pad) {
       return s.replace(/=+$/, "");
@@ -92,10 +110,11 @@ this.CommonUtils = {
    * Create a nsIURI instance from a string.
    */
   makeURI: function makeURI(URIString) {
-    if (!URIString)
+    if (!URIString) {
       return null;
+    }
     try {
-      return Services.io.newURI(URIString, null, null);
+      return Services.io.newURI(URIString);
     } catch (e) {
       let log = Log.repository.getLogger("Common.Utils");
       log.debug("Could not create URI", e);
@@ -115,34 +134,7 @@ this.CommonUtils = {
     if (thisObj) {
       callback = callback.bind(thisObj);
     }
-    Services.tm.currentThread.dispatch(callback, Ci.nsIThread.DISPATCH_NORMAL);
-  },
-
-  /**
-   * Return a promise resolving on some later tick.
-   *
-   * This a wrapper around Promise.resolve() that prevents stack
-   * accumulation and prevents callers from accidentally relying on
-   * same-tick promise resolution.
-   */
-  laterTickResolvingPromise: function (value, prototype) {
-    let deferred = Promise.defer(prototype);
-    this.nextTick(deferred.resolve.bind(deferred, value));
-    return deferred.promise;
-  },
-
-  /**
-   * Spin the event loop and return once the next tick is executed.
-   *
-   * This is an evil function and should not be used in production code. It
-   * exists in this module for ease-of-use.
-   */
-  waitForNextTick: function waitForNextTick() {
-    let cb = Async.makeSyncCallback();
-    this.nextTick(cb);
-    Async.waitForSyncCallback(cb);
-
-    return;
+    Services.tm.dispatchToMainThread(callback);
   },
 
   /**
@@ -152,17 +144,21 @@ this.CommonUtils = {
    */
   namedTimer: function namedTimer(callback, wait, thisObj, name) {
     if (!thisObj || !name) {
-      throw "You must provide both an object and a property name for the timer!";
+      throw new Error(
+        "You must provide both an object and a property name for the timer!"
+      );
     }
 
     // Delay an existing timer if it exists
     if (name in thisObj && thisObj[name] instanceof Ci.nsITimer) {
       thisObj[name].delay = wait;
-      return;
+      return thisObj[name];
     }
 
     // Create a special timer that we can add extra properties
-    let timer = Object.create(Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer));
+    let timer = Object.create(
+      Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer)
+    );
 
     // Provide an easy way to clear out the timer
     timer.clear = function() {
@@ -171,15 +167,19 @@ this.CommonUtils = {
     };
 
     // Initialize the timer with a smart callback
-    timer.initWithCallback({
-      notify: function notify() {
-        // Clear out the timer once it's been triggered
-        timer.clear();
-        callback.call(thisObj, timer);
-      }
-    }, wait, timer.TYPE_ONE_SHOT);
+    timer.initWithCallback(
+      {
+        notify: function notify() {
+          // Clear out the timer once it's been triggered
+          timer.clear();
+          callback.call(thisObj, timer);
+        },
+      },
+      wait,
+      timer.TYPE_ONE_SHOT
+    );
 
-    return thisObj[name] = timer;
+    return (thisObj[name] = timer);
   },
 
   encodeUTF8: function encodeUTF8(str) {
@@ -208,8 +208,40 @@ this.CommonUtils = {
     return Array.prototype.slice.call(bytesString).map(c => c.charCodeAt(0));
   },
 
+  // A lot of Util methods work with byte strings instead of ArrayBuffers.
+  // A patch should address this problem, but in the meantime let's provide
+  // helpers method to convert byte strings to Uint8Array.
+  byteStringToArrayBuffer(byteString) {
+    if (byteString === undefined) {
+      return new Uint8Array();
+    }
+    const bytes = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; ++i) {
+      bytes[i] = byteString.charCodeAt(i) & 0xff;
+    }
+    return bytes;
+  },
+
+  arrayBufferToByteString(buffer) {
+    return CommonUtils.byteArrayToString([...buffer]);
+  },
+
+  bufferToHex(buffer) {
+    return Array.prototype.map
+      .call(buffer, x => ("00" + x.toString(16)).slice(-2))
+      .join("");
+  },
+
   bytesAsHex: function bytesAsHex(bytes) {
-    return Array.prototype.slice.call(bytes).map(c => ("0" + c.charCodeAt(0).toString(16)).slice(-2)).join("");
+    let s = "";
+    for (let i = 0, len = bytes.length; i < len; i++) {
+      let c = (bytes[i].charCodeAt(0) & 0xff).toString(16);
+      if (c.length == 1) {
+        c = "0" + c;
+      }
+      s += c;
+    }
+    return s;
   },
 
   stringAsHex: function stringAsHex(str) {
@@ -228,6 +260,11 @@ this.CommonUtils = {
     return String.fromCharCode.apply(String, bytes);
   },
 
+  hexToArrayBuffer(str) {
+    const octString = CommonUtils.hexToBytes(str);
+    return CommonUtils.byteStringToArrayBuffer(octString);
+  },
+
   hexAsString: function hexAsString(hex) {
     return CommonUtils.decodeUTF8(CommonUtils.hexToBytes(hex));
   },
@@ -237,29 +274,31 @@ this.CommonUtils = {
    */
   encodeBase32: function encodeBase32(bytes) {
     const key = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let quanta = Math.floor(bytes.length / 5);
     let leftover = bytes.length % 5;
 
     // Pad the last quantum with zeros so the length is a multiple of 5.
     if (leftover) {
-      quanta += 1;
-      for (let i = leftover; i < 5; i++)
+      for (let i = leftover; i < 5; i++) {
         bytes += "\0";
+      }
     }
 
     // Chop the string into quanta of 5 bytes (40 bits). Each quantum
     // is turned into 8 characters from the 32 character base.
     let ret = "";
     for (let i = 0; i < bytes.length; i += 5) {
-      let c = Array.prototype.slice.call(bytes.slice(i, i + 5)).map(byte => byte.charCodeAt(0));
-      ret += key[c[0] >> 3]
-           + key[((c[0] << 2) & 0x1f) | (c[1] >> 6)]
-           + key[(c[1] >> 1) & 0x1f]
-           + key[((c[1] << 4) & 0x1f) | (c[2] >> 4)]
-           + key[((c[2] << 1) & 0x1f) | (c[3] >> 7)]
-           + key[(c[3] >> 2) & 0x1f]
-           + key[((c[3] << 3) & 0x1f) | (c[4] >> 5)]
-           + key[c[4] & 0x1f];
+      let c = Array.prototype.slice
+        .call(bytes.slice(i, i + 5))
+        .map(byte => byte.charCodeAt(0));
+      ret +=
+        key[c[0] >> 3] +
+        key[((c[0] << 2) & 0x1f) | (c[1] >> 6)] +
+        key[(c[1] >> 1) & 0x1f] +
+        key[((c[1] << 4) & 0x1f) | (c[2] >> 4)] +
+        key[((c[2] << 1) & 0x1f) | (c[3] >> 7)] +
+        key[(c[3] >> 2) & 0x1f] +
+        key[((c[3] << 3) & 0x1f) | (c[4] >> 5)] +
+        key[c[4] & 0x1f];
     }
 
     switch (leftover) {
@@ -283,8 +322,8 @@ this.CommonUtils = {
     const key = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
     let padChar = str.indexOf("=");
-    let chars = (padChar == -1) ? str.length : padChar;
-    let bytes = Math.floor(chars * 5 / 8);
+    let chars = padChar == -1 ? str.length : padChar;
+    let bytes = Math.floor((chars * 5) / 8);
     let blocks = Math.ceil(chars / 8);
 
     // Process a chunk of 5 bytes / 8 characters.
@@ -300,12 +339,15 @@ this.CommonUtils = {
       }
 
       function advance() {
-        c  = str[cOffset++];
-        if (!c || c == "" || c == "=") // Easier than range checking.
-          throw "Done";                // Will be caught far away.
+        c = str[cOffset++];
+        if (!c || c == "" || c == "=") {
+          // Easier than range checking.
+          throw new Error("Done");
+        } // Will be caught far away.
         val = key.indexOf(c);
-        if (val == -1)
-          throw "Unknown character in base32: " + c;
+        if (val == -1) {
+          throw new Error(`Unknown character in base32: ${c}`);
+        }
       }
 
       // Handle a left shift, restricted to bytes.
@@ -341,8 +383,8 @@ this.CommonUtils = {
     }
 
     // Our output. Define to be explicit (and maybe the compiler will be smart).
-    let ret  = new Array(bytes);
-    let i    = 0;
+    let ret = new Array(bytes);
+    let i = 0;
     let cOff = 0;
     let rOff = 0;
 
@@ -351,8 +393,9 @@ this.CommonUtils = {
         processBlock(ret, cOff, rOff);
       } catch (ex) {
         // Handle the detection of padding.
-        if (ex == "Done")
+        if (ex.message == "Done") {
           break;
+        }
         throw ex;
       }
       cOff += 8;
@@ -380,8 +423,8 @@ this.CommonUtils = {
    * @param path the file to read. Will be passed to `OS.File.read()`.
    * @return a promise that resolves to the JSON contents of the named file.
    */
-  readJSON: function(path) {
-    return OS.File.read(path, { encoding: "utf-8" }).then((data) => {
+  readJSON(path) {
+    return OS.File.read(path, { encoding: "utf-8" }).then(data => {
       return JSON.parse(data);
     });
   },
@@ -393,11 +436,13 @@ this.CommonUtils = {
    * @param path the path of the file to write.
    * @return a promise, as produced by OS.File.writeAtomic.
    */
-  writeJSON: function(contents, path) {
+  writeJSON(contents, path) {
     let data = JSON.stringify(contents);
-    return OS.File.writeAtomic(path, data, {encoding: "utf-8", tmpPath: path + ".tmp"});
+    return OS.File.writeAtomic(path, data, {
+      encoding: "utf-8",
+      tmpPath: path + ".tmp",
+    });
   },
-
 
   /**
    * Ensure that the specified value is defined in integer milliseconds since
@@ -423,7 +468,7 @@ this.CommonUtils = {
     let intValue = parseInt(value, 10);
 
     if (!intValue) {
-       return;
+      return;
     }
 
     // Catch what looks like seconds, not milliseconds.
@@ -443,9 +488,10 @@ this.CommonUtils = {
    */
   readBytesFromInputStream: function readBytesFromInputStream(stream, count) {
     let BinaryInputStream = Components.Constructor(
-        "@mozilla.org/binaryinputstream;1",
-        "nsIBinaryInputStream",
-        "setInputStream");
+      "@mozilla.org/binaryinputstream;1",
+      "nsIBinaryInputStream",
+      "setInputStream"
+    );
     if (!count) {
       count = stream.available();
     }
@@ -462,9 +508,9 @@ this.CommonUtils = {
    */
   generateUUID: function generateUUID() {
     let uuid = Cc["@mozilla.org/uuid-generator;1"]
-                 .getService(Ci.nsIUUIDGenerator)
-                 .generateUUID()
-                 .toString();
+      .getService(Ci.nsIUUIDGenerator)
+      .generateUUID()
+      .toString();
 
     return uuid.substring(1, uuid.length - 1);
   },
@@ -492,7 +538,7 @@ this.CommonUtils = {
    * @param log
    *        (Log.Logger) Logger to write warnings to.
    */
-  getEpochPref: function getEpochPref(branch, pref, def=0, log=null) {
+  getEpochPref: function getEpochPref(branch, pref, def = 0, log = null) {
     if (!Number.isInteger(def)) {
       throw new Error("Default value is not a number: " + def);
     }
@@ -503,8 +549,14 @@ this.CommonUtils = {
       let valueInt = parseInt(valueStr, 10);
       if (Number.isNaN(valueInt)) {
         if (log) {
-          log.warn("Preference value is not an integer. Using default. " +
-                   pref + "=" + valueStr + " -> " + def);
+          log.warn(
+            "Preference value is not an integer. Using default. " +
+              pref +
+              "=" +
+              valueStr +
+              " -> " +
+              def
+          );
         }
 
         return def;
@@ -537,9 +589,13 @@ this.CommonUtils = {
    * @param oldestYear
    *        (Number) Oldest year to accept in read values.
    */
-  getDatePref: function getDatePref(branch, pref, def=0, log=null,
-                                    oldestYear=2010) {
-
+  getDatePref: function getDatePref(
+    branch,
+    pref,
+    def = 0,
+    log = null,
+    oldestYear = 2010
+  ) {
     let valueInt = this.getEpochPref(branch, pref, def, log);
     let date = new Date(valueInt);
 
@@ -548,8 +604,14 @@ this.CommonUtils = {
     }
 
     if (log) {
-      log.warn("Unexpected old date seen in pref. Returning default: " +
-               pref + "=" + date + " -> " + def);
+      log.warn(
+        "Unexpected old date seen in pref. Returning default: " +
+          pref +
+          "=" +
+          date +
+          " -> " +
+          def
+      );
     }
 
     return new Date(def);
@@ -572,11 +634,17 @@ this.CommonUtils = {
    * @param oldestYear
    *        (Number) The oldest year to accept for values.
    */
-  setDatePref: function setDatePref(branch, pref, date, oldestYear=2010) {
+  setDatePref: function setDatePref(branch, pref, date, oldestYear = 2010) {
     if (date.getFullYear() < oldestYear) {
-      throw new Error("Trying to set " + pref + " to a very old time: " +
-                      date + ". The current time is " + new Date() +
-                      ". Is the system clock wrong?");
+      throw new Error(
+        "Trying to set " +
+          pref +
+          " to a very old time: " +
+          date +
+          ". The current time is " +
+          new Date() +
+          ". Is the system clock wrong?"
+      );
     }
 
     branch.set(pref, "" + date.getTime());
@@ -606,26 +674,37 @@ this.CommonUtils = {
       throw new Error("Input string must be defined.");
     }
 
-    let is = Cc["@mozilla.org/io/string-input-stream;1"]
-               .createInstance(Ci.nsIStringInputStream);
+    let is = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+      Ci.nsIStringInputStream
+    );
     is.setData(s, s.length);
 
-    let listener = Cc["@mozilla.org/network/stream-loader;1"]
-                     .createInstance(Ci.nsIStreamLoader);
+    let listener = Cc["@mozilla.org/network/stream-loader;1"].createInstance(
+      Ci.nsIStreamLoader
+    );
 
     let result;
 
     listener.init({
-      onStreamComplete: function onStreamComplete(loader, context, status,
-                                                  length, data) {
+      onStreamComplete: function onStreamComplete(
+        loader,
+        context,
+        status,
+        length,
+        data
+      ) {
         result = String.fromCharCode.apply(this, data);
       },
     });
 
-    let converter = this._converterService.asyncConvertData(source, dest,
-                                                            listener, null);
+    let converter = this._converterService.asyncConvertData(
+      source,
+      dest,
+      listener,
+      null
+    );
     converter.onStartRequest(null, null);
-    converter.onDataAvailable(null, null, is, 0, s.length);
+    converter.onDataAvailable(null, is, 0, s.length);
     converter.onStopRequest(null, null, null);
 
     return result;
@@ -633,13 +712,15 @@ this.CommonUtils = {
 };
 
 XPCOMUtils.defineLazyGetter(CommonUtils, "_utf8Converter", function() {
-  let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                    .createInstance(Ci.nsIScriptableUnicodeConverter);
+  let converter = Cc[
+    "@mozilla.org/intl/scriptableunicodeconverter"
+  ].createInstance(Ci.nsIScriptableUnicodeConverter);
   converter.charset = "UTF-8";
   return converter;
 });
 
 XPCOMUtils.defineLazyGetter(CommonUtils, "_converterService", function() {
-  return Cc["@mozilla.org/streamConverters;1"]
-           .getService(Ci.nsIStreamConverterService);
+  return Cc["@mozilla.org/streamConverters;1"].getService(
+    Ci.nsIStreamConverterService
+  );
 });

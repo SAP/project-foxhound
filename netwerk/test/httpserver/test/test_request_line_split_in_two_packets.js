@@ -14,27 +14,24 @@ var srv = createServer();
 srv.start(-1);
 const PORT = srv.identity.primaryPort;
 
-function run_test()
-{
-  srv.registerPathHandler("/lots-of-leading-blank-lines",
-                          lotsOfLeadingBlankLines);
-  srv.registerPathHandler("/very-long-request-line",
-                          veryLongRequestLine);
+function run_test() {
+  srv.registerPathHandler(
+    "/lots-of-leading-blank-lines",
+    lotsOfLeadingBlankLines
+  );
+  srv.registerPathHandler("/very-long-request-line", veryLongRequestLine);
 
   runRawTests(tests, testComplete(srv));
 }
 
-
-/***************
+/** *************
  * BEGIN TESTS *
  ***************/
 
-var test, data, str;
+var test, gData, str;
 var tests = [];
 
-
-function veryLongRequestLine(request, response)
-{
+function veryLongRequestLine(request, response) {
   writeDetails(request, response);
   response.setStatusLine(request.httpVersion, 200, "TEST PASSED");
 }
@@ -48,88 +45,94 @@ reallyLong = reallyLong + reallyLong + reallyLong + reallyLong; // 8192
 reallyLong = reallyLong + reallyLong + reallyLong + reallyLong; // 32768
 reallyLong = reallyLong + reallyLong + reallyLong + reallyLong; // 131072
 reallyLong = reallyLong + reallyLong + reallyLong + reallyLong; // 524288
-if (reallyLong.length !== 524288)
+if (reallyLong.length !== 524288) {
   throw new TypeError("generated length not as long as expected");
-str = "GET /very-long-request-line?" + reallyLong + " HTTP/1.1\r\n" +
-      "Host: localhost:" + PORT + "\r\n" +
-      "\r\n";
-data = [];
-for (var i = 0; i < str.length; i += 16384)
-  data.push(str.substr(i, 16384));
+}
+str =
+  "GET /very-long-request-line?" +
+  reallyLong +
+  " HTTP/1.1\r\n" +
+  "Host: localhost:" +
+  PORT +
+  "\r\n" +
+  "\r\n";
+gData = [];
+for (let i = 0; i < str.length; i += 16384) {
+  gData.push(str.substr(i, 16384));
+}
 
-function checkVeryLongRequestLine(data)
-{
+function checkVeryLongRequestLine(data) {
   var iter = LineIterator(data);
 
   print("data length: " + data.length);
   print("iter object: " + iter);
 
   // Status-Line
-  do_check_eq(iter.next(), "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
-    [
-     "Method:  GET",
-     "Path:    /very-long-request-line",
-     "Query:   " + reallyLong,
-     "Version: 1.1",
-     "Scheme:  http",
-     "Host:    localhost",
-     "Port:    " + PORT,
-    ];
+  var body = [
+    "Method:  GET",
+    "Path:    /very-long-request-line",
+    "Query:   " + reallyLong,
+    "Version: 1.1",
+    "Scheme:  http",
+    "Host:    localhost",
+    "Port:    " + PORT,
+  ];
 
   expectLines(iter, body);
 }
-test = new RawTest("localhost", PORT, data, checkVeryLongRequestLine),
+test = new RawTest("localhost", PORT, gData, checkVeryLongRequestLine);
 tests.push(test);
 
-
-function lotsOfLeadingBlankLines(request, response)
-{
+function lotsOfLeadingBlankLines(request, response) {
   writeDetails(request, response);
   response.setStatusLine(request.httpVersion, 200, "TEST PASSED");
 }
 
 var blankLines = "\r\n";
-for (var i = 0; i < 14; i++)
+for (let i = 0; i < 14; i++) {
   blankLines += blankLines;
-str = blankLines +
-      "GET /lots-of-leading-blank-lines HTTP/1.1\r\n" +
-      "Host: localhost:" + PORT + "\r\n" +
-      "\r\n";
-data = [];
-for (var i = 0; i < str.length; i += 100)
-  data.push(str.substr(i, 100));
+}
+str =
+  blankLines +
+  "GET /lots-of-leading-blank-lines HTTP/1.1\r\n" +
+  "Host: localhost:" +
+  PORT +
+  "\r\n" +
+  "\r\n";
+gData = [];
+for (let i = 0; i < str.length; i += 100) {
+  gData.push(str.substr(i, 100));
+}
 
-function checkLotsOfLeadingBlankLines(data)
-{
+function checkLotsOfLeadingBlankLines(data) {
   var iter = LineIterator(data);
 
   // Status-Line
   print("data length: " + data.length);
   print("iter object: " + iter);
 
-  do_check_eq(iter.next(), "HTTP/1.1 200 TEST PASSED");
+  Assert.equal(iter.next().value, "HTTP/1.1 200 TEST PASSED");
 
   skipHeaders(iter);
 
   // Okay, next line must be the data we expected to be written
-  var body =
-    [
-     "Method:  GET",
-     "Path:    /lots-of-leading-blank-lines",
-     "Query:   ",
-     "Version: 1.1",
-     "Scheme:  http",
-     "Host:    localhost",
-     "Port:    " + PORT,
-    ];
+  var body = [
+    "Method:  GET",
+    "Path:    /lots-of-leading-blank-lines",
+    "Query:   ",
+    "Version: 1.1",
+    "Scheme:  http",
+    "Host:    localhost",
+    "Port:    " + PORT,
+  ];
 
   expectLines(iter, body);
 }
 
-test = new RawTest("localhost", PORT, data, checkLotsOfLeadingBlankLines),
+test = new RawTest("localhost", PORT, gData, checkLotsOfLeadingBlankLines);
 tests.push(test);

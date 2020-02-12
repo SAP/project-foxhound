@@ -10,22 +10,19 @@
 
 using namespace mozilla::dom;
 
-PerformanceMark::PerformanceMark(nsISupports* aParent,
-                                 const nsAString& aName,
+PerformanceMark::PerformanceMark(nsISupports* aParent, const nsAString& aName,
                                  DOMHighResTimeStamp aStartTime)
-  : PerformanceEntry(aParent, aName, NS_LITERAL_STRING("mark"))
-  , mStartTime(aStartTime)
-{
-  // mParent is null in workers.
-  MOZ_ASSERT(mParent || !NS_IsMainThread());
+    : PerformanceEntry(aParent, aName, NS_LITERAL_STRING("mark")),
+      mStartTime(aStartTime) {}
+
+PerformanceMark::~PerformanceMark() {}
+
+JSObject* PerformanceMark::WrapObject(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return PerformanceMark_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-PerformanceMark::~PerformanceMark()
-{
-}
-
-JSObject*
-PerformanceMark::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PerformanceMarkBinding::Wrap(aCx, this, aGivenProto);
+size_t PerformanceMark::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }

@@ -1,22 +1,27 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Test basic black boxing.
  */
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-black-box", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront = threadFront;
       testBlackBox();
     });
   });
@@ -26,74 +31,88 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-const testBlackBox = Task.async(function* () {
-  let packet = yield executeOnNextTickAndWaitForPause(evalCode, gClient);
-  let source = gThreadClient.source(packet.frame.where.source);
+const testBlackBox = async function() {
+  const packet = await executeOnNextTickAndWaitForPause(evalCode, gThreadFront);
 
-  yield setBreakpoint(source, {
-    line: 2
-  });
-  yield resume(gThreadClient);
+  const bpSource = await getSourceById(gThreadFront, packet.frame.where.actor);
 
-  const { sources } = yield getSources(gThreadClient);
-  let sourceClient = gThreadClient.source(
-    sources.filter(s => s.url == BLACK_BOXED_URL)[0]);
-  do_check_true(!sourceClient.isBlackBoxed,
-                "By default the source is not black boxed.");
+  await setBreakpoint(gThreadFront, { sourceUrl: bpSource.url, line: 2 });
+  await resume(gThreadFront);
+
+  let sourceForm = await getSourceForm(gThreadFront, BLACK_BOXED_URL);
+
+  Assert.ok(
+    !sourceForm.isBlackBoxed,
+    "By default the source is not black boxed."
+  );
 
   // Test that we can step into `doStuff` when we are not black boxed.
-  yield runTest(
-    function onSteppedLocation(aLocation) {
-      do_check_eq(aLocation.source.url, BLACK_BOXED_URL);
-      do_check_eq(aLocation.line, 2);
+  await runTest(
+    async function onSteppedLocation(location) {
+      const source = await getSourceFormById(gThreadFront, location.actor);
+      Assert.equal(source.url, BLACK_BOXED_URL);
+      Assert.equal(location.line, 2);
     },
-    function onDebuggerStatementFrames(aFrames) {
-      do_check_true(!aFrames.some(f => f.where.source.isBlackBoxed));
+    async function onDebuggerStatementFrames(frames) {
+      for (const frame of frames) {
+        const source = await getSourceFormById(gThreadFront, frame.where.actor);
+        Assert.ok(!source.isBlackBoxed);
+      }
     }
   );
 
-  let blackBoxResponse = yield blackBox(sourceClient);
-  do_check_true(sourceClient.isBlackBoxed);
+  const blackboxedSource = await getSource(gThreadFront, BLACK_BOXED_URL);
+  await blackBox(blackboxedSource);
+  sourceForm = await getSourceForm(gThreadFront, BLACK_BOXED_URL);
+  Assert.ok(sourceForm.isBlackBoxed);
 
   // Test that we step through `doStuff` when we are black boxed and its frame
   // doesn't show up.
-  yield runTest(
-    function onSteppedLocation(aLocation) {
-      do_check_eq(aLocation.source.url, SOURCE_URL);
-      do_check_eq(aLocation.line, 4);
+  await runTest(
+    async function onSteppedLocation(location) {
+      const source = await getSourceFormById(gThreadFront, location.actor);
+      Assert.equal(source.url, SOURCE_URL);
+      Assert.equal(location.line, 4);
     },
-    function onDebuggerStatementFrames(aFrames) {
-      for (let f of aFrames) {
-        if (f.where.source.url == BLACK_BOXED_URL) {
-          do_check_true(f.where.source.isBlackBoxed);
+    async function onDebuggerStatementFrames(frames) {
+      for (const frame of frames) {
+        const source = await getSourceFormById(gThreadFront, frame.where.actor);
+        if (source.url == BLACK_BOXED_URL) {
+          Assert.ok(source.isBlackBoxed);
         } else {
-          do_check_true(!f.where.source.isBlackBoxed);
+          Assert.ok(!source.isBlackBoxed);
         }
       }
     }
   );
 
-  let unBlackBoxResponse = yield unBlackBox(sourceClient);
-  do_check_true(!sourceClient.isBlackBoxed);
+  await unBlackBox(blackboxedSource);
+  sourceForm = await getSourceForm(gThreadFront, BLACK_BOXED_URL);
+  Assert.ok(!sourceForm.isBlackBoxed);
 
   // Test that we can step into `doStuff` again.
-  yield runTest(
-    function onSteppedLocation(aLocation) {
-      do_check_eq(aLocation.source.url, BLACK_BOXED_URL);
-      do_check_eq(aLocation.line, 2);
+  await runTest(
+    async function onSteppedLocation(location) {
+      const source = await getSourceFormById(gThreadFront, location.actor);
+      Assert.equal(source.url, BLACK_BOXED_URL);
+      Assert.equal(location.line, 2);
     },
-    function onDebuggerStatementFrames(aFrames) {
-      do_check_true(!aFrames.some(f => f.where.source.isBlackBoxed));
+    async function onDebuggerStatementFrames(frames) {
+      for (const frame of frames) {
+        const source = await getSourceFormById(gThreadFront, frame.where.actor);
+        Assert.ok(!source.isBlackBoxed);
+      }
     }
   );
 
   finishClient(gClient);
-});
+};
 
 function evalCode() {
-  Components.utils.evalInSandbox(
+  /* eslint-disable */
+  Cu.evalInSandbox(
     "" + function doStuff(k) { // line 1
-      let arg = 15;            // line 2 - Step in here
+      var arg = 15;            // line 2 - Step in here
       k(arg);                  // line 3
     },                         // line 4
     gDebuggee,
@@ -102,44 +121,46 @@ function evalCode() {
     1
   );
 
-  Components.utils.evalInSandbox(
+  Cu.evalInSandbox(
     "" + function runTest() { // line 1
       doStuff(                // line 2 - Break here
         function (n) {        // line 3 - Step through `doStuff` to here
-          debugger;           // line 4
-        }                     // line 5
-      );                      // line 6
-    } + "\n"                  // line 7
-    + "debugger;",            // line 8
+          (() => {})();       // line 4
+          debugger;           // line 5
+        }                     // line 6
+      );                      // line 7
+    } + "\n"                  // line 8
+    + "debugger;",            // line 9
     gDebuggee,
     "1.8",
     SOURCE_URL,
     1
   );
+  /* eslint-enable */
 }
 
-const runTest = Task.async(function* (onSteppedLocation, onDebuggerStatementFrames) {
-  let packet = yield executeOnNextTickAndWaitForPause(gDebuggee.runTest,
-                                                      gClient);
-  do_check_eq(packet.why.type, "breakpoint");
+const runTest = async function(onSteppedLocation, onDebuggerStatementFrames) {
+  let packet = await executeOnNextTickAndWaitForPause(
+    gDebuggee.runTest,
+    gThreadFront
+  );
+  Assert.equal(packet.why.type, "breakpoint");
 
-  yield stepIn(gClient, gThreadClient);
-  yield stepIn(gClient, gThreadClient);
-  yield stepIn(gClient, gThreadClient);
+  await stepIn(gThreadFront);
 
-  const location = yield getCurrentLocation();
-  onSteppedLocation(location);
+  const location = await getCurrentLocation();
+  await onSteppedLocation(location);
 
-  packet = yield resumeAndWaitForPause(gClient, gThreadClient);
-  do_check_eq(packet.why.type, "debuggerStatement");
+  packet = await resumeAndWaitForPause(gThreadFront);
+  Assert.equal(packet.why.type, "debuggerStatement");
 
-  let { frames } = yield getFrames(gThreadClient, 0, 100);
-  onDebuggerStatementFrames(frames);
+  const { frames } = await getFrames(gThreadFront, 0, 100);
+  await onDebuggerStatementFrames(frames);
 
-  return resume(gThreadClient);
-});
+  return resume(gThreadFront);
+};
 
-const getCurrentLocation = Task.async(function* () {
-  const response = yield getFrames(gThreadClient, 0, 1);
+const getCurrentLocation = async function() {
+  const response = await getFrames(gThreadFront, 0, 1);
   return response.frames[0].where;
-});
+};

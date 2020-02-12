@@ -30,16 +30,15 @@ class AudioTrack;
  * Although AudioTrack and VideoTrack are not EventTargets, TextTrack is, and
  * TextTrack inherits from MediaTrack as well (or is going to).
  */
-class MediaTrack : public DOMEventTargetHelper
-{
-public:
-  MediaTrack(const nsAString& aId,
-             const nsAString& aKind,
-             const nsAString& aLabel,
+class MediaTrack : public DOMEventTargetHelper {
+ public:
+  MediaTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
+             const nsAString& aKind, const nsAString& aLabel,
              const nsAString& aLanguage);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaTrack, DOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(dom::MediaTrack,
+                                           DOMEventTargetHelper)
 
   enum {
     DEFAULT = 0,
@@ -50,46 +49,24 @@ public:
   // It should not fire any events when fetching media resource.
   virtual void SetEnabledInternal(bool aEnabled, int aFlags) = 0;
 
-  virtual AudioTrack* AsAudioTrack()
-  {
-    return nullptr;
-  }
+  virtual AudioTrack* AsAudioTrack() { return nullptr; }
 
-  virtual VideoTrack* AsVideoTrack()
-  {
-    return nullptr;
-  }
+  virtual VideoTrack* AsVideoTrack() { return nullptr; }
 
-  const nsString& GetId() const
-  {
-    return mId;
-  }
+  const nsString& GetId() const { return mId; }
 
   // WebIDL
-  void GetId(nsAString& aId) const
-  {
-    aId = mId;
-  }
-  void GetKind(nsAString& aKind) const
-  {
-    aKind = mKind;
-  }
-  void GetLabel(nsAString& aLabel) const
-  {
-    aLabel = mLabel;
-  }
-  void GetLanguage(nsAString& aLanguage) const
-  {
-    aLanguage = mLanguage;
-  }
+  void GetId(nsAString& aId) const { aId = mId; }
+  void GetKind(nsAString& aKind) const { aKind = mKind; }
+  void GetLabel(nsAString& aLabel) const { aLabel = mLabel; }
+  void GetLanguage(nsAString& aLanguage) const { aLanguage = mLanguage; }
 
   friend class MediaTrackList;
 
-protected:
+ protected:
   virtual ~MediaTrack();
 
   void SetTrackList(MediaTrackList* aList);
-  void Init(nsPIDOMWindowInner* aOwnerWindow);
 
   RefPtr<MediaTrackList> mList;
   nsString mId;
@@ -98,7 +75,7 @@ protected:
   nsString mLanguage;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_MediaTrack_h
+#endif  // mozilla_dom_MediaTrack_h

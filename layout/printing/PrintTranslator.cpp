@@ -18,15 +18,13 @@ namespace mozilla {
 namespace layout {
 
 PrintTranslator::PrintTranslator(nsDeviceContext* aDeviceContext)
-  : mDeviceContext(aDeviceContext)
-{
-  RefPtr<gfxContext> context = mDeviceContext->CreateRenderingContext();
+    : mDeviceContext(aDeviceContext) {
+  RefPtr<gfxContext> context =
+      mDeviceContext->CreateReferenceRenderingContext();
   mBaseDT = context->GetDrawTarget();
 }
 
-bool
-PrintTranslator::TranslateRecording(std::istream& aRecording)
-{
+bool PrintTranslator::TranslateRecording(PRFileDescStream& aRecording) {
   uint32_t magicInt;
   ReadElement(aRecording, magicInt);
   if (magicInt != mozilla::gfx::kMagicInt) {
@@ -48,16 +46,18 @@ PrintTranslator::TranslateRecording(std::istream& aRecording)
   int32_t eventType;
   ReadElement(aRecording, eventType);
   while (aRecording.good()) {
-    UniquePtr<RecordedEvent> recordedEvent(
-      RecordedEvent::LoadEventFromStream(aRecording,
-      static_cast<RecordedEvent::EventType>(eventType)));
+    bool success = RecordedEvent::DoWithEventFromStream(
+        aRecording, static_cast<RecordedEvent::EventType>(eventType),
+        [&](RecordedEvent* recordedEvent) -> bool {
+          // Make sure that the whole event was read from the stream.
+          if (!aRecording.good()) {
+            return false;
+          }
 
-    // Make sure that the whole event was read from the stream successfully.
-    if (!aRecording.good() || !recordedEvent) {
-      return false;
-    }
+          return recordedEvent->PlayEvent(this);
+        });
 
-    if (!recordedEvent->PlayEvent(this)) {
+    if (!success) {
       return false;
     }
 
@@ -67,11 +67,9 @@ PrintTranslator::TranslateRecording(std::istream& aRecording)
   return true;
 }
 
-already_AddRefed<DrawTarget>
-PrintTranslator::CreateDrawTarget(ReferencePtr aRefPtr,
-                                  const gfx::IntSize &aSize,
-                                  gfx::SurfaceFormat aFormat)
-{
+already_AddRefed<DrawTarget> PrintTranslator::CreateDrawTarget(
+    ReferencePtr aRefPtr, const gfx::IntSize& aSize,
+    gfx::SurfaceFormat aFormat) {
   RefPtr<gfxContext> context = mDeviceContext->CreateRenderingContext();
   if (!context) {
     NS_WARNING("Failed to create rendering context for print.");
@@ -83,23 +81,5 @@ PrintTranslator::CreateDrawTarget(ReferencePtr aRefPtr,
   return drawTarget.forget();
 }
 
-FontType
-PrintTranslator::GetDesiredFontType()
-{
-  switch (mBaseDT->GetBackendType()) {
-    case BackendType::DIRECT2D:
-      return FontType::DWRITE;
-    case BackendType::CAIRO:
-      return FontType::CAIRO;
-    case BackendType::SKIA:
-      return FontType::SKIA;
-    case BackendType::COREGRAPHICS:
-    case BackendType::COREGRAPHICS_ACCELERATED:
-      return FontType::COREGRAPHICS;
-    default:
-      return FontType::CAIRO;
-  }
-}
-
-} // namespace layout
-} // namespace mozilla
+}  // namespace layout
+}  // namespace mozilla

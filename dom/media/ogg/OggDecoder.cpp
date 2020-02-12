@@ -4,75 +4,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "MediaPrefs.h"
-#include "MediaDecoderStateMachine.h"
-#include "MediaFormatReader.h"
-#include "OggDemuxer.h"
-#include "OggReader.h"
 #include "OggDecoder.h"
-#include "nsContentTypeParser.h"
+#include "MediaContainerType.h"
+#include "MediaDecoder.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "nsMimeTypes.h"
 
 namespace mozilla {
 
-MediaDecoderStateMachine* OggDecoder::CreateStateMachine()
-{
-  bool useFormatDecoder = MediaPrefs::OggFormatReader();
-  RefPtr<OggDemuxer> demuxer =
-    useFormatDecoder ? new OggDemuxer(GetResource()) : nullptr;
-  RefPtr<MediaDecoderReader> reader = useFormatDecoder
-    ? static_cast<MediaDecoderReader*>(new MediaFormatReader(this, demuxer, GetVideoFrameContainer()))
-    : new OggReader(this);
-  if (useFormatDecoder) {
-    demuxer->SetChainingEvents(&reader->TimedMetadataProducer(),
-                               &reader->MediaNotSeekableProducer());
-  }
-  return new MediaDecoderStateMachine(this, reader);
-}
-
 /* static */
-bool
-OggDecoder::IsEnabled()
-{
-  return MediaPrefs::OggEnabled();
-}
-
-/* static */
-bool
-OggDecoder::CanHandleMediaType(const nsACString& aMIMETypeExcludingCodecs,
-                               const nsAString& aCodecs)
-{
-  if (!IsEnabled()) {
+bool OggDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
+  if (!StaticPrefs::media_ogg_enabled()) {
     return false;
   }
 
-  const bool isOggAudio = aMIMETypeExcludingCodecs.EqualsASCII("audio/ogg");
-  const bool isOggVideo =
-    aMIMETypeExcludingCodecs.EqualsASCII("video/ogg") ||
-    aMIMETypeExcludingCodecs.EqualsASCII("application/ogg");
-
-  if (!isOggAudio && !isOggVideo) {
+  if (aContainerType.Type() != MEDIAMIMETYPE(AUDIO_OGG) &&
+      aContainerType.Type() != MEDIAMIMETYPE(VIDEO_OGG) &&
+      aContainerType.Type() != MEDIAMIMETYPE("application/ogg")) {
     return false;
   }
 
-  nsTArray<nsCString> codecMimes;
-  if (aCodecs.IsEmpty()) {
-    // WebM guarantees that the only codecs it contained are vp8, vp9, opus or vorbis.
+  const bool isOggVideo = (aContainerType.Type() != MEDIAMIMETYPE(AUDIO_OGG));
+
+  const MediaCodecs& codecs = aContainerType.ExtendedType().Codecs();
+  if (codecs.IsEmpty()) {
+    // Ogg guarantees that the only codecs it contained are supported.
     return true;
   }
   // Verify that all the codecs specified are ones that we expect that
   // we can play.
-  nsTArray<nsString> codecs;
-  if (!ParseCodecsString(aCodecs, codecs)) {
-    return false;
-  }
-  for (const nsString& codec : codecs) {
-    if ((IsOpusEnabled() && codec.EqualsLiteral("opus")) ||
-        codec.EqualsLiteral("vorbis") ||
-        (MediaPrefs::FlacInOgg() && codec.EqualsLiteral("flac"))) {
+  for (const auto& codec : codecs.Range()) {
+    if ((MediaDecoder::IsOpusEnabled() && codec.EqualsLiteral("opus")) ||
+        codec.EqualsLiteral("vorbis") || codec.EqualsLiteral("flac")) {
       continue;
     }
-    // Note: Only accept Theora in a video content type, not in an audio
-    // content type.
+    // Note: Only accept Theora in a video container type, not in an audio
+    // container type.
     if (isOggVideo && codec.EqualsLiteral("theora")) {
       continue;
     }
@@ -82,4 +49,36 @@ OggDecoder::CanHandleMediaType(const nsACString& aMIMETypeExcludingCodecs,
   return true;
 }
 
-} // namespace mozilla
+/* static */
+nsTArray<UniquePtr<TrackInfo>> OggDecoder::GetTracksInfo(
+    const MediaContainerType& aType) {
+  nsTArray<UniquePtr<TrackInfo>> tracks;
+  if (!IsSupportedType(aType)) {
+    return tracks;
+  }
+
+  const MediaCodecs& codecs = aType.ExtendedType().Codecs();
+  if (codecs.IsEmpty()) {
+    // Codecs must be specified for ogg as it can't be implied.
+    return tracks;
+  }
+
+  for (const auto& codec : codecs.Range()) {
+    if (codec.EqualsLiteral("opus") || codec.EqualsLiteral("vorbis") ||
+        codec.EqualsLiteral("flac")) {
+      tracks.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+              NS_LITERAL_CSTRING("audio/") + NS_ConvertUTF16toUTF8(codec),
+              aType));
+    } else {
+      MOZ_ASSERT(codec.EqualsLiteral("theora"));
+      tracks.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+              NS_LITERAL_CSTRING("video/") + NS_ConvertUTF16toUTF8(codec),
+              aType));
+    }
+  }
+  return tracks;
+}
+
+}  // namespace mozilla

@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=777098
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 777098</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -20,13 +20,14 @@ SimpleTest.waitForExplicitFinish();
 setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
 
 function go() {
-  var plugin = document.getElementById('plugin');
+  var plugin = document.getElementById("plugin");
 
   // Get wrapped npobject from plugin (plugin.__proto__)
   var val = plugin.getObjectValue();
 
   // Force a re-instantiate by re-setting dummy uri,
   // making val a wrapper for a dead plugin
+  // eslint-disable-next-line no-self-assign
   plugin.data = plugin.data;
 
   // The correct behavior is an exception, if plugin.checkObjectValue succeeds
@@ -41,7 +42,7 @@ function go() {
   }
 
   // Spin the event loop so the instantiation can complete
-  window.setTimeout(function () {
+  window.setTimeout(function() {
     ok(pluginCheck(), "Shouldn't explode");
 
     // All done.

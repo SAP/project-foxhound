@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=399925
 -->
 <head>
   <title>Test for Bug 399925</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="imgutils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=399925
 
 /** Test for Bug 399925. **/
 var triggerDiscardingManually = false;
-var pngResults = new Array();
+var pngResults = [];
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestFlakyTimeout("untriaged");
 
@@ -63,7 +63,6 @@ function runTest() {
 
   if (triggerDiscardingManually) {
     var request = SpecialPowers.wrap(image)
-        .QueryInterface(SpecialPowers.Ci.nsIImageLoadingContent)
         .getRequest(SpecialPowers.Ci.nsIImageLoadingContent.CURRENT_REQUEST);
     setTimeout(() => request.requestDiscard(), 1000);
   }
@@ -82,9 +81,7 @@ function addCallbacks(anImage, loadCompleteCallback, discardCallback) {
                            .getService(SpecialPowers.Ci.imgITools)
                            .createScriptedObserver(observer);
 
-  var imgLoadingContent =
-    SpecialPowers.wrap(anImage)
-                 .QueryInterface(SpecialPowers.Ci.nsIImageLoadingContent);
+  var imgLoadingContent = SpecialPowers.wrap(anImage);
   imgLoadingContent.addObserver(scriptedObserver);
 }
 

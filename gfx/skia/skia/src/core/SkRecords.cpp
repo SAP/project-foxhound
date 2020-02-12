@@ -9,17 +9,9 @@
 #include "SkRecords.h"
 
 namespace SkRecords {
-    ImmutableBitmap::ImmutableBitmap(const SkBitmap& bitmap) {
-        if (bitmap.isImmutable()) {
-            fBitmap = bitmap;
-        } else {
-            bitmap.copyTo(&fBitmap);
-        }
-        fBitmap.setImmutable();
-    }
-
     PreCachedPath::PreCachedPath(const SkPath& path) : SkPath(path) {
         this->updateBoundsCache();
+        (void)this->getGenerationID();
 #if 0  // Disabled to see if we ever really race on this.  It costs time, chromium:496982.
         SkPathPriv::FirstDirection junk;
         (void)SkPathPriv::CheapComputeFirstDirection(*this, &junk);

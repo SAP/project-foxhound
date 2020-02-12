@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import unittest
@@ -139,7 +139,6 @@ class TestMozconfigLoader(unittest.TestCase):
 
         srcdir = self.get_temp_dir()
         curdir = self.get_temp_dir()
-        dirs = [srcdir, curdir]
         loader = MozconfigLoader(srcdir)
 
         path = os.path.join(srcdir, relative_mozconfig)
@@ -199,7 +198,7 @@ class TestMozconfigLoader(unittest.TestCase):
             MozconfigLoader(d).find_mozconfig()
 
         self.assertIn('Multiple default mozconfig files present',
-            e.exception.message)
+                      e.exception.message)
 
     def test_find_deprecated_path_srcdir(self):
         """Ensure we error when deprecated path locations are present."""
@@ -212,7 +211,7 @@ class TestMozconfigLoader(unittest.TestCase):
                 MozconfigLoader(d).find_mozconfig()
 
             self.assertIn('This implicit location is no longer',
-                e.exception.message)
+                          e.exception.message)
             self.assertIn(d, e.exception.message)
 
     def test_find_deprecated_home_paths(self):
@@ -230,7 +229,7 @@ class TestMozconfigLoader(unittest.TestCase):
                 self.get_loader().find_mozconfig()
 
             self.assertIn('This implicit location is no longer',
-                e.exception.message)
+                          e.exception.message)
             self.assertIn(path, e.exception.message)
 
     def test_read_no_mozconfig(self):
@@ -287,24 +286,6 @@ class TestMozconfigLoader(unittest.TestCase):
             self.assertEqual(result['configure_args'], [
                 '--foo=%s' % loader.topsrcdir])
 
-    def test_read_ac_app_options(self):
-        with NamedTemporaryFile(mode='w') as mozconfig:
-            mozconfig.write('ac_add_options --foo=@TOPSRCDIR@\n')
-            mozconfig.write('ac_add_app_options app1 --bar=@TOPSRCDIR@\n')
-            mozconfig.write('ac_add_app_options app2 --bar=x\n')
-            mozconfig.flush()
-
-            loader = self.get_loader()
-            result = loader.read_mozconfig(mozconfig.name, moz_build_app='app1')
-            self.assertEqual(result['configure_args'], [
-                '--foo=%s' % loader.topsrcdir,
-                '--bar=%s' % loader.topsrcdir])
-
-            result = loader.read_mozconfig(mozconfig.name, moz_build_app='app2')
-            self.assertEqual(result['configure_args'], [
-                '--foo=%s' % loader.topsrcdir,
-                '--bar=x'])
-
     def test_read_capture_mk_options(self):
         """Ensures mk_add_options calls are captured."""
         with NamedTemporaryFile(mode='w') as mozconfig:
@@ -318,10 +299,6 @@ class TestMozconfigLoader(unittest.TestCase):
             self.assertEqual(result['topobjdir'], '/foo/bar')
             self.assertEqual(result['make_flags'], ['-j8', '-s'])
             self.assertEqual(result['make_extra'], ['FOO=BAR BAZ', 'BIZ=1'])
-
-            vars = result['vars']['added']
-            for var in ('MOZ_OBJDIR', 'MOZ_MAKE_FLAGS', 'FOO', 'BIZ'):
-                self.assertEqual(vars.get('%s_IS_SET' % var), '1')
 
     def test_read_empty_mozconfig_objdir_environ(self):
         os.environ[b'MOZ_OBJDIR'] = b'obj-firefox'
@@ -349,7 +326,7 @@ class TestMozconfigLoader(unittest.TestCase):
             result = loader.read_mozconfig(mozconfig.name)
 
             self.assertEqual(result['topobjdir'], '%s/some-objdir' %
-                loader.topsrcdir)
+                             loader.topsrcdir)
 
     def test_read_new_variables(self):
         """New variables declared in mozconfig file are detected."""
@@ -379,22 +356,25 @@ class TestMozconfigLoader(unittest.TestCase):
 
     def test_read_modify_variables(self):
         """Variables modified by mozconfig are detected."""
-        os.environ[b'CC'] = b'/usr/bin/gcc'
+        old_path = os.path.realpath(b'/usr/bin/gcc')
+        new_path = os.path.realpath(b'/usr/local/bin/clang')
+        os.environ[b'CC'] = old_path
 
         with NamedTemporaryFile(mode='w') as mozconfig:
-            mozconfig.write('CC=/usr/local/bin/clang\n')
+            mozconfig.write('CC="%s"\n' % new_path)
             mozconfig.flush()
 
             result = self.get_loader().read_mozconfig(mozconfig.name)
 
             self.assertEqual(result['vars']['modified'], {})
             self.assertEqual(result['env']['modified'], {
-                'CC': ('/usr/bin/gcc', '/usr/local/bin/clang')
+                'CC': (old_path, new_path)
             })
 
     def test_read_unmodified_variables(self):
         """Variables modified by mozconfig are detected."""
-        os.environ[b'CC'] = b'/usr/bin/gcc'
+        cc_path = os.path.realpath(b'/usr/bin/gcc')
+        os.environ[b'CC'] = cc_path
 
         with NamedTemporaryFile(mode='w') as mozconfig:
             mozconfig.flush()
@@ -403,12 +383,13 @@ class TestMozconfigLoader(unittest.TestCase):
 
             self.assertEqual(result['vars']['unmodified'], {})
             self.assertEqual(result['env']['unmodified'], {
-                'CC': '/usr/bin/gcc'
+                'CC': cc_path
             })
 
     def test_read_removed_variables(self):
         """Variables unset by the mozconfig are detected."""
-        os.environ[b'CC'] = b'/usr/bin/clang'
+        cc_path = os.path.realpath(b'/usr/bin/clang')
+        os.environ[b'CC'] = cc_path
 
         with NamedTemporaryFile(mode='w') as mozconfig:
             mozconfig.write('unset CC\n')
@@ -418,7 +399,7 @@ class TestMozconfigLoader(unittest.TestCase):
 
             self.assertEqual(result['vars']['removed'], {})
             self.assertEqual(result['env']['removed'], {
-                'CC': '/usr/bin/clang'})
+                'CC': cc_path})
 
     def test_read_multiline_variables(self):
         """Ensure multi-line variables are captured properly."""
@@ -445,7 +426,7 @@ class TestMozconfigLoader(unittest.TestCase):
             result = loader.read_mozconfig(mozconfig.name)
 
             self.assertEqual(result['vars']['added']['TEST'],
-                loader.topsrcdir.replace(os.sep, '/'))
+                             loader.topsrcdir.replace(os.sep, '/'))
             self.assertEqual(result['env']['added'], {})
 
     def test_read_empty_variable_value(self):
@@ -474,10 +455,10 @@ class TestMozconfigLoader(unittest.TestCase):
             with self.assertRaises(MozconfigLoadException) as e:
                 self.get_loader().read_mozconfig(mozconfig.name)
 
-            self.assertTrue(e.exception.message.startswith(
-                'Evaluation of your mozconfig exited with an error'))
+            self.assertIn('Evaluation of your mozconfig exited with an error',
+                          e.exception.message)
             self.assertEquals(e.exception.path,
-                mozconfig.name.replace(os.sep, '/'))
+                              mozconfig.name.replace(os.sep, '/'))
             self.assertEquals(e.exception.output, ['hello world'])
 
 

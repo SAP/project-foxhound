@@ -4,15 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# Any changes that affect Android need to be made in pie/moz.build as well.
-
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     Program(CONFIG['MOZ_CHILD_PROCESS_NAME'])
     SOURCES += [
         'MozillaRuntimeMainAndroid.cpp',
     ]
-
-    DIRS += ['pie']
 else:
     GeckoProgram(CONFIG['MOZ_CHILD_PROCESS_NAME'], linkage='dependent')
 
@@ -26,16 +22,6 @@ LOCAL_INCLUDES += [
     '/toolkit/xre',
     '/xpcom/base',
 ]
-
-# We link GMPLoader into plugin-container on desktop so that its code is
-# covered by the desktop DRM vendor's voucher.
-if CONFIG['OS_TARGET'] != 'Android':
-    SOURCES += [
-        '../../dom/media/gmp/GMPLoader.cpp',
-    ]
-    USE_LIBS += [
-        'rlz',
-    ]
 
 # DELAYLOAD_DLLS in this block ensures that the DLL blocklist is functional
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -63,17 +49,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'xul.dll',
     ]
 
-if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] in ('Linux', 'Android'):
-    USE_LIBS += [
-        'mozsandbox',
-    ]
-
-    # gcc lto likes to put the top level asm in syscall.cc in a different partition
-    # from the function using it which breaks the build.  Work around that by
-    # forcing there to be only one partition.
-    if '-flto' in CONFIG['OS_CXXFLAGS'] and not CONFIG['CLANG_CXX']:
-        LDFLAGS += ['--param lto-partitions=1']
-
 if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] == 'Darwin':
     # For sandbox includes and the include dependencies those have
     LOCAL_INCLUDES += [
@@ -84,12 +59,10 @@ if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] == 'Darwin':
         'mozsandbox',
     ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     # Always enter a Windows program through wmain, whether or not we're
     # a console application.
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
-
-LDFLAGS += CONFIG['MOZ_ALLOW_HEAP_EXECUTE_FLAGS']
 
 # Control the default heap size.
 # This is the heap returned by GetProcessHeap().
@@ -99,16 +72,11 @@ LDFLAGS += CONFIG['MOZ_ALLOW_HEAP_EXECUTE_FLAGS']
 # The heap will grow if need be.
 #
 # Set it to 256k.  See bug 127069.
-if CONFIG['OS_ARCH'] == 'WINNT' and not CONFIG['GNU_CC']:
+if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
     LDFLAGS += ['/HEAP:0x40000']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    OS_LIBS += [
-        'binder',
-        'utils',
-    ]
-
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wshadow']
 
-DEFINES['MOZ_PLUGIN_CONTAINER'] = 1;
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Content Processes")

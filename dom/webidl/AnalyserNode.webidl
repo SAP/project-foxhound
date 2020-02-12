@@ -10,8 +10,19 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
+dictionary AnalyserOptions : AudioNodeOptions {
+             unsigned long fftSize = 2048;
+             double        maxDecibels = -30;
+             double        minDecibels = -100;
+             double        smoothingTimeConstant = 0.8;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface AnalyserNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context,
+                optional AnalyserOptions options = {});
 
     // Real-time frequency-domain data
     void getFloatFrequencyData(Float32Array array);
@@ -37,5 +48,4 @@ interface AnalyserNode : AudioNode {
 };
 
 // Mozilla extension
-AnalyserNode implements AudioNodePassThrough;
-
+AnalyserNode includes AudioNodePassThrough;

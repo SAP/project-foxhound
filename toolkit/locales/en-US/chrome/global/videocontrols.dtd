@@ -10,19 +10,13 @@
 <!ENTITY fullscreenButton.exitfullscreenlabel "Exit Full Screen">
 <!ENTITY castingButton.castingLabel "Cast to Screen">
 <!ENTITY closedCaption.off "Off">
+<!-- LOCALIZATION NOTE (volumeScrubber.label): This label is exposed to
+     accessibility software to clarify what the slider is for. -->
+<!ENTITY volumeScrubber.label "Volume slider">
 
-<!ENTITY stats.media "Media">
-<!ENTITY stats.size "Size">
-<!ENTITY stats.activity "Activity">
-<!ENTITY stats.activityPaused "Paused">
-<!ENTITY stats.activityPlaying "Playing">
-<!ENTITY stats.activityEnded "Ended">
-<!ENTITY stats.activitySeeking "(seeking)">
-<!ENTITY stats.volume "Volume">
-<!ENTITY stats.framesParsed "Frames parsed">
-<!ENTITY stats.framesDecoded "Frames decoded">
-<!ENTITY stats.framesPresented "Frames presented">
-<!ENTITY stats.framesPainted "Frames painted">
+<!-- LOCALIZATION NOTE (pictureInPicture.label): This string is used as part of
+the Picture-in-Picture video toggle button when the mouse is hovering it. -->
+<!ENTITY pictureInPicture.label "Picture-in-Picture">
 
 <!ENTITY error.aborted "Video loading stopped.">
 <!ENTITY error.network "Video playback aborted due to a network error.">
@@ -31,9 +25,15 @@
 <!ENTITY error.noSource2 "No video with supported format and MIME type found.">
 <!ENTITY error.generic "Video playback aborted due to an unknown error.">
 
-<!-- LOCALIZATION NOTE (scrubberScale.nameFormat): the #1 string is the current
+<!ENTITY status.pictureInPicture "This video is playing in Picture-in-Picture mode.">
+
+<!-- LOCALIZATION NOTE (positionAndDuration.nameFormat): the #1 string is the current
 media position, and the #2 string is the total duration. For example, when at
 the 5 minute mark in a 6 hour long video, #1 would be "5:00" and #2 would be
-"6:00:00", result string would be "5:00 of 6:00:00 elapsed".
+"6:00:00", result string would be "5:00 / 6:00:00".
+Note that #2 is not always available. For example, when at the 5 minute mark in an
+unknown duration video, #1 would be "5:00" and the string which is surrounded by
+<span> would be deleted, result string would be "5:00".
 -->
-<!ENTITY scrubberScale.nameFormat "#1 of #2 elapsed">
+<!ENTITY positionAndDuration.nameFormat "#1<span> / #2</span>">
+

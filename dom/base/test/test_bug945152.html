@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=945152
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 945152</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -16,12 +16,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=945152
 
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 function translateChrome(uriStr) {
   const { Cc, Ci } = SpecialPowers;
   let ios = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
   let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
-  let uri = ios.newURI(uriStr, null, ios.newURI(document.baseURI, null, null));
+  let uri = ios.newURI(uriStr, null, ios.newURI(document.baseURI));
   return chromeReg.convertChromeURL(uri).spec;
 }
 

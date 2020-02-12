@@ -1,5 +1,4 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -14,38 +13,40 @@ XPCOMUtils.defineLazyGetter(this, "randomURI", function() {
 });
 
 function inChildProcess() {
-  return Cc["@mozilla.org/xre/app-info;1"]
-           .getService(Ci.nsIXULRuntime)
-           .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+  return (
+    Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
+      .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
+  );
 }
 
 function make_channel(url, callback, ctx) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
 const redirectTargetBody = "response body";
 const response301Body = "redirect body";
 
-function redirectHandler(metadata, response)
-{
+function redirectHandler(metadata, response) {
   response.setStatusLine(metadata.httpVersion, 301, "Moved");
   response.bodyOutputStream.write(response301Body, response301Body.length);
-  response.setHeader("Location", "data:text/plain," + redirectTargetBody, false);
+  response.setHeader(
+    "Location",
+    "data:text/plain," + redirectTargetBody,
+    false
+  );
 }
 
-function finish_test(request, buffer)
-{
-  do_check_eq(buffer, redirectTargetBody);
+function finish_test(request, buffer) {
+  Assert.equal(buffer, redirectTargetBody);
   httpServer.stop(do_test_finished);
 }
 
-function run_test()
-{
+function run_test() {
   httpServer = new HttpServer();
   httpServer.registerPathHandler(randomPath, redirectHandler);
   httpServer.start(-1);
 
   var chan = make_channel(randomURI);
-  chan.asyncOpen2(new ChannelListener(finish_test, null, 0));
+  chan.asyncOpen(new ChannelListener(finish_test, null, 0));
   do_test_pending();
 }

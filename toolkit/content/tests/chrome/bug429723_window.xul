@@ -14,16 +14,17 @@
         title="429723 test">
 
   <script type="application/javascript"><![CDATA[
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
     var gFindBar = null;
     var gBrowser;
 
     function ok(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+      window.arguments[0].SimpleTest.ok(condition, message);
     }
 
     function finish() {
       window.close();
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
     }
 
     function onLoad() {
@@ -31,7 +32,7 @@
         gFindBar = document.getElementById("FindToolbar");
         gBrowser = document.getElementById("content");
         gBrowser.addEventListener("pageshow", onPageShow, false);
-        gBrowser.loadURI("data:text/html,<h2 id='h2'>mozilla</h2>");
+        BrowserTestUtils.loadURI(gBrowser, "data:text/html,<h2 id='h2'>mozilla</h2>");
       }
       setTimeout(_delayedOnLoad, 1000);
     }
@@ -41,7 +42,7 @@
         var event = document.createEvent("KeyboardEvent");
         event.initKeyEvent("keypress", true, true, null, false, false,
                            false, false, 0, aString.charCodeAt(i));
-        gFindBar._findField.inputField.dispatchEvent(event);
+        gFindBar._findField.dispatchEvent(event);
       }
     }
 
@@ -67,9 +68,9 @@
       var event = document.createEvent("KeyboardEvent");
       event.initKeyEvent("keypress", true, true, null, false, false,
                          false, false, KeyEvent.DOM_VK_BACK_SPACE, 0);
-      gFindBar._findField.inputField.dispatchEvent(event);
+      gFindBar._findField.dispatchEvent(event);
 
-      var notRed = !findField.hasAttribute("status") || 
+      var notRed = !findField.hasAttribute("status") ||
                    (findField.getAttribute("status") != "notfound");
       ok(notRed, "Find Bar textbox is correct colour");
       finish();
@@ -79,6 +80,6 @@
   <commandset>
     <command id="cmd_find" oncommand="document.getElementById('FindToolbar').onFindCommand();"/>
   </commandset>
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
   <findbar id="FindToolbar" browserid="content"/>
 </window>

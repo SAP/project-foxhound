@@ -6,6 +6,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsITimer.h"
+#include "nsINamed.h"
 
 class nsIGeolocationUpdate;
 class nsIGeolocationProvider;
@@ -27,17 +28,17 @@ class nsIGeolocationProvider;
  Telemetry is recommended to monitor that the primary provider is responding
  first when expected to do so.
 */
-class MLSFallback : public nsITimerCallback
-{
-public:
+class MLSFallback : public nsITimerCallback, public nsINamed {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   explicit MLSFallback(uint32_t delayMs = 2000);
   nsresult Startup(nsIGeolocationUpdate* aWatcher);
   nsresult Shutdown();
 
-private:
+ private:
   nsresult CreateMLSFallbackProvider();
   virtual ~MLSFallback();
   nsCOMPtr<nsITimer> mHandoffTimer;
@@ -45,4 +46,3 @@ private:
   nsCOMPtr<nsIGeolocationUpdate> mUpdateWatcher;
   const uint32_t mDelayMs;
 };
-

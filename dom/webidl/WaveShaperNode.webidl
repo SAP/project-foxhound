@@ -16,15 +16,24 @@ enum OverSampleType {
   "4x"
 };
 
-[Pref="dom.webaudio.enabled"]
-interface WaveShaperNode : AudioNode {
+dictionary WaveShaperOptions : AudioNodeOptions {
+             sequence<float> curve;
+             OverSampleType  oversample = "none";
+};
 
-      [SetterThrows]
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface WaveShaperNode : AudioNode {
+  [Throws]
+  constructor(BaseAudioContext context,
+              optional WaveShaperOptions options = {});
+
+      [Cached, Pure, SetterThrows]
       attribute Float32Array? curve;
       attribute OverSampleType oversample;
 
 };
 
 // Mozilla extension
-WaveShaperNode implements AudioNodePassThrough;
+WaveShaperNode includes AudioNodePassThrough;
 

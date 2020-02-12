@@ -1,14 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 #ifndef nsMathMLmencloseFrame_h___
 #define nsMathMLmencloseFrame_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
 #include "nsMathMLContainerFrame.h"
+
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
 
 //
 // <menclose> -- enclose content with a stretching symbol such
@@ -21,56 +26,48 @@
   The menclose element renders its content inside the enclosing notation
   specified by its notation attribute. menclose accepts any number of arguments;
   if this number is not 1, its contents are treated as a single "inferred mrow"
-  containing its arguments, as described in Section 3.1.3 Required Arguments. 
+  containing its arguments, as described in Section 3.1.3 Required Arguments.
 */
 
-enum nsMencloseNotation
-  {
-    NOTATION_LONGDIV = 0x1,
-    NOTATION_RADICAL = 0x2,
-    NOTATION_ROUNDEDBOX = 0x4,
-    NOTATION_CIRCLE = 0x8,
-    NOTATION_LEFT = 0x10,
-    NOTATION_RIGHT = 0x20,
-    NOTATION_TOP = 0x40,
-    NOTATION_BOTTOM = 0x80,
-    NOTATION_UPDIAGONALSTRIKE = 0x100,
-    NOTATION_DOWNDIAGONALSTRIKE = 0x200,
-    NOTATION_VERTICALSTRIKE = 0x400,
-    NOTATION_HORIZONTALSTRIKE = 0x800,
-    NOTATION_UPDIAGONALARROW = 0x1000,
-    NOTATION_PHASORANGLE = 0x2000
-  };
+enum nsMencloseNotation {
+  NOTATION_LONGDIV,
+  NOTATION_RADICAL,
+  NOTATION_ROUNDEDBOX,
+  NOTATION_CIRCLE,
+  NOTATION_LEFT,
+  NOTATION_RIGHT,
+  NOTATION_TOP,
+  NOTATION_BOTTOM,
+  NOTATION_UPDIAGONALSTRIKE,
+  NOTATION_DOWNDIAGONALSTRIKE,
+  NOTATION_VERTICALSTRIKE,
+  NOTATION_HORIZONTALSTRIKE,
+  NOTATION_UPDIAGONALARROW,
+  NOTATION_PHASORANGLE
+};
 
 class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsMathMLmencloseFrame)
 
-  friend nsIFrame* NS_NewMathMLmencloseFrame(nsIPresShell*   aPresShell,
-                                             nsStyleContext* aContext);
-  
-  virtual nsresult
-  Place(DrawTarget*          aDrawTarget,
-        bool                 aPlaceOrigin,
-        ReflowOutput& aDesiredSize) override;
-  
-  virtual nsresult
-  MeasureForWidth(DrawTarget* aDrawTarget,
-                  ReflowOutput& aDesiredSize) override;
-  
-  virtual nsresult
-  AttributeChanged(int32_t         aNameSpaceID,
-                   nsIAtom*        aAttribute,
-                   int32_t         aModType) override;
-  
-  virtual void
-  SetAdditionalStyleContext(int32_t          aIndex, 
-                            nsStyleContext*  aStyleContext) override;
-  virtual nsStyleContext*
-  GetAdditionalStyleContext(int32_t aIndex) const override;
+  friend nsIFrame* NS_NewMathMLmencloseFrame(mozilla::PresShell* aPresShell,
+                                             ComputedStyle* aStyle);
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual nsresult Place(DrawTarget* aDrawTarget, bool aPlaceOrigin,
+                         ReflowOutput& aDesiredSize) override;
+
+  virtual nsresult MeasureForWidth(DrawTarget* aDrawTarget,
+                                   ReflowOutput& aDesiredSize) override;
+
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                    int32_t aModType) override;
+
+  virtual void SetAdditionalComputedStyle(
+      int32_t aIndex, ComputedStyle* aComputedStyle) override;
+  virtual ComputedStyle* GetAdditionalComputedStyle(
+      int32_t aIndex) const override;
+
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
   NS_IMETHOD
@@ -79,33 +76,29 @@ public:
   NS_IMETHOD
   TransmitAutomaticData() override;
 
-  virtual nscoord
-  FixInterFrameSpacing(ReflowOutput& aDesiredSize) override;
+  virtual nscoord FixInterFrameSpacing(ReflowOutput& aDesiredSize) override;
 
-  bool
-  IsMrowLike() override {
-    return mFrames.FirstChild() != mFrames.LastChild() ||
-           !mFrames.FirstChild();
+  bool IsMrowLike() override {
+    return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();
   }
 
-protected:
-  explicit nsMathMLmencloseFrame(nsStyleContext* aContext);
+ protected:
+  explicit nsMathMLmencloseFrame(ComputedStyle* aStyle,
+                                 nsPresContext* aPresContext,
+                                 ClassID aID = kClassID);
   virtual ~nsMathMLmencloseFrame();
 
-  nsresult PlaceInternal(DrawTarget*          aDrawTarget,
-                         bool                 aPlaceOrigin,
-                         ReflowOutput& aDesiredSize,
-                         bool                 aWidthOnly);
+  nsresult PlaceInternal(DrawTarget* aDrawTarget, bool aPlaceOrigin,
+                         ReflowOutput& aDesiredSize, bool aWidthOnly);
 
   // functions to parse the "notation" attribute.
   nsresult AddNotation(const nsAString& aNotation);
   void InitNotations();
 
   // Description of the notations to draw
-  uint32_t mNotationsToDraw;
-  bool IsToDraw(nsMencloseNotation mask)
-  {
-    return mask & mNotationsToDraw;
+  mozilla::EnumSet<nsMencloseNotation> mNotationsToDraw;
+  bool IsToDraw(nsMencloseNotation notation) {
+    return mNotationsToDraw.contains(notation);
   }
 
   nscoord mRuleThickness;
@@ -117,9 +110,8 @@ protected:
 
   // Display a frame of the specified type.
   // @param aType Type of frame to display
-  void DisplayNotation(nsDisplayListBuilder* aBuilder,
-                       nsIFrame* aFrame, const nsRect& aRect,
-                       const nsDisplayListSet& aLists,
+  void DisplayNotation(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+                       const nsRect& aRect, const nsDisplayListSet& aLists,
                        nscoord aThickness, nsMencloseNotation aType);
 };
 

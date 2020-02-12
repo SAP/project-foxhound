@@ -9,57 +9,44 @@
 var timeInMicroseconds = Date.now() * 1000;
 
 const VISITS = [
-  { isVisit: true,
+  {
+    isVisit: true,
     transType: TRANSITION_TYPED,
     uri: "http://redirect.example.com/",
     title: "example",
     isRedirect: true,
-    lastVisit: timeInMicroseconds--
+    lastVisit: timeInMicroseconds--,
   },
-  { isVisit: true,
+  {
+    isVisit: true,
     transType: TRANSITION_TYPED,
     uri: "http://target.example.com/",
     title: "example",
-    lastVisit: timeInMicroseconds--
-  }
+    lastVisit: timeInMicroseconds--,
+  },
 ];
 
 const HIDDEN_VISITS = [
-  { isVisit: true,
+  {
+    isVisit: true,
     transType: TRANSITION_FRAMED_LINK,
     uri: "http://hidden.example.com/",
     title: "red",
-    lastVisit: timeInMicroseconds--
+    lastVisit: timeInMicroseconds--,
   },
 ];
 
 const TEST_DATA = [
-  { searchTerms: "example",
-    includeHidden: true,
-    expectedResults: 2
-  },
-  { searchTerms: "example",
-    includeHidden: false,
-    expectedResults: 1
-  },
-  { searchTerms: "red",
-    includeHidden: true,
-    expectedResults: 1
-  }
+  { searchTerms: "example", includeHidden: true, expectedResults: 2 },
+  { searchTerms: "example", includeHidden: false, expectedResults: 1 },
+  { searchTerms: "red", includeHidden: true, expectedResults: 1 },
 ];
 
-function run_test()
-{
-  run_next_test();
-}
-
-add_task(function* test_initalize()
-{
-  yield task_populateDB(VISITS);
+add_task(async function test_initalize() {
+  await task_populateDB(VISITS);
 });
 
-add_task(function* test_searchTerms_includeHidden()
-{
+add_task(async function test_searchTerms_includeHidden() {
   for (let data of TEST_DATA) {
     let query = PlacesUtils.history.getNewQuery();
     query.searchTerms = data.searchTerms;
@@ -71,14 +58,17 @@ add_task(function* test_searchTerms_includeHidden()
 
     let cc = root.childCount;
     // Live update with hidden visits.
-    yield task_populateDB(HIDDEN_VISITS);
+    await task_populateDB(HIDDEN_VISITS);
     let cc_update = root.childCount;
 
     root.containerOpen = false;
 
-    do_check_eq(cc, data.expectedResults);
-    do_check_eq(cc_update, data.expectedResults + (data.includeHidden ? 1 : 0));
+    Assert.equal(cc, data.expectedResults);
+    Assert.equal(
+      cc_update,
+      data.expectedResults + (data.includeHidden ? 1 : 0)
+    );
 
-    PlacesUtils.bhistory.removePage(uri("http://hidden.example.com/"));
+    await PlacesUtils.history.remove("http://hidden.example.com/");
   }
 });

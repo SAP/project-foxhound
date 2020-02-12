@@ -8,15 +8,16 @@
  * http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
  */
 
+[Exposed=Window]
 interface HTMLStyleElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
            [Pure]
            attribute boolean disabled;
-           [SetterThrows, Pure]
+           [CEReactions, SetterThrows, Pure]
            attribute DOMString media;
-           [SetterThrows, Pure]
+           [CEReactions, SetterThrows, Pure]
            attribute DOMString type;
-           [SetterThrows, Pure]
-           attribute boolean scoped;
 };
-HTMLStyleElement implements LinkStyle;
+HTMLStyleElement includes LinkStyle;
 

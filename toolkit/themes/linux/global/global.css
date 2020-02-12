@@ -8,58 +8,36 @@
 
 /* all localizable skin settings shall live here */
 @import url("chrome://global/locale/intl.css");
+@import url("chrome://global/content/widgets.css");
 
-@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace xul url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
+
+%include ../../shared/global.inc.css
 
 /* ::::: XBL bindings ::::: */
 
-checkbox {
-  -moz-binding: url("chrome://global/content/bindings/checkbox.xml#checkbox-with-spacing");
+@media (-moz-menubar-drag) {
+  xul|toolbar[type="menubar"] {
+    -moz-window-dragging: drag;
+  }
 }
 
-radio {
-  -moz-binding: url("chrome://global/skin/globalBindings.xml#radio-with-spacing");
-}
-
-menulist > menupopup {
-  -moz-binding: url("chrome://global/content/bindings/popup.xml#popup-scrollbars");
-}
-
-progressmeter[mode="undetermined"] {
-  -moz-binding: url("chrome://global/content/bindings/progressmeter.xml#progressmeter-undetermined");
-}
-
-toolbar[type="menubar"]:not([autohide="true"]):not(:-moz-lwtheme):-moz-system-metric(menubar-drag) {
-  -moz-binding: url("chrome://global/content/bindings/toolbar.xml#toolbar-drag");
-}
-
-/* ::::: Variables ::::: */
 :root {
-  --panel-arrowcontent-padding: 10px;
-  --panel-arrowcontent-background: -moz-field;
-  --panel-arrowcontent-color: -moz-fieldText;
-  --panel-arrowcontent-border-color: ThreeDShadow;
-}
-
-/* ::::: root elements ::::: */
-
-window,
-page,
-dialog,
-wizard,
-prefwindow {
-  -moz-appearance: window;
+  /* ::::: Variables ::::: */
+  --default-arrowpanel-background: -moz-field;
+  --default-arrowpanel-color: -moz-fieldText;
+  --default-arrowpanel-border-color: ThreeDShadow;
+  --arrowpanel-background: var(--default-arrowpanel-background);
+  --arrowpanel-color: var(--default-arrowpanel-color);
+  --arrowpanel-border-color: var(--default-arrowpanel-border-color);
+  --arrowpanel-padding: 10px;
+  --panel-disabled-color: GrayText;
+  /* ::::: Styles ::::: */
+  -moz-appearance: dialog;
   background-color: -moz-Dialog;
   color: -moz-DialogText;
   font: message-box;
-}
-
-/* deprecated */
-window.dialog {
-  padding-top: 8px;
-  padding-bottom: 10px;
-  padding-inline-start: 8px;
-  padding-inline-end: 10px;
 }
 
 /* ::::: alert icons :::::*/
@@ -68,7 +46,7 @@ window.dialog {
   list-style-image: url("moz-icon://stock/gtk-dialog-info?size=dialog");
 }
 
-.alert-dialog #info\.icon,
+.alert-dialog #infoIcon,
 .alert-icon {
   list-style-image: url("moz-icon://stock/gtk-dialog-warning?size=dialog");
 }
@@ -87,7 +65,7 @@ window.dialog {
 
 /* ::::: iframe ::::: */
 
-iframe {
+xul|iframe {
   border: none;
   width: 100px;
   height: 100px;
@@ -95,118 +73,95 @@ iframe {
   min-height: 10px;
 }
 
-/* ::::: statusbar ::::: */
-
-statusbar {
-  -moz-appearance: statusbar;
-  border-top: 1px solid ThreeDLightShadow;
-  border-left: 1px solid ThreeDShadow;
-  border-right: 1px solid ThreeDHighlight;
-  border-bottom: 1px solid ThreeDHighlight;
-  background-color: -moz-Dialog;
-  min-height: 22px;
-}
-
-statusbarpanel {
-  -moz-appearance: statusbarpanel;
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  border-left: 1px solid ThreeDHighlight;
-  border-top: 1px solid ThreeDHighlight;
-  border-right: 1px solid ThreeDShadow;
-  border-bottom: 1px solid ThreeDShadow;
-  padding: 0 4px;
-}
-
-.statusbar-resizerpanel {
-  -moz-box-align: end;
-  -moz-box-pack: end;
-  -moz-appearance: resizerpanel;
-  padding: 0;
-  border: none;
-}
-
-.statusbarpanel-iconic,
-.statusbarpanel-iconic-text,
-.statusbarpanel-menu-iconic {
-  padding: 0 1px;
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  /* In emulation, <iframe> is block instead of inline, so reset the width/height */
+  xul|iframe {
+    width: auto;
+    height: auto;
+  }
 }
 
 /* XXXBlake yeah, shoot me -- these don't belong here.  I'll move them later. */
 
-sidebarheader {
-  height: 25px;
-  background-color: -moz-Dialog;
+xul|sidebarheader {
+  min-height: 25px;
+  text-shadow: none;
 }
 
-sidebarheader > label {
+xul|sidebarheader > xul|label {
   padding-inline-start: 4px;
 }
 
-.toolbar-focustarget {
-  -moz-user-focus: ignore !important;
-}
-
-toolbar[mode="text"] .toolbarbutton-text {
+xul|toolbar[mode="text"] .toolbarbutton-text {
   padding: 0 !important;
   margin: 3px 5px !important;
 }
 
+/* ::::: print preview ::::: */
+
+.print-preview-navigate-button {
+  min-width: 1.9em;
+}
+
+.print-preview-navigate-button > .toolbarbutton-icon {
+  display: none;
+}
+
+#print-preview-portrait-button {
+  list-style-image: url("moz-icon://stock/gtk-orientation-portrait?size=button");
+}
+
+#print-preview-landscape-button {
+  list-style-image: url("moz-icon://stock/gtk-orientation-landscape?size=button");
+}
+
+#print-preview-portrait-button > .toolbarbutton-icon,
+#print-preview-landscape-button > .toolbarbutton-icon {
+  margin-inline-end: 2px;
+}
+
+html|*#print-preview-pageNumber {
+  /* 3 chars + (3px border + 1px padding) on both sides */
+  width: calc(8px + 3ch);
+  margin: 0 4px;
+}
+
 /* ::::: miscellaneous formatting ::::: */
 
-:root:-moz-lwtheme,
-[lwthemefooter="true"],
-statusbarpanel:-moz-lwtheme {
+:root:-moz-lwtheme {
   -moz-appearance: none;
 }
 
-sidebarheader:-moz-lwtheme {
-  background: none;
-}
-
-:root:-moz-lwtheme-darktext {
+:root[lwtheme-image]:-moz-lwtheme-darktext {
   text-shadow: 0 -0.5px 1.5px white;
 }
 
-:root:-moz-lwtheme-brighttext {
+:root[lwtheme-image]:-moz-lwtheme-brighttext {
   text-shadow: 1px 1px 1.5px black;
 }
 
-.inset {
-  border: 1px solid ThreeDShadow;
-  border-right-color: ThreeDHighlight;
-  border-bottom-color: ThreeDHighlight;
-  margin: 0 5px 5px;
-}
-  
-.outset {
-  border: 1px solid ThreeDShadow;
-  border-left-color: ThreeDHighlight;
-  border-top-color: ThreeDHighlight;
-}
-
-separator:not([orient="vertical"]) {
+xul|separator:not([orient="vertical"]) {
   height: 1.5em;
 }
-separator[orient="vertical"] {
+xul|separator[orient="vertical"] {
   width: 1.5em;
 }
 
-separator.thin:not([orient="vertical"]) {
+xul|separator.thin:not([orient="vertical"]) {
   height: 0.5em;
-}  
-separator.thin[orient="vertical"] {
+}
+xul|separator.thin[orient="vertical"] {
   width: 0.5em;
 }
 
-separator.groove:not([orient="vertical"]) {
+xul|separator.groove:not([orient="vertical"]) {
   border-top: 1px solid ThreeDShadow;
   border-bottom: 1px solid ThreeDHighlight;
   height: 0;
   margin-top: 0.4em;
   margin-bottom: 0.4em;
 }
-separator.groove[orient="vertical"] {
+xul|separator.groove[orient="vertical"] {
   border-left: 1px solid ThreeDShadow;
   border-right: 1px solid ThreeDHighlight;
   width: 0;
@@ -214,19 +169,8 @@ separator.groove[orient="vertical"] {
   margin-right: 0.4em;
 }
 
-.small-margin {
-  margin: 1px 2px;
-}
-    
-.plain {
-  -moz-appearance: none;
-  margin: 0 !important;
-  border: none;
-  padding: 0;
-}
-
-description,
-label {
+xul|description,
+xul|label {
   cursor: default;
   margin-top: 1px;
   margin-bottom: 2px;
@@ -234,11 +178,11 @@ label {
   margin-inline-end: 5px;
 }
 
-description {
+xul|description {
   margin-bottom: 4px;
 }
 
-label[disabled="true"] {
+xul|label[disabled="true"] {
   color: GrayText;
 }
 
@@ -250,24 +194,12 @@ label[disabled="true"] {
   font-weight: bold;
 }
 
-.monospace {
-  font-family: monospace;
-}
-
 .indent {
   margin-inline-start: 23px;
 }
 
 .box-padded {
   padding: 5px;
-}
-
-.spaced {
-  margin: 3px 5px 4px;
-}
-
-.wizard-box {
-  padding: 20px 44px 10px;
 }
 
 .text-link {
@@ -283,52 +215,17 @@ label[disabled="true"] {
   outline: 1px dotted;
 }
 
-notification > button {
+html|input {
+  margin: 2px 4px;
+}
+
+xul|notification > xul|hbox > xul|button {
   margin-top: 0;
   margin-bottom: 0;
 }
 
-popupnotificationcontent {
+xul|popupnotificationcontent {
   margin-top: .5em;
 }
 
-/* :::::: autoscroll popup ::::: */
-
-.autoscroller {
-  height: 28px;
-  width: 28px;
-  border: none;
-  margin: -14px;
-  padding: 0;
-  background-image: url("chrome://global/skin/icons/autoscroll.png");
-  background-color: transparent;
-  background-position: right top;
-  -moz-appearance: none;
-}
-
-.autoscroller[scrolldir="NS"] {
-  background-position: right center;
-}
-
-.autoscroller[scrolldir="EW"] {
-  background-position: right bottom;
-}
-
-/* :::::: Close button icons ::::: */
-
-.close-icon {
-  -moz-appearance: none;
-  height: 16px;
-  width: 16px;
-  background-image: -moz-image-rect(url("chrome://global/skin/icons/close.svg"), 0, 16, 16, 0);
-  background-position: center center;
-  background-repeat: no-repeat;
-}
-
-.close-icon:hover {
-  background-image: -moz-image-rect(url("chrome://global/skin/icons/close.svg"), 0, 32, 16, 16);
-}
-
-.close-icon:hover:active {
-  background-image: -moz-image-rect(url("chrome://global/skin/icons/close.svg"), 0, 48, 16, 32);
-}
+%include ../../shared/notification-popup.inc.css

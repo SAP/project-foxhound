@@ -2,16 +2,16 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-Components.utils.import("resource://gre/modules/Promise.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
-Components.utils.import("resource://testing-common/PromiseTestUtils.jsm");
+const { Promise } = ChromeUtils.import("resource://gre/modules/Promise.jsm");
+const { Task } = ChromeUtils.import("resource://testing-common/Task.jsm");
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
 
 // Prevent test failures due to the unhandled rejections in this test file.
 PromiseTestUtils.disableUncaughtRejectionObserverForSelfTest();
 
-////////////////////////////////////////////////////////////////////////////////
-//// Test runner
+// Test runner
 
 var run_promise_tests = function run_promise_tests(tests, cb) {
   let loop = function loop(index) {
@@ -21,12 +21,12 @@ var run_promise_tests = function run_promise_tests(tests, cb) {
       }
       return;
     }
-    do_print("Launching test " + (index + 1) + "/" + tests.length);
+    info("Launching test " + (index + 1) + "/" + tests.length);
     let test = tests[index];
     // Execute from an empty stack
     let next = function next() {
-      do_print("Test " + (index + 1) + "/" + tests.length + " complete");
-      do_execute_soon(function() {
+      info("Test " + (index + 1) + "/" + tests.length + " complete");
+      executeSoon(function() {
         loop(index + 1);
       });
     };
@@ -38,7 +38,7 @@ var run_promise_tests = function run_promise_tests(tests, cb) {
 
 var make_promise_test = function(test) {
   return function runtest() {
-    do_print("Test starting: " + test.name);
+    info("Test starting: " + test.name);
     try {
       let result = test();
       if (result && "promise" in result) {
@@ -47,7 +47,9 @@ var make_promise_test = function(test) {
       if (!result || !("then" in result)) {
         let exn;
         try {
-          do_throw("Test " + test.name + " did not return a promise: " + result);
+          do_throw(
+            "Test " + test.name + " did not return a promise: " + result
+          );
         } catch (x) {
           exn = x;
         }
@@ -57,7 +59,7 @@ var make_promise_test = function(test) {
       result = result.then(
         // Test complete
         function onResolve() {
-          do_print("Test complete: " + test.name);
+          info("Test complete: " + test.name);
         },
         // The test failed with an unexpected error
         function onReject(err) {
@@ -67,20 +69,27 @@ var make_promise_test = function(test) {
           } else {
             detail = "(no stack)";
           }
-          do_throw("Test " + test.name + " rejected with the following reason: "
-              + err + detail);
-      });
+          do_throw(
+            "Test " +
+              test.name +
+              " rejected with the following reason: " +
+              err +
+              detail
+          );
+        }
+      );
       return result;
     } catch (x) {
       // The test failed because of an error outside of a promise
-      do_throw("Error in body of test " + test.name + ": " + x + " at " + x.stack);
+      do_throw(
+        "Error in body of test " + test.name + ": " + x + " at " + x.stack
+      );
       return Promise.reject();
     }
   };
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
 var tests = [];
 
@@ -89,13 +98,13 @@ var tests = [];
 // not returned.
 var observe_failures = function observe_failures(promise) {
   promise.catch(function onReject(reason) {
-    test.do_throw("Observed failure in test " + test + ": " + reason);
+    do_throw("Observed failure in test: " + reason);
   });
 };
 
 // Test that all observers are notified
-tests.push(make_promise_test(
-  function notification(test) {
+tests.push(
+  make_promise_test(function notification(test) {
     // The size of the test
     const SIZE = 10;
     const RESULT = "this is an arbitrary value";
@@ -111,51 +120,58 @@ tests.push(make_promise_test(
     let result = Promise.defer();
 
     let install_observer = function install_observer(i) {
-      observe_failures(source.promise.then(
-        function onSuccess(value) {
-          do_check_true(!notified[i], "Ensuring that observer is notified at most once");
+      observe_failures(
+        source.promise.then(function onSuccess(value) {
+          Assert.ok(
+            !notified[i],
+            "Ensuring that observer is notified at most once"
+          );
           notified[i] = true;
 
-          do_check_eq(value, RESULT, "Ensuring that the observed value is correct");
+          Assert.equal(
+            value,
+            RESULT,
+            "Ensuring that the observed value is correct"
+          );
           if (--expected == 0) {
             result.resolve();
           }
-        }));
+        })
+      );
     };
 
     // Install a number of observers before resolving
     let i;
-    for (i = 0; i < SIZE/2; ++i) {
+    for (i = 0; i < SIZE / 2; ++i) {
       install_observer(i);
     }
 
     source.resolve(RESULT);
 
     // Install remaining observers
-    for (;i < SIZE; ++i) {
+    for (; i < SIZE; ++i) {
       install_observer(i);
     }
 
     return result;
-  }));
+  })
+);
 
 // Test that observers get the correct "this" value in strict mode.
 tests.push(
   make_promise_test(function handlers_this_value(test) {
-    return Promise.resolve().then(
-      function onResolve() {
+    return Promise.resolve()
+      .then(function onResolve() {
         // Since this file is in strict mode, the correct value is "undefined".
-        do_check_eq(this, undefined);
-        throw "reject";
-      }
-    ).then(
-      null,
-      function onReject() {
+        Assert.equal(this, undefined);
+        throw new Error("reject");
+      })
+      .then(null, function onReject() {
         // Since this file is in strict mode, the correct value is "undefined".
-        do_check_eq(this, undefined);
-      }
-    );
-  }));
+        Assert.equal(this, undefined);
+      });
+  })
+);
 
 // Test that observers registered on a pending promise are notified in order.
 tests.push(
@@ -165,31 +181,26 @@ tests.push(
 
     let order = 0;
 
-    promise.then(
-      function onResolve() {
-        do_check_eq(order, 0);
-        order++;
-      }
-    );
+    promise.then(function onResolve() {
+      Assert.equal(order, 0);
+      order++;
+    });
 
-    promise.then(
-      function onResolve() {
-        do_check_eq(order, 1);
-        order++;
-      }
-    );
+    promise.then(function onResolve() {
+      Assert.equal(order, 1);
+      order++;
+    });
 
-    let newPromise = promise.then(
-      function onResolve() {
-        do_check_eq(order, 2);
-      }
-    );
+    let newPromise = promise.then(function onResolve() {
+      Assert.equal(order, 2);
+    });
 
     deferred.resolve();
 
     // This test finishes after the last handler succeeds.
     return newPromise;
-  }));
+  })
+);
 
 // Test that observers registered on a resolved promise are notified in order.
 tests.push(
@@ -198,32 +209,27 @@ tests.push(
 
     let order = 0;
 
-    promise.then(
-      function onResolve() {
-        do_check_eq(order, 0);
-        order++;
-      }
-    );
+    promise.then(function onResolve() {
+      Assert.equal(order, 0);
+      order++;
+    });
 
-    promise.then(
-      function onResolve() {
-        do_check_eq(order, 1);
-        order++;
-      }
-    );
+    promise.then(function onResolve() {
+      Assert.equal(order, 1);
+      order++;
+    });
 
     // This test finishes after the last handler succeeds.
-    return promise.then(
-      function onResolve() {
-        do_check_eq(order, 2);
-      }
-    );
-  }));
+    return promise.then(function onResolve() {
+      Assert.equal(order, 2);
+    });
+  })
+);
 
 // Test that all observers are notified at most once, even if source
 // is resolved/rejected several times
-tests.push(make_promise_test(
-  function notification_once(test) {
+tests.push(
+  make_promise_test(function notification_once(test) {
     // The size of the test
     const SIZE = 10;
     const RESULT = "this is an arbitrary value";
@@ -239,28 +245,36 @@ tests.push(make_promise_test(
     let result = Promise.defer();
 
     let install_observer = function install_observer(i) {
-      observe_failures(observed.promise.then(
-        function onSuccess(value) {
-          do_check_true(!notified[i], "Ensuring that observer is notified at most once");
+      observe_failures(
+        observed.promise.then(function onSuccess(value) {
+          Assert.ok(
+            !notified[i],
+            "Ensuring that observer is notified at most once"
+          );
           notified[i] = true;
 
-          do_check_eq(value, RESULT, "Ensuring that the observed value is correct");
+          Assert.equal(
+            value,
+            RESULT,
+            "Ensuring that the observed value is correct"
+          );
           if (--expected == 0) {
             result.resolve();
           }
-        }));
+        })
+      );
     };
 
     // Install a number of observers before resolving
     let i;
-    for (i = 0; i < SIZE/2; ++i) {
+    for (i = 0; i < SIZE / 2; ++i) {
       install_observer(i);
     }
 
     observed.resolve(RESULT);
 
     // Install remaining observers
-    for (;i < SIZE; ++i) {
+    for (; i < SIZE; ++i) {
       install_observer(i);
     }
 
@@ -271,43 +285,44 @@ tests.push(make_promise_test(
     }
 
     return result;
-  }));
+  })
+);
 
 // Test that throwing an exception from a onResolve listener
 // does not prevent other observers from receiving the notification
 // of success.
 tests.push(
-  make_promise_test(function exceptions_do_not_stop_notifications(test)  {
+  make_promise_test(function exceptions_do_not_stop_notifications(test) {
     let source = Promise.defer();
 
     let exception_thrown = false;
     let exception_content = new Error("Boom!");
 
-    let observer_1 = source.promise.then(
-      function onResolve() {
-        exception_thrown = true;
-        throw exception_content;
-      });
+    let observer_1 = source.promise.then(function onResolve() {
+      exception_thrown = true;
+      throw exception_content;
+    });
 
-    let observer_2 = source.promise.then(
-      function onResolve() {
-        do_check_true(exception_thrown, "Second observer called after first observer has thrown");
-      }
-    );
+    source.promise.then(function onResolve() {
+      Assert.ok(
+        exception_thrown,
+        "Second observer called after first observer has thrown"
+      );
+    });
 
     let result = observer_1.then(
       function onResolve() {
         do_throw("observer_1 should not have resolved");
       },
       function onReject(reason) {
-        do_check_true(reason == exception_content, "Obtained correct rejection");
+        Assert.ok(reason == exception_content, "Obtained correct rejection");
       }
     );
 
     source.resolve();
     return result;
-  }
-));
+  })
+);
 
 // Test that, once a promise is resolved, further resolve/reject
 // are ignored.
@@ -320,7 +335,7 @@ tests.push(
 
     let result = deferred.promise.then(
       function onResolve(value) {
-        do_check_eq(value, 1, "Resolution chose the first value");
+        Assert.equal(value, 1, "Resolution chose the first value");
       },
       function onReject(reason) {
         do_throw("Obtained a rejection while the promise was already resolved");
@@ -328,7 +343,8 @@ tests.push(
     );
 
     return result;
-  }));
+  })
+);
 
 // Test that, once a promise is rejected, further resolve/reject
 // are ignored.
@@ -341,15 +357,18 @@ tests.push(
 
     let result = deferred.promise.then(
       function onResolve() {
-        do_throw("Obtained a resolution while the promise was already rejected");
+        do_throw(
+          "Obtained a resolution while the promise was already rejected"
+        );
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "Rejection chose the first value");
+        Assert.equal(reason, 1, "Rejection chose the first value");
       }
     );
 
     return result;
-  }));
+  })
+);
 
 // Test that returning normally from a rejection recovers from the error
 // and that listeners are informed of a success.
@@ -364,20 +383,26 @@ tests.push(
         do_throw("A rejected promise should not resolve");
       },
       function onReject(reason) {
-        do_check_true(reason == boom, "Promise was rejected with the correct error");
+        Assert.ok(
+          reason == boom,
+          "Promise was rejected with the correct error"
+        );
         return RESULT;
       }
     );
 
-    promise = promise.then(
-      function onResolve(value) {
-        do_check_eq(value, RESULT, "Promise was recovered with the correct value");
-      }
-    );
+    promise = promise.then(function onResolve(value) {
+      Assert.equal(
+        value,
+        RESULT,
+        "Promise was recovered with the correct value"
+      );
+    });
 
     deferred.reject(boom);
     return promise;
-  }));
+  })
+);
 
 // Test that returning a resolved promise from a onReject causes a resolution
 // (recovering from the error) and that returning a rejected promise
@@ -395,29 +420,37 @@ tests.push(
         do_throw("A rejected promise should not resolve");
       },
       function onReject(reason) {
-        do_check_true(reason == boom, "Promise was rejected with the correct error");
+        Assert.ok(
+          reason == boom,
+          "Promise was rejected with the correct error"
+        );
         return Promise.resolve(RESULT);
       }
     );
 
     // return a rejected promise from a onResolve listener
-    promise = promise.then(
-      function onResolve(value) {
-        do_check_eq(value, RESULT, "Promise was recovered with the correct value");
-        return Promise.reject(boom2);
-      }
-    );
+    promise = promise.then(function onResolve(value) {
+      Assert.equal(
+        value,
+        RESULT,
+        "Promise was recovered with the correct value"
+      );
+      return Promise.reject(boom2);
+    });
 
-    promise = promise.catch(
-      function onReject(reason) {
-        do_check_eq(reason, boom2, "Rejection was propagated with the correct " +
-                "reason, through a promise");
-      }
-    );
+    promise = promise.catch(function onReject(reason) {
+      Assert.equal(
+        reason,
+        boom2,
+        "Rejection was propagated with the correct " +
+          "reason, through a promise"
+      );
+    });
 
     deferred.reject(boom);
     return promise;
-  }));
+  })
+);
 
 // Test that we can resolve with promises of promises
 tests.push(
@@ -431,13 +464,15 @@ tests.push(
     d2.resolve(d1.promise);
     d1.resolve(RESULT);
 
-    return d3.promise.then(
-      function onSuccess(value) {
-        do_check_eq(value, RESULT, "Resolution with a promise eventually yielded "
-                + " the correct result");
-      }
-    );
-  }));
+    return d3.promise.then(function onSuccess(value) {
+      Assert.equal(
+        value,
+        RESULT,
+        "Resolution with a promise eventually yielded  the correct result"
+      );
+    });
+  })
+);
 
 // Test sequences of |then| and |catch|
 tests.push(
@@ -455,64 +490,61 @@ tests.push(
     source.resolve(result_1);
 
     // Check that result_1 is correctly propagated
-    promise = promise.then(
-      function onSuccess(result) {
-        do_check_eq(result, result_1, "Result was propagated correctly through " +
-                " several applications of |then|");
-        return result_2;
-      }
-    );
+    promise = promise.then(function onSuccess(result) {
+      Assert.equal(
+        result,
+        result_1,
+        "Result was propagated correctly through " +
+          " several applications of |then|"
+      );
+      return result_2;
+    });
 
     // Check that returning from the promise produces a resolution
-    promise = promise.catch(
-      function onReject() {
-        do_throw("Incorrect rejection");
-      }
-    );
+    promise = promise.catch(function onReject() {
+      do_throw("Incorrect rejection");
+    });
 
     // ... and that the check did not alter the value
-    promise = promise.then(
-      function onResolve(value) {
-        do_check_eq(value, result_2, "Result was propagated correctly once again");
-      }
-    );
+    promise = promise.then(function onResolve(value) {
+      Assert.equal(
+        value,
+        result_2,
+        "Result was propagated correctly once again"
+      );
+    });
 
     // Now the same kind of tests for rejections
-    promise = promise.then(
-      function onResolve() {
-        throw error_1;
-      }
-    );
+    promise = promise.then(function onResolve() {
+      throw error_1;
+    });
 
-    promise = promise.then(
-      function onResolve() {
-        do_throw("Incorrect resolution: the exception should have caused a rejection");
-      }
-    );
+    promise = promise.then(function onResolve() {
+      do_throw(
+        "Incorrect resolution: the exception should have caused a rejection"
+      );
+    });
 
-    promise = promise.catch(
-      function onReject(reason) {
-        do_check_true(reason == error_1, "Reason was propagated correctly");
-        throw error_2;
-      }
-    );
+    promise = promise.catch(function onReject(reason) {
+      Assert.ok(reason == error_1, "Reason was propagated correctly");
+      throw error_2;
+    });
 
-    promise = promise.catch(
-      function onReject(reason) {
-        do_check_true(reason == error_2, "Throwing an error altered the reason " +
-            "as expected");
-        return result_3;
-      }
-    );
+    promise = promise.catch(function onReject(reason) {
+      Assert.ok(
+        reason == error_2,
+        "Throwing an error altered the reason as expected"
+      );
+      return result_3;
+    });
 
-    promise = promise.then(
-      function onResolve(result) {
-        do_check_eq(result, result_3, "Error was correctly recovered");
-      }
-    );
+    promise = promise.then(function onResolve(result) {
+      Assert.equal(result, result_3, "Error was correctly recovered");
+    });
 
     return promise;
-  }));
+  })
+);
 
 // Test that resolving with a rejected promise actually rejects
 tests.push(
@@ -525,14 +557,15 @@ tests.push(
         do_throw("Incorrect call to onResolve listener");
       },
       function onReject(reason) {
-        do_check_eq(reason, error, "Rejection lead to the expected reason");
+        Assert.equal(reason, error, "Rejection lead to the expected reason");
       }
     );
 
     source.resolve(Promise.reject(error));
 
     return promise;
-  }));
+  })
+);
 
 // Test that Promise.resolve resolves as expected
 tests.push(
@@ -540,22 +573,34 @@ tests.push(
     const RESULT = "arbitrary value";
     let p1 = Promise.resolve(RESULT);
     let p2 = Promise.resolve(p1);
-    do_check_eq(p1, p2, "Promise.resolve used on a promise just returns the promise");
-
-    return p1.then(
-      function onResolve(result) {
-        do_check_eq(result, RESULT, "Promise.resolve propagated the correct result");
-      }
+    Assert.equal(
+      p1,
+      p2,
+      "Promise.resolve used on a promise just returns the promise"
     );
-  }));
+
+    return p1.then(function onResolve(result) {
+      Assert.equal(
+        result,
+        RESULT,
+        "Promise.resolve propagated the correct result"
+      );
+    });
+  })
+);
 
 // Test that Promise.resolve throws when its argument is an async function.
 tests.push(
-  make_promise_test(function test_promise_resolve_throws_with_async_function(test) {
-    Assert.throws(() => Promise.resolve(Task.async(function* () {})),
-                  /Cannot resolve a promise with an async function/);
+  make_promise_test(function test_promise_resolve_throws_with_async_function(
+    test
+  ) {
+    Assert.throws(
+      () => Promise.resolve(Task.async(function*() {})), // eslint-disable-line mozilla/no-task
+      /Cannot resolve a promise with an async function/
+    );
     return Promise.resolve();
-  }));
+  })
+);
 
 // Test that the code after "then" is always executed before the callbacks
 tests.push(
@@ -564,16 +609,15 @@ tests.push(
 
     let thenExecuted = false;
 
-    promise = promise.then(
-      function onResolve() {
-        thenExecuted = true;
-      }
-    );
+    promise = promise.then(function onResolve() {
+      thenExecuted = true;
+    });
 
-    do_check_false(thenExecuted);
+    Assert.ok(!thenExecuted);
 
     return promise;
-  }));
+  })
+);
 
 // Test that chaining promises does not generate long stack traces
 tests.push(
@@ -584,35 +628,32 @@ tests.push(
     const NUM_ITERATIONS = 100;
 
     for (let i = 0; i < NUM_ITERATIONS; i++) {
-      promise = promise.then(
-        function onResolve(result) {
-          return result + ".";
-        }
-      );
+      promise = promise.then(function onResolve(result) {
+        return result + ".";
+      });
     }
 
-    promise = promise.then(
-      function onResolve(result) {
-        // Check that the execution went as expected.
-        let expectedString = new Array(1 + NUM_ITERATIONS).join(".");
-        do_check_true(result == expectedString);
+    promise = promise.then(function onResolve(result) {
+      // Check that the execution went as expected.
+      let expectedString = new Array(1 + NUM_ITERATIONS).join(".");
+      Assert.ok(result == expectedString);
 
-        // Check that we didn't generate one or more stack frames per iteration.
-        let stackFrameCount = 0;
-        let stackFrame = Components.stack;
-        while (stackFrame) {
-          stackFrameCount++;
-          stackFrame = stackFrame.caller;
-        }
-
-        do_check_true(stackFrameCount < NUM_ITERATIONS);
+      // Check that we didn't generate one or more stack frames per iteration.
+      let stackFrameCount = 0;
+      let stackFrame = Components.stack;
+      while (stackFrame) {
+        stackFrameCount++;
+        stackFrame = stackFrame.caller;
       }
-    );
+
+      Assert.ok(stackFrameCount < NUM_ITERATIONS);
+    });
 
     source.resolve("");
 
     return promise;
-  }));
+  })
+);
 
 // Test that the values of the promise return by Promise.all() are kept in the
 // given order even if the given promises are resolved in arbitrary order
@@ -624,19 +665,23 @@ tests.push(
 
     d3.resolve(4);
     d2.resolve(2);
-    do_execute_soon(() => d1.resolve(1));
+    executeSoon(() => d1.resolve(1));
 
     let promises = [d1.promise, d2.promise, 3, d3.promise];
 
-    return Promise.all(promises).then(
-      function onResolve([val1, val2, val3, val4]) {
-        do_check_eq(val1, 1);
-        do_check_eq(val2, 2);
-        do_check_eq(val3, 3);
-        do_check_eq(val4, 4);
-      }
-    );
-  }));
+    return Promise.all(promises).then(function onResolve([
+      val1,
+      val2,
+      val3,
+      val4,
+    ]) {
+      Assert.equal(val1, 1);
+      Assert.equal(val2, 2);
+      Assert.equal(val3, 3);
+      Assert.equal(val4, 4);
+    });
+  })
+);
 
 // Test that rejecting one of the promises passed to Promise.all()
 // rejects the promise return by Promise.all()
@@ -650,7 +695,7 @@ tests.push(
 
     d3.resolve(3);
     d2.resolve(2);
-    do_execute_soon(() => d1.reject(error));
+    executeSoon(() => d1.reject(error));
 
     let promises = [d1.promise, d2.promise, d3.promise];
 
@@ -659,10 +704,11 @@ tests.push(
         do_throw("Incorrect call to onResolve listener");
       },
       function onReject(reason) {
-        do_check_eq(reason, error, "Rejection lead to the expected reason");
+        Assert.equal(reason, error, "Rejection lead to the expected reason");
       }
     );
-  }));
+  })
+);
 
 // Test that passing only values (not promises) to Promise.all()
 // forwards them all as resolution values.
@@ -670,27 +716,28 @@ tests.push(
   make_promise_test(function all_resolve_no_promises(test) {
     try {
       Promise.all(null);
-      do_check_true(false, "all() should only accept iterables");
+      Assert.ok(false, "all() should only accept iterables");
     } catch (e) {
-      do_check_true(true, "all() fails when first the arg is not an iterable");
+      Assert.ok(true, "all() fails when first the arg is not an iterable");
     }
 
-    let p1 = Promise.all([]).then(
-      function onResolve(val) {
-        do_check_true(Array.isArray(val) && val.length == 0);
-      }
-    );
+    let p1 = Promise.all([]).then(function onResolve(val) {
+      Assert.ok(Array.isArray(val) && !val.length);
+    });
 
-    let p2 = Promise.all([1, 2, 3]).then(
-      function onResolve([val1, val2, val3]) {
-        do_check_eq(val1, 1);
-        do_check_eq(val2, 2);
-        do_check_eq(val3, 3);
-      }
-    );
+    let p2 = Promise.all([1, 2, 3]).then(function onResolve([
+      val1,
+      val2,
+      val3,
+    ]) {
+      Assert.equal(val1, 1);
+      Assert.equal(val2, 2);
+      Assert.equal(val3, 3);
+    });
 
     return Promise.all([p1, p2]);
-  }));
+  })
+);
 
 // Test that Promise.all() handles non-array iterables
 tests.push(
@@ -703,22 +750,23 @@ tests.push(
 
     return Promise.all(iterable()).then(
       function onResolve([val1, val2, val3]) {
-        do_check_eq(val1, 1);
-        do_check_eq(val2, 2);
-        do_check_eq(val3, 3);
+        Assert.equal(val1, 1);
+        Assert.equal(val2, 2);
+        Assert.equal(val3, 3);
       },
       function onReject() {
         do_throw("all() unexpectedly rejected");
       }
     );
-  }));
+  })
+);
 
 // Test that throwing from the iterable passed to Promise.all() rejects the
 // promise returned by Promise.all()
 tests.push(
   make_promise_test(function all_iterable_throws(test) {
     function* iterable() {
-      throw 1;
+      throw new Error(1);
     }
 
     return Promise.all(iterable()).then(
@@ -726,10 +774,15 @@ tests.push(
         do_throw("all() unexpectedly resolved");
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "all() rejects when the iterator throws");
+        Assert.equal(
+          reason.message,
+          1,
+          "all() rejects when the iterator throws"
+        );
       }
     );
-  }));
+  })
+);
 
 // Test that Promise.race() resolves with the first available resolution value
 tests.push(
@@ -737,29 +790,27 @@ tests.push(
     let p1 = Promise.resolve(1);
     let p2 = Promise.resolve().then(() => 2);
 
-    return Promise.race([p1, p2]).then(
-      function onResolve(value) {
-        do_check_eq(value, 1);
-      }
-    );
-  }));
+    return Promise.race([p1, p2]).then(function onResolve(value) {
+      Assert.equal(value, 1);
+    });
+  })
+);
 
 // Test that passing only values (not promises) to Promise.race() works
 tests.push(
   make_promise_test(function race_resolve_no_promises(test) {
     try {
       Promise.race(null);
-      do_check_true(false, "race() should only accept iterables");
+      Assert.ok(false, "race() should only accept iterables");
     } catch (e) {
-      do_check_true(true, "race() fails when first the arg is not an iterable");
+      Assert.ok(true, "race() fails when first the arg is not an iterable");
     }
 
-    return Promise.race([1, 2, 3]).then(
-      function onResolve(value) {
-        do_check_eq(value, 1);
-      }
-    );
-  }));
+    return Promise.race([1, 2, 3]).then(function onResolve(value) {
+      Assert.equal(value, 1);
+    });
+  })
+);
 
 // Test that Promise.race() never resolves when passed an empty iterable
 tests.push(
@@ -777,7 +828,8 @@ tests.push(
       // Approximate "never" so we don't have to solve the halting problem.
       do_timeout(200, resolve);
     });
-  }));
+  })
+);
 
 // Test that Promise.race() handles non-array iterables.
 tests.push(
@@ -790,20 +842,21 @@ tests.push(
 
     return Promise.race(iterable()).then(
       function onResolve(value) {
-        do_check_eq(value, 1);
+        Assert.equal(value, 1);
       },
       function onReject() {
         do_throw("race() unexpectedly rejected");
       }
     );
-  }));
+  })
+);
 
 // Test that throwing from the iterable passed to Promise.race() rejects the
 // promise returned by Promise.race()
 tests.push(
   make_promise_test(function race_iterable_throws(test) {
     function* iterable() {
-      throw 1;
+      throw new Error(1);
     }
 
     return Promise.race(iterable()).then(
@@ -811,10 +864,15 @@ tests.push(
         do_throw("race() unexpectedly resolved");
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "race() rejects when the iterator throws");
+        Assert.equal(
+          reason.message,
+          1,
+          "race() rejects when the iterator throws"
+        );
       }
     );
-  }));
+  })
+);
 
 // Test that rejecting one of the promises passed to Promise.race() rejects the
 // promise returned by Promise.race()
@@ -829,43 +887,46 @@ tests.push(
         do_throw("race() unexpectedly resolved");
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "race() rejects when given a rejected promise");
+        Assert.equal(reason, 1, "race() rejects when given a rejected promise");
       }
     );
-  }));
+  })
+);
 
 // Test behavior of the Promise constructor.
 tests.push(
   make_promise_test(function test_constructor(test) {
     try {
       new Promise(null);
-      do_check_true(false, "Constructor should fail when not passed a function");
+      Assert.ok(false, "Constructor should fail when not passed a function");
     } catch (e) {
-      do_check_true(true, "Constructor fails when not passed a function");
+      Assert.ok(true, "Constructor fails when not passed a function");
     }
 
     let executorRan = false;
-    let promise = new Promise(
-      function executor(resolve, reject) {
-        executorRan = true;
-        do_check_eq(this, undefined);
-        do_check_eq(typeof resolve, "function",
-                    "resolve function should be passed to the executor");
-        do_check_eq(typeof reject, "function",
-                    "reject function should be passed to the executor");
-      }
-    );
+    let promise = new Promise(function executor(resolve, reject) {
+      executorRan = true;
+      Assert.equal(this, undefined);
+      Assert.equal(
+        typeof resolve,
+        "function",
+        "resolve function should be passed to the executor"
+      );
+      Assert.equal(
+        typeof reject,
+        "function",
+        "reject function should be passed to the executor"
+      );
+    });
     do_check_instanceof(promise, Promise);
-    do_check_true(executorRan, "Executor should execute synchronously");
+    Assert.ok(executorRan, "Executor should execute synchronously");
 
     // resolve a promise from the executor
-    let resolvePromise = new Promise(
-      function executor(resolve) {
-        resolve(1);
-      }
-    ).then(
+    let resolvePromise = new Promise(function executor(resolve) {
+      resolve(1);
+    }).then(
       function onResolve(value) {
-        do_check_eq(value, 1, "Executor resolved with correct value");
+        Assert.equal(value, 1, "Executor resolved with correct value");
       },
       function onReject() {
         do_throw("Executor unexpectedly rejected");
@@ -873,35 +934,32 @@ tests.push(
     );
 
     // reject a promise from the executor
-    let rejectPromise = new Promise(
-      function executor(_, reject) {
-        reject(1);
-      }
-    ).then(
+    let rejectPromise = new Promise(function executor(_, reject) {
+      reject(1);
+    }).then(
       function onResolve() {
         do_throw("Executor unexpectedly resolved");
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "Executor rejected with correct value");
+        Assert.equal(reason, 1, "Executor rejected with correct value");
       }
     );
 
     // throw from the executor, causing a rejection
-    let throwPromise = new Promise(
-      function executor() {
-        throw 1;
-      }
-    ).then(
+    let throwPromise = new Promise(function executor() {
+      throw 1; // eslint-disable-line no-throw-literal
+    }).then(
       function onResolve() {
         do_throw("Throwing inside an executor should not resolve the promise");
       },
       function onReject(reason) {
-        do_check_eq(reason, 1, "Executor rejected with correct value");
+        Assert.equal(reason, 1, "Executor rejected with correct value");
       }
     );
 
     return Promise.all([resolvePromise, rejectPromise, throwPromise]);
-  }));
+  })
+);
 
 // Test deadlock in Promise.jsm with nested event loops
 // The scenario being tested is:
@@ -924,10 +982,7 @@ tests.push(
     let shouldExitNestedEventLoop = false;
 
     function event_loop() {
-      let thr = Services.tm.mainThread;
-      while (!shouldExitNestedEventLoop) {
-        thr.processNextEvent(true);
-      }
+      Services.tm.spinEventLoopUntil(() => shouldExitNestedEventLoop);
     }
 
     // I wish there was a way to cancel xpcshell do_timeout()s
@@ -941,19 +996,22 @@ tests.push(
     let promise1 = Promise.resolve(1);
     let promise2 = Promise.resolve(2);
 
-    do_print("Setting wait for first promise");
+    info("Setting wait for first promise");
     promise1.then(value => {
-      do_print("Starting event loop");
+      info("Starting event loop");
       event_loop();
     }, null);
 
-    do_print("Setting wait for second promise");
-    return promise2.catch(error => { return 3; })
-    .then(
-      count => {
+    info("Setting wait for second promise");
+    return promise2
+      .catch(error => {
+        return 3;
+      })
+      .then(count => {
         shouldExitNestedEventLoop = true;
       });
-  }));
+  })
+);
 
 function wait_for_uncaught(aMustAppear, aTimeout = undefined) {
   let remaining = new Set();
@@ -961,13 +1019,12 @@ function wait_for_uncaught(aMustAppear, aTimeout = undefined) {
     remaining.add(k);
   }
   let deferred = Promise.defer();
-  let print = do_print;
-  let execute_soon = do_execute_soon;
-  let observer = function({message, stack}) {
+  let print = info;
+  let observer = function({ message, stack }) {
     let data = message + stack;
     print("Observing " + message + ", looking for " + aMustAppear.join(", "));
     for (let expected of remaining) {
-      if (data.indexOf(expected) != -1) {
+      if (data.includes(expected)) {
         print("I found " + expected);
         remaining.delete(expected);
       }
@@ -994,49 +1051,59 @@ function wait_for_uncaught(aMustAppear, aTimeout = undefined) {
 // Test that uncaught errors are reported as uncaught
 (function() {
   let make_string_rejection = function make_string_rejection() {
-    let salt = (Math.random() * ( Math.pow(2, 24) - 1 ));
+    let salt = Math.random() * (Math.pow(2, 24) - 1);
     let string = "This is an uncaught rejection " + salt;
     // Our error is not Error-like nor an nsIException, so the stack will
     // include the closure doing the actual rejection.
-    return {mustFind: ["test_rejection_closure", string], error: string};
+    return { mustFind: ["test_rejection_closure", string], error: string };
   };
   let make_num_rejection = function make_num_rejection() {
-    let salt = (Math.random() * ( Math.pow(2, 24) - 1 ));
+    let salt = Math.random() * (Math.pow(2, 24) - 1);
     // Our error is not Error-like nor an nsIException, so the stack will
     // include the closure doing the actual rejection.
-    return {mustFind: ["test_rejection_closure", salt], error: salt};
+    return { mustFind: ["test_rejection_closure", salt], error: salt };
   };
   let make_undefined_rejection = function make_undefined_rejection() {
     // Our error is not Error-like nor an nsIException, so the stack will
     // include the closure doing the actual rejection.
-    return {mustFind: ["test_rejection_closure"], error: undefined};
+    return { mustFind: ["test_rejection_closure"], error: undefined };
   };
   let make_error_rejection = function make_error_rejection() {
-    let salt = (Math.random() * ( Math.pow(2, 24) - 1 ));
+    let salt = Math.random() * (Math.pow(2, 24) - 1);
     let error = new Error("This is an uncaught error " + salt);
     return {
       mustFind: [error.message, error.fileName, error.lineNumber, error.stack],
-      error: error
+      error,
     };
   };
   let make_exception_rejection = function make_exception_rejection() {
-    let salt = (Math.random() * ( Math.pow(2, 24) - 1 ));
-    let exn = new Components.Exception("This is an uncaught exception " + salt,
-                                       Components.results.NS_ERROR_NOT_AVAILABLE);
+    let salt = Math.random() * (Math.pow(2, 24) - 1);
+    let exn = new Components.Exception(
+      "This is an uncaught exception " + salt,
+      Cr.NS_ERROR_NOT_AVAILABLE
+    );
     return {
-      mustFind: [exn.message, exn.filename, exn.lineNumber, exn.location.toString()],
-      error: exn
+      mustFind: [
+        exn.message,
+        exn.filename,
+        exn.lineNumber,
+        exn.location.toString(),
+      ],
+      error: exn,
     };
   };
-  for (let make_rejection of [make_string_rejection,
+  for (let make_rejection of [
+    make_string_rejection,
     make_num_rejection,
     make_undefined_rejection,
     make_error_rejection,
-    make_exception_rejection]) {
-      let {mustFind, error} = make_rejection();
-      let name = make_rejection.name;
-      tests.push(make_promise_test(function test_uncaught_is_reported() {
-        do_print("Testing with rejection " + name);
+    make_exception_rejection,
+  ]) {
+    let { mustFind, error } = make_rejection();
+    let name = make_rejection.name;
+    tests.push(
+      make_promise_test(function test_uncaught_is_reported() {
+        info("Testing with rejection " + name);
         let promise = wait_for_uncaught(mustFind);
         (function test_rejection_closure() {
           // For the moment, we cannot be absolutely certain that a value is
@@ -1057,51 +1124,59 @@ function wait_for_uncaught(aMustAppear, aTimeout = undefined) {
             Promise.reject(error);
           }
         })();
-        do_print("Posted all rejections");
-        Components.utils.forceGC();
-        Components.utils.forceCC();
-        Components.utils.forceShrinkingGC();
+        info("Posted all rejections");
+        Cu.forceGC();
+        Cu.forceCC();
+        Cu.forceShrinkingGC();
         return promise;
-      }));
+      })
+    );
   }
 })();
 
-
 // Test that caught errors are not reported as uncaught
 tests.push(
-make_promise_test(function test_caught_is_not_reported() {
-  let salt = (Math.random() * ( Math.pow(2, 24) - 1 ));
-  let promise = wait_for_uncaught([salt], 500);
-  (function() {
-    let uncaught = Promise.reject("This error, on the other hand, is caught " + salt);
-    uncaught.catch(function() { /* ignore rejection */ });
-    uncaught = null;
-  })();
-  // Isolate this in a function to increase likelihood that the gc will
-  // realise that |uncaught| has remained uncaught.
-  Components.utils.forceGC();
+  make_promise_test(function test_caught_is_not_reported() {
+    let salt = Math.random() * (Math.pow(2, 24) - 1);
+    let promise = wait_for_uncaught([salt], 500);
+    (function() {
+      let uncaught = Promise.reject(
+        "This error, on the other hand, is caught " + salt
+      );
+      uncaught.catch(function() {
+        /* ignore rejection */
+      });
+      uncaught = null;
+    })();
+    // Isolate this in a function to increase likelihood that the gc will
+    // realise that |uncaught| has remained uncaught.
+    Cu.forceGC();
 
-  return promise.then(function onSuccess() {
-    throw new Error("This error was caught and should not have been reported");
-  }, function onError() {
-    do_print("The caught error was not reported, all is fine");
-  }
-  );
-}));
+    return promise.then(
+      function onSuccess() {
+        throw new Error(
+          "This error was caught and should not have been reported"
+        );
+      },
+      function onError() {
+        info("The caught error was not reported, all is fine");
+      }
+    );
+  })
+);
 
 // Bug 1033406 - Make sure Promise works even after freezing.
 tests.push(
   make_promise_test(function test_freezing_promise(test) {
     var p = new Promise(function executor(resolve) {
-      do_execute_soon(resolve);
+      executeSoon(resolve);
     });
     Object.freeze(p);
     return p;
   })
 );
 
-function run_test()
-{
+function run_test() {
   do_test_pending();
   run_promise_tests(tests, do_test_finished);
 }

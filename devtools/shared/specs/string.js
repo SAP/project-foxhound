@@ -4,9 +4,8 @@
 "use strict";
 
 const protocol = require("devtools/shared/protocol");
-const {Arg, RetVal, generateActorSpec} = protocol;
+const { Arg, RetVal, generateActorSpec } = protocol;
 const promise = require("promise");
-const {Class} = require("sdk/core/heritage");
 
 const longStringSpec = generateActorSpec({
   typeName: "longstractor",
@@ -15,7 +14,7 @@ const longStringSpec = generateActorSpec({
     substring: {
       request: {
         start: Arg(0),
-        end: Arg(1)
+        end: Arg(1),
       },
       response: { substring: RetVal() },
     },
@@ -30,32 +29,32 @@ exports.longStringSpec = longStringSpec;
  * client, the SimpleStringFront can be used as it shares the same API as a
  * LongStringFront but will not make unnecessary trips to the server.
  */
-const SimpleStringFront = Class({
-  initialize: function (str) {
+class SimpleStringFront {
+  constructor(str) {
     this.str = str;
-  },
+  }
 
   get length() {
     return this.str.length;
-  },
+  }
 
   get initial() {
     return this.str;
-  },
+  }
 
-  string: function () {
+  string() {
     return promise.resolve(this.str);
-  },
+  }
 
-  substring: function (start, end) {
+  substring(start, end) {
     return promise.resolve(this.str.substring(start, end));
-  },
+  }
 
-  release: function () {
+  release() {
     this.str = null;
     return promise.resolve(undefined);
   }
-});
+}
 
 exports.SimpleStringFront = SimpleStringFront;
 
@@ -79,9 +78,9 @@ protocol.types.addType("longstring", {
     if (context instanceof protocol.Actor) {
       throw Error("Passing a longstring as an argument isn't supported.");
     }
-    if (typeof (value) === "string") {
+    if (typeof value === "string") {
       return new SimpleStringFront(value);
     }
     return stringActorType.read(value, context, detail);
-  }
+  },
 });

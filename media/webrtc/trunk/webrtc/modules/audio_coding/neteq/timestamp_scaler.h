@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_
+#define MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/audio_coding/neteq/packet.h"
-#include "webrtc/typedefs.h"
+#include "modules/audio_coding/neteq/packet.h"
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -36,7 +36,7 @@ class TimestampScaler {
   virtual ~TimestampScaler() {}
 
   // Start over.
-  virtual void Reset() { first_packet_received_ = false; }
+  virtual void Reset();
 
   // Scale the timestamp in |packet| from external to internal.
   virtual void ToInternal(Packet* packet);
@@ -61,8 +61,8 @@ class TimestampScaler {
   uint32_t internal_ref_;
   const DecoderDatabase& decoder_database_;
 
-  DISALLOW_COPY_AND_ASSIGN(TimestampScaler);
+  RTC_DISALLOW_COPY_AND_ASSIGN(TimestampScaler);
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_TIMESTAMP_SCALER_H_

@@ -4,6 +4,7 @@
 
 # Required Plugins:
 # AppAssocReg http://nsis.sourceforge.net/Application_Association_Registration_plug-in
+# BitsUtils   http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/BitsUtils
 # CityHash    http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
 # ShellLink   http://nsis.sourceforge.net/ShellLink_plug-in
 # UAC         http://nsis.sourceforge.net/UAC_plug-in
@@ -19,17 +20,13 @@ CRCCheck on
 
 RequestExecutionLevel user
 
-; The commands inside this ifdef require NSIS 3.0a2 or greater so the ifdef can
-; be removed after we require NSIS 3.0a2 or greater.
-!ifdef NSIS_PACKEDVERSION
-  Unicode true
-  ManifestSupportedOS all
-  ManifestDPIAware true
-!endif
+Unicode true
+ManifestSupportedOS all
+ManifestDPIAware true
 
 !addplugindir ./
 
-; On Vista and above attempt to elevate Standard Users in addition to users that
+; Attempt to elevate Standard Users in addition to users that
 ; are a member of the Administrators group.
 !define NONADMIN_ELEVATE
 
@@ -41,6 +38,11 @@ RequestExecutionLevel user
 
 Var TmpVal
 Var MaintCertKey
+Var ShouldOpenSurvey
+; AddTaskbarSC is defined here in order to silence warnings from inside
+; MigrateTaskBarShortcut and is not intended to be used here.
+; See Bug 1329869 for more.
+Var AddTaskbarSC
 
 ; Other included files may depend upon these includes!
 ; The following includes are provided by NSIS.
@@ -91,6 +93,11 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro WriteRegDWORD2
 !insertmacro WriteRegStr2
 
+; This needs to be inserted after InitHashAppModelId because it uses
+; $AppUserModelID and the compiler can't handle using variables lexically before
+; they've been declared.
+!insertmacro GetInstallerRegistryPref
+
 !insertmacro un.ChangeMUIHeaderImage
 !insertmacro un.CheckForFilesInUse
 !insertmacro un.CleanUpdateDirectories
@@ -103,6 +110,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro un.RegCleanAppHandler
 !insertmacro un.RegCleanFileHandler
 !insertmacro un.RegCleanMain
+!insertmacro un.RegCleanPrefs
 !insertmacro un.RegCleanUninstall
 !insertmacro un.RegCleanProtocolHandler
 !insertmacro un.RemoveQuotesFromPath
@@ -128,6 +136,8 @@ OutFile "helper.exe"
 !endif
 ShowUnInstDetails nevershow
 
+!define URLUninstallSurvey "https://qsurvey.mozilla.com/s3/FF-Desktop-Post-Uninstall?channel=${UpdateChannel}&version=${AppVersion}&osversion="
+
 ################################################################################
 # Modern User Interface - MUI
 
@@ -138,6 +148,11 @@ ShowUnInstDetails nevershow
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP wizWatermark.bmp
+; By default MUI_BGCOLOR is hardcoded to FFFFFF, which is only correct if the
+; the Windows theme or high-contrast mode hasn't changed it, so we need to
+; override that with GetSysColor(COLOR_WINDOW) (this string ends up getting
+; passed to SetCtlColors, which uses this custom syntax to mean that).
+!define MUI_BGCOLOR SYSCLR:WINDOW
 
 ; Use a right to left header image when the language is right to left
 !ifdef ${AB_CD}_rtl
@@ -151,6 +166,7 @@ ShowUnInstDetails nevershow
  */
 ; Welcome Page
 !define MUI_PAGE_CUSTOMFUNCTION_PRE un.preWelcome
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.showWelcome
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.leaveWelcome
 !insertmacro MUI_UNPAGE_WELCOME
 
@@ -161,7 +177,12 @@ UninstPage custom un.preConfirm
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ; Finish Page
-
+!define MUI_FINISHPAGE_SHOWREADME
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_SHOWREADME_TEXT $(UN_SURVEY_CHECKBOX_LABEL)
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION un.Survey
+!define MUI_PAGE_CUSTOMFUNCTION_PRE un.preFinish
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.showFinish
 !insertmacro MUI_UNPAGE_FINISH
 
 ; Use the default dialog for IDD_VERIFY for a simple Banner
@@ -170,8 +191,17 @@ ChangeUI IDD_VERIFY "${NSISDIR}\Contrib\UIs\default.exe"
 ################################################################################
 # Helper Functions
 
+Function un.Survey
+  ; We can't actually call ExecInExplorer here because it's going to have to
+  ; make some marshalled COM calls and those are not allowed from within a
+  ; synchronous message handler (where we currently are); we'll be thrown
+  ; RPC_E_CANTCALLOUT_ININPUTSYNCCALL if we try. So all we can do is record
+  ; that we need to make the call later, which we'll do from un.onGUIEnd.
+  StrCpy $ShouldOpenSurvey "1"
+FunctionEnd
+
 ; This function is used to uninstall the maintenance service if the
-; application currently being uninstalled is the last application to use the 
+; application currently being uninstalled is the last application to use the
 ; maintenance service.
 Function un.UninstallServiceIfNotUsed
   ; $0 will store if a subkey exists
@@ -182,6 +212,7 @@ Function un.UninstallServiceIfNotUsed
 
   ; The maintenance service always uses the 64-bit registry on x64 systems
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView 64
   ${EndIf}
 
@@ -197,19 +228,32 @@ Function un.UninstallServiceIfNotUsed
 
   ; Restore back the registry view
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastUsed
   ${EndIf}
+
   ${If} $0 == 0
-    ; Get the path of the maintenance service uninstaller
+    ; Get the path of the maintenance service uninstaller.
+    ; Look in both the 32-bit and 64-bit registry views.
+    SetRegView 32
     ReadRegStr $1 HKLM ${MaintUninstallKey} "UninstallString"
+    SetRegView lastused
+
+    ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
+      ${If} $1 == ""
+        SetRegView 64
+        ReadRegStr $1 HKLM ${MaintUninstallKey} "UninstallString"
+        SetRegView lastused
+      ${EndIf}
+    ${EndIf}
 
     ; If the uninstall string does not exist, skip executing it
-    StrCmp $1 "" doneUninstall
-
-    ; $1 is already a quoted string pointing to the install path
-    ; so we're already protected against paths with spaces
-    nsExec::Exec "$1 /S"
-doneUninstall:
+    ${If} $1 != ""
+      ; $1 is already a quoted string pointing to the install path
+      ; so we're already protected against paths with spaces
+      nsExec::Exec "$1 /S"
+    ${EndIf}
   ${EndIf}
 
   ; Restore the old value of $1 and $0
@@ -248,6 +292,7 @@ Section "Uninstall"
 
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${un.RegCleanMain} "Software\Mozilla"
+  ${un.RegCleanPrefs} "Software\Mozilla\${AppName}"
   ${un.RegCleanUninstall}
   ${un.DeleteShortcuts}
 
@@ -257,7 +302,7 @@ Section "Uninstall"
     ApplicationID::UninstallJumpLists "$AppUserModelID"
   ${EndIf}
 
-  ; Remove the updates directory for Vista and above
+  ; Remove the updates directory
   ${un.CleanUpdateDirectories} "Mozilla\Firefox" "Mozilla\updates"
 
   ; Remove any app model id's stored in the registry for this install path
@@ -278,28 +323,22 @@ Section "Uninstall"
     ${un.SetAppLSPCategories}
   ${EndIf}
 
-  ${un.RegCleanAppHandler} "FirefoxURL"
-  ${un.RegCleanAppHandler} "FirefoxHTML"
+  ${un.RegCleanAppHandler} "FirefoxURL-$AppUserModelID"
+  ${un.RegCleanAppHandler} "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanProtocolHandler} "ftp"
   ${un.RegCleanProtocolHandler} "http"
   ${un.RegCleanProtocolHandler} "https"
-
-  ClearErrors
-  ReadRegStr $R9 HKCR "FirefoxHTML" ""
-  ; Don't clean up the file handlers if the FirefoxHTML key still exists since
-  ; there should be a second installation that may be the default file handler
-  ${If} ${Errors}
-    ${un.RegCleanFileHandler}  ".htm"   "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".html"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".shtml" "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".xht"   "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".xhtml" "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".oga"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".ogg"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".ogv"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".pdf"  "FirefoxHTML"
-    ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML"
-  ${EndIf}
+  ${un.RegCleanFileHandler}  ".htm"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".html"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".shtml" "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".xht"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".xhtml" "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".oga"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".ogg"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".ogv"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".pdf"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler} ".svg" "FirefoxHTML-$AppUserModelID"
 
   SetShellVarContext all  ; Set SHCTX to HKLM
   ${un.GetSecondInstallPath} "Software\Mozilla" $R9
@@ -308,36 +347,32 @@ Section "Uninstall"
     ${un.GetSecondInstallPath} "Software\Mozilla" $R9
   ${EndIf}
 
-  StrCpy $0 "Software\Clients\StartMenuInternet\${FileMainEXE}\shell\open\command"
-  ReadRegStr $R1 HKLM "$0" ""
-  ${un.RemoveQuotesFromPath} "$R1" $R1
-  ${un.GetParent} "$R1" $R1
+  DeleteRegKey HKLM "Software\Clients\StartMenuInternet\${AppRegName}-$AppUserModelID"
+  DeleteRegValue HKLM "Software\RegisteredApplications" "${AppRegName}-$AppUserModelID"
 
-  ; Only remove the StartMenuInternet key if it refers to this install location.
-  ; The StartMenuInternet registry key is independent of the default browser
-  ; settings. The XPInstall base un-installer always removes this key if it is
-  ; uninstalling the default browser and it will always replace the keys when
-  ; installing even if there is another install of Firefox that is set as the
-  ; default browser. Now the key is always updated on install but it is only
-  ; removed if it refers to this install location.
-  ${If} "$INSTDIR" == "$R1"
-    DeleteRegKey HKLM "Software\Clients\StartMenuInternet\${FileMainEXE}"
+  DeleteRegKey HKCU "Software\Clients\StartMenuInternet\${AppRegName}-$AppUserModelID"
+  DeleteRegValue HKCU "Software\RegisteredApplications" "${AppRegName}-$AppUserModelID"
+
+  ; Remove old protocol handler and StartMenuInternet keys without install path
+  ; hashes, but only if they're for this installation.
+  ReadRegStr $0 HKLM "Software\Classes\FirefoxHTML\DefaultIcon" ""
+  StrCpy $0 $0 -2
+  ${If} $0 == "$INSTDIR\${FileMainEXE}"
+    DeleteRegKey HKLM "Software\Classes\FirefoxHTML"
+    DeleteRegKey HKLM "Software\Classes\FirefoxURL"
+    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
+    DeleteRegKey HKLM "Software\Clients\StartMenuInternet\$R9"
+    DeleteRegValue HKLM "Software\RegisteredApplications" "$R9"
     DeleteRegValue HKLM "Software\RegisteredApplications" "${AppRegName}"
   ${EndIf}
-
-  ReadRegStr $R1 HKCU "$0" ""
-  ${un.RemoveQuotesFromPath} "$R1" $R1
-  ${un.GetParent} "$R1" $R1
-
-  ; Only remove the StartMenuInternet key if it refers to this install location.
-  ; The StartMenuInternet registry key is independent of the default browser
-  ; settings. The XPInstall base un-installer always removes this key if it is
-  ; uninstalling the default browser and it will always replace the keys when
-  ; installing even if there is another install of Firefox that is set as the
-  ; default browser. Now the key is always updated on install but it is only
-  ; removed if it refers to this install location.
-  ${If} "$INSTDIR" == "$R1"
-    DeleteRegKey HKCU "Software\Clients\StartMenuInternet\${FileMainEXE}"
+  ReadRegStr $0 HKCU "Software\Classes\FirefoxHTML\DefaultIcon" ""
+  StrCpy $0 $0 -2
+  ${If} $0 == "$INSTDIR\${FileMainEXE}"
+    DeleteRegKey HKCU "Software\Classes\FirefoxHTML"
+    DeleteRegKey HKCU "Software\Classes\FirefoxURL"
+    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
+    DeleteRegKey HKCU "Software\Clients\StartMenuInternet\$R9"
+    DeleteRegValue HKCU "Software\RegisteredApplications" "$R9"
     DeleteRegValue HKCU "Software\RegisteredApplications" "${AppRegName}"
   ${EndIf}
 
@@ -390,17 +425,26 @@ Section "Uninstall"
     ${UnregisterDLL} "$INSTDIR\AccessibleMarshal.dll"
   ${EndIf}
 
+  ; Only unregister the dll if the registration points to this installation
+  ReadRegStr $R1 HKCR "CLSID\${AccessibleHandlerCLSID}\InprocHandler32" ""
+  ${If} "$INSTDIR\AccessibleHandler.dll" == "$R1"
+    ${UnregisterDLL} "$INSTDIR\AccessibleHandler.dll"
+  ${EndIf}
+
+!ifdef MOZ_LAUNCHER_PROCESS
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Launcher"
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Browser"
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Image"
+  DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry"
+!endif
+
   ${un.RemovePrecompleteEntries} "false"
 
   ${If} ${FileExists} "$INSTDIR\defaults\pref\channel-prefs.js"
     Delete /REBOOTOK "$INSTDIR\defaults\pref\channel-prefs.js"
   ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\defaults\pref"
-    RmDir /REBOOTOK "$INSTDIR\defaults\pref"
-  ${EndIf}
-  ${If} ${FileExists} "$INSTDIR\defaults"
-    RmDir /REBOOTOK "$INSTDIR\defaults"
-  ${EndIf}
+  RmDir "$INSTDIR\defaults\pref"
+  RmDir "$INSTDIR\defaults"
   ${If} ${FileExists} "$INSTDIR\uninstall"
     ; Remove the uninstall directory that we control
     RmDir /r /REBOOTOK "$INSTDIR\uninstall"
@@ -412,7 +456,7 @@ Section "Uninstall"
     Delete /REBOOTOK "$INSTDIR\update-settings.ini"
   ${EndIf}
 
-  ; Explictly remove empty webapprt dir in case it exists (bug 757978).
+  ; Explicitly remove empty webapprt dir in case it exists (bug 757978).
   RmDir "$INSTDIR\webapprt\components"
   RmDir "$INSTDIR\webapprt"
 
@@ -458,14 +502,21 @@ Section "Uninstall"
   ${If} $MaintCertKey != ""
     ; Always use the 64bit registry for certs on 64bit systems.
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView 64
     ${EndIf}
     DeleteRegKey HKLM "$MaintCertKey"
     ${If} ${RunningX64}
+    ${OrIf} ${IsNativeARM64}
       SetRegView lastused
     ${EndIf}
   ${EndIf}
   Call un.UninstallServiceIfNotUsed
+!endif
+
+!ifdef MOZ_BITS_DOWNLOAD
+  BitsUtils::CancelBitsJobsByName "MozillaUpdate $AppUserModelID"
+  Pop $0
 !endif
 
   ${un.IsFirewallSvcRunning}
@@ -497,6 +548,25 @@ Function un.preWelcome
     Delete "$PLUGINSDIR\modern-wizard.bmp"
     CopyFiles /SILENT "$INSTDIR\distribution\modern-wizard.bmp" "$PLUGINSDIR\modern-wizard.bmp"
   ${EndIf}
+!ifdef MOZ_BITS_DOWNLOAD
+  BitsUtils::StartBitsServiceBackground
+!endif
+
+  ; We don't want the header bitmap showing on the welcome page.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_HIDE}
+FunctionEnd
+
+Function un.ShowWelcome
+  ; The welcome and finish pages don't get the correct colors for their labels
+  ; like the other pages do, presumably because they're built by filling in an
+  ; InstallOptions .ini file instead of from a dialog resource like the others.
+  ; Field 2 is the header and Field 3 is the body text.
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 2" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
 FunctionEnd
 
 Function un.leaveWelcome
@@ -526,9 +596,20 @@ Function un.leaveWelcome
       StrCpy $TmpVal "true"
     ${EndIf}
   ${EndIf}
+
+  ; Bring back the header bitmap for the next pages.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_SHOW}
 FunctionEnd
 
 Function un.preConfirm
+  ; The header and subheader on the wizard pages don't get the correct text
+  ; color by default for some reason, even though the other controls do.
+  GetDlgItem $0 $HWNDPARENT 1037
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+  GetDlgItem $0 $HWNDPARENT 1038
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
   ${If} ${FileExists} "$INSTDIR\distribution\modern-header.bmp"
   ${AndIf} $hHeaderBitmap == ""
     Delete "$PLUGINSDIR\modern-header.bmp"
@@ -586,6 +667,45 @@ Function un.preConfirm
   !insertmacro MUI_INSTALLOPTIONS_SHOW
 FunctionEnd
 
+Function un.preFinish
+  ; Need to give the survey (readme) checkbox a few extra DU's of height
+  ; to accommodate a potentially multi-line label. If the reboot flag is set,
+  ; then we're not showing the survey checkbox and Field 4 is the "reboot now"
+  ; radio button; setting it to go from 90 to 120 (instead of 90 to 100) would
+  ; cover up Field 5 which is "reboot later", running from 110 to 120. For
+  ; whatever reason child windows get created at the bottom of the z-order, so
+  ; 4 overlaps 5.
+  ${IfNot} ${RebootFlag}
+    WriteINIStr "$PLUGINSDIR\ioSpecial.ini" "Field 4" Bottom "120"
+  ${EndIf}
+
+  ; We don't want the header bitmap showing on the finish page.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_HIDE}
+FunctionEnd
+
+Function un.ShowFinish
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 2" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; Either Fields 4 and 5 are the reboot option radio buttons, or Field 4 is
+  ; the survey checkbox and Field 5 doesn't exist. Either way, we need to
+  ; clear the theme from them before we can set their background colors.
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 4" "HWND"
+  System::Call 'uxtheme::SetWindowTheme(i $0, w " ", w " ")'
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ClearErrors
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 5" "HWND"
+  ${IfNot} ${Errors}
+    System::Call 'uxtheme::SetWindowTheme(i $0, w " ", w " ")'
+    SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+  ${EndIf}
+FunctionEnd
+
 ################################################################################
 # Initialization Functions
 
@@ -604,16 +724,9 @@ Function un.onInit
   System::Call 'kernel32::SetDllDirectoryW(w "")'
 
   StrCpy $LANGUAGE 0
+  StrCpy $ShouldOpenSurvey "0"
 
   ${un.UninstallUnOnInitCommon}
-
-; The commands inside this ifndef are needed prior to NSIS 3.0a2 and can be
-; removed after we require NSIS 3.0a2 or greater.
-!ifndef NSIS_PACKEDVERSION
-  ${If} ${AtLeastWinVista}
-    System::Call 'user32::SetProcessDPIAware()'
-  ${EndIf}
-!endif
 
   !insertmacro InitInstallOptionsFile "unconfirm.ini"
 FunctionEnd
@@ -624,4 +737,32 @@ FunctionEnd
 
 Function un.onGUIEnd
   ${un.OnEndCommon}
+
+  ${If} $ShouldOpenSurvey == "1"
+    ; Though these values are sometimes incorrect due to bug 444664 it happens
+    ; so rarely it isn't worth working around it by reading the registry values.
+    ${WinVerGetMajor} $0
+    ${WinVerGetMinor} $1
+    ${WinVerGetBuild} $2
+    ${WinVerGetServicePackLevel} $3
+    StrCpy $R1 "${URLUninstallSurvey}$0.$1.$2.$3"
+
+    ; We can't just open the URL normally because we are most likely running
+    ; elevated without an unelevated process to redirect through, and we're
+    ; not going to go around starting elevated web browsers. But to start an
+    ; unelevated process directly from here we need a pretty nasty hack; see
+    ; the ExecInExplorer plugin code itself for the details.
+    ; If we were the default browser and we've now been uninstalled, we need
+    ; to take steps to make sure the user doesn't see an "open with" dialog;
+    ; they're helping us out by answering this survey, they don't need more
+    ; friction. Sometimes Windows 7 and 8 automatically switch the default to
+    ; IE, but it isn't reliable, so we'll manually invoke IE in that case.
+    ; Windows 10 always seems to just clear the default browser, so for it
+    ; we'll manually invoke Edge using Edge's custom URI scheme.
+    ${If} ${AtLeastWin10}
+      ExecInExplorer::Exec "microsoft-edge:$R1"
+    ${Else}
+      ExecInExplorer::Exec "iexplore.exe" /cmdargs "$R1"
+    ${EndIf}
+  ${EndIf}
 FunctionEnd

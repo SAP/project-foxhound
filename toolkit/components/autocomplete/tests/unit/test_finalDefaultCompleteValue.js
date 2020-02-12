@@ -16,38 +16,46 @@ function AutoCompleteInput(aSearches) {
 }
 AutoCompleteInput.prototype = Object.create(AutoCompleteInputBase.prototype);
 
-function run_test() {
-  run_next_test();
-}
-
 add_test(function test_keyNavigation() {
-  doSearch("moz", "mozilla.com", "http://www.mozilla.com", function(aController) {
-    do_check_eq(aController.input.textValue, "mozilla.com");
-    aController.handleKeyNavigation(Ci.nsIDOMKeyEvent.DOM_VK_RIGHT);
-    do_check_eq(aController.input.textValue, "mozilla.com");
+  doSearch("moz", "mozilla.com", "http://www.mozilla.com", function(
+    aController
+  ) {
+    Assert.equal(aController.input.textValue, "mozilla.com");
+    // Hardcode KeyboardEvent.DOM_VK_RIGHT, because we can't easily
+    // include KeyboardEvent here.
+    aController.handleKeyNavigation(0x27 /* KeyboardEvent.DOM_VK_RIGHT */);
+    Assert.equal(aController.input.textValue, "mozilla.com");
   });
 });
 
 add_test(function test_handleEnter() {
-  doSearch("moz", "mozilla.com", "http://www.mozilla.com", function(aController) {
-    do_check_eq(aController.input.textValue, "mozilla.com");
+  doSearch("moz", "mozilla.com", "http://www.mozilla.com", function(
+    aController
+  ) {
+    Assert.equal(aController.input.textValue, "mozilla.com");
     aController.handleEnter(false);
-    do_check_eq(aController.input.textValue, "http://www.mozilla.com");
+    Assert.equal(aController.input.textValue, "http://www.mozilla.com");
   });
 });
 
-function doSearch(aSearchString, aResultValue, aFinalCompleteValue, aOnCompleteCallback) {
+function doSearch(
+  aSearchString,
+  aResultValue,
+  aFinalCompleteValue,
+  aOnCompleteCallback
+) {
   let search = new AutoCompleteSearchBase(
     "search",
-    new AutoCompleteResult([ aResultValue ], [ aFinalCompleteValue ])
+    new AutoCompleteResult([aResultValue], [aFinalCompleteValue])
   );
   registerAutoCompleteSearch(search);
 
-  let controller = Cc["@mozilla.org/autocomplete/controller;1"].
-                   getService(Ci.nsIAutoCompleteController);
+  let controller = Cc["@mozilla.org/autocomplete/controller;1"].getService(
+    Ci.nsIAutoCompleteController
+  );
 
   // Make an AutoCompleteInput that uses our searches and confirms results.
-  let input = new AutoCompleteInput([ search.name ]);
+  let input = new AutoCompleteInput([search.name]);
   input.textValue = aSearchString;
 
   // Caret must be at the end for autofill to happen.

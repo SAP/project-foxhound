@@ -18,16 +18,14 @@
 
 function runTests(testFile, order) {
   function setupPrefs() {
-    return new Promise(function(resolve, reject) {
-      SpecialPowers.pushPrefEnv({
-        "set": [["dom.caches.enabled", true],
-                ["dom.caches.testing.enabled", true],
-                ["dom.serviceWorkers.enabled", true],
-                ["dom.serviceWorkers.testing.enabled", true],
-                ["dom.serviceWorkers.exemptFromPerDomainMax", true]]
-      }, function() {
-        resolve();
-      });
+    return SpecialPowers.pushPrefEnv({
+      set: [
+        ["dom.caches.enabled", true],
+        ["dom.caches.testing.enabled", true],
+        ["dom.serviceWorkers.enabled", true],
+        ["dom.serviceWorkers.testing.enabled", true],
+        ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+      ],
     });
   }
 
@@ -53,8 +51,12 @@ function runTests(testFile, order) {
   }
 
   function importDrivers() {
-    return Promise.all([loadScript("worker_driver.js"),
-                        loadScript("serviceworker_driver.js")]);
+    /* import-globals-from worker_driver.js */
+    /* import-globals-from serviceworker_driver.js */
+    return Promise.all([
+      loadScript("worker_driver.js"),
+      loadScript("serviceworker_driver.js"),
+    ]);
   }
 
   function runWorkerTest() {
@@ -77,13 +79,13 @@ function runTests(testFile, order) {
           if (event.data.context != "Window") {
             return;
           }
-          if (event.data.type == 'finish') {
+          if (event.data.type == "finish") {
             window.removeEventListener("message", onMessage);
             resolve();
-          } else if (event.data.type == 'status') {
+          } else if (event.data.type == "status") {
             ok(event.data.status, event.data.context + ": " + event.data.msg);
           }
-        }, false);
+        });
         doc.body.appendChild(s);
       };
       document.body.appendChild(iframe);
@@ -97,36 +99,38 @@ function runTests(testFile, order) {
     // TODO: Make this "both" again.
   }
 
-  ok(order == "parallel" || order == "sequential" || order == "both",
-     "order argument should be valid");
+  ok(
+    order == "parallel" || order == "sequential" || order == "both",
+    "order argument should be valid"
+  );
 
   if (order == "both") {
     info("Running tests in both modes; first: sequential");
-    return runTests(testFile, "sequential")
-        .then(function() {
-          info("Running tests in parallel mode");
-          return runTests(testFile, "parallel");
-        });
+    return runTests(testFile, "sequential").then(function() {
+      info("Running tests in parallel mode");
+      return runTests(testFile, "parallel");
+    });
   }
   if (order == "sequential") {
     return setupPrefs()
-        .then(importDrivers)
-        .then(runWorkerTest)
-        .then(clearStorage)
-        .then(runServiceWorkerTest)
-        .then(clearStorage)
-        .then(runFrameTest)
-        .then(clearStorage)
-        .catch(function(e) {
-          ok(false, "A promise was rejected during test execution: " + e);
-        });
-  }
-  return setupPrefs()
       .then(importDrivers)
-      .then(() => Promise.all([runWorkerTest(), runServiceWorkerTest(), runFrameTest()]))
+      .then(runWorkerTest)
+      .then(clearStorage)
+      .then(runServiceWorkerTest)
+      .then(clearStorage)
+      .then(runFrameTest)
       .then(clearStorage)
       .catch(function(e) {
         ok(false, "A promise was rejected during test execution: " + e);
       });
+  }
+  return setupPrefs()
+    .then(importDrivers)
+    .then(() =>
+      Promise.all([runWorkerTest(), runServiceWorkerTest(), runFrameTest()])
+    )
+    .then(clearStorage)
+    .catch(function(e) {
+      ok(false, "A promise was rejected during test execution: " + e);
+    });
 }
-

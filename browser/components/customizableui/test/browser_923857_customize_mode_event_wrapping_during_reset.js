@@ -5,20 +5,20 @@
 "use strict";
 
 // Customize mode reset button should revert correctly
-add_task(function*() {
-  yield startCustomizing();
+add_task(async function() {
+  await startCustomizing();
   let devButton = document.getElementById("developer-button");
-  let downloadsButton = document.getElementById("downloads-button");
-  let searchBox = document.getElementById("search-container");
+  let libraryButton = document.getElementById("library-button");
+  let homeButton = document.getElementById("home-button");
   let palette = document.getElementById("customization-palette");
-  ok(devButton && downloadsButton && searchBox && palette, "Stuff should exist");
-  simulateItemDrag(devButton, downloadsButton);
-  simulateItemDrag(searchBox, palette);
-  yield gCustomizeMode.reset();
+  ok(devButton && libraryButton && homeButton && palette, "Stuff should exist");
+  simulateItemDrag(devButton, libraryButton);
+  simulateItemDrag(homeButton, palette);
+  await gCustomizeMode.reset();
   ok(CustomizableUI.inDefaultState, "Should be back in default state");
-  yield endCustomizing();
+  await endCustomizing();
 });
 
-add_task(function* asyncCleanup() {
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await resetCustomization();
 });

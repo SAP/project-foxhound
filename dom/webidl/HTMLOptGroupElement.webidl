@@ -11,9 +11,12 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLOptGroupElement : HTMLElement {
-           [SetterThrows]
+  [HTMLConstructor] constructor();
+
+           [CEReactions, SetterThrows]
            attribute boolean disabled;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString label;
 };

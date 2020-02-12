@@ -4,26 +4,30 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
-var {AddonTestUtils} = Cu.import("resource://testing-common/AddonManagerTesting.jsm", {});
-var GMPScope = Cu.import("resource://gre/modules/addons/GMPProvider.jsm");
+ChromeUtils.import("resource://gre/modules/Promise.jsm", this);
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+var GMPScope = ChromeUtils.import(
+  "resource://gre/modules/addons/GMPProvider.jsm",
+  null
+);
 
 const TEST_DATE = new Date(2013, 0, 1, 12);
 
 var gManagerWindow;
 var gCategoryUtilities;
-var gIsEnUsLocale;
 
 var gMockAddons = [];
 
 for (let plugin of GMPScope.GMP_PLUGINS) {
   let mockAddon = Object.freeze({
-      id: plugin.id,
-      isValid: true,
-      isInstalled: false,
-      isEME: (plugin.id == "gmp-widevinecdm" ||
-              plugin.id.indexOf("gmp-eme-") == 0) ? true : false,
+    id: plugin.id,
+    isValid: true,
+    isInstalled: false,
+    isEME: !!(
+      plugin.id == "gmp-widevinecdm" || plugin.id.indexOf("gmp-eme-") == 0
+    ),
   });
   gMockAddons.push(mockAddon);
 }
@@ -33,11 +37,14 @@ var gInstallDeferred = null;
 var gPrefs = Services.prefs;
 var getKey = GMPScope.GMPPrefs.getPrefKey;
 
-function MockGMPInstallManager() {
-}
+function MockGMPInstallManager() {}
 
 MockGMPInstallManager.prototype = {
-  checkForAddons: () => Promise.resolve(gMockAddons),
+  checkForAddons: () =>
+    Promise.resolve({
+      usedFallback: true,
+      gmpAddons: gMockAddons,
+    }),
 
   installAddon: addon => {
     gInstalledAddonId = addon.id;
@@ -46,255 +53,262 @@ MockGMPInstallManager.prototype = {
   },
 };
 
-var gOptionsObserver = {
-  lastDisplayed: null,
-  observe: function(aSubject, aTopic, aData) {
-    if (aTopic == AddonManager.OPTIONS_NOTIFICATION_DISPLAYED) {
-      this.lastDisplayed = aData;
-    }
-  }
-};
-
-function getInstallItem() {
-  let doc = gManagerWindow.document;
-  let list = doc.getElementById("addon-list");
-
-  let node = list.firstChild;
-  while (node) {
-    if (node.getAttribute("status") == "installing") {
-      return node;
-    }
-    node = node.nextSibling;
-  }
-
-  return null;
-}
-
 function openDetailsView(aId) {
   let view = get_current_view(gManagerWindow);
-  Assert.equal(view.id, "list-view", "Should be in the list view to use this function");
+  Assert.equal(
+    view.id,
+    "html-view",
+    "Should be in the list view to use this function"
+  );
 
   let item = get_addon_element(gManagerWindow, aId);
   Assert.ok(item, "Should have got add-on element.");
   is_element_visible(item, "Add-on element should be visible.");
 
   item.scrollIntoView();
-  EventUtils.synthesizeMouseAtCenter(item, { clickCount: 1 }, gManagerWindow);
-  EventUtils.synthesizeMouseAtCenter(item, { clickCount: 2 }, gManagerWindow);
+  EventUtils.synthesizeMouseAtCenter(item, { clickCount: 1 }, item.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(item, { clickCount: 2 }, item.ownerGlobal);
 
-  let deferred = Promise.defer();
-  wait_for_view_load(gManagerWindow, deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    wait_for_view_load(gManagerWindow, resolve);
+  });
 }
 
-add_task(function* initializeState() {
+async function initializeState() {
   gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_LOGGING_DUMP, true);
   gPrefs.setIntPref(GMPScope.GMPPrefs.KEY_LOGGING_LEVEL, 0);
 
-  gManagerWindow = yield open_manager();
+  gManagerWindow = await open_manager();
+
   gCategoryUtilities = new CategoryUtilities(gManagerWindow);
 
-  registerCleanupFunction(Task.async(function*() {
-    Services.obs.removeObserver(gOptionsObserver, AddonManager.OPTIONS_NOTIFICATION_DISPLAYED);
-
+  registerCleanupFunction(async function() {
     for (let addon of gMockAddons) {
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id));
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id));
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id));
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id));
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id));
-      gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id));
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id)
+      );
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id)
+      );
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id)
+      );
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id)
+      );
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id)
+      );
+      gPrefs.clearUserPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id)
+      );
     }
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_LOGGING_DUMP);
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_LOGGING_LEVEL);
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_UPDATE_LAST_CHECK);
     gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_EME_ENABLED);
-    yield GMPScope.GMPProvider.shutdown();
+    await GMPScope.GMPProvider.shutdown();
     GMPScope.GMPProvider.startup();
-  }));
-
-  let chrome = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIXULChromeRegistry);
-  gIsEnUsLocale = chrome.getSelectedLocale("global") == "en-US";
-
-  Services.obs.addObserver(gOptionsObserver, AddonManager.OPTIONS_NOTIFICATION_DISPLAYED, false);
+  });
 
   // Start out with plugins not being installed, disabled and automatic updates
   // disabled.
   gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, true);
   for (let addon of gMockAddons) {
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id), false);
-    gPrefs.setIntPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id), 0);
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id), false);
-    gPrefs.setCharPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id), "");
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id), true);
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id), true);
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id),
+      false
+    );
+    gPrefs.setIntPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id),
+      0
+    );
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id),
+      false
+    );
+    gPrefs.setCharPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id),
+      ""
+    );
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id),
+      true
+    );
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id),
+      true
+    );
   }
-  yield GMPScope.GMPProvider.shutdown();
+  await GMPScope.GMPProvider.shutdown();
   GMPScope.GMPProvider.startup();
-});
+}
 
-add_task(function* testNotInstalledDisabled() {
+async function testNotInstalledDisabled() {
   Assert.ok(gCategoryUtilities.isTypeVisible("plugin"), "Plugin tab visible.");
-  yield gCategoryUtilities.openType("plugin");
+  await gCategoryUtilities.openType("plugin");
 
   for (let addon of gMockAddons) {
-    let item = get_addon_element(gManagerWindow, addon.id);
-    Assert.ok(item, "Got add-on element:" + addon.id);
-    item.parentNode.ensureElementIsVisible(item);
-    is(item.getAttribute("active"), "false");
+    let addonCard = get_addon_element(gManagerWindow, addon.id);
+    Assert.ok(addonCard, "Got add-on element:" + addon.id);
 
-    let el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "warning");
-    is_element_hidden(el, "Warning notification is hidden.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "class", "disabled-postfix");
-    is_element_visible(el, "disabled-postfix is visible.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "disable-btn");
-    is_element_hidden(el, "Disable button not visible.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "enable-btn");
-    is_element_hidden(el, "Enable button not visible.");
+    is(
+      addonCard.ownerDocument.l10n.getAttributes(addonCard.addonNameEl).id,
+      "addon-name-disabled",
+      "The addon name should include a disabled postfix"
+    );
 
-    let menu = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "state-menulist");
-    is_element_visible(menu, "State menu should be visible.");
-
-    let neverActivate = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "never-activate-menuitem");
-    is(menu.selectedItem, neverActivate, "Plugin state should be never-activate.");
+    let cardMessage = addonCard.querySelector("message-bar.addon-card-message");
+    is_element_hidden(cardMessage, "Warning notification is hidden");
   }
-});
+}
 
-add_task(function* testNotInstalledDisabledDetails() {
+async function testNotInstalledDisabledDetails() {
   for (let addon of gMockAddons) {
-    yield openDetailsView(addon.id);
+    await openDetailsView(addon.id);
     let doc = gManagerWindow.document;
 
-    let el = doc.getElementsByClassName("disabled-postfix")[0];
-    is_element_visible(el, "disabled-postfix is visible.");
-    el = doc.getElementById("detail-findUpdates-btn");
-    is_element_visible(el, "Find updates link is visible.");
-    el = doc.getElementById("detail-warning");
-    is_element_hidden(el, "Warning notification is hidden.");
-    el = doc.getElementsByTagName("setting")[0];
+    let addonCard = get_addon_element(gManagerWindow, addon.id);
+    ok(addonCard, "Got add-on element: " + addon.id);
 
-    yield gCategoryUtilities.openType("plugin");
+    is(
+      doc.l10n.getAttributes(addonCard.addonNameEl).id,
+      "addon-name-disabled",
+      "The addon name should include a disabled postfix"
+    );
+
+    let updatesBtn = addonCard.querySelector("[action=update-check]");
+    is_element_visible(updatesBtn, "Check for Updates action is visible");
+    let cardMessage = addonCard.querySelector("message-bar.addon-card-message");
+    is_element_hidden(cardMessage, "Warning notification is hidden");
+
+    await gCategoryUtilities.openType("plugin");
   }
-});
+}
 
-add_task(function* testNotInstalled() {
+async function testNotInstalled() {
   for (let addon of gMockAddons) {
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id), true);
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id),
+      true
+    );
     let item = get_addon_element(gManagerWindow, addon.id);
     Assert.ok(item, "Got add-on element:" + addon.id);
-    item.parentNode.ensureElementIsVisible(item);
-    is(item.getAttribute("active"), "true");
 
-    let el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "warning");
-    is_element_visible(el, "Warning notification is visible.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "class", "disabled-postfix");
-    is_element_hidden(el, "disabled-postfix is hidden.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "disable-btn");
-    is_element_hidden(el, "Disable button not visible.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "enable-btn");
-    is_element_hidden(el, "Enable button not visible.");
+    let warningMessageBar = await BrowserTestUtils.waitForCondition(() => {
+      return item.querySelector("message-bar.addon-card-message[type=warning]");
+    }, "Wait for the addon card message to be updated");
 
-    let menu = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "state-menulist");
-    is_element_visible(menu, "State menu should be visible.");
+    is_element_visible(warningMessageBar, "Warning notification is visible");
 
-    let alwaysActivate = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "always-activate-menuitem");
-    is(menu.selectedItem, alwaysActivate, "Plugin state should be always-activate.");
+    is(item.parentNode.getAttribute("section"), "0", "Should be enabled");
+    // Open the options menu (needed to check the disabled buttons).
+    const pluginOptions = item.querySelector("plugin-options");
+    pluginOptions.querySelector("panel-list").open = true;
+    const alwaysActivate = pluginOptions.querySelector(
+      "panel-item[action=always-activate]"
+    );
+    ok(
+      alwaysActivate.hasAttribute("checked"),
+      "Plugin state should be always-activate"
+    );
+    pluginOptions.querySelector("panel-list").open = false;
   }
-});
+}
 
-add_task(function* testNotInstalledDetails() {
+async function testNotInstalledDetails() {
   for (let addon of gMockAddons) {
-    yield openDetailsView(addon.id);
-    let doc = gManagerWindow.document;
+    await openDetailsView(addon.id);
 
-    let el = doc.getElementsByClassName("disabled-postfix")[0];
-    is_element_hidden(el, "disabled-postfix is hidden.");
-    el = doc.getElementById("detail-findUpdates-btn");
-    is_element_visible(el, "Find updates link is visible.");
-    el = doc.getElementById("detail-warning");
-    is_element_visible(el, "Warning notification is visible.");
-    el = doc.getElementsByTagName("setting")[0];
+    const addonCard = get_addon_element(gManagerWindow, addon.id);
+    let el = addonCard.querySelector("[action=update-check]");
+    is_element_visible(el, "Check for Updates action is visible");
 
-    yield gCategoryUtilities.openType("plugin");
+    let warningMessageBar = await BrowserTestUtils.waitForCondition(() => {
+      return addonCard.querySelector(
+        "message-bar.addon-card-message[type=warning]"
+      );
+    }, "Wait for the addon card message to be updated");
+    is_element_visible(warningMessageBar, "Warning notification is visible");
+
+    await gCategoryUtilities.openType("plugin");
   }
-});
+}
 
-add_task(function* testInstalled() {
+async function testInstalled() {
   for (let addon of gMockAddons) {
-    gPrefs.setIntPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id),
-                      TEST_DATE.getTime());
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id), false);
-    gPrefs.setCharPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id), "1.2.3.4");
+    gPrefs.setIntPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_LAST_UPDATE, addon.id),
+      TEST_DATE.getTime()
+    );
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_AUTOUPDATE, addon.id),
+      false
+    );
+    gPrefs.setCharPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id),
+      "1.2.3.4"
+    );
 
     let item = get_addon_element(gManagerWindow, addon.id);
     Assert.ok(item, "Got add-on element.");
-    item.parentNode.ensureElementIsVisible(item);
-    is(item.getAttribute("active"), "true");
 
-    let el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "warning");
-    is_element_hidden(el, "Warning notification is hidden.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "class", "disabled-postfix");
-    is_element_hidden(el, "disabled-postfix is hidden.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "disable-btn");
-    is_element_hidden(el, "Disable button not visible.");
-    el = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "enable-btn");
-    is_element_hidden(el, "Enable button not visible.");
-
-    let menu = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "state-menulist");
-    is_element_visible(menu, "State menu should be visible.");
-
-    let alwaysActivate = item.ownerDocument.getAnonymousElementByAttribute(item, "anonid", "always-activate-menuitem");
-    is(menu.selectedItem, alwaysActivate, "Plugin state should be always-activate.");
+    is(item.parentNode.getAttribute("section"), "0", "Should be enabled");
+    // Open the options menu (needed to check the disabled buttons).
+    const pluginOptions = item.querySelector("plugin-options");
+    pluginOptions.querySelector("panel-list").open = true;
+    const alwaysActivate = pluginOptions.querySelector(
+      "panel-item[action=always-activate]"
+    );
+    ok(
+      alwaysActivate.hasAttribute("checked"),
+      "Plugin state should be always-activate"
+    );
+    pluginOptions.querySelector("panel-list").open = false;
   }
-});
+}
 
-add_task(function* testInstalledDetails() {
+async function testInstalledDetails() {
   for (let addon of gMockAddons) {
-    yield openDetailsView(addon.id);
-    let doc = gManagerWindow.document;
+    await openDetailsView(addon.id);
 
-    let el = doc.getElementsByClassName("disabled-postfix")[0];
-    is_element_hidden(el, "disabled-postfix is hidden.");
-    el = doc.getElementById("detail-findUpdates-btn");
-    is_element_visible(el, "Find updates link is visible.");
-    el = doc.getElementById("detail-warning");
-    is_element_hidden(el, "Warning notification is hidden.");
-    el = doc.getElementsByTagName("setting")[0];
+    let card = get_addon_element(gManagerWindow, addon.id);
+    ok(card, "Got add-on element:" + addon.id);
 
-    let contextMenu = doc.getElementById("addonitem-popup");
-    let deferred = Promise.defer();
-    let listener = () => {
-      contextMenu.removeEventListener("popupshown", listener, false);
-      deferred.resolve();
-    };
-    contextMenu.addEventListener("popupshown", listener, false);
-    el = doc.getElementsByClassName("detail-view-container")[0];
-    EventUtils.synthesizeMouse(el, 4, 4, { }, gManagerWindow);
-    EventUtils.synthesizeMouse(el, 4, 4, { type: "contextmenu", button: 2 }, gManagerWindow);
-    yield deferred.promise;
-    let menuSep = doc.getElementById("addonitem-menuseparator");
-    is_element_hidden(menuSep, "Menu separator is hidden.");
-    contextMenu.hidePopup();
+    is_element_visible(
+      card.querySelector("[action=update-check]"),
+      "Find updates link is visible"
+    );
 
-    yield gCategoryUtilities.openType("plugin");
+    await gCategoryUtilities.openType("plugin");
   }
-});
+}
 
-add_task(function* testInstalledGlobalEmeDisabled() {
+async function testInstalledGlobalEmeDisabled() {
   gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, false);
   for (let addon of gMockAddons) {
     let item = get_addon_element(gManagerWindow, addon.id);
     if (addon.isEME) {
-      Assert.ok(!item, "Couldn't get add-on element.");
+      is(item.parentNode.getAttribute("section"), "1", "Should be disabled");
+      // Open the options menu (needed to check the disabled buttons).
+      const pluginOptions = item.querySelector("plugin-options");
+      pluginOptions.querySelector("panel-list").open = true;
+      const askActivate = pluginOptions.querySelector(
+        "panel-item[action=ask-to-activate]"
+      );
+      ok(
+        askActivate.shadowRoot.querySelector("button").disabled,
+        "ask-to-activate should be disabled"
+      );
+      pluginOptions.querySelector("panel-list").open = false;
     } else {
       Assert.ok(item, "Got add-on element.");
     }
   }
   gPrefs.setBoolPref(GMPScope.GMPPrefs.KEY_EME_ENABLED, true);
-});
+}
 
-add_task(function* testPreferencesButton() {
-
+async function testPreferencesButton() {
   let prefValues = [
     { enabled: false, version: "" },
     { enabled: false, version: "1.2.3.4" },
@@ -303,33 +317,45 @@ add_task(function* testPreferencesButton() {
   ];
 
   for (let preferences of prefValues) {
-    dump("Testing preferences button with pref settings: " +
-         JSON.stringify(preferences) + "\n");
+    dump(
+      "Testing preferences button with pref settings: " +
+        JSON.stringify(preferences) +
+        "\n"
+    );
     for (let addon of gMockAddons) {
-      yield close_manager(gManagerWindow);
-      gManagerWindow = yield open_manager();
+      await close_manager(gManagerWindow);
+      gManagerWindow = await open_manager();
       gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-      gPrefs.setCharPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id),
-                         preferences.version);
-      gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id),
-                         preferences.enabled);
+      gPrefs.setCharPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VERSION, addon.id),
+        preferences.version
+      );
+      gPrefs.setBoolPref(
+        getKey(GMPScope.GMPPrefs.KEY_PLUGIN_ENABLED, addon.id),
+        preferences.enabled
+      );
 
-      yield gCategoryUtilities.openType("plugin");
-      let doc = gManagerWindow.document;
+      await gCategoryUtilities.openType("plugin");
       let item = get_addon_element(gManagerWindow, addon.id);
 
-      let button = doc.getAnonymousElementByAttribute(item, "anonid", "preferences-btn");
-      EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-      let deferred = Promise.defer();
-      wait_for_view_load(gManagerWindow, deferred.resolve);
-      yield deferred.promise;
+      // Open the options menu (needed to check the more options action is enabled).
+      const pluginOptions = item.querySelector("plugin-options");
+      pluginOptions.querySelector("panel-list").open = true;
+      const moreOptions = pluginOptions.querySelector(
+        "panel-item[action=expand]"
+      );
+      ok(
+        !moreOptions.shadowRoot.querySelector("button").disabled,
+        "more options action should be enabled"
+      );
+      moreOptions.click();
 
-      is(gOptionsObserver.lastDisplayed, addon.id);
+      await wait_for_view_load(gManagerWindow);
     }
   }
-});
+}
 
-add_task(function* testUpdateButton() {
+async function testUpdateButton() {
   gPrefs.clearUserPref(GMPScope.GMPPrefs.KEY_UPDATE_LAST_CHECK);
 
   let originalInstallManager = GMPScope.GMPInstallManager;
@@ -337,64 +363,65 @@ add_task(function* testUpdateButton() {
     value: MockGMPInstallManager,
     writable: true,
     enumerable: true,
-    configurable: true
+    configurable: true,
   });
 
   for (let addon of gMockAddons) {
-    yield gCategoryUtilities.openType("plugin");
-    let doc = gManagerWindow.document;
+    await gCategoryUtilities.openType("plugin");
     let item = get_addon_element(gManagerWindow, addon.id);
 
     gInstalledAddonId = "";
     gInstallDeferred = Promise.defer();
 
-    let button = doc.getAnonymousElementByAttribute(item, "anonid", "preferences-btn");
-    EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-    let deferred = Promise.defer();
-    wait_for_view_load(gManagerWindow, deferred.resolve);
-    yield deferred.promise;
+    item.querySelector("[action=expand]").click();
+    await wait_for_view_load(gManagerWindow);
+    let detail = get_addon_element(gManagerWindow, addon.id);
+    detail.querySelector("[action=update-check]").click();
 
-    button = doc.getElementById("detail-findUpdates-btn");
-    Assert.ok(button != null, "Got detail-findUpdates-btn");
-    EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-    yield gInstallDeferred.promise;
-
+    await gInstallDeferred.promise;
     Assert.equal(gInstalledAddonId, addon.id);
   }
   Object.defineProperty(GMPScope, "GMPInstallManager", {
     value: originalInstallManager,
     writable: true,
     enumerable: true,
-    configurable: true
+    configurable: true,
   });
-});
+}
 
-add_task(function* testEmeSupport() {
+async function testEmeSupport() {
   for (let addon of gMockAddons) {
-    gPrefs.clearUserPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id));
+    gPrefs.clearUserPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id)
+    );
   }
-  yield GMPScope.GMPProvider.shutdown();
+  await GMPScope.GMPProvider.shutdown();
   GMPScope.GMPProvider.startup();
 
   for (let addon of gMockAddons) {
-    yield gCategoryUtilities.openType("plugin");
-    let doc = gManagerWindow.document;
+    await gCategoryUtilities.openType("plugin");
     let item = get_addon_element(gManagerWindow, addon.id);
     if (addon.id == GMPScope.EME_ADOBE_ID) {
       if (AppConstants.isPlatformAndVersionAtLeast("win", "6")) {
         Assert.ok(item, "Adobe EME supported, found add-on element.");
       } else {
-        Assert.ok(!item,
-                  "Adobe EME not supported, couldn't find add-on element.");
+        Assert.ok(
+          !item,
+          "Adobe EME not supported, couldn't find add-on element."
+        );
       }
     } else if (addon.id == GMPScope.WIDEVINE_ID) {
-      if (AppConstants.isPlatformAndVersionAtLeast("win", "6") ||
-          AppConstants.platform == "macosx" ||
-          AppConstants.platform == "linux") {
+      if (
+        AppConstants.isPlatformAndVersionAtLeast("win", "6") ||
+        AppConstants.platform == "macosx" ||
+        AppConstants.platform == "linux"
+      ) {
         Assert.ok(item, "Widevine supported, found add-on element.");
       } else {
-        Assert.ok(!item,
-                  "Widevine not supported, couldn't find add-on element.");
+        Assert.ok(
+          !item,
+          "Widevine not supported, couldn't find add-on element."
+        );
       }
     } else {
       Assert.ok(item, "Found add-on element.");
@@ -402,14 +429,38 @@ add_task(function* testEmeSupport() {
   }
 
   for (let addon of gMockAddons) {
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id), true);
-    gPrefs.setBoolPref(getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id), true);
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_VISIBLE, addon.id),
+      true
+    );
+    gPrefs.setBoolPref(
+      getKey(GMPScope.GMPPrefs.KEY_PLUGIN_FORCE_SUPPORTED, addon.id),
+      true
+    );
   }
-  yield GMPScope.GMPProvider.shutdown();
+  await GMPScope.GMPProvider.shutdown();
   GMPScope.GMPProvider.startup();
+}
 
-});
+async function testCleanupState() {
+  await SpecialPowers.popPrefEnv();
+  await close_manager(gManagerWindow);
+}
 
-add_task(function* test_cleanup() {
-  yield close_manager(gManagerWindow);
+// This function run the sequence of all the gmpProvider tests
+// under the same initializeStateOptions (which will enable or disable
+// the HTML about:addons views).
+add_task(async function test_gmpProvider(initializeStateOptions) {
+  await initializeState();
+  await testNotInstalledDisabled();
+  await testNotInstalledDisabledDetails();
+  await testNotInstalled();
+  await testNotInstalledDetails();
+  await testInstalled();
+  await testInstalledDetails();
+  await testInstalledGlobalEmeDisabled();
+  await testPreferencesButton();
+  await testUpdateButton();
+  await testEmeSupport();
+  await testCleanupState();
 });

@@ -1,7 +1,6 @@
 <head>
   <title>Do plugin stream src requests send the Referer header correctly?</title>
-  <script type="application/javascript"
-	  src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="plugin-utils.js"></script>
   <link rel="stylesheet" type="text/css" 
         href="/tests/SimpleTest/test.css" />
@@ -14,8 +13,11 @@
   setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
 
   function frameLoaded() {
-    var testframe = document.getElementById('pluginframe');
-    var content = testframe.contentDocument.body.innerHTML;
+    var testframe = document.getElementById("pluginframe");
+    // We have to use SpecialPowers because nptest.cpp prepends
+    // data: whichs makes the frame cross origin with the including page.
+    var wrappedDoc = SpecialPowers.wrap(testframe).contentDocument;
+    var content = wrappedDoc.body.innerHTML;
     if (!content.length)
       return;
 

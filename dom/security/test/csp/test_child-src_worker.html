@@ -3,7 +3,7 @@
   <head>
     <title>Bug 1045891</title>
     <!-- Including SimpleTest.js so we can use waitForExplicitFinish !-->
-    <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   </head>
   <body>
@@ -83,19 +83,19 @@
           id: "script-src-worker",
           file: WORKER_TEST_FILE,
           result : "blocked",
-          policy : "default-src 'none'; script-src 'self' 'unsafe-inline'"
+          policy : "default-src 'none'; script-src https://www.example.org 'unsafe-inline'"
         },
         'script-src-service_worker': {
           id: "script-src-service_worker",
           file: SERVICE_WORKER_TEST_FILE,
           result : "blocked",
-          policy : "default-src 'none'; script-src 'self' 'unsafe-inline'"
+          policy : "default-src 'none'; script-src https://www.example.org 'unsafe-inline'"
         },
         'script-src-self-shared_worker': {
           id: "script-src-self-shared_worker",
           file: SHARED_WORKER_TEST_FILE,
           result : "blocked",
-          policy : "default-src 'none'; script-src 'self' 'unsafe-inline'"
+          policy : "default-src 'none'; script-src https://www.example.org 'unsafe-inline'"
         },
       };
 
@@ -111,7 +111,7 @@
         }
       }
 
-      window.addEventListener('message', recvMessage, false);
+      window.addEventListener('message', recvMessage);
 
       function loadNextTest() {
         for (item in tests) {

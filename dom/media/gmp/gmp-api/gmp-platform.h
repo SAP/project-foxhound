@@ -40,27 +40,27 @@
 /* Platform helper API. */
 
 class GMPTask {
-public:
-  virtual void Destroy() = 0; // Deletes object.
+ public:
+  virtual void Destroy() = 0;  // Deletes object.
   virtual ~GMPTask() {}
   virtual void Run() = 0;
 };
 
 class GMPThread {
-public:
+ public:
   virtual ~GMPThread() {}
   virtual void Post(GMPTask* aTask) = 0;
-  virtual void Join() = 0; // Deletes object after join completes.
+  virtual void Join() = 0;  // Deletes object after join completes.
 };
 
 // A re-entrant monitor; can be locked from the same thread multiple times.
 // Must be unlocked the same number of times it's locked.
 class GMPMutex {
-public:
+ public:
   virtual ~GMPMutex() {}
   virtual void Acquire() = 0;
   virtual void Release() = 0;
-  virtual void Destroy() = 0; // Deletes object.
+  virtual void Destroy() = 0;  // Deletes object.
 };
 
 // Time is defined as the number of milliseconds since the
@@ -79,31 +79,16 @@ typedef GMPErr (*GMPCreateRecordPtr)(const char* aRecordName,
                                      GMPRecordClient* aClient);
 
 // Call on main thread only.
-typedef GMPErr (*GMPSetTimerOnMainThreadPtr)(GMPTask* aTask, int64_t aTimeoutMS);
+typedef GMPErr (*GMPSetTimerOnMainThreadPtr)(GMPTask* aTask,
+                                             int64_t aTimeoutMS);
 typedef GMPErr (*GMPGetCurrentTimePtr)(GMPTimestamp* aOutTime);
-
-typedef void (*RecvGMPRecordIteratorPtr)(GMPRecordIterator* aRecordIterator,
-                                         void* aUserArg,
-                                         GMPErr aStatus);
-
-// Creates a GMPCreateRecordIterator to enumerate the records in storage.
-// When the iterator is ready, the function at aRecvIteratorFunc
-// is called with the GMPRecordIterator as an argument. If the operation
-// fails, RecvGMPRecordIteratorPtr is called with a failure aStatus code.
-// The list that the iterator is covering is fixed when
-// GMPCreateRecordIterator is called, it is *not* updated when changes are
-// made to storage.
-// Iterator begins pointing at first record.
-// aUserArg is passed to the aRecvIteratorFunc upon completion.
-typedef GMPErr (*GMPCreateRecordIteratorPtr)(RecvGMPRecordIteratorPtr aRecvIteratorFunc,
-                                             void* aUserArg);
 
 struct GMPPlatformAPI {
   // Increment the version when things change. Can only add to the struct,
   // do not change what already exists. Pointers to functions may be NULL
   // when passed to plugins, but beware backwards compat implications of
   // doing that.
-  uint16_t version; // Currently version 0
+  uint16_t version;  // Currently version 0
 
   GMPCreateThreadPtr createthread;
   GMPRunOnMainThreadPtr runonmainthread;
@@ -112,7 +97,6 @@ struct GMPPlatformAPI {
   GMPCreateRecordPtr createrecord;
   GMPSetTimerOnMainThreadPtr settimer;
   GMPGetCurrentTimePtr getcurrenttime;
-  GMPCreateRecordIteratorPtr getrecordenumerator;
 };
 
-#endif // GMP_PLATFORM_h_
+#endif  // GMP_PLATFORM_h_

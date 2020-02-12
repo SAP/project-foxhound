@@ -6,13 +6,16 @@
 
 "use strict";
 
-const { takeSnapshotAndCensus } = require("devtools/client/memory/actions/snapshot");
+const {
+  takeSnapshotAndCensus,
+} = require("devtools/client/memory/actions/snapshot");
 const { viewState } = require("devtools/client/memory/constants");
 const { changeView } = require("devtools/client/memory/actions/view");
 
-const TEST_URL = "http://example.com/browser/devtools/client/memory/test/browser/doc_steady_allocation.html";
+const TEST_URL =
+  "http://example.com/browser/devtools/client/memory/test/browser/doc_steady_allocation.html";
 
-this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
+this.test = makeMemoryTest(TEST_URL, async function({ tab, panel }) {
   const heapWorker = panel.panelWin.gHeapAnalysesClient;
   const front = panel.panelWin.gFront;
   const { getState, dispatch } = panel.panelWin.gStore;
@@ -20,18 +23,25 @@ this.test = makeMemoryTest(TEST_URL, function* ({ tab, panel }) {
 
   dispatch(changeView(viewState.CENSUS));
 
-  yield dispatch(takeSnapshotAndCensus(front, heapWorker));
+  await dispatch(takeSnapshotAndCensus(front, heapWorker));
 
   is(getState().allocations.recording, false);
-  const recordingCheckbox = doc.getElementById("record-allocation-stacks-checkbox");
+  const recordingCheckbox = doc.getElementById(
+    "record-allocation-stacks-checkbox"
+  );
   EventUtils.synthesizeMouseAtCenter(recordingCheckbox, {}, panel.panelWin);
   is(getState().allocations.recording, true);
 
-  const nameElems = [...doc.querySelectorAll(".heap-tree-item-field.heap-tree-item-name")];
+  const nameElems = [
+    ...doc.querySelectorAll(".heap-tree-item-field.heap-tree-item-name"),
+  ];
 
-  for (let el of nameElems) {
+  for (const el of nameElems) {
     dumpn(`Found ${el.textContent.trim()}`);
-    is(el.style.marginInlineStart, "0px",
-       "None of the elements should be an indented/expanded child");
+    is(
+      el.style.marginInlineStart,
+      "0px",
+      "None of the elements should be an indented/expanded child"
+    );
   }
 });

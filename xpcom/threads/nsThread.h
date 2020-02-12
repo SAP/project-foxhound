@@ -8,225 +8,307 @@
 #define nsThread_h__
 
 #include "mozilla/Mutex.h"
+#include "nsIIdlePeriod.h"
 #include "nsIThreadInternal.h"
 #include "nsISupportsPriority.h"
-#include "nsEventQueue.h"
 #include "nsThreadUtils.h"
 #include "nsString.h"
 #include "nsTObserverArray.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/LinkedList.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/SynchronizedEventQueue.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/TimeStamp.h"
 #include "nsAutoPtr.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Array.h"
+#include "mozilla/dom/DocGroup.h"
 
 namespace mozilla {
 class CycleCollectedJSContext;
-}
+class EventQueue;
+template <typename>
+class ThreadEventQueue;
+class ThreadEventTarget;
+}  // namespace mozilla
 
 using mozilla::NotNull;
 
+class nsLocalExecutionRecord;
+class nsThreadEnumerator;
+
+// See https://www.w3.org/TR/longtasks
+#define LONGTASK_BUSY_WINDOW_MS 50
+
 // A native thread
-class nsThread
-  : public nsIThreadInternal
-  , public nsISupportsPriority
-{
-public:
+class nsThread : public nsIThreadInternal,
+                 public nsISupportsPriority,
+                 private mozilla::LinkedListElement<nsThread> {
+  friend mozilla::LinkedList<nsThread>;
+  friend mozilla::LinkedListElement<nsThread>;
+
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIEVENTTARGET
+  NS_DECL_NSIEVENTTARGET_FULL
   NS_DECL_NSITHREAD
   NS_DECL_NSITHREADINTERNAL
   NS_DECL_NSISUPPORTSPRIORITY
-  using nsIEventTarget::Dispatch;
 
-  enum MainThreadFlag
-  {
-    MAIN_THREAD,
-    NOT_MAIN_THREAD
-  };
+  enum MainThreadFlag { MAIN_THREAD, NOT_MAIN_THREAD };
 
-  nsThread(MainThreadFlag aMainThread, uint32_t aStackSize);
+  nsThread(NotNull<mozilla::SynchronizedEventQueue*> aQueue,
+           MainThreadFlag aMainThread, uint32_t aStackSize);
 
-  // Initialize this as a wrapper for a new PRThread.
-  nsresult Init();
+ private:
+  nsThread();
+
+ public:
+  // Initialize this as a named wrapper for a new PRThread.
+  nsresult Init(const nsACString& aName);
 
   // Initialize this as a wrapper for the current PRThread.
   nsresult InitCurrentThread();
 
+ private:
+  // Initializes the mThreadId and stack base/size members, and adds the thread
+  // to the ThreadList().
+  void InitCommon();
+
+ public:
   // The PRThread corresponding to this thread.
-  PRThread* GetPRThread()
-  {
-    return mThread;
-  }
+  PRThread* GetPRThread() { return mThread; }
+
+  const void* StackBase() const { return mStackBase; }
+  size_t StackSize() const { return mStackSize; }
+
+  uint32_t ThreadId() const { return mThreadId; }
 
   // If this flag is true, then the nsThread was created using
   // nsIThreadManager::NewThread.
-  bool ShutdownRequired()
-  {
-    return mShutdownRequired;
-  }
+  bool ShutdownRequired() { return mShutdownRequired; }
 
-  // Clear the observer list.
-  void ClearObservers()
-  {
-    mEventObservers.Clear();
-  }
+  void SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
 
-  void
-  SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
-
-  uint32_t
-  RecursionDepth() const;
+  uint32_t RecursionDepth() const;
 
   void ShutdownComplete(NotNull<struct nsThreadShutdownContext*> aContext);
 
   void WaitForAllAsynchronousShutdowns();
 
-#ifdef MOZ_CRASHREPORTER
-  enum class ShouldSaveMemoryReport
-  {
-    kMaybeReport,
-    kForceReport
-  };
+  static const uint32_t kRunnableNameBufSize = 1000;
+  static mozilla::Array<char, kRunnableNameBufSize> sMainThreadRunnableName;
 
-  static bool SaveMemoryReportNearOOM(ShouldSaveMemoryReport aShouldSave);
+  void EnableInputEventPrioritization() {
+    EventQueue()->EnableInputEventPrioritization();
+  }
+
+  void FlushInputEventPrioritization() {
+    EventQueue()->FlushInputEventPrioritization();
+  }
+
+  void SuspendInputEventPrioritization() {
+    EventQueue()->SuspendInputEventPrioritization();
+  }
+
+  void ResumeInputEventPrioritization() {
+    EventQueue()->ResumeInputEventPrioritization();
+  }
+
+#ifndef RELEASE_OR_BETA
+  mozilla::TimeStamp& NextIdleDeadlineRef() { return mNextIdleDeadline; }
 #endif
 
-private:
+  mozilla::SynchronizedEventQueue* EventQueue() { return mEvents.get(); }
+
+  bool ShuttingDown() { return mShutdownContext != nullptr; }
+
+  virtual mozilla::PerformanceCounter* GetPerformanceCounter(
+      nsIRunnable* aEvent);
+
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+  // Returns the size of this object, its PRThread, and its shutdown contexts,
+  // but excluding its event queues.
+  size_t ShallowSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+  size_t SizeOfEventQueues(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+  static nsThreadEnumerator Enumerate();
+
+  static uint32_t MaxActiveThreads();
+
+  const mozilla::TimeStamp& LastLongTaskEnd() { return mLastLongTaskEnd; }
+  const mozilla::TimeStamp& LastLongNonIdleTaskEnd() {
+    return mLastLongNonIdleTaskEnd;
+  }
+
+  // When entering local execution mode a new event queue is created and used as
+  // an event source. This queue is only accessible through an
+  // nsLocalExecutionGuard constructed from the nsLocalExecutionRecord returned
+  // by this function, effectively restricting the events that get run while in
+  // local execution mode to those dispatched by the owner of the guard object.
+  //
+  // Local execution is not nestable. When the nsLocalExecutionGuard is
+  // destructed, the thread exits the local execution mode.
+  //
+  // Note that code run in local execution mode is not considered a task in the
+  // spec sense. Events from the local queue are considered part of the
+  // enclosing task and as such do not trigger profiling hooks, observer
+  // notifications, etc.
+  nsLocalExecutionRecord EnterLocalExecution();
+
+ private:
   void DoMainThreadSpecificProcessing(bool aReallyWait);
 
-protected:
-  class nsChainedEventQueue;
-
-  class nsNestedEventTarget;
-  friend class nsNestedEventTarget;
-
+ protected:
   friend class nsThreadShutdownEvent;
 
-  virtual ~nsThread();
+  friend class nsThreadEnumerator;
 
-  bool ShuttingDown()
-  {
-    return mShutdownContext != nullptr;
-  }
+  virtual ~nsThread();
 
   static void ThreadFunc(void* aArg);
 
   // Helper
-  already_AddRefed<nsIThreadObserver> GetObserver()
-  {
+  already_AddRefed<nsIThreadObserver> GetObserver() {
     nsIThreadObserver* obs;
     nsThread::GetObserver(&obs);
     return already_AddRefed<nsIThreadObserver>(obs);
   }
 
-  // Wrappers for event queue methods:
-  nsresult PutEvent(nsIRunnable* aEvent, nsNestedEventTarget* aTarget);
-  nsresult PutEvent(already_AddRefed<nsIRunnable> aEvent,
-                    nsNestedEventTarget* aTarget);
-
-  nsresult DispatchInternal(already_AddRefed<nsIRunnable> aEvent,
-                            uint32_t aFlags, nsNestedEventTarget* aTarget);
-
   struct nsThreadShutdownContext* ShutdownInternal(bool aSync);
 
-  // Wrapper for nsEventQueue that supports chaining.
-  class nsChainedEventQueue
-  {
-  public:
-    explicit nsChainedEventQueue(mozilla::Mutex& aLock)
-      : mNext(nullptr)
-      , mQueue(aLock)
-    {
-    }
+  friend class nsThreadManager;
+  friend class nsThreadPool;
 
-    bool GetEvent(bool aMayWait, nsIRunnable** aEvent,
-                  mozilla::MutexAutoLock& aProofOfLock)
-    {
-      return mQueue.GetEvent(aMayWait, aEvent, aProofOfLock);
-    }
+  static mozilla::OffTheBooksMutex& ThreadListMutex();
+  static mozilla::LinkedList<nsThread>& ThreadList();
+  static void ClearThreadList();
 
-    void PutEvent(nsIRunnable* aEvent, mozilla::MutexAutoLock& aProofOfLock)
-    {
-      mQueue.PutEvent(aEvent, aProofOfLock);
-    }
+  // The current number of active threads.
+  static uint32_t sActiveThreads;
+  // The maximum current number of active threads we've had in this session.
+  static uint32_t sMaxActiveThreads;
 
-    void PutEvent(already_AddRefed<nsIRunnable> aEvent,
-                  mozilla::MutexAutoLock& aProofOfLock)
-    {
-      mQueue.PutEvent(mozilla::Move(aEvent), aProofOfLock);
-    }
+  void AddToThreadList();
+  void MaybeRemoveFromThreadList();
 
-    bool HasPendingEvent(mozilla::MutexAutoLock& aProofOfLock)
-    {
-      return mQueue.HasPendingEvent(aProofOfLock);
-    }
+  // Whether or not these members have a value determines whether the nsThread
+  // is treated as a full XPCOM thread or as a thin wrapper.
+  //
+  // For full nsThreads, they will always contain valid pointers. For thin
+  // wrappers around non-XPCOM threads, they will be null, and event dispatch
+  // methods which rely on them will fail (and assert) if called.
+  RefPtr<mozilla::SynchronizedEventQueue> mEvents;
+  RefPtr<mozilla::ThreadEventTarget> mEventTarget;
 
-    nsChainedEventQueue* mNext;
-    RefPtr<nsNestedEventTarget> mEventTarget;
-
-  private:
-    nsEventQueue mQueue;
-  };
-
-  class nsNestedEventTarget final : public nsIEventTarget
-  {
-  public:
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSIEVENTTARGET
-
-    nsNestedEventTarget(NotNull<nsThread*> aThread,
-                        NotNull<nsChainedEventQueue*> aQueue)
-      : mThread(aThread)
-      , mQueue(aQueue)
-    {
-    }
-
-    NotNull<RefPtr<nsThread>> mThread;
-
-    // This is protected by mThread->mLock.
-    nsChainedEventQueue* mQueue;
-
-  private:
-    ~nsNestedEventTarget()
-    {
-    }
-  };
-
-  // This lock protects access to mObserver, mEvents and mEventsAreDoomed.
-  // All of those fields are only modified on the thread itself (never from
-  // another thread).  This means that we can avoid holding the lock while
-  // using mObserver and mEvents on the thread itself.  When calling PutEvent
-  // on mEvents, we have to hold the lock to synchronize with PopEventQueue.
-  mozilla::Mutex mLock;
-
-  nsCOMPtr<nsIThreadObserver> mObserver;
-  mozilla::CycleCollectedJSContext* mScriptObserver;
-
-  // Only accessed on the target thread.
-  nsAutoTObserverArray<NotNull<nsCOMPtr<nsIThreadObserver>>, 2> mEventObservers;
-
-  NotNull<nsChainedEventQueue*> mEvents;  // never null
-  nsChainedEventQueue mEventsRoot;
-
-  int32_t   mPriority;
-  PRThread* mThread;
-  uint32_t  mNestedEventLoopDepth;
-  uint32_t  mStackSize;
-
+  // The shutdown contexts for any other threads we've asked to shut down.
+  using ShutdownContexts = nsTArray<nsAutoPtr<struct nsThreadShutdownContext>>;
+  ShutdownContexts mRequestedShutdownContexts;
   // The shutdown context for ourselves.
   struct nsThreadShutdownContext* mShutdownContext;
-  // The shutdown contexts for any other threads we've asked to shut down.
-  nsTArray<nsAutoPtr<struct nsThreadShutdownContext>> mRequestedShutdownContexts;
 
-  bool mShutdownRequired;
-  // Set to true when events posted to this thread will never run.
-  bool mEventsAreDoomed;
-  MainThreadFlag mIsMainThread;
+  mozilla::CycleCollectedJSContext* mScriptObserver;
+
+  PRThread* mThread;
+  void* mStackBase = nullptr;
+  uint32_t mStackSize;
+  uint32_t mThreadId;
+
+  uint32_t mNestedEventLoopDepth;
+  uint32_t mCurrentEventLoopDepth;
+
+  mozilla::TimeStamp mLastLongTaskEnd;
+  mozilla::TimeStamp mLastLongNonIdleTaskEnd;
+
+  mozilla::Atomic<bool> mShutdownRequired;
+
+  int8_t mPriority;
+
+  bool mIsMainThread;
+
+  // Set to true if this thread creates a JSRuntime.
+  bool mCanInvokeJS;
+
+  bool mHasTLSEntry = false;
+
+  // Used to track which event is being executed by ProcessNextEvent
+  nsCOMPtr<nsIRunnable> mCurrentEvent;
+
+  mozilla::TimeStamp mCurrentEventStart;
+  mozilla::TimeStamp mNextIdleDeadline;
+
+#ifdef EARLY_BETA_OR_EARLIER
+  nsCString mNameForWakeupTelemetry;
+  mozilla::TimeStamp mLastWakeupCheckTime;
+  uint32_t mWakeupCount = 0;
+#endif
+
+  RefPtr<mozilla::PerformanceCounter> mCurrentPerformanceCounter;
+
+  bool mIsInLocalExecutionMode = false;
 };
 
-#if defined(XP_UNIX) && !defined(ANDROID) && !defined(DEBUG) && HAVE_UALARM \
-  && defined(_GNU_SOURCE)
-# define MOZ_CANARY
+class nsLocalExecutionRecord;
+
+// This RAII class controls the duration of the associated nsThread's local
+// execution mode and provides access to the local event target. (See
+// nsThread::EnterLocalExecution() for details.) It is constructed from an
+// nsLocalExecutionRecord, which can only be constructed by nsThread.
+class MOZ_RAII nsLocalExecutionGuard final {
+ public:
+  MOZ_IMPLICIT nsLocalExecutionGuard(
+      nsLocalExecutionRecord&& aLocalExecutionRecord);
+  nsLocalExecutionGuard(const nsLocalExecutionGuard&) = delete;
+  nsLocalExecutionGuard(nsLocalExecutionGuard&&) = delete;
+  ~nsLocalExecutionGuard();
+
+  nsCOMPtr<nsISerialEventTarget> GetEventTarget() const {
+    return mLocalEventTarget;
+  }
+
+ private:
+  mozilla::SynchronizedEventQueue& mEventQueueStack;
+  nsCOMPtr<nsISerialEventTarget> mLocalEventTarget;
+  bool& mLocalExecutionFlag;
+};
+
+class MOZ_TEMPORARY_CLASS nsLocalExecutionRecord final {
+ private:
+  friend class nsThread;
+  friend class nsLocalExecutionGuard;
+
+  nsLocalExecutionRecord(mozilla::SynchronizedEventQueue& aEventQueueStack,
+                         bool& aLocalExecutionFlag)
+      : mEventQueueStack(aEventQueueStack),
+        mLocalExecutionFlag(aLocalExecutionFlag) {}
+
+  nsLocalExecutionRecord(nsLocalExecutionRecord&&) = default;
+
+ public:
+  nsLocalExecutionRecord(const nsLocalExecutionRecord&) = delete;
+
+ private:
+  mozilla::SynchronizedEventQueue& mEventQueueStack;
+  bool& mLocalExecutionFlag;
+};
+
+class MOZ_STACK_CLASS nsThreadEnumerator final {
+ public:
+  nsThreadEnumerator() : mMal(nsThread::ThreadListMutex()) {}
+
+  auto begin() { return nsThread::ThreadList().begin(); }
+  auto end() { return nsThread::ThreadList().end(); }
+
+ private:
+  mozilla::OffTheBooksMutexAutoLock mMal;
+};
+
+#if defined(XP_UNIX) && !defined(ANDROID) && !defined(DEBUG) && HAVE_UALARM && \
+    defined(_GNU_SOURCE)
+#  define MOZ_CANARY
 
 extern int sCanaryOutputFD;
 #endif

@@ -49,11 +49,6 @@
       window.console.log = function() { };
       window.console.error = function() { };
       window.internals.settings.setWebGLErrorsToConsoleEnabled(false);
-
-      // RAF doesn't work in LayoutTests. Disable it so the tests will
-      // use setTimeout instead.
-      window.requestAnimationFrame = undefined;
-      window.webkitRequestAnimationFrame = undefined;
     }
 
     /* -- end platform specific code --*/
@@ -200,7 +195,7 @@ function debug(msg)
     if (!quietMode())
       _addSpan(msg);
     if (_jsTestPreVerboseLogging) {
-	_bufferedLogToConsole(msg);
+        _bufferedLogToConsole(msg);
     }
 }
 
@@ -231,7 +226,7 @@ function testPassed(msg) {
     if (!quietMode())
       _addSpan('<span><span class="pass">PASS</span> ' + escapeHTML(msg) + '</span>');
     if (_jsTestPreVerboseLogging) {
-	_bufferedLogToConsole('PASS ' + msg);
+        _bufferedLogToConsole('PASS ' + msg);
     }
 }
 
@@ -277,12 +272,12 @@ function getCurrentTestName()
 function testPassedOptions(msg, addSpan)
 {
     if (addSpan && !quietMode())
-	{
+    {
         reportTestResultsToHarness(true, _currentTestName + ": " + msg);
         _addSpan('<span><span class="pass">PASS</span> ' + escapeHTML(_currentTestName) + ": " + escapeHTML(msg) + '</span>');
-	}
+    }
     if (_jsTestPreVerboseLogging) {
-		_bufferedLogToConsole('PASS ' + msg);
+        _bufferedLogToConsole('PASS ' + msg);
     }
 }
 
@@ -294,12 +289,12 @@ function testPassedOptions(msg, addSpan)
 function testSkippedOptions(msg, addSpan)
 {
     if (addSpan && !quietMode())
-	{
+    {
         reportSkippedTestResultsToHarness(true, _currentTestName + ": " + msg);
         _addSpan('<span><span class="warn">SKIP</span> ' + escapeHTML(_currentTestName) + ": " + escapeHTML(msg) + '</span>');
-	}
+    }
     if (_jsTestPreVerboseLogging) {
-		_bufferedLogToConsole('SKIP' + msg);
+        _bufferedLogToConsole('SKIP' + msg);
     }
 }
 
@@ -376,6 +371,16 @@ function evalAndLog(_a)
     testFailed(_a + " threw exception " + e);
   }
   return _av;
+}
+
+function shouldBeString(evalable, expected) {
+    const val = eval(evalable);
+    const text = evalable + " should be " + expected + ".";
+    if (val == expected) {
+        testPassed(text);
+    } else {
+        testFailed(text + " (was " + val + ")");
+    }
 }
 
 function shouldBe(_a, _b, quiet)
@@ -594,6 +599,31 @@ function expectTrue(v, msg) {
   } else {
     testFailed(msg);
   }
+}
+
+function maxArrayDiff(a, b) {
+    if (a.length != b.length)
+        throw new Error(`a and b have different lengths: ${a.length} vs ${b.length}`);
+
+    let diff = 0;
+    for (const i in a) {
+        diff = Math.max(diff, Math.abs(a[i] - b[i]));
+    }
+    return diff;
+}
+
+function expectArray(was, expected, maxDiff=0) {
+    const diff = maxArrayDiff(expected, was);
+    let str = `Expected [${expected.toString()}]`;
+    let fn = testPassed;
+    if (maxDiff) {
+        str += ' +/- ' + maxDiff;
+    }
+    if (diff > maxDiff) {
+        fn = testFailed;
+        str += `, was [${was.toString()}]`;
+    }
+    fn(str);
 }
 
 function shouldThrow(_a, _e)

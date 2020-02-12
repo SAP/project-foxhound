@@ -8,14 +8,14 @@
 
 #if defined(WCHAR_T_IS_UTF16)
 
-#error This file should not be used on 2-byte wchar_t systems
+#  error This file should not be used on 2-byte wchar_t systems
 // If this winds up being needed on 2-byte wchar_t systems, either the
 // definitions below can be used, or the host system's wide character
 // functions like wmemcmp can be wrapped.
 
 #elif defined(WCHAR_T_IS_UTF32)
 
-#include "base/string_util.h"
+#  include "base/string_util.h"
 
 namespace base {
 
@@ -33,7 +33,7 @@ int c16memcmp(const char16* s1, const char16* s2, size_t n) {
 }
 
 size_t c16len(const char16* s) {
-  const char16 *s_orig = s;
+  const char16* s_orig = s;
   while (*s) {
     ++s;
   }
@@ -59,7 +59,7 @@ char16* c16memcpy(char16* s1, const char16* s2, size_t n) {
 }
 
 char16* c16memset(char16* s, char16 c, size_t n) {
-  char16 *s_orig = s;
+  char16* s_orig = s;
   while (n-- > 0) {
     *s = c;
     ++s;

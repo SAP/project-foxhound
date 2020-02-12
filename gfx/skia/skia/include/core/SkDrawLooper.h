@@ -10,15 +10,18 @@
 #ifndef SkDrawLooper_DEFINED
 #define SkDrawLooper_DEFINED
 
+#include "../private/SkNoncopyable.h"
 #include "SkBlurTypes.h"
 #include "SkFlattenable.h"
 #include "SkPoint.h"
 #include "SkColor.h"
 
-class SkCanvas;
-class SkPaint;
+class  SkArenaAlloc;
+class  SkCanvas;
+class  SkColorSpaceXformer;
+class  SkPaint;
 struct SkRect;
-class SkString;
+class  SkString;
 
 /** \class SkDrawLooper
     Subclasses of SkDrawLooper can be attached to a SkPaint. Where they are,
@@ -61,19 +64,8 @@ public:
     /**
      *  Called right before something is being drawn. Returns a Context
      *  whose next() method should be called until it returns false.
-     *  The caller has to ensure that the storage pointer provides enough
-     *  memory for the Context. The required size can be queried by calling
-     *  contextSize(). It is also the caller's responsibility to destroy the
-     *  object after use.
      */
-    virtual Context* createContext(SkCanvas*, void* storage) const = 0;
-
-    /**
-      *  Returns the number of bytes needed to store subclasses of Context (belonging to the
-      *  corresponding SkDrawLooper subclass).
-      */
-    virtual size_t contextSize() const = 0;
-
+    virtual Context* makeContext(SkCanvas*, SkArenaAlloc*) const = 0;
 
     /**
      * The fast bounds functions are used to enable the paint to be culled early
@@ -93,7 +85,6 @@ public:
         SkVector        fOffset;
         SkColor         fColor;
         SkBlurStyle     fStyle;
-        SkBlurQuality   fQuality;
     };
     /**
      *  If this looper can be interpreted as having two layers, such that
@@ -106,13 +97,32 @@ public:
      */
     virtual bool asABlurShadow(BlurShadowRec*) const;
 
-    SK_TO_STRING_PUREVIRT()
-    SK_DEFINE_FLATTENABLE_TYPE(SkDrawLooper)
+    static SkFlattenable::Type GetFlattenableType() {
+        return kSkDrawLooper_Type;
+    }
+
+    SkFlattenable::Type getFlattenableType() const override {
+        return kSkDrawLooper_Type;
+    }
+
+    static sk_sp<SkDrawLooper> Deserialize(const void* data, size_t size,
+                                          const SkDeserialProcs* procs = nullptr) {
+        return sk_sp<SkDrawLooper>(static_cast<SkDrawLooper*>(
+                                  SkFlattenable::Deserialize(
+                                  kSkDrawLooper_Type, data, size, procs).release()));
+    }
 
 protected:
+    sk_sp<SkDrawLooper> makeColorSpace(SkColorSpaceXformer* xformer) const {
+        return this->onMakeColorSpace(xformer);
+    }
+    virtual sk_sp<SkDrawLooper> onMakeColorSpace(SkColorSpaceXformer*) const = 0;
+
     SkDrawLooper() {}
 
 private:
+    friend class SkColorSpaceXformer;
+
     typedef SkFlattenable INHERITED;
 };
 

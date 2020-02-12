@@ -2,33 +2,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.importGlobalProperties(['File']);
+Cu.importGlobalProperties(['File']);
 
-const Ci = Components.interfaces;
-
-function run_test() {
+add_task(async function() {
   // throw if anything goes wrong
 
   // find the current directory path
-  var file = Components.classes["@mozilla.org/file/directory_service;1"]
+  var file = Cc["@mozilla.org/file/directory_service;1"]
              .getService(Ci.nsIProperties)
              .get("CurWorkD", Ci.nsIFile);
   file.append("xpcshell.ini");
 
   // should be able to construct a file
-  var f1 = new File(file.path);
+  var f1 = await File.createFromFileName(file.path);
   // and with nsIFiles
-  var f2 = new File(file);
+  var f2 = await File.createFromNsIFile(file);
 
   // do some tests
-  do_check_true(f1 instanceof File, "Should be a DOM File");
-  do_check_true(f2 instanceof File, "Should be a DOM File");
+  Assert.ok(f1 instanceof File, "Should be a DOM File");
+  Assert.ok(f2 instanceof File, "Should be a DOM File");
 
-  do_check_true(f1.name == "xpcshell.ini", "Should be the right file");
-  do_check_true(f2.name == "xpcshell.ini", "Should be the right file");
+  Assert.ok(f1.name == "xpcshell.ini", "Should be the right file");
+  Assert.ok(f2.name == "xpcshell.ini", "Should be the right file");
 
-  do_check_true(f1.type == "", "Should be the right type");
-  do_check_true(f2.type == "", "Should be the right type");
+  Assert.ok(f1.type == "", "Should be the right type");
+  Assert.ok(f2.type == "", "Should be the right type");
 
   var threw = false;
   try {
@@ -37,7 +35,7 @@ function run_test() {
   } catch (e) {
     threw = true;
   }
-  do_check_true(threw, "No ctor arguments should throw");
+  Assert.ok(threw, "No ctor arguments should throw");
 
   var threw = false;
   try {
@@ -46,17 +44,17 @@ function run_test() {
   } catch (e) {
     threw = true;
   }
-  do_check_true(threw, "Passing a random object should fail");
+  Assert.ok(threw, "Passing a random object should fail");
 
   var threw = false
   try {
     // Directories fail
-    var dir = Components.classes["@mozilla.org/file/directory_service;1"]
-                        .getService(Ci.nsIProperties)
-                        .get("CurWorkD", Ci.nsIFile);
-    var f7 = File(dir)
+    var dir = Cc["@mozilla.org/file/directory_service;1"]
+                .getService(Ci.nsIProperties)
+                .get("CurWorkD", Ci.nsIFile);
+    var f7 = await File.createFromNsIFile(dir)
   } catch (e) {
     threw = true;
   }
-  do_check_true(threw, "Can't create a File object for a directory");
-}
+  Assert.ok(threw, "Can't create a File object for a directory");
+});

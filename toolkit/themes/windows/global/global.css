@@ -8,46 +8,33 @@
 
 /* all localizable skin settings shall live here */
 @import url("chrome://global/locale/intl.css");
+@import url("chrome://global/content/widgets.css");
 
-@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace xul url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
 
-/* ::::: XBL bindings ::::: */
+%include ../../shared/global.inc.css
 
-radio {
-  -moz-binding: url("chrome://global/skin/globalBindings.xml#radio");
-}
-
-menulist > menupopup {
-  -moz-binding: url("chrome://global/content/bindings/popup.xml#popup-scrollbars");
-}
-
-/* ::::: Variables ::::: */
 :root {
-  --panel-arrowcontent-padding: 10px;
-  --panel-arrowcontent-background: -moz-field;
-  --panel-arrowcontent-color: -moz-FieldText;
-  --panel-arrowcontent-border-color: ThreeDShadow;
-}
-
-/* ::::: root elements ::::: */
-
-window,
-page,
-dialog,
-wizard,
-prefwindow {
-  -moz-appearance: window;
+  /* ::::: Variables ::::: */
+  --arrowpanel-padding: 10px;
+  --default-arrowpanel-background: -moz-field;
+  --default-arrowpanel-color: -moz-fieldText;
+  --default-arrowpanel-border-color: ThreeDShadow;
+  --arrowpanel-background: var(--default-arrowpanel-background);
+  --arrowpanel-color: var(--default-arrowpanel-color);
+  --arrowpanel-border-color: var(--default-arrowpanel-border-color);
+  --panel-disabled-color: GrayText;
+  /* ::::: Styles ::::: */
   background-color: -moz-Dialog;
   color: -moz-DialogText;
   font: message-box;
 }
 
-/* deprecated */
-window.dialog {
-  padding-top: 8px;
-  padding-bottom: 10px;
-  padding-inline-start: 8px;
-  padding-inline-end: 10px;
+@media (-moz-windows-default-theme) {
+  :root {
+    --arrowpanel-border-color: hsla(210,4%,10%,.2);
+  }
 }
 
 /* ::::: alert icons :::::*/
@@ -61,12 +48,14 @@ window.dialog {
 }
 
 .message-icon {
-  list-style-image: url("chrome://global/skin/icons/information-32.png");
+  list-style-image: url("chrome://global/skin/icons/info.svg");
 }
 
-.alert-dialog #info\.icon,
+.alert-dialog #infoIcon,
 .alert-icon {
-  list-style-image: url("chrome://global/skin/icons/Warning.png");
+  list-style-image: url("chrome://global/skin/icons/warning.svg");
+  width: 32px;
+  height: 32px;
 }
 
 .error-icon {
@@ -74,12 +63,12 @@ window.dialog {
 }
 
 .question-icon {
-  list-style-image: url("chrome://global/skin/icons/Question.png");
+  list-style-image: url("chrome://global/skin/icons/help.svg");
 }
 
 /* ::::: iframe ::::: */
 
-iframe {
+xul|iframe {
   border: none;
   width: 100px;
   height: 100px;
@@ -87,131 +76,94 @@ iframe {
   min-height: 10px;
 }
 
-/* ::::: statusbar ::::: */
-
-statusbar {
-  -moz-appearance: statusbar;
-  border-top: 1px solid ThreeDLightShadow;
-  border-left: 1px solid ThreeDShadow;
-  border-right: 1px solid ThreeDHighlight;
-  border-bottom: 1px solid ThreeDHighlight;
-  background-color: -moz-Dialog;
-  min-height: 22px;
-}
-
-statusbarpanel {
-  -moz-appearance: statusbarpanel;
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  border-left: 1px solid ThreeDHighlight;
-  border-top: 1px solid ThreeDHighlight;
-  border-right: 1px solid ThreeDShadow;
-  border-bottom: 1px solid ThreeDShadow;
-  padding: 0 4px;
-}
-
-statusbarpanel:not(.statusbar-resizerpanel):-moz-lwtheme {
-  -moz-appearance: none;
-  border-top-style: none;
-  border-bottom-style: none;
-  border-inline-start-style: none;
-}
-
-.statusbar-resizerpanel {
-  -moz-box-align: end;
-  -moz-box-pack: end;
-  -moz-appearance: resizerpanel;
-  padding: 0;
-  border: none;
-}
-
-.statusbarpanel-iconic,
-.statusbarpanel-iconic-text,
-.statusbarpanel-menu-iconic {
-  padding: 0 1px;
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  /* In emulation, <iframe> is block instead of inline, so reset the width/height */
+  xul|iframe {
+    width: auto;
+    height: auto;
+  }
 }
 
 /* XXXBlake yeah, shoot me -- these don't belong here.  I'll move them later. */
 
-sidebarheader {
-  height: 25px;
-  background-color: -moz-Dialog;
-  -moz-appearance: toolbox;
-  border-bottom: 1px solid ThreeDShadow;
-  border-top: 1px solid ThreeDHighlight;
+xul|sidebarheader {
+  min-height: 25px;
+  text-shadow: none;
 }
 
-sidebarheader > label {
+xul|sidebarheader > xul|label {
   padding-inline-start: 4px;
 }
 
-.toolbar-focustarget {
-  -moz-user-focus: ignore !important;
-}
-
-toolbar[mode="text"] .toolbarbutton-text {
+xul|toolbar[mode="text"] .toolbarbutton-text {
   padding: 0 !important;
   margin: 3px 5px !important;
 }
 
-/* ::::: miscellaneous formatting ::::: */
+/* ::::: print preview ::::: */
 
-:root:-moz-lwtheme,
-[lwthemefooter="true"] {
-  -moz-appearance: none;
+.print-preview-navigate-button {
+  min-width: 1.9em;
 }
 
-:root:-moz-lwtheme-darktext {
+.print-preview-navigate-button > .toolbarbutton-icon {
+  display: none;
+}
+
+#print-preview-portrait-button {
+  list-style-image: url("chrome://global/skin/icons/Print-preview.png");
+  -moz-image-region: rect(0px 16px 16px 0px);
+}
+
+#print-preview-landscape-button {
+  list-style-image: url("chrome://global/skin/icons/Print-preview.png");
+  -moz-image-region: rect(0px 32px 16px 16px);
+}
+
+#print-preview-portrait-button > .toolbarbutton-icon,
+#print-preview-landscape-button > .toolbarbutton-icon {
+  margin-inline-end: 2px;
+}
+
+html|*#print-preview-pageNumber {
+  /* 3 chars + (3px border + 1px padding) on both sides */
+  width: calc(8px + 3ch);
+  margin: 0 4px;
+}
+
+/* ::::: miscellaneous formatting ::::: */
+
+:root[lwtheme-image]:-moz-lwtheme-darktext {
   text-shadow: 0 -0.5px 1.5px white;
 }
 
-:root:-moz-lwtheme-brighttext {
+:root[lwtheme-image]:-moz-lwtheme-brighttext {
   text-shadow: 1px 1px 1.5px black;
 }
 
-statusbar:-moz-lwtheme,
-sidebarheader:-moz-lwtheme {
-  -moz-appearance: none;
-  background: none;
-  border-style: none;
-}
-
-.inset {
-  border: 1px solid ThreeDShadow;
-  border-right-color: ThreeDHighlight;
-  border-bottom-color: ThreeDHighlight;
-  margin: 0 5px 5px;
-}
-
-.outset {
-  border: 1px solid ThreeDShadow;
-  border-left-color: ThreeDHighlight;
-  border-top-color: ThreeDHighlight;
-}
-
 /* separators */
-separator:not([orient="vertical"]) {
+xul|separator:not([orient="vertical"]) {
   height: 1.5em;
 }
-separator[orient="vertical"] {
+xul|separator[orient="vertical"] {
   width: 1.5em;
 }
 
-separator.thin:not([orient="vertical"]) {
+xul|separator.thin:not([orient="vertical"]) {
   height: 0.5em;
 }
-separator.thin[orient="vertical"] {
+xul|separator.thin[orient="vertical"] {
   width: 0.5em;
 }
 
-separator.groove:not([orient="vertical"]) {
+xul|separator.groove:not([orient="vertical"]) {
   border-top: 1px solid ThreeDShadow;
   border-bottom: 1px solid ThreeDHighlight;
   height: 0;
   margin-top: 0.4em;
   margin-bottom: 0.4em;
 }
-separator.groove[orient="vertical"] {
+xul|separator.groove[orient="vertical"] {
   border-left: 1px solid ThreeDShadow;
   border-right: 1px solid ThreeDHighlight;
   width: 0;
@@ -219,19 +171,8 @@ separator.groove[orient="vertical"] {
   margin-right: 0.4em;
 }
 
-.small-margin {
-  margin: 1px 2px;
-}
-
-.plain {
-  -moz-appearance: none;
-  margin: 0 !important;
-  border: none;
-  padding: 0;
-}
-
-description,
-label {
+xul|description,
+xul|label {
   cursor: default;
   margin-top: 1px;
   margin-bottom: 2px;
@@ -239,17 +180,19 @@ label {
   margin-inline-end: 5px;
 }
 
-description {
+xul|description {
   margin-bottom: 4px;
 }
 
-label[disabled="true"] {
+xul|label[disabled="true"] {
   color: GrayText;
 }
 
-label[disabled="true"]:-moz-system-metric(windows-classic) {
-  color: ThreeDShadow;
-  text-shadow: 1px 1px ThreeDHighlight;
+@media (-moz-windows-classic) {
+  xul|label[disabled="true"] {
+    color: ThreeDShadow;
+    text-shadow: 1px 1px ThreeDHighlight;
+  }
 }
 
 .tooltip-label {
@@ -260,24 +203,12 @@ label[disabled="true"]:-moz-system-metric(windows-classic) {
   font-weight: bold;
 }
 
-.monospace {
-  font-family: monospace;
-}
-
 .indent {
   margin-inline-start: 23px;
 }
 
 .box-padded {
   padding: 5px;
-}
-
-.spaced {
-  margin: 3px 5px 4px;
-}
-
-.wizard-box {
-  padding: 20px 44px 10px;
 }
 
 .text-link {
@@ -293,112 +224,12 @@ label[disabled="true"]:-moz-system-metric(windows-classic) {
   outline: 1px dotted;
 }
 
-popupnotificationcontent {
+html|input {
+  margin: 2px 4px;
+}
+
+xul|popupnotificationcontent {
   margin-top: .5em;
 }
 
-/* :::::: autoscroll popup ::::: */
-
-.autoscroller {
-  height: 28px;
-  width: 28px;
-  border: none;
-  margin: -14px;
-  padding: 0;
-  background-image: url("chrome://global/skin/icons/autoscroll.png");
-  background-color: transparent;
-%ifdef XP_WIN
-  background-position: right top;
-%endif
-  -moz-appearance: none;
-}
-
-.autoscroller[scrolldir="NS"] {
-%ifdef XP_WIN
-  background-position: right center;
-%else
-  background-position: left center;
-%endif
-}
-
-.autoscroller[scrolldir="EW"] {
-%ifdef XP_WIN
-  background-position: right bottom;
-%else
-  background-position: left bottom;
-%endif
-}
-
-/* :::::: Close button icons ::::: */
-
-.close-icon {
-  list-style-image: url("chrome://global/skin/icons/close.png");
-  -moz-image-region: rect(0, 20px, 20px, 0);
-}
-
-.close-icon:hover {
-  -moz-image-region: rect(0, 40px, 20px, 20px);
-}
-
-.close-icon:hover:active {
-  -moz-image-region: rect(0, 60px, 20px, 40px);
-}
-
-.close-icon > .button-icon,
-.close-icon > .button-box > .button-icon,
-.close-icon > .toolbarbutton-icon {
-  width: 20px;
-}
-
-@media (-moz-os-version: windows-xp),
-       (-moz-os-version: windows-vista),
-       (-moz-os-version: windows-win7) {
-  .close-icon {
-    -moz-image-region: rect(0, 16px, 16px, 0);
-  }
-
-  .close-icon:hover {
-    -moz-image-region: rect(0, 32px, 16px, 16px);
-  }
-
-  .close-icon:hover:active {
-    -moz-image-region: rect(0, 48px, 16px, 32px);
-  }
-
-  .close-icon > .button-icon,
-  .close-icon > .button-box > .button-icon,
-  .close-icon > .toolbarbutton-icon {
-    width: 16px;
-  }
-}
-
-@media (min-resolution: 1.1dppx) {
-  .close-icon {
-    list-style-image: url("chrome://global/skin/icons/close@2x.png");
-    -moz-image-region: rect(0, 40px, 40px, 0);
-  }
-
-  .close-icon:hover {
-    -moz-image-region: rect(0, 80px, 40px, 40px);
-  }
-
-  .close-icon:hover:active {
-    -moz-image-region: rect(0, 120px, 40px, 80px);
-  }
-
-  @media (-moz-os-version: windows-xp),
-         (-moz-os-version: windows-vista),
-         (-moz-os-version: windows-win7) {
-    .close-icon {
-      -moz-image-region: rect(0, 32px, 32px, 0);
-    }
-
-    .close-icon:hover {
-      -moz-image-region: rect(0, 64px, 32px, 32px);
-    }
-
-    .close-icon:hover:active {
-      -moz-image-region: rect(0, 96px, 32px, 64px);
-    }
-  }
-}
+%include ../../shared/notification-popup.inc.css

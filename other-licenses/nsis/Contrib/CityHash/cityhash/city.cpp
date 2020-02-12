@@ -33,8 +33,23 @@
 
 using namespace std;
 
+#if __sparc__
+#include <string.h>
+static inline uint64 UNALIGNED_LOAD64(const char *p) {
+  uint64 val;
+  memcpy(&val, p, sizeof(uint64));
+  return val;
+}
+
+static inline uint32 UNALIGNED_LOAD32(const char *p) {
+  uint32 val;
+  memcpy(&val, p, sizeof(uint32));
+  return val;
+}
+#else
 #define UNALIGNED_LOAD64(p) (*(const uint64*)(p))
 #define UNALIGNED_LOAD32(p) (*(const uint32*)(p))
+#endif
 
 #if !defined(LIKELY)
 #if defined(__GNUC__)
@@ -202,13 +217,13 @@ uint64 CityHash64WithSeeds(const char *s, size_t len,
 }
 
 // A subroutine for CityHash128().  Returns a decent 128-bit hash for strings
-// of any length representable in ssize_t.  Based on City and Murmur.
+// of any length representable in an int.  Based on City and Murmur.
 static uint128 CityMurmur(const char *s, size_t len, uint128 seed) {
   uint64 a = Uint128Low64(seed);
   uint64 b = Uint128High64(seed);
   uint64 c = 0;
   uint64 d = 0;
-  ssize_t l = len - 16;
+  int l = len - 16;
   if (l <= 0) {  // len <= 16
     c = b * k1 + HashLen0to16(s, len);
     d = Rotate(a + (len >= 8 ? UNALIGNED_LOAD64(s) : c), 32);

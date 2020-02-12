@@ -1,9 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
   "id": "choiceSet.json",
-  "title": "Definitions: Choice, Composite, List, Independents.",
-  "description": "Schemas in #/definitions detect or validate keys/objects used in describing Choice, Composite, List, Independents (Sections 3.2.7 and 3.2.8).",
-  "definitions": {
+  "title": "Definitions: Choice.",
+  "description": "Schemas in #/definitions detect or validate keys/objects used in describing Choice (Sections 3.2.7 and 3.2.8).",
+  "definitions":
+  {
 
     "itemsDetected" :
     {
@@ -20,16 +21,14 @@
           "items": {
             "oneOf":
               [
-              {"$ref": "specificResource.json#/definitions/specificeResourceDetected" },
-              {"$ref": "bodyTarget.json#/definitions/externalWebResourceDetected" },
-              {"$ref": "bodyTarget.json#/definitions/textualBodyFound" },
-                {"$ref": "id.json#/definitions/stringUri" },
-                {"$ref" : "#/definitions/itemsDetected",
-                  "oneOf": [
-                  { "$ref": "#/definitions/choiceTypeDefinition" },
-                  { "$ref": "#/definitions/compositeTypeDefinition" },
-                  { "$ref": "#/definitions/listTypeDefinition" },
-                    { "$ref": "#/definitions/independentsTypeDefinition" }
+                { "$ref": "specificResource.json#/definitions/specificeResourceDetected" },
+                { "$ref": "bodyTarget.json#/definitions/externalWebResourceDetected" },
+                { "$ref": "bodyTarget.json#/definitions/textualBodyFound" },
+                { "$ref": "id.json#/definitions/stringUri" },
+                { "allOf":
+                  [
+                     { "$ref" : "#/definitions/choiceOrSetTypeDefinition" },
+                     { "$ref": "#/definitions/itemsDetected"  }
                   ]
                 }
               ]
@@ -56,60 +55,26 @@
       "required": [ "type" ]
     },
 
-    "compositeTypeDefinition":
+    "choiceOrSetTypeDefinition":
     {
-      "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Choice type",
-      "description": "True when object has type key and object's type is 'Composite' (Section 3.2.7)",
-      "type": "object",
-      "properties":
-      {
-        "type":
-        {
-          "type": "string",
-          "enum": ["Composite"]
-        }
-      },
-      "required": [ "type" ]
-    },
-
-    "listTypeDefinition":
-    {
-      "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Choice type",
-      "description": "True when object has type key and object's type is 'List' (Section 3.2.7)",
-      "type": "object",
-      "properties":
-      {
-        "type":
-        {
-          "type": "string",
-          "enum": ["List"]
-        }
-      },
-      "required": [ "type" ]
-    },
-
-    "independentsTypeDefinition":
-    {
-      "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Choice type",
-      "description": "True when object has type key and object's type is 'Independents' (Section 3.2.7)",
-      "type": "object",
-      "properties":
-      {
-        "type":
-        {
-          "type": "string",
-          "enum": ["Independents"]
-        }
-      },
-      "required": [ "type" ]
+       "$schema": "http://json-schema.org/draft-04/schema#",
+       "title": "Definition: Choice or Set type",
+       "description": "True when object has type key and object's type is any of 'Choice' (Section 3.2.7)",
+       "type": "object",
+       "properties":
+       {
+         "type":
+         {
+           "type": "string",
+           "enum": ["Choice"]
+         }
+       },
+            "required": [ "type" ]
     },
 
     "choiceDetected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Choice",
+      "title": "Detection: Choice",
       "description": "True when object's type is 'Choice' and the object has an items array (Section 3.2.7)",
       "type": "object",
       "allOf":
@@ -119,40 +84,43 @@
         ]
     },
 
-    "compositeDetected": {
+    "choiceOrSetDetected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Composite",
-      "description": "True when object's type is 'Composite' and the object has at items array (Section 3.2.8)",
+      "title": "Detection: Choice or Set",
+      "description": "True when object's type is one of Choice and the object has an items array (Section 3.2.7)",
       "type": "object",
       "allOf":
         [
-        { "$ref": "#/definitions/compositeTypeDefinition" },
-        { "$ref": "#/definitions/itemsDetected" }
+           { "$ref": "#/definitions/choiceOrSetTypeDefinition" },
+           { "$ref": "#/definitions/itemsDetected" }
         ]
     },
 
-    "listDetected": {
-      "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: List",
-      "description": "True when object's type is 'List' and the object has at items array (Section 3.2.7)",
-      "type": "object",
-      "allOf":
-        [
-        { "$ref": "#/definitions/listTypeDefinition" },
-        { "$ref": "#/definitions/itemsDetected" }
-        ]
+    "choiceSetWithValue" :
+    {
+        "allOf":
+           [
+            { "$ref": "#/definitions/choiceOrSetDetected" },
+            { "required": [ "value" ] }
+           ]
     },
 
-    "independentsDetected": {
-      "$schema": "http://json-schema.org/draft-04/schema#",
-      "title": "Definition: Independents",
-      "description": "True when object's type is 'Independents' and the object has at items array (Section 3.2.7)",
-      "type": "object",
-      "allOf":
-        [
-        { "$ref": "#/definitions/independentsTypeDefinition" },
-        { "$ref": "#/definitions/itemsDetected" }
-        ]
+    "choiceSetWithSource" :
+    {
+        "allOf":
+           [
+            { "$ref": "#/definitions/choiceOrSetDetected" },
+            { "required": [ "source" ] }
+           ]
+    },
+
+    "choiceSetWithPurpose" :
+    {
+        "allOf":
+           [
+            { "$ref": "#/definitions/choiceOrSetDetected" },
+            { "required": [ "purpose" ] }
+           ]
     }
 
   }

@@ -8,170 +8,175 @@
 #define mozilla_CamerasParent_h
 
 #include "nsIObserver.h"
-#include "mozilla/dom/ContentParent.h"
+#include "VideoEngine.h"
 #include "mozilla/camera/PCamerasParent.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/ShmemPool.h"
 #include "mozilla/Atomics.h"
+#include "webrtc/modules/video_capture/video_capture.h"
+#include "webrtc/modules/video_capture/video_capture_defines.h"
+#include "webrtc/common_video/include/incoming_video_stream.h"
+#include "webrtc/media/base/videosinkinterface.h"
 
 // conflicts with #include of scoped_ptr.h
 #undef FF
-#include "webrtc/common.h"
-// Video Engine
-#include "webrtc/video_engine/include/vie_base.h"
-#include "webrtc/video_engine/include/vie_capture.h"
-#include "webrtc/video_engine/include/vie_render.h"
+#include "webrtc/common_types.h"
+
 #include "CamerasChild.h"
 
 #include "base/thread.h"
 
 namespace mozilla {
+
+namespace ipc {
+class PrincipalInfo;
+}
+
 namespace camera {
 
 class CamerasParent;
 
-class CallbackHelper : public webrtc::ExternalRenderer
-{
-public:
-  CallbackHelper(CaptureEngine aCapEng, int aCapId, CamerasParent *aParent)
-    : mCapEngine(aCapEng), mCapturerId(aCapId), mParent(aParent) {};
+class CallbackHelper : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+ public:
+  CallbackHelper(CaptureEngine aCapEng, uint32_t aStreamId,
+                 CamerasParent* aParent)
+      : mCapEngine(aCapEng), mStreamId(aStreamId), mParent(aParent){};
 
-  // ViEExternalRenderer implementation. These callbacks end up
-  // running on the VideoCapture thread.
-  virtual int FrameSizeChange(unsigned int w, unsigned int h,
-                              unsigned int streams) override;
-  virtual int DeliverFrame(unsigned char* buffer,
-                           size_t size,
-                           uint32_t time_stamp,
-                           int64_t ntp_time,
-                           int64_t render_time,
-                           void *handle) override;
-  virtual int DeliverI420Frame(const webrtc::I420VideoFrame& webrtc_frame) override;
-  virtual bool IsTextureSupported() override { return false; };
+  // These callbacks end up running on the VideoCapture thread.
+  // From  VideoCaptureCallback
+  void OnFrame(const webrtc::VideoFrame& videoFrame) override;
 
   friend CamerasParent;
 
-private:
+ private:
   CaptureEngine mCapEngine;
-  int mCapturerId;
-  CamerasParent *mParent;
+  uint32_t mStreamId;
+  CamerasParent* mParent;
 };
 
-class EngineHelper
-{
-public:
-  EngineHelper() :
-    mEngine(nullptr), mPtrViEBase(nullptr), mPtrViECapture(nullptr),
-    mPtrViERender(nullptr), mEngineIsRunning(false) {};
+class InputObserver : public webrtc::VideoInputFeedBack {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(InputObserver)
 
-  webrtc::VideoEngine *mEngine;
-  webrtc::ViEBase *mPtrViEBase;
-  webrtc::ViECapture *mPtrViECapture;
-  webrtc::ViERender *mPtrViERender;
+  explicit InputObserver(CamerasParent* aParent) : mParent(aParent){};
 
-  // The webrtc code keeps a reference to this one.
-  webrtc::Config mConfig;
-
-  // Engine alive
-  bool mEngineIsRunning;
-};
-
-class InputObserver :  public webrtc::ViEInputObserver
-{
-public:
-  explicit InputObserver(CamerasParent* aParent)
-    : mParent(aParent) {};
-  virtual void DeviceChange();
+  virtual void OnDeviceChange() override;
 
   friend CamerasParent;
 
-private:
+ private:
+  ~InputObserver() {}
+
   RefPtr<CamerasParent> mParent;
 };
 
-class CamerasParent :  public PCamerasParent,
-                       public nsIObserver
-{
+class CamerasParent final : public PCamerasParent,
+                            public nsIAsyncShutdownBlocker {
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIOBSERVER
 
-public:
+ public:
   static already_AddRefed<CamerasParent> Create();
 
   // Messages received form the child. These run on the IPC/PBackground thread.
-  virtual bool RecvAllocateCaptureDevice(const int&, const nsCString&, const nsCString&) override;
-  virtual bool RecvReleaseCaptureDevice(const int&, const int &) override;
-  virtual bool RecvNumberOfCaptureDevices(const int&) override;
-  virtual bool RecvNumberOfCapabilities(const int&, const nsCString&) override;
-  virtual bool RecvGetCaptureCapability(const int&, const nsCString&, const int&) override;
-  virtual bool RecvGetCaptureDevice(const int&, const int&) override;
-  virtual bool RecvStartCapture(const int&, const int&, const CaptureCapability&) override;
-  virtual bool RecvStopCapture(const int&, const int&) override;
-  virtual bool RecvReleaseFrame(mozilla::ipc::Shmem&&) override;
-  virtual bool RecvAllDone() override;
-  virtual void ActorDestroy(ActorDestroyReason aWhy) override;
+  mozilla::ipc::IPCResult RecvAllocateCaptureDevice(
+      const CaptureEngine& aEngine, const nsCString& aUnique_idUTF8,
+      const ipc::PrincipalInfo& aPrincipalInfo) override;
+  mozilla::ipc::IPCResult RecvReleaseCaptureDevice(const CaptureEngine&,
+                                                   const int&) override;
+  mozilla::ipc::IPCResult RecvNumberOfCaptureDevices(
+      const CaptureEngine&) override;
+  mozilla::ipc::IPCResult RecvNumberOfCapabilities(const CaptureEngine&,
+                                                   const nsCString&) override;
+  mozilla::ipc::IPCResult RecvGetCaptureCapability(const CaptureEngine&,
+                                                   const nsCString&,
+                                                   const int&) override;
+  mozilla::ipc::IPCResult RecvGetCaptureDevice(const CaptureEngine&,
+                                               const int&) override;
+  mozilla::ipc::IPCResult RecvStartCapture(
+      const CaptureEngine&, const int&, const VideoCaptureCapability&) override;
+  mozilla::ipc::IPCResult RecvFocusOnSelectedSource(const CaptureEngine&,
+                                                    const int&) override;
+  mozilla::ipc::IPCResult RecvStopCapture(const CaptureEngine&,
+                                          const int&) override;
+  mozilla::ipc::IPCResult RecvReleaseFrame(mozilla::ipc::Shmem&&) override;
+  mozilla::ipc::IPCResult RecvAllDone() override;
+  void ActorDestroy(ActorDestroyReason aWhy) override;
+  mozilla::ipc::IPCResult RecvEnsureInitialized(const CaptureEngine&) override;
 
-  nsIThread* GetBackgroundThread() { return mPBackgroundThread; };
-  bool IsShuttingDown() { return !mChildIsAlive
-                              ||  mDestroyed
-                              || !mWebRTCAlive; };
+  nsIEventTarget* GetBackgroundEventTarget() {
+    return mPBackgroundEventTarget;
+  };
+  bool IsShuttingDown() {
+    return !mChildIsAlive || mDestroyed || !mWebRTCAlive;
+  };
   ShmemBuffer GetBuffer(size_t aSize);
 
   // helper to forward to the PBackground thread
-  int DeliverFrameOverIPC(CaptureEngine capEng,
-                          int cap_id,
-                          ShmemBuffer buffer,
-                          unsigned char* altbuffer,
-                          size_t size,
-                          uint32_t time_stamp,
-                          int64_t ntp_time,
-                          int64_t render_time);
-
+  int DeliverFrameOverIPC(CaptureEngine capEng, uint32_t aStreamId,
+                          ShmemBuffer buffer, unsigned char* altbuffer,
+                          VideoFrameProperties& aProps);
 
   CamerasParent();
 
-protected:
+ protected:
   virtual ~CamerasParent();
 
   // We use these helpers for shutdown and for the respective IPC commands.
-  void StopCapture(const int& aCapEngine, const int& capnum);
-  int ReleaseCaptureDevice(const int& aCapEngine, const int& capnum);
+  void StopCapture(const CaptureEngine& aCapEngine, const int& capnum);
+  int ReleaseCaptureDevice(const CaptureEngine& aCapEngine, const int& capnum);
 
   bool SetupEngine(CaptureEngine aCapEngine);
-  bool EnsureInitialized(int aEngine);
+  VideoEngine* EnsureInitialized(int aEngine);
   void CloseEngines();
   void StopIPC();
   void StopVideoCapture();
-  // Can't take already_AddRefed because it can fail in stupid ways.
-  nsresult DispatchToVideoCaptureThread(Runnable* event);
+  nsresult DispatchToVideoCaptureThread(RefPtr<Runnable> event);
+  NS_IMETHOD BlockShutdown(nsIAsyncShutdownClient*) override;
+  NS_IMETHOD GetName(nsAString& aName) override {
+    aName = mName;
+    return NS_OK;
+  }
+  NS_IMETHOD GetState(nsIPropertyBag**) override { return NS_OK; }
+  static nsString GetNewName();
 
-  EngineHelper mEngines[CaptureEngine::MaxEngine];
+  // sEngines will be accessed by VideoCapture thread only
+  // sNumOfCamerasParent, sNumOfOpenCamerasParentEngines, and
+  // sVideoCaptureThread will be accessed by main thread / PBackground thread /
+  // VideoCapture thread sNumOfCamerasParent and sThreadMonitor create & delete
+  // are protected by sMutex sNumOfOpenCamerasParentEngines and
+  // sVideoCaptureThread are protected by sThreadMonitor
+  static StaticRefPtr<VideoEngine> sEngines[CaptureEngine::MaxEngine];
+  static int32_t sNumOfOpenCamerasParentEngines;
+  static int32_t sNumOfCamerasParents;
   nsTArray<CallbackHelper*> mCallbacks;
+  nsString mName;
 
   // image buffers
-  mozilla::ShmemPool mShmemPool;
+  ShmemPool mShmemPool;
 
   // PBackground parent thread
-  nsCOMPtr<nsIThread> mPBackgroundThread;
+  nsCOMPtr<nsISerialEventTarget> mPBackgroundEventTarget;
 
-  // Monitors creation of the thread below
-  Monitor mThreadMonitor;
+  static StaticMutex sMutex;
+  static Monitor* sThreadMonitor;
 
   // video processing thread - where webrtc.org capturer code runs
-  base::Thread* mVideoCaptureThread;
+  static base::Thread* sVideoCaptureThread;
 
   // Shutdown handling
   bool mChildIsAlive;
   bool mDestroyed;
   // Above 2 are PBackground only, but this is potentially
   // read cross-thread.
-  mozilla::Atomic<bool> mWebRTCAlive;
-  nsTArray<InputObserver*> mObservers;
+  Atomic<bool> mWebRTCAlive;
+  RefPtr<InputObserver> mCameraObserver;
+  std::map<nsCString, std::map<uint32_t, webrtc::VideoCaptureCapability>>
+      mAllCandidateCapabilities;
 };
 
 PCamerasParent* CreateCamerasParent();
 
-} // namespace camera
-} // namespace mozilla
+}  // namespace camera
+}  // namespace mozilla
 
 #endif  // mozilla_CameraParent_h

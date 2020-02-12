@@ -15,10 +15,9 @@
 namespace mozilla {
 namespace a11y {
 
-class ServiceProvider final : public IServiceProvider
-{
-public:
-  ServiceProvider(AccessibleWrap* aAcc) : mAccessible(aAcc) {}
+class ServiceProvider final : public IServiceProvider {
+ public:
+  explicit ServiceProvider(AccessibleWrap* aAcc) : mAccessible(aAcc) {}
   ~ServiceProvider() {}
 
   DECL_IUNKNOWN
@@ -28,11 +27,11 @@ public:
                                                  REFIID aIID,
                                                  void** aInstancePtr);
 
-private:
+ private:
   RefPtr<AccessibleWrap> mAccessible;
 };
 
-}
-}
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

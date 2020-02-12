@@ -10,7 +10,7 @@
  * liability, trademark and document use rules apply.
  */
 
-[Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface IDBDatabase : EventTarget {
     readonly    attribute DOMString          name;
     readonly    attribute unsigned long long version;
@@ -18,7 +18,7 @@ interface IDBDatabase : EventTarget {
     readonly    attribute DOMStringList      objectStoreNames;
 
     [Throws]
-    IDBObjectStore createObjectStore (DOMString name, optional IDBObjectStoreParameters optionalParameters);
+    IDBObjectStore createObjectStore (DOMString name, optional IDBObjectStoreParameters optionalParameters = {});
 
     [Throws]
     void           deleteObjectStore (DOMString name);
@@ -39,10 +39,10 @@ partial interface IDBDatabase {
     [Func="mozilla::dom::IndexedDatabaseManager::ExperimentalFeaturesEnabled"]
     readonly    attribute StorageType        storage;
 
-    [Exposed=Window, Throws]
+    [Exposed=Window, Throws, UseCounter]
     IDBRequest createMutableFile (DOMString name, optional DOMString type);
 
     // this is deprecated due to renaming in the spec
-    [Exposed=Window, Throws]
+    [Exposed=Window, Throws, UseCounter]
     IDBRequest mozCreateFileHandle (DOMString name, optional DOMString type); // now createMutableFile
 };

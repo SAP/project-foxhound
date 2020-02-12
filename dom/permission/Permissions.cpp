@@ -26,29 +26,20 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(Permissions)
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Permissions, mWindow)
 
-Permissions::Permissions(nsPIDOMWindowInner* aWindow)
-  : mWindow(aWindow)
-{
-}
+Permissions::Permissions(nsPIDOMWindowInner* aWindow) : mWindow(aWindow) {}
 
-Permissions::~Permissions()
-{
-}
+Permissions::~Permissions() {}
 
-JSObject*
-Permissions::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PermissionsBinding::Wrap(aCx, this, aGivenProto);
+JSObject* Permissions::WrapObject(JSContext* aCx,
+                                  JS::Handle<JSObject*> aGivenProto) {
+  return Permissions_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 namespace {
 
-already_AddRefed<PermissionStatus>
-CreatePermissionStatus(JSContext* aCx,
-                       JS::Handle<JSObject*> aPermission,
-                       nsPIDOMWindowInner* aWindow,
-                       ErrorResult& aRv)
-{
+already_AddRefed<PermissionStatus> CreatePermissionStatus(
+    JSContext* aCx, JS::Handle<JSObject*> aPermission,
+    nsPIDOMWindowInner* aWindow, ErrorResult& aRv) {
   PermissionDescriptor permission;
   JS::Rooted<JS::Value> value(aCx, JS::ObjectOrNullValue(aPermission));
   if (NS_WARN_IF(!permission.Init(aCx, value))) {
@@ -60,6 +51,7 @@ CreatePermissionStatus(JSContext* aCx,
     case PermissionName::Geolocation:
     case PermissionName::Notifications:
     case PermissionName::Push:
+    case PermissionName::Persistent_storage:
       return PermissionStatus::Create(aWindow, permission.mName, aRv);
 
     default:
@@ -69,28 +61,25 @@ CreatePermissionStatus(JSContext* aCx,
   }
 }
 
-} // namespace
+}  // namespace
 
-already_AddRefed<Promise>
-Permissions::Query(JSContext* aCx,
-                   JS::Handle<JSObject*> aPermission,
-                   ErrorResult& aRv)
-{
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-  if (!global) {
+already_AddRefed<Promise> Permissions::Query(JSContext* aCx,
+                                             JS::Handle<JSObject*> aPermission,
+                                             ErrorResult& aRv) {
+  if (!mWindow) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
 
   RefPtr<PermissionStatus> status =
-    CreatePermissionStatus(aCx, aPermission, mWindow, aRv);
+      CreatePermissionStatus(aCx, aPermission, mWindow, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     MOZ_ASSERT(!status);
     return nullptr;
   }
 
   MOZ_ASSERT(status);
-  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(mWindow->AsGlobal(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -99,9 +88,9 @@ Permissions::Query(JSContext* aCx,
   return promise.forget();
 }
 
-/* static */ nsresult
-Permissions::RemovePermission(nsIPrincipal* aPrincipal, const char* aPermissionType)
-{
+/* static */
+nsresult Permissions::RemovePermission(nsIPrincipal* aPrincipal,
+                                       const nsACString& aPermissionType) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
@@ -112,13 +101,10 @@ Permissions::RemovePermission(nsIPrincipal* aPrincipal, const char* aPermissionT
   return permMgr->RemoveFromPrincipal(aPrincipal, aPermissionType);
 }
 
-already_AddRefed<Promise>
-Permissions::Revoke(JSContext* aCx,
-                    JS::Handle<JSObject*> aPermission,
-                    ErrorResult& aRv)
-{
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-  if (!global) {
+already_AddRefed<Promise> Permissions::Revoke(JSContext* aCx,
+                                              JS::Handle<JSObject*> aPermission,
+                                              ErrorResult& aRv) {
+  if (!mWindow) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
@@ -130,12 +116,12 @@ Permissions::Revoke(JSContext* aCx,
     return nullptr;
   }
 
-  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  RefPtr<Promise> promise = Promise::Create(mWindow->AsGlobal(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIDocument> document = mWindow->GetExtantDoc();
+  nsCOMPtr<Document> document = mWindow->GetExtantDoc();
   if (!document) {
     promise->MaybeReject(NS_ERROR_UNEXPECTED);
     return promise.forget();
@@ -147,7 +133,8 @@ Permissions::Revoke(JSContext* aCx,
     return promise.forget();
   }
 
-  const char* permissionType = PermissionNameToType(permission.mName);
+  const nsLiteralCString& permissionType =
+      PermissionNameToType(permission.mName);
 
   nsresult rv;
   if (XRE_IsParentProcess()) {
@@ -157,7 +144,7 @@ Permissions::Revoke(JSContext* aCx,
     // to the parent; `ContentParent::RecvRemovePermission` will call
     // `RemovePermission`.
     ContentChild::GetSingleton()->SendRemovePermission(
-      IPC::Principal(document->NodePrincipal()), nsDependentCString(permissionType), &rv);
+        IPC::Principal(document->NodePrincipal()), permissionType, &rv);
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -166,7 +153,7 @@ Permissions::Revoke(JSContext* aCx,
   }
 
   RefPtr<PermissionStatus> status =
-    CreatePermissionStatus(aCx, aPermission, mWindow, aRv);
+      CreatePermissionStatus(aCx, aPermission, mWindow, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     MOZ_ASSERT(!status);
     return nullptr;
@@ -177,5 +164,5 @@ Permissions::Revoke(JSContext* aCx,
   return promise.forget();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

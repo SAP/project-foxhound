@@ -4,40 +4,35 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Workers")
+
+DIRS += ['remoteworkers', 'sharedworkers']
+
 # Public stuff.
 EXPORTS.mozilla.dom += [
-    'FileReaderSync.h',
-    'ServiceWorkerCommon.h',
-    'ServiceWorkerContainer.h',
-    'ServiceWorkerEvents.h',
-    'ServiceWorkerMessageEvent.h',
-    'ServiceWorkerRegistrar.h',
-    'ServiceWorkerRegistration.h',
+    'ChromeWorker.h',
+    'Worker.h',
+    'WorkerCommon.h',
+    'WorkerDebugger.h',
+    'WorkerDebuggerManager.h',
+    'WorkerError.h',
+    'WorkerLoadInfo.h',
     'WorkerLocation.h',
     'WorkerNavigator.h',
-    'WorkerPrefs.h',
     'WorkerPrivate.h',
+    'WorkerRef.h',
     'WorkerRunnable.h',
     'WorkerScope.h',
+    'WorkerStatus.h',
 ]
 
-EXPORTS.mozilla.dom.workers += [
+# Private stuff.
+EXPORTS.mozilla.dom.workerinternals += [
+    'JSSettings.h',
+    'Queue.h',
     'RuntimeService.h',
-    'ServiceWorkerInfo.h',
-    'ServiceWorkerManager.h',
-    'ServiceWorkerRegistrationInfo.h',
-    'WorkerDebuggerManager.h',
-    'Workers.h',
-]
-
-# Stuff needed for the bindings, not really public though.
-EXPORTS.mozilla.dom.workers.bindings += [
-    'ServiceWorker.h',
-    'ServiceWorkerClient.h',
-    'ServiceWorkerClients.h',
-    'ServiceWorkerWindowClient.h',
-    'SharedWorker.h',
-    'WorkerHolder.h',
+    'ScriptLoader.h',
 ]
 
 XPIDL_MODULE = 'dom_workers'
@@ -48,86 +43,62 @@ XPIDL_SOURCES += [
 ]
 
 UNIFIED_SOURCES += [
+    'ChromeWorker.cpp',
     'ChromeWorkerScope.cpp',
-    'FileReaderSync.cpp',
+    'MessageEventRunnable.cpp',
     'Principal.cpp',
     'RegisterBindings.cpp',
     'RuntimeService.cpp',
     'ScriptLoader.cpp',
-    'ServiceWorker.cpp',
-    'ServiceWorkerClient.cpp',
-    'ServiceWorkerClients.cpp',
-    'ServiceWorkerContainer.cpp',
-    'ServiceWorkerEvents.cpp',
-    'ServiceWorkerInfo.cpp',
-    'ServiceWorkerJob.cpp',
-    'ServiceWorkerJobQueue.cpp',
-    'ServiceWorkerManager.cpp',
-    'ServiceWorkerManagerChild.cpp',
-    'ServiceWorkerManagerParent.cpp',
-    'ServiceWorkerManagerService.cpp',
-    'ServiceWorkerMessageEvent.cpp',
-    'ServiceWorkerPrivate.cpp',
-    'ServiceWorkerRegisterJob.cpp',
-    'ServiceWorkerRegistrar.cpp',
-    'ServiceWorkerRegistration.cpp',
-    'ServiceWorkerRegistrationInfo.cpp',
-    'ServiceWorkerScriptCache.cpp',
-    'ServiceWorkerUnregisterJob.cpp',
-    'ServiceWorkerUpdateJob.cpp',
-    'ServiceWorkerWindowClient.cpp',
-    'SharedWorker.cpp',
+    'Worker.cpp',
+    'WorkerCSPEventListener.cpp',
+    'WorkerDebugger.cpp',
     'WorkerDebuggerManager.cpp',
-    'WorkerHolder.cpp',
+    'WorkerError.cpp',
+    'WorkerEventTarget.cpp',
+    'WorkerLoadInfo.cpp',
     'WorkerLocation.cpp',
     'WorkerNavigator.cpp',
     'WorkerPrivate.cpp',
+    'WorkerRef.cpp',
     'WorkerRunnable.cpp',
     'WorkerScope.cpp',
     'WorkerThread.cpp',
 ]
 
-IPDL_SOURCES += [
-    'PServiceWorkerManager.ipdl',
-    'ServiceWorkerRegistrarTypes.ipdlh',
-]
-
 LOCAL_INCLUDES += [
-    '../base',
-    '../system',
+    '/caps',
     '/dom/base',
+    '/dom/bindings',
+    '/dom/system',
+    '/dom/workers/remoteworkers',
+    '/js/xpconnect/loader',
+    '/netwerk/base',
     '/xpcom/build',
     '/xpcom/threads',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    LOCAL_INCLUDES += [
+        '/xpcom/base',
+    ]
+
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-TEST_DIRS += [
-    'test/extensions/bootstrap',
-    'test/extensions/traditional',
-]
-
 MOCHITEST_MANIFESTS += [
     'test/mochitest.ini',
-    'test/serviceworkers/mochitest.ini',
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
     'test/chrome.ini',
-    'test/serviceworkers/chrome.ini'
-]
-
-BROWSER_CHROME_MANIFESTS += [
-    'test/serviceworkers/browser.ini',
 ]
 
 XPCSHELL_TESTS_MANIFESTS += ['test/xpcshell/xpcshell.ini']
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
-TEST_DIRS += ['test/gtest']
-
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

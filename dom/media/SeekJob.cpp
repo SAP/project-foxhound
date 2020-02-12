@@ -8,48 +8,24 @@
 
 namespace mozilla {
 
-SeekJob::SeekJob()
-{
-}
-
-SeekJob::SeekJob(SeekJob&& aOther) : mTarget(aOther.mTarget)
-{
-  aOther.mTarget.Reset();
-  mPromise = Move(aOther.mPromise);
-}
-
-SeekJob::~SeekJob()
-{
-  MOZ_DIAGNOSTIC_ASSERT(!mTarget.IsValid());
+SeekJob::~SeekJob() {
+  MOZ_DIAGNOSTIC_ASSERT(mTarget.isNothing());
   MOZ_DIAGNOSTIC_ASSERT(mPromise.IsEmpty());
 }
 
-SeekJob& SeekJob::operator=(SeekJob&& aOther)
-{
-  MOZ_DIAGNOSTIC_ASSERT(!Exists());
-  mTarget = aOther.mTarget;
-  aOther.mTarget.Reset();
-  mPromise = Move(aOther.mPromise);
-  return *this;
+bool SeekJob::Exists() const {
+  MOZ_ASSERT(mTarget.isSome() == !mPromise.IsEmpty());
+  return mTarget.isSome();
 }
 
-bool SeekJob::Exists() const
-{
-  MOZ_ASSERT(mTarget.IsValid() == !mPromise.IsEmpty());
-  return mTarget.IsValid();
+void SeekJob::Resolve(const char* aCallSite) {
+  mPromise.Resolve(true, aCallSite);
+  mTarget.reset();
 }
 
-void SeekJob::Resolve(bool aAtEnd, const char* aCallSite)
-{
-  MediaDecoder::SeekResolveValue val(aAtEnd, mTarget.mEventVisibility);
-  mPromise.Resolve(val, aCallSite);
-  mTarget.Reset();
-}
-
-void SeekJob::RejectIfExists(const char* aCallSite)
-{
-  mTarget.Reset();
+void SeekJob::RejectIfExists(const char* aCallSite) {
+  mTarget.reset();
   mPromise.RejectIfExists(true, aCallSite);
 }
 
-} // namespace mozilla
+}  // namespace mozilla

@@ -10,19 +10,14 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         onload="start();">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <script type="application/javascript">
   <![CDATA[
-    const Cc = Components.classes;
-    const Cu = Components.utils;
-    const Ci = Components.interfaces;
-    Cu.import("resource://gre/modules/DOMRequestHelper.jsm");
+    const {DOMRequestIpcHelper} = ChromeUtils.import("resource://gre/modules/DOMRequestHelper.jsm");
     let obs = Cc["@mozilla.org/observer-service;1"].
               getService(Ci.nsIObserverService);
-    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"].
-              getService(Ci.nsIMessageBroadcaster);
+    let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
 
     function DummyHelperSubclass() {
       this.onuninit = null;
@@ -146,9 +141,9 @@
         }
       };
 
-      let frame = document.createElement("iframe");
+      let frame = document.createXULElement("iframe");
       frame.onload = function() {
-        obs.addObserver(observer, TOPIC, false);
+        obs.addObserver(observer, TOPIC);
         // Create dummy DOMRequestHelper specific to checkWindowDestruction()
         let cwdDummy = new DummyHelperSubclass();
         cwdDummy.onuninit = function() {

@@ -3,10 +3,10 @@
 
 <window title="Add and remove dictionaries test"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         onload="RunTest();">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -17,14 +17,12 @@
 SimpleTest.waitForExplicitFinish();
 
 function getMisspelledWords(editor) {
-  return editor.selectionController.getSelection(Components.interfaces.nsISelectionController.SELECTION_SPELLCHECK).toString();
+  return editor.selectionController.getSelection(Ci.nsISelectionController.SELECTION_SPELLCHECK).toString();
 }
 
 function getDictionaryList(editor) {
   var spellchecker = editor.getInlineSpellChecker(true).spellChecker;
-  var o1 = {};
-  spellchecker.GetDictionaryList(o1, {});
-  return o1.value;
+  return spellchecker.GetDictionaryList();
 }
 
 function getCurrentDictionary(editor) {
@@ -42,18 +40,17 @@ function RunTest() {
   textbox.focus();
   var editor = textbox.editor;
 
-  var dir = Components.classes["@mozilla.org/file/directory_service;1"].
-            getService(Components.interfaces.nsIProperties).
-            get("CurWorkD", Components.interfaces.nsIFile);
+  var dir = Cc["@mozilla.org/file/directory_service;1"].
+            getService(Ci.nsIProperties).
+            get("CurWorkD", Ci.nsIFile);
   dir.append("chrome");
   dir.append("extensions");
   dir.append("spellcheck");
   dir.append("tests");
   dir.append("chrome");
 
-  var hunspell = Components
-    .classes["@mozilla.org/spellchecker/engine;1"]
-    .getService(Components.interfaces.mozISpellCheckingEngine);
+  var hunspell = Cc["@mozilla.org/spellchecker/engine;1"]
+    .getService(Ci.mozISpellCheckingEngine);
 
   // install base dictionary
   var base = dir.clone();
@@ -67,7 +64,8 @@ function RunTest() {
   ok(map.exists());
   hunspell.addDirectory(map);
 
-  Components.utils.import("resource://gre/modules/AsyncSpellCheckTestHelper.jsm");
+  const {onSpellCheck} = ChromeUtils.import(
+    "resource://testing-common/AsyncSpellCheckTestHelper.jsm");
   onSpellCheck(textbox, function () {
 
     // test that base and map dictionaries are available
@@ -125,5 +123,5 @@ function RunTest() {
 }
   ]]>
   </script>
-  <textbox id="textbox" spellcheck="true" value="created imply Frühstück tomorrow qwertyu"/>
+  <html:input id="textbox" spellcheck="true" value="created imply Frühstück tomorrow qwertyu"/>
 </window>

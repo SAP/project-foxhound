@@ -96,6 +96,18 @@
     <gfxBlacklistEntry>
       <os>All</os>
       <vendor>0xabcd</vendor>
+      <devices>
+        <device>0x2783</device>
+        <device>0x1234</device>
+        <device>0x2782</device>
+      </devices>
+      <feature> WEBGL2 </feature>
+      <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
+    </gfxBlacklistEntry>
+
+    <gfxBlacklistEntry>
+      <os>All</os>
+      <vendor>0xabcd</vendor>
       <versionRange minVersion="12.0" maxVersion="16.0"/>
       <devices>
         <device>0x2783</device>
@@ -128,7 +140,7 @@
         <device>0x1234</device>
         <device>0x2782</device>
       </devices>
-      <feature> WEBRTC_HW_ACCELERATION </feature>
+      <feature> WEBRTC_HW_ACCELERATION_H264 </feature>
       <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
     </gfxBlacklistEntry>
 
@@ -290,6 +302,18 @@
     <gfxBlacklistEntry>
       <os>Darwin 13</os>
       <vendor>0xabcd</vendor>
+      <devices>
+        <device>0x2783</device>
+        <device>0x1234</device>
+        <device>0x2782</device>
+      </devices>
+      <feature> WEBGL2 </feature>
+      <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
+    </gfxBlacklistEntry>
+
+    <gfxBlacklistEntry>
+      <os>Darwin 13</os>
+      <vendor>0xabcd</vendor>
       <versionRange minVersion="12.0" maxVersion="16.0"/>
       <devices>
         <device>0x2783</device>
@@ -322,7 +346,7 @@
         <device>0x1234</device>
         <device>0x2782</device>
       </devices>
-      <feature> WEBRTC_HW_ACCELERATION </feature>
+      <feature> WEBRTC_HW_ACCELERATION_H264 </feature>
       <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
     </gfxBlacklistEntry>
 
@@ -484,6 +508,18 @@
     <gfxBlacklistEntry>
       <os>Linux</os>
       <vendor>0xabcd</vendor>
+      <devices>
+        <device>0x2783</device>
+        <device>0x1234</device>
+        <device>0x2782</device>
+      </devices>
+      <feature> WEBGL2 </feature>
+      <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
+    </gfxBlacklistEntry>
+
+    <gfxBlacklistEntry>
+      <os>Linux</os>
+      <vendor>0xabcd</vendor>
       <versionRange minVersion="12.0" maxVersion="16.0"/>
       <devices>
         <device>0x2783</device>
@@ -516,7 +552,7 @@
         <device>0x1234</device>
         <device>0x2782</device>
       </devices>
-      <feature> WEBRTC_HW_ACCELERATION </feature>
+      <feature> WEBRTC_HW_ACCELERATION_H264 </feature>
       <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
     </gfxBlacklistEntry>
 
@@ -678,6 +714,18 @@
     <gfxBlacklistEntry>
       <os>Android</os>
       <vendor>0xabcd</vendor>
+      <devices>
+        <device>0x2783</device>
+        <device>0x1234</device>
+        <device>0x2782</device>
+      </devices>
+      <feature> WEBGL2 </feature>
+      <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
+    </gfxBlacklistEntry>
+
+    <gfxBlacklistEntry>
+      <os>Android</os>
+      <vendor>0xabcd</vendor>
       <versionRange minVersion="12.0" maxVersion="16.0"/>
       <devices>
         <device>0x2783</device>
@@ -710,7 +758,7 @@
         <device>0x1234</device>
         <device>0x2782</device>
       </devices>
-      <feature> WEBRTC_HW_ACCELERATION </feature>
+      <feature> WEBRTC_HW_ACCELERATION_H264 </feature>
       <featureStatus> BLOCKED_DRIVER_VERSION </featureStatus>
     </gfxBlacklistEntry>
 

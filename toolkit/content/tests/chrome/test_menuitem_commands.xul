@@ -6,8 +6,7 @@
         onload="runOrOpen()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
 <script>
 <![CDATA[
@@ -15,7 +14,7 @@ SimpleTest.waitForExplicitFinish();
 
 function checkAttributes(elem, label, accesskey, disabled, hidden, isAfter)
 {
-  var is = window.opener.wrappedJSObject.SimpleTest.is;
+  var is = window.arguments[0].SimpleTest.is;
 
   is(elem.getAttribute("label"), label, elem.id + " label " + (isAfter ? "after" : "before") + " open");
   is(elem.getAttribute("accesskey"), accesskey, elem.id + " accesskey " + (isAfter ? "after" : "before") + " open");
@@ -25,11 +24,11 @@ function checkAttributes(elem, label, accesskey, disabled, hidden, isAfter)
 
 function runOrOpen()
 {
-  if (window.opener) {
+  if (window.arguments) {
     SimpleTest.waitForFocus(runTest);
   }
   else {
-    window.open("test_menuitem_commands.xul", "", "chrome");
+    window.openDialog("test_menuitem_commands.xul", "", "chrome,noopener", window);
   }
 }
 
@@ -38,12 +37,12 @@ function runTest()
   runTestSet("");
   runTestSet("bar");
   window.close();
-  window.opener.wrappedJSObject.SimpleTest.finish();
+  window.arguments[0].SimpleTest.finish();
 }
 
 function runTestSet(suffix)
 {
-  var isMac = (navigator.platform.indexOf("Mac") >= 0);
+  var isMac = (navigator.platform.includes("Mac"));
 
   var one = $("one" + suffix);
   var two = $("two" + suffix);
@@ -56,8 +55,7 @@ function runTestSet(suffix)
   checkAttributes(four, "Four", "F", "", "", false);
 
   if (isMac && suffix) {
-    var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                       getInterface(Components.interfaces.nsIDOMWindowUtils);
+    var utils = window.windowUtils;
     utils.forceUpdateNativeMenuAt("0");
   }
   else {

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=300992
 -->
 <head>
   <title>Test for Bug 300992</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -30,10 +30,10 @@ document.onreadystatechange = function (event) {
 };
 document.addEventListener('readystatechange', function(event) {
   is(document.readyState + '2', states[i++], 'readystatechange event document listener');
-}, false);
+});
 window.addEventListener('readystatechange', function(event) {
   ok(false, 'window listener', 'readystatechange event should not bubble to window');
-}, false);
+});
 addLoadEvent(function() {
   is(i, states.length, 'readystatechange event count');
   SimpleTest.finish();

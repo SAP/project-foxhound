@@ -1,21 +1,27 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+/* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-var gSyncProfile;
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-gSyncProfile = do_get_profile();
+// Required to avoid failures.
+do_get_profile();
 
 // Init FormHistoryStartup and pretend we opened a profile.
-var fhs = Cc["@mozilla.org/satchel/form-history-startup;1"]
-            .getService(Ci.nsIObserver);
+var fhs = Cc["@mozilla.org/satchel/form-history-startup;1"].getService(
+  Ci.nsIObserver
+);
 fhs.observe(null, "profile-after-change", null);
 
 // An app is going to have some prefs set which xpcshell tests don't.
-Services.prefs.setCharPref("identity.sync.tokenserver.uri", "http://token-server");
+Services.prefs.setCharPref(
+  "identity.sync.tokenserver.uri",
+  "http://token-server"
+);
 
 // Make sure to provide the right OS so crypto loads the right binaries
 function getOS() {
@@ -29,7 +35,7 @@ function getOS() {
   }
 }
 
-Cu.import("resource://testing-common/AppInfo.jsm", this);
+ChromeUtils.import("resource://testing-common/AppInfo.jsm", this);
 updateAppInfo({
   name: "XPCShell",
   ID: "xpcshell@tests.mozilla.org",
@@ -40,11 +46,11 @@ updateAppInfo({
 
 // Register resource aliases. Normally done in SyncComponents.manifest.
 function addResourceAlias() {
-  const resProt = Services.io.getProtocolHandler("resource")
-                          .QueryInterface(Ci.nsIResProtocolHandler);
+  const resProt = Services.io
+    .getProtocolHandler("resource")
+    .QueryInterface(Ci.nsIResProtocolHandler);
   for (let s of ["common", "sync", "crypto"]) {
-    let uri = Services.io.newURI("resource://gre/modules/services-" + s + "/", null,
-                                 null);
+    let uri = Services.io.newURI("resource://gre/modules/services-" + s + "/");
     resProt.setSubstitution("services-" + s, uri);
   }
 }

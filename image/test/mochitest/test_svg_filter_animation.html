@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=666446
 -->
 <head>
   <title>Test for Bug 666446 - Animated Images within SVG Filters</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <script type="application/javascript" src="imgutils.js"></script>
   <script type="application/javascript" src="animationPolling.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -22,7 +22,7 @@ Mozilla Bug 666446: lots of animated gifs swamp us with paint events
 </div>
 <div id="debug" style="display:none"></div>
 <pre id="test">
-<script type="text/javascript;version=1.8">
+<script type="text/javascript">
 
 /** Test for Bug 666446 nsSVGFEImageElement/RasterImage**/
 

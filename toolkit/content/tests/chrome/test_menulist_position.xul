@@ -6,8 +6,8 @@
         onload="setTimeout(init, 0)"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <!--
   This test checks the position of a menulist's popup.
@@ -40,9 +40,9 @@ function popupShown()
   ok(isWithinHalfPixel(menurect.right + marginLeft, popuprect.right), "right position");
 
   let index = menulist.selectedIndex;
-  if (menulist.selectedItem && navigator.platform.indexOf("Mac") >= 0) {
-    let menulistlabel = document.getAnonymousElementByAttribute(menulist, "class", "menulist-label");
-    let mitemlabel = document.getAnonymousElementByAttribute(menulist.selectedItem, "class", "menu-iconic-text");
+  if (menulist.selectedItem && navigator.platform.includes("Mac")) {
+    let menulistlabel = menulist.querySelector(".menulist-label");
+    let mitemlabel = menulist.selectedItem.querySelector(".menu-iconic-text");
 
     ok(isWithinHalfPixel(menulistlabel.getBoundingClientRect().left,
                          mitemlabel.getBoundingClientRect().left),
@@ -50,6 +50,19 @@ function popupShown()
     ok(isWithinHalfPixel(menulistlabel.getBoundingClientRect().top,
                          mitemlabel.getBoundingClientRect().top),
        "Labels vertically aligned for index " + index);
+
+    // Store the current value and reset it afterwards.
+    let current = menulist.selectedIndex;
+
+    // Cycle through the items to ensure that the popup doesn't move when the selection changes.
+    for (let i = 0; i < menulist.itemCount; i++) {
+      menulist.selectedIndex = i;
+
+      let newpopuprect = menulist.menupopup.getBoundingClientRect();
+      is(newpopuprect.x, popuprect.x, "Popup remained horizontally for index " + i + " starting at " + current);
+      is(newpopuprect.y, popuprect.y, "Popup remained vertically for index " + i + " starting at " + current);
+    }
+    menulist.selectedIndex = current;
   }
   else {
     let marginTop = parseFloat(getComputedStyle(menulist.menupopup).marginTop);
@@ -73,14 +86,16 @@ function popupHidden()
 ]]>
 </script>
 
-<hbox align="center" pack="center" style="margin-top: 100px;">
+<hbox align="center" pack="center" style="margin-top: 140px;">
   <menulist id="menulist" onpopupshown="popupShown();" onpopuphidden="popupHidden();">
-    <menupopup>
+    <menupopup style="max-height: 90px;">
       <menuitem label="One"/>
       <menuitem label="Two"/>
       <menuitem label="Three"/>
       <menuitem label="Four"/>
       <menuitem label="Five"/>
+      <menuitem label="Six"/>
+      <menuitem label="Seven"/>
     </menupopup>
   </menulist>
 </hbox>

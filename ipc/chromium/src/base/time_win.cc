@@ -4,7 +4,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 // Windows Timer Primer
 //
 // A good article:  http://www.ddj.com/windows/184416651
@@ -38,16 +37,16 @@
 
 #include "base/time.h"
 
-#pragma comment(lib, "winmm.lib")
+#ifndef __MINGW32__
+#  pragma comment(lib, "winmm.lib")
+#endif
 #include <windows.h>
 #include <mmsystem.h>
 
 #include "base/basictypes.h"
-#include "base/lock.h"
 #include "base/logging.h"
-#include "base/cpu.h"
-#include "base/singleton.h"
 #include "mozilla/Casting.h"
+#include "mozilla/StaticMutex.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -67,7 +66,7 @@ int64_t FileTimeToMicroseconds(const FILETIME& ft) {
 
 void MicrosecondsToFileTime(int64_t us, FILETIME* ft) {
   DCHECK(us >= 0) << "Time is less than 0, negative values are not "
-      "representable in FILETIME";
+                     "representable in FILETIME";
 
   // Multiply by 10 to convert milliseconds to 100-nanoseconds. BitwiseCast will
   // handle alignment problems. This only works on little-endian machines.
@@ -104,8 +103,7 @@ const int64_t Time::kTimeTToMicrosecondsOffset = GG_INT64_C(11644473600000000);
 
 // static
 Time Time::Now() {
-  if (initial_time == 0)
-    InitializeClock();
+  if (initial_time == 0) InitializeClock();
 
   // We implement time using the high-resolution timers so that we can get
   // timeouts which are smaller than 10-15ms.  If we just used
@@ -117,7 +115,7 @@ Time Time::Now() {
   //
   // To avoid any drift, we periodically resync the counters to the system
   // clock.
-  while(true) {
+  while (true) {
     TimeTicks ticks = TimeTicks::Now();
 
     // Calculate the time elapsed since we started our timer
@@ -138,17 +136,6 @@ Time Time::NowFromSystemTime() {
   // Force resync.
   InitializeClock();
   return Time(initial_time);
-}
-
-// static
-Time Time::FromFileTime(FILETIME ft) {
-  return Time(FileTimeToMicroseconds(ft));
-}
-
-FILETIME Time::ToFileTime() const {
-  FILETIME utc_ft;
-  MicrosecondsToFileTime(us_, &utc_ft);
-  return utc_ft;
 }
 
 // static
@@ -218,10 +205,7 @@ namespace {
 // We define a wrapper to adapt between the __stdcall and __cdecl call of the
 // mock function, and to avoid a static constructor.  Assigning an import to a
 // function pointer directly would require setup code to fetch from the IAT.
-DWORD timeGetTimeWrapper() {
-  return timeGetTime();
-}
-
+DWORD timeGetTimeWrapper() { return timeGetTime(); }
 
 DWORD (*tick_function)(void) = &timeGetTimeWrapper;
 
@@ -232,145 +216,48 @@ DWORD (*tick_function)(void) = &timeGetTimeWrapper;
 // 49 days.
 class NowSingleton {
  public:
-  NowSingleton()
-    : rollover_(TimeDelta::FromMilliseconds(0)),
-      last_seen_(0) {
-  }
-
   TimeDelta Now() {
-    AutoLock locked(lock_);
+    mozilla::StaticMutexAutoLock locked(lock_);
     // We should hold the lock while calling tick_function to make sure that
     // we keep our last_seen_ stay correctly in sync.
     DWORD now = tick_function();
     if (now < last_seen_)
-      rollover_ += TimeDelta::FromMilliseconds(GG_LONGLONG(0x100000000));  // ~49.7 days.
+      rollover_ +=
+          TimeDelta::FromMilliseconds(GG_LONGLONG(0x100000000));  // ~49.7 days.
     last_seen_ = now;
     return TimeDelta::FromMilliseconds(now) + rollover_;
   }
 
+  static NowSingleton& instance() {
+    // This setup is a little gross: the `now` instance lives until libxul is
+    // unloaded, but leak checking runs prior to that, and would see a Mutex
+    // instance contained in NowSingleton as still live.  Said instance would
+    // be reported as a leak...but it's not, really.  To avoid that, we need
+    // to use StaticMutex (which is not leak-checked), but StaticMutex can't
+    // be a member variable.  So we have to have this separate variable and
+    // pass it into the NowSingleton constructor.
+    static mozilla::StaticMutex mutex;
+    static NowSingleton now(mutex);
+    return now;
+  }
+
  private:
-  Lock lock_;  // To protected last_seen_ and rollover_.
-  TimeDelta rollover_;  // Accumulation of time lost due to rollover.
+  explicit NowSingleton(mozilla::StaticMutex& aMutex)
+      : lock_(aMutex),
+        rollover_(TimeDelta::FromMilliseconds(0)),
+        last_seen_(0) {}
+  ~NowSingleton() = default;
+
+  mozilla::StaticMutex& lock_;  // To protected last_seen_ and rollover_.
+  TimeDelta rollover_;          // Accumulation of time lost due to rollover.
   DWORD last_seen_;  // The last timeGetTime value we saw, to detect rollover.
 
   DISALLOW_COPY_AND_ASSIGN(NowSingleton);
 };
 
-// Overview of time counters:
-// (1) CPU cycle counter. (Retrieved via RDTSC)
-// The CPU counter provides the highest resolution time stamp and is the least
-// expensive to retrieve. However, the CPU counter is unreliable and should not
-// be used in production. Its biggest issue is that it is per processor and it
-// is not synchronized between processors. Also, on some computers, the counters
-// will change frequency due to thermal and power changes, and stop in some
-// states.
-//
-// (2) QueryPerformanceCounter (QPC). The QPC counter provides a high-
-// resolution (100 nanoseconds) time stamp but is comparatively more expensive
-// to retrieve. What QueryPerformanceCounter actually does is up to the HAL.
-// (with some help from ACPI).
-// According to http://blogs.msdn.com/oldnewthing/archive/2005/09/02/459952.aspx
-// in the worst case, it gets the counter from the rollover interrupt on the
-// programmable interrupt timer. In best cases, the HAL may conclude that the
-// RDTSC counter runs at a constant frequency, then it uses that instead. On
-// multiprocessor machines, it will try to verify the values returned from
-// RDTSC on each processor are consistent with each other, and apply a handful
-// of workarounds for known buggy hardware. In other words, QPC is supposed to
-// give consistent result on a multiprocessor computer, but it is unreliable in
-// reality due to bugs in BIOS or HAL on some, especially old computers.
-// With recent updates on HAL and newer BIOS, QPC is getting more reliable but
-// it should be used with caution.
-//
-// (3) System time. The system time provides a low-resolution (typically 10ms
-// to 55 milliseconds) time stamp but is comparatively less expensive to
-// retrieve and more reliable.
-class HighResNowSingleton {
- public:
-  HighResNowSingleton()
-    : ticks_per_microsecond_(0.0),
-      skew_(0) {
-    InitializeClock();
-
-    // On Athlon X2 CPUs (e.g. model 15) QueryPerformanceCounter is
-    // unreliable.  Fallback to low-res clock.
-    base::CPU cpu;
-    if (cpu.vendor_name() == "AuthenticAMD" && cpu.family() == 15)
-      DisableHighResClock();
-  }
-
-  bool IsUsingHighResClock() {
-    return ticks_per_microsecond_ != 0.0;
-  }
-
-  void DisableHighResClock() {
-    ticks_per_microsecond_ = 0.0;
-  }
-
-  TimeDelta Now() {
-    // Our maximum tolerance for QPC drifting.
-    const int kMaxTimeDrift = 50 * Time::kMicrosecondsPerMillisecond;
-
-    if (IsUsingHighResClock()) {
-      int64_t now = UnreliableNow();
-
-      // Verify that QPC does not seem to drift.
-      DCHECK(now - ReliableNow() - skew_ < kMaxTimeDrift);
-
-      return TimeDelta::FromMicroseconds(now);
-    }
-
-    // Just fallback to the slower clock.
-    return Singleton<NowSingleton>::get()->Now();
-  }
-
- private:
-  // Synchronize the QPC clock with GetSystemTimeAsFileTime.
-  void InitializeClock() {
-    LARGE_INTEGER ticks_per_sec = {{0}};
-    if (!QueryPerformanceFrequency(&ticks_per_sec))
-      return;  // Broken, we don't guarantee this function works.
-    ticks_per_microsecond_ = static_cast<float>(ticks_per_sec.QuadPart) /
-      static_cast<float>(Time::kMicrosecondsPerSecond);
-
-    skew_ = UnreliableNow() - ReliableNow();
-  }
-
-  // Get the number of microseconds since boot in a reliable fashion
-  int64_t UnreliableNow() {
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    return static_cast<int64_t>(now.QuadPart / ticks_per_microsecond_);
-  }
-
-  // Get the number of microseconds since boot in a reliable fashion
-  int64_t ReliableNow() {
-    return Singleton<NowSingleton>::get()->Now().InMicroseconds();
-  }
-
-  // Cached clock frequency -> microseconds. This assumes that the clock
-  // frequency is faster than one microsecond (which is 1MHz, should be OK).
-  float ticks_per_microsecond_;  // 0 indicates QPF failed and we're broken.
-  int64_t skew_;  // Skew between lo-res and hi-res clocks (for debugging).
-
-  DISALLOW_COPY_AND_ASSIGN(HighResNowSingleton);
-};
-
 }  // namespace
 
 // static
-TimeTicks::TickFunctionType TimeTicks::SetMockTickFunction(
-    TickFunctionType ticker) {
-  TickFunctionType old = tick_function;
-  tick_function = ticker;
-  return old;
-}
-
-// static
 TimeTicks TimeTicks::Now() {
-  return TimeTicks() + Singleton<NowSingleton>::get()->Now();
-}
-
-// static
-TimeTicks TimeTicks::HighResNow() {
-  return TimeTicks() + Singleton<HighResNowSingleton>::get()->Now();
+  return TimeTicks() + NowSingleton::instance().Now();
 }

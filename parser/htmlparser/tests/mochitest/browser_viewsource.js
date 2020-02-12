@@ -1,8 +1,11 @@
 "use strict";
 
-add_task(function*() {
+add_task(async function() {
   const PAGE_URL = getRootDirectory(gTestPath) + "file_viewsource.html";
-  let viewSourceTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "view-source:" + PAGE_URL);
+  let viewSourceTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "view-source:" + PAGE_URL
+  );
 
   let xhrPromise = new Promise(resolve => {
     let xhr = new XMLHttpRequest();
@@ -11,12 +14,15 @@ add_task(function*() {
     xhr.send();
   });
 
-  let viewSourceContentPromise = ContentTask.spawn(viewSourceTab.linkedBrowser, null, function*() {
-    return content.document.body.textContent;
-  });
+  let viewSourceContentPromise = ContentTask.spawn(
+    viewSourceTab.linkedBrowser,
+    null,
+    async function() {
+      return content.document.body.textContent;
+    }
+  );
 
-  let results = yield Promise.all([viewSourceContentPromise, xhrPromise]);
+  let results = await Promise.all([viewSourceContentPromise, xhrPromise]);
   is(results[0], results[1], "Sources should match");
-  yield BrowserTestUtils.removeTab(viewSourceTab);
+  BrowserTestUtils.removeTab(viewSourceTab);
 });
-

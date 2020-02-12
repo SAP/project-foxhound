@@ -5,9 +5,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 GeckoSimplePrograms([
-    'BadCertServer',
+    'BadCertAndPinningServer',
+    'DelegatedCredentialsServer',
     'GenerateOCSPResponse',
     'OCSPStaplingServer',
+    'SanctionsTestServer',
 ], linkage=None)
 
 LOCAL_INCLUDES += [
@@ -15,10 +17,9 @@ LOCAL_INCLUDES += [
 ]
 
 USE_LIBS += [
-    'mozillapkix',
+    'mozpkix',
     'nspr',
     'nss',
-    'pkixtestutil',
     'tlsserver',
 ]
 

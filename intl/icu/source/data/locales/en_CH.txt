@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/en_CH.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 en_CH{
     %%Parent{"en_150"}
     NumberElements{
@@ -15,9 +9,10 @@ en_CH{
                 currencyFormat{"¤ #,##0.00;¤-#,##0.00"}
             }
             symbols{
+                group{"’"}
                 superscriptingExponent{"·"}
             }
         }
     }
-    Version{"2.1.19.69"}
+    Version{"2.1.48.50"}
 }

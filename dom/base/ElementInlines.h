@@ -8,24 +8,42 @@
 #define mozilla_dom_ElementInlines_h
 
 #include "mozilla/dom/Element.h"
-#include "nsIDocument.h"
+#include "mozilla/ServoBindingTypes.h"
+#include "nsIContentInlines.h"
+#include "mozilla/dom/Document.h"
 
 namespace mozilla {
 namespace dom {
 
-inline void
-Element::RegisterActivityObserver()
-{
+inline void Element::RegisterActivityObserver() {
   OwnerDoc()->RegisterActivityObserver(this);
 }
 
-inline void
-Element::UnregisterActivityObserver()
-{
+inline void Element::UnregisterActivityObserver() {
   OwnerDoc()->UnregisterActivityObserver(this);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_ElementInlines_h
+inline Element* nsINode::GetFlattenedTreeParentElement() const {
+  nsINode* parentNode = GetFlattenedTreeParentNode();
+  if
+    MOZ_LIKELY(parentNode && parentNode->IsElement()) {
+      return parentNode->AsElement();
+    }
+
+  return nullptr;
+}
+
+inline Element* nsINode::GetFlattenedTreeParentElementForStyle() const {
+  nsINode* parentNode = GetFlattenedTreeParentNodeForStyle();
+  if
+    MOZ_LIKELY(parentNode && parentNode->IsElement()) {
+      return parentNode->AsElement();
+    }
+
+  return nullptr;
+}
+
+#endif  // mozilla_dom_ElementInlines_h

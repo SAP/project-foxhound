@@ -1,16 +1,19 @@
-/*
- * Test for LoginUtils._getPasswordOrigin
+/**
+ * Test for LoginHelper.getLoginOrigin
  */
 
 "use strict";
 
-const LMCBackstagePass = Cu.import("resource://gre/modules/LoginManagerContent.jsm");
 const TESTCASES = [
   ["javascript:void(0);", null],
   ["javascript:void(0);", "javascript:", true],
   ["chrome://MyAccount", null],
   ["data:text/html,example", null],
-  ["http://username:password@example.com:80/foo?bar=baz#fragment", "http://example.com", true],
+  [
+    "http://username:password@example.com:80/foo?bar=baz#fragment",
+    "http://example.com",
+    true,
+  ],
   ["http://127.0.0.1:80/foo", "http://127.0.0.1"],
   ["http://[::1]:80/foo", "http://[::1]"],
   ["http://example.com:8080/foo", "http://example.com:8080"],
@@ -23,6 +26,6 @@ const TESTCASES = [
 ];
 
 for (let [input, expected, allowJS] of TESTCASES) {
-  let actual = LMCBackstagePass.LoginUtils._getPasswordOrigin(input, allowJS);
+  let actual = LoginHelper.getLoginOrigin(input, allowJS);
   Assert.strictEqual(actual, expected, "Checking: " + input);
 }

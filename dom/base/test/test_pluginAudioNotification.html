@@ -2,7 +2,8 @@
 <html>
 <head>
   <title>Test for audio controller in windows</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="application/javascript" src="plugin.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -12,97 +13,62 @@
 
 <script type="application/javascript">
 
-// Copied from /dom/plugins/test/mochitest/utils.js
-function getTestPlugin(pluginName) {
-  var ph = SpecialPowers.Cc["@mozilla.org/plugin/host;1"]
-                                 .getService(SpecialPowers.Ci.nsIPluginHost);
-  var tags = ph.getPluginTags();
-  var name = pluginName || "Test Plug-in";
-  for (var tag of tags) {
-    if (tag.name == name) {
-      return tag;
-    }
-  }
-
-  ok(false, "Could not find plugin tag with plugin name '" + name + "'");
-  return null;
-}
-// Copied from /dom/plugins/test/mochitest/utils.js
-function setTestPluginEnabledState(newEnabledState, pluginName) {
-  var oldEnabledState = SpecialPowers.setTestPluginEnabledState(newEnabledState, pluginName);
-  if (!oldEnabledState) {
-    return;
-  }
-  var plugin = getTestPlugin(pluginName);
-  while (plugin.enabledState != newEnabledState) {
-    // Run a nested event loop to wait for the preference change to
-    // propagate to the child. Yuck!
-    SpecialPowers.Services.tm.currentThread.processNextEvent(true);
-  }
-  SimpleTest.registerCleanupFunction(function() {
-    SpecialPowers.setTestPluginEnabledState(oldEnabledState, pluginName);
-  });
-}
-setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
-
 SimpleTest.waitForExplicitFinish();
 
-var expectedNotification = null;
 var iframe = null;
 
-var observer = {
-  observe: function(subject, topic, data) {
-    is(topic, "audio-playback", "audio-playback received");
-    is(data, expectedNotification, "This is the right notification");
-    SimpleTest.executeSoon(runTest);
-  }
-};
+function waitForObserver(expectedNotification) {
+  return new Promise(resolve => {
+    let observe = function(subject, topic, data) {
+      is(topic, "audio-playback", "audio-playback received");
+      is(data, expectedNotification, `${expectedNotification} is the right notification`);
+      SpecialPowers.removeObserver(observe, "audio-playback");
+      resolve();
+    }
 
-var observerService = SpecialPowers.Cc["@mozilla.org/observer-service;1"]
-                                   .getService(SpecialPowers.Ci.nsIObserverService);
+    SpecialPowers.addObserver(observe, "audio-playback");
+  });
+}
 
 var tests = [
-  function() {
+  async function() {
     iframe = document.querySelector("iframe");
-    observerService.addObserver(observer, "audio-playback", false);
-    ok(true, "Observer set");
-    runTest();
-  },
-
-  function() {
-    expectedNotification = 'active';
+    let observerPromise = waitForObserver('active');
     iframe.src = "file_pluginAudio.html";
+    await observerPromise;
   },
 
-  function() {
+  async function() {
+    info("=== Mute plugin ===");
     ok(!iframe.contentWindow.pluginMuted(), "Plugin should not be muted");
+    let observerPromise = waitForObserver('inactive-nonaudible');
     iframe.contentWindow.toggleMuteState(true);
+    await observerPromise;
     ok(iframe.contentWindow.pluginMuted(), "Plugin should be muted");
+  },
+
+  async function() {
+    info("=== unmute plugin ==");
+    ok(iframe.contentWindow.pluginMuted(), "Plugin should be muted");
+    let observerPromise = waitForObserver('active');
     iframe.contentWindow.toggleMuteState(false);
+    await observerPromise;
     ok(!iframe.contentWindow.pluginMuted(), "Plugin should not be muted");
-    runTest();
   },
 
-  function() {
-    expectedNotification = 'inactive-pause';
+  async function() {
+    info("=== stop audio ==");
+    let observerPromise = waitForObserver('inactive-pause');
     iframe.contentWindow.stopAudio();
+    await observerPromise;
   },
-
-  function() {
-    observerService.removeObserver(observer, "audio-playback");
-    ok(true, "Observer removed");
-    runTest();
-  }
 ];
 
-function runTest() {
-  if (!tests.length) {
-    SimpleTest.finish();
-    return;
+async function runTest() {
+  for (let test of tests) {
+    await test();
   }
-
-  var test = tests.shift();
-  test();
+  SimpleTest.finish();
 }
 
 onload = runTest;
@@ -110,4 +76,3 @@ onload = runTest;
 </script>
 </body>
 </html>
-

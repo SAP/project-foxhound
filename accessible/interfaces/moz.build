@@ -5,11 +5,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows' and CONFIG['COMPILE_ENVIRONMENT']:
-    DIRS += ['msaa', 'ia2']
+    DIRS += ['gecko', 'msaa', 'ia2']
 
 XPIDL_SOURCES += [
     'nsIAccessibilityService.idl',
     'nsIAccessible.idl',
+    'nsIAccessibleAnnouncementEvent.idl',
     'nsIAccessibleApplication.idl',
     'nsIAccessibleCaretMoveEvent.idl',
     'nsIAccessibleDocument.idl',
@@ -23,6 +24,7 @@ XPIDL_SOURCES += [
     'nsIAccessiblePivot.idl',
     'nsIAccessibleRelation.idl',
     'nsIAccessibleRole.idl',
+    'nsIAccessibleScrollingEvent.idl',
     'nsIAccessibleSelectable.idl',
     'nsIAccessibleStateChangeEvent.idl',
     'nsIAccessibleStates.idl',
@@ -34,7 +36,6 @@ XPIDL_SOURCES += [
     'nsIAccessibleTypes.idl',
     'nsIAccessibleValue.idl',
     'nsIAccessibleVirtualCursorChangeEvent.idl',
-    'nsIXBLAccessible.idl',
 ]
 
 XPIDL_MODULE = 'accessibility'

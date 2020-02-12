@@ -9,16 +9,29 @@ Library('imagetest')
 UNIFIED_SOURCES = [
     'Common.cpp',
     'TestADAM7InterpolatingFilter.cpp',
+    'TestAnimationFrameBuffer.cpp',
+    'TestBlendAnimationFilter.cpp',
+    'TestContainers.cpp',
     'TestCopyOnWrite.cpp',
-    'TestDecoders.cpp',
-    'TestDecodeToSurface.cpp',
     'TestDeinterlacingFilter.cpp',
-    'TestMetadata.cpp',
+    'TestFrameAnimator.cpp',
+    'TestLoader.cpp',
     'TestRemoveFrameRectFilter.cpp',
-    'TestSourceBuffer.cpp',
     'TestStreamingLexer.cpp',
     'TestSurfaceSink.cpp',
+    'TestSwizzleFilter.cpp',
 ]
+
+# skip the test on windows10-aarch64, aarch64 due to 1544961
+if not(CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CPU_ARCH'] == 'aarch64'):
+    UNIFIED_SOURCES += [
+        'TestDecoders.cpp',
+        'TestDecodersPerf.cpp',
+        'TestDecodeToSurface.cpp',
+        'TestMetadata.cpp',
+        'TestSourceBuffer.cpp',
+        'TestSurfaceCache.cpp',
+    ]
 
 if CONFIG['MOZ_ENABLE_SKIA']:
     UNIFIED_SOURCES += [
@@ -33,8 +46,12 @@ SOURCES += [
 
 TEST_HARNESS_FILES.gtest += [
     'animated-with-extra-image-sub-blocks.gif',
+    'blend.gif',
+    'blend.png',
+    'blend.webp',
     'corrupt-with-bad-bmp-height.ico',
     'corrupt-with-bad-bmp-width.ico',
+    'corrupt-with-bad-ico-bpp.ico',
     'corrupt.jpg',
     'downscaled.bmp',
     'downscaled.gif',
@@ -42,23 +59,46 @@ TEST_HARNESS_FILES.gtest += [
     'downscaled.icon',
     'downscaled.jpg',
     'downscaled.png',
+    'downscaled.webp',
     'first-frame-green.gif',
     'first-frame-green.png',
+    'first-frame-green.webp',
     'first-frame-padding.gif',
+    'green-1x1-truncated.gif',
+    'green-large-bmp.ico',
+    'green-large-png.ico',
+    'green-multiple-sizes.ico',
     'green.bmp',
     'green.gif',
+    'green.icc_srgb.webp',
     'green.ico',
     'green.icon',
     'green.jpg',
     'green.png',
+    'green.webp',
     'invalid-truncated-metadata.bmp',
+    'large.webp',
     'no-frame-delay.gif',
+    'perf_cmyk.jpg',
+    'perf_gray.jpg',
+    'perf_gray.png',
+    'perf_gray_alpha.png',
+    'perf_srgb.gif',
+    'perf_srgb.png',
+    'perf_srgb_alpha.png',
+    'perf_srgb_alpha_lossless.webp',
+    'perf_srgb_alpha_lossy.webp',
+    'perf_srgb_lossless.webp',
+    'perf_srgb_lossy.webp',
+    'perf_ycbcr.jpg',
     'rle4.bmp',
     'rle8.bmp',
     'transparent-ico-with-and-mask.ico',
     'transparent-if-within-ico.bmp',
+    'transparent-no-alpha-header.webp',
     'transparent.gif',
     'transparent.png',
+    'transparent.webp',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -73,5 +113,5 @@ LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
 FINAL_LIBRARY = 'xul-gtest'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

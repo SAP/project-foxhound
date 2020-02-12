@@ -6,9 +6,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378028
 -->
 <window title="Mozilla Bug 378028"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/paint_listener.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/paint_listener.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -30,18 +30,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378028
     <richlistitem id="richlistbox_item7"><label value="Item 7"/></richlistitem>
     <richlistitem id="richlistbox_item8"><label value="Item 8"/></richlistitem>
   </richlistbox>
-
-  <listbox id="listbox" rows="2">
-    <listitem id="listbox_item0" label="Item 0" hidden="true"/>
-    <listitem id="listbox_item1" label="Item 1"/>
-    <listitem id="listbox_item2" label="Item 2"/>
-    <listitem id="listbox_item3" label="Item 3"/>
-    <listitem id="listbox_item4" label="Item 4"/>
-    <listitem id="listbox_item5" label="Item 5"/>
-    <listitem id="listbox_item6" label="Item 6"/>
-    <listitem id="listbox_item7" label="Item 7"/>
-    <listitem id="listbox_item8" label="Item 8"/>
-  </listbox>
 
   <box orient="horizontal">
     <arrowscrollbox id="hscrollbox" clicktoscroll="true" orient="horizontal"
@@ -78,9 +66,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378028
 
 /** Test for Bug 378028 **/
 /*   and for Bug 350471 **/
-var smoothScrollPref = "general.smoothScroll";
-SpecialPowers.setBoolPref(smoothScrollPref, false);
 SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(prepareRunningTests);
+
+const IS_MAC = navigator.platform.indexOf("Mac") == 0;
+
+// Some tests need to wait until stopping scroll completely.  At this time,
+// setTimeout() will retry to check up to MAX_RETRY_COUNT times.
+const MAX_RETRY_COUNT = 5;
 
 const deltaModes = [
   WheelEvent.DOM_DELTA_PIXEL,  // 0
@@ -88,59 +81,28 @@ const deltaModes = [
   WheelEvent.DOM_DELTA_PAGE    // 2
 ];
 
-function testListbox(id)
+function sendWheelAndWait(aScrollTaget, aX, aY, aEvent, aChecker)
 {
-  var listbox = document.getElementById(id);
-
-  function helper(aStart, aDelta, aIntDelta, aDeltaMode)
-  {
-    listbox.scrollToIndex(aStart);
-    synthesizeWheel(listbox, 10, 10,
-                    { deltaMode: aDeltaMode, deltaY: aDelta,
-                      lineOrPageDeltaY: aIntDelta });
-    var expectedPos = aStart;
-    if (aIntDelta) {
-      if (aDeltaMode == WheelEvent.DOM_DELTA_PAGE) {
-        expectedPos += aIntDelta > 0 ? listbox.getNumberOfVisibleRows() :
-                                       -listbox.getNumberOfVisibleRows();
-      } else {
-        expectedPos += aIntDelta;
-      }
-    }
-    is(listbox.getIndexOfFirstVisibleRow(), expectedPos,
-       "testListbox(" + id +  "): vertical, starting " + aStart +
-         " delta " + aDelta + " lineOrPageDelta " + aIntDelta +
-         " aDeltaMode " + aDeltaMode);
-
-    // Check that horizontal scrolling has no effect
-    listbox.scrollToIndex(aStart);
-    synthesizeWheel(listbox, 10, 10,
-                    { deltaMode: aDeltaMode, deltaX: aDelta,
-                      lineOrPageDeltaX: aIntDelta });
-    is(listbox.getIndexOfFirstVisibleRow(), aStart,
-       "testListbox(" + id +  "): horizontal, starting " + aStart +
-         " delta " + aDelta + " lineOrPageDelta " + aIntDelta +
-         " aDeltaMode " + aDeltaMode);
+  function continueTestsIfScrolledAsExpected() {
+    if (!aChecker())
+      SimpleTest.executeSoon(()=>{ continueTestsIfScrolledAsExpected(aChecker) });
+    else
+      runTests();
   }
-  deltaModes.forEach(function(aDeltaMode) {
-    let delta = (aDeltaMode == WheelEvent.DOM_DELTA_PIXEL) ? 5.0 : 0.3;
-    helper(5, -delta,  0, aDeltaMode);
-    helper(5, -delta, -1, aDeltaMode);
-    helper(5,  delta,  1, aDeltaMode);
-    helper(5,  delta,  0, aDeltaMode);
+
+  sendWheelAndPaint(aScrollTaget, aX, aY, aEvent, ()=>{
+    // sendWheelAndPaint may wait not enough for <scrollbox>.
+    // Let's check the position before using is() for avoiding random orange.
+    // So, this test may detect regressions with timeout.
+    continueTestsIfScrolledAsExpected(aChecker);
   });
 }
 
-function testRichListbox(id, andThen)
+function* testRichListbox(id)
 {
   var listbox = document.getElementById(id);
-  var tests = [];
 
-  var winUtils = SpecialPowers.getDOMWindowUtils(window);
-  winUtils.advanceTimeAndRefresh(100);
-
-  function nextTest() {
-    var [aStart, aDelta, aIntDelta, aDeltaMode] = tests.shift();
+  function* helper(aStart, aDelta, aIntDelta, aDeltaMode) {
     listbox.scrollToIndex(aStart);
 
     let event = {
@@ -148,127 +110,203 @@ function testRichListbox(id, andThen)
       deltaY: aDelta,
       lineOrPageDeltaY: aIntDelta
     };
-    sendWheelAndPaint(listbox, 10, 10, event, function() {
-      var change = listbox.getIndexOfFirstVisibleRow() - aStart;
-      var direction = (change > 0) - (change < 0);
-      var expected = (aDelta > 0) - (aDelta < 0);
-      is(direction, expected,
-       "testRichListbox(" + id +  "): vertical, starting " + aStart +
-         " delta " + aDelta + " lineOrPageDeltaY " + aIntDelta +
+    // We don't need to wait for finishing the scroll in this test.
+    yield sendWheelAndWait(listbox, 10, 10, event, ()=>{ return true; });
+    var change = listbox.getIndexOfFirstVisibleRow() - aStart;
+    var direction = (change > 0) - (change < 0);
+    var expected = (aDelta > 0) - (aDelta < 0);
+    is(direction, expected,
+     "testRichListbox(" + id +  "): vertical, starting " + aStart +
+       " delta " + aDelta + " lineOrPageDeltaY " + aIntDelta +
+       " aDeltaMode " + aDeltaMode);
+
+    // Check that horizontal scrolling has no effect
+    event = {
+      deltaMode: aDeltaMode,
+      deltaX: aDelta,
+      lineOrPageDeltaX: aIntDelta
+    };
+
+    listbox.scrollToIndex(aStart);
+    yield sendWheelAndWait(listbox, 10, 10, event, ()=>{ return true; });
+    is(listbox.getIndexOfFirstVisibleRow(), aStart,
+       "testRichListbox(" + id +  "): horizontal, starting " + aStart +
+         " delta " + aDelta + " lineOrPageDeltaX " + aIntDelta +
          " aDeltaMode " + aDeltaMode);
-
-      // Check that horizontal scrolling has no effect
-      let event = {
-        deltaMode: aDeltaMode,
-        deltaX: aDelta,
-        lineOrPageDeltaX: aIntDelta
-      };
-
-      listbox.scrollToIndex(aStart);
-      sendWheelAndPaint(listbox, 10, 10, event, function() {
-        is(listbox.getIndexOfFirstVisibleRow(), aStart,
-           "testRichListbox(" + id +  "): horizontal, starting " + aStart +
-             " delta " + aDelta + " lineOrPageDeltaX " + aIntDelta +
-             " aDeltaMode " + aDeltaMode);
-
-        if (!tests.length) {
-          winUtils.restoreNormalRefresh();
-          andThen();
-          return;
-        }
-
-        nextTest();
-      });
-    });
   }
 
   // richlistbox currently uses native XUL scrolling, so the "line"
   // amounts don't necessarily correspond 1-to-1 with listbox items. So
   // we just check that scrolling up/down scrolls in the right direction.
-  deltaModes.forEach(function(aDeltaMode) {
-    let delta = (aDeltaMode == WheelEvent.DOM_DELTA_PIXEL) ? 32.0 : 2.0;
-    tests.push([5, -delta, -1, aDeltaMode]);
-    tests.push([5, -delta,  0, aDeltaMode]);
-    tests.push([5,  delta,  1, aDeltaMode]);
-    tests.push([5,  delta,  0, aDeltaMode]);
-  });
-
-  nextTest();
+  for (let i = 0; i < deltaModes.length; i++) {
+    let delta = (deltaModes[i] == WheelEvent.DOM_DELTA_PIXEL) ? 32.0 : 2.0;
+    yield* helper(5, -delta, -1, deltaModes[i]);
+    yield* helper(5, -delta,  0, deltaModes[i]);
+    yield* helper(5,  delta,  1, deltaModes[i]);
+    yield* helper(5,  delta,  0, deltaModes[i]);
+  }
 }
 
-function testArrowScrollbox(id)
+function* testArrowScrollbox(id)
 {
-  var scrollbox = document.getElementById(id);
-  var scrollBoxObject = scrollbox.scrollBoxObject;
+  var scrollbox = document.getElementById(id).scrollbox;
   var orient = scrollbox.getAttribute("orient");
 
-  function helper(aStart, aDelta, aDeltaMode, aExpected)
+  function* helper(aStart, aDelta, aDeltaMode, aExpected)
   {
     var lineOrPageDelta = (aDeltaMode == WheelEvent.DOM_DELTA_PIXEL) ? aDelta / 10 : aDelta;
     var orientIsHorizontal = (orient == "horizontal");
 
-    scrollBoxObject.scrollTo(aStart, aStart);
-
+    scrollbox.scrollTo(aStart, aStart);
     for (var i = orientIsHorizontal ? 2 : 0; i >= 0; i--) {
-      synthesizeWheel(scrollbox, 5, 5,
-                      { deltaMode: aDeltaMode, deltaY: aDelta,
-                        lineOrPageDeltaY: lineOrPageDelta });
-
-      var pos = orientIsHorizontal ? scrollBoxObject.positionX :
-                                     scrollBoxObject.positionY;
-
       // Note, vertical mouse scrolling is allowed to scroll horizontal
       // arrowscrollboxes, because many users have no horizontal mouse scroll
       // capability
       let expected = !i ? aExpected : aStart;
-      is(pos, expected,
-         "testArrowScrollbox(" + id +  "): vertical, starting " + aStart +
-           " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
-           " aDeltaMode " + aDeltaMode);
+      let getPos = ()=>{
+        return orientIsHorizontal ? scrollbox.scrollLeft :
+                                    scrollbox.scrollTop;
+      };
+      let oldPos = -1;
+      let retry = 0;
+      yield sendWheelAndWait(scrollbox, 5, 5,
+                             { deltaMode: aDeltaMode, deltaY: aDelta,
+                               lineOrPageDeltaY: lineOrPageDelta },
+                             ()=>{
+                                if (getPos() == expected) {
+                                  return true;
+                                }
+                                if (oldPos == getPos()) {
+                                  // If scroll stopped completely, let's continue the test.
+                                  return ++retry == MAX_RETRY_COUNT;
+                                }
+                                oldPos = getPos();
+                                retry = 0;
+                                return false;
+                             });
+      if (IS_MAC && expected == aExpected && expected != 0) {
+        // XXX On macOS, <scrollbox>.scrollPosition += enoughInt; may not set the scrollPosition
+        //     to scrollSize even if enoughInt is larger than scrollSize.
+        todo_is(getPos(), expected,
+                "testArrowScrollbox(" + id +  "): vertical, starting " + aStart +
+                  " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+                  " aDeltaMode " + aDeltaMode);
+        let isInRange = false;
+        if (aDelta > 0)
+          isInRange = getPos() > aStart && getPos() < expected;
+        else
+          isInRange = getPos() < aStart && getPos() > expected;
+        ok(isInRange,
+           "testArrowScrollbox(" + id +  "): vertical, starting " + aStart +
+             " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+             " aDeltaMode " + aDeltaMode);
+      } else {
+        is(getPos(), expected,
+           "testArrowScrollbox(" + id +  "): vertical, starting " + aStart +
+             " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+             " aDeltaMode " + aDeltaMode);
+      }
     }
 
-    scrollBoxObject.scrollTo(aStart, aStart);
+    scrollbox.scrollTo(aStart, aStart);
     for (var i = orientIsHorizontal ? 2 : 0; i >= 0; i--) {
-      synthesizeWheel(scrollbox, 5, 5,
-                      { deltaMode: aDeltaMode, deltaX: aDelta,
-                        lineOrPageDeltaX: lineOrPageDelta });
       // horizontal mouse scrolling is never allowed to scroll vertical
       // arrowscrollboxes
-      var pos = orientIsHorizontal ? scrollBoxObject.positionX :
-                                     scrollBoxObject.positionY;
       let expected = (!i && orientIsHorizontal) ? aExpected : aStart;
-      is(pos, expected,
-         "testArrowScrollbox(" + id +  "): horizontal, starting " + aStart +
-           " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
-           " aDeltaMode " + aDeltaMode);
+      let getPos = ()=>{
+        return orientIsHorizontal ? scrollbox.scrollLeft :
+                                    scrollbox.scrollTop;
+      };
+      let oldPos = -1;
+      let retry = 0;
+      yield sendWheelAndWait(scrollbox, 5, 5,
+                             { deltaMode: aDeltaMode, deltaX: aDelta,
+                               lineOrPageDeltaX: lineOrPageDelta },
+                             ()=>{
+                                if (getPos() == expected) {
+                                  return true;
+                                }
+                                if (oldPos == getPos()) {
+                                  // If scroll stopped completely, let's continue the test.
+                                  return ++retry == MAX_RETRY_COUNT;
+                                }
+                                oldPos = getPos();
+                                retry = 0;
+                                return false;
+                             });
+      if (IS_MAC && expected == aExpected && expected != 0) {
+        // XXX On macOS, <scrollbox>.scrollPosition += enoughInt; may not set the scrollPosition
+        //     to scrollSize even if enoughInt is larger than scrollSize.
+        todo_is(getPos(), expected,
+                "testArrowScrollbox(" + id +  "): horizontal, starting " + aStart +
+                  " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+                  " aDeltaMode " + aDeltaMode);
+        let isInRange = false;
+        if (aDelta > 0)
+          isInRange = getPos() > aStart && getPos() < expected;
+        else
+          isInRange = getPos() < aStart && getPos() > expected;
+        ok(isInRange,
+           "testArrowScrollbox(" + id +  "): horizontal, starting " + aStart +
+             " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+             " aDeltaMode " + aDeltaMode);
+      } else {
+        is(getPos(), expected,
+           "testArrowScrollbox(" + id +  "): horizontal, starting " + aStart +
+             " delta " + aDelta + " lineOrPageDelta " + lineOrPageDelta +
+             " aDeltaMode " + aDeltaMode);
+      }
     }
   }
 
-  var scrolledWidth = scrollBoxObject.scrolledWidth;
-  var scrolledHeight = scrollBoxObject.scrolledHeight;
-  var scrollMaxX = scrolledWidth - scrollBoxObject.width;
-  var scrollMaxY = scrolledHeight - scrollBoxObject.height;
+  var scrolledWidth = scrollbox.scrollWidth;
+  var scrolledHeight = scrollbox.scrollHeight;
+  var scrollMaxX = scrolledWidth - scrollbox.getBoundingClientRect().width;
+  var scrollMaxY = scrolledHeight - scrollbox.getBoundingClientRect().height;
   var scrollMax = orient == "horizontal" ? scrollMaxX : scrollMaxY;
 
-  deltaModes.forEach(function(aDeltaMode) {
-    helper(50, -1000, aDeltaMode, 0);
-    helper(50,  1000, aDeltaMode, scrollMax);
-    helper(50,     0, aDeltaMode, 50);
-    helper(50,     0, aDeltaMode, 50);
-  });
+  for (let i = 0; i < deltaModes.length; i++) {
+    yield* helper(50, -1000, deltaModes[i], 0);
+    yield* helper(50,  1000, deltaModes[i], scrollMax);
+  }
 }
+
+var gTestContinuation = null;
 
 function runTests()
 {
-  testRichListbox("richlistbox", function() {
-    testListbox("listbox");
-    testArrowScrollbox("hscrollbox");
-    testArrowScrollbox("vscrollbox");
-    SpecialPowers.clearUserPref(smoothScrollPref);
+  if (!gTestContinuation) {
+    gTestContinuation = testBody();
+  }
+  var ret = gTestContinuation.next();
+  if (ret.done) {
+    var winUtils = SpecialPowers.getDOMWindowUtils(window);
+    winUtils.restoreNormalRefresh();
     SimpleTest.finish();
-  });
+  }
 }
 
-window.onload = function() { setTimeout(runTests, 0); };
+async function prepareRunningTests()
+{
+  // Before actually running tests, we disable auto-dir scrolling, becasue the
+  // horizontal scrolling tests in this file are mostly meant to ensure that the
+  // tested controls in the default style should only have one scrollbar and it
+  // must always be in the block-flow direction so they are not really meant to
+  // test default actions for wheel events, so we simply disabled auto-dir
+  // scrolling, which are well tested in
+  // dom/events/test/window_wheel_default_action.html.
+  await SpecialPowers.pushPrefEnv({"set": [["mousewheel.autodir.enabled",
+                                            false]]});
+
+  runTests();
+}
+
+function* testBody()
+{
+  yield* testRichListbox("richlistbox");
+  yield* testArrowScrollbox("hscrollbox");
+  yield* testArrowScrollbox("vscrollbox");
+}
+
   ]]></script>
 </window>

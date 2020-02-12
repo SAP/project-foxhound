@@ -20,14 +20,13 @@
  *   implementation isn't always required (or even well defined)
  */
 
-this.EXPORTED_SYMBOLS = [ "console", "ConsoleAPI" ];
+var EXPORTED_SYMBOLS = ["console", "ConsoleAPI"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
 
 var gTimerRegistry = new Map();
 
@@ -63,18 +62,17 @@ function fmt(aStr, aMaxLen, aMinLen, aOptions) {
   if (aStr.length > aMaxLen) {
     if (aOptions && aOptions.truncate == "start") {
       return "_" + aStr.substring(aStr.length - aMaxLen + 1);
-    }
-    else if (aOptions && aOptions.truncate == "center") {
-      let start = aStr.substring(0, (aMaxLen / 2));
+    } else if (aOptions && aOptions.truncate == "center") {
+      let start = aStr.substring(0, aMaxLen / 2);
 
-      let end = aStr.substring((aStr.length - (aMaxLen / 2)) + 1);
+      let end = aStr.substring(aStr.length - aMaxLen / 2 + 1);
       return start + "_" + end;
     }
     return aStr.substring(0, aMaxLen - 1) + "_";
   }
   if (aStr.length < aMinLen) {
     let padding = Array(aMinLen - aStr.length + 1).join(" ");
-    aStr = (aOptions.align === "end") ? padding + aStr : aStr + padding;
+    aStr = aOptions.align === "end" ? padding + aStr : aStr + padding;
   }
   return aStr;
 }
@@ -112,10 +110,11 @@ function getCtorName(aObj) {
           Is this object an error?
  */
 function isError(aThing) {
-  return aThing && (
-           (typeof aThing.name == "string" &&
-            aThing.name.startsWith("NS_ERROR_")) ||
-           getCtorName(aThing).endsWith("Error"));
+  return (
+    aThing &&
+    ((typeof aThing.name == "string" && aThing.name.startsWith("NS_ERROR_")) ||
+      getCtorName(aThing).endsWith("Error"))
+  );
 }
 
 /**
@@ -143,17 +142,16 @@ function stringify(aThing, aAllowNewLines) {
 
   if (typeof aThing == "object") {
     let type = getCtorName(aThing);
-    if (aThing instanceof Components.interfaces.nsIDOMNode && aThing.tagName) {
+    if (Element.isInstance(aThing)) {
       return debugElement(aThing);
     }
-    type = (type == "Object" ? "" : type + " ");
+    type = type == "Object" ? "" : type + " ";
     let json;
     try {
       json = JSON.stringify(aThing);
-    }
-    catch (ex) {
+    } catch (ex) {
       // Can't use a real ellipsis here, because cmd.exe isn't unicode-enabled
-      json = "{" + Object.keys(aThing).join(":..,") + ":.., " + "}";
+      json = "{" + Object.keys(aThing).join(":..,") + ":.., }";
     }
     return type + json;
   }
@@ -172,18 +170,21 @@ function stringify(aThing, aAllowNewLines) {
 /**
  * Create a simple debug representation of a given element.
  *
- * @param {nsIDOMElement} aElement
+ * @param {Element} aElement
  *        The element to debug
  * @return {string}
  *        A simple single line representation of aElement
  */
 function debugElement(aElement) {
-  return "<" + aElement.tagName +
-      (aElement.id ? "#" + aElement.id : "") +
-      (aElement.className && aElement.className.split ?
-          "." + aElement.className.split(" ").join(" .") :
-          "") +
-      ">";
+  return (
+    "<" +
+    aElement.tagName +
+    (aElement.id ? "#" + aElement.id : "") +
+    (aElement.className && aElement.className.split
+      ? "." + aElement.className.split(" ").join(" .")
+      : "") +
+    ">"
+  );
 }
 
 /**
@@ -211,16 +212,14 @@ function log(aThing) {
       for (let [key, value] of aThing) {
         reply += logProperty(key, value);
       }
-    }
-    else if (type == "Set") {
+    } else if (type == "Set") {
       let i = 0;
       reply += "Set\n";
       for (let value of aThing) {
-        reply += logProperty('' + i, value);
+        reply += logProperty("" + i, value);
         i++;
       }
-    }
-    else if (isError(aThing)) {
+    } else if (isError(aThing)) {
       reply += "  Message: " + aThing + "\n";
       if (aThing.stack) {
         reply += "  Stack:\n";
@@ -230,19 +229,16 @@ function log(aThing) {
           frame = frame.caller;
         }
       }
-    }
-    else if (aThing instanceof Components.interfaces.nsIDOMNode && aThing.tagName) {
+    } else if (Element.isInstance(aThing)) {
       reply += "  " + debugElement(aThing) + "\n";
-    }
-    else {
+    } else {
       let keys = Object.getOwnPropertyNames(aThing);
-      if (keys.length > 0) {
+      if (keys.length) {
         reply += type + "\n";
         keys.forEach(function(aProp) {
           reply += logProperty(aProp, aThing[aProp]);
         });
-      }
-      else {
+      } else {
         reply += type + "\n";
         let root = aThing;
         let logged = [];
@@ -258,7 +254,7 @@ function log(aThing) {
 
           root = Object.getPrototypeOf(root);
           if (root != null) {
-            reply += '  - prototype ' + getCtorName(root) + '\n';
+            reply += "  - prototype " + getCtorName(root) + "\n";
           }
         }
       }
@@ -286,29 +282,31 @@ function logProperty(aProp, aValue) {
   if (aProp == "stack" && typeof value == "string") {
     let trace = parseStack(aValue);
     reply += formatTrace(trace);
-  }
-  else {
+  } else {
     reply += "    - " + aProp + " = " + stringify(aValue) + "\n";
   }
   return reply;
 }
 
 const LOG_LEVELS = {
-  "all": Number.MIN_VALUE,
-  "debug": 2,
-  "log": 3,
-  "info": 3,
-  "clear": 3,
-  "trace": 3,
-  "timeEnd": 3,
-  "time": 3,
-  "group": 3,
-  "groupEnd": 3,
-  "dir": 3,
-  "dirxml": 3,
-  "warn": 4,
-  "error": 5,
-  "off": Number.MAX_VALUE,
+  all: Number.MIN_VALUE,
+  debug: 2,
+  log: 3,
+  info: 3,
+  clear: 3,
+  trace: 3,
+  timeEnd: 3,
+  time: 3,
+  assert: 3,
+  group: 3,
+  groupEnd: 3,
+  profile: 3,
+  profileEnd: 3,
+  dir: 3,
+  dirxml: 3,
+  warn: 4,
+  error: 5,
+  off: Number.MAX_VALUE,
 };
 
 /**
@@ -349,7 +347,7 @@ function parseStack(aStack) {
     trace.push({
       filename: posn.split(":")[0],
       lineNumber: posn.split(":")[1],
-      functionName: line.substring(0, at)
+      functionName: line.substring(0, at),
     });
   });
   return trace;
@@ -399,9 +397,13 @@ function getStack(aFrame, aMaxDepth = 0) {
 function formatTrace(aTrace) {
   let reply = "";
   aTrace.forEach(function(frame) {
-    reply += fmt(frame.filename, 20, 20, { truncate: "start" }) + " " +
-             fmt(frame.lineNumber, 5, 5) + " " +
-             fmt(frame.functionName, 75, 0, { truncate: "center" }) + "\n";
+    reply +=
+      fmt(frame.filename, 20, 20, { truncate: "start" }) +
+      " " +
+      fmt(frame.lineNumber, 5, 5) +
+      " " +
+      fmt(frame.functionName, 75, 0, { truncate: "center" }) +
+      "\n";
   });
   return reply;
 }
@@ -442,7 +444,7 @@ function stopTimer(aName, aTimestamp) {
   let key = aName.toString();
   let duration = (aTimestamp || Date.now()) - gTimerRegistry.get(key);
   gTimerRegistry.delete(key);
-  return { name: aName, duration: duration };
+  return { name: aName, duration };
 }
 
 /**
@@ -458,9 +460,12 @@ function stopTimer(aName, aTimestamp) {
  */
 function dumpMessage(aConsole, aLevel, aMessage) {
   aConsole.dump(
-    "console." + aLevel + ": " +
-    (aConsole.prefix ? aConsole.prefix + ": " : "")  +
-    aMessage + "\n"
+    "console." +
+      aLevel +
+      ": " +
+      (aConsole.prefix ? aConsole.prefix + ": " : "") +
+      aMessage +
+      "\n"
   );
 }
 
@@ -537,8 +542,7 @@ function createMultiLineDumper(aLevel) {
  *        - stacktrace: for trace(). Holds the array of stack frames as given by
  *        getStack().
  */
-function sendConsoleAPIMessage(aConsole, aLevel, aFrame, aArgs, aOptions = {})
-{
+function sendConsoleAPIMessage(aConsole, aLevel, aFrame, aArgs, aOptions = {}) {
   let consoleEvent = {
     ID: "jsm",
     innerID: aConsole.innerID || aFrame.filename,
@@ -550,6 +554,7 @@ function sendConsoleAPIMessage(aConsole, aLevel, aFrame, aArgs, aOptions = {})
     timeStamp: Date.now(),
     arguments: aArgs,
     prefix: aConsole.prefix,
+    chromeContext: true,
   };
 
   consoleEvent.wrappedJSObject = consoleEvent;
@@ -567,8 +572,7 @@ function sendConsoleAPIMessage(aConsole, aLevel, aFrame, aArgs, aOptions = {})
     case "groupEnd":
       try {
         consoleEvent.groupName = Array.prototype.join.call(aArgs, " ");
-      }
-      catch (ex) {
+      } catch (ex) {
         Cu.reportError(ex);
         Cu.reportError(ex.stack);
         return;
@@ -576,8 +580,9 @@ function sendConsoleAPIMessage(aConsole, aLevel, aFrame, aArgs, aOptions = {})
       break;
   }
 
-  let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
-                            .getService(Ci.nsIConsoleAPIStorage);
+  let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
+    Ci.nsIConsoleAPIStorage
+  );
   if (ConsoleAPIStorage) {
     ConsoleAPIStorage.recordEvent("jsm", null, consoleEvent);
   }
@@ -622,8 +627,13 @@ function ConsoleAPI(aConsoleOptions = {}) {
 
   // Setup maxLogLevelPref watching
   let updateMaxLogLevel = () => {
-    if (Services.prefs.getPrefType(aConsoleOptions.maxLogLevelPref) == Services.prefs.PREF_STRING) {
-      this._maxLogLevel = Services.prefs.getCharPref(aConsoleOptions.maxLogLevelPref).toLowerCase();
+    if (
+      Services.prefs.getPrefType(aConsoleOptions.maxLogLevelPref) ==
+      Services.prefs.PREF_STRING
+    ) {
+      this._maxLogLevel = Services.prefs
+        .getCharPref(aConsoleOptions.maxLogLevelPref)
+        .toLowerCase();
     } else {
       this._maxLogLevel = this._maxExplicitLogLevel;
     }
@@ -631,12 +641,15 @@ function ConsoleAPI(aConsoleOptions = {}) {
 
   if (aConsoleOptions.maxLogLevelPref) {
     updateMaxLogLevel();
-    Services.prefs.addObserver(aConsoleOptions.maxLogLevelPref, updateMaxLogLevel, false);
+    Services.prefs.addObserver(
+      aConsoleOptions.maxLogLevelPref,
+      updateMaxLogLevel
+    );
   }
 
   // Bind all the functions to this object.
   for (let prop in this) {
-    if (typeof(this[prop]) === "function") {
+    if (typeof this[prop] === "function") {
       this[prop] = this[prop].bind(this);
     }
   }
@@ -653,6 +666,7 @@ ConsoleAPI.prototype = {
    */
   _maxLogLevel: null,
   debug: createMultiLineDumper("debug"),
+  assert: createDumper("assert"),
   log: createDumper("log"),
   info: createDumper("info"),
   warn: createDumper("warn"),
@@ -665,8 +679,7 @@ ConsoleAPI.prototype = {
     }
     let args = Array.prototype.slice.call(arguments, 0);
     let trace = getStack(Components.stack.caller);
-    sendConsoleAPIMessage(this, "trace", trace[0], args,
-                          { stacktrace: trace });
+    sendConsoleAPIMessage(this, "trace", trace[0], args, { stacktrace: trace });
     dumpMessage(this, "trace", "\n" + formatTrace(trace));
   },
   clear: function Console_clear() {},
@@ -683,9 +696,8 @@ ConsoleAPI.prototype = {
     let args = Array.prototype.slice.call(arguments, 0);
     let frame = getStack(Components.stack.caller, 1)[0];
     let timer = startTimer(args[0]);
-    sendConsoleAPIMessage(this, "time", frame, args, { timer: timer });
-    dumpMessage(this, "time",
-                "'" + timer.name + "' @ " + (new Date()));
+    sendConsoleAPIMessage(this, "time", frame, args, { timer });
+    dumpMessage(this, "time", "'" + timer.name + "' @ " + new Date());
   },
 
   timeEnd: function Console_timeEnd() {
@@ -695,9 +707,46 @@ ConsoleAPI.prototype = {
     let args = Array.prototype.slice.call(arguments, 0);
     let frame = getStack(Components.stack.caller, 1)[0];
     let timer = stopTimer(args[0]);
-    sendConsoleAPIMessage(this, "timeEnd", frame, args, { timer: timer });
-    dumpMessage(this, "timeEnd",
-                "'" + timer.name + "' " + timer.duration + "ms");
+    sendConsoleAPIMessage(this, "timeEnd", frame, args, { timer });
+    dumpMessage(
+      this,
+      "timeEnd",
+      "'" + timer.name + "' " + timer.duration + "ms"
+    );
+  },
+
+  profile(profileName) {
+    if (!shouldLog("profile", this.maxLogLevel)) {
+      return;
+    }
+    Services.obs.notifyObservers(
+      {
+        wrappedJSObject: {
+          action: "profile",
+          arguments: [profileName],
+          chromeContext: true,
+        },
+      },
+      "console-api-profiler"
+    );
+    dumpMessage(this, "profile", `'${profileName}'`);
+  },
+
+  profileEnd(profileName) {
+    if (!shouldLog("profileEnd", this.maxLogLevel)) {
+      return;
+    }
+    Services.obs.notifyObservers(
+      {
+        wrappedJSObject: {
+          action: "profileEnd",
+          arguments: [profileName],
+          chromeContext: true,
+        },
+      },
+      "console-api-profiler"
+    );
+    dumpMessage(this, "profileEnd", `'${profileName}'`);
   },
 
   get maxLogLevel() {
@@ -709,5 +758,4 @@ ConsoleAPI.prototype = {
   },
 };
 
-this.console = new ConsoleAPI();
-this.ConsoleAPI = ConsoleAPI;
+var console = new ConsoleAPI();

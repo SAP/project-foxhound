@@ -62,6 +62,10 @@ html {
   border: none;
 }
 
+.peer-connection table th {
+  font-weight: bold;
+}
+
 .peer-connection table th,
 .peer-connection table td {
   padding: 0.4em;
@@ -70,6 +74,24 @@ html {
 .peer-connection table tr:nth-child(even) {
   background-color: #ddd;
 }
+
+.peer-connection table caption {
+  text-align: left;
+}
+
+.peer-connection table.raw-candidate {
+  text-align: left;
+}
+
+.bottom-border td {
+  border-bottom: thin solid;
+  border-color: black;
+}
+
+.ice-trickled { background-color: hsla(210, 66%, 75%, 1); }
+.ice-success { background-color: hsla(120, 66%, 75%, 1); }
+.ice-failed { background-color: hsla(0, 66%, 75%, 1); }
+.ice-cancelled { background-color: hsla(60, 66%, 75%, 1); }
 
 .info-label {
   font-weight: bold;

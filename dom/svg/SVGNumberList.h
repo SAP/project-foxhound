@@ -12,10 +12,15 @@
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 #include "nsTArray.h"
 
 namespace mozilla {
+
+namespace dom {
+class DOMSVGNumber;
+class DOMSVGNumberList;
+}  // namespace dom
 
 /**
  * ATTENTION! WARNING! WATCH OUT!!
@@ -26,16 +31,14 @@ namespace mozilla {
  *
  * The DOM wrapper class for this class is DOMSVGNumberList.
  */
-class SVGNumberList
-{
+class SVGNumberList {
+  friend class dom::DOMSVGNumber;
+  friend class dom::DOMSVGNumberList;
   friend class SVGAnimatedNumberList;
-  friend class DOMSVGNumberList;
-  friend class DOMSVGNumber;
 
-public:
-
-  SVGNumberList(){}
-  ~SVGNumberList(){}
+ public:
+  SVGNumberList() = default;
+  ~SVGNumberList() = default;
 
   // Only methods that don't make/permit modification to this list are public.
   // Only our friend classes can access methods that may change us.
@@ -43,17 +46,11 @@ public:
   /// This may return an incomplete string on OOM, but that's acceptable.
   void GetValueAsString(nsAString& aValue) const;
 
-  bool IsEmpty() const {
-    return mNumbers.IsEmpty();
-  }
+  bool IsEmpty() const { return mNumbers.IsEmpty(); }
 
-  uint32_t Length() const {
-    return mNumbers.Length();
-  }
+  uint32_t Length() const { return mNumbers.Length(); }
 
-  const float& operator[](uint32_t aIndex) const {
-    return mNumbers[aIndex];
-  }
+  const float& operator[](uint32_t aIndex) const { return mNumbers[aIndex]; }
 
   bool operator==(const SVGNumberList& rhs) const {
     return mNumbers == rhs.mNumbers;
@@ -63,9 +60,7 @@ public:
     return mNumbers.SetCapacity(size, fallible);
   }
 
-  void Compact() {
-    mNumbers.Compact();
-  }
+  void Compact() { mNumbers.Compact(); }
 
   // Access to methods that can modify objects of this type is deliberately
   // limited. This is to reduce the chances of someone modifying objects of
@@ -74,17 +69,14 @@ public:
   // SVGAnimatedNumberList and having that class act as an intermediary so it
   // can take care of keeping DOM wrappers in sync.
 
-protected:
-
+ protected:
   /**
    * This may fail on OOM if the internal capacity needs to be increased, in
    * which case the list will be left unmodified.
    */
   nsresult CopyFrom(const SVGNumberList& rhs);
 
-  float& operator[](uint32_t aIndex) {
-    return mNumbers[aIndex];
-  }
+  float& operator[](uint32_t aIndex) { return mNumbers[aIndex]; }
 
   /**
    * This may fail (return false) on OOM if the internal capacity is being
@@ -94,26 +86,23 @@ protected:
     return mNumbers.SetLength(aNumberOfItems, fallible);
   }
 
-private:
-
+ private:
   // Marking the following private only serves to show which methods are only
   // used by our friend classes (as opposed to our subclasses) - it doesn't
   // really provide additional safety.
 
   nsresult SetValueFromString(const nsAString& aValue);
 
-  void Clear() {
-    mNumbers.Clear();
-  }
+  void Clear() { mNumbers.Clear(); }
 
-  bool InsertItem(uint32_t aIndex, const float &aNumber) {
+  bool InsertItem(uint32_t aIndex, const float& aNumber) {
     if (aIndex >= mNumbers.Length()) {
       aIndex = mNumbers.Length();
     }
     return !!mNumbers.InsertElementAt(aIndex, aNumber, fallible);
   }
 
-  void ReplaceItem(uint32_t aIndex, const float &aNumber) {
+  void ReplaceItem(uint32_t aIndex, const float& aNumber) {
     MOZ_ASSERT(aIndex < mNumbers.Length(),
                "DOM wrapper caller should have raised INDEX_SIZE_ERR");
     mNumbers[aIndex] = aNumber;
@@ -129,41 +118,34 @@ private:
     return !!mNumbers.AppendElement(aNumber, fallible);
   }
 
-protected:
-
+ protected:
   /* See SVGLengthList for the rationale for using FallibleTArray<float> instead
    * of FallibleTArray<float, 1>.
    */
   FallibleTArray<float> mNumbers;
 };
 
-
 /**
  * This SVGNumberList subclass is used by the SMIL code when a number list
- * is to be stored in an nsISMILValue instance. Since nsISMILValue objects may
+ * is to be stored in a SMILValue instance. Since SMILValue objects may
  * be cached, it is necessary for us to hold a strong reference to our element
  * so that it doesn't disappear out from under us if, say, the element is
  * removed from the DOM tree.
  */
-class SVGNumberListAndInfo : public SVGNumberList
-{
-public:
+class SVGNumberListAndInfo : public SVGNumberList {
+ public:
+  SVGNumberListAndInfo() : mElement(nullptr) {}
 
-  SVGNumberListAndInfo()
-    : mElement(nullptr)
-  {}
+  explicit SVGNumberListAndInfo(dom::SVGElement* aElement)
+      : mElement(do_GetWeakReference(static_cast<nsINode*>(aElement))) {}
 
-  explicit SVGNumberListAndInfo(nsSVGElement *aElement)
-    : mElement(do_GetWeakReference(static_cast<nsINode*>(aElement)))
-  {}
-
-  void SetInfo(nsSVGElement *aElement) {
+  void SetInfo(dom::SVGElement* aElement) {
     mElement = do_GetWeakReference(static_cast<nsINode*>(aElement));
   }
 
-  nsSVGElement* Element() const {
+  dom::SVGElement* Element() const {
     nsCOMPtr<nsIContent> e = do_QueryReferent(mElement);
-    return static_cast<nsSVGElement*>(e.get());
+    return static_cast<dom::SVGElement*>(e.get());
   }
 
   nsresult CopyFrom(const SVGNumberListAndInfo& rhs) {
@@ -193,14 +175,14 @@ public:
     return SVGNumberList::SetLength(aNumberOfItems);
   }
 
-private:
+ private:
   // We must keep a weak reference to our element because we may belong to a
-  // cached baseVal nsSMILValue. See the comments starting at:
+  // cached baseVal SMILValue. See the comments starting at:
   // https://bugzilla.mozilla.org/show_bug.cgi?id=515116#c15
   // See also https://bugzilla.mozilla.org/show_bug.cgi?id=653497
   nsWeakPtr mElement;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZILLA_SVGNUMBERLIST_H__
+#endif  // MOZILLA_SVGNUMBERLIST_H__

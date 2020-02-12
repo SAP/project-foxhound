@@ -61,7 +61,7 @@ var invalidValues = {
 
 // Invalid font family names.
 var invalidFontFamilyNames = [
-  "", "\"\"", "sans-serif", "A, B", "inherit", "a 1"
+  "", "sans-serif", "A, B", "inherit", "a 1"
 ];
 
 // Font family list where at least one is likely to be available on
@@ -128,7 +128,6 @@ function is_pending(aPromise, aDescription, aTestID) {
 }
 
 function fetchAsArrayBuffer(aURL) {
-  var xhr;
   return new Promise(function(aResolve, aReject) {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", aURL);
@@ -160,6 +159,10 @@ function awaitRefresh() {
   }
 
   return awaitOneRefresh().then(awaitOneRefresh);
+}
+
+function flushStyles() {
+  getComputedStyle(document.body).width;
 }
 
 function runTest() {
@@ -220,12 +223,12 @@ function runTest() {
 
   }).then(function() {
 
-    // (TEST 3) Test that document.fonts.ready starts out resolved with the
-    // FontFaceSet.
+    // (TEST 3) Test that document.fonts.ready is resolved with the
+    // document.fonts FontFaceSet.
     var p = Promise.resolve();
     sourceDocuments.forEach(function({ doc, what }) {
-      p = p.then(function() {
-        return is_resolved_with(doc.fonts.ready, doc.fonts, "initial value of document.fonts", "(TEST 3) (" + what + ")");
+      p = p.then(_ => { return doc.fonts.ready }).then(function() {
+        return is_resolved_with(doc.fonts.ready, doc.fonts, "document.fonts.ready resolves with document.fonts.", "(TEST 3) (" + what + ")");
       });
     });
     return p;
@@ -402,12 +405,16 @@ function runTest() {
 
   }).then(function() {
 
-    // XXX Disabled this sub-test due to intermittent failures (bug 1076803).
-    return;
-
     // (TEST 18) Test passing valid url() source strings to the FontFace
     // constructor.
     var p = Promise.resolve();
+
+    // The sub-test is very fragile on Android platform, see Bug 1455824,
+    // especially Comment 34.
+    if (navigator.appVersion.includes("Android")) {
+      return p;
+    }
+
     sourceWindows.forEach(function({ win, what }) {
       p = p.then(function() {
         var srcTests = Promise.resolve();
@@ -956,6 +963,7 @@ function runTest() {
     is(document.fonts.status, "loading", "FontFaceSet.status after adding a loading FontFace (TEST 32)");
 
     document.fonts.clear();
+    flushStyles();
 
     is(document.fonts.status, "loaded", "FontFaceSet.status after clearing (TEST 32)");
 
@@ -997,7 +1005,7 @@ function runTest() {
     is(all.length, 1, "document.fonts should contain one FontFace (TEST 33)");
 
     var face = all[0];
-    is(face.family, "\"something\"", "FontFace should have correct family value (TEST 33)");
+    is(face.family, "something", "FontFace should have correct family value (TEST 33)");
     Object.keys(nonDefaultValues).forEach(function(aDesc) {
       var ok_todo = aDesc == "variant" ? todo : ok;
       ok_todo(face[aDesc] == nonDefaultValues[aDesc][1], "FontFace should have correct " + aDesc + " value (TEST 33)");
@@ -1124,14 +1132,18 @@ function runTest() {
     var p = Promise.resolve();
     sources.forEach(function({ win, doc, what}, i) {
       p = p.then(function() {
+        return setTimeoutZero();  // wait for any previous events to be dispatched
+      }).then(function() {
         var events = [], face, face2;
 
-        doc.fonts.onloadingdone = function(e) {
-          events.push(e);
-        };
-        doc.fonts.onloadingerror = function(e) {
-          events.push(e);
-        };
+        var awaitEvents = new Promise(function(aResolve, aReject) {
+          doc.fonts.onloadingdone = doc.fonts.onloadingerror = function(e) {
+            events.push(e);
+            if (events.length == 2) {
+              aResolve();
+            }
+          };
+        });
 
         is(doc.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" (TEST 37) (" + what + ")");
 
@@ -1151,6 +1163,8 @@ function runTest() {
             is(doc.fonts.status, "loading", "document.fonts.status should have status \"loading\" after second font added (TEST 37) (" + what + ")");
 
             return doc.fonts.ready;
+          }).then(function() {
+            return awaitEvents;
           }).then(function() {
             is(doc.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" after second font loaded (TEST 37) (" + what + ")");
             is(face2.status, "loaded", "second FontFace should have status \"loaded\" (TEST 37) (" + what + ")");
@@ -1182,14 +1196,18 @@ function runTest() {
     var p = Promise.resolve();
     sources.forEach(function({ win, doc, what }) {
       p = p.then(function() {
+        return setTimeoutZero();  // wait for any previous events to be dispatched
+      }).then(function() {
         var events = [], face, face2;
 
-        doc.fonts.onloadingdone = function(e) {
-          events.push(e);
-        };
-        doc.fonts.onloadingerror = function(e) {
-          events.push(e);
-        };
+        var awaitEvents = new Promise(function(aResolve, aReject) {
+          doc.fonts.onloadingdone = doc.fonts.onloadingerror = function(e) {
+            events.push(e);
+            if (events.length == 4) {
+              aResolve();
+            }
+          };
+        });
 
         is(doc.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" (TEST 38) (" + what + ")");
 
@@ -1209,6 +1227,8 @@ function runTest() {
             is(doc.fonts.status, "loading", "document.fonts.status should have status \"loading\" after second font added (TEST 38) (" + what + ")");
 
             return doc.fonts.ready;
+          }).then(function() {
+            return awaitEvents;
           }).then(function() {
             is(doc.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" after second font failed to load (TEST 38) (" + what + ")");
             is(face2.status, "error", "second FontFace should have status \"error\" (TEST 38) (" + what + ")");
@@ -1243,29 +1263,35 @@ function runTest() {
     // (TEST 39) Test that a FontFace for an @font-face rule only has one
     // loadingdone event dispatched at the FontFaceSet containing it.
 
-    var style = document.querySelector("style");
-    var ruleText = "@font-face { font-family: test; src: url(BitPattern.woff?test39a); } " +
-                   "@font-face { font-family: test2; src: url(BitPattern.woff?test39b); }";
+    var style, all, events, awaitEvents;
 
-    style.textContent = ruleText;
-
-    var all = Array.from(document.fonts);
-    var events = [];
-
-    document.fonts.onloadingdone = function(e) {
-      events.push(e);
-    };
-    document.fonts.onloadingerror = function(e) {
-      events.push(e);
-    };
-
-    is(document.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" (TEST 39)");
-
-    all[0].load();
-    is(document.fonts.status, "loading", "document.fonts.status should have status \"loading\" after first font loading (TEST 39)");
-
-    return document.fonts.ready
+    return setTimeoutZero()  // wait for any previous events to be dispatched
       .then(function() {
+        style = document.querySelector("style");
+        var ruleText = "@font-face { font-family: test; src: url(BitPattern.woff?test39a); } " +
+                       "@font-face { font-family: test2; src: url(BitPattern.woff?test39b); }";
+
+        style.textContent = ruleText;
+
+        all = Array.from(document.fonts);
+        events = [];
+
+        awaitEvents = new Promise(function(aResolve, aReject) {
+          document.fonts.onloadingdone = document.fonts.onloadingerror = function(e) {
+            events.push(e);
+            if (events.length == 2) {
+              aResolve();
+            }
+          };
+        });
+
+        is(document.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" (TEST 39)");
+
+        all[0].load();
+        is(document.fonts.status, "loading", "document.fonts.status should have status \"loading\" after first font loading (TEST 39)");
+
+        return document.fonts.ready
+      }).then(function() {
         is(document.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" after first font loaded (TEST 39)");
         is(all[0].status, "loaded", "first FontFace should have status \"loaded\" (TEST 39)");
         is(all[1].status, "unloaded", "second FontFace should have status \"unloaded\" (TEST 39)");
@@ -1274,6 +1300,8 @@ function runTest() {
         is(document.fonts.status, "loading", "document.fonts.status should have status \"loading\" after second font loading (TEST 39)");
 
         return document.fonts.ready;
+      }).then(function() {
+        return awaitEvents;
       }).then(function() {
         is(document.fonts.status, "loaded", "document.fonts.status should have status \"loaded\" after second font loaded (TEST 39)");
         is(all[1].status, "loaded", "second FontFace should have status \"loaded\" (TEST 39)");
@@ -1789,10 +1817,9 @@ function runTest() {
     expected.vdocument.push(all[0]);
 
     // Create a FontFace in each window and add it to each document's FontFaceSet.
-    var i = 0;
     var faces = [];
-    sourceWindows.forEach(function({ win, what: whatWin }) {
-      var f = new win.FontFace("test" + ++i, "url(x)");
+    sourceWindows.forEach(function({ win, what: whatWin }, index) {
+      var f = new win.FontFace("test" + index, "url(x)");
       sourceDocuments.forEach(function({ doc, what: whatDoc }) {
         doc.fonts.add(f);
         expected[whatDoc].push(f);
@@ -1801,10 +1828,10 @@ function runTest() {
     });
 
     sourceDocuments.forEach(function({ doc, what }) {
-      var all = Array.from(doc.fonts);
-      is(expected[what].length, all.length, "expected FontFaceSet size (TEST 48) (" + what + ")");
-      for (var i = 0; i < expected[what].length; i++) {
-        is(expected[what][i], all[i], "expected FontFace (" + expected[what][i]._description + ") at index " + i + " (TEST 48) (" + what + ")");
+      let allFonts = Array.from(doc.fonts);
+      is(expected[what].length, allFonts.length, "expected FontFaceSet size (TEST 48) (" + what + ")");
+      for (let i = 0; i < expected[what].length; i++) {
+        is(expected[what][i], allFonts[i], "expected FontFace (" + expected[what][i]._description + ") at index " + i + " (TEST 48) (" + what + ")");
       }
     });
 

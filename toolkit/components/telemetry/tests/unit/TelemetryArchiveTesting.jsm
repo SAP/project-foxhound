@@ -1,13 +1,9 @@
-const {utils: Cu} = Components;
-Cu.import("resource://gre/modules/TelemetryArchive.jsm");
-Cu.import("resource://testing-common/Assert.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/TelemetryController.jsm");
+const { TelemetryArchive } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryArchive.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.EXPORTED_SYMBOLS = [
-  "TelemetryArchiveTesting",
-];
+var EXPORTED_SYMBOLS = ["TelemetryArchiveTesting"];
 
 function checkForProperties(ping, expected) {
   for (let [props, val] of expected) {
@@ -30,12 +26,11 @@ function checkForProperties(ping, expected) {
  * was properly saved. To use, first initialize to collect the starting pings
  * and then check for new ping data.
  */
-function Checker() {
-}
+function Checker() {}
 Checker.prototype = {
-  promiseInit: function() {
+  promiseInit() {
     this._pingMap = new Map();
-    return TelemetryArchive.promiseArchivedPingList().then((plist) => {
+    return TelemetryArchive.promiseArchivedPingList().then(plist => {
       for (let ping of plist) {
         this._pingMap.set(ping.id, ping);
       }
@@ -54,9 +49,9 @@ Checker.prototype = {
    * ]
    * @returns a matching ping if found, or null
    */
-  promiseFindPing: Task.async(function*(type, expected) {
+  async promiseFindPing(type, expected) {
     let candidates = [];
-    let plist = yield TelemetryArchive.promiseArchivedPingList();
+    let plist = await TelemetryArchive.promiseArchivedPingList();
     for (let ping of plist) {
       if (this._pingMap.has(ping.id)) {
         continue;
@@ -67,20 +62,20 @@ Checker.prototype = {
     }
 
     for (let candidate of candidates) {
-      let ping = yield TelemetryArchive.promiseArchivedPingById(candidate.id);
+      let ping = await TelemetryArchive.promiseArchivedPingById(candidate.id);
       if (checkForProperties(ping, expected)) {
         return ping;
       }
     }
     return null;
-  }),
+  },
 };
 
 const TelemetryArchiveTesting = {
-  setup: function() {
+  setup() {
     Services.prefs.setCharPref("toolkit.telemetry.log.level", "Trace");
     Services.prefs.setBoolPref("toolkit.telemetry.archive.enabled", true);
   },
 
-  Checker: Checker,
+  Checker,
 };

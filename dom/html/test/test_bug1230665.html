@@ -1,8 +1,8 @@
 <html>
 <head>
   <title>Test for Bug 1230665</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -11,12 +11,12 @@ SimpleTest.waitForExplicitFinish();
 
 SimpleTest.waitForFocus(function() {
   document.getElementById("flexbutton1").focus();
-  synthesizeKey("VK_TAB", { });
+  synthesizeKey("KEY_Tab");
   var e = document.getElementById("flexbutton2");
   is(document.activeElement, e, "focus in flexbutton2 after TAB");
 
   document.getElementById("gridbutton1").focus();
-  synthesizeKey("VK_TAB", { });
+  synthesizeKey("KEY_Tab");
   e = document.getElementById("gridbutton2");
   is(document.activeElement, e, "focus in gridbutton2 after TAB");
 

@@ -14,11 +14,11 @@
  * Library Handle class for ELF libraries we don't let the system linker
  * handle.
  */
-class CustomElf: public BaseElf, private ElfLoader::link_map
-{
+class CustomElf : public BaseElf, private ElfLoader::link_map {
   friend class ElfLoader;
   friend class SEGVHandler;
-public:
+
+ public:
   /**
    * Returns a new CustomElf using the given file descriptor to map ELF
    * content. The file descriptor ownership is stolen, and it will be closed
@@ -28,63 +28,55 @@ public:
    * currently, none are supported and the behaviour is more or less that of
    * RTLD_GLOBAL | RTLD_BIND_NOW.
    */
-  static already_AddRefed<LibHandle> Load(Mappable *mappable,
-                                               const char *path, int flags);
+  static already_AddRefed<LibHandle> Load(Mappable* mappable, const char* path,
+                                          int flags);
 
   /**
    * Inherited from LibHandle/BaseElf
    */
   virtual ~CustomElf();
 
-protected:
-  virtual Mappable *GetMappable() const;
+ protected:
+  virtual Mappable* GetMappable() const;
 
-public:
-  /**
-   * Shows some stats about the Mappable instance. The when argument is to be
-   * used by the caller to give an identifier of the when the stats call is
-   * made.
-   */
-  virtual void stats(const char *when) const;
-
+ public:
   /**
    * Returns the instance, casted as BaseElf. (short of a better way to do
    * this without RTTI)
    */
-  virtual BaseElf *AsBaseElf() { return this; }
+  virtual BaseElf* AsBaseElf() { return this; }
 
-private:
+ private:
   /**
    * Scan dependent libraries to find the address corresponding to the
    * given symbol name. This is used to find symbols that are undefined
    * in the Elf object.
    */
-  void *GetSymbolPtrInDeps(const char *symbol) const;
+  void* GetSymbolPtrInDeps(const char* symbol) const;
 
   /**
    * Private constructor
    */
-  CustomElf(Mappable *mappable, const char *path)
-  : BaseElf(path, mappable)
-  , link_map()
-  , init(0)
-  , fini(0)
-  , initialized(false)
-  , has_text_relocs(false)
-  { }
+  CustomElf(Mappable* mappable, const char* path)
+      : BaseElf(path, mappable),
+        link_map(),
+        init(0),
+        fini(0),
+        initialized(false),
+        has_text_relocs(false) {}
 
   /**
    * Loads an Elf segment defined by the given PT_LOAD header.
    * Returns whether this succeeded or failed.
    */
-  bool LoadSegment(const Elf::Phdr *pt_load) const;
+  bool LoadSegment(const Elf::Phdr* pt_load) const;
 
   /**
    * Initializes the library according to information found in the given
    * PT_DYNAMIC header.
    * Returns whether this succeeded or failed.
    */
-  bool InitDyn(const Elf::Phdr *pt_dyn);
+  bool InitDyn(const Elf::Phdr* pt_dyn);
 
   /**
    * Apply .rel.dyn/.rela.dyn relocations.
@@ -113,12 +105,11 @@ private:
   /**
    * Call a function given a pointer to its location.
    */
-  void CallFunction(void *ptr) const
-  {
+  void CallFunction(void* ptr) const {
     /* C++ doesn't allow direct conversion between pointer-to-object
      * and pointer-to-function. */
     union {
-      void *ptr;
+      void* ptr;
       void (*func)(void);
     } f;
     f.ptr = ptr;
@@ -129,10 +120,7 @@ private:
   /**
    * Call a function given a an address relative to the library base
    */
-  void CallFunction(Elf::Addr addr) const
-  {
-    return CallFunction(GetPtr(addr));
-  }
+  void CallFunction(Elf::Addr addr) const { return CallFunction(GetPtr(addr)); }
 
   /* List of dependent libraries */
   std::vector<RefPtr<LibHandle> > dependencies;
@@ -149,7 +137,7 @@ private:
 
   /* List of initialization and destruction functions
    * (.init_array/.fini_array) */
-  Array<void *> init_array, fini_array;
+  Array<void*> init_array, fini_array;
 
   bool initialized;
 

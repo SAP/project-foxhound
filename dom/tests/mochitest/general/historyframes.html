@@ -9,7 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=602256
 <body onload="SimpleTest.executeSoon(run_test)">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=602256">Mozilla Bug 602256</a>
 <div id="content">
-  <iframe id="iframe" src="data:text/html,<p%20id='text'>Start</p>"></iframe>
+  <iframe id="iframe" src="start_historyframe.html"></iframe>
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -27,15 +27,15 @@ var gState = null;
 
 window.addEventListener("popstate", function(aEvent) {
   gState = aEvent.state;
-}, false);
+});
 
 function waitForLoad() {
   function listener() {
-    gFrame.removeEventListener("load", listener, false);
+    gFrame.removeEventListener("load", listener);
     SimpleTest.executeSoon(continue_test);
   }
 
-  gFrame.addEventListener("load", listener, false);
+  gFrame.addEventListener("load", listener);
 }
 
 function loadContent(aURL) {
@@ -52,9 +52,10 @@ function getContent() {
   return gFrame.contentDocument.getElementById("text").textContent;
 }
 
-var START = "data:text/html,<p%20id='text'>Start</p>";
-var URL1 = "data:text/html,<p%20id='text'>Test1</p>";
-var URL2 = "data:text/html,<p%20id='text'>Test2</p>";
+var BASE_URI = "http://mochi.test:8888/tests/dom/tests/mochitest/general/";
+var START = BASE_URI + "start_historyframe.html";
+var URL1 = BASE_URI + "url1_historyframe.html";
+var URL2 = BASE_URI + "url2_historyframe.html";
 
 function run_test() {
   window.history.pushState("START", window.location);
@@ -80,6 +81,16 @@ function continue_test() {
   if (ret.done) {
     testWin.done();
   }
+}
+
+var gTestContinuation = null;
+function continueAsync() {
+  setTimeout(function() { gTestContinuation.next(); })
+}
+
+function continueOnPopState() {
+  // Use continueAsync to avoid recursion within sync popstate listener.
+  window.addEventListener("popstate", continueAsync, { once: true });
 }
 
 function* test_basic_inner_navigation() {
@@ -117,25 +128,35 @@ function* test_state_navigation() {
   is(getContent(), "Test2", "Page should be correct");
 
   window.history.back();
+  continueOnPopState();
+  yield;
 
   is(gState, "STATE1", "State should be correct");
   is(getURL(), URL2, "URL should be correct");
   is(getContent(), "Test2", "Page should be correct");
 
   window.history.forward();
+  continueOnPopState();
+  yield;
 
   is(gState, "STATE2", "State should be correct");
   is(getURL(), URL2, "URL should be correct");
   is(getContent(), "Test2", "Page should be correct");
 
   window.history.back();
+  continueOnPopState();
+  yield;
   window.history.back();
+  continueOnPopState();
+  yield;
 
   is(gState, "START", "State should be correct");
   is(getURL(), URL2, "URL should be correct");
   is(getContent(), "Test2", "Page should be correct");
 
   window.history.back();
+  continueAsync();
+  yield;
   is(gState, "START", "State should be correct");
   yield waitForLoad();
 
@@ -143,6 +164,8 @@ function* test_state_navigation() {
   is(getContent(), "Test1", "Page should be correct");
 
   window.history.back();
+  continueAsync();
+  yield;
   is(gState, "START", "State should be correct after going back twice");
   yield waitForLoad();
 

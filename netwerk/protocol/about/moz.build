@@ -11,6 +11,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'necko_about'
 
 EXPORTS += [
+    'nsAboutProtocolHandler.h',
     'nsAboutProtocolUtils.h',
 ]
 
@@ -30,5 +31,5 @@ LOCAL_INCLUDES += [
     '/netwerk/cache2',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

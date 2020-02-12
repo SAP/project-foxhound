@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test progess events in case of gzipped data.</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="onLoadData()">
@@ -27,7 +27,7 @@ function onProgress(e) {
 
 function onLoadData() {
   var xhr = new XMLHttpRequest();
-  xhr.addEventListener('progress', onProgress, false);
+  xhr.addEventListener('progress', onProgress);
   xhr.open('GET', url, true);
   xhr.onreadystatechange = function() {
     if (xhr.readyState == 4) {

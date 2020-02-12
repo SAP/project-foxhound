@@ -1,19 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* exported DevToolsUtils, DevToolsLoader */
+
 "use strict";
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
 
-const {require, DevToolsLoader, devtools} = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require, DevToolsLoader } = ChromeUtils.import(
+  "resource://devtools/shared/Loader.jsm"
+);
+const Services = require("Services");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const flags = require("devtools/shared/flags");
 
-flags.testing = true;
-do_register_cleanup(() => {
-  flags.testing = false;
+Services.prefs.setBoolPref("devtools.testing", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("devtools.testing");
 });
 
 // Register a console listener, so console messages don't just disappear
@@ -23,25 +23,32 @@ do_register_cleanup(() => {
 // failures, set this to true.
 var ALLOW_CONSOLE_ERRORS = false;
 
-var errorCount = 0;
+// XXX This listener is broken, see bug 1456634, for now turn off no-undef here,
+// this needs turning back on!
+/* eslint-disable no-undef */
 var listener = {
-  observe: function (aMessage) {
-    errorCount++;
+  observe: function(message) {
+    let string;
     try {
-      // If we've been given an nsIScriptError, then we can print out
-      // something nicely formatted, for tools like Emacs to pick up.
-      var scriptError = aMessage.QueryInterface(Ci.nsIScriptError);
-      dump(aMessage.sourceName + ":" + aMessage.lineNumber + ": " +
-           scriptErrorFlagsToKind(aMessage.flags) + ": " +
-           aMessage.errorMessage + "\n");
-      var string = aMessage.errorMessage;
-    } catch (x) {
+      message.QueryInterface(Ci.nsIScriptError);
+      dump(
+        message.sourceName +
+          ":" +
+          message.lineNumber +
+          ": " +
+          scriptErrorFlagsToKind(message.flags) +
+          ": " +
+          message.errorMessage +
+          "\n"
+      );
+      string = message.errorMessage;
+    } catch (ex) {
       // Be a little paranoid with message, as the whole goal here is to lose
       // no information.
       try {
-        var string = "" + aMessage.message;
-      } catch (x) {
-        var string = "<error converting error message to string>";
+        string = "" + message.message;
+      } catch (e) {
+        string = "<error converting error message to string>";
       }
     }
 
@@ -53,8 +60,8 @@ var listener = {
     if (!ALLOW_CONSOLE_ERRORS) {
       do_throw("head_devtools.js got console message: " + string + "\n");
     }
-  }
+  },
 };
+/* eslint-enable no-undef */
 
-var consoleService = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
-consoleService.registerListener(listener);
+Services.console.registerListener(listener);

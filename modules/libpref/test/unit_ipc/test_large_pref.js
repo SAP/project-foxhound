@@ -5,24 +5,22 @@
 // Large preferences should not be set in the child process.
 // Non-string preferences are not tested here, because their behavior
 // should not be affected by this filtering.
-
-var Ci = Components.interfaces;
-var Cc = Components.classes;
+//
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function isParentProcess() {
-    let appInfo = Cc["@mozilla.org/xre/app-info;1"];
-    return (!appInfo || appInfo.getService(Ci.nsIXULRuntime).processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT);
+  return Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 }
 
 function makeBuffer(length) {
-    let string = "x";
-    while (string.length < length) {
-      string = string + string;
-    }
-    if (string.length > length) {
-      string = string.substring(length - string.length);
-    }
-    return string;
+  let string = "x";
+  while (string.length < length) {
+    string = string + string;
+  }
+  if (string.length > length) {
+    string = string.substring(length - string.length);
+  }
+  return string;
 }
 
 // from prefapi.h
@@ -32,9 +30,9 @@ const largeString = makeBuffer(MAX_ADVISABLE_PREF_LENGTH + 1);
 const smallString = makeBuffer(4);
 
 const testValues = [
-  {name: "None", value: undefined},
-  {name: "Small", value: smallString},
-  {name: "Large", value: largeString},
+  { name: "None", value: undefined },
+  { name: "Small", value: smallString },
+  { name: "Large", value: largeString },
 ];
 
 function prefName(def, user) {
@@ -49,12 +47,19 @@ function expectedPrefValue(def, user) {
 }
 
 function run_test() {
-  let pb = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
-  let ps = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefService);
-  let defaultBranch = ps.getDefaultBranch("");
+  const pb = Services.prefs;
+  let defaultBranch = pb.getDefaultBranch("");
 
   let isParent = isParentProcess();
   if (isParent) {
+    // Preferences with large values will still appear in the shared memory
+    // snapshot that we share with all processes. They should not, however, be
+    // sent with the list of changes on top of the snapshot.
+    //
+    // So, make sure we've generated the initial snapshot before we set the
+    // preference values by launching a child process with an empty test.
+    sendCommand("");
+
     // Set all combinations of none, small and large, for default and user prefs.
     for (let def of testValues) {
       for (let user of testValues) {
@@ -79,19 +84,21 @@ function run_test() {
       }
       let pref_name = prefName(def, user);
       if (isParent || (def.name != "Large" && user.name != "Large")) {
-        do_check_eq(pb.getCharPref(pref_name), expectedPrefValue(def, user));
+        Assert.equal(pb.getCharPref(pref_name), expectedPrefValue(def, user));
       } else {
         // This is the child, and either the default or user value is
         // large, so the preference should not be set.
         let prefExists;
         try {
-          pb.getCharPref(pref_name);
-          prefExists = true;
-        } catch(e) {
+          let val = pb.getCharPref(pref_name);
+          prefExists = val.length > 128;
+        } catch (e) {
           prefExists = false;
         }
-        ok(!prefExists,
-           "Pref " + pref_name + " should not be set in the child");
+        ok(
+          !prefExists,
+          "Pref " + pref_name + " should not be set in the child"
+        );
       }
     }
   }

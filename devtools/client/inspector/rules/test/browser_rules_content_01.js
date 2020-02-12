@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -21,31 +20,49 @@ const TEST_URI = `
   <div id="testid2">Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
 
-  yield selectNode("#testid", inspector);
-  is(view.element.querySelectorAll("#ruleview-no-results").length, 0,
-    "After a highlight, no longer has a no-results element.");
+  await selectNode("#testid", inspector);
+  is(
+    view.element.querySelectorAll("#ruleview-no-results").length,
+    0,
+    "After a highlight, no longer has a no-results element."
+  );
 
-  yield clearCurrentNodeSelection(inspector);
-  is(view.element.querySelectorAll("#ruleview-no-results").length, 1,
-    "After highlighting null, has a no-results element again.");
+  await clearCurrentNodeSelection(inspector);
+  is(
+    view.element.querySelectorAll("#ruleview-no-results").length,
+    1,
+    "After highlighting null, has a no-results element again."
+  );
 
-  yield selectNode("#testid", inspector);
+  await selectNode("#testid", inspector);
 
   let linkText = getRuleViewLinkTextByIndex(view, 1);
-  is(linkText, "inline:3 @screen and (min-width: 10px)",
-    "link text at index 1 contains media query text.");
+  is(
+    linkText,
+    "inline:3 @screen and (min-width: 10px)",
+    "link text at index 1 contains media query text."
+  );
 
   linkText = getRuleViewLinkTextByIndex(view, 2);
-  is(linkText, "inline:7",
-    "link text at index 2 contains no media query text.");
+  is(
+    linkText,
+    "inline:7",
+    "link text at index 2 contains no media query text."
+  );
 
-  let selector = getRuleViewRuleEditor(view, 2).selectorText;
-  is(selector.querySelector(".ruleview-selector-matched").textContent,
-    ".testclass", ".textclass should be matched.");
-  is(selector.querySelector(".ruleview-selector-unmatched").textContent,
-    ".unmatched", ".unmatched should not be matched.");
+  const selector = getRuleViewRuleEditor(view, 2).selectorText;
+  is(
+    selector.querySelector(".ruleview-selector-matched").textContent,
+    ".testclass",
+    ".textclass should be matched."
+  );
+  is(
+    selector.querySelector(".ruleview-selector-unmatched").textContent,
+    ".unmatched",
+    ".unmatched should not be matched."
+  );
 });

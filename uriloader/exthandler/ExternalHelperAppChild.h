@@ -16,30 +16,34 @@ class nsIDivertableChannel;
 namespace mozilla {
 namespace dom {
 
-class ExternalHelperAppChild : public PExternalHelperAppChild
-                             , public nsIStreamListener
-{
-public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSISTREAMLISTENER
-    NS_DECL_NSIREQUESTOBSERVER
+class BrowserChild;
 
-    ExternalHelperAppChild();
+class ExternalHelperAppChild : public PExternalHelperAppChild,
+                               public nsIStreamListener {
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSISTREAMLISTENER
+  NS_DECL_NSIREQUESTOBSERVER
 
-    // Give the listener a real nsExternalAppHandler to complete processing on
-    // the child.
-    void SetHandler(nsExternalAppHandler *handler) { mHandler = handler; }
+  ExternalHelperAppChild();
 
-    virtual bool RecvCancel(const nsresult& aStatus) override;
-private:
-    virtual ~ExternalHelperAppChild();
-    MOZ_MUST_USE nsresult DivertToParent(nsIDivertableChannel *divertable, nsIRequest *request);
+  // Give the listener a real nsExternalAppHandler to complete processing on
+  // the child.
+  void SetHandler(nsExternalAppHandler* handler) { mHandler = handler; }
 
-    RefPtr<nsExternalAppHandler> mHandler;
-    nsresult mStatus;
+  mozilla::ipc::IPCResult RecvCancel(const nsresult& aStatus);
+
+ private:
+  virtual ~ExternalHelperAppChild();
+  MOZ_MUST_USE nsresult DivertToParent(nsIDivertableChannel* divertable,
+                                       nsIRequest* request,
+                                       BrowserChild* browserChild);
+
+  RefPtr<nsExternalAppHandler> mHandler;
+  nsresult mStatus;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_ExternalHelperAppChild_h
+#endif  // mozilla_dom_ExternalHelperAppChild_h

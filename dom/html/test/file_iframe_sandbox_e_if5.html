@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <title>Test for Bug 341604</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <script type="application/javascript">
-function doTest() {
-  sendMouseEvent({type:'click'}, 'anchor');
+function navigateAway() {
+  document.getElementById("anchor").click();
 }
 </script>
-<body onload="doTest()">
+<body onload="navigateAway()">
   I am sandboxed with 'allow-scripts and allow-top-navigation'
 
-  <a href="file_iframe_sandbox_top_navigation_pass.html" target='_top' id='anchor'>
+  <a href="file_iframe_sandbox_top_navigation_pass.html" target='_top' id='anchor'>Click me</a>
 </body>
 </html>

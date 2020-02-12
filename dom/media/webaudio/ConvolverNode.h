@@ -13,40 +13,44 @@
 namespace mozilla {
 namespace dom {
 
-class ConvolverNode final : public AudioNode
-{
-public:
-  explicit ConvolverNode(AudioContext* aContext);
+class AudioContext;
+struct ConvolverOptions;
+
+class ConvolverNode final : public AudioNode {
+ public:
+  static already_AddRefed<ConvolverNode> Create(
+      JSContext* aCx, AudioContext& aAudioContext,
+      const ConvolverOptions& aOptions, ErrorResult& aRv);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ConvolverNode, AudioNode);
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  AudioBuffer* GetBuffer(JSContext* aCx) const
-  {
-    return mBuffer;
+  static already_AddRefed<ConvolverNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const ConvolverOptions& aOptions, ErrorResult& aRv) {
+    return Create(aGlobal.Context(), aAudioContext, aOptions, aRv);
   }
 
-  void SetBuffer(JSContext* aCx, AudioBuffer* aBufferi, ErrorResult& aRv);
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  bool Normalize() const
-  {
-    return mNormalize;
-  }
+  AudioBuffer* GetBuffer(JSContext* aCx) const { return mBuffer; }
+
+  void SetBuffer(JSContext* aCx, AudioBuffer* aBuffer, ErrorResult& aRv);
+
+  bool Normalize() const { return mNormalize; }
 
   void SetNormalize(bool aNormal);
 
-  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override
-  {
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
     if (aChannelCount > 2) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
       return;
     }
     AudioNode::SetChannelCount(aChannelCount, aRv);
   }
-  void SetChannelCountModeValue(ChannelCountMode aMode, ErrorResult& aRv) override
-  {
+  void SetChannelCountModeValue(ChannelCountMode aMode,
+                                ErrorResult& aRv) override {
     if (aMode == ChannelCountMode::Max) {
       aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
       return;
@@ -54,25 +58,20 @@ public:
     AudioNode::SetChannelCountModeValue(aMode, aRv);
   }
 
-  const char* NodeType() const override
-  {
-    return "ConvolverNode";
-  }
+  const char* NodeType() const override { return "ConvolverNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-protected:
-  virtual ~ConvolverNode();
+ private:
+  explicit ConvolverNode(AudioContext* aContext);
+  ~ConvolverNode() = default;
 
-private:
   RefPtr<AudioBuffer> mBuffer;
   bool mNormalize;
 };
 
-
-} //end namespace dom
-} //end namespace mozilla
+}  // end namespace dom
+}  // end namespace mozilla
 
 #endif
-

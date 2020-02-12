@@ -7,15 +7,10 @@
 
 #import "mozAccessible.h"
 
+using namespace mozilla;
 using namespace mozilla::a11y;
 
-DocAccessibleWrap::
-  DocAccessibleWrap(nsIDocument* aDocument, nsIPresShell* aPresShell) :
-  DocAccessible(aDocument, aPresShell)
-{
-}
+DocAccessibleWrap::DocAccessibleWrap(dom::Document* aDocument, PresShell* aPresShell)
+    : DocAccessible(aDocument, aPresShell) {}
 
-DocAccessibleWrap::~DocAccessibleWrap()
-{
-}
-
+DocAccessibleWrap::~DocAccessibleWrap() {}

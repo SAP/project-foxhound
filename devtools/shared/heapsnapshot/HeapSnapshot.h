@@ -1,4 +1,4 @@
-/* -*-  Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +16,7 @@
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 #include "CoreDump.pb.h"
 #include "nsCOMPtr.h"
@@ -31,30 +31,21 @@ namespace devtools {
 
 class DominatorTree;
 
-struct NSFreePolicy {
-  void operator()(void* ptr) {
-    NS_Free(ptr);
-  }
-};
+using UniqueTwoByteString = UniqueFreePtr<char16_t[]>;
+using UniqueOneByteString = UniqueFreePtr<char[]>;
 
-using UniqueTwoByteString = UniquePtr<char16_t[], NSFreePolicy>;
-using UniqueOneByteString = UniquePtr<char[], NSFreePolicy>;
-
-class HeapSnapshot final : public nsISupports
-                         , public nsWrapperCache
-{
+class HeapSnapshot final : public nsISupports, public nsWrapperCache {
   friend struct DeserializedNode;
   friend struct DeserializedEdge;
   friend struct DeserializedStackFrame;
   friend class JS::ubi::Concrete<JS::ubi::DeserializedNode>;
 
   explicit HeapSnapshot(JSContext* cx, nsISupports* aParent)
-    : timestamp(Nothing())
-    , rootId(0)
-    , nodes(cx)
-    , frames(cx)
-    , mParent(aParent)
-  {
+      : timestamp(Nothing()),
+        rootId(0),
+        nodes(cx),
+        frames(cx),
+        mParent(aParent) {
     MOZ_ASSERT(aParent);
   };
 
@@ -75,13 +66,13 @@ class HeapSnapshot final : public nsISupports
   bool saveStackFrame(const protobuf::StackFrame& frame,
                       StackFrameId& outFrameId);
 
-public:
+ public:
   // The maximum number of stack frames that we will serialize into a core
   // dump. This helps prevent over-recursion in the protobuf library when
   // deserializing stacks.
   static const size_t MAX_STACK_DEPTH = 60;
 
-private:
+ private:
   // If present, a timestamp in the same units that `PR_Now` gives.
   Maybe<uint64_t> timestamp;
 
@@ -93,8 +84,8 @@ private:
   NodeSet nodes;
 
   // The set of stack frames in this deserialized heap graph, keyed by id.
-  using FrameSet = js::HashSet<DeserializedStackFrame,
-                               DeserializedStackFrame::HashPolicy>;
+  using FrameSet =
+      js::HashSet<DeserializedStackFrame, DeserializedStackFrame::HashPolicy>;
   FrameSet frames;
 
   Vector<UniqueTwoByteString> internedTwoByteStrings;
@@ -102,31 +93,29 @@ private:
 
   using StringOrRef = Variant<const std::string*, uint64_t>;
 
-  template<typename CharT,
-           typename InternedStringSet>
+  template <typename CharT, typename InternedStringSet>
   const CharT* getOrInternString(InternedStringSet& internedStrings,
                                  Maybe<StringOrRef>& maybeStrOrRef);
 
-protected:
+ protected:
   nsCOMPtr<nsISupports> mParent;
 
-  virtual ~HeapSnapshot() { }
+  virtual ~HeapSnapshot() {}
 
-public:
+ public:
   // Create a `HeapSnapshot` from the given buffer that contains a serialized
   // core dump. Do NOT take ownership of the buffer, only borrow it for the
   // duration of the call.
   static already_AddRefed<HeapSnapshot> Create(JSContext* cx,
                                                dom::GlobalObject& global,
                                                const uint8_t* buffer,
-                                               uint32_t size,
-                                               ErrorResult& rv);
+                                               uint32_t size, ErrorResult& rv);
 
   // Creates the `$TEMP_DIR/XXXXXX-XXX.fxsnapshot` core dump file that heap
   // snapshots are serialized into.
-  static already_AddRefed<nsIFile> CreateUniqueCoreDumpFile(ErrorResult& rv,
-                                                            const TimeStamp& now,
-                                                            nsAString& outFilePath);
+  static already_AddRefed<nsIFile> CreateUniqueCoreDumpFile(
+      ErrorResult& rv, const TimeStamp& now, nsAString& outFilePath,
+      nsAString& outSnapshotId);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HeapSnapshot)
@@ -142,7 +131,6 @@ public:
 
   // Get the root node of this heap snapshot's graph.
   JS::ubi::Node getRoot() {
-    MOZ_ASSERT(nodes.initialized());
     auto p = nodes.lookup(rootId);
     MOZ_ASSERT(p);
     const DeserializedNode& node = *p;
@@ -151,8 +139,7 @@ public:
 
   Maybe<JS::ubi::Node> getNodeById(JS::ubi::Node::Id nodeId) {
     auto p = nodes.lookup(nodeId);
-    if (!p)
-      return Nothing();
+    if (!p) return Nothing();
     return Some(JS::ubi::Node(const_cast<DeserializedNode*>(&*p)));
   }
 
@@ -164,11 +151,10 @@ public:
 
   already_AddRefed<DominatorTree> ComputeDominatorTree(ErrorResult& rv);
 
-  void ComputeShortestPaths(JSContext*cx, uint64_t start,
+  void ComputeShortestPaths(JSContext* cx, uint64_t start,
                             const dom::Sequence<uint64_t>& targets,
                             uint64_t maxNumPaths,
-                            JS::MutableHandleObject results,
-                            ErrorResult& rv);
+                            JS::MutableHandleObject results, ErrorResult& rv);
 
   dom::Nullable<uint64_t> GetCreationTime() {
     static const uint64_t maxTime = uint64_t(1) << 53;
@@ -182,19 +168,15 @@ public:
 
 // A `CoreDumpWriter` is given the data we wish to save in a core dump and
 // serializes it to disk, or memory, or a socket, etc.
-class CoreDumpWriter
-{
-public:
-  virtual ~CoreDumpWriter() { };
+class CoreDumpWriter {
+ public:
+  virtual ~CoreDumpWriter(){};
 
   // Write the given bits of metadata we would like to associate with this core
   // dump.
   virtual bool writeMetadata(uint64_t timestamp) = 0;
 
-  enum EdgePolicy : bool {
-    INCLUDE_EDGES = true,
-    EXCLUDE_EDGES = false
-  };
+  enum EdgePolicy : bool { INCLUDE_EDGES = true, EXCLUDE_EDGES = false };
 
   // Write the given `JS::ubi::Node` to the core dump. The given `EdgePolicy`
   // dictates whether its outgoing edges should also be written to the core
@@ -207,23 +189,15 @@ public:
 // If `wantNames` is true, capture edge names. If `zones` is non-null, only
 // capture the sub-graph within the zone set, otherwise capture the whole heap
 // graph. Returns false on failure.
-bool
-WriteHeapGraph(JSContext* cx,
-               const JS::ubi::Node& node,
-               CoreDumpWriter& writer,
-               bool wantNames,
-               JS::CompartmentSet* compartments,
-               JS::AutoCheckCannotGC& noGC,
-               uint32_t& outNodeCount,
-               uint32_t& outEdgeCount);
-inline bool
-WriteHeapGraph(JSContext* cx,
-               const JS::ubi::Node& node,
-               CoreDumpWriter& writer,
-               bool wantNames,
-               JS::CompartmentSet* compartments,
-               JS::AutoCheckCannotGC& noGC)
-{
+bool WriteHeapGraph(JSContext* cx, const JS::ubi::Node& node,
+                    CoreDumpWriter& writer, bool wantNames,
+                    JS::CompartmentSet* compartments,
+                    JS::AutoCheckCannotGC& noGC, uint32_t& outNodeCount,
+                    uint32_t& outEdgeCount);
+inline bool WriteHeapGraph(JSContext* cx, const JS::ubi::Node& node,
+                           CoreDumpWriter& writer, bool wantNames,
+                           JS::CompartmentSet* compartments,
+                           JS::AutoCheckCannotGC& noGC) {
   uint32_t ignoreNodeCount;
   uint32_t ignoreEdgeCount;
   return WriteHeapGraph(cx, node, writer, wantNames, compartments, noGC,
@@ -233,7 +207,7 @@ WriteHeapGraph(JSContext* cx,
 // Get the mozilla::MallocSizeOf for the current thread's JSRuntime.
 MallocSizeOf GetCurrentThreadDebuggerMallocSizeOf();
 
-} // namespace devtools
-} // namespace mozilla
+}  // namespace devtools
+}  // namespace mozilla
 
-#endif // mozilla_devtools_HeapSnapshot__
+#endif  // mozilla_devtools_HeapSnapshot__

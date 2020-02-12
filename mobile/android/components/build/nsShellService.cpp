@@ -6,25 +6,16 @@
 #include "nsShellService.h"
 #include "nsString.h"
 
-#include "GeneratedJNIWrappers.h"
-
 using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsShellService, nsIShellService)
 
 NS_IMETHODIMP
-nsShellService::SwitchTask()
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
+nsShellService::SwitchTask() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
 nsShellService::CreateShortcut(const nsAString& aTitle, const nsAString& aURI,
-                                const nsAString& aIcondata, const nsAString& aIntent)
-{
-  if (!aTitle.Length() || !aURI.Length())
-    return NS_ERROR_FAILURE;
-
-  java::GeckoAppShell::CreateShortcut(aTitle, aURI);
-  return NS_OK;
+                               const nsAString& aIcondata,
+                               const nsAString& aIntent) {
+  return NS_ERROR_FAILURE;
 }

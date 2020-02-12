@@ -1,6 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Pretty-printer for SpiderMonkey symbols.
 
-import gdb
 import mozilla.prettyprinters
 from mozilla.prettyprinters import ptr_pretty_printer
 
@@ -10,6 +13,7 @@ mozilla.prettyprinters.clear_module_printers(__name__)
 # JS::SymbolCode enumerators
 InSymbolRegistry = 0xfffffffe
 UniqueSymbol = 0xffffffff
+
 
 @ptr_pretty_printer("JS::Symbol")
 class JSSymbolPtr(mozilla.prettyprinters.Pointer):
@@ -30,4 +34,3 @@ class JSSymbolPtr(mozilla.prettyprinters.Pointer):
             assert desc[0] == '"'
             assert desc[-1] == '"'
             return desc[1:-1]
-

@@ -1,17 +1,12 @@
 /*
  * Bug 1270678 - A test case to test does the favicon obey originAttributes.
  */
-let { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+const { PlacesUtils } = ChromeUtils.import(
+  "resource://gre/modules/PlacesUtils.jsm"
+);
+let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-let {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
-
-const USER_CONTEXTS = [
-  "default",
-  "personal",
-  "work",
-];
+const USER_CONTEXTS = ["default", "personal", "work"];
 
 let gHttpServer = null;
 let gUserContextId;
@@ -19,29 +14,33 @@ let gFaviconData;
 
 function getIconFile() {
   new Promise(resolve => {
-    NetUtil.asyncFetch({
-      uri: "http://www.example.com/browser/browser/components/contextualidentity/test/browser/favicon-normal32.png",
-      loadUsingSystemPrincipal: true,
-      contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE
-    }, function(inputStream, status) {
+    NetUtil.asyncFetch(
+      {
+        uri:
+          "http://www.example.com/browser/browser/components/contextualidentity/test/browser/favicon-normal32.png",
+        loadUsingSystemPrincipal: true,
+        contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_FAVICON,
+      },
+      function(inputStream, status) {
         let size = inputStream.available();
         gFaviconData = NetUtil.readInputStreamToString(inputStream, size);
         resolve();
-    });
+      }
+    );
   });
 }
 
-function* openTabInUserContext(uri, userContextId) {
+async function openTabInUserContext(uri, userContextId) {
   // open the tab in the correct userContextId
-  let tab = gBrowser.addTab(uri, {userContextId});
+  let tab = BrowserTestUtils.addTab(gBrowser, uri, { userContextId });
 
   // select tab and make sure its browser is focused
   gBrowser.selectedTab = tab;
   tab.ownerGlobal.focus();
 
   let browser = gBrowser.getBrowserForTab(tab);
-  yield BrowserTestUtils.browserLoaded(browser);
-  return {tab, browser};
+  await BrowserTestUtils.browserLoaded(browser);
+  return { tab, browser };
 }
 
 function loadIndexHandler(metadata, response) {
@@ -65,7 +64,11 @@ function loadFaviconHandler(metadata, response) {
   let expectedCookie = "userContext=" + USER_CONTEXTS[gUserContextId];
 
   if (metadata.hasHeader("Cookie")) {
-    is(metadata.getHeader("Cookie"), expectedCookie, "The cookie has matched with the expected cookie.");
+    is(
+      metadata.getHeader("Cookie"),
+      expectedCookie,
+      "The cookie has matched with the expected cookie."
+    );
   } else {
     ok(false, "The request should have a cookie.");
   }
@@ -75,19 +78,17 @@ function loadFaviconHandler(metadata, response) {
   response.bodyOutputStream.write(gFaviconData, gFaviconData.length);
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   // Make sure userContext is enabled.
-  yield new Promise(resolve => {
-    SpecialPowers.pushPrefEnv({"set": [
-      ["privacy.userContext.enabled", true]
-    ]}, resolve);
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.userContext.enabled", true]],
   });
 
   // Create a http server for the image cache test.
   if (!gHttpServer) {
     gHttpServer = new HttpServer();
-    gHttpServer.registerPathHandler('/', loadIndexHandler);
-    gHttpServer.registerPathHandler('/favicon.png', loadFaviconHandler);
+    gHttpServer.registerPathHandler("/", loadIndexHandler);
+    gHttpServer.registerPathHandler("/favicon.png", loadFaviconHandler);
     gHttpServer.start(-1);
   }
 });
@@ -98,11 +99,11 @@ registerCleanupFunction(() => {
   });
 });
 
-add_task(function* test() {
+add_task(async function test() {
   waitForExplicitFinish();
 
   // First, get the icon data.
-  yield getIconFile();
+  await getIconFile();
 
   let serverPort = gHttpServer.identity.primaryPort;
   let testURL = "http://localhost:" + serverPort + "/";
@@ -113,29 +114,37 @@ add_task(function* test() {
 
     // Load the page in 3 different contexts and set a cookie
     // which should only be visible in that context.
-    let value = USER_CONTEXTS[userContextId];
 
     // Open our tab in the given user context.
-    let tabInfo = yield* openTabInUserContext(testURL, userContextId);
+    let tabInfo = await openTabInUserContext(testURL, userContextId);
 
     // Write a cookie according to the userContext.
-    yield ContentTask.spawn(tabInfo.browser, { userContext: USER_CONTEXTS[userContextId] }, function (arg) {
-      content.document.cookie = "userContext=" + arg.userContext;
-    });
+    await ContentTask.spawn(
+      tabInfo.browser,
+      { userContext: USER_CONTEXTS[userContextId] },
+      function(arg) {
+        content.document.cookie = "userContext=" + arg.userContext;
+      }
+    );
 
     let pageURI = NetUtil.newURI(testURL);
     let favIconURI = NetUtil.newURI(testFaviconURL);
 
-    yield new Promise(resolve => {
-      PlacesUtils.favicons.setAndFetchFaviconForPage(pageURI, favIconURI,
-        true, PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE, {
+    await new Promise(resolve => {
+      PlacesUtils.favicons.setAndFetchFaviconForPage(
+        pageURI,
+        favIconURI,
+        true,
+        PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
+        {
           onComplete() {
             resolve();
           },
         },
-        tabInfo.browser.contentPrincipal);
+        tabInfo.browser.contentPrincipal
+      );
     });
 
-    yield BrowserTestUtils.removeTab(tabInfo.tab);
+    BrowserTestUtils.removeTab(tabInfo.tab);
   }
 });

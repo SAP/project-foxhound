@@ -17,12 +17,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
+#include "sandbox/win/src/interceptors.h"
 #include "sandbox/win/src/sandbox_types.h"
 
 namespace sandbox {
 
 class TargetProcess;
-enum InterceptorId;
 
 // Internal structures used for communication between the broker and the target.
 struct DllPatchInfo;
@@ -49,9 +49,10 @@ struct DllInterceptionData;
 //         sandbox::INTERCEPTION_EAT, L"MyCreateDirectoryW@12", MY_ID_2))
 //   return false;
 //
-// if (!interception_manager.InitializeInterceptions()) {
+// sandbox::ResultCode rc = interception_manager.InitializeInterceptions();
+// if (rc != sandbox::SBOX_ALL_OK) {
 //   DWORD error = ::GetLastError();
-//   return false;
+//   return rc;
 // }
 //
 // Any required syncronization must be performed outside this class. Also, it is
@@ -122,7 +123,7 @@ class InterceptionManager {
   bool AddToUnloadModules(const wchar_t* dll_name);
 
   // Initializes all interceptions on the client.
-  // Returns true on success.
+  // Returns SBOX_ALL_OK on success, or an appropriate error code.
   //
   // The child process must be created suspended, and cannot be resumed until
   // after this method returns. In addition, no action should be performed on
@@ -131,12 +132,13 @@ class InterceptionManager {
   //
   // This function must be called only once, after all interceptions have been
   // set up using AddToPatchedFunctions.
-  bool InitializeInterceptions();
+  ResultCode InitializeInterceptions();
 
  private:
   // Used to store the interception information until the actual set-up.
   struct InterceptionData {
     InterceptionData();
+    InterceptionData(const InterceptionData& other);
     ~InterceptionData();
 
     InterceptionType type;            // Interception type.
@@ -154,7 +156,7 @@ class InterceptionManager {
   // value is the current size of the buffer, and alignment is specified in
   // bytes.
   static inline size_t RoundUpToMultiple(size_t value, size_t alignment) {
-    return ((value + alignment -1) / alignment) * alignment;
+    return ((value + alignment - 1) / alignment) * alignment;
   }
 
   // Sets up a given buffer with all the information that has to be transfered
@@ -174,14 +176,16 @@ class InterceptionManager {
   // (the actual interception info), and the current size of the buffer will
   // decrease to account the space used by this method.
   bool SetupDllInfo(const InterceptionData& data,
-                    void** buffer, size_t* buffer_bytes) const;
+                    void** buffer,
+                    size_t* buffer_bytes) const;
 
   // Fills up the part of the transfer buffer that corresponds to a single
   // function to patch.
   // dll_info points to the dll being updated with the interception stored on
   // data. The buffer pointer and remaining size are updated by this call.
   // Returns true on success.
-  bool SetupInterceptionInfo(const InterceptionData& data, void** buffer,
+  bool SetupInterceptionInfo(const InterceptionData& data,
+                             void** buffer,
                              size_t* buffer_bytes,
                              DllPatchInfo* dll_info) const;
 
@@ -191,24 +195,25 @@ class InterceptionManager {
 
   // Allocates a buffer on the child's address space (returned on
   // remote_buffer), and fills it with the contents of a local buffer.
-  // Returns true on success.
-  bool CopyDataToChild(const void* local_buffer, size_t buffer_bytes,
-                       void** remote_buffer) const;
+  // Returns SBOX_ALL_OK on success.
+  ResultCode CopyDataToChild(const void* local_buffer,
+                             size_t buffer_bytes,
+                             void** remote_buffer) const;
 
   // Performs the cold patch (from the parent) of ntdll.
-  // Returns true on success.
+  // Returns SBOX_ALL_OK on success.
   //
   // This method will insert additional interceptions to launch the interceptor
   // agent on the child process, if there are additional interceptions to do.
-  bool PatchNtdll(bool hot_patch_needed);
+  ResultCode PatchNtdll(bool hot_patch_needed);
 
   // Peforms the actual interceptions on ntdll.
   // thunks is the memory to store all the thunks for this dll (on the child),
   // and dll_data is a local buffer to hold global dll interception info.
-  // Returns true on success.
-  bool PatchClientFunctions(DllInterceptionData* thunks,
-                            size_t thunk_bytes,
-                            DllInterceptionData* dll_data);
+  // Returns SBOX_ALL_OK on success.
+  ResultCode PatchClientFunctions(DllInterceptionData* thunks,
+                                  size_t thunk_bytes,
+                                  DllInterceptionData* dll_data);
 
   // The process to intercept.
   TargetProcess* child_;
@@ -233,30 +238,29 @@ class InterceptionManager {
 // (WINAPI = with the "C" underscore).
 #if SANDBOX_EXPORTS
 #if defined(_WIN64)
-#define MAKE_SERVICE_NAME(service, params) "Target" # service "64"
+#define MAKE_SERVICE_NAME(service, params) "Target" #service "64"
 #else
-#define MAKE_SERVICE_NAME(service, params) "_Target" # service "@" # params
+#define MAKE_SERVICE_NAME(service, params) "_Target" #service "@" #params
 #endif
 
-#define ADD_NT_INTERCEPTION(service, id, num_params) \
-  AddToPatchedFunctions(kNtdllName, #service, \
+#define ADD_NT_INTERCEPTION(service, id, num_params)        \
+  AddToPatchedFunctions(kNtdllName, #service,               \
                         sandbox::INTERCEPTION_SERVICE_CALL, \
                         MAKE_SERVICE_NAME(service, num_params), id)
 
-#define INTERCEPT_NT(manager, service, id, num_params) \
-  ((&Target##service) ? \
-    manager->ADD_NT_INTERCEPTION(service, id, num_params) : false)
+#define INTERCEPT_NT(manager, service, id, num_params)                        \
+  ((&Target##service) ? manager->ADD_NT_INTERCEPTION(service, id, num_params) \
+                      : false)
 
 // When intercepting the EAT it is important that the patched version of the
 // function not call any functions imported from system libraries unless
 // |TargetServices::InitCalled()| returns true, because it is only then that
 // we are guaranteed that our IAT has been initialized.
-#define INTERCEPT_EAT(manager, dll, function, id, num_params) \
-  ((&Target##function) ? \
-    manager->AddToPatchedFunctions(dll, #function, sandbox::INTERCEPTION_EAT, \
-                                   MAKE_SERVICE_NAME(function, num_params), \
-                                   id) : \
-    false)
+#define INTERCEPT_EAT(manager, dll, function, id, num_params)             \
+  ((&Target##function) ? manager->AddToPatchedFunctions(                  \
+                             dll, #function, sandbox::INTERCEPTION_EAT,   \
+                             MAKE_SERVICE_NAME(function, num_params), id) \
+                       : false)
 #else  // SANDBOX_EXPORTS
 #if defined(_WIN64)
 #define MAKE_SERVICE_NAME(service) &Target##service##64
@@ -264,10 +268,10 @@ class InterceptionManager {
 #define MAKE_SERVICE_NAME(service) &Target##service
 #endif
 
-#define ADD_NT_INTERCEPTION(service, id, num_params) \
-  AddToPatchedFunctions(kNtdllName, #service, \
-                        sandbox::INTERCEPTION_SERVICE_CALL, \
-                        MAKE_SERVICE_NAME(service), id)
+#define ADD_NT_INTERCEPTION(service, id, num_params)            \
+  AddToPatchedFunctions(                                        \
+      kNtdllName, #service, sandbox::INTERCEPTION_SERVICE_CALL, \
+      reinterpret_cast<void*>(MAKE_SERVICE_NAME(service)), id)
 
 #define INTERCEPT_NT(manager, service, id, num_params) \
   manager->ADD_NT_INTERCEPTION(service, id, num_params)
@@ -277,8 +281,9 @@ class InterceptionManager {
 // |TargetServices::InitCalled()| returns true, because it is only then that
 // we are guaranteed that our IAT has been initialized.
 #define INTERCEPT_EAT(manager, dll, function, id, num_params) \
-  manager->AddToPatchedFunctions(dll, #function, sandbox::INTERCEPTION_EAT, \
-                                 MAKE_SERVICE_NAME(function), id)
+  manager->AddToPatchedFunctions(                             \
+      dll, #function, sandbox::INTERCEPTION_EAT,              \
+      reinterpret_cast<void*>(MAKE_SERVICE_NAME(function)), id)
 #endif  // SANDBOX_EXPORTS
 
 }  // namespace sandbox

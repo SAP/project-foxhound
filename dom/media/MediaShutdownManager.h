@@ -5,16 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(MediaShutdownManager_h_)
-#define MediaShutdownManager_h_
+#  define MediaShutdownManager_h_
 
-#include "mozilla/Monitor.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/StaticPtr.h"
-#include "nsCOMPtr.h"
-#include "nsIAsyncShutdown.h"
-#include "nsIThread.h"
-#include "nsHashKeys.h"
-#include "nsTHashtable.h"
+#  include "mozilla/Monitor.h"
+#  include "mozilla/RefPtr.h"
+#  include "mozilla/StaticPtr.h"
+#  include "nsCOMPtr.h"
+#  include "nsIAsyncShutdown.h"
+#  include "nsIThread.h"
+#  include "nsHashKeys.h"
+#  include "nsTHashtable.h"
 
 namespace mozilla {
 
@@ -50,9 +50,11 @@ class MediaDecoder;
 //  instance.Unregister(someDecoder); // Warning! May delete instance!
 //  instance.Register(someOtherDecoder); // BAD! instance may be dangling!
 class MediaShutdownManager : public nsIAsyncShutdownBlocker {
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIASYNCSHUTDOWNBLOCKER
+
+  static void InitStatics();
 
   // The MediaShutdownManager is a singleton, access its instance with
   // this accessor.
@@ -60,21 +62,27 @@ public:
 
   // Notifies the MediaShutdownManager that it needs to track the shutdown
   // of this MediaDecoder.
-  void Register(MediaDecoder* aDecoder);
+  nsresult Register(MediaDecoder* aDecoder);
 
   // Notifies the MediaShutdownManager that a MediaDecoder that it was
   // tracking has shutdown, and it no longer needs to be shutdown in the
   // xpcom-shutdown listener.
   void Unregister(MediaDecoder* aDecoder);
 
-private:
+ private:
+  enum InitPhase {
+    NotInited,
+    InitSucceeded,
+    InitFailed,
+    XPCOMShutdownStarted,
+    XPCOMShutdownEnded
+  };
+
+  static InitPhase sInitPhase;
 
   MediaShutdownManager();
   virtual ~MediaShutdownManager();
-
-  // Ensures we have a shutdown listener if we need one, and removes the
-  // listener and destroys the singleton if we don't.
-  void EnsureCorrectShutdownObserverState();
+  void RemoveBlocker();
 
   static StaticRefPtr<MediaShutdownManager> sInstance;
 
@@ -82,13 +90,8 @@ private:
   // in their Shutdown() method, so we'll drop the reference naturally when
   // we're shutting down (in the non xpcom-shutdown case).
   nsTHashtable<nsRefPtrHashKey<MediaDecoder>> mDecoders;
-
-  // True if we have an XPCOM shutdown observer.
-  bool mIsObservingShutdown;
-
-  bool mIsDoingXPCOMShutDown;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

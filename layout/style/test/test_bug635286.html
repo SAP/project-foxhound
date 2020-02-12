@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635286
 <head>
   <title>Test for Bug 635286</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style type="text/css">
     div { background: transparent; }
@@ -28,20 +28,20 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=635286
 /** Test for Bug 635286 **/
 
 window.addEventListener("load", function() {
-  var cases = Array.slice(document.getElementsByTagName("div"));
+  var cases = Array.from(document.getElementsByTagName("div"));
   cases.forEach(function(aCase, aIndex) {
     aCase.className = "after";
   });
   window.setTimeout(function() {
     cases.forEach(function(aCase, aIndex) {
-      is(window.getComputedStyle(aCase, null)
+      is(window.getComputedStyle(aCase)
            .getPropertyValue("background-color"),
-         "transparent",
+         "rgba(0, 0, 0, 0)",
          aCase.textContent);
     });
     SimpleTest.finish();
   }, 1);
-}, false);
+});
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestFlakyTimeout("untriaged");

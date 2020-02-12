@@ -4,67 +4,80 @@
 
 // This test makes sure that private browsing mode disables the remember option
 // for the popup blocker menu.
-add_task(function* test() {
-  let testURI = "http://mochi.test:8888/browser/browser/components/privatebrowsing/test/browser/popup.html";
-  let oldPopupPolicy = gPrefService.getBoolPref("dom.disable_open_during_load");
-  gPrefService.setBoolPref("dom.disable_open_during_load", true);
+add_task(async function test() {
+  let testURI =
+    "http://mochi.test:8888/browser/browser/components/privatebrowsing/test/browser/popup.html";
+  let oldPopupPolicy = Services.prefs.getBoolPref(
+    "dom.disable_open_during_load"
+  );
+  Services.prefs.setBoolPref("dom.disable_open_during_load", true);
 
   registerCleanupFunction(() => {
-    gPrefService.setBoolPref("dom.disable_open_during_load", oldPopupPolicy);
+    Services.prefs.setBoolPref("dom.disable_open_during_load", oldPopupPolicy);
   });
 
   function testPopupBlockerMenuItem(aExpectedDisabled, aWindow, aCallback) {
+    aWindow.gBrowser.addEventListener(
+      "DOMUpdateBlockedPopups",
+      function() {
+        executeSoon(function() {
+          let notification = aWindow.gBrowser
+            .getNotificationBox()
+            .getNotificationWithValue("popup-blocked");
+          ok(notification, "The notification box should be displayed");
 
-    aWindow.gBrowser.addEventListener("DOMUpdatePageReport", function() {
-      aWindow.gBrowser.removeEventListener("DOMUpdatePageReport", arguments.callee, false);
+          function checkMenuItem(callback) {
+            dump("CMI: in\n");
+            aWindow.document.addEventListener("popupshown", function listener(
+              event
+            ) {
+              dump("CMI: popupshown\n");
+              aWindow.document.removeEventListener("popupshown", listener);
 
-      executeSoon(function() {
-        let notification = aWindow.gBrowser.getNotificationBox().getNotificationWithValue("popup-blocked");
-        ok(notification, "The notification box should be displayed");
+              if (aExpectedDisabled) {
+                is(
+                  aWindow.document
+                    .getElementById("blockedPopupAllowSite")
+                    .getAttribute("disabled"),
+                  "true",
+                  "The allow popups menu item should be disabled"
+                );
+              }
 
-        function checkMenuItem(callback) {
-          dump("CMI: in\n");
-          aWindow.document.addEventListener("popupshown", function(event) {
-            dump("CMI: popupshown\n");
-            aWindow.document.removeEventListener("popupshown", arguments.callee, false);
+              event.originalTarget.hidePopup();
+              dump("CMI: calling back\n");
+              callback();
+              dump("CMI: called back\n");
+            });
+            dump("CMI: out\n");
+          }
 
-            if (aExpectedDisabled)
-              is(aWindow.document.getElementById("blockedPopupAllowSite").getAttribute("disabled"), "true",
-                 "The allow popups menu item should be disabled");
-
-            event.originalTarget.hidePopup();
-            dump("CMI: calling back\n");
-            callback();
-            dump("CMI: called back\n");
-          }, false);
-          dump("CMI: out\n");
-        }
-
-        checkMenuItem(function() {
-          aCallback();
+          checkMenuItem(function() {
+            aCallback();
+          });
+          notification.querySelector("button").doCommand();
         });
-        notification.querySelector("button").doCommand();
-      });
+      },
+      { once: true }
+    );
 
-    }, false);
-
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
-  let win1 = yield BrowserTestUtils.openNewBrowserWindow();
-  yield new Promise(resolve => waitForFocus(resolve, win1));
-  yield new Promise(resolve => testPopupBlockerMenuItem(false, win1, resolve));
+  let win1 = await BrowserTestUtils.openNewBrowserWindow();
+  await new Promise(resolve => waitForFocus(resolve, win1));
+  await new Promise(resolve => testPopupBlockerMenuItem(false, win1, resolve));
 
-  let win2 = yield BrowserTestUtils.openNewBrowserWindow({private: true});
-  yield new Promise(resolve => waitForFocus(resolve, win2));
-  yield new Promise(resolve => testPopupBlockerMenuItem(true, win2, resolve));
+  let win2 = await BrowserTestUtils.openNewBrowserWindow({ private: true });
+  await new Promise(resolve => waitForFocus(resolve, win2));
+  await new Promise(resolve => testPopupBlockerMenuItem(true, win2, resolve));
 
-  let win3 = yield BrowserTestUtils.openNewBrowserWindow();
-  yield new Promise(resolve => waitForFocus(resolve, win3));
-  yield new Promise(resolve => testPopupBlockerMenuItem(false, win3, resolve));
+  let win3 = await BrowserTestUtils.openNewBrowserWindow();
+  await new Promise(resolve => waitForFocus(resolve, win3));
+  await new Promise(resolve => testPopupBlockerMenuItem(false, win3, resolve));
 
   // Cleanup
-  yield BrowserTestUtils.closeWindow(win1);
-  yield BrowserTestUtils.closeWindow(win2);
-  yield BrowserTestUtils.closeWindow(win3);
+  await BrowserTestUtils.closeWindow(win1);
+  await BrowserTestUtils.closeWindow(win2);
+  await BrowserTestUtils.closeWindow(win3);
 });

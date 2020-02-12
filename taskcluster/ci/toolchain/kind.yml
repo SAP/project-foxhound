@@ -1,45 +1,43 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
 
-implementation: taskgraph.task.transform:TransformTask
+kind-dependencies:
+    - fetch
 
 transforms:
-   - taskgraph.transforms.build_attrs:transforms
-   - taskgraph.transforms.job:transforms
-   - taskgraph.transforms.task:transforms
+    - taskgraph.transforms.try_job:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.cached_tasks:transforms
+    - taskgraph.transforms.task:transforms
 
 job-defaults:
-    description: toolchain build
     treeherder:
         kind: build
+        platform: toolchains/opt
         tier: 1
-        platform: linux64/opt
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        implementation: docker-worker
-        docker-image: {in-tree: desktop-build}
-        max-run-time: 36000
+    run-on-projects: []
+    run:
+        using: toolchain-script
 
-jobs:
-    linux64-clang/opt:
-        treeherder:
-            symbol: Cc(Clang)
-        run:
-            using: toolchain-script
-            script: build-clang-linux.sh
-        when:
-            files-changed:
-                - 'build/build-clang/**'
-                - 'taskcluster/scripts/misc/build-clang-linux.sh'
-
-    linux64-gcc/opt:
-        treeherder:
-            symbol: Cc(GCC)
-        run:
-            using: toolchain-script
-            script: build-gcc-linux.sh
-        when:
-            files-changed:
-                - 'build/unix/build-gcc/**'
-                - 'taskcluster/scripts/misc/build-gcc-linux.sh'
+jobs-from:
+    - android.yml
+    - cbindgen.yml
+    - cctools-port.yml
+    - clang-tidy.yml
+    - clang.yml
+    - gcc.yml
+    - geckodriver.yml
+    - gn.yml
+    - grcov.yml
+    - mingw.yml
+    - minidump_stackwalk.yml
+    - misc.yml
+    - nasm.yml
+    - node.yml
+    - rust.yml
+    - rust-size.yml
+    - sccache.yml
+    - dist-toolchains.yml

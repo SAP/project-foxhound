@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/lrc.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 lrc{
     Currencies{
         BRL{
@@ -28,6 +22,10 @@ lrc{
             "₹",
             "روٙپیه هئن",
         }
+        IQD{
+            "د.ع.‏",
+            "IQD",
+        }
         JPY{
             "JP¥",
             "یئن جاپوٙن",
@@ -41,7 +39,7 @@ lrc{
             "USD",
         }
         XXX{
-            "XXX",
+            "¤",
             "پیل نادیار",
         }
     }
@@ -84,5 +82,5 @@ lrc{
             other{"پیل نادیار"}
         }
     }
-    Version{"2.1.19.97"}
+    Version{"2.1.47.82"}
 }

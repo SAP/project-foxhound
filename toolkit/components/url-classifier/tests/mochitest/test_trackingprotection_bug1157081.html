@@ -4,7 +4,7 @@
 <html>
 <head>
   <title>Test Tracking Protection with and without Safe Browsing (Bug #1157081)</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 
@@ -16,53 +16,43 @@
 
 <script class="testbody" type="text/javascript">
 
-var Cc = SpecialPowers.Cc;
-var Ci = SpecialPowers.Ci;
+var mainWindow = window.docShell.rootTreeItem.domWindow;
+var contentPage = "http://mochi.test:8888/chrome/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html";
 
-var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIWebNavigation)
-                    .QueryInterface(Ci.nsIDocShellTreeItem)
-                    .rootTreeItem
-                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindow);
-var contentPage = "chrome://mochitests/content/chrome/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html"
-
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
-
-function whenDelayedStartupFinished(aWindow, aCallback) {
-  Services.obs.addObserver(function observer(aSubject, aTopic) {
-    if (aWindow == aSubject) {
-      Services.obs.removeObserver(observer, aTopic);
-      setTimeout(aCallback, 0);
-    }
-  }, "browser-delayed-startup-finished", false);
-}
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
+const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 
 function testOnWindow(aCallback) {
   var win = mainWindow.OpenBrowserWindow();
-  win.addEventListener("load", function onLoad() {
-    win.removeEventListener("load", onLoad, false);
-    whenDelayedStartupFinished(win, function() {
+  win.addEventListener("load", function() {
+    TestUtils.topicObserved("browser-delayed-startup-finished",
+                            subject => subject == win).then(() => {
       win.addEventListener("DOMContentLoaded", function onInnerLoad() {
         if (win.content.location.href != contentPage) {
-          win.gBrowser.loadURI(contentPage);
+          win.gBrowser.loadURI(contentPage, {
+            triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+          });
           return;
         }
         win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
 
-        win.content.addEventListener('load', function innerLoad2() {
-          win.content.removeEventListener('load', innerLoad2, false);
+        win.content.addEventListener("load", function innerLoad2() {
+          win.content.removeEventListener("load", innerLoad2);
           SimpleTest.executeSoon(function() { aCallback(win); });
         }, false, true);
       }, true);
-      SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
+      SimpleTest.executeSoon(function() {
+        win.gBrowser.loadURI(contentPage, {
+          triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+        });
+      });
     });
-  }, true);
+  }, {capture: true, once: true});
 }
 
 var badids = [
-  "badscript"
+  "badscript",
 ];
 
 function checkLoads(aWindow, aBlocked) {
@@ -71,11 +61,11 @@ function checkLoads(aWindow, aBlocked) {
 }
 
 SpecialPowers.pushPrefEnv(
-  {"set" : [["urlclassifier.trackingTable", "test-track-simple"],
-            ["privacy.trackingprotection.enabled", true],
-            ["browser.safebrowsing.malware.enabled", false],
-            ["browser.safebrowsing.phishing.enabled", false],
-            ["channelclassifier.allowlist_example", true]]},
+  {"set": [["urlclassifier.trackingTable", "moztest-track-simple"],
+           ["privacy.trackingprotection.enabled", true],
+           ["browser.safebrowsing.malware.enabled", false],
+           ["browser.safebrowsing.phishing.enabled", false],
+           ["channelclassifier.allowlist_example", true]]},
   test);
 
 function test() {
@@ -88,9 +78,9 @@ function test() {
 
       // Safe Browsing turned ON, tracking protection should still work
       SpecialPowers.setBoolPref("browser.safebrowsing.phishing.enabled", true);
-      testOnWindow(function(aWindow) {
-        checkLoads(aWindow, true);
-        aWindow.close();
+      testOnWindow(function(aWindow1) {
+        checkLoads(aWindow1, true);
+        aWindow1.close();
         SimpleTest.finish();
       });
     });

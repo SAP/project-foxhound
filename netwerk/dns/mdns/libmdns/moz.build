@@ -4,8 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa' or \
-        (CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk' and CONFIG['ANDROID_VERSION'] >= '16'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     UNIFIED_SOURCES += [
         'MDNSResponderOperator.cpp',
         'MDNSResponderReply.cpp',
@@ -16,20 +15,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa' or \
       '/netwerk/base',
     ]
 
-    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-        LOCAL_INCLUDES += [
-            '%' + '%s/%s' % (CONFIG['ANDROID_SOURCE'], d) for d in [
-                'external/mdnsresponder/mDNSShared',
-            ]
-        ]
-
 else:
-    EXTRA_COMPONENTS += [
-        'nsDNSServiceDiscovery.js',
-        'nsDNSServiceDiscovery.manifest',
-    ]
-
     EXTRA_JS_MODULES += [
+        'DNSServiceDiscovery.jsm',
         'fallback/DataReader.jsm',
         'fallback/DataWriter.jsm',
         'fallback/DNSPacket.jsm',
@@ -46,11 +34,18 @@ else:
 
 UNIFIED_SOURCES += [
     'nsDNSServiceInfo.cpp',
-    'nsMulticastDNSModule.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

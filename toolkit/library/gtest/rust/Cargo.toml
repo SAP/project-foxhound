@@ -5,8 +5,37 @@ authors = ["nobody@mozilla.org"]
 license = "MPL-2.0"
 description = "Testing code for libgkrust"
 
+[features]
+quantum_render = ["gkrust-shared/quantum_render"]
+cubeb-remoting = ["gkrust-shared/cubeb-remoting"]
+cubeb_coreaudio_rust = ["gkrust-shared/cubeb_coreaudio_rust"]
+cubeb_pulse_rust = ["gkrust-shared/cubeb_pulse_rust"]
+gecko_debug = ["gkrust-shared/gecko_debug"]
+gecko_refcount_logging = ["gkrust-shared/gecko_refcount_logging"]
+simd-accel = ["gkrust-shared/simd-accel"]
+moz_memory = ["gkrust-shared/moz_memory"]
+moz_places = ["gkrust-shared/moz_places"]
+spidermonkey_rust = ["gkrust-shared/spidermonkey_rust"]
+cranelift_x86 = ["gkrust-shared/cranelift_x86"]
+cranelift_arm32 = ["gkrust-shared/cranelift_arm32"]
+cranelift_arm64 = ["gkrust-shared/cranelift_arm64"]
+cranelift_none = ["gkrust-shared/cranelift_none"]
+gecko_profiler = ["gkrust-shared/gecko_profiler"]
+gecko_profiler_parse_elf = ["gkrust-shared/gecko_profiler_parse_elf"]
+bitsdownload = ["gkrust-shared/bitsdownload"]
+new_xulstore = ["gkrust-shared/new_xulstore"]
+new_cert_storage = ["gkrust-shared/new_cert_storage"]
+fuzzing_interfaces = ["gkrust-shared/fuzzing_interfaces", "gecko-fuzz-targets"]
+webrtc = ["gkrust-shared/webrtc"]
+moz_xbl = ["gkrust-shared/moz_xbl"]
+
 [dependencies]
+bench-collections-gtest = { path = "../../../../xpcom/rust/gtest/bench-collections" }
 mp4parse-gtest = { path = "../../../../dom/media/gtest" }
+nsstring-gtest = { path = "../../../../xpcom/rust/gtest/nsstring" }
+xpcom-gtest = { path = "../../../../xpcom/rust/gtest/xpcom" }
+gkrust-shared = { path = "../../rust/shared" }
+gecko-fuzz-targets = { path = "../../../../tools/fuzzing/rust", optional = true }
 
 [lib]
 path = "lib.rs"
@@ -17,30 +46,3 @@ bench = false
 doc = false
 plugin = false
 harness = false
-
-# Explicitly specify what our profiles use.
-[profile.dev]
-opt-level = 1
-# XXX: We're passing `-C debuginfo=1` to rustc to work around an llvm-dsymutil
-# crash (bug 1301751), but rustc can't handle -g with that option, so
-# turn off debug for now.
-# This should be temporary until we upgrade to Rust 1.12.
-debug = false
-rpath = false
-lto = false
-debug-assertions = true
-codegen-units = 1
-panic = "abort"
-
-[profile.release]
-opt-level = 2
-debug = false
-rpath = false
-# This would normally be 'true' for release configurations, but using LTO on
-# rul-gtest causes link failures due to symbols also being found in libxul's
-# librul.a.  But LTO'ing things here is not crucial and not LTO'ing things
-# enables us to link libxul-gtest, so we leave it turned off.
-lto = false
-debug-assertions = false
-codegen-units = 1
-panic = "abort"

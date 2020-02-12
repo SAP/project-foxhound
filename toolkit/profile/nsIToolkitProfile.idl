@@ -19,7 +19,7 @@ interface nsIProfileLock : nsISupports
      * The main profile directory.
      */
     readonly attribute nsIFile directory;
-    
+
     /**
      * A directory corresponding to the main profile directory that exists for
      * the purpose of storing data on the local filesystem, including cache
@@ -46,7 +46,7 @@ interface nsIProfileLock : nsISupports
  * @note THIS INTERFACE SHOULD BE IMPLEMENTED BY THE TOOLKIT CODE ONLY! DON'T
  *       EVEN THINK ABOUT IMPLEMENTING THIS IN JAVASCRIPT!
  */
-[scriptable, uuid(7422b090-4a86-4407-972e-75468a625388)]
+[scriptable, builtinclass, uuid(7422b090-4a86-4407-972e-75468a625388)]
 interface nsIToolkitProfile : nsISupports
 {
     /**
@@ -73,6 +73,16 @@ interface nsIToolkitProfile : nsISupports
      *        removed in addition.
      */
     void remove(in boolean removeFiles);
+
+    /**
+     * Removes the profile from the registry of profiles.
+     * The profile directory is removed in the stream transport thread.
+     *
+     * @param removeFiles
+     *        Indicates whether or not the profile directory should be
+     *        removed in addition.
+     */
+    void removeInBackground(in boolean removeFiles);
 
     /**
      * Lock this profile using platform-specific locking methods.

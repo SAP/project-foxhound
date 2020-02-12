@@ -249,7 +249,7 @@ pl_base64_decode_buffer(PLBase64Decoder *data, const unsigned char *in,
         }
         i = 0;
 
-        PR_ASSERT((out - data->output_buffer + 3) <= data->output_buflen);
+        PR_ASSERT((PRUint32)(out - data->output_buffer + 3) <= data->output_buflen);
 
         /*
          * Assume we are not at the end; the following function only works
@@ -370,7 +370,7 @@ pl_base64_decode_flush(PLBase64Decoder *data)
 static PRUint32
 PL_Base64MaxDecodedLength(PRUint32 size)
 {
-    return ((size * 3) / 4);
+    return size * 0.75;
 }
 
 /*
@@ -704,9 +704,8 @@ NSSBase64_DecodeBuffer(PLArenaPool *arenaOpt, SECItem *outItemOpt,
 {
     SECItem *out_item = NULL;
     PRUint32 max_out_len = 0;
-    PRUint32 out_len;
     void *mark = NULL;
-    unsigned char *dummy;
+    unsigned char *dummy = NULL;
 
     if ((outItemOpt != NULL && outItemOpt->data != NULL) || inLen == 0) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -717,33 +716,35 @@ NSSBase64_DecodeBuffer(PLArenaPool *arenaOpt, SECItem *outItemOpt,
         mark = PORT_ArenaMark(arenaOpt);
 
     max_out_len = PL_Base64MaxDecodedLength(inLen);
+    if (max_out_len == 0) {
+        goto loser;
+    }
     out_item = SECITEM_AllocItem(arenaOpt, outItemOpt, max_out_len);
     if (out_item == NULL) {
-        if (arenaOpt != NULL)
-            PORT_ArenaRelease(arenaOpt, mark);
-        return NULL;
+        goto loser;
     }
 
     dummy = PL_Base64DecodeBuffer(inStr, inLen, out_item->data,
-                                  max_out_len, &out_len);
+                                  max_out_len, &out_item->len);
     if (dummy == NULL) {
-        if (arenaOpt != NULL) {
-            PORT_ArenaRelease(arenaOpt, mark);
-            if (outItemOpt != NULL) {
-                outItemOpt->data = NULL;
-                outItemOpt->len = 0;
-            }
-        } else {
-            SECITEM_FreeItem(out_item,
-                             (outItemOpt == NULL) ? PR_TRUE : PR_FALSE);
-        }
-        return NULL;
+        goto loser;
     }
-
-    if (arenaOpt != NULL)
+    if (arenaOpt != NULL) {
         PORT_ArenaUnmark(arenaOpt, mark);
-    out_item->len = out_len;
+    }
     return out_item;
+
+loser:
+    if (arenaOpt != NULL) {
+        PORT_ArenaRelease(arenaOpt, mark);
+        if (outItemOpt != NULL) {
+            outItemOpt->data = NULL;
+            outItemOpt->len = 0;
+        }
+    } else if (dummy == NULL) {
+        SECITEM_FreeItem(out_item, (PRBool)(outItemOpt == NULL));
+    }
+    return NULL;
 }
 
 /*

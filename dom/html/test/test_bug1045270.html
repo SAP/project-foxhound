@@ -1,12 +1,12 @@
-﻿<!DOCTYPE HTML>
+<!DOCTYPE HTML>
 <html>
     <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=1045270
 -->
   <head>
     <title>Test for Bug 583514</title>
-    <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-    <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   </head>
   <body>
@@ -29,10 +29,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1045270
         document.body.style.display = "none";
         document.body.style.display = "";
         document.body.offsetLeft; // flush
-      }, false);
-      synthesizeKey("1", {});
+      });
+      sendString("1");
       SimpleTest.executeSoon(function() {
-        synthesizeKey("2", {});
+        sendString("2");
         SimpleTest.executeSoon(function() {
           is(input.value, "12", "Reframe should restore focus and selection properly");
           SimpleTest.finish();

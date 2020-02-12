@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Add select options test</title>
+  <title>HTML select options test</title>
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -17,14 +16,12 @@
 
   <script type="application/javascript">
 
-    function addOptions(aID)
-    {
+    function addOptions(aID) {
       this.selectNode = getNode(aID);
       this.select = getAccessible(this.selectNode);
       this.selectList = this.select.firstChild;
 
-      this.invoke = function addOptions_invoke()
-      {
+      this.invoke = function addOptions_invoke() {
         for (i = 0; i < 2; i++) {
           var opt = document.createElement("option");
           opt.value = i;
@@ -32,76 +29,95 @@
 
           this.selectNode.add(opt, null);
         }
-      }
+      };
 
       this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, this.selectList)
+        new invokerChecker(EVENT_REORDER, this.selectList),
       ];
 
-      this.finalCheck = function addOptions_finalCheck()
-      {
+      this.finalCheck = function addOptions_finalCheck() {
         var tree =
           { COMBOBOX: [
             { COMBOBOX_LIST: [
               { COMBOBOX_OPTION: [
-                { TEXT_LEAF: [] }
+                { TEXT_LEAF: [] },
               ] },
               { COMBOBOX_OPTION: [
-                { TEXT_LEAF: [] }
-              ] }
-            ] }
+                { TEXT_LEAF: [] },
+              ] },
+            ] },
           ] };
         testAccessibleTree(this.select, tree);
-      }
+      };
 
-      this.getID = function addOptions_getID()
-      {
+      this.getID = function addOptions_getID() {
         return "test elements insertion into a select";
-      }
+      };
     }
 
-    function removeOptions(aID)
-    {
+    function removeOptions(aID) {
       this.selectNode = getNode(aID);
       this.select = getAccessible(this.selectNode);
       this.selectList = this.select.firstChild;
 
-      this.invoke = function removeOptions_invoke()
-      {
+      this.invoke = function removeOptions_invoke() {
         while (this.selectNode.length)
           this.selectNode.remove(0);
-      }
+      };
 
       this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, this.selectList)
+        new invokerChecker(EVENT_REORDER, this.selectList),
       ];
 
-      this.finalCheck = function removeOptions_finalCheck()
-      {
+      this.finalCheck = function removeOptions_finalCheck() {
         var tree =
           { COMBOBOX: [
-            { COMBOBOX_LIST: [] }
+            { COMBOBOX_LIST: [] },
           ] };
         testAccessibleTree(this.select, tree);
-      }
+      };
 
-      this.getID = function removeptions_getID()
-      {
+      this.getID = function removeptions_getID() {
         return "test elements removal from a select";
-      }
+      };
     }
 
-    //gA11yEventDumpID = "debug";
+    /**
+     * Setting @href on option makes the accessible to recreate.
+     */
+    function setHrefOnOption() {
+      this.eventSeq = [
+        new invokerChecker(EVENT_HIDE, "s2_o"),
+        new invokerChecker(EVENT_SHOW, "s2_o"),
+      ];
 
-    function doTest()
-    {
+      this.invoke = function setHrefOnOption_setHref() {
+        getNode("s2_o").setAttribute("href", "1");
+      };
+
+      this.finalCheck = function() {
+        var tree =
+          { COMBOBOX: [
+            { COMBOBOX_LIST: [
+              { COMBOBOX_OPTION: [ ] },
+            ] },
+          ] };
+        testAccessibleTree("s2", tree);
+      };
+
+      this.getID = function removeptions_getID() {
+        return "setting @href on select option";
+      };
+    }
+
+    function doTest() {
       gQueue = new eventQueue();
 
       gQueue.push(new addOptions("select"));
       gQueue.push(new removeOptions("select"));
+      gQueue.push(new setHrefOnOption());
 
       gQueue.invoke(); // Will call SimpleTest.finish();
-
     }
 
     SimpleTest.waitForExplicitFinish();
@@ -109,22 +125,12 @@
   </script>
 </head>
 <body>
-
-  <a target="_blank"
-     href="https://bugzilla.mozilla.org/show_bug.cgi?id=616452"
-     title="Bug 616452 - Dynamically inserted select options aren't reflected in accessible tree">
-    Mozilla Bug 616452</a>
-  <a target="_blank"
-     href="https://bugzilla.mozilla.org/show_bug.cgi?id=616940"
-     title="Removed select option accessibles aren't removed until hide event is fired">
-    Mozilla Bug 616940</a>
   <p id="display"></p>
   <div id="content" style="display: none"></div>
   <pre id="test">
   </pre>
 
   <select id="select"></select>
-
-  <div id="debug"/>
+  <select id="s2"><option id="s2_o"></option></select>
 </body>
 </html>

@@ -8,14 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_
+#define MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_
 
+#include <memory>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/typedefs.h"
+#include "api/array_view.h"
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 namespace test {
@@ -40,20 +41,19 @@ class AudioLoop {
   bool Init(const std::string file_name, size_t max_loop_length_samples,
             size_t block_length_samples);
 
-  // Returns a pointer to the next block of audio. The number given as
-  // |block_length_samples| to the Init() function determines how many samples
-  // that can be safely read from the pointer.
-  const int16_t* GetNextBlock();
+  // Returns a (pointer,size) pair for the next block of audio. The size is
+  // equal to the |block_length_samples| Init() argument.
+  rtc::ArrayView<const int16_t> GetNextBlock();
 
  private:
   size_t next_index_;
   size_t loop_length_samples_;
   size_t block_length_samples_;
-  rtc::scoped_ptr<int16_t[]> audio_array_;
+  std::unique_ptr<int16_t[]> audio_array_;
 
-  DISALLOW_COPY_AND_ASSIGN(AudioLoop);
+  RTC_DISALLOW_COPY_AND_ASSIGN(AudioLoop);
 };
 
 }  // namespace test
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_TOOLS_AUDIO_LOOP_H_

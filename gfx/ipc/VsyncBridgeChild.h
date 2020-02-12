@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,42 +14,43 @@ namespace gfx {
 
 class VsyncIOThreadHolder;
 
-class VsyncBridgeChild final : public PVsyncBridgeChild
-{
+class VsyncBridgeChild final : public PVsyncBridgeChild {
   friend class NotifyVsyncTask;
 
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VsyncBridgeChild)
 
-  static RefPtr<VsyncBridgeChild> Create(RefPtr<VsyncIOThreadHolder> aThread,
-                                         const uint64_t& aProcessToken,
-                                         Endpoint<PVsyncBridgeChild>&& aEndpoint);
+  static RefPtr<VsyncBridgeChild> Create(
+      RefPtr<VsyncIOThreadHolder> aThread, const uint64_t& aProcessToken,
+      Endpoint<PVsyncBridgeChild>&& aEndpoint);
 
   void Close();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPVsyncBridgeChild() override;
+  void ActorDealloc() override;
   void ProcessingError(Result aCode, const char* aReason) override;
 
-  void NotifyVsync(TimeStamp aTimeStamp, const uint64_t& aLayersId);
+  void NotifyVsync(const VsyncEvent& aVsync, const layers::LayersId& aLayersId);
 
-private:
+  void HandleFatalError(const char* aMsg) const override;
+
+ private:
   VsyncBridgeChild(RefPtr<VsyncIOThreadHolder>, const uint64_t& aProcessToken);
-  ~VsyncBridgeChild();
+  virtual ~VsyncBridgeChild();
 
   void Open(Endpoint<PVsyncBridgeChild>&& aEndpoint);
 
-  void NotifyVsyncImpl(TimeStamp aTimeStamp, const uint64_t& aLayersId);
+  void NotifyVsyncImpl(const VsyncEvent& aVsync,
+                       const layers::LayersId& aLayersId);
 
   bool IsOnVsyncIOThread() const;
 
-private:
+ private:
   RefPtr<VsyncIOThreadHolder> mThread;
-  MessageLoop* mLoop;
   uint64_t mProcessToken;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // include_gfx_ipc_VsyncBridgeChild_h
+#endif  // include_gfx_ipc_VsyncBridgeChild_h

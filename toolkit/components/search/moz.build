@@ -4,35 +4,49 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
+SPHINX_TREES['/toolkit/search'] = 'docs'
 
-EXTRA_COMPONENTS += [
-    'nsSearchSuggestions.js',
+XPCSHELL_TESTS_MANIFESTS += [
+    'tests/xpcshell/searchconfigs/xpcshell-1.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-2.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-3.ini',
+    'tests/xpcshell/searchconfigs/xpcshell-4.ini',
+    'tests/xpcshell/xpcshell-legacyconfig.ini',
+    'tests/xpcshell/xpcshell.ini',
 ]
 
+XPIDL_SOURCES += [
+    'nsISearchService.idl',
+]
+
+XPIDL_MODULE = 'toolkit_search'
+
 if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
-    DEFINES['HAVE_SIDEBAR'] = True
-    EXTRA_COMPONENTS += [
-    'nsSidebar.js',
+    EXTRA_JS_MODULES += [
+        'Sidebar.jsm',
     ]
 
 EXTRA_JS_MODULES += [
+    'SearchEngine.jsm',
+    'SearchEngineSelector.jsm',
+    'SearchService.jsm',
+    'SearchStaticData.jsm',
     'SearchSuggestionController.jsm',
+    'SearchSuggestions.jsm',
+    'SearchUtils.jsm',
 ]
 
-EXTRA_PP_COMPONENTS += [
-    'nsSearchService.js',
+EXTRA_COMPONENTS += [
     'toolkitsearch.manifest',
 ]
 
-EXTRA_JS_MODULES += [
-    'SearchStaticData.jsm',
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
-DEFINES['MOZ_DISTRIBUTION_ID'] = CONFIG['MOZ_DISTRIBUTION_ID']
-
-if CONFIG['MOZ_BUILD_APP'] == 'mobile/android':
-    DEFINES['MOZ_FENNEC'] = True
+TESTING_JS_MODULES += [
+    'tests/SearchTestUtils.jsm',
+]
 
 with Files('**'):
     BUG_COMPONENT = ('Firefox', 'Search')

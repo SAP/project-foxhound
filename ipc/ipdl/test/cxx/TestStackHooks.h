@@ -9,122 +9,99 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestStackHooksParent : public PTestStackHooksParent {
+  friend class PTestStackHooksParent;
 
-class TestStackHooksParent :
-    public PTestStackHooksParent
-{
-public:
-    TestStackHooksParent();
-    virtual ~TestStackHooksParent();
+ public:
+  TestStackHooksParent();
+  virtual ~TestStackHooksParent();
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    void Main();
+  void Main();
 
-protected:    
-    virtual bool RecvAsync() override {
-        if (!mOnStack)
-            fail("not on C++ stack?!");
-        return true;
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvAsync() {
+    if (!mOnStack) fail("not on C++ stack?!");
+    return IPC_OK();
+  }
 
-    virtual bool RecvSync() override {
-        if (!mOnStack)
-            fail("not on C++ stack?!");
-        return true;
-    }
+  mozilla::ipc::IPCResult RecvSync() {
+    if (!mOnStack) fail("not on C++ stack?!");
+    return IPC_OK();
+  }
 
-    virtual bool AnswerRpc() override {
-        if (!mOnStack)
-            fail("not on C++ stack?!");
-        return true;
-    }
+  mozilla::ipc::IPCResult AnswerRpc() {
+    if (!mOnStack) fail("not on C++ stack?!");
+    return IPC_OK();
+  }
 
-    virtual bool AnswerStackFrame() override;
+  mozilla::ipc::IPCResult AnswerStackFrame();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 
-    virtual void EnteredCxxStack() override {
-        mOnStack = true;
-    }
-    virtual void ExitedCxxStack() override {
-        mOnStack = false;
-    }
+  virtual void EnteredCxxStack() override { mOnStack = true; }
+  virtual void ExitedCxxStack() override { mOnStack = false; }
 
-    virtual void EnteredCall() override {
-        ++mIncallDepth;
-    }
-    virtual void ExitedCall() override {
-        --mIncallDepth;
-    }
+  virtual void EnteredCall() override { ++mIncallDepth; }
+  virtual void ExitedCall() override { --mIncallDepth; }
 
-private:
-    bool mOnStack;
-    int mIncallDepth;
+ private:
+  bool mOnStack;
+  int mIncallDepth;
 };
 
+class TestStackHooksChild : public PTestStackHooksChild {
+  friend class PTestStackHooksChild;
 
-class TestStackHooksChild :
-    public PTestStackHooksChild
-{
-public:
-    TestStackHooksChild();
-    virtual ~TestStackHooksChild();
+ public:
+  TestStackHooksChild();
+  virtual ~TestStackHooksChild();
 
-    void RunTests();
+  void RunTests();
 
-protected:
-    virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool AnswerStackFrame() override;
+  mozilla::ipc::IPCResult AnswerStackFrame();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
 
-        if (mEntered != mExited)
-            fail("unbalanced enter/exit notifications");
+    if (mEntered != mExited) fail("unbalanced enter/exit notifications");
 
-        if (mOnStack)
-            fail("computing mOnStack went awry; should have failed above assertion");
+    if (mOnStack)
+      fail("computing mOnStack went awry; should have failed above assertion");
 
-        QuitChild();
-    }
+    QuitChild();
+  }
 
-    virtual void EnteredCxxStack() override {
-        ++mEntered;
-        mOnStack = true;
-    }
-    virtual void ExitedCxxStack() override {
-        ++mExited;
-        mOnStack = false;
-    }
+  virtual void EnteredCxxStack() override {
+    ++mEntered;
+    mOnStack = true;
+  }
+  virtual void ExitedCxxStack() override {
+    ++mExited;
+    mOnStack = false;
+  }
 
-    virtual void EnteredCall() override {
-        ++mIncallDepth;
-    }
-    virtual void ExitedCall() override {
-        --mIncallDepth;
-    }
+  virtual void EnteredCall() override { ++mIncallDepth; }
+  virtual void ExitedCall() override { --mIncallDepth; }
 
-private:
-    bool mOnStack;
-    int mEntered;
-    int mExited;
-    int mIncallDepth;
+ private:
+  bool mOnStack;
+  int mEntered;
+  int mExited;
+  int mIncallDepth;
+  int32_t mNumAnswerStackFrame;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestStackHooks_h
+#endif  // ifndef mozilla__ipdltest_TestStackHooks_h

@@ -10,10 +10,13 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor,
- Pref="media.webspeech.recognition.enable",
- Func="SpeechRecognition::IsAuthorized"]
+[Pref="media.webspeech.recognition.enable",
+ Func="SpeechRecognition::IsAuthorized",
+ Exposed=Window]
 interface SpeechRecognition : EventTarget {
+    [Throws]
+    constructor();
+
     // recognition parameters
     attribute SpeechGrammarList grammars;
     attribute DOMString lang;
@@ -25,7 +28,7 @@ interface SpeechRecognition : EventTarget {
     attribute DOMString serviceURI;
 
     // methods to drive the speech interaction
-    [Throws, UnsafeInPrerendering]
+    [Throws, NeedsCallerType]
     void start(optional MediaStream stream);
     void stop();
     void abort();

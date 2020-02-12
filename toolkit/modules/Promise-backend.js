@@ -19,8 +19,7 @@
  * More documentation can be found in the Promise.jsm module.
  */
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 // Obtain an instance of Cu. How this instance is obtained depends on how this
 // file is loaded.
@@ -40,9 +39,18 @@
 // that Components is not defined in worker threads, so no instance of Cu can
 // be obtained.
 
+// As this can be loaded in several ways, allow require and module to be defined.
+/* global module:false require:false */
+// This is allowed in workers.
+/* global setImmediate:false */
+
+/* eslint-disable mozilla/no-define-cc-etc */
+/* eslint-disable mozilla/use-cc-etc */
 var Cu = this.require ? require("chrome").Cu : Components.utils;
 var Cc = this.require ? require("chrome").Cc : Components.classes;
 var Ci = this.require ? require("chrome").Ci : Components.interfaces;
+/* eslint-enable mozilla/use-cc-etc */
+/* eslint-enable mozilla/no-define-cc-etc */
 // If we can access Components, then we use it to capture an async
 // parent stack trace; see scheduleWalkerLoop.  However, as it might
 // not be available (see above), users of this must check it first.
@@ -50,16 +58,17 @@ var Components_ = this.require ? require("chrome").components : Components;
 
 // If Cu is defined, use it to lazily define the FinalizationWitnessService.
 if (Cu) {
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+  // If we're in a devtools module environment, ChromeUtils won't exist.
+  /* eslint "mozilla/use-chromeutils-import": ["error", {allowCu: true}] */
+  Cu.import("resource://gre/modules/Services.jsm", this);
+  Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
-  XPCOMUtils.defineLazyServiceGetter(this, "FinalizationWitnessService",
-                                     "@mozilla.org/toolkit/finalizationwitness;1",
-                                     "nsIFinalizationWitnessService");
-
-  // For now, we're worried about add-ons using Promises with CPOWs, so we'll
-  // permit them in this scope, but this support will go away soon.
-  Cu.permitCPOWsInScope(this);
+  XPCOMUtils.defineLazyServiceGetter(
+    this,
+    "FinalizationWitnessService",
+    "@mozilla.org/toolkit/finalizationwitness;1",
+    "nsIFinalizationWitnessService"
+  );
 }
 
 const STATUS_PENDING = 0;
@@ -77,7 +86,7 @@ const N_INTERNALS = "{private:internals:" + salt + "}";
 // We use DOM Promise for scheduling the walker loop.
 const DOMPromise = Cu ? Promise : null;
 
-/////// Warn-upon-finalization mechanism
+// Warn-upon-finalization mechanism
 //
 // One of the difficult problems with promises is locating uncaught
 // rejections. We adopt the following strategy: if a promise is rejected
@@ -119,10 +128,10 @@ var PendingErrors = {
   /**
    * Initialize PendingErrors
    */
-  init: function() {
+  init() {
     Services.obs.addObserver(function observe(aSubject, aTopic, aValue) {
       PendingErrors.report(aValue);
-    }, "promise-finalization-witness", false);
+    }, "promise-finalization-witness");
   },
 
   /**
@@ -130,8 +139,8 @@ var PendingErrors = {
    *
    * @return The unique identifier of the error.
    */
-  register: function(error) {
-    let id = "pending-error-" + (this._counter++);
+  register(error) {
+    let id = "pending-error-" + this._counter++;
     //
     // At this stage, ideally, we would like to store the error itself
     // and delay any treatment until we are certain that we will need
@@ -149,9 +158,10 @@ var PendingErrors = {
       message: "" + error,
       fileName: null,
       stack: null,
-      lineNumber: null
+      lineNumber: null,
     };
-    try { // Defend against non-enumerable values
+    try {
+      // Defend against non-enumerable values
       if (error && error instanceof Ci.nsIException) {
         // nsIException does things a little differently.
         try {
@@ -174,9 +184,10 @@ var PendingErrors = {
         }
       } else if (typeof error == "object" && error) {
         for (let k of ["fileName", "stack", "lineNumber"]) {
-          try { // Defend against fallible getters and string conversions
+          try {
+            // Defend against fallible getters and string conversions
             let v = error[k];
-            value[k] = v ? ("" + v) : null;
+            value[k] = v ? "" + v : null;
           } catch (ex) {
             // Ignore field
           }
@@ -186,8 +197,11 @@ var PendingErrors = {
       if (!value.stack) {
         // |error| is not an Error (or Error-alike). Try to figure out the stack.
         let stack = null;
-        if (error && error.location &&
-            error.location instanceof Ci.nsIStackFrame) {
+        if (
+          error &&
+          error.location &&
+          error.location instanceof Ci.nsIStackFrame
+        ) {
           // nsIException has full stack frames in the |.location| member.
           stack = error.location;
         } else {
@@ -223,7 +237,7 @@ var PendingErrors = {
    * @param id The identifier of the pending error, as returned by
    * |register|.
    */
-  report: function(id) {
+  report(id) {
     let value = this._map.get(id);
     if (!value) {
       return; // The error has already been reported
@@ -237,7 +251,7 @@ var PendingErrors = {
   /**
    * Mark all pending errors are uncaught, notify the observers.
    */
-  flush: function() {
+  flush() {
     // Since we are going to modify the map while walking it,
     // let's copying the keys first.
     for (let key of Array.from(this._map.keys())) {
@@ -249,7 +263,7 @@ var PendingErrors = {
    * Stop tracking an error, as this error has been caught,
    * eventually.
    */
-  unregister: function(id) {
+  unregister(id) {
     this._map.delete(id);
   },
 
@@ -261,23 +275,23 @@ var PendingErrors = {
    *   {message, date, fileName, stack, lineNumber}
    * All arguments are optional.
    */
-  addObserver: function(observer) {
+  addObserver(observer) {
     this._observers.add(observer);
   },
 
   /**
    * Remove an observer added with addObserver
    */
-  removeObserver: function(observer) {
+  removeObserver(observer) {
     this._observers.delete(observer);
   },
 
   /**
    * Remove all the observers added with addObserver
    */
-  removeAllObservers: function() {
+  removeAllObservers() {
     this._observers.clear();
-  }
+  },
 };
 
 // Initialize the warn-upon-finalization mechanism if and only if Cu is defined.
@@ -288,18 +302,21 @@ if (Cu) {
 
 // Default mechanism for displaying errors
 PendingErrors.addObserver(function(details) {
-  const generalDescription = "A promise chain failed to handle a rejection." +
+  const generalDescription =
+    "A promise chain failed to handle a rejection." +
     " Did you forget to '.catch', or did you forget to 'return'?\nSee" +
     " https://developer.mozilla.org/Mozilla/JavaScript_code_modules/Promise.jsm/Promise\n\n";
 
-  let error = Cc['@mozilla.org/scripterror;1'].createInstance(Ci.nsIScriptError);
+  let error = Cc["@mozilla.org/scripterror;1"].createInstance(
+    Ci.nsIScriptError
+  );
   if (!error || !Services.console) {
     // Too late during shutdown to use the nsIConsole
     dump("*************************\n");
     dump(generalDescription);
     dump("On: " + details.date + "\n");
     dump("Full message: " + details.message + "\n");
-    dump("Full stack: " + (details.stack||"not available") + "\n");
+    dump("Full stack: " + (details.stack || "not available") + "\n");
     dump("*************************\n");
     return;
   }
@@ -308,26 +325,33 @@ PendingErrors.addObserver(function(details) {
     message += "\nFull Stack: " + details.stack;
   }
   error.init(
-             /*message*/ generalDescription +
-             "Date: " + details.date + "\nFull Message: " + message,
-             /*sourceName*/ details.fileName,
-             /*sourceLine*/ details.lineNumber?("" + details.lineNumber):0,
-             /*lineNumber*/ details.lineNumber || 0,
-             /*columnNumber*/ 0,
-             /*flags*/ Ci.nsIScriptError.errorFlag,
-             /*category*/ "chrome javascript");
+    /* message*/ generalDescription +
+      "Date: " +
+      details.date +
+      "\nFull Message: " +
+      message,
+    /* sourceName*/ details.fileName,
+    /* sourceLine*/ details.lineNumber ? "" + details.lineNumber : 0,
+    /* lineNumber*/ details.lineNumber || 0,
+    /* columnNumber*/ 0,
+    /* flags*/ Ci.nsIScriptError.errorFlag,
+    /* category*/ "chrome javascript"
+  );
   Services.console.logMessage(error);
 });
 
-
-///////// Additional warnings for developers
+// Additional warnings for developers
 //
 // The following error types are considered programmer errors, which should be
 // reported (possibly redundantly) so as to let programmers fix their code.
-const ERRORS_TO_REPORT = ["EvalError", "RangeError", "ReferenceError", "TypeError"];
+const ERRORS_TO_REPORT = [
+  "EvalError",
+  "RangeError",
+  "ReferenceError",
+  "TypeError",
+];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Promise
+// Promise
 
 /**
  * The Promise constructor. Creates a new promise given an executor callback.
@@ -336,60 +360,67 @@ const ERRORS_TO_REPORT = ["EvalError", "RangeError", "ReferenceError", "TypeErro
  * @param aExecutor
  *        The callback that will be called with resolve and reject.
  */
-this.Promise = function Promise(aExecutor)
-{
-  if (typeof(aExecutor) != "function") {
+this.Promise = function Promise(aExecutor) {
+  if (typeof aExecutor != "function") {
     throw new TypeError("Promise constructor must be called with an executor.");
   }
 
   /*
    * Object holding all of our internal values we associate with the promise.
    */
-  Object.defineProperty(this, N_INTERNALS, { value: {
-    /*
-     * Internal status of the promise.  This can be equal to STATUS_PENDING,
-     * STATUS_RESOLVED, or STATUS_REJECTED.
-     */
-    status: STATUS_PENDING,
+  Object.defineProperty(this, N_INTERNALS, {
+    value: {
+      /*
+       * Internal status of the promise.  This can be equal to STATUS_PENDING,
+       * STATUS_RESOLVED, or STATUS_REJECTED.
+       */
+      status: STATUS_PENDING,
 
-    /*
-     * When the status property is STATUS_RESOLVED, this contains the final
-     * resolution value, that cannot be a promise, because resolving with a
-     * promise will cause its state to be eventually propagated instead.  When the
-     * status property is STATUS_REJECTED, this contains the final rejection
-     * reason, that could be a promise, even if this is uncommon.
-     */
-    value: undefined,
+      /*
+       * When the status property is STATUS_RESOLVED, this contains the final
+       * resolution value, that cannot be a promise, because resolving with a
+       * promise will cause its state to be eventually propagated instead.  When the
+       * status property is STATUS_REJECTED, this contains the final rejection
+       * reason, that could be a promise, even if this is uncommon.
+       */
+      value: undefined,
 
-    /*
-     * Array of Handler objects registered by the "then" method, and not processed
-     * yet.  Handlers are removed when the promise is resolved or rejected.
-     */
-    handlers: [],
+      /*
+       * Array of Handler objects registered by the "then" method, and not processed
+       * yet.  Handlers are removed when the promise is resolved or rejected.
+       */
+      handlers: [],
 
-    /**
-     * When the status property is STATUS_REJECTED and until there is
-     * a rejection callback, this contains an array
-     * - {string} id An id for use with |PendingErrors|;
-     * - {FinalizationWitness} witness A witness broadcasting |id| on
-     *   notification "promise-finalization-witness".
-     */
-    witness: undefined
-  }});
+      /**
+       * When the status property is STATUS_REJECTED and until there is
+       * a rejection callback, this contains an array
+       * - {string} id An id for use with |PendingErrors|;
+       * - {FinalizationWitness} witness A witness broadcasting |id| on
+       *   notification "promise-finalization-witness".
+       */
+      witness: undefined,
+    },
+  });
 
   Object.seal(this);
 
-  let resolve = PromiseWalker.completePromise
-                             .bind(PromiseWalker, this, STATUS_RESOLVED);
-  let reject = PromiseWalker.completePromise
-                            .bind(PromiseWalker, this, STATUS_REJECTED);
+  let resolve = PromiseWalker.completePromise.bind(
+    PromiseWalker,
+    this,
+    STATUS_RESOLVED
+  );
+  let reject = PromiseWalker.completePromise.bind(
+    PromiseWalker,
+    this,
+    STATUS_REJECTED
+  );
 
   try {
-    aExecutor.call(undefined, resolve, reject);
+    aExecutor(resolve, reject);
   } catch (ex) {
     reject(ex);
   }
-}
+};
 
 /**
  * Calls one of the provided functions as soon as this promise is either
@@ -434,15 +465,13 @@ this.Promise = function Promise(aExecutor)
  *       the returned promise instead, to process any exception occurred in
  *       either of the callbacks registered on this promise.
  */
-Promise.prototype.then = function (aOnResolve, aOnReject)
-{
+Promise.prototype.then = function(aOnResolve, aOnReject) {
   let handler = new Handler(this, aOnResolve, aOnReject);
   this[N_INTERNALS].handlers.push(handler);
 
   // Ensure the handler is scheduled for processing if this promise is already
   // resolved or rejected.
   if (this[N_INTERNALS].status != STATUS_PENDING) {
-
     // This promise is not the last in the chain anymore. Remove any watchdog.
     if (this[N_INTERNALS].witness != null) {
       let [id, witness] = this[N_INTERNALS].witness;
@@ -468,8 +497,7 @@ Promise.prototype.then = function (aOnResolve, aOnReject)
  *
  * @see Promise.prototype.then
  */
-Promise.prototype.catch = function (aOnReject)
-{
+Promise.prototype.catch = function(aOnReject) {
   return this.then(undefined, aOnReject);
 };
 
@@ -480,8 +508,7 @@ Promise.prototype.catch = function (aOnReject)
  *         and the methods to change its state in the "resolve" and "reject"
  *         properties.  See the Deferred documentation for details.
  */
-Promise.defer = function ()
-{
+Promise.defer = function() {
   return new Deferred();
 };
 
@@ -497,21 +524,21 @@ Promise.defer = function ()
  *
  * @return A promise that can be pending, resolved, or rejected.
  */
-Promise.resolve = function (aValue)
-{
-  if (aValue && typeof(aValue) == "function" && aValue.isAsyncFunction) {
+Promise.resolve = function(aValue) {
+  if (aValue && typeof aValue == "function" && aValue.isAsyncFunction) {
     throw new TypeError(
       "Cannot resolve a promise with an async function. " +
-      "You should either invoke the async function first " +
-      "or use 'Task.spawn' instead of 'Task.async' to start " +
-      "the Task and return its promise.");
+        "You should either invoke the async function first " +
+        "or use 'Task.spawn' instead of 'Task.async' to start " +
+        "the Task and return its promise."
+    );
   }
 
   if (aValue instanceof Promise) {
     return aValue;
   }
 
-  return new Promise((aResolve) => aResolve(aValue));
+  return new Promise(aResolve => aResolve(aValue));
 };
 
 /**
@@ -528,8 +555,7 @@ Promise.resolve = function (aValue)
  *       promise for the value of aReason would make the rejection reason
  *       equal to the rejected promise itself, and not its rejection reason.
  */
-Promise.reject = function (aReason)
-{
+Promise.reject = function(aReason) {
   return new Promise((_, aReject) => aReject(aReason));
 };
 
@@ -549,9 +575,8 @@ Promise.reject = function (aReason)
  *         reason will be forwarded from the first promise in the list of
  *         given promises to be rejected.
  */
-Promise.all = function (aValues)
-{
-  if (aValues == null || typeof(aValues[Symbol.iterator]) != "function") {
+Promise.all = function(aValues) {
+  if (aValues == null || typeof aValues[Symbol.iterator] != "function") {
     throw new Error("Promise.all() expects an iterable.");
   }
 
@@ -577,7 +602,7 @@ Promise.all = function (aValues)
       let value = values[i];
       let resolver = val => checkForCompletion(val, index);
 
-      if (value && typeof(value.then) == "function") {
+      if (value && typeof value.then == "function") {
         value.then(resolver, reject);
       } else {
         // Given value is not a promise, forward it as a resolution value.
@@ -600,9 +625,8 @@ Promise.all = function (aValues)
  *         rejected. Its resolution value will be forwarded from the resolution
  *         value or rejection reason.
  */
-Promise.race = function (aValues)
-{
-  if (aValues == null || typeof(aValues[Symbol.iterator]) != "function") {
+Promise.race = function(aValues) {
+  if (aValues == null || typeof aValues[Symbol.iterator] != "function") {
     throw new Error("Promise.race() expects an iterable.");
   }
 
@@ -622,7 +646,7 @@ Promise.Debugging = {
    *   {message, date, fileName, stack, lineNumber}
    * All arguments are optional.
    */
-  addUncaughtErrorObserver: function(observer) {
+  addUncaughtErrorObserver(observer) {
     PendingErrors.addObserver(observer);
   },
 
@@ -632,14 +656,14 @@ Promise.Debugging = {
    * @param {function} An observer registered with
    * addUncaughtErrorObserver.
    */
-  removeUncaughtErrorObserver: function(observer) {
+  removeUncaughtErrorObserver(observer) {
     PendingErrors.removeObserver(observer);
   },
 
   /**
    * Remove all the observers added with addUncaughtErrorObserver
    */
-  clearUncaughtErrorObservers: function() {
+  clearUncaughtErrorObservers() {
     PendingErrors.removeAllObservers();
   },
 
@@ -647,7 +671,7 @@ Promise.Debugging = {
    * Force all pending errors to be reported immediately as uncaught.
    * Note that this may cause some false positives.
    */
-  flushUncaughtErrors: function() {
+  flushUncaughtErrors() {
     PendingErrors.flush();
   },
 };
@@ -661,8 +685,7 @@ if (this.module) {
   module.exports = Promise;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// PromiseWalker
+// PromiseWalker
 
 /**
  * This singleton object invokes the handlers registered on resolved and
@@ -691,8 +714,7 @@ this.PromiseWalker = {
    * @param aValue
    *        Associated resolution value or rejection reason.
    */
-  completePromise: function (aPromise, aStatus, aValue)
-  {
+  completePromise(aPromise, aStatus, aValue) {
     // Do nothing if the promise is already resolved or rejected.
     if (aPromise[N_INTERNALS].status != STATUS_PENDING) {
       return;
@@ -700,24 +722,31 @@ this.PromiseWalker = {
 
     // Resolving with another promise will cause this promise to eventually
     // assume the state of the provided promise.
-    if (aStatus == STATUS_RESOLVED && aValue &&
-        typeof(aValue.then) == "function") {
-      aValue.then(this.completePromise.bind(this, aPromise, STATUS_RESOLVED),
-                  this.completePromise.bind(this, aPromise, STATUS_REJECTED));
+    if (
+      aStatus == STATUS_RESOLVED &&
+      aValue &&
+      typeof aValue.then == "function"
+    ) {
+      aValue.then(
+        this.completePromise.bind(this, aPromise, STATUS_RESOLVED),
+        this.completePromise.bind(this, aPromise, STATUS_REJECTED)
+      );
       return;
     }
 
     // Change the promise status and schedule our handlers for processing.
     aPromise[N_INTERNALS].status = aStatus;
     aPromise[N_INTERNALS].value = aValue;
-    if (aPromise[N_INTERNALS].handlers.length > 0) {
+    if (aPromise[N_INTERNALS].handlers.length) {
       this.schedulePromise(aPromise);
     } else if (Cu && aStatus == STATUS_REJECTED) {
       // This is a rejection and the promise is the last in the chain.
       // For the time being we therefore have an uncaught error.
       let id = PendingErrors.register(aValue);
-      let witness =
-          FinalizationWitnessService.make("promise-finalization-witness", id);
+      let witness = FinalizationWitnessService.make(
+        "promise-finalization-witness",
+        id
+      );
       aPromise[N_INTERNALS].witness = [id, witness];
     }
   },
@@ -725,8 +754,7 @@ this.PromiseWalker = {
   /**
    * Sets up the PromiseWalker loop to start on the next tick of the event loop
    */
-  scheduleWalkerLoop: function()
-  {
+  scheduleWalkerLoop() {
     this.walkerLoopScheduled = true;
 
     // If this file is loaded on a worker thread, DOMPromise will not behave as
@@ -747,8 +775,11 @@ this.PromiseWalker = {
       let stack = Components_ ? Components_.stack : null;
       if (stack) {
         DOMPromise.resolve().then(() => {
-          Cu.callFunctionWithAsyncStack(this.walkerLoop.bind(this), stack,
-                                        "Promise")
+          Cu.callFunctionWithAsyncStack(
+            this.walkerLoop.bind(this),
+            stack,
+            "Promise"
+          );
         });
       } else {
         DOMPromise.resolve().then(() => this.walkerLoop());
@@ -766,8 +797,7 @@ this.PromiseWalker = {
    *        Resolved or rejected promise whose handlers should be processed.  It
    *        is expected that this promise has at least one handler to process.
    */
-  schedulePromise: function (aPromise)
-  {
+  schedulePromise(aPromise) {
     // Migrate the handlers from the provided promise to the global list.
     for (let handler of aPromise[N_INTERNALS].handlers) {
       this.handlers.push(handler);
@@ -793,8 +823,7 @@ this.PromiseWalker = {
    *
    * This function is called with "this" bound to the PromiseWalker object.
    */
-  walkerLoop: function ()
-  {
+  walkerLoop() {
     // If there is more than one handler waiting, reschedule the walker loop
     // immediately.  Otherwise, use walkerLoopScheduled to tell schedulePromise()
     // to reschedule the loop if it adds more handlers to the queue.  This makes
@@ -812,7 +841,7 @@ this.PromiseWalker = {
     }
 
     // Process all the known handlers eagerly.
-    while (this.handlers.length > 0) {
+    while (this.handlers.length) {
       this.handlers.shift().process();
     }
   },
@@ -821,15 +850,13 @@ this.PromiseWalker = {
 // Bind the function to the singleton once.
 PromiseWalker.walkerLoop = PromiseWalker.walkerLoop.bind(PromiseWalker);
 
-////////////////////////////////////////////////////////////////////////////////
-//// Deferred
+// Deferred
 
 /**
  * Returned by "Promise.defer" to provide a new promise along with methods to
  * change its state.
  */
-function Deferred()
-{
+function Deferred() {
   this.promise = new Promise((aResolve, aReject) => {
     this.resolve = aResolve;
     this.reject = aReject;
@@ -883,14 +910,12 @@ Deferred.prototype = {
   reject: null,
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// Handler
+// Handler
 
 /**
  * Handler registered on a promise by the "then" function.
  */
-function Handler(aThisPromise, aOnResolve, aOnReject)
-{
+function Handler(aThisPromise, aOnResolve, aOnReject) {
   this.thisPromise = aThisPromise;
   this.onResolve = aOnResolve;
   this.onReject = aOnReject;
@@ -922,8 +947,7 @@ Handler.prototype = {
    * Called after thisPromise is resolved or rejected, invokes the appropriate
    * callback and propagates the result to nextPromise.
    */
-  process: function()
-  {
+  process() {
     // The state of this promise is propagated unless a handler is defined.
     let nextStatus = this.thisPromise[N_INTERNALS].status;
     let nextValue = this.thisPromise[N_INTERNALS].value;
@@ -933,20 +957,22 @@ Handler.prototype = {
       // to determine the state of the next promise, that will be resolved with
       // the returned value, that can also be another promise.
       if (nextStatus == STATUS_RESOLVED) {
-        if (typeof(this.onResolve) == "function") {
+        if (typeof this.onResolve == "function") {
           nextValue = this.onResolve.call(undefined, nextValue);
         }
-      } else if (typeof(this.onReject) == "function") {
+      } else if (typeof this.onReject == "function") {
         nextValue = this.onReject.call(undefined, nextValue);
         nextStatus = STATUS_RESOLVED;
       }
     } catch (ex) {
-
       // An exception has occurred in the handler.
 
-      if (ex && typeof ex == "object" && "name" in ex &&
-          ERRORS_TO_REPORT.indexOf(ex.name) != -1) {
-
+      if (
+        ex &&
+        typeof ex == "object" &&
+        "name" in ex &&
+        ERRORS_TO_REPORT.includes(ex.name)
+      ) {
         // We suspect that the exception is a programmer error, so we now
         // display it using dump().  Note that we do not use Cu.reportError as
         // we assume that this is a programming error, so we do not want end
@@ -954,14 +980,19 @@ Handler.prototype = {
         // they will either treat the error or log them somewhere.
 
         dump("*************************\n");
-        dump("A coding exception was thrown in a Promise " +
-             ((nextStatus == STATUS_RESOLVED) ? "resolution":"rejection") +
-             " callback.\n");
-        dump("See https://developer.mozilla.org/Mozilla/JavaScript_code_modules/Promise.jsm/Promise\n\n");
+        dump(
+          "A coding exception was thrown in a Promise " +
+            (nextStatus == STATUS_RESOLVED ? "resolution" : "rejection") +
+            " callback.\n"
+        );
+        dump(
+          "See https://developer.mozilla.org/Mozilla/JavaScript_code_modules/Promise.jsm/Promise\n\n"
+        );
         dump("Full message: " + ex + "\n");
-        dump("Full stack: " + (("stack" in ex)?ex.stack:"not available") + "\n");
+        dump(
+          "Full stack: " + ("stack" in ex ? ex.stack : "not available") + "\n"
+        );
         dump("*************************\n");
-
       }
 
       // Additionally, reject the next promise.

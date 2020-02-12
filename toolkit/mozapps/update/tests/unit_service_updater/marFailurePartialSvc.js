@@ -5,7 +5,7 @@
 
 /* General Partial MAR File Patch Apply Failure Test */
 
-function run_test() {
+async function run_test() {
   if (!setupTestCommon()) {
     return;
   }
@@ -13,35 +13,27 @@ function run_test() {
   gTestFiles[11].originalFile = "partial.png";
   gTestDirs = gTestDirsPartialSuccess;
   setTestFilesAndDirsForFailure();
-  setupUpdaterTest(FILE_PARTIAL_MAR, false);
-}
-
-/**
- * Called after the call to setupUpdaterTest finishes.
- */
-function setupUpdaterTestFinished() {
+  await setupUpdaterTest(FILE_PARTIAL_MAR, false);
   // If execv is used the updater process will turn into the callback process
   // and the updater's return code will be that of the callback process.
-  runUpdate(STATE_FAILED_LOADSOURCE_ERROR_WRONG_SIZE, false,
-            (USE_EXECV ? 0 : 1), true);
-}
-
-/**
- * Called after the call to runUpdate finishes.
- */
-function runUpdateFinished() {
+  runUpdate(
+    STATE_FAILED_LOADSOURCE_ERROR_WRONG_SIZE,
+    false,
+    USE_EXECV ? 0 : 1,
+    true
+  );
   checkAppBundleModTime();
   standardInit();
-  Assert.equal(readStatusFile(), STATE_NONE,
-               "the status file failure code" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_FAILED,
-               "the update state" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).errorCode, LOADSOURCE_ERROR_WRONG_SIZE,
-               "the update errorCode" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateFailure(getApplyDirFile);
   checkUpdateLogContents(LOG_PARTIAL_FAILURE);
+  await waitForUpdateXMLFiles();
+  checkUpdateManager(
+    STATE_NONE,
+    false,
+    STATE_FAILED,
+    LOADSOURCE_ERROR_WRONG_SIZE,
+    1
+  );
   checkCallbackLog();
 }

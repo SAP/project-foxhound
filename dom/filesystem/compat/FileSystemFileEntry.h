@@ -13,47 +13,39 @@ namespace mozilla {
 namespace dom {
 
 class File;
-class BlobCallback;
+class FileCallback;
+class FileSystemDirectoryEntry;
 
-class FileSystemFileEntry final : public FileSystemEntry
-{
-public:
+class FileSystemFileEntry final : public FileSystemEntry {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(FileSystemFileEntry, FileSystemEntry)
 
   FileSystemFileEntry(nsIGlobalObject* aGlobalObject, File* aFile,
+                      FileSystemDirectoryEntry* aParentEntry,
                       FileSystem* aFileSystem);
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual bool
-  IsFile() const override
-  {
-    return true;
-  }
+  virtual bool IsFile() const override { return true; }
 
-  virtual void
-  GetName(nsAString& aName, ErrorResult& aRv) const override;
+  virtual void GetName(nsAString& aName, ErrorResult& aRv) const override;
 
-  virtual void
-  GetFullPath(nsAString& aFullPath, ErrorResult& aRv) const override;
+  virtual void GetFullPath(nsAString& aFullPath,
+                           ErrorResult& aRv) const override;
 
-  void
-  CreateWriter(VoidCallback& aSuccessCallback,
-               const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback) const;
+  void GetFile(
+      FileCallback& aSuccessCallback,
+      const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback) const;
 
-  void
-  GetFile(BlobCallback& aSuccessCallback,
-          const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback) const;
-
-private:
+ private:
   ~FileSystemFileEntry();
 
   RefPtr<File> mFile;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FileSystemFileEntry_h
+#endif  // mozilla_dom_FileSystemFileEntry_h

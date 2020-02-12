@@ -10,13 +10,13 @@
     </vbox>
     <spacer flex="1"/>
   </hbox>
-  
+
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
     var imports = [ "SimpleTest", "is", "isnot", "ok", "snapshotWindow",
                     "compareSnapshots", "onerror" ];
     for (var name of imports) {
-      window[name] = window.opener.wrappedJSObject[name];
+      window[name] = window.arguments[0][name];
     }
 
     function $(id) {
@@ -48,10 +48,10 @@
     $("f2").setAttribute("src", doc2);
     $("f3").setAttribute("src", doc2);
 
-    function doTheTest() {
-      var s1 = snapshotWindow($("f1").contentWindow);
-      var s2 = snapshotWindow($("f2").contentWindow);
-      var s3 = snapshotWindow($("f3").contentWindow);
+    async function doTheTest() {
+      var s1 = await snapshotWindow($("f1").contentWindow);
+      var s2 = await snapshotWindow($("f2").contentWindow);
+      var s3 = await snapshotWindow($("f3").contentWindow);
 
       // This test is broken - see bug 1090274
       //ok(!compareSnapshots(s2, s3, true)[0],
@@ -86,7 +86,7 @@
         _afterFirst: false,
         _removedDispatched: false,
         _addedDispatched: false,
-        handleEvent: function(aEvent) {
+        handleEvent: async function(aEvent) {
           if (!this._afterFirst) {
             is(aEvent.type, "DOMLinkAdded");
 
@@ -117,9 +117,12 @@
             l3.detach();
             l4.detach();
 
-            var s1_new = snapshotWindow($("f1").contentWindow);
+            // swapDocShells reflows asynchronously, ensure layout is
+            // clean so that the viewport of f1 is the right size.
+            $("f1").getBoundingClientRect();
+            var s1_new = await snapshotWindow($("f1").contentWindow);
             var [same, first, second] = compareSnapshots(s1_new, s2, true);
-            ok(same, "Should reflow on swap", "Expected " + second + " but got " + first);
+            ok(same, "Should reflow on swap. Expected " + second + " but got " + first);
 
             is(strs["f1"], "f1.pagehide f1.pageshow");
             is(strs["f3"], "f3.pagehide f3.pageshow");

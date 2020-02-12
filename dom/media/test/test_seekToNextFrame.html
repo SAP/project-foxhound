@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test seekToNextFrame of media files that should play OK</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -32,13 +32,16 @@ function startTest(test, token) {
   function callSeekToNextFrame() {
     v.seekToNextFrame().then(
       () => {
-        ok(v.seenSeeking, "Should have already received seeking event.")
+        if (!v.seenSeeking) {
+          ok(false, v.token + ": Should have already received seeking event.");
+        }
         v.seenSeeking = false;
-        if (!v.seenEnded)
+        if (!v.ended) {
           callSeekToNextFrame();
+        }
       },
       () => {
-        ok(false, "seekToNextFrame() failed.");
+        ok(false, v.token + ": seekToNextFrame() failed.");
       }
     );
   }
@@ -49,8 +52,8 @@ function startTest(test, token) {
 
   var finish = function() {
     v.finished = true;
-    v.removeEventListener("loadedmetadata", onLoadedmetadata, false);
-    v.removeEventListener("seeking", onSeeking, false);
+    v.removeEventListener("loadedmetadata", onLoadedmetadata);
+    v.removeEventListener("seeking", onSeeking);
     removeNodeAndSource(v);
     manager.finished(v.token);
   }
@@ -61,13 +64,15 @@ function startTest(test, token) {
   }}(test, v);
 
   var onSeeking = function(test, v) { return function() {
-    ok(!v.seenSeeking, "Should yet receive seeking event.")
+    if (v.seenSeeking) {
+      ok(false, v.token + ": Should yet receive seeking event.");
+    }
     v.seenSeeking = true;
   }}(test, v);
 
-  v.addEventListener("loadedmetadata", onLoadedmetadata, false);
-  v.addEventListener("seeking", onSeeking, false);
-  v.addEventListener("ended", onEnded, false);
+  v.addEventListener("loadedmetadata", onLoadedmetadata);
+  v.addEventListener("seeking", onSeeking);
+  v.addEventListener("ended", onEnded);
 
   document.body.appendChild(v);
 }
@@ -75,7 +80,10 @@ function startTest(test, token) {
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv(
   {
-    "set": [["media.seekToNextFrame.enabled", true ]]
+    "set": [
+      ["media.seekToNextFrame.enabled", true ],
+      ["media.dormant-on-pause-timeout-ms", -1]
+    ]
   },
   function() {
     manager.runTests(gSeekToNextFrameTests, startTest);

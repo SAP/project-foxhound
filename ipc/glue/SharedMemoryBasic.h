@@ -15,4 +15,4 @@
 #  include "mozilla/ipc/SharedMemoryBasic_chromium.h"
 #endif
 
-#endif // ifndef mozilla_ipc_SharedMemoryBasic_h
+#endif  // ifndef mozilla_ipc_SharedMemoryBasic_h

@@ -5,10 +5,8 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -18,27 +16,25 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    //gA11yEventDumpToConsole = true;
-    function doPreTest()
-    {
+    // gA11yEventDumpToConsole = true;
+    function doPreTest() {
       waitForImageMap("imgmap", doTest);
     }
 
-    function doTest()
-    {
+    function doTest() {
       // image map
       var accTree = {
         role: ROLE_IMAGE_MAP,
         children: [
           {
             role: ROLE_LINK,
-            children: []
+            children: [],
           },
           {
             role: ROLE_LINK,
-            children: []
-          }
-        ]
+            children: [],
+          },
+        ],
       };
 
       testAccessibleTree("imgmap", accTree);
@@ -46,7 +42,7 @@
       // img
       accTree = {
         role: ROLE_GRAPHIC,
-        children: []
+        children: [],
       };
 
       testAccessibleTree("img", accTree);

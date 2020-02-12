@@ -6,9 +6,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=582181
 <head>
   <title>Test for Bug 582181</title>
   <meta charset="utf-8">
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="test()">
@@ -34,11 +34,11 @@ function test() {
   s1 = snapshotWindow(window);
 
   textInput.focus();
-  synthesizeKey("VK_DOWN", { });
-  synthesizeKey("VK_DOWN", { });
-  synthesizeKey("VK_DOWN", { });
-  synthesizeKey("VK_DOWN", { });
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_ArrowDown");
+  synthesizeKey("KEY_ArrowDown");
+  synthesizeKey("KEY_ArrowDown");
+  synthesizeKey("KEY_ArrowDown");
+  synthesizeKey("KEY_Backspace");
   textInput.blur();
   s2 = snapshotWindow(window);
 
@@ -46,7 +46,7 @@ function test() {
   ok(unequal, "backspace after text should change rendering: got " + str2);
 
   textInput.focus();
-  synthesizeKey(">", { });
+  sendString(">");
   textInput.blur();
   s3 = snapshotWindow(window);
 

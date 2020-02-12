@@ -4,7 +4,7 @@
 <html>
 <head>
   <title>Test Tracking Protection in Private Browsing mode</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 
@@ -16,55 +16,49 @@
 
 <script class="testbody" type="text/javascript">
 
-var Cc = SpecialPowers.Cc;
-var Ci = SpecialPowers.Ci;
+var mainWindow = window.docShell.rootTreeItem.domWindow;
+var contentPage = "http://www.itisatrap.org/chrome/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html";
 
-var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIWebNavigation)
-                    .QueryInterface(Ci.nsIDocShellTreeItem)
-                    .rootTreeItem
-                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindow);
-var contentPage = "http://www.itisatrap.org/tests/toolkit/components/url-classifier/tests/mochitest/classifiedAnnotatedPBFrame.html";
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
+const {TestUtils} = ChromeUtils.import("resource://testing-common/TestUtils.jsm");
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://testing-common/UrlClassifierTestUtils.jsm");
+function testOnWindow(aPrivate) {
+  return new Promise((resolve, reject) => {
+    let win = mainWindow.OpenBrowserWindow({private: aPrivate});
+    win.addEventListener("load", function() {
+      TestUtils.topicObserved("browser-delayed-startup-finished",
+                              subject => subject == win).then(() => {
+        win.addEventListener("DOMContentLoaded", function onInnerLoad() {
+          if (win.content.location.href != contentPage) {
+            win.gBrowser.loadURI(contentPage, {
+              triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+            });
+            return;
+          }
+          win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
 
-function whenDelayedStartupFinished(aWindow, aCallback) {
-  Services.obs.addObserver(function observer(aSubject, aTopic) {
-    if (aWindow == aSubject) {
-      Services.obs.removeObserver(observer, aTopic);
-      setTimeout(aCallback, 0);
-    }
-  }, "browser-delayed-startup-finished", false);
-}
-
-function testOnWindow(aPrivate, aCallback) {
-  var win = mainWindow.OpenBrowserWindow({private: aPrivate});
-  win.addEventListener("load", function onLoad() {
-    win.removeEventListener("load", onLoad, false);
-    whenDelayedStartupFinished(win, function() {
-      win.addEventListener("DOMContentLoaded", function onInnerLoad() {
-        if (win.content.location.href != contentPage) {
-          win.gBrowser.loadURI(contentPage);
-          return;
-        }
-        win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
-
-        win.content.addEventListener('load', function innerLoad2() {
-          win.content.removeEventListener('load', innerLoad2, false);
-          SimpleTest.executeSoon(function() { aCallback(win); });
-        }, false, true);
-      }, true);
-      SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
-    });
-  }, true);
+          win.content.addEventListener("load", function innerLoad2() {
+            win.content.removeEventListener("load", innerLoad2);
+            SimpleTest.executeSoon(function() {
+              resolve(win);
+            });
+          }, false, true);
+        }, true);
+        SimpleTest.executeSoon(function() {
+          win.gBrowser.loadURI(contentPage, {
+            triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+          });
+        });
+      });
+    }, {capture: true, once: true});
+  });
 }
 
 var badids = [
   "badscript",
   "badimage",
-  "badcss"
+  "badcss",
 ];
 
 function checkLoads(aWindow, aBlocked) {
@@ -72,24 +66,25 @@ function checkLoads(aWindow, aBlocked) {
   is(win.document.getElementById("badscript").dataset.touched, aBlocked ? "no" : "yes", "Should not load tracking javascript");
   is(win.document.getElementById("badimage").dataset.touched, aBlocked ? "no" : "yes", "Should not load tracking images");
   is(win.document.getElementById("goodscript").dataset.touched, "yes", "Should load whitelisted tracking javascript");
+  is(win.document.getElementById("goodimage").dataset.touched, "yes", "Should load non-blacklisted image");
 
   var elt = win.document.getElementById("styleCheck");
-  var style = win.document.defaultView.getComputedStyle(elt, "");
+  var style = win.document.defaultView.getComputedStyle(elt);
   isnot(style.visibility, aBlocked ? "hidden" : "", "Should not load tracking css");
 
-  is(win.document.blockedTrackingNodeCount, aBlocked ? badids.length : 0, "Should identify all tracking elements");
+  is(win.document.blockedNodeByClassifierCount, aBlocked ? badids.length : 0, "Should identify all tracking elements");
 
-  var blockedTrackingNodes = win.document.blockedTrackingNodes;
+  var blockedNodes = win.document.blockedNodesByClassifier;
 
-  // Make sure that every node in blockedTrackingNodes exists in the tree
+  // Make sure that every node in blockedNodes exists in the tree
   // (that may not always be the case but do not expect any nodes to disappear
   // from the tree here)
   var allNodeMatch = true;
-  for (var i = 0; i < blockedTrackingNodes.length; i++) {
-    var nodeMatch = false;
-    for (var j = 0; j < badids.length && !nodeMatch; j++) {
+  for (let i = 0; i < blockedNodes.length; i++) {
+    let nodeMatch = false;
+    for (let j = 0; j < badids.length && !nodeMatch; j++) {
       nodeMatch = nodeMatch ||
-        (blockedTrackingNodes[i] == win.document.getElementById(badids[j]));
+        (blockedNodes[i] == win.document.getElementById(badids[j]));
     }
 
     allNodeMatch = allNodeMatch && nodeMatch;
@@ -97,14 +92,14 @@ function checkLoads(aWindow, aBlocked) {
   is(allNodeMatch, true, "All annotated nodes are expected in the tree");
 
   // Make sure that every node with a badid (see badids) is found in the
-  // blockedTrackingNodes. This tells us if we are neglecting to annotate
+  // blockedNodes. This tells us if we are neglecting to annotate
   // some nodes
   allNodeMatch = true;
-  for (var j = 0; j < badids.length; j++) {
-    var nodeMatch = false;
-    for (var i = 0; i < blockedTrackingNodes.length && !nodeMatch; i++) {
+  for (let j = 0; j < badids.length; j++) {
+    let nodeMatch = false;
+    for (let i = 0; i < blockedNodes.length && !nodeMatch; i++) {
       nodeMatch = nodeMatch ||
-        (blockedTrackingNodes[i] == win.document.getElementById(badids[j]));
+        (blockedNodes[i] == win.document.getElementById(badids[j]));
     }
 
     allNodeMatch = allNodeMatch && nodeMatch;
@@ -113,35 +108,35 @@ function checkLoads(aWindow, aBlocked) {
 }
 
 SpecialPowers.pushPrefEnv(
-  {"set" : [["urlclassifier.trackingTable", "test-track-simple"],
-            ["privacy.trackingprotection.enabled", false],
-            ["privacy.trackingprotection.pbmode.enabled", true],
-            ["channelclassifier.allowlist_example", true]]},
-  test);
+  {"set": [
+      ["privacy.trackingprotection.enabled", false],
+      ["privacy.trackingprotection.pbmode.enabled", true],
+  ]}, test);
 
-function test() {
+async function test() {
   SimpleTest.registerCleanupFunction(UrlClassifierTestUtils.cleanupTestTrackers);
-  UrlClassifierTestUtils.addTestTrackers().then(() => {
-    // Normal mode, with the pref (trackers should be loaded)
-    testOnWindow(false, function(aWindow) {
-      checkLoads(aWindow, false);
-      aWindow.close();
+  await UrlClassifierTestUtils.addTestTrackers();
 
-      // Private Browsing, with the pref (trackers should be blocked)
-      testOnWindow(true, function(aWindow) {
-        checkLoads(aWindow, true);
-        aWindow.close();
-
-        // Private Browsing, without the pref (trackers should be loaded)
-        SpecialPowers.setBoolPref("privacy.trackingprotection.pbmode.enabled", false);
-        testOnWindow(true, function(aWindow) {
-          checkLoads(aWindow, false);
-          aWindow.close();
-          SimpleTest.finish();
-        });
-      });
-    });
+  // Normal mode, with the pref (trackers should be loaded)
+  await testOnWindow(false).then(function(aWindow) {
+    checkLoads(aWindow, false);
+    aWindow.close();
   });
+
+  // Private Browsing, with the pref (trackers should be blocked)
+  await testOnWindow(true).then(function(aWindow) {
+    checkLoads(aWindow, true);
+    aWindow.close();
+  });
+
+  // Private Browsing, without the pref (trackers should be loaded)
+  await SpecialPowers.setBoolPref("privacy.trackingprotection.pbmode.enabled", false);
+  await testOnWindow(true).then(function(aWindow) {
+    checkLoads(aWindow, false);
+    aWindow.close();
+  });
+
+  SimpleTest.finish();
 }
 
 SimpleTest.waitForExplicitFinish();

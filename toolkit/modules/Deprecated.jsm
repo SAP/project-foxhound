@@ -4,21 +4,22 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "Deprecated" ];
+var EXPORTED_SYMBOLS = ["Deprecated"];
 
-const Cu = Components.utils;
-const Ci = Components.interfaces;
 const PREF_DEPRECATION_WARNINGS = "devtools.errorconsole.deprecation_warnings";
 
-Cu.import("resource://gre/modules/Services.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // A flag that indicates whether deprecation warnings should be logged.
 var logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
 
-Services.prefs.addObserver(PREF_DEPRECATION_WARNINGS,
-  function (aSubject, aTopic, aData) {
-    logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
-  }, false);
+Services.prefs.addObserver(PREF_DEPRECATION_WARNINGS, function(
+  aSubject,
+  aTopic,
+  aData
+) {
+  logWarnings = Services.prefs.getBoolPref(PREF_DEPRECATION_WARNINGS);
+});
 
 /**
  * Build a callstack log message.
@@ -26,7 +27,7 @@ Services.prefs.addObserver(PREF_DEPRECATION_WARNINGS,
  * @param nsIStackFrame aStack
  *        A callstack to be converted into a string log message.
  */
-function stringifyCallstack (aStack) {
+function stringifyCallstack(aStack) {
   // If aStack is invalid, use Components.stack (ignoring the last frame).
   if (!aStack || !(aStack instanceof Ci.nsIStackFrame)) {
     aStack = Components.stack.caller;
@@ -36,14 +37,13 @@ function stringifyCallstack (aStack) {
   let msg = "";
   // Get every frame in the callstack.
   while (frame) {
-    msg += frame.filename + " " + frame.lineNumber +
-      " " + frame.name + "\n";
+    msg += frame.filename + " " + frame.lineNumber + " " + frame.name + "\n";
     frame = frame.caller;
   }
   return msg;
 }
 
-this.Deprecated = {
+var Deprecated = {
   /**
    * Log a deprecation warning.
    *
@@ -57,25 +57,30 @@ this.Deprecated = {
    *        snapshot of the current JavaScript callstack will be
    *        logged.
    */
-  warning: function (aText, aUrl, aStack) {
+  warning(aText, aUrl, aStack) {
     if (!logWarnings) {
       return;
     }
 
     // If URL is not provided, report an error.
     if (!aUrl) {
-      Cu.reportError("Error in Deprecated.warning: warnings must " +
-        "provide a URL documenting this deprecation.");
+      Cu.reportError(
+        "Error in Deprecated.warning: warnings must " +
+          "provide a URL documenting this deprecation."
+      );
       return;
     }
 
-    let textMessage = "DEPRECATION WARNING: " + aText +
+    let textMessage =
+      "DEPRECATION WARNING: " +
+      aText +
       "\nYou may find more details about this deprecation at: " +
-      aUrl + "\n" +
+      aUrl +
+      "\n" +
       // Append a callstack part to the deprecation message.
       stringifyCallstack(aStack);
 
     // Report deprecation warning.
     Cu.reportError(textMessage);
-  }
+  },
 };

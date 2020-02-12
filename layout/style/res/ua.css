@@ -12,20 +12,22 @@
 /* Tables */
 
 *|*::-moz-table {
-  display: table !important;
+  display: table;
   box-sizing: border-box; /* XXX do we really want this? */
 }
 
 *|*::-moz-inline-table {
-  display: inline-table !important;
+  display: inline-table;
   box-sizing: border-box; /* XXX do we really want this? */
 }
 
 *|*::-moz-table-wrapper {
-  display: inherit !important; /* table or inline-table */
-  margin: inherit ! important;
-  padding: 0 ! important;
-  border: none ! important;
+  /* The inherited properties here need to be safe to have on both the
+   * table and the table wrapper, generally because code ignores them
+   * for the table. */
+  display: inherit; /* table or inline-table */
+  -moz-top-layer: inherit;
+  margin: inherit;
   float: inherit;
   clear: inherit;
   position: inherit;
@@ -39,37 +41,68 @@
   page-break-inside: inherit;
   vertical-align: inherit; /* needed for inline-table */
   line-height: inherit; /* needed for vertical-align on inline-table */
-  align-self: inherit;
-  justify-self: inherit;
-  order: inherit;   /* needed for "order" to work on table flex/grid items */
   /* Bug 722777 */
   transform: inherit;
   transform-origin: inherit;
   /* Bug 724750 */
   backface-visibility: inherit;
   clip: inherit;
+  /* Other transform-related properties */
+  /* transform-style: inherit; Bug 1560704 */
+  rotate: inherit;
+  scale: inherit;
+  translate: inherit;
+  /* When the table wrapper is a Flex/Grid item we need these: */
+  align-self: inherit;
+  justify-self: inherit;
+  grid-column-start: inherit;
+  grid-column-end: inherit;
+  grid-row-start: inherit;
+  grid-row-end: inherit;
+  order: inherit;
+  outline: inherit;
+  column-span: inherit; /* needed if <table> has "column-span:all" */
+  contain: inherit; /* needed if table has 'contain:layout' or 'paint' */
 }
 
 *|*::-moz-table-row {
-  display: table-row !important;
+  display: table-row;
 }
 
 /* The ::-moz-table-column pseudo-element is for extra columns at the end
    of a table. */
 *|*::-moz-table-column {
-  display: table-column !important;
+  display: table-column;
+  /* Make sure anonymous columns don't interfere with hit testing.  Basically,
+   * they should pretend as much as possible to not exist (since in the spec
+   * they do not exist).
+   *
+   * Please make sure to not reintroduce
+   * https://bugzilla.mozilla.org/show_bug.cgi?id=1403293 if you change this
+   * bit!
+   */
+  visibility: hidden;
 }
 
 *|*::-moz-table-column-group {
-  display: table-column-group !important;
+  display: table-column-group;
+  /* Make sure anonymous colgroups don't interfere with hit testing.  Basically,
+   * they should pretend as much as possible to not exist (since in the spec
+   * they do not exist).
+   *
+   * Please make sure to not reintroduce
+   * https://bugzilla.mozilla.org/show_bug.cgi?id=1403293 if you change this
+   * bit!
+   */
+  visibility: hidden;
 }
 
 *|*::-moz-table-row-group {
-  display: table-row-group !important;
+  display: table-row-group;
 }
 
 *|*::-moz-table-cell {
-  display: table-cell !important;
+  display: table-cell;
   white-space: inherit;
 }
 
@@ -95,14 +128,11 @@
   unicode-bidi: isolate;
 }
 
-/* Lists */
-
-*|*::-moz-list-bullet, *|*::-moz-list-number {
-  display: inline;
-  vertical-align: baseline;
+/* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
+*|*::marker {
+  text-align: end;
+  unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
-  /* Prevent the element from being selected when clicking on the marker. */
-  -moz-user-select: none;
 }
 
 /* SVG documents don't always load this file but they do have links.
@@ -123,16 +153,17 @@
 
 /* Miscellaneous */
 
-*|*::-moz-anonymous-block, *|*::-moz-cell-content {
-  display: block !important;
-  position: static !important;
+*|*::-moz-cell-content {
+  display: block;
   unicode-bidi: inherit;
   text-overflow: inherit;
   overflow-clip-box: inherit;
 }
 
-*|*::-moz-anonymous-block, *|*::-moz-anonymous-positioned-block {
+*|*::-moz-block-inside-inline-wrapper {
+  display: block;
   /* we currently inherit from the inline that is split */
+  position: inherit; /* static or relative or sticky */
   outline: inherit;
   outline-offset: inherit;
   clip-path: inherit;
@@ -140,15 +171,23 @@
   mask: inherit;
   opacity: inherit;
   text-decoration: inherit;
-  -moz-box-ordinal-group: inherit !important;
+  -moz-box-ordinal-group: inherit;
   overflow-clip-box: inherit;
+  unicode-bidi: inherit;
+  text-overflow: inherit;
+  /* The properties below here don't apply if our position is static,
+     and we do want them to have an effect if it's not, so it's fine
+     to always inherit them. */
+  top: inherit;
+  left: inherit;
+  bottom: inherit;
+  right: inherit;
+  z-index: inherit;
 }
 
 *|*::-moz-xul-anonymous-block {
-  display: block ! important;
-  position: static ! important;
-  float: none ! important;
-  -moz-box-ordinal-group: inherit !important;
+  display: block;
+  -moz-box-ordinal-group: inherit;
   text-overflow: inherit;
   overflow-clip-box: inherit;
 }
@@ -165,13 +204,13 @@
   unicode-bidi: inherit;
   text-overflow: inherit;
   /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
-     ::-moz-fieldset-content in forms.css */
+     ::-moz-fieldset-content/::-moz-button-content in forms.css */
   /* Multicol container */
-  -moz-column-count: inherit;
-  -moz-column-width: inherit;
-  -moz-column-gap: inherit;
-  -moz-column-rule: inherit;
-  -moz-column-fill: inherit;
+  column-count: inherit;
+  column-width: inherit;
+  column-gap: inherit;
+  column-rule: inherit;
+  column-fill: inherit;
   /* Flex container */
   flex-direction: inherit;
   flex-wrap: inherit;
@@ -180,6 +219,7 @@
   -moz-box-direction: inherit;
   -moz-box-pack: inherit;
   -moz-box-align: inherit;
+  -webkit-line-clamp: inherit;
   /* Grid container */
   grid-auto-columns: inherit;
   grid-auto-rows: inherit;
@@ -196,13 +236,11 @@
   justify-items: inherit;
   /* Do not change these. nsCSSFrameConstructor depends on them to create a good
      frame tree. */
-  position: static !important;
-  float: none !important;
   overflow-clip-box: inherit;
 }
 
 *|*::-moz-viewport, *|*::-moz-viewport-scroll, *|*::-moz-canvas, *|*::-moz-scrolled-canvas {
-  display: block !important;
+  display: block;
   background-color: inherit;
 }
 
@@ -213,16 +251,35 @@
 %endif
 }
 
+*|*::-moz-column-set,
 *|*::-moz-column-content {
   /* the column boxes inside a column-flowed block */
   /* make unicode-bidi inherit, otherwise it has no effect on column boxes */
   unicode-bidi: inherit;
   text-overflow: inherit;
-  /* inherit the outer frame's display, otherwise we turn into an inline */
-  display: inherit !important;
-  /* Carry through our parent's height so that %-height children get
-  their heights set */
-  height: 100%;
+  /* Both -moz-column-set and -moz-column-content need to be blocks. */
+  display: block;
+  /* -moz-column-set and -moz-column-content's max block size cannot exceed
+   * ColumnSetWrapperFrame's block size. */
+  max-block-size: 100%;
+}
+
+*|*::-moz-column-set {
+  /* Inherit from ColumnSetWrapperFrame so that nsColumnSetFrame is aware of
+   them.*/
+  columns: inherit;
+  column-gap: inherit;
+  column-rule: inherit;
+  column-fill: inherit;
+}
+
+*|*::-moz-column-span-wrapper {
+  /* As a result of the discussion in
+   * https://github.com/w3c/csswg-drafts/issues/1072, most of the styles
+   * currently applied to ::-moz-block-inside-inline-wrapper should not
+   * apply here. */
+  display: block;
+  column-span: all;
 }
 
 *|*::-moz-anonymous-flex-item,
@@ -235,7 +292,7 @@
 *|*::-moz-page-sequence, *|*::-moz-scrolled-page-sequence {
   /* Collection of pages in print/print preview. Visual styles may only appear
    * in print preview. */
-  display: block !important;
+  display: block;
   background: linear-gradient(#606060, #8a8a8a) fixed;
   height: 100%;
 }
@@ -243,33 +300,20 @@
 *|*::-moz-page {
   /* Individual page in print/print preview. Visual styles may only appear
    * in print preview. */
-  display: block !important;
+  display: block;
   background: white;
   box-shadow: 5px 5px 8px #202020;
+  box-decoration-break: clone;
   margin: 0.125in 0.25in;
 }
 
 *|*::-moz-pagecontent {
-  display: block !important;
+  display: block;
   margin: auto;
 }
 
 *|*::-moz-pagebreak {
-  display: block !important;
-}
-
-*|*::-moz-anonymous-positioned-block {
-  display: block !important;
-  position: inherit; /* relative or sticky */
-  top: inherit;
-  left: inherit;
-  bottom: inherit;
-  right: inherit;
-  z-index: inherit;
-  clip: inherit;
-  opacity: inherit;
-  unicode-bidi: inherit;
-  text-overflow: inherit;
+  display: block;
 }
 
 /* Printing */
@@ -298,6 +342,14 @@
   box-sizing: border-box !important;
   object-fit: contain;
   transform: none !important;
+}
+
+xul|*:fullscreen:not(:root):not([hidden="true"]) {
+  /* The position: fixed; property above used to force the computed display
+   * value to block. It is no longer the case now, so we manually set it here to
+   * maintain the old behaviour. We should probably not do this, but we don't
+   * fullscreen XUL element that frequently either. */
+  display: block;
 }
 
 /* Selectors here should match the check in
@@ -354,8 +406,7 @@ div:-moz-native-anonymous.moz-accessiblecaret {
 
 div:-moz-native-anonymous.moz-accessiblecaret,
 div:-moz-native-anonymous.moz-accessiblecaret > #text-overlay,
-div:-moz-native-anonymous.moz-accessiblecaret > #image,
-div:-moz-native-anonymous.moz-accessiblecaret > #bar {
+div:-moz-native-anonymous.moz-accessiblecaret > #image {
   position: absolute;
   z-index: 2147483647;
 }
@@ -376,15 +427,6 @@ div:-moz-native-anonymous.moz-accessiblecaret > #image {
   background-repeat: no-repeat;
   background-origin: content-box;
   height: 100%;
-}
-
-div:-moz-native-anonymous.moz-accessiblecaret > #bar {
-  margin-left: 49%;
-  background-color: #008aa0;
-}
-
-div:-moz-native-anonymous.moz-accessiblecaret.no-bar > #bar {
-  display: none;
 }
 
 div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {

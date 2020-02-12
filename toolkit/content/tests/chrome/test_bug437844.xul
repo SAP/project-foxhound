@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
-<?xml-stylesheet 
+<?xml-stylesheet
   href="chrome://mochikit/content/tests/SimpleTest/test.css"
   type="text/css"?>
 <!--
@@ -10,19 +10,19 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348233
 <window title="Mozilla Bug 437844 and Bug 348233"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" 
+  <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" 
+  <script type="application/javascript"
           src="chrome://mochikit/content/chrome-harness.js"></script>
   <script type="application/javascript"
           src="RegisterUnregisterChrome.js"></script>
 
   <body  xmlns="http://www.w3.org/1999/xhtml">
-    <a target="_blank" 
+    <a target="_blank"
        href="https://bugzilla.mozilla.org/show_bug.cgi?id=437844">
       Mozilla Bug 437844
     </a>
-    <a target="_blank" 
+    <a target="_blank"
        href="https://bugzilla.mozilla.org/show_bug.cgi?id=348233">
       Mozilla Bug 348233
     </a>
@@ -37,14 +37,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348233
   <script class="testbody" type="application/javascript">
     <![CDATA[
 
-      SimpleTest.expectAssertions(18, 22);
+      SimpleTest.expectAssertions(0, 56);
 
       /** Test for Bug 437844 and Bug 348233 **/
       SimpleTest.waitForExplicitFinish();
 
-      let prefs = Components.classes["@mozilla.org/preferences-service;1"]
-                            .getService(Components.interfaces.nsIPrefBranch);
-      prefs.setCharPref("intl.uidirection.en-US", "rtl");
+      let prefs = Cc["@mozilla.org/preferences-service;1"]
+                    .getService(Ci.nsIPrefBranch);
+      prefs.setIntPref("intl.uidirection", 1);
 
       let rootDir = getRootDirectory(window.location.href);
       let manifest = rootDir + "rtlchrome/rtl.manifest";
@@ -63,18 +63,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348233
       let cleanupFunc = createManifestTemporarily(tempProfileDir, manifest);
 
       // Load about:plugins in an iframe
-      let frame = document.createElement("iframe");
+      let frame = document.createXULElement("iframe");
       frame.setAttribute("src", "about:plugins");
       frame.addEventListener("load", function () {
           frame.removeEventListener("load", arguments.callee, false);
           is(frame.contentDocument.dir, "rtl", "about:plugins should be RTL in RTL locales");
 
-          let gDirSvc    = Components.classes["@mozilla.org/file/directory_service;1"].
-                                      getService(Components.interfaces.nsIDirectoryService).
-                                      QueryInterface(Components.interfaces.nsIProperties);
-          let tmpd = gDirSvc.get("ProfD", Components.interfaces.nsIFile);
+          let gDirSvc    = Cc["@mozilla.org/file/directory_service;1"].
+                                      getService(Ci.nsIDirectoryService).
+                                      QueryInterface(Ci.nsIProperties);
+          let tmpd = gDirSvc.get("ProfD", Ci.nsIFile);
 
-          frame = document.createElement("iframe");
+          frame = document.createXULElement("iframe");
           frame.setAttribute("src", "file://" + tmpd.path); // a file:// URI, bug 348233
           frame.addEventListener("load", function () {
               frame.removeEventListener("load", arguments.callee, false);
@@ -82,7 +82,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=348233
               is(frame.contentDocument.body.dir, "rtl", "file:// listings should be RTL in RTL locales");
 
               cleanupFunc();
-              prefs.clearUserPref("intl.uidirection.en-US");
+              prefs.clearUserPref("intl.uidirection");
               SimpleTest.finish();
             }, false);
           document.documentElement.appendChild(frame);

@@ -2,13 +2,19 @@
 // Selects "open link in new window" from the context menu.
 
 function startNewWindowTestCase(aTestNumber) {
-  info("browser_referrer_open_link_in_window: " +
-       getReferrerTestDescription(aTestNumber));
+  info(
+    "browser_referrer_open_link_in_window: " +
+      getReferrerTestDescription(aTestNumber)
+  );
   contextMenuOpened(gTestWindow, "testlink").then(function(aContextMenu) {
     newWindowOpened().then(function(aNewWindow) {
-      someTabLoaded(aNewWindow).then(function() {
-        checkReferrerAndStartNextTest(aTestNumber, aNewWindow, null,
-                                      startNewWindowTestCase);
+      BrowserTestUtils.firstBrowserLoaded(aNewWindow, false).then(function() {
+        checkReferrerAndStartNextTest(
+          aTestNumber,
+          aNewWindow,
+          null,
+          startNewWindowTestCase
+        );
       });
     });
 
@@ -17,6 +23,6 @@ function startNewWindowTestCase(aTestNumber) {
 }
 
 function test() {
-  requestLongerTimeout(10);  // slowwww shutdown on e10s
+  requestLongerTimeout(10); // slowwww shutdown on e10s
   startReferrerTest(startNewWindowTestCase);
 }

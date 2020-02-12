@@ -8,37 +8,35 @@
 #define mozilla_dom_HTMLTimeElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMHTMLElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 
 namespace mozilla {
 namespace dom {
 
-class HTMLTimeElement final : public nsGenericHTMLElement
-{
-public:
-  explicit HTMLTimeElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class HTMLTimeElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLTimeElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
   virtual ~HTMLTimeElement();
 
   // HTMLTimeElement WebIDL
-  void GetDateTime(DOMString& aDateTime)
-  {
+  void GetDateTime(DOMString& aDateTime) {
     GetHTMLAttr(nsGkAtoms::datetime, aDateTime);
   }
 
-  void SetDateTime(const nsAString& aDateTime, ErrorResult& aError)
-  {
+  void SetDateTime(const nsAString& aDateTime, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::datetime, aDateTime, aError);
   }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-protected:
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLTimeElement_h
+#endif  // mozilla_dom_HTMLTimeElement_h

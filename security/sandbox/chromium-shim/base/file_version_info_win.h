@@ -11,6 +11,8 @@
 #ifndef BASE_FILE_VERSION_INFO_WIN_H_
 #define BASE_FILE_VERSION_INFO_WIN_H_
 
+#include "mozilla/Assertions.h"
+
 struct tagVS_FIXEDFILEINFO;
 typedef tagVS_FIXEDFILEINFO VS_FIXEDFILEINFO;
 
@@ -20,10 +22,10 @@ class FilePath;
 
 class FileVersionInfoWin {
  public:
-  static FileVersionInfoWin*
-    CreateFileVersionInfo(const base::FilePath& file_path) { return nullptr; }
+  static std::unique_ptr<FileVersionInfoWin> CreateFileVersionInfoWin(
+      const base::FilePath& file_path) { MOZ_CRASH(); }
 
-  VS_FIXEDFILEINFO* fixed_file_info() { return nullptr; }
+  VS_FIXEDFILEINFO* fixed_file_info() { MOZ_CRASH(); }
 };
 
 #endif  // BASE_FILE_VERSION_INFO_WIN_H_

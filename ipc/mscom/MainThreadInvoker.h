@@ -8,7 +8,11 @@
 #define mozilla_mscom_MainThreadInvoker_h
 
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Move.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/TimeStamp.h"
+#include "nsCOMPtr.h"
+#include "nsThreadUtils.h"
 
 #include <windows.h>
 
@@ -17,28 +21,34 @@ class nsIRunnable;
 namespace mozilla {
 namespace mscom {
 
-class MainThreadInvoker
-{
-public:
+class MainThreadInvoker {
+ public:
   MainThreadInvoker();
-  ~MainThreadInvoker();
 
-  bool WaitForCompletion(DWORD aTimeout = INFINITE);
-  bool Invoke(already_AddRefed<nsIRunnable>&& aRunnable,
-              DWORD aTimeout = INFINITE);
-  HANDLE GetTargetThread() const { return sMainThread; }
+  bool Invoke(already_AddRefed<nsIRunnable>&& aRunnable);
+  const TimeDuration& GetDuration() const { return mDuration; }
+  static HANDLE GetTargetThread() { return sMainThread; }
 
-private:
+ private:
+  TimeDuration mDuration;
+
   static bool InitStatics();
   static VOID CALLBACK MainThreadAPC(ULONG_PTR aParam);
 
-  HANDLE  mDoneEvent;
-
   static HANDLE sMainThread;
-  static StaticRefPtr<nsIRunnable> sAlertRunnable;
 };
 
-} // namespace mscom
-} // namespace mozilla
+template <typename Class, typename... Args>
+inline bool InvokeOnMainThread(const char* aName, Class* aObject,
+                               void (Class::*aMethod)(Args...), Args&&... aArgs) {
+  nsCOMPtr<nsIRunnable> runnable(NewNonOwningRunnableMethod<Args...>(
+      aName, aObject, aMethod, std::forward<Args>(aArgs)...));
 
-#endif // mozilla_mscom_MainThreadInvoker_h
+  MainThreadInvoker invoker;
+  return invoker.Invoke(runnable.forget());
+}
+
+}  // namespace mscom
+}  // namespace mozilla
+
+#endif  // mozilla_mscom_MainThreadInvoker_h

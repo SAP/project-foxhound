@@ -1,113 +1,136 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.multi_dep:loader
 
-# NOTE: please write a description of this kind in taskcluster/docs/kinds.rst
-
-implementation: taskgraph.task.transform:TransformTask
+group-by: platform
 
 transforms:
-   - taskgraph.transforms.build_attrs:transforms
-   - taskgraph.transforms.job:transforms
-   - taskgraph.transforms.task:transforms
+    - taskgraph.transforms.l10n:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.task:transforms
 
-job-defaults:
+kind-dependencies:
+    - build
+    - build-signing
+    - repackage
+    - toolchain
+
+primary-dependency: build
+
+only-for-build-platforms:
+    - linux64-shippable/opt
+    - linux-shippable/opt
+    - macosx64-shippable/opt
+    - win32-shippable/opt
+    - win64-shippable/opt
+
+job-template:
+    description: Localization
+    locales-file: browser/locales/l10n-onchange-changesets.json
+    ignore-locales:
+        by-build-platform:
+            # OSX has a special locale for japanese
+            macosx64.*: [ja]
+            default: [ja-JP-mac]
+    run-time: 3600
+    secrets: false
+    fetches:
+        toolchain:
+            by-build-platform:
+                default: []
+                macosx64.*:
+                    - linux64-libdmg
+                    - linux64-hfsplus
+    tooltool:
+        by-build-platform:
+            default: internal
+            linux.*: public
     index:
+        type: l10n
         product: firefox
+        job-name:
+            by-build-platform:
+                linux(?!64).*: linux-opt
+                linux64.*: linux64-opt
+                macosx64.*: macosx64-opt
+                win32.*: win32-opt
+                win64.*: win64-opt
+    run-on-projects: ['all']
+    worker-type:
+        by-build-platform:
+            default: b-linux
+            win.*: b-win2012
     treeherder:
-        kind: build
-        tier: 2
-    worker-type: aws-provisioner-v1/gecko-{level}-b-linux
-    worker:
-        implementation: docker-worker
-        docker-image: {in-tree: desktop-build}
-        max-run-time: 36000
-        env:
-            # NOTE: this should really be a different "using" since it's using
-            # build-l10n.sh instead of build-linux.sh.  Preferably, build-linux.sh
-            # and the mozharness run implementation should be modified to support
-            # the functionality that l10n needs
-
-            JOB_SCRIPT: "taskcluster/scripts/builder/build-l10n.sh"
-    # don't run anywhere by default, but still available via try
-    run-on-projects: []
+        symbol: L10n
+        tier: 1
+        platform:
+            by-build-platform:
+                linux64: linux64/opt
+                linux64-pgo: linux64-pgo/opt
+                linux64-shippable: linux64-shippable/opt
+                linux: linux32/opt
+                linux-shippable: linux32-shippable/opt
+                macosx64: osx-cross/opt
+                macosx64-shippable: osx-shippable/opt
+                win32: windows2012-32/opt
+                win32-pgo: windows2012-32-pgo/opt
+                win32-shippable: windows2012-32-shippable/opt
+                win64: windows2012-64/opt
+                win64-pgo: windows2012-64-pgo/opt
+                win64-shippable: windows2012-64-shippable/opt
+    env:
+        by-build-platform:
+            linux.*:    # linux64 and 32 get same treatment here
+                EN_US_PACKAGE_NAME: target.tar.bz2
+                EN_US_BINARY_URL:
+                    artifact-reference: <build-signing/{artifact_prefix}>
+            macosx64.*:
+                EN_US_PACKAGE_NAME: target.dmg
+                EN_US_BINARY_URL:
+                    artifact-reference: <repackage/{artifact_prefix}>
+            win.*:
+                EN_US_PACKAGE_NAME: target.zip
+                EN_US_BINARY_URL:
+                    artifact-reference: <build-signing/{artifact_prefix}>
+    mozharness:
+        config:
+            by-build-platform:
+                linux(?!64).*:
+                    - single_locale/firefox.py
+                    - single_locale/linux32.py
+                    - single_locale/tc_common.py
+                    - single_locale/tc_linux_common.py
+                linux64.*:
+                    - single_locale/firefox.py
+                    - single_locale/linux64.py
+                    - single_locale/tc_common.py
+                    - single_locale/tc_linux_common.py
+                macosx64.*:
+                    - single_locale/firefox.py
+                    - single_locale/macosx64.py
+                    - single_locale/tc_common.py
+                    - single_locale/tc_macosx64.py
+                win32.*:
+                    - single_locale/firefox.py
+                    - single_locale/win32.py
+                    - single_locale/tc_common.py
+                    - single_locale/tc_win32.py
+                win64.*:
+                    - single_locale/firefox.py
+                    - single_locale/win64.py
+                    - single_locale/tc_common.py
+                    - single_locale/tc_win64.py
+        # no default, so we fail on new entries
+        actions: ['clone-locales', 'list-locales', 'setup', 'repack', 'summary']
+        script: mozharness/scripts/desktop_l10n.py
     when:
         files-changed:
-            - browser/locales/all-locales
-            - python/compare-locales/**
+            - browser/locales/l10n-onchange-changesets.json
             - testing/mozharness/configs/single_locale/**
             - testing/mozharness/mozharness/mozilla/l10n/locales.py
             - testing/mozharness/scripts/desktop_l10n.py
+            - third_party/python/compare-locales/**
             - toolkit/locales/**
             - toolkit/mozapps/installer/**
-
-jobs:
-    linux-l10n/opt:
-        description: "Localization"
-        index:
-            job-name:
-                gecko-v2: linux32-l10n-opt
-        treeherder:
-            platform: linux32/opt
-            symbol: tc(L10n)
-        run:
-            using: mozharness
-            script: mozharness/scripts/desktop_l10n.py
-            actions: [clone-locales list-locales setup repack summary]
-            config:
-                - single_locale/tc_linux32.py
-            options:
-                - environment-config=single_locale/production.py
-                - branch-config=single_locale/try.py # NOTE: this will need to be modified in a transform..
-                - platform-config=single_locale/linux32.py  # same
-                - total-chunks=1
-                - this-chunk=1
-            tooltool-downloads: public
-            need-xvfb: true
-
-    linux64-l10n/opt:
-        description: "Localization"
-        index:
-            job-name:
-                gecko-v2: linux64-l10n-opt
-        treeherder:
-            platform: linux64/opt
-            symbol: tc(L10n)
-        run:
-            using: mozharness
-            script: mozharness/scripts/desktop_l10n.py
-            actions: [clone-locales list-locales setup repack summary]
-            config:
-                - single_locale/tc_linux64.py
-            options:
-                - environment-config=single_locale/production.py
-                - branch-config=single_locale/try.py
-                - platform-config=single_locale/linux64.py
-                - total-chunks=1
-                - this-chunk=1
-            tooltool-downloads: public
-            need-xvfb: true
-
-    android-api-15-l10n/opt:
-        description: "Single Locale Repack"
-        index:
-            product: mobile
-            job-name:
-                gecko-v2: android-l10n-opt
-        treeherder:
-            platform: android-api-15/opt
-            symbol: tc(L10n)
-        worker-type: aws-provisioner-v1/android-api-15
-        worker:
-            max-run-time: 18000
-        run:
-            using: mozharness
-            script: mozharness/scripts/mobile_l10n.py
-            actions: [clone-locales list-locales setup repack upload-repacks summary]
-            config:  # NOTE: this will need to be modified in a transform..
-                - single_locale/try_android-api-15.py single_locale/tc_android-api-15.py
-            options:
-                - total-chunks=1
-                - this-chunk=1
-            tooltool-downloads: internal
-            need-xvfb: true

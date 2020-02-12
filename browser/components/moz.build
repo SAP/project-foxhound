@@ -4,62 +4,105 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "General")
+
+with Files("distribution.js"):
+    BUG_COMPONENT = ("Firefox", "Distributions")
+
+with Files("tests/**"):
+    BUG_COMPONENT = ("Firefox", "General")
+
+with Files("tests/browser/browser_contentpermissionprompt.js"):
+    BUG_COMPONENT = ("Firefox", "Site Permissions")
+
+with Files("tests/unit/test_distribution.js"):
+    BUG_COMPONENT = ("Firefox", "Distributions")
+
+with Files("safebrowsing/**"):
+    BUG_COMPONENT = ("Toolkit", "Safe Browsing")
+
+with Files('controlcenter/**'):
+    BUG_COMPONENT = ('Firefox', 'General')
+
+
 DIRS += [
     'about',
+    'aboutconfig',
+    'aboutlogins',
+    'attribution',
     'contextualidentity',
     'customizableui',
     'dirprovider',
     'downloads',
+    'enterprisepolicies',
     'extensions',
-    'feeds',
+    'fxmonitor',
+    'library',
     'migration',
     'newtab',
     'originattributes',
     'places',
+    'pocket',
     'preferences',
     'privatebrowsing',
+    'protections',
+    'protocolhandler',
+    'resistfingerprinting',
     'search',
     'sessionstore',
     'shell',
-    'selfsupport',
     'syncedtabs',
     'uitour',
+    'urlbar',
     'translation',
+    'webshare',
 ]
 
 DIRS += ['build']
 
+if CONFIG['NIGHTLY_BUILD']:
+    DIRS += [
+        'payments',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    DIRS += ['touchbar']
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    DIRS += ['installerprefs']
+
 XPIDL_SOURCES += [
-    'nsIBrowserGlue.idl',
     'nsIBrowserHandler.idl',
 ]
 
 XPIDL_MODULE = 'browsercompsbase'
 
-EXTRA_PP_COMPONENTS += [
-    'BrowserComponents.manifest',
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 EXTRA_COMPONENTS += [
-    'nsBrowserContentHandler.js',
-    'nsBrowserGlue.js',
+    'BrowserComponents.manifest',
+    'tests/startupRecorder.js',
+    'tests/testComponents.manifest',
 ]
 
 EXTRA_JS_MODULES += [
+    'BrowserContentHandler.jsm',
+    'BrowserGlue.jsm',
     'distribution.js',
 ]
 
 BROWSER_CHROME_MANIFESTS += [
     'safebrowsing/content/test/browser.ini',
-    'tests/browser/browser.ini'
+    'tests/browser/browser.ini',
 ]
+
+if CONFIG['MOZ_UPDATER']:
+    BROWSER_CHROME_MANIFESTS += [
+        'tests/browser/whats_new_page/browser.ini',
+    ]
 
 XPCSHELL_TESTS_MANIFESTS += [
     'tests/unit/xpcshell.ini'
 ]
-
-with Files('safebrowsing/*'):
-    BUG_COMPONENT = ('Toolkit', 'Phishing Protection')
-
-with Files('controlcenter/**'):
-    BUG_COMPONENT = ('Firefox', 'General')

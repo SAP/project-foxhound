@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558788
 -->
 <head>
   <title>Test for Bug 558788</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -133,10 +133,10 @@ function makeMinMaxLengthElementsActuallyInvalid(aInvalidElements,
     var e = aInvalidElements[i];
     if (aInvalidElementsDesc[i][5]) { // maxlength
       e.focus();
-      synthesizeKey("VK_BACK_SPACE", {});
+      synthesizeKey("KEY_Backspace");
     } else if (aInvalidElementsDesc[i][6]) { // minlength
       e.focus();
-      synthesizeKey("VK_BACK_SPACE", {});
+      synthesizeKey("KEY_Backspace");
     }
   }
 }

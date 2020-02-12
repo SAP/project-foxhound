@@ -11,50 +11,43 @@
 #include "nsTArray.h"
 #include "mozilla/Attributes.h"
 
-class nsINIParserImpl final
-  : public nsIINIParser
-{
+class nsINIParserImpl final : public nsIINIParser, public nsIINIParserWriter {
   ~nsINIParserImpl() {}
 
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIINIPARSER
+  NS_DECL_NSIINIPARSERWRITER
 
   nsresult Init(nsIFile* aINIFile) { return mParser.Init(aINIFile); }
 
-private:
+ private:
   nsINIParser mParser;
+  bool ContainsNull(const nsACString& aStr);
 };
 
-NS_IMPL_ISUPPORTS(nsINIParserFactory,
-                  nsIINIParserFactory,
-                  nsIFactory)
+NS_IMPL_ISUPPORTS(nsINIParserFactory, nsIINIParserFactory, nsIFactory)
 
 NS_IMETHODIMP
-nsINIParserFactory::CreateINIParser(nsIFile* aINIFile,
-                                    nsIINIParser** aResult)
-{
+nsINIParserFactory::CreateINIParser(nsIFile* aINIFile, nsIINIParser** aResult) {
   *aResult = nullptr;
 
   RefPtr<nsINIParserImpl> p(new nsINIParserImpl());
-  if (!p) {
-    return NS_ERROR_OUT_OF_MEMORY;
+
+  if (aINIFile) {
+    nsresult rv = p->Init(aINIFile);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
   }
 
-  nsresult rv = p->Init(aINIFile);
-
-  if (NS_SUCCEEDED(rv)) {
-    NS_ADDREF(*aResult = p);
-  }
-
-  return rv;
+  p.forget(aResult);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsINIParserFactory::CreateInstance(nsISupports* aOuter,
-                                   REFNSIID aIID,
-                                   void** aResult)
-{
+nsINIParserFactory::CreateInstance(nsISupports* aOuter, REFNSIID aIID,
+                                   void** aResult) {
   if (NS_WARN_IF(aOuter)) {
     return NS_ERROR_NO_AGGREGATION;
   }
@@ -64,29 +57,23 @@ nsINIParserFactory::CreateInstance(nsISupports* aOuter,
 }
 
 NS_IMETHODIMP
-nsINIParserFactory::LockFactory(bool aLock)
-{
-  return NS_OK;
+nsINIParserFactory::LockFactory(bool aLock) { return NS_OK; }
+
+NS_IMPL_ISUPPORTS(nsINIParserImpl, nsIINIParser, nsIINIParserWriter)
+
+bool nsINIParserImpl::ContainsNull(const nsACString& aStr) {
+  return aStr.CountChar('\0') > 0;
 }
 
-NS_IMPL_ISUPPORTS(nsINIParserImpl,
-                  nsIINIParser)
-
-static bool
-SectionCB(const char* aSection, void* aClosure)
-{
+static bool SectionCB(const char* aSection, void* aClosure) {
   nsTArray<nsCString>* strings = static_cast<nsTArray<nsCString>*>(aClosure);
   strings->AppendElement()->Assign(aSection);
   return true;
 }
 
 NS_IMETHODIMP
-nsINIParserImpl::GetSections(nsIUTF8StringEnumerator** aResult)
-{
+nsINIParserImpl::GetSections(nsIUTF8StringEnumerator** aResult) {
   nsTArray<nsCString>* strings = new nsTArray<nsCString>;
-  if (!strings) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   nsresult rv = mParser.GetSections(SectionCB, strings);
   if (NS_SUCCEEDED(rv)) {
@@ -100,9 +87,7 @@ nsINIParserImpl::GetSections(nsIUTF8StringEnumerator** aResult)
   return rv;
 }
 
-static bool
-KeyCB(const char* aKey, const char* aValue, void* aClosure)
-{
+static bool KeyCB(const char* aKey, const char* aValue, void* aClosure) {
   nsTArray<nsCString>* strings = static_cast<nsTArray<nsCString>*>(aClosure);
   strings->AppendElement()->Assign(aKey);
   return true;
@@ -110,15 +95,15 @@ KeyCB(const char* aKey, const char* aValue, void* aClosure)
 
 NS_IMETHODIMP
 nsINIParserImpl::GetKeys(const nsACString& aSection,
-                         nsIUTF8StringEnumerator** aResult)
-{
-  nsTArray<nsCString>* strings = new nsTArray<nsCString>;
-  if (!strings) {
-    return NS_ERROR_OUT_OF_MEMORY;
+                         nsIUTF8StringEnumerator** aResult) {
+  if (ContainsNull(aSection)) {
+    return NS_ERROR_INVALID_ARG;
   }
 
-  nsresult rv = mParser.GetStrings(PromiseFlatCString(aSection).get(),
-                                   KeyCB, strings);
+  nsTArray<nsCString>* strings = new nsTArray<nsCString>;
+
+  nsresult rv =
+      mParser.GetStrings(PromiseFlatCString(aSection).get(), KeyCB, strings);
   if (NS_SUCCEEDED(rv)) {
     rv = NS_NewAdoptingUTF8StringEnumerator(aResult, strings);
   }
@@ -128,15 +113,32 @@ nsINIParserImpl::GetKeys(const nsACString& aSection,
   }
 
   return rv;
-
 }
 
 NS_IMETHODIMP
-nsINIParserImpl::GetString(const nsACString& aSection,
-                           const nsACString& aKey,
-                           nsACString& aResult)
-{
+nsINIParserImpl::GetString(const nsACString& aSection, const nsACString& aKey,
+                           nsACString& aResult) {
+  if (ContainsNull(aSection) || ContainsNull(aKey)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   return mParser.GetString(PromiseFlatCString(aSection).get(),
+                           PromiseFlatCString(aKey).get(), aResult);
+}
+
+NS_IMETHODIMP
+nsINIParserImpl::SetString(const nsACString& aSection, const nsACString& aKey,
+                           const nsACString& aValue) {
+  if (ContainsNull(aSection) || ContainsNull(aKey) || ContainsNull(aValue)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  return mParser.SetString(PromiseFlatCString(aSection).get(),
                            PromiseFlatCString(aKey).get(),
-                           aResult);
+                           PromiseFlatCString(aValue).get());
+}
+
+NS_IMETHODIMP
+nsINIParserImpl::WriteFile(nsIFile* aINIFile) {
+  return mParser.WriteToFile(aINIFile);
 }

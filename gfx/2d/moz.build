@@ -24,10 +24,15 @@ EXPORTS.mozilla.gfx += [
     'CriticalSection.h',
     'DataSurfaceHelpers.h',
     'DrawEventRecorder.h',
+    'DrawTargetOffset.h',
+    'DrawTargetRecording.h',
     'DrawTargetTiled.h',
+    'DrawTargetWrapAndRecord.h',
     'Filters.h',
+    'FontVariation.h',
     'Helpers.h',
     'HelpersCairo.h',
+    'InlineTranslator.h',
     'IterableArena.h',
     'JobScheduler.h',
     'JobScheduler_posix.h',
@@ -45,13 +50,17 @@ EXPORTS.mozilla.gfx += [
     'RecordedEvent.h',
     'RecordingTypes.h',
     'Rect.h',
+    'RectAbsolute.h',
     'Scale.h',
     'ScaleFactor.h',
     'ScaleFactors2D.h',
     'SourceSurfaceCairo.h',
+    'SourceSurfaceCapture.h',
     'SourceSurfaceRawData.h',
     'StackArray.h',
+    'Swizzle.h',
     'Tools.h',
+    'Triangle.h',
     'Types.h',
     'UserData.h',
 ]
@@ -61,15 +70,18 @@ EXPORTS.mozilla.gfx += ['ssse3-scaler.h']
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     EXPORTS.mozilla.gfx += [
         'MacIOSurface.h',
+        'UnscaledFontMac.h',
     ]
     UNIFIED_SOURCES += [
-        'DrawTargetCG.cpp',
         'NativeFontResourceMac.cpp',
-        'PathCG.cpp',
         'ScaledFontMac.cpp',
-        'SourceSurfaceCG.cpp',
     ]
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    EXPORTS.mozilla.gfx += [
+        'dw-extra.h',
+        'UnscaledFontDWrite.h',
+        'UnscaledFontGDI.h',
+    ]
     SOURCES += [
         'DrawTargetD2D1.cpp',
         'ExtendInputEffectD2D1.cpp',
@@ -90,29 +102,40 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'windows':
         'JobScheduler_posix.cpp',
     ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk'):
+    EXPORTS.mozilla.gfx += [
+        'UnscaledFontFreeType.h',
+    ]
+    SOURCES += [
+        'NativeFontResourceFreeType.cpp',
+        'UnscaledFontFreeType.cpp',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     SOURCES += [
         'ScaledFontFontconfig.cpp',
     ]
 
-if CONFIG['MOZ_ENABLE_SKIA']:
-    UNIFIED_SOURCES += [
-        'convolver.cpp',
-    ]
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     SOURCES += [
+        'ScaledFontFreeType.cpp',
+    ]
+
+if CONFIG['MOZ_ENABLE_SKIA']:
+    SOURCES += [
+        'ConvolutionFilter.cpp',
         'DrawTargetSkia.cpp',
-        'image_operations.cpp', # Uses _USE_MATH_DEFINES
         'PathSkia.cpp',
         'SourceSurfaceSkia.cpp',
     ]
-    if CONFIG['CLANG_CXX']:
+    if CONFIG['CC_TYPE'] == 'clang':
         # Suppress warnings from Skia header files.
         SOURCES['DrawTargetSkia.cpp'].flags += ['-Wno-implicit-fallthrough']
         SOURCES['PathSkia.cpp'].flags += ['-Wno-implicit-fallthrough']
         SOURCES['SourceSurfaceSkia.cpp'].flags += ['-Wno-implicit-fallthrough']
     EXPORTS.mozilla.gfx += [
+        'ConvolutionFilter.h',
         'HelpersSkia.h',
-        'RefPtrSkia.h',
     ]
 
 # Are we targeting x86 or x64?  If so, build SSE2 files.
@@ -122,32 +145,31 @@ if CONFIG['INTEL_ARCHITECTURE']:
         'FilterProcessingSSE2.cpp',
         'ImageScalingSSE2.cpp',
         'ssse3-scaler.c',
+        'SwizzleAVX2.cpp',
+        'SwizzleSSE2.cpp',
+        'SwizzleSSSE3.cpp',
     ]
-    if CONFIG['MOZ_ENABLE_SKIA']:
-        SOURCES += [
-            'convolverSSE2.cpp',
-        ]
     DEFINES['USE_SSE2'] = True
     # The file uses SSE2 intrinsics, so it needs special compile flags on some
     # compilers.
     SOURCES['BlurSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
     SOURCES['FilterProcessingSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
     SOURCES['ImageScalingSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
+    SOURCES['SwizzleAVX2.cpp'].flags += ['-mavx2']
+    SOURCES['SwizzleSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
+    SOURCES['SwizzleSSSE3.cpp'].flags += CONFIG['SSSE3_FLAGS']
     SOURCES['ssse3-scaler.c'].flags += CONFIG['SSSE3_FLAGS']
-    if CONFIG['MOZ_ENABLE_SKIA']:
-        SOURCES['convolverSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 elif CONFIG['CPU_ARCH'].startswith('mips'):
     SOURCES += [
         'BlurLS3.cpp',
     ]
-    if CONFIG['MOZ_ENABLE_SKIA']:
-        SOURCES += [
-            'convolverLS3.cpp',
-        ]
 
 UNIFIED_SOURCES += [
     'BezierUtils.cpp',
     'Blur.cpp',
+    'BufferEdgePad.cpp',
+    'BufferUnrotate.cpp',
+    'CaptureCommandList.cpp',
     'DataSourceSurface.cpp',
     'DataSurfaceHelpers.cpp',
     'DrawEventRecorder.cpp',
@@ -156,8 +178,11 @@ UNIFIED_SOURCES += [
     'DrawTargetCairo.cpp',
     'DrawTargetCapture.cpp',
     'DrawTargetDual.cpp',
+    'DrawTargetOffset.cpp',
     'DrawTargetRecording.cpp',
     'DrawTargetTiled.cpp',
+    'DrawTargetWrapAndRecord.cpp',
+    'FilterNodeCapture.cpp',
     'FilterNodeSoftware.cpp',
     'FilterProcessing.cpp',
     'FilterProcessingScalar.cpp',
@@ -166,27 +191,30 @@ UNIFIED_SOURCES += [
     'Matrix.cpp',
     'Path.cpp',
     'PathCairo.cpp',
+    'PathCapture.cpp',
     'PathHelpers.cpp',
     'PathRecording.cpp',
     'Quaternion.cpp',
     'RecordedEvent.cpp',
     'Scale.cpp',
     'ScaledFontBase.cpp',
-    'ScaledFontCairo.cpp',
     'SFNTData.cpp',
     'SFNTNameTable.cpp',
     'SourceSurfaceCairo.cpp',
+    'SourceSurfaceCapture.cpp',
     'SourceSurfaceRawData.cpp',
+    'Swizzle.cpp',
 ]
 
 SOURCES += [
     'Factory.cpp', # Need to suppress warnings in Skia header files.
+    'InlineTranslator.cpp',
 ]
 
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] == 'clang':
     SOURCES['Factory.cpp'].flags += ['-Wno-implicit-fallthrough']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
@@ -198,9 +226,16 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'QuartzSupport.mm',
     ]
 
-if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['BUILD_ARM_NEON']:
-    SOURCES += ['BlurNEON.cpp']
+if CONFIG['CPU_ARCH'] == 'aarch64' or CONFIG['BUILD_ARM_NEON']:
+    SOURCES += [
+        'BlurNEON.cpp',
+        'LuminanceNEON.cpp',
+        'SwizzleNEON.cpp',
+    ]
+    DEFINES['USE_NEON'] = True
     SOURCES['BlurNEON.cpp'].flags += CONFIG['NEON_FLAGS']
+    SOURCES['LuminanceNEON.cpp'].flags += CONFIG['NEON_FLAGS']
+    SOURCES['SwizzleNEON.cpp'].flags += CONFIG['NEON_FLAGS']
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -209,12 +244,23 @@ FINAL_LIBRARY = 'xul'
 for var in ('USE_CAIRO', 'MOZ2D_HAS_MOZ_CAIRO'):
     DEFINES[var] = True
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gtk3', 'gonk'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk'):
     DEFINES['MOZ_ENABLE_FREETYPE'] = True
 
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gtk3', 'gonk'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk'):
     CXXFLAGS += CONFIG['CAIRO_FT_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
+
+if CONFIG['MOZ_ENABLE_SKIA']:
+    LOCAL_INCLUDES += [
+        '/gfx/skia/skia/include/private',
+        '/gfx/skia/skia/src/core',
+        '/gfx/skia/skia/src/image',
+    ]
+if CONFIG['MOZ_ENABLE_SKIA_GPU']:
+    LOCAL_INCLUDES += [
+        '/gfx/skia/skia/src/gpu',
+    ]

@@ -6,12 +6,14 @@
 
 #include "FileInfo.h"
 
+#include "ActorsParent.h"
 #include "FileManager.h"
 #include "IndexedDatabaseManager.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/ipc/BackgroundParent.h"
 #include "nsError.h"
 #include "nsThreadUtils.h"
 
@@ -20,78 +22,37 @@ namespace dom {
 namespace indexedDB {
 
 using namespace mozilla::dom::quota;
+using namespace mozilla::ipc;
 
 namespace {
 
 template <typename IdType>
-class FileInfoImpl final
-  : public FileInfo
-{
+class FileInfoImpl final : public FileInfo {
   IdType mFileId;
 
-public:
+ public:
   FileInfoImpl(FileManager* aFileManager, IdType aFileId)
-    : FileInfo(aFileManager)
-    , mFileId(aFileId)
-  {
+      : FileInfo(aFileManager), mFileId(aFileId) {
     MOZ_ASSERT(aFileManager);
     MOZ_ASSERT(aFileId > 0);
   }
 
-private:
-  ~FileInfoImpl()
-  { }
+ private:
+  ~FileInfoImpl() {}
 
-  virtual int64_t
-  Id() const override
-  {
-    return int64_t(mFileId);
-  }
+  virtual int64_t Id() const override { return int64_t(mFileId); }
 };
 
-class CleanupFileRunnable final
-  : public Runnable
-{
-  RefPtr<FileManager> mFileManager;
-  int64_t mFileId;
+}  // namespace
 
-public:
-  static void
-  DoCleanup(FileManager* aFileManager, int64_t aFileId);
-
-  CleanupFileRunnable(FileManager* aFileManager, int64_t aFileId)
-    : mFileManager(aFileManager)
-    , mFileId(aFileId)
-  {
-    MOZ_ASSERT(aFileManager);
-    MOZ_ASSERT(aFileId > 0);
-  }
-
-  NS_DECL_ISUPPORTS_INHERITED
-
-private:
-  ~CleanupFileRunnable()
-  { }
-
-  NS_DECL_NSIRUNNABLE
-};
-
-} // namespace
-
-FileInfo::FileInfo(FileManager* aFileManager)
-  : mFileManager(aFileManager)
-{
+FileInfo::FileInfo(FileManager* aFileManager) : mFileManager(aFileManager) {
   MOZ_ASSERT(aFileManager);
 }
 
-FileInfo::~FileInfo()
-{
-}
+FileInfo::~FileInfo() {}
 
 // static
-FileInfo*
-FileInfo::Create(FileManager* aFileManager, int64_t aId)
-{
+FileInfo* FileInfo::Create(FileManager* aFileManager, int64_t aId) {
   MOZ_ASSERT(aFileManager);
   MOZ_ASSERT(aId > 0);
 
@@ -106,11 +67,8 @@ FileInfo::Create(FileManager* aFileManager, int64_t aId)
   return new FileInfoImpl<int64_t>(aFileManager, aId);
 }
 
-void
-FileInfo::GetReferences(int32_t* aRefCnt,
-                        int32_t* aDBRefCnt,
-                        int32_t* aSliceRefCnt)
-{
+void FileInfo::GetReferences(int32_t* aRefCnt, int32_t* aDBRefCnt,
+                             int32_t* aSliceRefCnt) {
   MOZ_ASSERT(!IndexedDatabaseManager::IsClosed());
 
   MutexAutoLock lock(IndexedDatabaseManager::FileMutex());
@@ -128,11 +86,8 @@ FileInfo::GetReferences(int32_t* aRefCnt,
   }
 }
 
-void
-FileInfo::UpdateReferences(ThreadSafeAutoRefCnt& aRefCount,
-                           int32_t aDelta,
-                           CustomCleanupCallback* aCustomCleanupCallback)
-{
+void FileInfo::UpdateReferences(ThreadSafeAutoRefCnt& aRefCount, int32_t aDelta,
+                                CustomCleanupCallback* aCustomCleanupCallback) {
   // XXX This can go away once DOM objects no longer hold FileInfo objects...
   //     Looking at you, BlobImplBase...
   //     BlobImplBase is being addressed in bug 1068975.
@@ -183,9 +138,7 @@ FileInfo::UpdateReferences(ThreadSafeAutoRefCnt& aRefCount,
   delete this;
 }
 
-bool
-FileInfo::LockedClearDBRefs()
-{
+bool FileInfo::LockedClearDBRefs() {
   MOZ_ASSERT(!IndexedDatabaseManager::IsClosed());
 
   IndexedDatabaseManager::FileMutex().AssertCurrentThreadOwns();
@@ -206,55 +159,33 @@ FileInfo::LockedClearDBRefs()
   return false;
 }
 
-void
-FileInfo::Cleanup()
-{
+void FileInfo::Cleanup() {
+  AssertIsOnBackgroundThread();
+
   int64_t id = Id();
 
-  // IndexedDatabaseManager is main-thread only.
-  if (!NS_IsMainThread()) {
-    RefPtr<CleanupFileRunnable> cleaner =
-      new CleanupFileRunnable(mFileManager, id);
-
-    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(cleaner));
-    return;
-  }
-
-  CleanupFileRunnable::DoCleanup(mFileManager, id);
-}
-
-// static
-void
-CleanupFileRunnable::DoCleanup(FileManager* aFileManager, int64_t aFileId)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aFileManager);
-  MOZ_ASSERT(aFileId > 0);
-
-  if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
-    return;
-  }
-
-  RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
-  MOZ_ASSERT(mgr);
-
-  if (NS_FAILED(mgr->AsyncDeleteFile(aFileManager, aFileId))) {
+  if (NS_FAILED(AsyncDeleteFile(mFileManager, id))) {
     NS_WARNING("Failed to delete file asynchronously!");
   }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(CleanupFileRunnable, Runnable)
+/* static */
+already_AddRefed<nsIFile> FileInfo::GetFileForFileInfo(FileInfo* aFileInfo) {
+  FileManager* fileManager = aFileInfo->Manager();
+  nsCOMPtr<nsIFile> directory = fileManager->GetDirectory();
+  if (NS_WARN_IF(!directory)) {
+    return nullptr;
+  }
 
-NS_IMETHODIMP
-CleanupFileRunnable::Run()
-{
-  MOZ_ASSERT(NS_IsMainThread());
+  nsCOMPtr<nsIFile> file =
+      FileManager::GetFileForId(directory, aFileInfo->Id());
+  if (NS_WARN_IF(!file)) {
+    return nullptr;
+  }
 
-  DoCleanup(mFileManager, mFileId);
-
-  return NS_OK;
+  return file.forget();
 }
 
-} // namespace indexedDB
-} // namespace dom
-} // namespace mozilla
+}  // namespace indexedDB
+}  // namespace dom
+}  // namespace mozilla

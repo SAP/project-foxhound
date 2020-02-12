@@ -7,32 +7,34 @@
 #ifndef mozilla_SandboxFilter_h
 #define mozilla_SandboxFilter_h
 
+#include <vector>
 #include "mozilla/Atomics.h"
+#include "mozilla/Range.h"
 #include "mozilla/UniquePtr.h"
 
 namespace sandbox {
 namespace bpf_dsl {
 class Policy;
 }
-}
+}  // namespace sandbox
 
 namespace mozilla {
-
-#ifdef MOZ_CONTENT_SANDBOX
 class SandboxBrokerClient;
 
-UniquePtr<sandbox::bpf_dsl::Policy> GetContentSandboxPolicy(SandboxBrokerClient* aMaybeBroker);
-#endif
+struct ContentProcessSandboxParams;
 
-#ifdef MOZ_GMP_SANDBOX
-struct SandboxOpenedFile {
-  const char *mPath;
-  Atomic<int> mFd;
-};
+UniquePtr<sandbox::bpf_dsl::Policy> GetContentSandboxPolicy(
+    SandboxBrokerClient* aMaybeBroker, ContentProcessSandboxParams&& aParams);
 
-UniquePtr<sandbox::bpf_dsl::Policy> GetMediaSandboxPolicy(SandboxOpenedFile* aPlugin);
-#endif
+class SandboxOpenedFiles;
 
-} // namespace mozilla
+// The SandboxOpenedFiles object must live until the process exits.
+UniquePtr<sandbox::bpf_dsl::Policy> GetMediaSandboxPolicy(
+    const SandboxOpenedFiles* aFiles);
+
+UniquePtr<sandbox::bpf_dsl::Policy> GetDecoderSandboxPolicy(
+    SandboxBrokerClient* aMaybeBroker);
+
+}  // namespace mozilla
 
 #endif

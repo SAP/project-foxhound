@@ -2,141 +2,357 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+var gArgs;
 var gBrowser;
-var gProgressListener;
+var gURLBar;
 var gDebugger;
-var gRTestIndexList;
-var gRTestURLList = null;
+var gMultiProcessBrowser = window.docShell.QueryInterface(Ci.nsILoadContext)
+  .useRemoteTabs;
+var gFissionBrowser = window.docShell.QueryInterface(Ci.nsILoadContext)
+  .useRemoteSubframes;
+var gWritingProfile = false;
+var gWrittenProfile = false;
 
-const nsILayoutDebuggingTools = Components.interfaces.nsILayoutDebuggingTools;
-const nsIDocShell = Components.interfaces.nsIDocShell;
-const nsIWebProgressListener = Components.interfaces.nsIWebProgressListener;
+const { E10SUtils } = ChromeUtils.import(
+  "resource://gre/modules/E10SUtils.jsm"
+);
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const NS_LAYOUT_DEBUGGINGTOOLS_CONTRACTID = "@mozilla.org/layout-debug/layout-debuggingtools;1";
+const HELPER_URL = "chrome://layoutdebug/content/layoutdebug-helper.js";
 
+const FEATURES = {
+  paintFlashing: "nglayout.debug.paint_flashing",
+  paintDumping: "nglayout.debug.paint_dumping",
+  invalidateDumping: "nglayout.debug.invalidate_dumping",
+  eventDumping: "nglayout.debug.event_dumping",
+  motionEventDumping: "nglayout.debug.motion_event_dumping",
+  crossingEventDumping: "nglayout.debug.crossing_event_dumping",
+  reflowCounts: "layout.reflow.showframecounts",
+};
 
-function nsLDBBrowserContentListener()
-{
+const COMMANDS = [
+  "dumpWebShells",
+  "dumpContent",
+  "dumpFrames",
+  "dumpViews",
+  "dumpStyleSheets",
+  "dumpMatchedRules",
+  "dumpComputedStyles",
+  "dumpReflowStats",
+];
+
+class Debugger {
+  constructor() {
+    this._flags = new Map();
+    this._visualDebugging = false;
+    this._visualEventDebugging = false;
+    this._attached = false;
+
+    for (let [name, pref] of Object.entries(FEATURES)) {
+      this._flags.set(name, !!Preferences.get(pref, false));
+    }
+
+    this.attachBrowser();
+  }
+
+  detachBrowser() {
+    if (!this._attached) {
+      return;
+    }
+    gBrowser.removeProgressListener(this._progressListener);
+    this._progressListener = null;
+    this._attached = false;
+  }
+
+  attachBrowser() {
+    if (this._attached) {
+      throw "already attached";
+    }
+    this._progressListener = new nsLDBBrowserContentListener();
+    gBrowser.addProgressListener(this._progressListener);
+    gBrowser.messageManager.loadFrameScript(HELPER_URL, false);
+    this._attached = true;
+  }
+
+  dumpProcessIDs() {
+    let parentPid = Services.appinfo.processID;
+    let [contentPid, ...framePids] = E10SUtils.getBrowserPids(
+      gBrowser,
+      gFissionBrowser
+    );
+
+    dump(`Parent pid: ${parentPid}\n`);
+    dump(`Content pid: ${contentPid || "-"}\n`);
+    if (gFissionBrowser) {
+      dump(`Subframe pids: ${framePids.length ? framePids.join(", ") : "-"}\n`);
+    }
+  }
+
+  get visualDebugging() {
+    return this._visualDebugging;
+  }
+
+  set visualDebugging(v) {
+    v = !!v;
+    this._visualDebugging = v;
+    this._sendMessage("setVisualDebugging", v);
+  }
+
+  get visualEventDebugging() {
+    return this._visualEventDebugging;
+  }
+
+  set visualEventDebugging(v) {
+    v = !!v;
+    this._visualEventDebugging = v;
+    this._sendMessage("setVisualEventDebugging", v);
+  }
+
+  _sendMessage(name, arg) {
+    gBrowser.messageManager.sendAsyncMessage("LayoutDebug:Call", { name, arg });
+  }
+}
+
+for (let [name, pref] of Object.entries(FEATURES)) {
+  Object.defineProperty(Debugger.prototype, name, {
+    get: function() {
+      return this._flags.get(name);
+    },
+    set: function(v) {
+      v = !!v;
+      Preferences.set(pref, v);
+      this._flags.set(name, v);
+      // XXX PresShell should watch for this pref change itself.
+      if (name == "reflowCounts") {
+        this._sendMessage("setReflowCounts", v);
+      }
+      this._sendMessage("forceRefresh");
+    },
+  });
+}
+
+for (let name of COMMANDS) {
+  Debugger.prototype[name] = function() {
+    this._sendMessage(name);
+  };
+}
+
+const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+
+function autoCloseIfNeeded(aCrash) {
+  if (!gArgs.autoclose) {
+    return;
+  }
+  setTimeout(function() {
+    if (aCrash) {
+      let browser = document.createElementNS(XUL_NS, "browser");
+      // FIXME(emilio): we could use gBrowser if we bothered get the process switches right.
+      //
+      // Doesn't seem worth for this particular case.
+      document.documentElement.appendChild(browser);
+      browser.loadURI("about:crashparent", {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      return;
+    }
+    if (gArgs.profile && Services.profiler) {
+      dumpProfile();
+    } else {
+      Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
+    }
+  }, gArgs.delay * 1000);
+}
+
+function nsLDBBrowserContentListener() {
   this.init();
 }
 
 nsLDBBrowserContentListener.prototype = {
+  init: function() {
+    this.mStatusText = document.getElementById("status-text");
+    this.mForwardButton = document.getElementById("forward-button");
+    this.mBackButton = document.getElementById("back-button");
+    this.mStopButton = document.getElementById("stop-button");
+  },
 
-  init : function()
-    {
-      this.mStatusText = document.getElementById("status-text");
-      this.mURLBar = document.getElementById("urlbar");
-      this.mForwardButton = document.getElementById("forward-button");
-      this.mBackButton = document.getElementById("back-button");
-      this.mStopButton = document.getElementById("stop-button");
-    },
-
-  QueryInterface : function(aIID)
-    {
-      if (aIID.equals(Components.interfaces.nsIWebProgressListener) ||
-          aIID.equals(Components.interfaces.nsISupportsWeakReference) ||
-          aIID.equals(Components.interfaces.nsISupports))
-        return this;
-      throw Components.results.NS_NOINTERFACE;
-    },
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIWebProgressListener,
+    Ci.nsISupportsWeakReference,
+  ]),
 
   // nsIWebProgressListener implementation
-  onStateChange : function(aWebProgress, aRequest, aStateFlags, aStatus)
-    {
-      if (!(aStateFlags & nsIWebProgressListener.STATE_IS_NETWORK) ||
-          aWebProgress != gBrowser.webProgress)
-        return;
+  onStateChange: function(aWebProgress, aRequest, aStateFlags, aStatus) {
+    if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK)) {
+      return;
+    }
 
-      if (aStateFlags & nsIWebProgressListener.STATE_START) {
-        this.setButtonEnabled(this.mStopButton, true);
-        this.setButtonEnabled(this.mForwardButton, gBrowser.canGoForward);
-        this.setButtonEnabled(this.mBackButton, gBrowser.canGoBack);
-        this.mStatusText.value = "loading...";
-        this.mLoading = true;
-
-      } else if (aStateFlags & nsIWebProgressListener.STATE_STOP) {
-        this.setButtonEnabled(this.mStopButton, false);
-        this.mStatusText.value = this.mURLBar.value + " loaded";
-
-        if (gRTestURLList && this.mLoading) {
-          // Let other things happen in the first 20ms, since this
-          // doesn't really seem to be when the page is done loading.
-          setTimeout("gRTestURLList.doneURL()", 20);
-        }
-        this.mLoading = false;
-      }
-    },
-
-  onProgressChange : function(aWebProgress, aRequest,
-                              aCurSelfProgress, aMaxSelfProgress,
-                              aCurTotalProgress, aMaxTotalProgress)
-    {
-    },
-
-  onLocationChange : function(aWebProgress, aRequest, aLocation, aFlags)
-    {
-      this.mURLBar.value = aLocation.spec;
+    if (aStateFlags & Ci.nsIWebProgressListener.STATE_START) {
+      this.setButtonEnabled(this.mStopButton, true);
       this.setButtonEnabled(this.mForwardButton, gBrowser.canGoForward);
       this.setButtonEnabled(this.mBackButton, gBrowser.canGoBack);
-    },
+      this.mStatusText.value = "loading...";
+      this.mLoading = true;
+    } else if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
+      this.setButtonEnabled(this.mStopButton, false);
+      this.mStatusText.value = gURLBar.value + " loaded";
+      this.mLoading = false;
 
-  onStatusChange : function(aWebProgress, aRequest, aStatus, aMessage)
-    {
-      this.mStatusText.value = aMessage;
-    },
+      if (gBrowser.currentURI.spec != "about:blank") {
+        // We check for about:blank just to avoid one or two STATE_STOP
+        // notifications that occur before the loadURI() call completes.
+        // This does mean that --autoclose doesn't work when the URL on
+        // the command line is about:blank (or not specified), but that's
+        // not a big deal.
+        autoCloseIfNeeded(false);
+      }
+    }
+  },
 
-  onSecurityChange : function(aWebProgress, aRequest, aState)
-    {
-    },
+  onProgressChange: function(
+    aWebProgress,
+    aRequest,
+    aCurSelfProgress,
+    aMaxSelfProgress,
+    aCurTotalProgress,
+    aMaxTotalProgress
+  ) {},
+
+  onLocationChange: function(aWebProgress, aRequest, aLocation, aFlags) {
+    gURLBar.value = aLocation.spec;
+    this.setButtonEnabled(this.mForwardButton, gBrowser.canGoForward);
+    this.setButtonEnabled(this.mBackButton, gBrowser.canGoBack);
+  },
+
+  onStatusChange: function(aWebProgress, aRequest, aStatus, aMessage) {
+    this.mStatusText.value = aMessage;
+  },
+
+  onSecurityChange: function(aWebProgress, aRequest, aState) {},
+
+  onContentBlockingEvent: function(aWebProgress, aRequest, aEvent) {},
 
   // non-interface methods
-  setButtonEnabled : function(aButtonElement, aEnabled)
-    {
-      if (aEnabled)
-        aButtonElement.removeAttribute("disabled");
-      else
-        aButtonElement.setAttribute("disabled", "true");
-    },
+  setButtonEnabled: function(aButtonElement, aEnabled) {
+    if (aEnabled) {
+      aButtonElement.removeAttribute("disabled");
+    } else {
+      aButtonElement.setAttribute("disabled", "true");
+    }
+  },
 
-  mStatusText : null,
-  mURLBar : null,
-  mForwardButton : null,
-  mBackButton : null,
-  mStopButton : null,
+  mStatusText: null,
+  mForwardButton: null,
+  mBackButton: null,
+  mStopButton: null,
 
-  mLoading : false
+  mLoading: false,
+};
 
+function parseArguments() {
+  let args = {
+    url: null,
+    autoclose: false,
+    delay: 0,
+  };
+  if (window.arguments) {
+    args.url = window.arguments[0];
+    for (let i = 1; i < window.arguments.length; ++i) {
+      let arg = window.arguments[i];
+      if (/^autoclose=(.*)$/.test(arg)) {
+        args.autoclose = true;
+        args.delay = +RegExp.$1;
+      } else if (/^profile=(.*)$/.test(arg)) {
+        args.profile = true;
+        args.profileFilename = RegExp.$1;
+      } else {
+        throw `Unknown option ${arg}`;
+      }
+    }
+  }
+  return args;
 }
 
-function OnLDBLoad()
-{
+const TabCrashedObserver = {
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "ipc:content-shutdown":
+        subject.QueryInterface(Ci.nsIPropertyBag2);
+        if (!subject.get("abnormal")) {
+          return;
+        }
+        break;
+      case "oop-frameloader-crashed":
+        break;
+    }
+    autoCloseIfNeeded(true);
+  },
+};
+
+function OnLDBLoad() {
   gBrowser = document.getElementById("browser");
+  gURLBar = document.getElementById("urlbar");
 
-  gProgressListener = new nsLDBBrowserContentListener();
-  gBrowser.addProgressListener(gProgressListener);
-
-  gDebugger = Components.classes[NS_LAYOUT_DEBUGGINGTOOLS_CONTRACTID].
-                  createInstance(nsILayoutDebuggingTools);
-
-  if (window.arguments && window.arguments[0])
-    gBrowser.loadURI(window.arguments[0]);
-  else
-    gBrowser.goHome();
-
-  gDebugger.init(gBrowser.contentWindow);
+  gDebugger = new Debugger();
 
   checkPersistentMenus();
-  gRTestIndexList = new RTestIndexList();
+
+  Services.obs.addObserver(TabCrashedObserver, "ipc:content-shutdown");
+  Services.obs.addObserver(TabCrashedObserver, "oop-frameloader-crashed");
+
+  // Pretend slightly to be like a normal browser, so that SessionStore.jsm
+  // doesn't get too confused.  The effect is that we'll never switch process
+  // type when navigating, and for layout debugging purposes we don't bother
+  // about getting that right.
+  gBrowser.getTabForBrowser = function() {
+    return null;
+  };
+
+  gArgs = parseArguments();
+
+  if (gArgs.profile) {
+    if (Services.profiler) {
+      let env = Cc["@mozilla.org/process/environment;1"].getService(
+        Ci.nsIEnvironment
+      );
+      if (!env.exists("MOZ_PROFILER_SYMBOLICATE")) {
+        dump(
+          "Warning: MOZ_PROFILER_SYMBOLICATE environment variable not set; " +
+            "profile will not be symbolicated.\n"
+        );
+      }
+      Services.profiler.StartProfiler(
+        1 << 20,
+        1,
+        ["default"],
+        ["GeckoMain", "Compositor", "Renderer", "RenderBackend", "StyleThread"]
+      );
+      if (gArgs.url) {
+        // Switch to the right kind of content process, and wait a bit so that
+        // the profiler has had a chance to attach to it.
+        updateBrowserRemotenessByURL(gArgs.url);
+        setTimeout(() => loadURI(gArgs.url), 3000);
+        return;
+      }
+    } else {
+      dump("Cannot profile Layout Debugger; profiler was not compiled in.\n");
+    }
+  }
+
+  if (gArgs.url) {
+    loadURI(gArgs.url);
+  }
 }
 
-function checkPersistentMenu(item)
-{
+function checkPersistentMenu(item) {
   var menuitem = document.getElementById("menu_" + item);
   menuitem.setAttribute("checked", gDebugger[item]);
 }
 
-function checkPersistentMenus()
-{
+function checkPersistentMenus() {
   // Restore the toggles that are stored in prefs.
   checkPersistentMenu("paintFlashing");
   checkPersistentMenu("paintDumping");
@@ -147,288 +363,118 @@ function checkPersistentMenus()
   checkPersistentMenu("reflowCounts");
 }
 
+function dumpProfile() {
+  gWritingProfile = true;
 
-function OnLDBUnload()
-{
-  gBrowser.removeProgressListener(gProgressListener);
+  let cwd = Services.dirsvc.get("CurWorkD", Ci.nsIFile).path;
+  let filename = OS.Path.join(cwd, gArgs.profileFilename);
+
+  dump(`Writing profile to ${filename}...\n`);
+
+  Services.profiler.dumpProfileToFileAsync(filename).then(function() {
+    gWritingProfile = false;
+    gWrittenProfile = true;
+    dump(`done\n`);
+    Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
+  });
 }
 
-function toggle(menuitem)
-{
+function OnLDBBeforeUnload(event) {
+  if (gArgs.profile && Services.profiler) {
+    if (gWrittenProfile) {
+      // We've finished writing the profile.  Allow the window to close.
+      return;
+    }
+
+    event.preventDefault();
+
+    if (gWritingProfile) {
+      // Wait for the profile to finish being written out.
+      return;
+    }
+
+    // The dumpProfileToFileAsync call can block for a while, so run it off a
+    // timeout to avoid annoying the window manager if we're doing this in
+    // response to clicking the window's close button.
+    setTimeout(dumpProfile, 0);
+  }
+}
+
+function OnLDBUnload() {
+  gDebugger.detachBrowser();
+  Services.obs.removeObserver(TabCrashedObserver, "ipc:content-shutdown");
+  Services.obs.removeObserver(TabCrashedObserver, "oop-frameloader-crashed");
+}
+
+function toggle(menuitem) {
   // trim the initial "menu_"
   var feature = menuitem.id.substring(5);
   gDebugger[feature] = menuitem.getAttribute("checked") == "true";
 }
 
-function openFile()
-{
-  var nsIFilePicker = Components.interfaces.nsIFilePicker;
-  var fp = Components.classes["@mozilla.org/filepicker;1"]
-        .createInstance(nsIFilePicker);
-  fp.init(window, "Select a File", nsIFilePicker.modeOpen);
-  fp.appendFilters(nsIFilePicker.filterHTML | nsIFilePicker.filterAll);
-  if (fp.show() == nsIFilePicker.returnOK && fp.fileURL.spec &&
-                fp.fileURL.spec.length > 0) {
-    gBrowser.loadURI(fp.fileURL.spec);
+function openFile() {
+  var fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+  fp.init(window, "Select a File", Ci.nsIFilePicker.modeOpen);
+  fp.appendFilters(Ci.nsIFilePicker.filterHTML | Ci.nsIFilePicker.filterAll);
+  fp.open(rv => {
+    if (
+      rv == Ci.nsIFilePicker.returnOK &&
+      fp.fileURL.spec &&
+      fp.fileURL.spec.length > 0
+    ) {
+      loadURI(fp.fileURL.spec);
+    }
+  });
+}
+
+// A simplified version of the function with the same name in tabbrowser.js.
+function updateBrowserRemotenessByURL(aURL) {
+  let remoteType = E10SUtils.getRemoteTypeForURI(
+    aURL,
+    gMultiProcessBrowser,
+    gFissionBrowser,
+    gBrowser.remoteType,
+    gBrowser.currentURI
+  );
+  if (gBrowser.remoteType != remoteType) {
+    gDebugger.detachBrowser();
+    if (remoteType == E10SUtils.NOT_REMOTE) {
+      gBrowser.removeAttribute("remote");
+      gBrowser.removeAttribute("remoteType");
+    } else {
+      gBrowser.setAttribute("remote", "true");
+      gBrowser.setAttribute("remoteType", remoteType);
+    }
+    if (
+      !Services.prefs.getBoolPref(
+        "fission.rebuild_frameloaders_on_remoteness_change",
+        false
+      )
+    ) {
+      gBrowser.replaceWith(gBrowser);
+    } else {
+      gBrowser.changeRemoteness({ remoteType });
+      gBrowser.construct();
+    }
+    gDebugger.attachBrowser();
   }
 }
-const LDB_RDFNS = "http://mozilla.org/newlayout/LDB-rdf#";
-const NC_RDFNS = "http://home.netscape.com/NC-rdf#";
 
-function RTestIndexList() {
-  this.init();
+function loadURI(aURL) {
+  // We don't bother trying to handle navigations within the browser to new URLs
+  // that should be loaded in a different process.
+  updateBrowserRemotenessByURL(aURL);
+  gBrowser.loadURI(aURL, {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
 }
 
-RTestIndexList.prototype = {
-
-  init : function()
-    {
-      const nsIPrefService = Components.interfaces.nsIPrefService;
-      const PREF_SERVICE_CONTRACTID = "@mozilla.org/preferences-service;1";
-      const PREF_BRANCH_NAME = "layout_debugger.rtest_url.";
-      const nsIRDFService = Components.interfaces.nsIRDFService;
-      const RDF_SERVICE_CONTRACTID = "@mozilla.org/rdf/rdf-service;1";
-      const nsIRDFDataSource = Components.interfaces.nsIRDFDataSource;
-      const RDF_DATASOURCE_CONTRACTID =
-          "@mozilla.org/rdf/datasource;1?name=in-memory-datasource";
-
-      this.mPrefService = Components.classes[PREF_SERVICE_CONTRACTID].
-                              getService(nsIPrefService);
-      this.mPrefBranch = this.mPrefService.getBranch(PREF_BRANCH_NAME);
-
-      this.mRDFService = Components.classes[RDF_SERVICE_CONTRACTID].
-                             getService(nsIRDFService);
-      this.mDataSource = Components.classes[RDF_DATASOURCE_CONTRACTID].
-                             createInstance(nsIRDFDataSource);
-
-      this.mLDB_Root = this.mRDFService.GetResource(LDB_RDFNS + "Root");
-      this.mNC_Name = this.mRDFService.GetResource(NC_RDFNS + "name");
-      this.mNC_Child = this.mRDFService.GetResource(NC_RDFNS + "child");
-
-      this.load();
-
-      document.getElementById("menu_RTest_baseline").database.
-          AddDataSource(this.mDataSource);
-      document.getElementById("menu_RTest_verify").database.
-          AddDataSource(this.mDataSource);
-      document.getElementById("menu_RTest_remove").database.
-          AddDataSource(this.mDataSource);
-    },
-
-  save : function()
-    {
-      this.mPrefBranch.deleteBranch("");
-
-      const nsIRDFLiteral = Components.interfaces.nsIRDFLiteral;
-      const nsIRDFResource = Components.interfaces.nsIRDFResource;
-      var etor = this.mDataSource.GetTargets(this.mLDB_Root,
-                                             this.mNC_Child, true);
-      var i = 0;
-      while (etor.hasMoreElements()) {
-        var resource = etor.getNext().QueryInterface(nsIRDFResource);
-        var literal = this.mDataSource.GetTarget(resource, this.mNC_Name, true);
-        literal = literal.QueryInterface(nsIRDFLiteral);
-        this.mPrefBranch.setCharPref(i.toString(), literal.Value);
-        ++i;
-      }
-
-      this.mPrefService.savePrefFile(null);
-    },
-
-  load : function()
-    {
-      var prefList = this.mPrefBranch.getChildList("");
-
-      var i = 0;
-      for (var pref in prefList) {
-        var file = this.mPrefBranch.getCharPref(pref);
-        var resource = this.mRDFService.GetResource(file);
-        var literal = this.mRDFService.GetLiteral(file);
-        this.mDataSource.Assert(this.mLDB_Root, this.mNC_Child, resource, true);
-        this.mDataSource.Assert(resource, this.mNC_Name, literal, true);
-        ++i;
-      }
-
-    },
-
-  /* Add a new list of regression tests to the menus. */
-  add : function()
-    {
-      const nsIFilePicker = Components.interfaces.nsIFilePicker;
-      const NS_FILEPICKER_CONTRACTID = "@mozilla.org/filepicker;1";
-
-      var fp = Components.classes[NS_FILEPICKER_CONTRACTID].
-                   createInstance(nsIFilePicker);
-
-      // XXX l10n (but this is just for 5 developers, so no problem)
-      fp.init(window, "New Regression Test List", nsIFilePicker.modeOpen);
-      fp.appendFilters(nsIFilePicker.filterAll);
-      fp.defaultString = "rtest.lst";
-      if (fp.show() != nsIFilePicker.returnOK)
-        return;
-
-      var file = fp.file.persistentDescriptor;
-      var resource = this.mRDFService.GetResource(file);
-      var literal = this.mRDFService.GetLiteral(file);
-      this.mDataSource.Assert(this.mLDB_Root, this.mNC_Child, resource, true);
-      this.mDataSource.Assert(resource, this.mNC_Name, literal, true);
-
-      this.save();
-
-    },
-
-  remove : function(file)
-    {
-      var resource = this.mRDFService.GetResource(file);
-      var literal = this.mRDFService.GetLiteral(file);
-      this.mDataSource.Unassert(this.mLDB_Root, this.mNC_Child, resource);
-      this.mDataSource.Unassert(resource, this.mNC_Name, literal);
-
-      this.save();
-    },
-
-  mPrefBranch : null,
-  mPrefService : null,
-  mRDFService : null,
-  mDataSource : null,
-  mLDB_Root : null,
-  mNC_Child : null,
-  mNC_Name : null
+function focusURLBar() {
+  gURLBar.focus();
+  gURLBar.select();
 }
 
-const nsIFileInputStream = Components.interfaces.nsIFileInputStream;
-const nsILineInputStream = Components.interfaces.nsILineInputStream;
-const nsIFile = Components.interfaces.nsIFile;
-const nsILocalFile = Components.interfaces.nsILocalFile;
-const nsIFileURL = Components.interfaces.nsIFileURL;
-const nsIIOService = Components.interfaces.nsIIOService;
-const nsILayoutRegressionTester = Components.interfaces.nsILayoutRegressionTester;
-
-const NS_LOCAL_FILE_CONTRACTID = "@mozilla.org/file/local;1";
-const IO_SERVICE_CONTRACTID = "@mozilla.org/network/io-service;1";
-const NS_LOCALFILEINPUTSTREAM_CONTRACTID =
-          "@mozilla.org/network/file-input-stream;1";
-
-
-function RunRTest(aFilename, aIsBaseline, aIsPrinting)
-{
-  if (gRTestURLList) {
-    // XXX Does alert work?
-    alert("Already running regression test.\n");
-    return;
-  }
-  dump("Running " + (aIsBaseline?"baseline":"verify") + 
-      (aIsPrinting?" PrintMode":"") + " test for " + aFilename + ".\n");
-
-  var listFile = Components.classes[NS_LOCAL_FILE_CONTRACTID].
-                    createInstance(nsILocalFile);
-  listFile.persistentDescriptor = aFilename;
-  gRTestURLList = new RTestURLList(listFile, aIsBaseline, aIsPrinting);
-  gRTestURLList.startURL();
-}
-
-function RTestURLList(aLocalFile, aIsBaseline, aIsPrinting) {
-  this.init(aLocalFile, aIsBaseline, aIsPrinting);
-}
-
-RTestURLList.prototype = {
-  init : function(aLocalFile, aIsBaseline, aIsPrinting)
-    {
-      this.mIsBaseline = aIsBaseline;
-      this.mIsPrinting = aIsPrinting;
-      this.mURLs = new Array();
-      this.readFileList(aLocalFile);
-      this.mRegressionTester =
-        Components.classes["@mozilla.org/layout-debug/regressiontester;1"].
-          createInstance(nsILayoutRegressionTester)
-    },
-
-  readFileList : function(aLocalFile)
-    {
-      var ios = Components.classes[IO_SERVICE_CONTRACTID]
-                .getService(nsIIOService);
-      var dirURL = ios.newFileURI(aLocalFile.parent);
-
-      var fis = Components.classes[NS_LOCALFILEINPUTSTREAM_CONTRACTID].
-                    createInstance(nsIFileInputStream);
-      fis.init(aLocalFile, -1, -1, false);
-      var lis = fis.QueryInterface(nsILineInputStream);
-
-      var line = {value:null};
-      do {
-        var more = lis.readLine(line);
-        var str = line.value;
-        str = /^[^#]*/.exec(str); // strip everything after "#"
-        str = /\S*/.exec(str); // take the first chunk of non-whitespace
-        if (!str || str == "")
-          continue;
-      
-        var item = dirURL.resolve(str);
-        if (item.match(/\/rtest.lst$/)) {
-          var itemurl = ios.newURI(item, null, null);
-          itemurl = itemurl.QueryInterface(nsIFileURL);
-          this.readFileList(itemurl.file);
-        } else {
-          this.mURLs.push( {url:item, dir:aLocalFile.parent, relurl:str} );
-        }
-      } while (more);
-    },
-
-  doneURL : function()
-  {
-    var basename =
-      String(this.mCurrentURL.relurl).replace(/[:=&.\/?]/g, "_") + ".rgd";
-
-    var data = this.mCurrentURL.dir.clone();
-    data.append( this.mIsBaseline ? "baseline" : "verify");
-    if (!data.exists())
-      data.create(nsIFile.DIRECTORY_TYPE, 0o777)
-    data.append(basename);
-
-    dump("Writing regression data to " +
-         data.QueryInterface(nsILocalFile).persistentDescriptor + "\n");
-    if (this.mIsPrinting) {
-      this.mRegressionTester.dumpFrameModel(gBrowser.contentWindow, data,
-        nsILayoutRegressionTester.DUMP_FLAGS_MASK_PRINT_MODE);
-    }
-    else {
-       this.mRegressionTester.dumpFrameModel(gBrowser.contentWindow, data, 0);
-    }
-     
-      
-
-    if (!this.mIsBaseline) {
-      var base_data = this.mCurrentURL.dir.clone();
-      base_data.append("baseline");
-      base_data.append(basename);
-      dump("Comparing to regression data from " +
-           base_data.QueryInterface(nsILocalFile).persistentDescriptor + "\n");
-      var filesDiffer =
-        this.mRegressionTester.compareFrameModels(base_data, data,
-          nsILayoutRegressionTester.COMPARE_FLAGS_BRIEF)
-      dump("Comparison for " + this.mCurrentURL.url + " " +
-           (filesDiffer ? "failed" : "passed") + ".\n");
-    }
-
-    this.mCurrentURL = null;
-
-    this.startURL();
-  },
-
-  startURL : function()
-  {
-    this.mCurrentURL = this.mURLs.shift();
-    if (!this.mCurrentURL) {
-      gRTestURLList = null;
-      return;
-    }
-
-    gBrowser.loadURI(this.mCurrentURL.url);
-  },
-
-  mURLs : null,
-  mCurrentURL : null, // url (string), dir (nsIFileURL), relurl (string)
-  mIsBaseline : null,
-  mRegressionTester : null,
-  mIsPrinting : null
+function go() {
+  loadURI(gURLBar.value);
+  gBrowser.focus();
 }

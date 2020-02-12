@@ -14,12 +14,13 @@
 enum GridDeclaration { "explicit", "implicit" };
 
 /**
- * Tracks expanded from auto-fill or auto-fit have repeat state, other tracks
- * are static.
+ * Tracks expanded from auto-fill are repeat , auto-fits with elements are
+ * also repeat, auto-fits with no elements are removed, other tracks are static.
  */
-enum GridTrackState { "static", "repeat" };
+enum GridTrackState { "static", "repeat", "removed" };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface Grid
 {
   readonly attribute GridDimension rows;
@@ -28,14 +29,16 @@ interface Grid
   readonly attribute sequence<GridArea> areas;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridDimension
 {
   readonly attribute GridLines lines;
   readonly attribute GridTracks tracks;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridLines
 {
   readonly attribute unsigned long length;
@@ -47,7 +50,8 @@ interface GridLines
   getter GridLine? item(unsigned long index);
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridLine
 {
   /**
@@ -71,12 +75,27 @@ interface GridLine
   readonly attribute GridDeclaration type;
 
   /**
-   * Number is the 1-indexed index of the line in flow order.
+   * Number is the 1-indexed index of the line in flow order. The
+   * first explicit line has number 1, and numbers increment by 1 for
+   * each line after that. Lines before the first explicit line
+   * have number 0, which is not a valid addressable line number, and
+   * should be filtered out by callers.
    */
   readonly attribute unsigned long number;
+
+  /**
+   * NegativeNumber is the 1-indexed index of the line in reverse
+   * flow order. The last explicit line has negativeNumber -1, and
+   * negativeNumbers decrement by 1 for each line before that.
+   * Lines after the last explicit line have negativeNumber 0, which
+   * is not a valid addressable line number, and should be filtered
+   * out by callers.
+   */
+  readonly attribute long negativeNumber;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridTracks
 {
   readonly attribute unsigned long length;
@@ -88,7 +107,8 @@ interface GridTracks
   getter GridTrack? item(unsigned long index);
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridTrack
 {
   readonly attribute double start;
@@ -97,7 +117,8 @@ interface GridTrack
   readonly attribute GridTrackState state;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridArea
 {
   readonly attribute DOMString name;

@@ -13,7 +13,8 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FileSystemEntry, mParent, mFileSystem)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FileSystemEntry, mParent, mParentEntry,
+                                      mFileSystem)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FileSystemEntry)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(FileSystemEntry)
@@ -23,46 +24,57 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemEntry)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-/* static */ already_AddRefed<FileSystemEntry>
-FileSystemEntry::Create(nsIGlobalObject* aGlobalObject,
-                        const OwningFileOrDirectory& aFileOrDirectory,
-                        FileSystem* aFileSystem)
-{
+/* static */
+already_AddRefed<FileSystemEntry> FileSystemEntry::Create(
+    nsIGlobalObject* aGlobalObject,
+    const OwningFileOrDirectory& aFileOrDirectory, FileSystem* aFileSystem) {
   MOZ_ASSERT(aGlobalObject);
   MOZ_ASSERT(aFileSystem);
 
   RefPtr<FileSystemEntry> entry;
   if (aFileOrDirectory.IsFile()) {
-    entry = new FileSystemFileEntry(aGlobalObject,
-                                    aFileOrDirectory.GetAsFile(),
-                                    aFileSystem);
+    entry = new FileSystemFileEntry(aGlobalObject, aFileOrDirectory.GetAsFile(),
+                                    nullptr, aFileSystem);
   } else {
     MOZ_ASSERT(aFileOrDirectory.IsDirectory());
-    entry = new FileSystemDirectoryEntry(aGlobalObject,
-                                         aFileOrDirectory.GetAsDirectory(),
-                                         aFileSystem);
+    entry = new FileSystemDirectoryEntry(
+        aGlobalObject, aFileOrDirectory.GetAsDirectory(), nullptr, aFileSystem);
   }
 
   return entry.forget();
 }
 
 FileSystemEntry::FileSystemEntry(nsIGlobalObject* aGlobal,
+                                 FileSystemEntry* aParentEntry,
                                  FileSystem* aFileSystem)
-  : mParent(aGlobal)
-  , mFileSystem(aFileSystem)
-{
+    : mParent(aGlobal), mParentEntry(aParentEntry), mFileSystem(aFileSystem) {
   MOZ_ASSERT(aGlobal);
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemEntry::~FileSystemEntry()
-{}
+FileSystemEntry::~FileSystemEntry() {}
 
-JSObject*
-FileSystemEntry::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return FileSystemEntryBinding::Wrap(aCx, this, aGivenProto);
+JSObject* FileSystemEntry::WrapObject(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return FileSystemEntry_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // dom namespace
-} // mozilla namespace
+void FileSystemEntry::GetParent(
+    const Optional<OwningNonNull<FileSystemEntryCallback>>& aSuccessCallback,
+    const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback) {
+  if (!aSuccessCallback.WasPassed() && !aErrorCallback.WasPassed()) {
+    return;
+  }
+
+  if (mParentEntry) {
+    FileSystemEntryCallbackHelper::Call(GetParentObject(), aSuccessCallback,
+                                        mParentEntry);
+    return;
+  }
+
+  FileSystemEntryCallbackHelper::Call(GetParentObject(), aSuccessCallback,
+                                      this);
+}
+
+}  // namespace dom
+}  // namespace mozilla

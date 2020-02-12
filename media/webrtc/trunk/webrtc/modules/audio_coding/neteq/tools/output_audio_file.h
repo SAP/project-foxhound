@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_
+#define MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_
 
 #include <assert.h>
 #include <stdio.h>
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/audio_coding/neteq/tools/audio_sink.h"
+#include "modules/audio_coding/neteq/tools/audio_sink.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 namespace test {
@@ -42,9 +42,9 @@ class OutputAudioFile : public AudioSink {
  private:
   FILE* out_file_;
 
-  DISALLOW_COPY_AND_ASSIGN(OutputAudioFile);
+  RTC_DISALLOW_COPY_AND_ASSIGN(OutputAudioFile);
 };
 
 }  // namespace test
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_TOOLS_OUTPUT_AUDIO_FILE_H_

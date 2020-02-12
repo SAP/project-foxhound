@@ -1,16 +1,20 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import
 
+import pprint
+import signal
 import time
-import psutil
-import mozcrash
-from mozprocess import ProcessHandler
+import traceback
+import subprocess
 from threading import Event
 
+import mozcrash
+import psutil
 from mozlog import get_proxy_logger
-
-from utils import TalosError
+from mozprocess import ProcessHandler
+from talos.utils import TalosError
 
 LOG = get_proxy_logger()
 
@@ -34,7 +38,15 @@ class ProcessContext(object):
         """
         if self.process and self.process.is_running():
             LOG.debug("Terminating %s" % self.process)
-            self.process.terminate()
+            try:
+                self.process.terminate()
+            except psutil.NoSuchProcess:
+                procs = self.process.children()
+                for p in procs:
+                    c = ProcessContext()
+                    c.process = p
+                    c.kill_process()
+                return self.process.returncode
             try:
                 return self.process.wait(3)
             except psutil.TimeoutExpired:
@@ -49,6 +61,7 @@ class Reader(object):
         self.got_end_timestamp = False
         self.got_timeout = False
         self.timeout_message = ''
+        self.got_error = False
         self.event = event
         self.proc = None
 
@@ -60,6 +73,9 @@ class Reader(object):
             self.got_timeout = True
             self.timeout_message = 'TART'
             self.event.set()
+        elif line.startswith('TEST-UNEXPECTED-FAIL | '):
+            self.got_error = True
+            self.event.set()
 
         if not (line.startswith('JavaScript error:') or
                 line.startswith('JavaScript warning:')):
@@ -68,7 +84,7 @@ class Reader(object):
 
 
 def run_browser(command, minidump_dir, timeout=None, on_started=None,
-                **kwargs):
+                debug=None, debugger=None, debugger_args=None, **kwargs):
     """
     Run the browser using the given `command`.
 
@@ -92,11 +108,19 @@ def run_browser(command, minidump_dir, timeout=None, on_started=None,
 
     Returns a ProcessContext instance, with available output and pid used.
     """
+
+    debugger_info = find_debugger_info(debug, debugger, debugger_args)
+    if debugger_info is not None:
+        return run_in_debug_mode(command, debugger_info,
+                                 on_started=on_started, env=kwargs.get('env'))
+
     context = ProcessContext()
     first_time = int(time.time()) * 1000
     wait_for_quit_timeout = 5
     event = Event()
     reader = Reader(event)
+
+    LOG.info("Using env: %s" % pprint.pformat(kwargs['env']))
 
     kwargs['storeOutput'] = False
     kwargs['processOutputLine'] = reader
@@ -104,6 +128,7 @@ def run_browser(command, minidump_dir, timeout=None, on_started=None,
     proc = ProcessHandler(command, **kwargs)
     reader.proc = proc
     proc.run()
+
     LOG.process_start(proc.pid, ' '.join(command))
     try:
         context.process = psutil.Process(proc.pid)
@@ -112,6 +137,7 @@ def run_browser(command, minidump_dir, timeout=None, on_started=None,
         # wait until we saw __endTimestamp in the proc output,
         # or the browser just terminated - or we have a timeout
         if not event.wait(timeout):
+            LOG.info("Timeout waiting for test completion; killing browser...")
             # try to extract the minidump stack if the browser hangs
             mozcrash.kill_and_get_minidump(proc.pid, minidump_dir)
             raise TalosError("timeout")
@@ -126,12 +152,20 @@ def run_browser(command, minidump_dir, timeout=None, on_started=None,
                 )
         elif reader.got_timeout:
             raise TalosError('TIMEOUT: %s' % reader.timeout_message)
+        elif reader.got_error:
+            raise TalosError("unexpected error")
     finally:
         # this also handle KeyboardInterrupt
         # ensure early the process is really terminated
-        return_code = context.kill_process()
-        if return_code is None:
-            return_code = proc.wait(1)
+        return_code = None
+        try:
+            return_code = context.kill_process()
+            if return_code is None:
+                return_code = proc.wait(1)
+        except Exception:
+            # Maybe killed by kill_and_get_minidump(), maybe ended?
+            LOG.info("Unable to kill process")
+            LOG.info(traceback.format_exc())
 
     reader.output.append(
         "__startBeforeLaunchTimestamp%d__endBeforeLaunchTimestamp"
@@ -145,4 +179,45 @@ def run_browser(command, minidump_dir, timeout=None, on_started=None,
     else:
         LOG.debug("Unable to detect exit code of the process %s." % proc.pid)
     context.output = reader.output
+    return context
+
+
+def find_debugger_info(debug, debugger, debugger_args):
+    debuggerInfo = None
+    if debug or debugger or debugger_args:
+        import mozdebug
+
+        if not debugger:
+            # No debugger name was provided. Look for the default ones on
+            # current OS.
+            debugger = mozdebug.get_default_debugger_name(mozdebug.DebuggerSearch.KeepLooking)
+
+        debuggerInfo = None
+        if debugger:
+            debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
+
+        if debuggerInfo is None:
+            raise TalosError('Could not find a suitable debugger in your PATH.')
+
+    return debuggerInfo
+
+
+def run_in_debug_mode(command, debugger_info, on_started=None, env=None):
+    signal.signal(signal.SIGINT, lambda sigid, frame: None)
+    context = ProcessContext()
+    command_under_dbg = [debugger_info.path] + debugger_info.args + command
+
+    ttest_process = subprocess.Popen(command_under_dbg, env=env)
+
+    context.process = psutil.Process(ttest_process.pid)
+    if on_started:
+        on_started(context.process)
+
+    return_code = ttest_process.wait()
+
+    if return_code is not None:
+        LOG.process_exit(ttest_process.pid, return_code)
+    else:
+        LOG.debug("Unable to detect exit code of the process %s." % ttest_process.pid)
+
     return context

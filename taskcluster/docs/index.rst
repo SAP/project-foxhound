@@ -22,11 +22,16 @@ check out the :doc:`how-to section <how-tos>`.
 .. toctree::
 
     taskgraph
-    parameters
-    attributes
-    kinds
+    mach
+    loading
     transforms
-    yaml-templates
-    how-tos
+    optimization
     docker-images
-    caches
+    cron
+    try
+    actions
+    release-promotion
+    versioncontrol
+    taskcluster-config
+    how-tos
+    reference

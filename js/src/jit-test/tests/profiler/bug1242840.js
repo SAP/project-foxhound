@@ -1,7 +1,6 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
-enableSPSProfiling();
+enableGeckoProfiling();
 oomTest(() => {
     try {
         for (quit of ArrayBuffer);
@@ -10,7 +9,7 @@ oomTest(() => {
             case 0:
                 let x
             case 1:
-                (function() x)()
+                (function() { return x; })()
         }
     }
 })

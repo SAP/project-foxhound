@@ -11,30 +11,23 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "LoginImport",
-];
+const EXPORTED_SYMBOLS = ["LoginImport"];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
-const Cr = Components.results;
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Sqlite",
+  "resource://gre/modules/Sqlite.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
-                                  "resource://gre/modules/Sqlite.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-
-////////////////////////////////////////////////////////////////////////////////
-//// LoginImport
+// LoginImport
 
 /**
  * Provides an object that has a method to import login-related data from the
@@ -45,7 +38,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
  * @param aPath
  *        String containing the file path of the SQLite login database.
  */
-this.LoginImport = function (aStore, aPath) {
+this.LoginImport = function(aStore, aPath) {
   this.store = aStore;
   this.path = aPath;
 };
@@ -64,35 +57,38 @@ this.LoginImport.prototype = {
   /**
    * Imports login-related data from the previous SQLite storage format.
    */
-  import: Task.async(function* () {
+  async import() {
     // We currently migrate data directly from the database to the JSON store at
     // first run, then we set a preference to prevent repeating the import.
     // Thus, merging with existing data is not a use case we support.  This
     // restriction might be removed to support re-importing passwords set by an
     // old version by flipping the import preference and restarting.
-    if (this.store.data.logins.length > 0 ||
-        this.store.data.disabledHosts.length > 0) {
-      throw new Error("Unable to import saved passwords because some data " +
-                      "has already been imported or saved.");
+    if (this.store.data.logins.length) {
+      throw new Error(
+        "Unable to import saved passwords because some data " +
+          "has already been imported or saved."
+      );
     }
 
     // When a timestamp is not specified, we will use the same reference time.
     let referenceTimeMs = Date.now();
 
-    let connection = yield Sqlite.openConnection({ path: this.path });
+    let connection = await Sqlite.openConnection({ path: this.path });
     try {
-      let schemaVersion = yield connection.getSchemaVersion();
+      let schemaVersion = await connection.getSchemaVersion();
 
       // We support importing database schema versions from 3 onwards.
       // Version 3 was implemented in bug 316084 (Firefox 3.6, March 2009).
       // Version 4 was implemented in bug 465636 (Firefox 4, March 2010).
       // Version 5 was implemented in bug 718817 (Firefox 13, February 2012).
       if (schemaVersion < 3) {
-        throw new Error("Unable to import saved passwords because " +
-                        "the existing profile is too old.");
+        throw new Error(
+          "Unable to import saved passwords because " +
+            "the existing profile is too old."
+        );
       }
 
-      let rows = yield connection.execute("SELECT * FROM moz_logins");
+      let rows = await connection.execute("SELECT * FROM moz_logins");
       for (let row of rows) {
         try {
           let hostname = row.getResultByName("hostname");
@@ -119,7 +115,7 @@ this.LoginImport.prototype = {
             timeLastUsed = row.getResultByName("timeLastUsed");
             timePasswordChanged = row.getResultByName("timePasswordChanged");
             timesUsed = row.getResultByName("timesUsed");
-          } catch (ex) { }
+          } catch (ex) {}
 
           // These columns may be null either because they were not present in
           // the database or because the record was created on a new schema
@@ -139,37 +135,26 @@ this.LoginImport.prototype = {
 
           this.store.data.logins.push({
             id: this.store.data.nextId++,
-            hostname: hostname,
-            httpRealm: httpRealm,
-            formSubmitURL: formSubmitURL,
-            usernameField: usernameField,
-            passwordField: passwordField,
-            encryptedUsername: encryptedUsername,
-            encryptedPassword: encryptedPassword,
-            guid: guid,
-            encType: encType,
-            timeCreated: timeCreated,
-            timeLastUsed: timeLastUsed,
-            timePasswordChanged: timePasswordChanged,
-            timesUsed: timesUsed,
+            hostname,
+            httpRealm,
+            formSubmitURL,
+            usernameField,
+            passwordField,
+            encryptedUsername,
+            encryptedPassword,
+            guid,
+            encType,
+            timeCreated,
+            timeLastUsed,
+            timePasswordChanged,
+            timesUsed,
           });
         } catch (ex) {
           Cu.reportError("Error importing login: " + ex);
         }
       }
-
-      rows = yield connection.execute("SELECT * FROM moz_disabledHosts");
-      for (let row of rows) {
-        try {
-          let hostname = row.getResultByName("hostname");
-
-          this.store.data.disabledHosts.push(hostname);
-        } catch (ex) {
-          Cu.reportError("Error importing disabled host: " + ex);
-        }
-      }
     } finally {
-      yield connection.close();
+      await connection.close();
     }
-  }),
+  },
 };

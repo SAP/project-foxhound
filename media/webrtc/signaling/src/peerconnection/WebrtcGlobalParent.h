@@ -15,9 +15,7 @@ namespace dom {
 
 class WebrtcParents;
 
-class WebrtcGlobalParent
-  : public PWebrtcGlobalParent
-{
+class WebrtcGlobalParent : public PWebrtcGlobalParent {
   friend class ContentParent;
   friend class WebrtcGlobalInformation;
   friend class WebrtcContentParents;
@@ -29,25 +27,30 @@ class WebrtcGlobalParent
   static WebrtcGlobalParent* Alloc();
   static bool Dealloc(WebrtcGlobalParent* aActor);
 
-  virtual bool RecvGetStatsResult(const int& aRequestId,
-                                  nsTArray<RTCStatsReportInternal>&& aStats) override;
-  virtual bool RecvGetLogResult(const int& aRequestId,
-                                const WebrtcGlobalLog& aLog) override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY because we can't do MOZ_CAN_RUN_SCRIPT in
+  // ipdl-generated things yet.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  virtual mozilla::ipc::IPCResult RecvGetStatsResult(
+      const int& aRequestId,
+      nsTArray<RTCStatsReportInternal>&& aStats) override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY because we can't do MOZ_CAN_RUN_SCRIPT in
+  // ipdl-generated things yet.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  virtual mozilla::ipc::IPCResult RecvGetLogResult(
+      const int& aRequestId, const WebrtcGlobalLog& aLog) override;
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
-  virtual bool Recv__delete__() override;
+  virtual mozilla::ipc::IPCResult Recv__delete__() override;
 
   virtual ~WebrtcGlobalParent();
-public:
+
+ public:
   NS_INLINE_DECL_REFCOUNTING(WebrtcGlobalParent)
 
-  bool IsActive()
-  {
-    return !mShutdown;
-  }
+  bool IsActive() { return !mShutdown; }
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // _WEBRTC_GLOBAL_PARENT_H_

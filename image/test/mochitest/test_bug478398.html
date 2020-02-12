@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=478398
 -->
 <head>
   <title>Test for Bug 478398</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="imgutils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -60,7 +60,9 @@ function stage2()
   ok(isFrameDecoded("testimage"), "image should be decoded");
 
   // Wait 1.5 seconds, then finish the test
-  setTimeout("finishTest();", 1500);
+  setTimeout(function() {
+    finishTest();;
+  }, 1500);
 
 }
 

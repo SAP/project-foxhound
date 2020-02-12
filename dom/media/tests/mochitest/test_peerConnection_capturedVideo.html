@@ -1,19 +1,21 @@
-﻿<!DOCTYPE HTML>
+<!DOCTYPE HTML>
 <html>
 <head>
   <script type="application/javascript" src="pc.js"></script>
-  <script type="text/javascript" src="../../test/manifest.js"></script>
 </head>
 <body>
 <pre id="test">
-<script type="application/javascript;version=1.8">
-var manager = new MediaTestManager;
+<script type="application/javascript">
 
 createHTML({
   bug: "1081409",
   title: "Captured video-only over peer connection",
   visible: true
 }).then(() => new Promise(resolve => {
+  // Run tests in sequence for log readability.
+  PARALLEL_TESTS = 1;
+  let manager = new MediaTestManager;
+  window.mediaTestManager = manager;
   manager.runTests(getPlayableVideos(gLongerTests), startTest);
   manager.onFinished = () => {
     // Tear down before SimpleTest.finish.
@@ -25,17 +27,16 @@ createHTML({
 }))
 .catch(e => ok(false, "Unexpected " + e + ":\n" + e.stack));
 
-// Run tests in sequence for log readability.
-PARALLEL_TESTS = 1;
-
 function startTest(media, token) {
+  let manager = window.mediaTestManager;
   manager.started(token);
+  info("Starting test for " + media.name);
   var video = document.createElement('video');
   video.id = "id_" + media.name;
   video.width = 160;
   video.height = 120;
   video.muted = true;
-  video.loop = true;
+  video.controls = true;
   video.preload = "metadata";
   video.src = "../../test/" + media.name;
 
@@ -62,8 +63,12 @@ function startTest(media, token) {
       test.chain.replace("PC_LOCAL_GUM", [
         function PC_LOCAL_CAPTUREVIDEO(test) {
           test.pcLocal.attachLocalStream(stream);
+        },
+      ]);
+      test.chain.insertBefore("PC_LOCAL_WAIT_FOR_MEDIA_FLOW", [
+        function PC_LOCAL_START_MEDIA(test) {
           video.play();
-        }
+        },
       ]);
       return test.chain.execute();
     });

@@ -5,44 +5,56 @@
  *
  * The origin of this IDL file is
  * https://w3c.github.io/FileAPI/#file
+ * https://wicg.github.io/entries-api
  */
 
 interface nsIFile;
 
-[Constructor(sequence<BlobPart> fileBits,
-             USVString fileName, optional FilePropertyBag options),
-
- // These constructors are just for chrome callers:
- Constructor(Blob fileBits, optional ChromeFilePropertyBag options),
- Constructor(nsIFile fileBits, optional ChromeFilePropertyBag options),
- Constructor(USVString fileBits, optional ChromeFilePropertyBag options),
-
- Exposed=(Window,Worker)]
+[Exposed=(Window,Worker)]
 interface File : Blob {
+  [Throws]
+  constructor(sequence<BlobPart> fileBits,
+              USVString fileName, optional FilePropertyBag options = {});
+
   readonly attribute DOMString name;
 
   [GetterThrows]
   readonly attribute long long lastModified;
 };
 
-dictionary FilePropertyBag {
-  DOMString type = "";
+dictionary FilePropertyBag : BlobPropertyBag {
   long long lastModified;
 };
 
 dictionary ChromeFilePropertyBag : FilePropertyBag {
   DOMString name = "";
-  boolean temporary = false;
+  boolean existenceCheck = true;
+};
+
+// https://wicg.github.io/entries-api
+partial interface File {
+  [BinaryName="relativePath", Pref="dom.webkitBlink.dirPicker.enabled"]
+  readonly attribute USVString webkitRelativePath;
 };
 
 // Mozilla extensions
 partial interface File {
-  [GetterThrows, Deprecated="FileLastModifiedDate"]
-  readonly attribute Date lastModifiedDate;
-
-  [BinaryName="path", Func="mozilla::dom::Directory::WebkitBlinkDirectoryPickerEnabled"]
-  readonly attribute DOMString webkitRelativePath;
-
-  [GetterThrows, ChromeOnly]
+  [GetterThrows, ChromeOnly, NeedsCallerType]
   readonly attribute DOMString mozFullPath;
+};
+
+// Mozilla extensions
+// These 2 methods can be used only in these conditions:
+// - the main-thread
+// - parent process OR file process OR, only for testing, with pref
+//   `dom.file.createInChild' set to true.
+[Exposed=(Window)]
+partial interface File {
+  [ChromeOnly, Throws, NeedsCallerType]
+  static Promise<File> createFromNsIFile(nsIFile file,
+                                         optional ChromeFilePropertyBag options = {});
+
+  [ChromeOnly, Throws, NeedsCallerType]
+  static Promise<File> createFromFileName(USVString fileName,
+                                          optional ChromeFilePropertyBag options = {});
 };

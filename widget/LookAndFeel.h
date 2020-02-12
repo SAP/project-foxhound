@@ -7,7 +7,7 @@
 #define __LookAndFeel
 
 #ifndef MOZILLA_INTERNAL_API
-#error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
+#  error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
 #endif
 
 #include "nsDebug.h"
@@ -16,170 +16,21 @@
 
 struct gfxFontStyle;
 
-struct LookAndFeelInt
-{
+struct LookAndFeelInt {
   int32_t id;
-  int32_t value;
+  union {
+    int32_t value;
+    nscolor colorValue;
+  };
 };
 
 namespace mozilla {
 
-class LookAndFeel
-{
-public:
-  // When modifying this list, also modify nsXPLookAndFeel::sColorPrefs
-  // in widget/xpwidgts/nsXPLookAndFeel.cpp.
-  enum ColorID : uint8_t {
+enum class StyleSystemColor : uint8_t;
 
-    // WARNING : NO NEGATIVE VALUE IN THIS ENUMERATION
-    // see patch in bug 57757 for more information
-
-    eColorID_WindowBackground,
-    eColorID_WindowForeground,
-    eColorID_WidgetBackground,
-    eColorID_WidgetForeground,
-    eColorID_WidgetSelectBackground,
-    eColorID_WidgetSelectForeground,
-    eColorID_Widget3DHighlight,
-    eColorID_Widget3DShadow,
-    eColorID_TextBackground,
-    eColorID_TextForeground,
-    eColorID_TextSelectBackground,
-    eColorID_TextSelectForeground,
-    eColorID_TextSelectForegroundCustom,
-    eColorID_TextSelectBackgroundDisabled,
-    eColorID_TextSelectBackgroundAttention,
-    eColorID_TextHighlightBackground,
-    eColorID_TextHighlightForeground,
-
-    eColorID_IMERawInputBackground,
-    eColorID_IMERawInputForeground,
-    eColorID_IMERawInputUnderline,
-    eColorID_IMESelectedRawTextBackground,
-    eColorID_IMESelectedRawTextForeground,
-    eColorID_IMESelectedRawTextUnderline,
-    eColorID_IMEConvertedTextBackground,
-    eColorID_IMEConvertedTextForeground,
-    eColorID_IMEConvertedTextUnderline,
-    eColorID_IMESelectedConvertedTextBackground,
-    eColorID_IMESelectedConvertedTextForeground,
-    eColorID_IMESelectedConvertedTextUnderline,
-
-    eColorID_SpellCheckerUnderline,
-
-    // New CSS 2 color definitions
-    eColorID_activeborder,
-    eColorID_activecaption,
-    eColorID_appworkspace,
-    eColorID_background,
-    eColorID_buttonface,
-    eColorID_buttonhighlight,
-    eColorID_buttonshadow,
-    eColorID_buttontext,
-    eColorID_captiontext,
-    eColorID_graytext,
-    eColorID_highlight,
-    eColorID_highlighttext,
-    eColorID_inactiveborder,
-    eColorID_inactivecaption,
-    eColorID_inactivecaptiontext,
-    eColorID_infobackground,
-    eColorID_infotext,
-    eColorID_menu,
-    eColorID_menutext,
-    eColorID_scrollbar,
-    eColorID_threeddarkshadow,
-    eColorID_threedface,
-    eColorID_threedhighlight,
-    eColorID_threedlightshadow,
-    eColorID_threedshadow,
-    eColorID_window,
-    eColorID_windowframe,
-    eColorID_windowtext,
-
-    eColorID__moz_buttondefault,
-    // Colors which will hopefully become CSS3
-    eColorID__moz_field,
-    eColorID__moz_fieldtext,
-    eColorID__moz_dialog,
-    eColorID__moz_dialogtext,
-    // used to highlight valid regions to drop something onto
-    eColorID__moz_dragtargetzone,
-
-    // used to cell text background, selected but not focus
-    eColorID__moz_cellhighlight,
-    // used to cell text, selected but not focus
-    eColorID__moz_cellhighlighttext,
-    // used to html select cell text background, selected but not focus
-    eColorID__moz_html_cellhighlight,
-    // used to html select cell text, selected but not focus
-    eColorID__moz_html_cellhighlighttext,
-    // used to button text background, when mouse is over
-    eColorID__moz_buttonhoverface,
-    // used to button text, when mouse is over
-    eColorID__moz_buttonhovertext,
-    // used to menu item background, when mouse is over
-    eColorID__moz_menuhover,
-    // used to menu item text, when mouse is over
-    eColorID__moz_menuhovertext,
-    // used to menu bar item text
-    eColorID__moz_menubartext,
-    // used to menu bar item text, when mouse is over
-    eColorID__moz_menubarhovertext,
-    // On platforms where these colors are the same as
-    // -moz-field, use -moz-fieldtext as foreground color
-    eColorID__moz_eventreerow,
-    eColorID__moz_oddtreerow,
-
-    // colors needed by the Mac OS X theme
-
-    // foreground color of :hover:active buttons
-    eColorID__moz_mac_buttonactivetext,
-    // background color of chrome toolbars in active windows
-    eColorID__moz_mac_chrome_active,
-    // background color of chrome toolbars in inactive windows
-    eColorID__moz_mac_chrome_inactive,
-    // foreground color of default buttons
-    eColorID__moz_mac_defaultbuttontext,
-    //ring around text fields and lists
-    eColorID__moz_mac_focusring,
-    //colour used when mouse is over a menu item
-    eColorID__moz_mac_menuselect,
-    //colour used to do shadows on menu items
-    eColorID__moz_mac_menushadow,
-    // color used to display text for disabled menu items
-    eColorID__moz_mac_menutextdisable,
-    //colour used to display text while mouse is over a menu item
-    eColorID__moz_mac_menutextselect,
-    // text color of disabled text on toolbars
-    eColorID__moz_mac_disabledtoolbartext,
-    //inactive light hightlight
-    eColorID__moz_mac_secondaryhighlight,
-
-    // vista rebars
-
-    // media rebar text
-    eColorID__moz_win_mediatext,
-    // communications rebar text
-    eColorID__moz_win_communicationstext,
-
-    // Hyperlink color extracted from the system, not affected by the
-    // browser.anchor_color user pref.
-    // There is no OS-specified safe background color for this text,
-    // but it is used regularly within Windows and the Gnome DE on Dialog and
-    // Window colors.
-    eColorID__moz_nativehyperlinktext,
-
-    // Combo box widgets
-    eColorID__moz_comboboxtext,
-    eColorID__moz_combobox,
-
-    // GtkInfoBar
-    eColorID__moz_gtk_info_bar_text,
-
-    // keep this one last, please
-    eColorID_LAST_COLOR
-  };
+class LookAndFeel {
+ public:
+  using ColorID = StyleSystemColor;
 
   // When modifying this list, also modify nsXPLookAndFeel::sIntPrefs
   // in widget/xpwidgts/nsXPLookAndFeel.cpp.
@@ -239,6 +90,15 @@ public:
     eIntID_ChosenMenuItemsShouldBlink,
 
     /*
+     * A Boolean value to determine whether the Windows accent color
+     * should be applied to the title bar.
+     *
+     * The value of this metric is not used on other platforms. These platforms
+     * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
+     */
+    eIntID_WindowsAccentColorInTitlebar,
+
+    /*
      * A Boolean value to determine whether the Windows default theme is
      * being used.
      *
@@ -291,15 +151,15 @@ public:
      */
     eIntID_MacGraphiteTheme,
 
-   /*
-    * A Boolean value to determine whether the Mac OS X Yosemite-specific theming
-    * should be used.
-    *
-    * The value of this metric is not used on non-Mac platforms. These
-    * platforms should return NS_ERROR_NOT_IMPLEMENTED when queried for this
-    * metric.
-    */
-   eIntID_MacYosemiteTheme,
+    /*
+     * A Boolean value to determine whether the Mac OS X Yosemite-specific
+     * theming should be used.
+     *
+     * The value of this metric is not used on non-Mac platforms. These
+     * platforms should return NS_ERROR_NOT_IMPLEMENTED when queried for this
+     * metric.
+     */
+    eIntID_MacYosemiteTheme,
 
     /*
      * eIntID_AlertNotificationOrigin indicates from which corner of the
@@ -337,14 +197,6 @@ public:
     eIntID_SpellCheckerUnderlineStyle,
 
     /**
-     * If this metric != 0, show icons in menus.
-     */
-    eIntID_ImagesInMenus,
-    /**
-     * If this metric != 0, show icons in buttons.
-     */
-    eIntID_ImagesInButtons,
-    /**
      * If this metric != 0, support window dragging on the menubar.
      */
     eIntID_MenuBarDrag,
@@ -372,46 +224,101 @@ public:
     eIntID_SwipeAnimationEnabled,
 
     /*
-     * A Boolean value to determine whether we have a color picker available
-     * for <input type="color"> to hook into.
-     *
-     * This lets us selectively enable the style for <input type="color">
-     * based on whether it's functional or not.
+     * Controls whether overlay scrollbars display when the user moves
+     * the mouse in a scrollable frame.
      */
-    eIntID_ColorPickerAvailable,
+    eIntID_ScrollbarDisplayOnMouseMove,
 
     /*
-     * A boolean value indicating whether or not the device has a hardware
-     * home button. Used on gaia to determine whether a home button
-     * is shown.
+     * Overlay scrollbar animation constants.
      */
-     eIntID_PhysicalHomeButton,
+    eIntID_ScrollbarFadeBeginDelay,
+    eIntID_ScrollbarFadeDuration,
 
-     /*
-      * Controls whether overlay scrollbars display when the user moves
-      * the mouse in a scrollable frame.
-      */
-     eIntID_ScrollbarDisplayOnMouseMove,
+    /**
+     * Distance in pixels to offset the context menu from the cursor
+     * on open.
+     */
+    eIntID_ContextMenuOffsetVertical,
+    eIntID_ContextMenuOffsetHorizontal,
 
-     /*
-      * Overlay scrollbar animation constants.
-      */
-     eIntID_ScrollbarFadeBeginDelay,
-     eIntID_ScrollbarFadeDuration,
-      
-     /**
-      * Distance in pixels to offset the context menu from the cursor
-      * on open.
-      */
-     eIntID_ContextMenuOffsetVertical,
-     eIntID_ContextMenuOffsetHorizontal
+    /*
+     * A boolean value indicating whether client-side decorations are
+     * supported by the user's GTK version.
+     */
+    eIntID_GTKCSDAvailable,
+
+    /*
+     * A boolean value indicating whether GTK+ system titlebar should be
+     * disabled by default.
+     */
+    eIntID_GTKCSDHideTitlebarByDefault,
+
+    /*
+     * A boolean value indicating whether client-side decorations should
+     * have transparent background.
+     */
+    eIntID_GTKCSDTransparentBackground,
+
+    /*
+     * A boolean value indicating whether client-side decorations should
+     * contain a minimize button.
+     */
+    eIntID_GTKCSDMinimizeButton,
+
+    /*
+     * A boolean value indicating whether client-side decorations should
+     * contain a maximize button.
+     */
+    eIntID_GTKCSDMaximizeButton,
+
+    /*
+     * A boolean value indicating whether client-side decorations should
+     * contain a close button.
+     */
+    eIntID_GTKCSDCloseButton,
+
+    /*
+     * A boolean value indicating whether titlebar buttons are located
+     * in left titlebar corner.
+     */
+    eIntID_GTKCSDReversedPlacement,
+
+    /*
+     * A boolean value indicating whether or not the OS is using a dark theme,
+     * which we may want to switch to as well if not overridden by the user.
+     */
+    eIntID_SystemUsesDarkTheme,
+
+    /**
+     * Corresponding to prefers-reduced-motion.
+     * https://drafts.csswg.org/mediaqueries-5/#prefers-reduced-motion
+     * 0: no-preference
+     * 1: reduce
+     */
+
+    eIntID_PrefersReducedMotion,
+    /**
+     * Corresponding to PointerCapabilities in ServoTypes.h
+     * 0: None
+     * 1: Coarse
+     * 2: Fine
+     * 4: Hover
+     */
+    eIntID_PrimaryPointerCapabilities,
+    /**
+     * Corresponding to union of PointerCapabilities values in ServoTypes.h
+     * E.g. if there is a mouse and a digitizer, the value will be
+     * 'Coarse | Fine | Hover'.
+     */
+    eIntID_AllPointerCapabilities,
   };
 
   /**
    * Windows themes we currently detect.
    */
   enum WindowsTheme {
-    eWindowsTheme_Generic = 0, // unrecognized theme
+    eWindowsTheme_Generic = 0,  // unrecognized theme
     eWindowsTheme_Classic,
     eWindowsTheme_Aero,
     eWindowsTheme_LunaBlue,
@@ -426,9 +333,7 @@ public:
    * Operating system versions.
    */
   enum OperatingSystemVersion {
-    eOperatingSystemVersion_WindowsXP = 0,
-    eOperatingSystemVersion_WindowsVista,
-    eOperatingSystemVersion_Windows7,
+    eOperatingSystemVersion_Windows7 = 2,
     eOperatingSystemVersion_Windows8,
     eOperatingSystemVersion_Windows10,
     eOperatingSystemVersion_Unknown
@@ -445,23 +350,20 @@ public:
   enum {
     // single arrow at each end
     eScrollArrowStyle_Single =
-      eScrollArrow_StartBackward | eScrollArrow_EndForward,
+        eScrollArrow_StartBackward | eScrollArrow_EndForward,
     // both arrows at bottom/right, none at top/left
     eScrollArrowStyle_BothAtBottom =
-      eScrollArrow_EndBackward | eScrollArrow_EndForward,
+        eScrollArrow_EndBackward | eScrollArrow_EndForward,
     // both arrows at both ends
     eScrollArrowStyle_BothAtEachEnd =
-      eScrollArrow_EndBackward | eScrollArrow_EndForward |
-      eScrollArrow_StartBackward | eScrollArrow_StartForward,
+        eScrollArrow_EndBackward | eScrollArrow_EndForward |
+        eScrollArrow_StartBackward | eScrollArrow_StartForward,
     // both arrows at top/left, none at bottom/right
     eScrollArrowStyle_BothAtTop =
-      eScrollArrow_StartBackward | eScrollArrow_StartForward
+        eScrollArrow_StartBackward | eScrollArrow_StartForward
   };
 
-  enum {
-    eScrollThumbStyle_Normal,
-    eScrollThumbStyle_Proportional
-  };
+  enum { eScrollThumbStyle_Normal, eScrollThumbStyle_Proportional };
 
   // When modifying this list, also modify nsXPLookAndFeel::sFloatPrefs
   // in widget/xpwidgts/nsXPLookAndFeel.cpp.
@@ -477,14 +379,15 @@ public:
   // These constants must be kept in 1:1 correspondence with the
   // NS_STYLE_FONT_* system font constants.
   enum FontID {
-    eFont_Caption = 1,     // css2
+    eFont_Caption = 1,  // css2
+    FontID_MINIMUM = eFont_Caption,
     eFont_Icon,
     eFont_Menu,
     eFont_MessageBox,
     eFont_SmallCaption,
     eFont_StatusBar,
 
-    eFont_Window,          // css3
+    eFont_Window,  // css3
     eFont_Document,
     eFont_Workspace,
     eFont_Desktop,
@@ -495,8 +398,9 @@ public:
     eFont_List,
     eFont_Field,
 
-    eFont_Tooltips,        // moz
-    eFont_Widget
+    eFont_Tooltips,  // moz
+    eFont_Widget,
+    FontID_MAXIMUM = eFont_Widget
   };
 
   /**
@@ -508,15 +412,15 @@ public:
    * which returns nscolor directly.
    *
    * NOTE:
-   *   eColorID_TextSelectForeground might return NS_DONT_CHANGE_COLOR.
-   *   eColorID_IME* might return NS_TRANSPARENT, NS_SAME_AS_FOREGROUND_COLOR or
+   *   ColorID::TextSelectForeground might return NS_DONT_CHANGE_COLOR.
+   *   ColorID::IME* might return NS_TRANSPARENT, NS_SAME_AS_FOREGROUND_COLOR or
    *   NS_40PERCENT_FOREGROUND_COLOR.
    *   These values have particular meaning.  Then, they are not an actual
    *   color value.
    */
   static nsresult GetColor(ColorID aID, nscolor* aResult);
 
-   /**
+  /**
    * This variant of GetColor() takes an extra Boolean parameter that allows
    * the caller to ask that hard-coded color values be substituted for
    * native colors (used when it is desireable to hide system colors to
@@ -536,8 +440,7 @@ public:
   static nsresult GetInt(IntID aID, int32_t* aResult);
   static nsresult GetFloat(FloatID aID, float* aResult);
 
-  static nscolor GetColor(ColorID aID, nscolor aDefault = NS_RGB(0, 0, 0))
-  {
+  static nscolor GetColor(ColorID aID, nscolor aDefault = NS_RGB(0, 0, 0)) {
     nscolor result = NS_RGB(0, 0, 0);
     if (NS_FAILED(GetColor(aID, &result))) {
       return aDefault;
@@ -545,8 +448,18 @@ public:
     return result;
   }
 
-  static int32_t GetInt(IntID aID, int32_t aDefault = 0)
-  {
+  static nscolor GetColorUsingStandins(ColorID aID,
+                                       nscolor aDefault = NS_RGB(0, 0, 0)) {
+    nscolor result = NS_RGB(0, 0, 0);
+    if (NS_FAILED(GetColor(aID,
+                           true,  // aUseStandinsForNativeColors
+                           &result))) {
+      return aDefault;
+    }
+    return result;
+  }
+
+  static int32_t GetInt(IntID aID, int32_t aDefault = 0) {
     int32_t result;
     if (NS_FAILED(GetInt(aID, &result))) {
       return aDefault;
@@ -554,8 +467,7 @@ public:
     return result;
   }
 
-  static float GetFloat(FloatID aID, float aDefault = 0.0f)
-  {
+  static float GetFloat(FloatID aID, float aDefault = 0.0f) {
     float result;
     if (NS_FAILED(GetFloat(aID, &result))) {
       return aDefault;
@@ -568,13 +480,13 @@ public:
    * if the system theme specifies this font, false if a default should
    * be used.  In the latter case neither aName nor aStyle is modified.
    *
+   * Size of the font should be in CSS pixels, not device pixels.
+   *
    * @param aID    Which system-theme font is wanted.
    * @param aName  The name of the font to use.
    * @param aStyle Styling to apply to the font.
-   * @param aDevPixPerCSSPixel  Ratio of device pixels to CSS pixels
    */
-  static bool GetFont(FontID aID, nsString& aName, gfxFontStyle& aStyle,
-                      float aDevPixPerCSSPixel);
+  static bool GetFont(FontID aID, nsString& aName, gfxFontStyle& aStyle);
 
   /**
    * GetPasswordCharacter() returns a unicode character which should be used
@@ -602,47 +514,62 @@ public:
   static void Refresh();
 
   /**
+   * GTK's initialization code can't be run off main thread, call this
+   * if you plan on using LookAndFeel off main thread later.
+   *
+   * This initialized state may get reset due to theme changes, so it
+   * must be called prior to each potential off-main-thread LookAndFeel
+   * call, not just once.
+   */
+  static void NativeInit();
+
+  /**
    * If the implementation is caching values, these accessors allow the
    * cache to be exported and imported.
    */
   static nsTArray<LookAndFeelInt> GetIntCache();
   static void SetIntCache(const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache);
+  /**
+   * Set a flag indicating whether the cache should be cleared in RefreshImpl()
+   * or not.
+   */
+  static void SetShouldRetainCacheForTest(bool aValue);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-// On the Mac, GetColor(eColorID_TextSelectForeground, color) returns this
+// On the Mac, GetColor(ColorID::TextSelectForeground, color) returns this
 // constant to specify that the foreground color should not be changed
 // (ie. a colored text keeps its colors  when selected).
 // Of course if other plaforms work like the Mac, they can use it too.
-#define NS_DONT_CHANGE_COLOR 	NS_RGB(0x01, 0x01, 0x01)
+#define NS_DONT_CHANGE_COLOR NS_RGB(0x01, 0x01, 0x01)
 
 // Similar with NS_DONT_CHANGE_COLOR, except NS_DONT_CHANGE_COLOR would returns
 // complementary color if fg color is same as bg color.
-// NS_CHANGE_COLOR_IF_SAME_AS_BG would returns eColorID_TextSelectForegroundCustom if
-// fg and bg color are the same.
+// NS_CHANGE_COLOR_IF_SAME_AS_BG would returns
+// ColorID::TextSelectForegroundCustom if fg and bg color are the same.
 #define NS_CHANGE_COLOR_IF_SAME_AS_BG NS_RGB(0x02, 0x02, 0x02)
 
 // ---------------------------------------------------------------------
-//  Special colors for eColorID_IME* and eColorID_SpellCheckerUnderline
+//  Special colors for ColorID::IME* and ColorID::SpellCheckerUnderline
 // ---------------------------------------------------------------------
 
 // For background color only.
-#define NS_TRANSPARENT                NS_RGBA(0x01, 0x00, 0x00, 0x00)
+#define NS_TRANSPARENT NS_RGBA(0x01, 0x00, 0x00, 0x00)
 // For foreground color only.
-#define NS_SAME_AS_FOREGROUND_COLOR   NS_RGBA(0x02, 0x00, 0x00, 0x00)
+#define NS_SAME_AS_FOREGROUND_COLOR NS_RGBA(0x02, 0x00, 0x00, 0x00)
 #define NS_40PERCENT_FOREGROUND_COLOR NS_RGBA(0x03, 0x00, 0x00, 0x00)
 
-#define NS_IS_SELECTION_SPECIAL_COLOR(c) ((c) == NS_TRANSPARENT || \
-                                          (c) == NS_SAME_AS_FOREGROUND_COLOR || \
-                                          (c) == NS_40PERCENT_FOREGROUND_COLOR)
+#define NS_IS_SELECTION_SPECIAL_COLOR(c)                          \
+  ((c) == NS_TRANSPARENT || (c) == NS_SAME_AS_FOREGROUND_COLOR || \
+   (c) == NS_40PERCENT_FOREGROUND_COLOR)
 
 // ------------------------------------------
 //  Bits for eIntID_AlertNotificationOrigin
 // ------------------------------------------
 
 #define NS_ALERT_HORIZONTAL 1
-#define NS_ALERT_LEFT       2
-#define NS_ALERT_TOP        4
+#define NS_ALERT_LEFT 2
+#define NS_ALERT_TOP 4
 
 #endif /* __LookAndFeel */

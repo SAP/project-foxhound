@@ -148,7 +148,7 @@ writeItem(PRFileDesc *fd, CK_VOID_PTR pValue,
         return PR_FAILURE;
     }
     bytesWritten = PR_Write(fd, pValue, ulValueLen);
-    if (bytesWritten != ulValueLen) {
+    if (bytesWritten < 0 || (CK_ULONG)bytesWritten != ulValueLen) {
         lperror(file);
         return PR_FAILURE;
     }
@@ -614,7 +614,7 @@ cleanup:
 static char *
 filePasswd(char *pwFile)
 {
-    unsigned char phrase[200];
+    unsigned char phrase[500];
     PRFileDesc *fd;
     PRInt32 nb;
     int i;

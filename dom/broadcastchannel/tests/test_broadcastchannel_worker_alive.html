@@ -9,7 +9,7 @@ Tests of DOM BroadcastChannel in workers
 -->
 <head>
   <title>Test for BroadcastChannel in workers</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -22,7 +22,7 @@ Tests of DOM BroadcastChannel in workers
 
 function runTests() {
   var id = 0;
-  (new BroadcastChannel('foobar')).onmessage = function(event) {
+  (new BroadcastChannel("foobar")).onmessage = function(event) {
     info("MSG: " + event.data);
 
     if (event.data == "READY") {

@@ -1,17 +1,13 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GMPCrashHelperHolder_h_
 #define GMPCrashHelperHolder_h_
 
-#include "GMPService.h"
 #include "mozilla/RefPtr.h"
-#include "nsPIDOMWindow.h"
-#include "mozilla/ipc/ProtocolUtils.h"
-
-class GMPCrashHelper;
+#include "GMPCrashHelper.h"
 
 namespace mozilla {
 
@@ -50,32 +46,18 @@ namespace mozilla {
 //
 // It's a bit yuck that we have to have two paths for disconnecting the crash
 // helpers, but there aren't really any better options.
-class GMPCrashHelperHolder
-{
-public:
+class GMPCrashHelperHolder {
+ public:
+  void SetCrashHelper(GMPCrashHelper* aHelper);
 
-  void SetCrashHelper(GMPCrashHelper* aHelper)
-  {
-    mCrashHelper = aHelper;
-  }
+  GMPCrashHelper* GetCrashHelper();
 
-  GMPCrashHelper* GetCrashHelper()
-  {
-    return mCrashHelper;
-  }
+  void MaybeDisconnect(bool aAbnormalShutdown);
 
-  void MaybeDisconnect(bool aAbnormalShutdown)
-  {
-    if (!aAbnormalShutdown) {
-      RefPtr<gmp::GeckoMediaPluginService> service(gmp::GeckoMediaPluginService::GetGeckoMediaPluginService());
-      service->DisconnectCrashHelper(GetCrashHelper());
-    }
-  }
-
-private:
+ private:
   RefPtr<GMPCrashHelper> mCrashHelper;
 };
 
-}
+}  // namespace mozilla
 
-#endif // GMPCrashHelperHolder_h_
+#endif  // GMPCrashHelperHolder_h_

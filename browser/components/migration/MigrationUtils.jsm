@@ -4,57 +4,83 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["MigrationUtils", "MigratorPrototype"];
+var EXPORTED_SYMBOLS = ["MigrationUtils", "MigratorPrototype"];
 
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-const TOPIC_WILL_IMPORT_BOOKMARKS = "initial-migration-will-import-default-bookmarks";
-const TOPIC_DID_IMPORT_BOOKMARKS = "initial-migration-did-import-default-bookmarks";
+const TOPIC_WILL_IMPORT_BOOKMARKS =
+  "initial-migration-will-import-default-bookmarks";
+const TOPIC_DID_IMPORT_BOOKMARKS =
+  "initial-migration-did-import-default-bookmarks";
 const TOPIC_PLACES_DEFAULTS_FINISHED = "places-browser-init-complete";
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-Cu.importGlobalProperties(["URL"]);
+XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
-XPCOMUtils.defineLazyModuleGetter(this, "AutoMigrate",
-                                  "resource:///modules/AutoMigrate.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BookmarkHTMLUtils",
-                                  "resource://gre/modules/BookmarkHTMLUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PromiseUtils",
-                                  "resource://gre/modules/PromiseUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Sqlite",
-                                  "resource://gre/modules/Sqlite.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TelemetryStopwatch",
-                                  "resource://gre/modules/TelemetryStopwatch.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "WindowsRegistry",
-                                  "resource://gre/modules/WindowsRegistry.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "BookmarkHTMLUtils",
+  "resource://gre/modules/BookmarkHTMLUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "LoginHelper",
+  "resource://gre/modules/LoginHelper.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PromiseUtils",
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ResponsivenessMonitor",
+  "resource://gre/modules/ResponsivenessMonitor.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Sqlite",
+  "resource://gre/modules/Sqlite.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "WindowsRegistry",
+  "resource://gre/modules/WindowsRegistry.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "setTimeout",
+  "resource://gre/modules/Timer.jsm"
+);
 
 var gMigrators = null;
 var gProfileStartup = null;
 var gMigrationBundle = null;
 var gPreviousDefaultBrowserKey = "";
 
+let gForceExitSpinResolve = false;
 let gKeepUndoData = false;
 let gUndoData = null;
 
 XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
   if (AppConstants.platform == "win") {
-    return [
-      "firefox", "edge", "ie", "chrome", "chromium", "360se",
-      "canary"
-    ];
+    return ["firefox", "edge", "ie", "chrome", "chromium", "360se", "canary"];
   }
   if (AppConstants.platform == "macosx") {
     return ["firefox", "safari", "chrome", "chromium", "canary"];
   }
   if (AppConstants.XP_UNIX) {
-    return ["firefox", "chrome", "chromium"];
+    return ["firefox", "chrome", "chrome-beta", "chrome-dev", "chromium"];
   }
   return [];
 });
@@ -62,7 +88,8 @@ XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
 function getMigrationBundle() {
   if (!gMigrationBundle) {
     gMigrationBundle = Services.strings.createBundle(
-     "chrome://browser/locale/migration/migration.properties");
+      "chrome://browser/locale/migration/migration.properties"
+    );
   }
   return gMigrationBundle;
 }
@@ -79,12 +106,10 @@ function getMigrationBundle() {
  * 4. If the migrator supports multiple profiles, override the sourceProfiles
  *    Here we default for single-profile migrator.
  * 5. Implement getResources(aProfile) (see below).
- * 6. If the migrator supports reading the home page of the source browser,
- *    override |sourceHomePageURL| getter.
- * 7. For startup-only migrators, override |startupOnlyMigrator|.
+ * 6. For startup-only migrators, override |startupOnlyMigrator|.
  */
-this.MigratorPrototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIBrowserProfileMigrator]),
+var MigratorPrototype = {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIBrowserProfileMigrator]),
 
   /**
    * OVERRIDE IF AND ONLY IF the source supports multiple profiles.
@@ -100,7 +125,7 @@ this.MigratorPrototype = {
    * For a single-profile source (e.g. safari, ie), this returns null,
    * and not an empty array.  That is the default implementation.
    */
-  get sourceProfiles() {
+  getSourceProfiles() {
     return null;
   },
 
@@ -148,7 +173,7 @@ this.MigratorPrototype = {
    *        aProfile is a value returned by the sourceProfiles getter (see
    *        above).
    */
-  getResources: function MP_getResources(aProfile) {
+  getResources: function MP_getResources(/* aProfile */) {
     throw new Error("getResources must be overridden");
   },
 
@@ -182,14 +207,6 @@ this.MigratorPrototype = {
   },
 
   /**
-   * OVERRIDE IF AND ONLY IF your migrator supports importing the homepage.
-   * @see nsIBrowserProfileMigrator
-   */
-  get sourceHomePageURL() {
-    return "";
-  },
-
-  /**
    * Override if the data to migrate is locked/in-use and the user should
    * probably shutdown the source browser.
    */
@@ -203,16 +220,19 @@ this.MigratorPrototype = {
    *
    * @see nsIBrowserProfileMigrator
    */
-  getMigrateData: function MP_getMigrateData(aProfile) {
-    let resources = this._getMaybeCachedResources(aProfile);
+  getMigrateData: async function MP_getMigrateData(aProfile) {
+    let resources = await this._getMaybeCachedResources(aProfile);
     if (!resources) {
       return [];
     }
     let types = resources.map(r => r.type);
-    return types.reduce((a, b) => a |= b, 0);
+    return types.reduce((a, b) => {
+      a |= b;
+      return a;
+    }, 0);
   },
 
-  getKey: function MP_getKey() {
+  getBrowserKey: function MP_getBrowserKey() {
     return this.contractID.match(/\=([^\=]+)$/)[1];
   },
 
@@ -222,159 +242,221 @@ this.MigratorPrototype = {
    *
    * @see nsIBrowserProfileMigrator
    */
-  migrate: function MP_migrate(aItems, aStartup, aProfile) {
-    let resources = this._getMaybeCachedResources(aProfile);
-    if (resources.length == 0)
+  migrate: async function MP_migrate(aItems, aStartup, aProfile) {
+    let resources = await this._getMaybeCachedResources(aProfile);
+    if (!resources.length) {
       throw new Error("migrate called for a non-existent source");
+    }
 
-    if (aItems != Ci.nsIBrowserProfileMigrator.ALL)
+    if (aItems != Ci.nsIBrowserProfileMigrator.ALL) {
       resources = resources.filter(r => aItems & r.type);
+    }
 
     // Used to periodically give back control to the main-thread loop.
-    let unblockMainThread = function () {
+    let unblockMainThread = function() {
       return new Promise(resolve => {
-        Services.tm.mainThread.dispatch(resolve, Ci.nsIThread.DISPATCH_NORMAL);
+        Services.tm.dispatchToMainThread(resolve);
       });
     };
 
-    let getHistogramForResourceType = resourceType => {
+    let getHistogramIdForResourceType = (resourceType, template) => {
       if (resourceType == MigrationUtils.resourceTypes.HISTORY) {
-        return "FX_MIGRATION_HISTORY_IMPORT_MS";
+        return template.replace("*", "HISTORY");
       }
       if (resourceType == MigrationUtils.resourceTypes.BOOKMARKS) {
-        return "FX_MIGRATION_BOOKMARKS_IMPORT_MS";
+        return template.replace("*", "BOOKMARKS");
       }
       if (resourceType == MigrationUtils.resourceTypes.PASSWORDS) {
-        return "FX_MIGRATION_LOGINS_IMPORT_MS";
+        return template.replace("*", "LOGINS");
       }
       return null;
     };
-    let maybeStartTelemetryStopwatch = (resourceType, resource) => {
-      let histogram = getHistogramForResourceType(resourceType);
-      if (histogram) {
-        TelemetryStopwatch.startKeyed(histogram, this.getKey(), resource);
+
+    let browserKey = this.getBrowserKey();
+
+    let maybeStartTelemetryStopwatch = resourceType => {
+      let histogramId = getHistogramIdForResourceType(
+        resourceType,
+        "FX_MIGRATION_*_IMPORT_MS"
+      );
+      if (histogramId) {
+        TelemetryStopwatch.startKeyed(histogramId, browserKey);
       }
+      return histogramId;
     };
-    let maybeStopTelemetryStopwatch = (resourceType, resource) => {
-      let histogram = getHistogramForResourceType(resourceType);
-      if (histogram) {
-        TelemetryStopwatch.finishKeyed(histogram, this.getKey(), resource);
+
+    let maybeStartResponsivenessMonitor = resourceType => {
+      let responsivenessMonitor;
+      let responsivenessHistogramId = getHistogramIdForResourceType(
+        resourceType,
+        "FX_MIGRATION_*_JANK_MS"
+      );
+      if (responsivenessHistogramId) {
+        responsivenessMonitor = new ResponsivenessMonitor();
+      }
+      return { responsivenessMonitor, responsivenessHistogramId };
+    };
+
+    let maybeFinishResponsivenessMonitor = (
+      responsivenessMonitor,
+      histogramId
+    ) => {
+      if (responsivenessMonitor) {
+        let accumulatedDelay = responsivenessMonitor.finish();
+        if (histogramId) {
+          try {
+            Services.telemetry
+              .getKeyedHistogramById(histogramId)
+              .add(browserKey, accumulatedDelay);
+          } catch (ex) {
+            Cu.reportError(histogramId + ": " + ex);
+          }
+        }
       }
     };
 
     let collectQuantityTelemetry = () => {
-      try {
-        for (let resourceType of Object.keys(MigrationUtils._importQuantities)) {
-          let histogramId =
-            "FX_MIGRATION_" + resourceType.toUpperCase() + "_QUANTITY";
-          let histogram = Services.telemetry.getKeyedHistogramById(histogramId);
-          histogram.add(this.getKey(), MigrationUtils._importQuantities[resourceType]);
+      for (let resourceType of Object.keys(MigrationUtils._importQuantities)) {
+        let histogramId =
+          "FX_MIGRATION_" + resourceType.toUpperCase() + "_QUANTITY";
+        try {
+          Services.telemetry
+            .getKeyedHistogramById(histogramId)
+            .add(browserKey, MigrationUtils._importQuantities[resourceType]);
+        } catch (ex) {
+          Cu.reportError(histogramId + ": " + ex);
         }
-      } catch (ex) { /* Telemetry is exception-happy */ }
+      }
     };
 
     // Called either directly or through the bookmarks import callback.
-    let doMigrate = Task.async(function*() {
+    let doMigrate = async function() {
       let resourcesGroupedByItems = new Map();
       resources.forEach(function(resource) {
         if (!resourcesGroupedByItems.has(resource.type)) {
           resourcesGroupedByItems.set(resource.type, new Set());
         }
-        resourcesGroupedByItems.get(resource.type).add(resource)
+        resourcesGroupedByItems.get(resource.type).add(resource);
       });
 
-      if (resourcesGroupedByItems.size == 0)
+      if (resourcesGroupedByItems.size == 0) {
         throw new Error("No items to import");
+      }
 
       let notify = function(aMsg, aItemType) {
         Services.obs.notifyObservers(null, aMsg, aItemType);
-      }
+      };
 
       for (let resourceType of Object.keys(MigrationUtils._importQuantities)) {
         MigrationUtils._importQuantities[resourceType] = 0;
       }
       notify("Migration:Started");
-      for (let [key, value] of resourcesGroupedByItems) {
-        // Workaround bug 449811.
-        let migrationType = key, itemResources = value;
-
+      for (let [migrationType, itemResources] of resourcesGroupedByItems) {
         notify("Migration:ItemBeforeMigrate", migrationType);
+
+        let stopwatchHistogramId = maybeStartTelemetryStopwatch(migrationType);
+
+        let {
+          responsivenessMonitor,
+          responsivenessHistogramId,
+        } = maybeStartResponsivenessMonitor(migrationType);
 
         let itemSuccess = false;
         for (let res of itemResources) {
-          // Workaround bug 449811.
-          let resource = res;
-          maybeStartTelemetryStopwatch(migrationType, resource);
           let completeDeferred = PromiseUtils.defer();
           let resourceDone = function(aSuccess) {
-            maybeStopTelemetryStopwatch(migrationType, resource);
-            itemResources.delete(resource);
+            itemResources.delete(res);
             itemSuccess |= aSuccess;
             if (itemResources.size == 0) {
-              notify(itemSuccess ?
-                     "Migration:ItemAfterMigrate" : "Migration:ItemError",
-                     migrationType);
+              notify(
+                itemSuccess
+                  ? "Migration:ItemAfterMigrate"
+                  : "Migration:ItemError",
+                migrationType
+              );
               resourcesGroupedByItems.delete(migrationType);
+
+              if (stopwatchHistogramId) {
+                TelemetryStopwatch.finishKeyed(
+                  stopwatchHistogramId,
+                  browserKey
+                );
+              }
+
+              maybeFinishResponsivenessMonitor(
+                responsivenessMonitor,
+                responsivenessHistogramId
+              );
+
               if (resourcesGroupedByItems.size == 0) {
                 collectQuantityTelemetry();
                 notify("Migration:Ended");
               }
             }
             completeDeferred.resolve();
-          }
+          };
 
           // If migrate throws, an error occurred, and the callback
           // (itemMayBeDone) might haven't been called.
           try {
-            resource.migrate(resourceDone);
-          }
-          catch (ex) {
+            res.migrate(resourceDone);
+          } catch (ex) {
             Cu.reportError(ex);
             resourceDone(false);
           }
 
-          // Certain resources must be ran sequentially or they could fail,
-          // for example bookmarks and history (See bug 1272652).
-          if (migrationType == MigrationUtils.resourceTypes.BOOKMARKS ||
-              migrationType == MigrationUtils.resourceTypes.HISTORY) {
-            yield completeDeferred.promise;
-          }
-
-          yield unblockMainThread();
+          await completeDeferred.promise;
+          await unblockMainThread();
         }
       }
-    });
+    };
 
-    if (MigrationUtils.isStartupMigration && !this.startupOnlyMigrator) {
+    if (
+      MigrationUtils.isStartupMigration &&
+      !this.startupOnlyMigrator &&
+      Services.policies.isAllowed("defaultBookmarks")
+    ) {
       MigrationUtils.profileStartup.doStartup();
       // First import the default bookmarks.
       // Note: We do not need to do so for the Firefox migrator
       // (=startupOnlyMigrator), as it just copies over the places database
       // from another profile.
-      Task.spawn(function* () {
+      (async function() {
         // Tell nsBrowserGlue we're importing default bookmarks.
-        let browserGlue = Cc["@mozilla.org/browser/browserglue;1"].
-                          getService(Ci.nsIObserver);
+        let browserGlue = Cc["@mozilla.org/browser/browserglue;1"].getService(
+          Ci.nsIObserver
+        );
         browserGlue.observe(null, TOPIC_WILL_IMPORT_BOOKMARKS, "");
 
         // Import the default bookmarks. We ignore whether or not we succeed.
-        yield BookmarkHTMLUtils.importFromURL(
-          "chrome://browser/locale/bookmarks.html", true).catch(r => r);
+        await BookmarkHTMLUtils.importFromURL(
+          "chrome://browser/locale/bookmarks.html",
+          {
+            replace: true,
+            source: PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
+          }
+        ).catch(Cu.reportError);
 
         // We'll tell nsBrowserGlue we've imported bookmarks, but before that
         // we need to make sure we're going to know when it's finished
         // initializing places:
         let placesInitedPromise = new Promise(resolve => {
           let onPlacesInited = function() {
-            Services.obs.removeObserver(onPlacesInited, TOPIC_PLACES_DEFAULTS_FINISHED);
+            Services.obs.removeObserver(
+              onPlacesInited,
+              TOPIC_PLACES_DEFAULTS_FINISHED
+            );
             resolve();
           };
-          Services.obs.addObserver(onPlacesInited, TOPIC_PLACES_DEFAULTS_FINISHED, false);
+          Services.obs.addObserver(
+            onPlacesInited,
+            TOPIC_PLACES_DEFAULTS_FINISHED
+          );
         });
         browserGlue.observe(null, TOPIC_DID_IMPORT_BOOKMARKS, "");
-        yield placesInitedPromise;
+        await placesInitedPromise;
         doMigrate();
-      });
+      })();
       return;
     }
     doMigrate();
@@ -386,55 +468,58 @@ this.MigratorPrototype = {
    *
    * @see nsIBrowserProfileMigrator
    */
-  get sourceExists() {
-    if (this.startupOnlyMigrator && !MigrationUtils.isStartupMigration)
+  async isSourceAvailable() {
+    if (this.startupOnlyMigrator && !MigrationUtils.isStartupMigration) {
       return false;
+    }
 
     // For a single-profile source, check if any data is available.
     // For multiple-profiles source, make sure that at least one
     // profile is available.
     let exists = false;
     try {
-      let profiles = this.sourceProfiles;
+      let profiles = await this.getSourceProfiles();
       if (!profiles) {
-        let resources = this._getMaybeCachedResources("");
-        if (resources && resources.length > 0)
+        let resources = await this._getMaybeCachedResources("");
+        if (resources && resources.length) {
           exists = true;
+        }
+      } else {
+        exists = !!profiles.length;
       }
-      else {
-        exists = profiles.length > 0;
-      }
-    }
-    catch (ex) {
+    } catch (ex) {
       Cu.reportError(ex);
     }
     return exists;
   },
 
-  /*** PRIVATE STUFF - DO NOT OVERRIDE ***/
-  _getMaybeCachedResources: function PMB__getMaybeCachedResources(aProfile) {
+  /** * PRIVATE STUFF - DO NOT OVERRIDE ***/
+  _getMaybeCachedResources: async function PMB__getMaybeCachedResources(
+    aProfile
+  ) {
     let profileKey = aProfile ? aProfile.id : "";
     if (this._resourcesByProfile) {
-      if (profileKey in this._resourcesByProfile)
+      if (profileKey in this._resourcesByProfile) {
         return this._resourcesByProfile[profileKey];
+      }
+    } else {
+      this._resourcesByProfile = {};
     }
-    else {
-      this._resourcesByProfile = { };
-    }
-    return this._resourcesByProfile[profileKey] = this.getResources(aProfile);
-  }
+    this._resourcesByProfile[profileKey] = await this.getResources(aProfile);
+    return this._resourcesByProfile[profileKey];
+  },
 };
 
-this.MigrationUtils = Object.freeze({
+var MigrationUtils = Object.freeze({
   resourceTypes: {
-    SETTINGS:   Ci.nsIBrowserProfileMigrator.SETTINGS,
-    COOKIES:    Ci.nsIBrowserProfileMigrator.COOKIES,
-    HISTORY:    Ci.nsIBrowserProfileMigrator.HISTORY,
-    FORMDATA:   Ci.nsIBrowserProfileMigrator.FORMDATA,
-    PASSWORDS:  Ci.nsIBrowserProfileMigrator.PASSWORDS,
-    BOOKMARKS:  Ci.nsIBrowserProfileMigrator.BOOKMARKS,
-    OTHERDATA:  Ci.nsIBrowserProfileMigrator.OTHERDATA,
-    SESSION:    Ci.nsIBrowserProfileMigrator.SESSION,
+    SETTINGS: Ci.nsIBrowserProfileMigrator.SETTINGS,
+    COOKIES: Ci.nsIBrowserProfileMigrator.COOKIES,
+    HISTORY: Ci.nsIBrowserProfileMigrator.HISTORY,
+    FORMDATA: Ci.nsIBrowserProfileMigrator.FORMDATA,
+    PASSWORDS: Ci.nsIBrowserProfileMigrator.PASSWORDS,
+    BOOKMARKS: Ci.nsIBrowserProfileMigrator.BOOKMARKS,
+    OTHERDATA: Ci.nsIBrowserProfileMigrator.OTHERDATA,
+    SESSION: Ci.nsIBrowserProfileMigrator.SESSION,
   },
 
   /**
@@ -478,15 +563,14 @@ this.MigrationUtils = Object.freeze({
       try {
         aFunction.apply(null, arguments);
         success = true;
-      }
-      catch (ex) {
+      } catch (ex) {
         Cu.reportError(ex);
       }
       // Do not change this to call aCallback directly in try try & catch
       // blocks, because if aCallback throws, we may end up calling aCallback
       // twice.
       aCallback(success);
-    }
+    };
   },
 
   /**
@@ -506,18 +590,21 @@ this.MigrationUtils = Object.freeze({
    * @see nsIStringBundle
    */
   getLocalizedString: function MU_getLocalizedString(aKey, aReplacements) {
-    aKey = aKey.replace(/_(canary|chromium)$/, "_chrome");
+    aKey = aKey.replace(
+      /_(canary|chromium|chrome-beta|chrome-dev)$/,
+      "_chrome"
+    );
 
     const OVERRIDES = {
       "4_firefox": "4_firefox_history_and_bookmarks",
-      "64_firefox": "64_firefox_other"
+      "64_firefox": "64_firefox_other",
     };
     aKey = OVERRIDES[aKey] || aKey;
 
-    if (aReplacements === undefined)
+    if (aReplacements === undefined) {
       return getMigrationBundle().GetStringFromName(aKey);
-    return getMigrationBundle().formatStringFromName(
-      aKey, aReplacements, aReplacements.length);
+    }
+    return getMigrationBundle().formatStringFromName(aKey, aReplacements);
   },
 
   _getLocalePropertyForBrowser(browserId) {
@@ -532,6 +619,10 @@ this.MigrationUtils = Object.freeze({
         return "sourceNameCanary";
       case "chrome":
         return "sourceNameChrome";
+      case "chrome-beta":
+        return "sourceNameChromeBeta";
+      case "chrome-dev":
+        return "sourceNameChromeDev";
       case "chromium":
         return "sourceNameChromium";
       case "firefox":
@@ -563,13 +654,15 @@ this.MigrationUtils = Object.freeze({
    *        the GUID of the folder in which the new folder should be created.
    * @return the GUID of the new folder.
    */
-  createImportedBookmarksFolder: Task.async(function* (sourceNameStr, parentGuid) {
+  async createImportedBookmarksFolder(sourceNameStr, parentGuid) {
     let source = this.getLocalizedString("sourceName" + sourceNameStr);
     let title = this.getLocalizedString("importedBookmarksFolder", [source]);
-    return (yield PlacesUtils.bookmarks.insert({
-      type: PlacesUtils.bookmarks.TYPE_FOLDER, parentGuid, title
+    return (await PlacesUtils.bookmarks.insert({
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      parentGuid,
+      title,
     })).guid;
-  }),
+  },
 
   /**
    * Get all the rows corresponding to a select query from a database, without
@@ -597,7 +690,7 @@ this.MigrationUtils = Object.freeze({
 
     const RETRYLIMIT = 10;
     const RETRYINTERVAL = 100;
-    return Task.spawn(function* innerGetRows() {
+    return (async function innerGetRows() {
       let rows = null;
       for (let retryCount = RETRYLIMIT; retryCount && !rows; retryCount--) {
         // Attempt to get the rows. If this succeeds, we will bail out of the loop,
@@ -608,9 +701,9 @@ this.MigrationUtils = Object.freeze({
         let didOpen = false;
         let exceptionSeen;
         try {
-          db = yield Sqlite.openConnection(dbOptions);
+          db = await Sqlite.openConnection(dbOptions);
           didOpen = true;
-          rows = yield db.execute(selectQuery);
+          rows = await db.execute(selectQuery);
         } catch (ex) {
           if (!exceptionSeen) {
             Cu.reportError(ex);
@@ -619,23 +712,59 @@ this.MigrationUtils = Object.freeze({
         } finally {
           try {
             if (didOpen) {
-              yield db.close();
+              await db.close();
             }
           } catch (ex) {}
         }
         if (exceptionSeen) {
-          yield new Promise(resolve => setTimeout(resolve, RETRYINTERVAL));
+          await new Promise(resolve => setTimeout(resolve, RETRYINTERVAL));
         }
       }
       if (!rows) {
-        throw new Error("Couldn't get rows from the " + description + " database.");
+        throw new Error(
+          "Couldn't get rows from the " + description + " database."
+        );
       }
       return rows;
-    });
+    })();
   },
 
   get _migrators() {
-    return gMigrators ? gMigrators : gMigrators = new Map();
+    if (!gMigrators) {
+      gMigrators = new Map();
+    }
+    return gMigrators;
+  },
+
+  forceExitSpinResolve: function MU_forceExitSpinResolve() {
+    gForceExitSpinResolve = true;
+  },
+
+  spinResolve: function MU_spinResolve(promise) {
+    if (!(promise instanceof Promise)) {
+      return promise;
+    }
+    let done = false;
+    let result = null;
+    let error = null;
+    gForceExitSpinResolve = false;
+    promise
+      .catch(e => {
+        error = e;
+      })
+      .then(r => {
+        result = r;
+        done = true;
+      });
+
+    Services.tm.spinEventLoopUntil(() => done || gForceExitSpinResolve);
+    if (!done) {
+      throw new Error("Forcefully exited event loop.");
+    } else if (error) {
+      throw error;
+    } else {
+      return result;
+    }
   },
 
   /*
@@ -660,23 +789,27 @@ this.MigrationUtils = Object.freeze({
    * @return profile migrator implementing nsIBrowserProfileMigrator, if it can
    *         import any data, null otherwise.
    */
-  getMigrator: function MU_getMigrator(aKey) {
+  getMigrator: async function MU_getMigrator(aKey) {
     let migrator = null;
     if (this._migrators.has(aKey)) {
       migrator = this._migrators.get(aKey);
-    }
-    else {
+    } else {
       try {
-        migrator = Cc["@mozilla.org/profile/migrator;1?app=browser&type=" +
-                      aKey].createInstance(Ci.nsIBrowserProfileMigrator);
+        migrator = Cc[
+          "@mozilla.org/profile/migrator;1?app=browser&type=" + aKey
+        ].createInstance(Ci.nsIBrowserProfileMigrator);
+      } catch (ex) {
+        Cu.reportError(ex);
       }
-      catch (ex) { Cu.reportError(ex) }
       this._migrators.set(aKey, migrator);
     }
 
     try {
-      return migrator && migrator.sourceExists ? migrator : null;
-    } catch (ex) { Cu.reportError(ex); return null }
+      return migrator && (await migrator.isSourceAvailable()) ? migrator : null;
+    } catch (ex) {
+      Cu.reportError(ex);
+      return null;
+    }
   },
 
   /**
@@ -689,34 +822,39 @@ this.MigrationUtils = Object.freeze({
   getMigratorKeyForDefaultBrowser() {
     // Canary uses the same description as Chrome so we can't distinguish them.
     const APP_DESC_TO_KEY = {
-      "Internet Explorer":                 "ie",
-      "Microsoft Edge":                    "edge",
-      "Safari":                            "safari",
-      "Firefox":                           "firefox",
-      "Google Chrome":                     "chrome",  // Windows, Linux
-      "Chrome":                            "chrome",  // OS X
-      "Chromium":                          "chromium", // Windows, OS X
-      "Chromium Web Browser":              "chromium", // Linux
+      "Internet Explorer": "ie",
+      "Microsoft Edge": "edge",
+      Safari: "safari",
+      Firefox: "firefox",
+      Nightly: "firefox",
+      "Google Chrome": "chrome", // Windows, Linux
+      Chrome: "chrome", // OS X
+      Chromium: "chromium", // Windows, OS X
+      "Chromium Web Browser": "chromium", // Linux
       "360\u5b89\u5168\u6d4f\u89c8\u5668": "360se",
     };
 
-    let browserDesc = "";
     let key = "";
     try {
-      let browserDesc =
-        Cc["@mozilla.org/uriloader/external-protocol-service;1"].
-        getService(Ci.nsIExternalProtocolService).
-        getApplicationDescription("http");
+      let browserDesc = Cc["@mozilla.org/uriloader/external-protocol-service;1"]
+        .getService(Ci.nsIExternalProtocolService)
+        .getApplicationDescription("http");
       key = APP_DESC_TO_KEY[browserDesc] || "";
-    }
-    catch (ex) {
+      // Handle devedition, as well as "FirefoxNightly" on OS X.
+      if (!key && browserDesc.startsWith("Firefox")) {
+        key = "firefox";
+      }
+    } catch (ex) {
       Cu.reportError("Could not detect default browser: " + ex);
     }
 
     // "firefox" is the least useful entry here, and might just be because we've set
     // ourselves as the default (on Windows 7 and below). In that case, check if we
     // have a registry key that tells us where to go:
-    if (key == "firefox" && AppConstants.isPlatformAndVersionAtMost("win", "6.2")) {
+    if (
+      key == "firefox" &&
+      AppConstants.isPlatformAndVersionAtMost("win", "6.2")
+    ) {
       // Because we remove the registry key, reading the registry key only works once.
       // We save the value for subsequent calls to avoid hard-to-trace bugs when multiple
       // consumers ask for this key.
@@ -726,19 +864,31 @@ this.MigrationUtils = Object.freeze({
         // We didn't have a saved value, so check the registry.
         const kRegPath = "Software\\Mozilla\\Firefox";
         let oldDefault = WindowsRegistry.readRegKey(
-            Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER, kRegPath, "OldDefaultBrowserCommand");
+          Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+          kRegPath,
+          "OldDefaultBrowserCommand"
+        );
         if (oldDefault) {
           // Remove the key:
           WindowsRegistry.removeRegKey(
-            Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER, kRegPath, "OldDefaultBrowserCommand");
+            Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+            kRegPath,
+            "OldDefaultBrowserCommand"
+          );
           try {
-            let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFileWin);
+            let file = Cc["@mozilla.org/file/local;1"].createInstance(
+              Ci.nsILocalFileWin
+            );
             file.initWithCommandLine(oldDefault);
-            key = APP_DESC_TO_KEY[file.getVersionInfoField("FileDescription")] || key;
+            key =
+              APP_DESC_TO_KEY[file.getVersionInfoField("FileDescription")] ||
+              key;
             // Save the value for future callers.
             gPreviousDefaultBrowserKey = key;
           } catch (ex) {
-            Cu.reportError("Could not convert old default browser value to description.");
+            Cu.reportError(
+              "Could not convert old default browser value to description."
+            );
           }
         }
       }
@@ -782,8 +932,7 @@ this.MigrationUtils = Object.freeze({
    *        constant below, and specify at least the first element of the array
    *        (the migration entry point for purposes of telemetry).
    */
-  showMigrationWizard:
-  function MU_showMigrationWizard(aOpener, aParams) {
+  showMigrationWizard: function MU_showMigrationWizard(aOpener, aParams) {
     let features = "chrome,dialog,modal,centerscreen,titlebar,resizable=no";
     if (AppConstants.platform == "macosx" && !this.isStartupMigration) {
       let win = Services.wm.getMostRecentWindow("Browser:MigrationWizard");
@@ -807,18 +956,21 @@ this.MigrationUtils = Object.freeze({
         } else {
           switch (typeof item) {
             case "boolean":
-              comtaminatedVal = Cc["@mozilla.org/supports-PRBool;1"].
-                                createInstance(Ci.nsISupportsPRBool);
+              comtaminatedVal = Cc[
+                "@mozilla.org/supports-PRBool;1"
+              ].createInstance(Ci.nsISupportsPRBool);
               comtaminatedVal.data = item;
               break;
             case "number":
-              comtaminatedVal = Cc["@mozilla.org/supports-PRUint32;1"].
-                                createInstance(Ci.nsISupportsPRUint32);
+              comtaminatedVal = Cc[
+                "@mozilla.org/supports-PRUint32;1"
+              ].createInstance(Ci.nsISupportsPRUint32);
               comtaminatedVal.data = item;
               break;
             case "string":
-              comtaminatedVal = Cc["@mozilla.org/supports-cstring;1"].
-                                createInstance(Ci.nsISupportsCString);
+              comtaminatedVal = Cc[
+                "@mozilla.org/supports-cstring;1"
+              ].createInstance(Ci.nsISupportsCString);
               comtaminatedVal.data = item;
               break;
 
@@ -828,27 +980,34 @@ this.MigrationUtils = Object.freeze({
                 comtaminatedVal = null;
                 break;
               }
+            /* intentionally falling through to error out here for
+                 non-null/undefined things: */
             default:
-              throw new Error("Unexpected parameter type " + (typeof item) + ": " + item);
+              throw new Error(
+                "Unexpected parameter type " + typeof item + ": " + item
+              );
           }
         }
-        params.appendElement(comtaminatedVal, false);
+        params.appendElement(comtaminatedVal);
       }
     } else {
       params = aParams;
     }
 
-    Services.ww.openWindow(aOpener,
-                           "chrome://browser/content/migration/migration.xul",
-                           "_blank",
-                           features,
-                           params);
+    Services.ww.openWindow(
+      aOpener,
+      "chrome://browser/content/migration/migration.xul",
+      "_blank",
+      features,
+      params
+    );
   },
 
   /**
    * Show the migration wizard for startup-migration.  This should only be
    * called by ProfileMigrator (see ProfileMigrator.js), which implements
-   * nsIProfileMigrator.
+   * nsIProfileMigrator. This runs asynchronously if we are running an
+   * automigration.
    *
    * @param aProfileStartup
    *        the nsIProfileStartup instance provided to ProfileMigrator.migrate.
@@ -865,59 +1024,76 @@ this.MigrationUtils = Object.freeze({
    * @throws if aMigratorKey is invalid or if it points to a non-existent
    *         source.
    */
-  startupMigration:
-  function MU_startupMigrator(aProfileStartup, aMigratorKey, aProfileToMigrate) {
+  startupMigration: function MU_startupMigrator(
+    aProfileStartup,
+    aMigratorKey,
+    aProfileToMigrate
+  ) {
+    this.spinResolve(
+      this.asyncStartupMigration(
+        aProfileStartup,
+        aMigratorKey,
+        aProfileToMigrate
+      )
+    );
+  },
+
+  asyncStartupMigration: async function MU_asyncStartupMigrator(
+    aProfileStartup,
+    aMigratorKey,
+    aProfileToMigrate
+  ) {
     if (!aProfileStartup) {
-      throw new Error("an profile-startup instance is required for startup-migration");
+      throw new Error(
+        "an profile-startup instance is required for startup-migration"
+      );
     }
     gProfileStartup = aProfileStartup;
 
-    let skipSourcePage = false, migrator = null, migratorKey = "";
+    let skipSourcePage = false,
+      migrator = null,
+      migratorKey = "";
     if (aMigratorKey) {
-      migrator = this.getMigrator(aMigratorKey);
+      migrator = await this.getMigrator(aMigratorKey);
       if (!migrator) {
         // aMigratorKey must point to a valid source, so, if it doesn't
         // cleanup and throw.
         this.finishMigration();
-        throw new Error("startMigration was asked to open auto-migrate from " +
-                        "a non-existent source: " + aMigratorKey);
+        throw new Error(
+          "startMigration was asked to open auto-migrate from " +
+            "a non-existent source: " +
+            aMigratorKey
+        );
       }
       migratorKey = aMigratorKey;
       skipSourcePage = true;
-    }
-    else {
+    } else {
       let defaultBrowserKey = this.getMigratorKeyForDefaultBrowser();
       if (defaultBrowserKey) {
-        migrator = this.getMigrator(defaultBrowserKey);
-        if (migrator)
+        migrator = await this.getMigrator(defaultBrowserKey);
+        if (migrator) {
           migratorKey = defaultBrowserKey;
+        }
       }
     }
 
     if (!migrator) {
+      let migrators = await Promise.all(
+        gAvailableMigratorKeys.map(key => this.getMigrator(key))
+      );
       // If there's no migrator set so far, ensure that there is at least one
       // migrator available before opening the wizard.
       // Note that we don't need to check the default browser first, because
       // if that one existed we would have used it in the block above this one.
-      if (!gAvailableMigratorKeys.some(key => !!this.getMigrator(key))) {
+      if (!migrators.some(m => m)) {
         // None of the keys produced a usable migrator, so finish up here:
         this.finishMigration();
         return;
       }
     }
 
-    let isRefresh = migrator && skipSourcePage &&
-                    migratorKey == AppConstants.MOZ_APP_NAME;
-
-    if (!isRefresh && AutoMigrate.enabled) {
-      try {
-        AutoMigrate.migrate(aProfileStartup, migratorKey, aProfileToMigrate);
-        return;
-      } catch (ex) {
-        // If automigration failed, continue and show the dialog.
-        Cu.reportError(ex);
-      }
-    }
+    let isRefresh =
+      migrator && skipSourcePage && migratorKey == AppConstants.MOZ_APP_NAME;
 
     let migrationEntryPoint = this.MIGRATION_ENTRYPOINT_FIRSTRUN;
     if (isRefresh) {
@@ -949,34 +1125,69 @@ this.MigrationUtils = Object.freeze({
     }
     // If we keep undo data, add a promise handler that stores the undo data once
     // the bookmark has been inserted in the DB, and then returns the bookmark.
-    let {parentGuid} = bookmark;
+    let { parentGuid } = bookmark;
     return insertionPromise.then(bm => {
-      let {guid, lastModified, type} = bm;
+      let { guid, lastModified, type } = bm;
       gUndoData.get("bookmarks").push({
-        parentGuid, guid, lastModified, type
+        parentGuid,
+        guid,
+        lastModified,
+        type,
       });
       return bm;
     });
   },
 
-  insertVisitsWrapper(places, options) {
-    this._importQuantities.history += places.length;
-    if (gKeepUndoData) {
-      this._updateHistoryUndo(places);
-    }
-    return PlacesUtils.asyncHistory.updatePlaces(places, options);
+  insertManyBookmarksWrapper(bookmarks, parent) {
+    let insertionPromise = PlacesUtils.bookmarks.insertTree({
+      guid: parent,
+      children: bookmarks,
+    });
+    return insertionPromise.then(
+      insertedItems => {
+        this._importQuantities.bookmarks += insertedItems.length;
+        if (gKeepUndoData) {
+          let bmData = gUndoData.get("bookmarks");
+          for (let bm of insertedItems) {
+            let { parentGuid, guid, lastModified, type } = bm;
+            bmData.push({ parentGuid, guid, lastModified, type });
+          }
+        }
+      },
+      ex => Cu.reportError(ex)
+    );
   },
 
-  insertLoginWrapper(login) {
-    this._importQuantities.logins++;
-    let insertedLogin = LoginHelper.maybeImportLogin(login);
+  insertVisitsWrapper(pageInfos) {
+    let now = new Date();
+    // Ensure that none of the dates are in the future. If they are, rewrite
+    // them to be now. This means we don't loose history entries, but they will
+    // be valid for the history store.
+    for (let pageInfo of pageInfos) {
+      for (let visit of pageInfo.visits) {
+        if (visit.date && visit.date > now) {
+          visit.date = now;
+        }
+      }
+    }
+    this._importQuantities.history += pageInfos.length;
+    if (gKeepUndoData) {
+      this._updateHistoryUndo(pageInfos);
+    }
+    return PlacesUtils.history.insertMany(pageInfos);
+  },
+
+  async insertLoginsWrapper(logins) {
+    this._importQuantities.logins += logins.length;
+    let inserted = await LoginHelper.maybeImportLogins(logins);
     // Note that this means that if we import a login that has a newer password
     // than we know about, we will update the login, and an undo of the import
     // will not revert this. This seems preferable over removing the login
     // outright or storing the old password in the undo file.
-    if (insertedLogin && gKeepUndoData) {
-      let {guid, timePasswordChanged} = insertedLogin;
-      gUndoData.get("logins").push({guid, timePasswordChanged});
+    if (gKeepUndoData) {
+      for (let { guid, timePasswordChanged } of inserted) {
+        gUndoData.get("logins").push({ guid, timePasswordChanged });
+      }
     }
   },
 
@@ -985,21 +1196,27 @@ this.MigrationUtils = Object.freeze({
     gUndoData = new Map([["bookmarks", []], ["visits", []], ["logins", []]]);
   },
 
-  _postProcessUndoData: Task.async(function*(state) {
+  async _postProcessUndoData(state) {
     if (!state) {
       return state;
     }
-    let bookmarkFolders = state.get("bookmarks").filter(b => b.type == PlacesUtils.bookmarks.TYPE_FOLDER);
+    let bookmarkFolders = state
+      .get("bookmarks")
+      .filter(b => b.type == PlacesUtils.bookmarks.TYPE_FOLDER);
 
     let bookmarkFolderData = [];
-    let bmPromises = bookmarkFolders.map(({guid}) => {
+    let bmPromises = bookmarkFolders.map(({ guid }) => {
       // Ignore bookmarks where the promise doesn't resolve (ie that are missing)
       // Also check that the bookmark fetch returns isn't null before adding it.
-      return PlacesUtils.bookmarks.fetch(guid).then(bm => bm && bookmarkFolderData.push(bm), () => {});
+      return PlacesUtils.bookmarks
+        .fetch(guid)
+        .then(bm => bm && bookmarkFolderData.push(bm), () => {});
     });
 
-    yield Promise.all(bmPromises);
-    let folderLMMap = new Map(bookmarkFolderData.map(b => [b.guid, b.lastModified]));
+    await Promise.all(bmPromises);
+    let folderLMMap = new Map(
+      bookmarkFolderData.map(b => [b.guid, b.lastModified])
+    );
     for (let bookmark of bookmarkFolders) {
       let lastModified = folderLMMap.get(bookmark.guid);
       // If the bookmark was deleted, the map will be returning null, so check:
@@ -1008,7 +1225,7 @@ this.MigrationUtils = Object.freeze({
       }
     }
     return state;
-  }),
+  },
 
   stopAndRetrieveUndoData() {
     let undoData = gUndoData;
@@ -1017,14 +1234,26 @@ this.MigrationUtils = Object.freeze({
     return this._postProcessUndoData(undoData);
   },
 
-  _updateHistoryUndo(places) {
+  _updateHistoryUndo(pageInfos) {
     let visits = gUndoData.get("visits");
     let visitMap = new Map(visits.map(v => [v.url, v]));
-    for (let place of places) {
-      let visitCount = place.visits.length;
-      let first = Math.min.apply(Math, place.visits.map(v => v.visitDate));
-      let last = Math.max.apply(Math, place.visits.map(v => v.visitDate));
-      let url = place.uri.spec;
+    for (let pageInfo of pageInfos) {
+      let visitCount = pageInfo.visits.length;
+      let first, last;
+      if (visitCount > 1) {
+        let dates = pageInfo.visits.map(v => v.date);
+        first = Math.min.apply(Math, dates);
+        last = Math.max.apply(Math, dates);
+      } else {
+        first = last = pageInfo.visits[0].date;
+      }
+      let url = pageInfo.url;
+      if (url instanceof Ci.nsIURI) {
+        url = pageInfo.url.spec;
+      } else if (typeof url != "string") {
+        pageInfo.url.href;
+      }
+
       try {
         new URL(url);
       } catch (ex) {
@@ -1032,7 +1261,7 @@ this.MigrationUtils = Object.freeze({
         continue;
       }
       if (!visitMap.has(url)) {
-        visitMap.set(url, {url, visitCount, first, last});
+        visitMap.set(url, { url, visitCount, first, last });
       } else {
         let currentData = visitMap.get(url);
         currentData.visitCount += visitCount;
@@ -1059,17 +1288,19 @@ this.MigrationUtils = Object.freeze({
   MIGRATION_ENTRYPOINT_FXREFRESH: 2,
   MIGRATION_ENTRYPOINT_PLACES: 3,
   MIGRATION_ENTRYPOINT_PASSWORDS: 4,
+  MIGRATION_ENTRYPOINT_NEWTAB: 5,
+  MIGRATION_ENTRYPOINT_FILE_MENU: 6,
 
   _sourceNameToIdMapping: {
-    "nothing":    1,
-    "firefox":    2,
-    "edge":       3,
-    "ie":         4,
-    "chrome":     5,
-    "chromium":   6,
-    "canary":     7,
-    "safari":     8,
-    "360se":      9,
+    nothing: 1,
+    firefox: 2,
+    edge: 3,
+    ie: 4,
+    chrome: 5,
+    chromium: 6,
+    canary: 7,
+    safari: 8,
+    "360se": 9,
   },
   getSourceIdForTelemetry(sourceName) {
     return this._sourceNameToIdMapping[sourceName] || 0;

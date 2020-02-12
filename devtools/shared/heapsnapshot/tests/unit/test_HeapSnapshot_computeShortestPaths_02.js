@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test computing shortest paths with invalid arguments.
 
@@ -8,7 +9,9 @@ function run_test() {
   const snapshot = ChromeUtils.readHeapSnapshot(path);
 
   const dominatorTree = snapshot.computeDominatorTree();
-  const target = dominatorTree.getImmediatelyDominated(dominatorTree.root).pop();
+  const target = dominatorTree
+    .getImmediatelyDominated(dominatorTree.root)
+    .pop();
   ok(target);
 
   let threw = false;

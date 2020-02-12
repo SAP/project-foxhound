@@ -27,9 +27,8 @@ class nsIChannel;
  * listener holds a reference to the backing file: the file is only removed
  * when all the listeners are done.
  */
-class CachedFileHolder
-{
-public:
+class CachedFileHolder {
+ public:
   explicit CachedFileHolder(nsIFile* cacheFile);
   ~CachedFileHolder();
 
@@ -38,21 +37,20 @@ public:
 
   nsIFile* file() const { return mFile; }
 
-private:
+ private:
   nsAutoRefCnt mRefCnt;
   nsCOMPtr<nsIFile> mFile;
 };
 
 class nsPluginStreamListenerPeer : public nsIStreamListener,
-public nsIProgressEventSink,
-public nsIHttpHeaderVisitor,
-public nsSupportsWeakReference,
-public nsIInterfaceRequestor,
-public nsIChannelEventSink
-{
+                                   public nsIProgressEventSink,
+                                   public nsIHttpHeaderVisitor,
+                                   public nsSupportsWeakReference,
+                                   public nsIInterfaceRequestor,
+                                   public nsIChannelEventSink {
   virtual ~nsPluginStreamListenerPeer();
 
-public:
+ public:
   nsPluginStreamListenerPeer();
 
   NS_DECL_ISUPPORTS
@@ -63,53 +61,34 @@ public:
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSICHANNELEVENTSINK
 
-  // Called by RequestRead
-  void
-  MakeByteRangeString(NPByteRange* aRangeList, nsACString &string, int32_t *numRequests);
-
-  bool UseExistingPluginCacheFile(nsPluginStreamListenerPeer* psi);
-
   // Called by GetURL and PostURL (via NewStream) or by the host in the case of
   // the initial plugin stream.
-  nsresult Initialize(nsIURI *aURL,
-                      nsNPAPIPluginInstance *aInstance,
-                      nsNPAPIPluginStreamListener *aListener);
+  nsresult Initialize(nsIURI* aURL, nsNPAPIPluginInstance* aInstance,
+                      nsNPAPIPluginStreamListener* aListener);
 
-  nsresult OnFileAvailable(nsIFile* aFile);
+  nsNPAPIPluginInstance* GetPluginInstance() { return mPluginInstance; }
 
-  nsresult ServeStreamAsFile(nsIRequest *request, nsISupports *ctxt);
-
-  nsNPAPIPluginInstance *GetPluginInstance() { return mPluginInstance; }
-
-  nsresult RequestRead(NPByteRange* rangeList);
   nsresult GetLength(uint32_t* result);
   nsresult GetURL(const char** result);
   nsresult GetLastModified(uint32_t* result);
-  nsresult IsSeekable(bool* result);
   nsresult GetContentType(char** result);
   nsresult GetStreamOffset(int32_t* result);
   nsresult SetStreamOffset(int32_t value);
 
-  void TrackRequest(nsIRequest* request)
-  {
-    mRequests.AppendObject(request);
-  }
+  void TrackRequest(nsIRequest* request) { mRequests.AppendObject(request); }
 
-  void ReplaceRequest(nsIRequest* oldRequest, nsIRequest* newRequest)
-  {
+  void ReplaceRequest(nsIRequest* oldRequest, nsIRequest* newRequest) {
     int32_t i = mRequests.IndexOfObject(oldRequest);
     if (i == -1) {
       NS_ASSERTION(mRequests.Count() == 0,
                    "Only our initial stream should be unknown!");
       mRequests.AppendObject(oldRequest);
-    }
-    else {
+    } else {
       mRequests.ReplaceObjectAt(newRequest, i);
     }
   }
 
-  void CancelRequests(nsresult status)
-  {
+  void CancelRequests(nsresult status) {
     // Copy the array to avoid modification during the loop.
     nsCOMArray<nsIRequest> requestsCopy(mRequests);
     for (int32_t i = 0; i < requestsCopy.Count(); ++i)
@@ -128,24 +107,17 @@ public:
       requestsCopy[i]->Resume();
   }
 
-  // Called by nsNPAPIPluginStreamListener
-  void OnStreamTypeSet(const int32_t aStreamType);
-
-  enum {
-    STREAM_TYPE_UNKNOWN = UINT16_MAX
-  };
-
-private:
+ private:
   nsresult SetUpStreamListener(nsIRequest* request, nsIURI* aURL);
-  nsresult SetupPluginCacheFile(nsIChannel* channel);
   nsresult GetInterfaceGlobal(const nsIID& aIID, void** result);
 
   nsCOMPtr<nsIURI> mURL;
-  nsCString mURLSpec; // Have to keep this member because GetURL hands out char*
+  nsCString
+      mURLSpec;  // Have to keep this member because GetURL hands out char*
   RefPtr<nsNPAPIPluginStreamListener> mPStreamListener;
 
   // Set to true if we request failed (like with a HTTP response of 404)
-  bool                    mRequestFailed;
+  bool mRequestFailed;
 
   /*
    * Set to true after nsNPAPIPluginStreamListener::OnStartBinding() has
@@ -153,33 +125,25 @@ private:
    * plugin's OnStartBinding if, for some reason, it has not already
    * been called.
    */
-  bool              mStartBinding;
-  bool              mHaveFiredOnStartRequest;
+  bool mStartBinding;
+  bool mHaveFiredOnStartRequest;
   // these get passed to the plugin stream listener
-  uint32_t                mLength;
-  int32_t                 mStreamType;
-
-  // local cached file, we save the content into local cache if browser cache is not available,
-  // or plugin asks stream as file and it expects file extension until bug 90558 got fixed
-  RefPtr<CachedFileHolder> mLocalCachedFileHolder;
-  nsCOMPtr<nsIOutputStream> mFileCacheOutputStream;
-  nsDataHashtable<nsUint32HashKey, uint32_t>* mDataForwardToRequest;
+  uint32_t mLength;
+  int32_t mStreamType;
 
   nsCString mContentType;
   bool mUseLocalCache;
   nsCOMPtr<nsIRequest> mRequest;
-  bool mSeekable;
   uint32_t mModified;
   RefPtr<nsNPAPIPluginInstance> mPluginInstance;
   int32_t mStreamOffset;
   bool mStreamComplete;
 
-public:
-  bool                    mAbort;
-  int32_t                 mPendingRequests;
-  nsWeakPtr               mWeakPtrChannelCallbacks;
-  nsWeakPtr               mWeakPtrChannelLoadGroup;
+ public:
+  int32_t mPendingRequests;
+  nsWeakPtr mWeakPtrChannelCallbacks;
+  nsWeakPtr mWeakPtrChannelLoadGroup;
   nsCOMArray<nsIRequest> mRequests;
 };
 
-#endif // nsPluginStreamListenerPeer_h_
+#endif  // nsPluginStreamListenerPeer_h_

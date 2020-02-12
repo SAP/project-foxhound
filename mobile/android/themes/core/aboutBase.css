@@ -5,7 +5,7 @@
 @import "defines.css";
 
 html {
-  font-family: "Clear Sans",sans-serif;
+  font-family: sans-serif;
   font-size: 14px;
   background-color: var(--color_about_background);
   -moz-text-size-adjust: none;
@@ -27,8 +27,7 @@ input {
   font-size: 1.1em;
   font-weight: bold;
   background-color: #f5f5f5;
-  border-bottom: 2px solid;
-  -moz-border-bottom-colors: #FF9500;
+  border-bottom: 2px solid #0A84FF;
   display: flex;
   flex-direction: row;
   align-items: center;

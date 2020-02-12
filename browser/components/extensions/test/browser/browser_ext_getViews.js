@@ -5,28 +5,23 @@
 function genericChecker() {
   let kind = "background";
   let path = window.location.pathname;
-  if (path.indexOf("popup") != -1) {
+  if (path.includes("popup")) {
     kind = "popup";
-  } else if (path.indexOf("tab") != -1) {
+  } else if (path.includes("tab")) {
     kind = "tab";
   }
   window.kind = kind;
 
   browser.test.onMessage.addListener((msg, ...args) => {
     if (msg == kind + "-check-views") {
-      let windowId = args[0];
       let counts = {
-        "background": 0,
-        "tab": 0,
-        "popup": 0,
-        "kind": 0,
-        "window": 0,
+        background: 0,
+        tab: 0,
+        popup: 0,
+        kind: 0,
       };
-      if (Number.isInteger(windowId)) {
-        counts.window = browser.extension.getViews({windowId: windowId}).length;
-      }
       if (kind !== "background") {
-        counts.kind = browser.extension.getViews({type: kind}).length;
+        counts.kind = browser.extension.getViews({ type: kind }).length;
       }
       let views = browser.extension.getViews();
       let background;
@@ -35,52 +30,107 @@ function genericChecker() {
         browser.test.assertTrue(view.kind in counts, "view type is valid");
         counts[view.kind]++;
         if (view.kind == "background") {
-          browser.test.assertTrue(view === browser.extension.getBackgroundPage(),
-                                  "background page is correct");
+          browser.test.assertTrue(
+            view === browser.extension.getBackgroundPage(),
+            "background page is correct"
+          );
           background = view;
         }
       }
       if (background) {
         browser.runtime.getBackgroundPage().then(view => {
-          browser.test.assertEq(background, view, "runtime.getBackgroundPage() is correct");
+          browser.test.assertEq(
+            background,
+            view,
+            "runtime.getBackgroundPage() is correct"
+          );
           browser.test.sendMessage("counts", counts);
         });
       } else {
         browser.test.sendMessage("counts", counts);
       }
+    } else if (msg == kind + "-getViews-with-filter") {
+      let filter = args[0];
+      let count = browser.extension.getViews(filter).length;
+      browser.test.sendMessage("getViews-count", count);
     } else if (msg == kind + "-open-tab") {
-      browser.tabs.create({windowId: args[0], url: browser.runtime.getURL("tab.html")});
+      browser.tabs
+        .create({ windowId: args[0], url: browser.runtime.getURL("tab.html") })
+        .then(tab => browser.test.sendMessage("opened-tab", tab.id));
     } else if (msg == kind + "-close-tab") {
-      browser.tabs.query({
-        windowId: args[0],
-      }, tabs => {
-        let tab = tabs.find(tab => tab.url.indexOf("tab.html") != -1);
-        browser.tabs.remove(tab.id, () => {
-          browser.test.sendMessage("closed");
-        });
-      });
+      browser.tabs.query(
+        {
+          windowId: args[0],
+        },
+        tabs => {
+          let tab = tabs.find(tab => tab.url.includes("tab.html"));
+          browser.tabs.remove(tab.id, () => {
+            browser.test.sendMessage("closed");
+          });
+        }
+      );
     }
   });
   browser.test.sendMessage(kind + "-ready");
 }
 
-add_task(function* () {
-  let win1 = yield BrowserTestUtils.openNewBrowserWindow();
-  let win2 = yield BrowserTestUtils.openNewBrowserWindow();
+async function promiseBrowserContentUnloaded(browser) {
+  // Wait until the content has unloaded before resuming the test, to avoid
+  // calling extension.getViews too early (and having intermittent failures).
+  const MSG_WINDOW_DESTROYED = "Test:BrowserContentDestroyed";
+  let unloadPromise = new Promise(resolve => {
+    Services.ppmm.addMessageListener(MSG_WINDOW_DESTROYED, function listener() {
+      Services.ppmm.removeMessageListener(MSG_WINDOW_DESTROYED, listener);
+      resolve();
+    });
+  });
+
+  await ContentTask.spawn(
+    browser,
+    MSG_WINDOW_DESTROYED,
+    MSG_WINDOW_DESTROYED => {
+      let innerWindowId = this.content.windowUtils.currentInnerWindowID;
+      let observer = subject => {
+        if (
+          innerWindowId === subject.QueryInterface(Ci.nsISupportsPRUint64).data
+        ) {
+          Services.obs.removeObserver(observer, "inner-window-destroyed");
+
+          // Use process message manager to ensure that the message is delivered
+          // even after the <browser>'s message manager is disconnected.
+          Services.cpmm.sendAsyncMessage(MSG_WINDOW_DESTROYED);
+        }
+      };
+      // Observe inner-window-destroyed, like ExtensionPageChild, to ensure that
+      // the ExtensionPageContextChild instance has been unloaded when we resolve
+      // the unloadPromise.
+      Services.obs.addObserver(observer, "inner-window-destroyed");
+    }
+  );
+
+  // Return an object so that callers can use "await".
+  return { unloadPromise };
+}
+
+add_task(async function() {
+  let win1 = await BrowserTestUtils.openNewBrowserWindow();
+  let win2 = await BrowserTestUtils.openNewBrowserWindow();
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "permissions": ["tabs"],
+      permissions: ["tabs"],
 
-      "browser_action": {
-        "default_popup": "popup.html",
+      browser_action: {
+        default_popup: "popup.html",
       },
     },
 
     files: {
       "tab.html": `
       <!DOCTYPE html>
-      <html><body>
+      <html>
+      <head><meta charset="utf-8"></head>
+      <body>
       <script src="tab.js"></script>
       </body></html>
       `,
@@ -89,7 +139,9 @@ add_task(function* () {
 
       "popup.html": `
       <!DOCTYPE html>
-      <html><body>
+      <html>
+      <head><meta charset="utf-8"></head>
+      <body>
       <script src="popup.js"></script>
       </body></html>
       `,
@@ -100,99 +152,126 @@ add_task(function* () {
     background: genericChecker,
   });
 
-  yield Promise.all([extension.startup(), extension.awaitMessage("background-ready")]);
+  await Promise.all([
+    extension.startup(),
+    extension.awaitMessage("background-ready"),
+  ]);
 
   info("started");
 
-  let {Management: {global: {WindowManager}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
+  let {
+    Management: {
+      global: { windowTracker },
+    },
+  } = ChromeUtils.import("resource://gre/modules/Extension.jsm", null);
 
-  let winId1 = WindowManager.getId(win1);
-  let winId2 = WindowManager.getId(win2);
+  let winId1 = windowTracker.getId(win1);
+  let winId2 = windowTracker.getId(win2);
 
-  function* openTab(winId) {
+  async function openTab(winId) {
     extension.sendMessage("background-open-tab", winId);
-    yield extension.awaitMessage("tab-ready");
+    await extension.awaitMessage("tab-ready");
+    return extension.awaitMessage("opened-tab");
   }
 
-  function* checkViews(kind, tabCount, popupCount, kindCount, windowId = undefined, windowCount = 0) {
-    extension.sendMessage(kind + "-check-views", windowId);
-    let counts = yield extension.awaitMessage("counts");
+  async function checkViews(kind, tabCount, popupCount, kindCount) {
+    extension.sendMessage(kind + "-check-views");
+    let counts = await extension.awaitMessage("counts");
     is(counts.background, 1, "background count correct");
     is(counts.tab, tabCount, "tab count correct");
     is(counts.popup, popupCount, "popup count correct");
     is(counts.kind, kindCount, "count for type correct");
-    is(counts.window, windowCount, "count for window correct");
   }
 
-  yield checkViews("background", 0, 0, 0);
+  async function checkViewsWithFilter(filter, expectedCount) {
+    extension.sendMessage("background-getViews-with-filter", filter);
+    let count = await extension.awaitMessage("getViews-count");
+    is(count, expectedCount, `count for ${JSON.stringify(filter)} correct`);
+  }
 
-  yield openTab(winId1);
+  await checkViews("background", 0, 0, 0);
+  await checkViewsWithFilter({ windowId: -1 }, 1);
+  await checkViewsWithFilter({ tabId: -1 }, 1);
 
-  yield checkViews("background", 1, 0, 0, winId1, 1);
-  yield checkViews("tab", 1, 0, 1);
+  let tabId1 = await openTab(winId1);
 
-  yield openTab(winId2);
+  await checkViews("background", 1, 0, 0);
+  await checkViews("tab", 1, 0, 1);
+  await checkViewsWithFilter({ windowId: winId1 }, 1);
+  await checkViewsWithFilter({ tabId: tabId1 }, 1);
 
-  yield checkViews("background", 2, 0, 0, winId2, 1);
+  let tabId2 = await openTab(winId2);
 
-  function* triggerPopup(win, callback) {
-    yield clickBrowserAction(extension, win);
-    yield awaitExtensionPanel(extension, win);
+  await checkViews("background", 2, 0, 0);
+  await checkViewsWithFilter({ windowId: winId2 }, 1);
+  await checkViewsWithFilter({ tabId: tabId2 }, 1);
 
-    yield extension.awaitMessage("popup-ready");
+  async function triggerPopup(win, callback) {
+    // Window needs focus to open popups.
+    await focusWindow(win);
+    await clickBrowserAction(extension, win);
+    let browser = await awaitExtensionPanel(extension, win);
 
-    yield callback();
+    await extension.awaitMessage("popup-ready");
 
+    await callback();
+
+    let { unloadPromise } = await promiseBrowserContentUnloaded(browser);
     closeBrowserAction(extension, win);
+    await unloadPromise;
   }
 
-  // The popup occasionally closes prematurely if we open it immediately here.
-  // I'm not sure what causes it to close (it's something internal, and seems to
-  // be focus-related, but it's not caused by JS calling hidePopup), but even a
-  // short timeout seems to consistently fix it.
-  yield new Promise(resolve => win1.setTimeout(resolve, 10));
-
-  yield triggerPopup(win1, function* () {
-    yield checkViews("background", 2, 1, 0, winId1, 2);
-    yield checkViews("popup", 2, 1, 1);
+  await triggerPopup(win1, async function() {
+    await checkViews("background", 2, 1, 0);
+    await checkViews("popup", 2, 1, 1);
+    await checkViewsWithFilter({ windowId: winId1 }, 2);
+    await checkViewsWithFilter({ type: "popup", tabId: -1 }, 1);
   });
 
-  yield triggerPopup(win2, function* () {
-    yield checkViews("background", 2, 1, 0, winId2, 2);
-    yield checkViews("popup", 2, 1, 1);
+  await triggerPopup(win2, async function() {
+    await checkViews("background", 2, 1, 0);
+    await checkViews("popup", 2, 1, 1);
+    await checkViewsWithFilter({ windowId: winId2 }, 2);
+    await checkViewsWithFilter({ type: "popup", tabId: -1 }, 1);
   });
 
   info("checking counts after popups");
 
-  yield checkViews("background", 2, 0, 0, winId1, 1);
+  await checkViews("background", 2, 0, 0);
+  await checkViewsWithFilter({ windowId: winId1 }, 1);
+  await checkViewsWithFilter({ tabId: -1 }, 1);
 
   info("closing one tab");
 
+  let { unloadPromise } = await promiseBrowserContentUnloaded(
+    win1.gBrowser.selectedBrowser
+  );
   extension.sendMessage("background-close-tab", winId1);
-  yield extension.awaitMessage("closed");
+  await extension.awaitMessage("closed");
+  await unloadPromise;
 
   info("one tab closed, one remains");
 
-  yield checkViews("background", 1, 0, 0);
+  await checkViews("background", 1, 0, 0);
 
   info("opening win1 popup");
 
-  yield triggerPopup(win1, function* () {
-    yield checkViews("background", 1, 1, 0);
-    yield checkViews("tab", 1, 1, 1);
-    yield checkViews("popup", 1, 1, 1);
+  await triggerPopup(win1, async function() {
+    await checkViews("background", 1, 1, 0);
+    await checkViews("tab", 1, 1, 1);
+    await checkViews("popup", 1, 1, 1);
   });
 
   info("opening win2 popup");
 
-  yield triggerPopup(win2, function* () {
-    yield checkViews("background", 1, 1, 0);
-    yield checkViews("tab", 1, 1, 1);
-    yield checkViews("popup", 1, 1, 1);
+  await triggerPopup(win2, async function() {
+    await checkViews("background", 1, 1, 0);
+    await checkViews("tab", 1, 1, 1);
+    await checkViews("popup", 1, 1, 1);
   });
 
-  yield extension.unload();
+  await extension.unload();
 
-  yield BrowserTestUtils.closeWindow(win1);
-  yield BrowserTestUtils.closeWindow(win2);
+  await BrowserTestUtils.closeWindow(win1);
+  await BrowserTestUtils.closeWindow(win2);
 });

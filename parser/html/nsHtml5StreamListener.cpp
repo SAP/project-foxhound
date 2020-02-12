@@ -12,28 +12,21 @@ NS_INTERFACE_MAP_BEGIN(nsHtml5StreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIThreadRetargetableStreamListener)
-NS_INTERFACE_MAP_END_THREADSAFE
+NS_INTERFACE_MAP_END
 
 nsHtml5StreamListener::nsHtml5StreamListener(nsHtml5StreamParser* aDelegate)
- : mDelegate(aDelegate)
-{
-}
+    : mDelegate(aDelegate) {}
 
-nsHtml5StreamListener::~nsHtml5StreamListener()
-{
-}
+nsHtml5StreamListener::~nsHtml5StreamListener() {}
 
-void
-nsHtml5StreamListener::DropDelegate()
-{
+void nsHtml5StreamListener::DropDelegate() {
   MOZ_ASSERT(NS_IsMainThread(),
              "Must not call DropDelegate from non-main threads.");
   mDelegate = nullptr;
 }
 
 NS_IMETHODIMP
-nsHtml5StreamListener::CheckListenerChain()
-{
+nsHtml5StreamListener::CheckListenerChain() {
   if (MOZ_UNLIKELY(!mDelegate)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -41,42 +34,29 @@ nsHtml5StreamListener::CheckListenerChain()
 }
 
 NS_IMETHODIMP
-nsHtml5StreamListener::OnStartRequest(nsIRequest* aRequest,
-                                      nsISupports* aContext)
-{
+nsHtml5StreamListener::OnStartRequest(nsIRequest* aRequest) {
   if (MOZ_UNLIKELY(!mDelegate)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mDelegate->OnStartRequest(aRequest, aContext);
+  return mDelegate->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
-nsHtml5StreamListener::OnStopRequest(nsIRequest* aRequest,
-                                     nsISupports* aContext,
-                                     nsresult aStatus)
-{
+nsHtml5StreamListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   if (MOZ_UNLIKELY(!mDelegate)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mDelegate->OnStopRequest(aRequest,
-                                  aContext,
-                                  aStatus);
+  return mDelegate->OnStopRequest(aRequest, aStatus);
 }
 
 NS_IMETHODIMP
 nsHtml5StreamListener::OnDataAvailable(nsIRequest* aRequest,
-                                       nsISupports* aContext,
                                        nsIInputStream* aInStream,
                                        uint64_t aSourceOffset,
-                                       uint32_t aLength)
-{
+                                       uint32_t aLength) {
   if (MOZ_UNLIKELY(!mDelegate)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mDelegate->OnDataAvailable(aRequest,
-                                    aContext,
-                                    aInStream,
-                                    aSourceOffset,
+  return mDelegate->OnDataAvailable(aRequest, aInStream, aSourceOffset,
                                     aLength);
 }
-

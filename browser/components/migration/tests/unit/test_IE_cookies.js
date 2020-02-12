@@ -1,10 +1,24 @@
-XPCOMUtils.defineLazyModuleGetter(this, "ctypes",
-                                  "resource://gre/modules/ctypes.jsm");
+"use strict";
 
-add_task(function* () {
-  let migrator = MigrationUtils.getMigrator("ie");
+ChromeUtils.defineModuleGetter(
+  this,
+  "ctypes",
+  "resource://gre/modules/ctypes.jsm"
+);
+
+add_task(async function() {
+  let migrator = await MigrationUtils.getMigrator("ie");
   // Sanity check for the source.
-  Assert.ok(migrator.sourceExists);
+  Assert.ok(await migrator.isSourceAvailable());
+
+  // Windows versions newer than 1709 don't store cookies as files anymore,
+  // thus our migrators don't import anything and this test is pointless.
+  // In these versions the CookD folder contains a deprecated.cookie file.
+  let deprecatedCookie = Services.dirsvc.get("CookD", Ci.nsIFile);
+  deprecatedCookie.append("deprecated.cookie");
+  if (deprecatedCookie.exists()) {
+    return;
+  }
 
   const BOOL = ctypes.bool;
   const LPCTSTR = ctypes.char16_t.ptr;
@@ -20,12 +34,17 @@ add_task(function* () {
     _In_  LPCTSTR lpszCookieData
   );
   */
-  let setIECookie = wininet.declare("InternetSetCookieW",
-                                    ctypes.default_abi,
-                                    BOOL,
-                                    LPCTSTR,
-                                    LPCTSTR,
-                                    LPCTSTR);
+  // NOTE: Even though MSDN documentation does not indicate a calling convention,
+  // InternetSetCookieW is declared in SDK headers as __stdcall but is exported
+  // from wininet.dll without name mangling, so it is effectively winapi_abi
+  let setIECookie = wininet.declare(
+    "InternetSetCookieW",
+    ctypes.winapi_abi,
+    BOOL,
+    LPCTSTR,
+    LPCTSTR,
+    LPCTSTR
+  );
 
   /*
   BOOL InternetGetCookieW(
@@ -35,17 +54,22 @@ add_task(function* () {
     _Inout_ LPDWORD lpdwSize
   );
   */
-  let getIECookie = wininet.declare("InternetGetCookieW",
-                                    ctypes.default_abi,
-                                    BOOL,
-                                    LPCTSTR,
-                                    LPCTSTR,
-                                    LPCTSTR,
-                                    LPDWORD);
+  // NOTE: Even though MSDN documentation does not indicate a calling convention,
+  // InternetGetCookieW is declared in SDK headers as __stdcall but is exported
+  // from wininet.dll without name mangling, so it is effectively winapi_abi
+  let getIECookie = wininet.declare(
+    "InternetGetCookieW",
+    ctypes.winapi_abi,
+    BOOL,
+    LPCTSTR,
+    LPCTSTR,
+    LPCTSTR,
+    LPDWORD
+  );
 
   // We need to randomize the cookie to avoid clashing with other cookies
   // that might have been set by previous tests and not properly cleared.
-  let date = (new Date()).getDate();
+  let date = new Date().getDate();
   const COOKIE = {
     get host() {
       return new URL(this.href).host;
@@ -53,20 +77,25 @@ add_task(function* () {
     href: `http://mycookietest.${Math.random()}.com`,
     name: "testcookie",
     value: "testvalue",
-    expiry: new Date(new Date().setDate(date + 2))
+    expiry: new Date(new Date().setDate(date + 2)),
   };
   let data = ctypes.char16_t.array()(256);
   let sizeRef = DWORD(256).address();
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     // Remove the cookie.
     try {
       let expired = new Date(new Date().setDate(date - 2));
-      let rv = setIECookie(COOKIE.href, COOKIE.name,
-                           `; expires=${expired.toUTCString()}`);
+      let rv = setIECookie(
+        COOKIE.href,
+        COOKIE.name,
+        `; expires=${expired.toUTCString()}`
+      );
       Assert.ok(rv, "Expired the IE cookie");
-      Assert.ok(!getIECookie(COOKIE.href, COOKIE.name, data, sizeRef),
-      "The cookie has been properly removed");
+      Assert.ok(
+        !getIECookie(COOKIE.href, COOKIE.name, data, sizeRef),
+        "The cookie has been properly removed"
+      );
     } catch (ex) {}
 
     // Close the library.
@@ -81,26 +110,37 @@ add_task(function* () {
   Assert.ok(rv, "Added a persistent IE cookie: " + value);
 
   // Sanity check the cookie has been created.
-  Assert.ok(getIECookie(COOKIE.href, COOKIE.name, data, sizeRef),
-            "Found the added persistent IE cookie");
-  do_print("Found cookie: " + data.readString());
-  Assert.equal(data.readString(), `${COOKIE.name}=${COOKIE.value}`,
-            "Found the expected cookie");
+  Assert.ok(
+    getIECookie(COOKIE.href, COOKIE.name, data, sizeRef),
+    "Found the added persistent IE cookie"
+  );
+  info("Found cookie: " + data.readString());
+  Assert.equal(
+    data.readString(),
+    `${COOKIE.name}=${COOKIE.value}`,
+    "Found the expected cookie"
+  );
 
   // Sanity check that there are no cookies.
-  Assert.equal(Services.cookies.countCookiesFromHost(COOKIE.host), 0,
-               "There are no cookies initially");
+  Assert.equal(
+    Services.cookies.countCookiesFromHost(COOKIE.host),
+    0,
+    "There are no cookies initially"
+  );
 
   // Migrate cookies.
-  yield promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES);
+  await promiseMigration(migrator, MigrationUtils.resourceTypes.COOKIES);
 
-  Assert.equal(Services.cookies.countCookiesFromHost(COOKIE.host), 1,
-               "Migrated the expected number of cookies");
+  Assert.equal(
+    Services.cookies.countCookiesFromHost(COOKIE.host),
+    1,
+    "Migrated the expected number of cookies"
+  );
 
   // Now check the cookie details.
   let enumerator = Services.cookies.getCookiesFromHost(COOKIE.host, {});
   Assert.ok(enumerator.hasMoreElements());
-  let foundCookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
+  let foundCookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
 
   Assert.equal(foundCookie.name, COOKIE.name);
   Assert.equal(foundCookie.value, COOKIE.value);

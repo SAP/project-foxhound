@@ -66,13 +66,6 @@ endif
 endif	# sparc
 endif	# SunOS
 
-ifeq ($(OS_ARCH), IRIX)
-ifeq ($(USE_PTHREADS), 1)
-OS_LIBS = -lpthread
-endif
-OS_LIBS += -lc
-endif
-
 ifeq ($(OS_ARCH),AIX)
 DSO_LDOPTS	+= -binitfini::_PR_Fini
 OS_LIBS		= -lodm -lcfg
@@ -109,15 +102,6 @@ GARBAGE += $(MAPFILE)
 MKSHLIB += $(MAPFILE)
 endif
 
-ifeq ($(OS_ARCH),OSF1)
-ifeq ($(USE_PTHREADS), 1)
-OS_LIBS 	= -lpthread -lrt
-endif
-ifneq ($(OS_RELEASE),V2.0)
-OS_LIBS		+= -lc_r
-endif
-endif
-
 # Linux, GNU/Hurd, and GNU/kFreeBSD systems
 ifneq (,$(filter Linux GNU%,$(OS_ARCH)))
 ifeq ($(USE_PTHREADS), 1)
@@ -138,11 +122,7 @@ endif
 
 ifeq ($(OS_ARCH),HP-UX)
 ifeq ($(USE_PTHREADS), 1)
-ifeq (,$(filter-out B.10.10 B.10.20,$(OS_RELEASE)))
-OS_LIBS 	= -ldce
-else
 OS_LIBS 	= -lpthread -lrt
-endif
 endif
 ifeq ($(PTHREADS_USER), 1)
 OS_LIBS 	= -lpthread

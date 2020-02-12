@@ -1,13 +1,14 @@
 "use strict";
 
 var tab;
-var notificationURL = "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
+var notificationURL =
+  "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 
 const ALERT_SERVICE = Cc["@mozilla.org/alerts-service;1"]
-                        .getService(Ci.nsIAlertsService)
-                        .QueryInterface(Ci.nsIAlertsDoNotDisturb);
+  .getService(Ci.nsIAlertsService)
+  .QueryInterface(Ci.nsIAlertsDoNotDisturb);
 
-function test () {
+function test() {
   waitForExplicitFinish();
 
   try {
@@ -16,32 +17,35 @@ function test () {
     ALERT_SERVICE.manualDoNotDisturb;
     ok(true, "Alert service implements do-not-disturb interface");
   } catch (e) {
-    ok(true, "Alert service doesn't implement do-not-disturb interface, exiting test");
+    ok(
+      true,
+      "Alert service doesn't implement do-not-disturb interface, exiting test"
+    );
     finish();
     return;
   }
 
-  let pm = Services.perms;
   registerCleanupFunction(function() {
     ALERT_SERVICE.manualDoNotDisturb = false;
-    pm.remove(makeURI(notificationURL), "desktop-notification");
     gBrowser.removeTab(tab);
     window.restore();
   });
 
-  pm.add(makeURI(notificationURL), "desktop-notification", pm.ALLOW_ACTION);
-
   // Make sure that do-not-disturb is not enabled.
-  ok(!ALERT_SERVICE.manualDoNotDisturb, "Alert service should not be disabled when test starts");
+  ok(
+    !ALERT_SERVICE.manualDoNotDisturb,
+    "Alert service should not be disabled when test starts"
+  );
   ALERT_SERVICE.manualDoNotDisturb = false;
 
-  tab = gBrowser.addTab(notificationURL);
-  gBrowser.selectedTab = tab;
-  tab.linkedBrowser.addEventListener("load", onLoad, true);
+  addNotificationPermission(notificationURL).then(function openTab() {
+    tab = BrowserTestUtils.addTab(gBrowser, notificationURL);
+    gBrowser.selectedTab = tab;
+    BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => onLoad());
+  });
 }
 
 function onLoad() {
-  tab.linkedBrowser.removeEventListener("load", onLoad, true);
   openNotification(tab.linkedBrowser, "showNotification2").then(onAlertShowing);
 }
 
@@ -54,7 +58,9 @@ function onAlertShowing() {
     closeNotification(tab.linkedBrowser).then(finish);
     return;
   }
-  let doNotDisturbMenuItem = alertWindow.document.getElementById("doNotDisturbMenuItem");
+  let doNotDisturbMenuItem = alertWindow.document.getElementById(
+    "doNotDisturbMenuItem"
+  );
   is(doNotDisturbMenuItem.localName, "menuitem", "menuitem found");
   alertWindow.addEventListener("beforeunload", onAlertClosing);
   doNotDisturbMenuItem.click();
@@ -64,14 +70,19 @@ function onAlertShowing() {
 function onAlertClosing(event) {
   event.target.removeEventListener("beforeunload", onAlertClosing);
 
-  ok(ALERT_SERVICE.manualDoNotDisturb, "Alert service should be disabled after clicking menuitem");
+  ok(
+    ALERT_SERVICE.manualDoNotDisturb,
+    "Alert service should be disabled after clicking menuitem"
+  );
 
   // The notification should not appear, but there is
   // no way from the client-side to know that it was
   // blocked, except for waiting some time and realizing
   // that the "onshow" event never fired.
-  openNotification(tab.linkedBrowser, "showNotification2", 2000)
-    .then(onAlert2Showing, finish);
+  openNotification(tab.linkedBrowser, "showNotification2", 2000).then(
+    onAlert2Showing,
+    finish
+  );
 }
 
 function onAlert2Showing() {

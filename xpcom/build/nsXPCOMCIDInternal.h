@@ -13,9 +13,12 @@
  * A hashtable-based property bag component.
  * @implements nsIWritablePropertyBag, nsIWritablePropertyBag2
  */
-#define NS_HASH_PROPERTY_BAG_CID \
-{ 0x678c50b8, 0x6bcb, 0x4ad0, \
-{ 0xb9, 0xb8, 0xc8, 0x11, 0x75, 0x95, 0x51, 0x99 } }
+#define NS_HASH_PROPERTY_BAG_CID                     \
+  {                                                  \
+    0x678c50b8, 0x6bcb, 0x4ad0, {                    \
+      0xb9, 0xb8, 0xc8, 0x11, 0x75, 0x95, 0x51, 0x99 \
+    }                                                \
+  }
 #define NS_HASH_PROPERTY_BAG_CONTRACTID "@mozilla.org/hash-property-bag;1"
 
 /**
@@ -34,21 +37,13 @@
 #define NS_THREADMANAGER_CONTRACTID "@mozilla.org/thread-manager;1"
 
 /**
- * A thread pool component.
- * @implements nsIThreadPool
- */
-#define NS_THREADPOOL_CONTRACTID "@mozilla.org/thread-pool;1"
-
-/**
  * The contract id for the nsIXULAppInfo service.
  */
-#define XULAPPINFO_SERVICE_CONTRACTID \
-  "@mozilla.org/xre/app-info;1"
+#define XULAPPINFO_SERVICE_CONTRACTID "@mozilla.org/xre/app-info;1"
 
 /**
  * The contract id for the nsIXULRuntime service.
  */
-#define XULRUNTIME_SERVICE_CONTRACTID \
-  "@mozilla.org/xre/runtime;1"
+#define XULRUNTIME_SERVICE_CONTRACTID "@mozilla.org/xre/runtime;1"
 
 #endif  // nsXPCOMCIDInternal_h__

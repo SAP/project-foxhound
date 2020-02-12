@@ -20,11 +20,8 @@
       function PC_REMOTE_ROLLBACK(test) {
         // We still haven't negotiated the tracks
         test.pcRemote.expectNegotiationNeeded();
-        return test.setRemoteDescription(
-          test.pcRemote,
-          new RTCSessionDescription({ type: "rollback" }),
-          STABLE)
-          .then(() => test.pcRemote.rollbackRemoteTracksIfNotNegotiated());
+        return test.setRemoteDescription(test.pcRemote, { type: "rollback" },
+                                         STABLE);
       },
 
       function PC_REMOTE_CHECK_CAN_TRICKLE_REVERT_SYNC(test) {

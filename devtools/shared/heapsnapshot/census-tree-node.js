@@ -73,8 +73,11 @@ CensusTreeNodeCacheValue.prototype = null;
  * @returns {String}
  *          The unique string that can be used as a key in a CensusTreeNodeCache.
  */
-CensusTreeNodeCache.hashFrame = function (frame) {
-  return `FRAME,${frame.functionDisplayName},${frame.source},${frame.line},${frame.column},${frame.asyncCause}`;
+CensusTreeNodeCache.hashFrame = function(frame) {
+  // eslint-disable-next-line max-len
+  return `FRAME,${frame.functionDisplayName},${frame.source},${frame.line},${
+    frame.column
+  },${frame.asyncCause}`;
 };
 
 /**
@@ -88,7 +91,7 @@ CensusTreeNodeCache.hashFrame = function (frame) {
  * @returns {String}
  *          The unique string that can be used as a key in a CensusTreeNodeCache.
  */
-CensusTreeNodeCache.hashNode = function (node) {
+CensusTreeNodeCache.hashNode = function(node) {
   return isSavedFrame(node.name)
     ? CensusTreeNodeCache.hashFrame(node.name)
     : `NODE,${node.name}`;
@@ -101,7 +104,7 @@ CensusTreeNodeCache.hashNode = function (node) {
  * @param {CensusTreeNodeCache} cache
  * @param {CensusTreeNodeCacheValue} value
  */
-CensusTreeNodeCache.insertFrame = function (cache, value) {
+CensusTreeNodeCache.insertFrame = function(cache, value) {
   cache[CensusTreeNodeCache.hashFrame(value.node.name)] = value;
 };
 
@@ -111,7 +114,7 @@ CensusTreeNodeCache.insertFrame = function (cache, value) {
  * @param {CensusTreeNodeCache} cache
  * @param {CensusTreeNodeCacheValue} value
  */
-CensusTreeNodeCache.insertNode = function (cache, value) {
+CensusTreeNodeCache.insertNode = function(cache, value) {
   if (isSavedFrame(value.node.name)) {
     CensusTreeNodeCache.insertFrame(cache, value);
   } else {
@@ -127,7 +130,7 @@ CensusTreeNodeCache.insertNode = function (cache, value) {
  *
  * @returns {undefined|CensusTreeNodeCacheValue}
  */
-CensusTreeNodeCache.lookupFrame = function (cache, frame) {
+CensusTreeNodeCache.lookupFrame = function(cache, frame) {
   return cache[CensusTreeNodeCache.hashFrame(frame)];
 };
 
@@ -139,7 +142,7 @@ CensusTreeNodeCache.lookupFrame = function (cache, frame) {
  *
  * @returns {undefined|CensusTreeNodeCacheValue}
  */
-CensusTreeNodeCache.lookupNode = function (cache, node) {
+CensusTreeNodeCache.lookupNode = function(cache, node) {
   return isSavedFrame(node.name)
     ? CensusTreeNodeCache.lookupFrame(cache, node.name)
     : cache[CensusTreeNodeCache.hashNode(node)];
@@ -295,7 +298,7 @@ CensusTreeNodeVisitor.prototype = Object.create(Visitor);
  *
  * @overrides Visitor.prototype.enter
  */
-CensusTreeNodeVisitor.prototype.enter = function (breakdown, report, edge) {
+CensusTreeNodeVisitor.prototype.enter = function(breakdown, report, edge) {
   this._index++;
 
   const cache = this._cacheStack[this._cacheStack.length - 1];
@@ -317,9 +320,11 @@ function values(cache) {
 }
 
 function isNonEmpty(node) {
-  return (node.children !== undefined && node.children.length)
-      || node.bytes !== 0
-      || node.count !== 0;
+  return (
+    (node.children !== undefined && node.children.length) ||
+    node.bytes !== 0 ||
+    node.count !== 0
+  );
 }
 
 /**
@@ -329,7 +334,7 @@ function isNonEmpty(node) {
  *
  * @overrides Visitor.prototype.exit
  */
-CensusTreeNodeVisitor.prototype.exit = function (breakdown, report, edge) {
+CensusTreeNodeVisitor.prototype.exit = function(breakdown, report, edge) {
   // Ensure all children are sorted and have their counts/bytes aggregated. We
   // only need to consider cache children here, because other children
   // correspond to other sub-reports and we already fixed them up in an earlier
@@ -367,7 +372,7 @@ CensusTreeNodeVisitor.prototype.exit = function (breakdown, report, edge) {
 /**
  * @overrides Visitor.prototype.count
  */
-CensusTreeNodeVisitor.prototype.count = function (breakdown, report, edge) {
+CensusTreeNodeVisitor.prototype.count = function(breakdown, report, edge) {
   const node = this._nodeStack[this._nodeStack.length - 1];
   node.reportLeafIndex = this._index;
 
@@ -385,9 +390,11 @@ CensusTreeNodeVisitor.prototype.count = function (breakdown, report, edge) {
  *
  * @returns {CensusTreeNode}
  */
-CensusTreeNodeVisitor.prototype.root = function () {
+CensusTreeNodeVisitor.prototype.root = function() {
   if (!this._root) {
-    throw new Error("Attempt to get the root before walking the census report!");
+    throw new Error(
+      "Attempt to get the root before walking the census report!"
+    );
   }
 
   if (this._nodeStack.length) {
@@ -467,10 +474,12 @@ CensusTreeNode.prototype = null;
  *          A number suitable for using with Array.prototype.sort.
  */
 function compareByTotal(node1, node2) {
-  return Math.abs(node2.totalBytes) - Math.abs(node1.totalBytes)
-      || Math.abs(node2.totalCount) - Math.abs(node1.totalCount)
-      || Math.abs(node2.bytes) - Math.abs(node1.bytes)
-      || Math.abs(node2.count) - Math.abs(node1.count);
+  return (
+    Math.abs(node2.totalBytes) - Math.abs(node1.totalBytes) ||
+    Math.abs(node2.totalCount) - Math.abs(node1.totalCount) ||
+    Math.abs(node2.bytes) - Math.abs(node1.bytes) ||
+    Math.abs(node2.count) - Math.abs(node1.count)
+  );
 }
 
 /**
@@ -484,10 +493,12 @@ function compareByTotal(node1, node2) {
  *          A number suitable for using with Array.prototype.sort.
  */
 function compareBySelf(node1, node2) {
-  return Math.abs(node2.bytes) - Math.abs(node1.bytes)
-      || Math.abs(node2.count) - Math.abs(node1.count)
-      || Math.abs(node2.totalBytes) - Math.abs(node1.totalBytes)
-      || Math.abs(node2.totalCount) - Math.abs(node1.totalCount);
+  return (
+    Math.abs(node2.bytes) - Math.abs(node1.bytes) ||
+    Math.abs(node2.count) - Math.abs(node1.count) ||
+    Math.abs(node2.totalBytes) - Math.abs(node1.totalBytes) ||
+    Math.abs(node2.totalCount) - Math.abs(node1.totalCount)
+  );
 }
 
 /**
@@ -514,8 +525,10 @@ function insertOrMergeNode(parentCacheValue, node) {
     // When inverting, it is possible that multiple leaves in the census report
     // get merged into a single CensusTreeNode node. When this occurs, switch
     // from a single index to a set of indices.
-    if (val.node.reportLeafIndex !== undefined &&
-        val.node.reportLeafIndex !== node.reportLeafIndex) {
+    if (
+      val.node.reportLeafIndex !== undefined &&
+      val.node.reportLeafIndex !== node.reportLeafIndex
+    ) {
       if (typeof val.node.reportLeafIndex === "number") {
         const oldIndex = val.node.reportLeafIndex;
         val.node.reportLeafIndex = new Set();
@@ -581,7 +594,7 @@ function invert(tree) {
     }
 
     path.pop();
-  }(tree));
+  })(tree);
 
   // Ensure that the root node always has the totals.
   inverted.node.totalBytes = tree.totalBytes;
@@ -615,7 +628,7 @@ function filter(tree, predicate) {
   function addMatchingNodes(node) {
     path.push(node);
 
-    let oldMatch = match;
+    const oldMatch = match;
     if (!match && predicate(node)) {
       match = true;
     }
@@ -658,15 +671,17 @@ function filter(tree, predicate) {
  * @returns {Function}
  */
 function makeFilterPredicate(filterString) {
-  return function (node) {
+  return function(node) {
     if (!node.name) {
       return false;
     }
 
     if (isSavedFrame(node.name)) {
-      return node.name.source.includes(filterString)
-        || (node.name.functionDisplayName || "").includes(filterString)
-        || (node.name.asyncCause || "").includes(filterString);
+      return (
+        node.name.source.includes(filterString) ||
+        (node.name.functionDisplayName || "").includes(filterString) ||
+        (node.name.asyncCause || "").includes(filterString)
+      );
     }
 
     return String(node.name).includes(filterString);
@@ -703,11 +718,14 @@ function makeFilterPredicate(filterString) {
  *
  * @returns {CensusTreeNode}
  */
-exports.censusReportToCensusTreeNode = function (breakdown, report,
-                                                 options = {
-                                                   invert: false,
-                                                   filter: null
-                                                 }) {
+exports.censusReportToCensusTreeNode = function(
+  breakdown,
+  report,
+  options = {
+    invert: false,
+    filter: null,
+  }
+) {
   // Reset the counter so that turning the same census report into a
   // CensusTreeNode tree repeatedly is idempotent.
   censusTreeNodeIdCounter = 0;
@@ -742,7 +760,7 @@ exports.censusReportToCensusTreeNode = function (breakdown, report,
         ensureSorted(node.children[i]);
       }
     }
-  }(result));
+  })(result);
 
   return result;
 };

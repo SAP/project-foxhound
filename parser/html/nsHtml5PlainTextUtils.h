@@ -7,10 +7,10 @@
 
 #include "nsHtml5HtmlAttributes.h"
 
-class nsHtml5PlainTextUtils
-{
-  public:
-    static nsHtml5HtmlAttributes* NewLinkAttributes();
+class nsHtml5PlainTextUtils {
+ public:
+  static nsHtml5HtmlAttributes* NewLinkAttributes();
+  static nsHtml5HtmlAttributes* NewBodyAttributes();
 };
 
-#endif // nsHtml5PlainTextUtils_h
+#endif  // nsHtml5PlainTextUtils_h

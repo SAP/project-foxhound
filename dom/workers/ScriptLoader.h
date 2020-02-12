@@ -7,62 +7,58 @@
 #ifndef mozilla_dom_workers_scriptloader_h__
 #define mozilla_dom_workers_scriptloader_h__
 
-#include "Workers.h"
-#include "nsIContentPolicyBase.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "nsIContentPolicy.h"
+#include "nsStringFwd.h"
 
 class nsIPrincipal;
 class nsIURI;
-class nsIDocument;
+
 class nsILoadGroup;
-class nsString;
 class nsIChannel;
+class nsICookieSettings;
 
 namespace mozilla {
 
 class ErrorResult;
 
-} // namespace mozilla
+namespace dom {
 
-BEGIN_WORKERS_NAMESPACE
+struct WorkerLoadInfo;
+class WorkerPrivate;
+class SerializedStackHolder;
 
-enum WorkerScriptType {
-  WorkerScript,
-  DebuggerScript
-};
+enum WorkerScriptType { WorkerScript, DebuggerScript };
 
-namespace scriptloader {
+namespace workerinternals {
 
-nsresult
-ChannelFromScriptURLMainThread(nsIPrincipal* aPrincipal,
-                               nsIURI* aBaseURI,
-                               nsIDocument* aParentDoc,
-                               nsILoadGroup* aLoadGroup,
-                               const nsAString& aScriptURL,
-                               nsContentPolicyType aContentPolicyType,
-                               bool aDefaultURIEncoding,
-                               nsIChannel** aChannel);
+nsresult ChannelFromScriptURLMainThread(
+    nsIPrincipal* aPrincipal, Document* aParentDoc, nsILoadGroup* aLoadGroup,
+    nsIURI* aScriptURL, const Maybe<ClientInfo>& aClientInfo,
+    nsContentPolicyType aContentPolicyType, nsICookieSettings* aCookieSettings,
+    nsIReferrerInfo* aReferrerInfo, nsIChannel** aChannel);
 
-nsresult
-ChannelFromScriptURLWorkerThread(JSContext* aCx,
-                                 WorkerPrivate* aParent,
-                                 const nsAString& aScriptURL,
-                                 nsIChannel** aChannel);
+nsresult ChannelFromScriptURLWorkerThread(JSContext* aCx,
+                                          WorkerPrivate* aParent,
+                                          const nsAString& aScriptURL,
+                                          WorkerLoadInfo& aLoadInfo);
 
 void ReportLoadError(ErrorResult& aRv, nsresult aLoadResult,
                      const nsAString& aScriptURL);
 
 void LoadMainScript(WorkerPrivate* aWorkerPrivate,
+                    UniquePtr<SerializedStackHolder> aOriginStack,
                     const nsAString& aScriptURL,
-                    WorkerScriptType aWorkerScriptType,
-                    ErrorResult& aRv);
+                    WorkerScriptType aWorkerScriptType, ErrorResult& aRv);
 
 void Load(WorkerPrivate* aWorkerPrivate,
+          UniquePtr<SerializedStackHolder> aOriginStack,
           const nsTArray<nsString>& aScriptURLs,
-          WorkerScriptType aWorkerScriptType,
-          mozilla::ErrorResult& aRv);
+          WorkerScriptType aWorkerScriptType, ErrorResult& aRv);
 
-} // namespace scriptloader
+}  // namespace workerinternals
 
-END_WORKERS_NAMESPACE
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_workers_scriptloader_h__ */

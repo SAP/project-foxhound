@@ -6,29 +6,32 @@
 # ***** END LICENSE BLOCK *****
 
 import copy
+import json
 import os
-import re
 import sys
 
 # load modules from parent dir
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
-from mozharness.base.errors import TarErrorList
-from mozharness.base.log import INFO, ERROR, WARNING
+from mozharness.base.errors import BaseErrorList, TarErrorList
+from mozharness.base.log import INFO
 from mozharness.base.script import PreScriptAction
 from mozharness.base.transfer import TransferMixin
 from mozharness.base.vcs.vcsbase import MercurialScript
-from mozharness.mozilla.blob_upload import BlobUploadMixin, blobupload_config_options
-from mozharness.mozilla.buildbot import TBPL_SUCCESS, TBPL_WARNING, TBPL_FAILURE
-from mozharness.mozilla.gaia import GaiaMixin
 from mozharness.mozilla.testing.errors import LogcatErrorList
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 from mozharness.mozilla.testing.unittest import TestSummaryOutputParserHelper
+from mozharness.mozilla.testing.codecoverage import (
+    CodeCoverageMixin,
+    code_coverage_config_options
+)
+from mozharness.mozilla.testing.errors import HarnessErrorList
+
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 
-# TODO: we could remove emulator specific code after B2G ICS emulator buildbot
-#       builds is turned off, Bug 1209180.
-class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMixin, GaiaMixin):
+
+class MarionetteTest(TestingMixin, MercurialScript, TransferMixin,
+                     CodeCoverageMixin):
     config_options = [[
         ["--application"],
         {"action": "store",
@@ -44,32 +47,12 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
          "help": "Optional command-line argument to pass to the browser"
          }
     ], [
-        ["--gaia-dir"],
-        {"action": "store",
-         "dest": "gaia_dir",
-         "default": None,
-         "help": "directory where gaia repo should be cloned"
-         }
-    ], [
-        ["--gaia-repo"],
-        {"action": "store",
-         "dest": "gaia_repo",
-         "default": "https://hg.mozilla.org/integration/gaia-central",
-         "help": "url of gaia repo to clone"
-         }
-    ], [
-        ["--gaia-branch"],
-        {"action": "store",
-         "dest": "gaia_branch",
-         "default": "default",
-         "help": "branch of gaia repo to clone"
-         }
-    ], [
         ["--marionette-address"],
         {"action": "store",
          "dest": "marionette_address",
          "default": None,
-         "help": "The host:port of the Marionette server running inside Gecko.  Unused for emulator testing",
+         "help": "The host:port of the Marionette server running inside Gecko. "
+                 "Unused for emulator testing",
          }
     ], [
         ["--emulator"],
@@ -81,14 +64,6 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
          "help": "Use an emulator for testing",
          }
     ], [
-        ["--gaiatest"],
-        {"action": "store_true",
-         "dest": "gaiatest",
-         "default": False,
-         "help": "Runs gaia-ui-tests by pulling down the test repo and invoking "
-                 "gaiatest's runtests.py rather than Marionette's."
-         }
-    ], [
         ["--test-manifest"],
         {"action": "store",
          "dest": "test_manifest",
@@ -97,56 +72,69 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
                  "tests directory",
          }
     ], [
-        ["--xre-path"],
-        {"action": "store",
-         "dest": "xre_path",
-         "default": "xulrunner-sdk",
-         "help": "directory (relative to gaia repo) of xulrunner-sdk"
-         }
-    ], [
-        ["--xre-url"],
-        {"action": "store",
-         "dest": "xre_url",
-         "default": None,
-         "help": "url of desktop xre archive"
-         }
-     ], [
         ["--total-chunks"],
         {"action": "store",
          "dest": "total_chunks",
          "help": "Number of total chunks",
-        }
+         }
      ], [
         ["--this-chunk"],
         {"action": "store",
          "dest": "this_chunk",
          "help": "Number of this chunk",
-        }
+         }
      ], [
-        ["--e10s"],
-        {"action": "store_true",
+        ["--disable-e10s"],
+        {"action": "store_false",
          "dest": "e10s",
+         "default": True,
+         "help": "Run tests without multiple processes (e10s). (Desktop builds only)",
+         }
+    ], [
+        ["--setpref"],
+        {"action": "append",
+         "metavar": "PREF=VALUE",
+         "dest": "extra_prefs",
+         "default": [],
+         "help": "Extra user prefs.",
+         }
+    ], [
+        ["--headless"],
+        {"action": "store_true",
+         "dest": "headless",
          "default": False,
-         "help": "Run tests with multiple processes. (Desktop builds only)",
-        }
+         "help": "Run tests in headless mode.",
+         }
+    ], [
+        ["--headless-width"],
+        {"action": "store",
+         "dest": "headless_width",
+         "default": "1600",
+         "help": "Specify headless virtual screen width (default: 1600).",
+         }
+    ], [
+        ["--headless-height"],
+        {"action": "store",
+         "dest": "headless_height",
+         "default": "1200",
+         "help": "Specify headless virtual screen height (default: 1200).",
+         }
     ], [
        ["--allow-software-gl-layers"],
        {"action": "store_true",
         "dest": "allow_software_gl_layers",
         "default": False,
         "help": "Permits a software GL implementation (such as LLVMPipe) to use the GL compositor."
-       }
+        }
+    ], [
+       ["--enable-webrender"],
+       {"action": "store_true",
+        "dest": "enable_webrender",
+        "default": False,
+        "help": "Enable the WebRender compositor in Gecko."
+        }
      ]] + copy.deepcopy(testing_config_options) \
-        + copy.deepcopy(blobupload_config_options)
-
-    error_list = [
-        {'substr': 'FAILED (errors=', 'level': WARNING},
-        {'substr': r'''Could not successfully complete transport of message to Gecko, socket closed''', 'level': ERROR},
-        {'substr': r'''Connection to Marionette server is lost. Check gecko''', 'level': ERROR},
-        {'substr': 'Timeout waiting for marionette on port', 'level': ERROR},
-        {'regex': re.compile(r'''(TEST-UNEXPECTED|PROCESS-CRASH)'''), 'level': ERROR},
-        {'regex': re.compile(r'''(\b((?!Marionette|TestMarionette|NoSuchElement|XPathLookup|NoSuchWindow|StaleElement|ScriptTimeout|ElementNotVisible|NoSuchFrame|InvalidResponse|Javascript|Timeout|InvalidElementState|NoAlertPresent|InvalidCookieDomain|UnableToSetCookie|InvalidSelector|MoveTargetOutOfBounds)\w*)Exception)'''), 'level': ERROR},
-    ]
+        + copy.deepcopy(code_coverage_config_options)
 
     repos = []
 
@@ -154,7 +142,6 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         super(MarionetteTest, self).__init__(
             config_options=self.config_options,
             all_actions=['clobber',
-                         'read-buildbot-config',
                          'pull',
                          'download-and-extract',
                          'create-virtualenv',
@@ -177,6 +164,10 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         self.test_url = c.get('test_url')
         self.test_packages_url = c.get('test_packages_url')
 
+        self.test_suite = self._get_test_suite(c.get('emulator'))
+        if self.test_suite not in self.config["suite_definitions"]:
+            self.fatal("{} is not defined in the config!".format(self.test_suite))
+
         if c.get('structured_output'):
             self.parser_class = StructuredOutputParser
         else:
@@ -185,7 +176,14 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
     def _pre_config_lock(self, rw_config):
         super(MarionetteTest, self)._pre_config_lock(rw_config)
         if not self.config.get('emulator') and not self.config.get('marionette_address'):
-                self.fatal("You need to specify a --marionette-address for non-emulator tests! (Try --marionette-address localhost:2828 )")
+            self.fatal("You need to specify a --marionette-address for non-emulator tests! "
+                       "(Try --marionette-address localhost:2828 )")
+
+    def _query_tests_dir(self):
+        dirs = self.query_abs_dirs()
+        test_dir = self.config["suite_definitions"][self.test_suite]["testsdir"]
+
+        return os.path.join(dirs['abs_test_install_dir'], test_dir)
 
     def query_abs_dirs(self):
         if self.abs_dirs:
@@ -195,23 +193,15 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         dirs['abs_test_install_dir'] = os.path.join(
             abs_dirs['abs_work_dir'], 'tests')
         dirs['abs_marionette_dir'] = os.path.join(
-            dirs['abs_test_install_dir'], 'marionette', 'marionette')
+            dirs['abs_test_install_dir'], 'marionette', 'harness', 'marionette_harness')
         dirs['abs_marionette_tests_dir'] = os.path.join(
             dirs['abs_test_install_dir'], 'marionette', 'tests', 'testing',
-            'marionette', 'harness', 'marionette', 'tests')
+            'marionette', 'harness', 'marionette_harness', 'tests')
         dirs['abs_gecko_dir'] = os.path.join(
             abs_dirs['abs_work_dir'], 'gecko')
         dirs['abs_emulator_dir'] = os.path.join(
             abs_dirs['abs_work_dir'], 'emulator')
-        dirs['abs_b2g-distro_dir'] = os.path.join(
-            dirs['abs_emulator_dir'], 'b2g-distro')
 
-        gaia_root_dir = self.config.get('gaia_dir')
-        if not gaia_root_dir:
-            gaia_root_dir = self.config['base_work_dir']
-        dirs['abs_gaia_dir'] = os.path.join(gaia_root_dir, 'gaia')
-        dirs['abs_gaiatest_dir'] = os.path.join(
-            dirs['abs_gaia_dir'], 'tests', 'python', 'gaia-ui-tests')
         dirs['abs_blob_upload_dir'] = os.path.join(abs_dirs['abs_work_dir'], 'blobber_upload_dir')
 
         for key in dirs.keys():
@@ -246,51 +236,15 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
             self.register_virtualenv_module(
                 'marionette', os.path.join('tests', 'marionette'))
 
-        if self.config.get('gaiatest'):
-            requirements = os.path.join(self.query_abs_dirs()['abs_gaiatest_dir'],
-                                        'tbpl_requirements.txt')
-            self.register_virtualenv_module(
-                'gaia-ui-tests',
-                url=self.query_abs_dirs()['abs_gaiatest_dir'],
-                method='pip',
-                requirements=[requirements],
-                editable=True)
-
-    def pull(self, **kwargs):
-        if self.config.get('gaiatest'):
-            # clone the gaia dir
-            dirs = self.query_abs_dirs()
-            dest = dirs['abs_gaia_dir']
-
-            repo = {
-                'repo_path': self.config.get('gaia_repo'),
-                'revision': 'default',
-                'branch': self.config.get('gaia_branch')
-            }
-
-            if self.buildbot_config is not None:
-                # get gaia commit via hgweb
-                repo.update({
-                    'revision': self.buildbot_config['properties']['revision'],
-                    'repo_path': 'https://hg.mozilla.org/%s' % self.buildbot_config['properties']['repo_path']
-                })
-
-            self.clone_gaia(dest, repo,
-                            use_gaia_json=self.buildbot_config is not None)
-
-        super(MarionetteTest, self).pull(**kwargs)
-
-    def _get_options_group(self, is_emulator, is_gaiatest):
+    def _get_test_suite(self, is_emulator):
         """
         Determine which in tree options group to use and return the
         appropriate key.
         """
         platform = 'emulator' if is_emulator else 'desktop'
-        testsuite = 'gaiatest' if is_gaiatest else 'marionette'
         # Currently running marionette on an emulator means webapi
         # tests. This method will need to change if this does.
-        if is_emulator and not is_gaiatest:
-            testsuite = 'webapi'
+        testsuite = 'webapi' if is_emulator else 'marionette'
         return '{}_{}'.format(testsuite, platform)
 
     def download_and_extract(self):
@@ -322,21 +276,23 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
                                     'marionette_raw.log')
         error_summary_file = os.path.join(dirs['abs_blob_upload_dir'],
                                           'marionette_errorsummary.log')
+        html_report_file = os.path.join(dirs['abs_blob_upload_dir'],
+                                        'report.html')
+
         config_fmt_args = {
             # emulator builds require a longer timeout
             'timeout': 60000 if self.config.get('emulator') else 10000,
-            'profile': os.path.join(dirs['abs_gaia_dir'], 'profile'),
+            'profile': os.path.join(dirs['abs_work_dir'], 'profile'),
             'xml_output': os.path.join(dirs['abs_work_dir'], 'output.xml'),
             'html_output': os.path.join(dirs['abs_blob_upload_dir'], 'output.html'),
             'logcat_dir': dirs['abs_work_dir'],
-            'emulator': 'x86' if os.path.isdir(os.path.join(dirs['abs_b2g-distro_dir'], 'out',
-                'target', 'product', 'generic_x86')) else 'arm',
+            'emulator': 'arm',
             'symbols_path': self.symbols_path,
-            'homedir': os.path.join(dirs['abs_emulator_dir'], 'b2g-distro'),
             'binary': self.binary_path,
             'address': self.config.get('marionette_address'),
             'raw_log_file': raw_log_file,
             'error_summary_file': error_summary_file,
+            'html_report_file': html_report_file,
             'gecko_log': dirs["abs_blob_upload_dir"],
             'this_chunk': self.config.get('this_chunk', 1),
             'total_chunks': self.config.get('total_chunks', 1)
@@ -346,81 +302,43 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         # build the marionette command arguments
         python = self.query_python_path('python')
 
-        if self.config.get('gaiatest'):
-            # make the gaia profile
-            build_config = os.path.join(dirs['abs_gaia_dir'], 'tests',
-                                        'python', 'gaia-ui-tests',
-                                        'build_config.json')
+        cmd = [python, '-u', os.path.join(dirs['abs_marionette_dir'],
+                                          'runtests.py')]
 
-            self.make_gaia(dirs['abs_gaia_dir'],
-                           self.config.get('xre_path'),
-                           xre_url=self.config.get('xre_url'),
-                           debug=False,
-                           noftu=False,
-                           build_config_path=build_config)
+        manifest = os.path.join(dirs['abs_marionette_tests_dir'],
+                                self.config['test_manifest'])
 
-            # write a testvars.json file
-            testvars = os.path.join(dirs['abs_gaiatest_dir'],
-                                    'gaiatest', 'testvars.json')
-            with open(testvars, 'w') as f:
-                f.write("""{"acknowledged_risks": true,
-                            "skip_warning": true,
-                            "settings": {
-                              "time.timezone": "America/Los_Angeles",
-                              "time.timezone.user-selected": "America/Los_Angeles"
-                            }}
-                        """)
-            config_fmt_args['testvars'] = testvars
+        if self.config.get('app_arg'):
+            config_fmt_args['app_arg'] = self.config['app_arg']
 
-            # gaia-ui-tests on B2G desktop builds
-            cmd = [python, '-u', os.path.join(dirs['abs_gaiatest_dir'],
-                                              'gaiatest',
-                                              'cli.py')]
+        if not self.config['e10s']:
+            cmd.append('--disable-e10s')
 
-            if not self.config.get('emulator'):
-                # support desktop builds with and without a built-in profile
-                binary_path = os.path.dirname(self.binary_path)
-                if os.access(os.path.join(binary_path, 'b2g-bin'), os.F_OK):
-                    # first, try to find and use b2g-bin
-                    config_fmt_args['binary'] = os.path.join(binary_path, 'b2g-bin')
-                else:
-                    # if b2g-bin cannot be found we must use just b2g
-                    config_fmt_args['binary'] = os.path.join(binary_path, 'b2g')
+        if self.config['enable_webrender']:
+            cmd.append('--enable-webrender')
 
-        else:
-            # Marionette or Marionette-webapi tests
-            cmd = [python, '-u', os.path.join(dirs['abs_marionette_dir'],
-                                              'runtests.py')]
+        cmd.extend(['--setpref={}'.format(p) for p in self.config['extra_prefs']])
 
-            manifest = os.path.join(dirs['abs_marionette_tests_dir'],
-                                    self.config['test_manifest'])
-
-            if self.config.get('app_arg'):
-                config_fmt_args['app_arg'] = self.config['app_arg']
-
-            if not self.config['e10s']:
-                cmd.append('--disable-e10s')
-
-            cmd.append('--gecko-log=%s' % os.path.join(dirs["abs_blob_upload_dir"],
-                                                       'gecko.log'))
+        cmd.append('--gecko-log=-')
 
         if self.config.get("structured_output"):
-            config_fmt_args["raw_log_file"]= "-"
+            cmd.append("--log-raw=-")
 
-        options_group = self._get_options_group(self.config.get('emulator'),
-                                                self.config.get('gaiatest'))
-
-        if options_group not in self.config["suite_definitions"]:
-            self.fatal("%s is not defined in the config!" % options_group)
-
-        for s in self.config["suite_definitions"][options_group]["options"]:
-            cmd.append(s % config_fmt_args)
+        for arg in self.config["suite_definitions"][self.test_suite]["options"]:
+            cmd.append(arg % config_fmt_args)
 
         if self.mkdir_p(dirs["abs_blob_upload_dir"]) == -1:
             # Make sure that the logging directory exists
             self.fatal("Could not create blobber upload directory")
 
-        cmd.append(manifest)
+        test_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
+
+        if test_paths and 'marionette' in test_paths:
+            paths = [os.path.join(dirs['abs_test_install_dir'], 'marionette', 'tests', p)
+                     for p in test_paths['marionette']]
+            cmd.extend(paths)
+        else:
+            cmd.append(manifest)
 
         try_options, try_tests = self.try_args("marionette")
         cmd.extend(self.query_tests_args(try_tests,
@@ -429,36 +347,41 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
         env = {}
         if self.query_minidump_stackwalk():
             env['MINIDUMP_STACKWALK'] = self.minidump_stackwalk_path
-        if self.config.get('gaiatest'):
-            env['GAIATEST_ACKNOWLEDGED_RISKS'] = '1'
-            env['GAIATEST_SKIP_WARNING'] = '1'
         env['MOZ_UPLOAD_DIR'] = self.query_abs_dirs()['abs_blob_upload_dir']
         env['MINIDUMP_SAVE_PATH'] = self.query_abs_dirs()['abs_blob_upload_dir']
+        env['RUST_BACKTRACE'] = 'full'
 
         if self.config['allow_software_gl_layers']:
             env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
+
+        if self.config['headless']:
+            env['MOZ_HEADLESS'] = '1'
+            env['MOZ_HEADLESS_WIDTH'] = self.config['headless_width']
+            env['MOZ_HEADLESS_HEIGHT'] = self.config['headless_height']
 
         if not os.path.isdir(env['MOZ_UPLOAD_DIR']):
             self.mkdir_p(env['MOZ_UPLOAD_DIR'])
         env = self.query_env(partial_env=env)
 
+        try:
+            cwd = self._query_tests_dir()
+        except Exception as e:
+            self.fatal("Don't know how to run --test-suite '{0}': {1}!".format(
+                self.test_suite, e))
+
         marionette_parser = self.parser_class(config=self.config,
                                               log_obj=self.log_obj,
-                                              error_list=self.error_list)
-        code = self.run_command(cmd, env=env,
-                                output_timeout=1000,
-                                output_parser=marionette_parser)
+                                              error_list=BaseErrorList + HarnessErrorList,
+                                              strict=False)
+        return_code = self.run_command(cmd,
+                                       cwd=cwd,
+                                       output_timeout=1000,
+                                       output_parser=marionette_parser,
+                                       env=env)
         level = INFO
-        if code == 0 and marionette_parser.passed > 0 and marionette_parser.failed == 0:
-            status = "success"
-            tbpl_status = TBPL_SUCCESS
-        elif code == 10 and marionette_parser.failed > 0:
-            status = "test failures"
-            tbpl_status = TBPL_WARNING
-        else:
-            status = "harness failures"
-            level = ERROR
-            tbpl_status = TBPL_FAILURE
+        tbpl_status, log_level, summary = marionette_parser.evaluate_parser(
+            return_code=return_code)
+        marionette_parser.append_tinderboxprint_line("marionette")
 
         qemu = os.path.join(dirs['abs_work_dir'], 'qemu.log')
         if os.path.isfile(qemu):
@@ -486,9 +409,9 @@ class MarionetteTest(TestingMixin, MercurialScript, BlobUploadMixin, TransferMix
 
         marionette_parser.print_summary('marionette')
 
-        self.log("Marionette exited with return code %s: %s" % (code, status),
+        self.log("Marionette exited with return code %s: %s" % (return_code, tbpl_status),
                  level=level)
-        self.buildbot_status(tbpl_status)
+        self.record_status(tbpl_status)
 
 
 if __name__ == '__main__':

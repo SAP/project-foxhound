@@ -1,6 +1,9 @@
-Services.scriptloader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js", this);
+Services.scriptloader.loadSubScript(
+  "chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js",
+  this
+);
 
-add_task(function*() {
+add_task(async function() {
   const SEARCH_TEXT = "text";
   const DATAURI = "data:text/html," + SEARCH_TEXT;
 
@@ -9,25 +12,29 @@ add_task(function*() {
 
   // Bug 493658. An invisible iframe that shouldn't interfere with
   // highlighting matches lying after it in the document
-  let invisible = "<iframe id='invisible' style='display: none;' " +
-                  "src='" + DATAURI + "'></iframe>";
+  let invisible =
+    "<iframe id='invisible' style='display: none;' " +
+    "src='" +
+    DATAURI +
+    "'></iframe>";
 
   let uri = DATAURI + invisible + SEARCH_TEXT + visible + SEARCH_TEXT;
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, uri);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, uri);
   let contentRect = tab.linkedBrowser.getBoundingClientRect();
   let noHighlightSnapshot = snapshotRect(window, contentRect);
   ok(noHighlightSnapshot, "Got noHighlightSnapshot");
 
-  yield openFindBarAndWait();
+  await openFindBarAndWait();
   gFindBar._findField.value = SEARCH_TEXT;
-  yield findAgainAndWait();
+  await findAgainAndWait();
   var matchCase = gFindBar.getElement("find-case-sensitive");
-  if (matchCase.checked)
+  if (matchCase.checked) {
     matchCase.doCommand();
+  }
 
   // Turn on highlighting
-  yield toggleHighlightAndWait(true);
-  yield closeFindBarAndWait();
+  await toggleHighlightAndWait(true);
+  await closeFindBarAndWait();
 
   // Take snapshot of highlighting
   let findSnapshot = snapshotRect(window, contentRect);
@@ -35,15 +42,15 @@ add_task(function*() {
 
   // Now, remove the highlighting, and take a snapshot to compare
   // to our original state
-  yield openFindBarAndWait();
-  yield toggleHighlightAndWait(false);
-  yield closeFindBarAndWait();
+  await openFindBarAndWait();
+  await toggleHighlightAndWait(false);
+  await closeFindBarAndWait();
 
   let unhighlightSnapshot = snapshotRect(window, contentRect);
   ok(unhighlightSnapshot, "Got unhighlightSnapshot");
 
   // Select the matches that should have been highlighted manually
-  yield ContentTask.spawn(tab.linkedBrowser, null, function*() {
+  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
     let doc = content.document;
     let win = doc.defaultView;
 
@@ -53,30 +60,28 @@ add_task(function*() {
     let range = iframe.contentDocument.createRange();
     range.selectNodeContents(ifBody.childNodes[0]);
     let ifWindow = iframe.contentWindow;
-    let ifDocShell = ifWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIWebNavigation)
-                             .QueryInterface(Ci.nsIDocShell);
+    let ifDocShell = ifWindow.docShell;
 
-    let ifController = ifDocShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                                 .getInterface(Ci.nsISelectionDisplay)
-                                 .QueryInterface(Ci.nsISelectionController);
+    let ifController = ifDocShell
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsISelectionDisplay)
+      .QueryInterface(Ci.nsISelectionController);
 
-    let frameFindSelection =
-      ifController.getSelection(ifController.SELECTION_FIND);
+    let frameFindSelection = ifController.getSelection(
+      ifController.SELECTION_FIND
+    );
     frameFindSelection.addRange(range);
 
     // Create manual highlights in the main document (the matches that lie
     // before/after the iframes
-    let docShell = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                      .getInterface(Ci.nsIWebNavigation)
-                      .QueryInterface(Ci.nsIDocShell);
+    let docShell = win.docShell;
 
-    let controller = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsISelectionDisplay)
-                             .QueryInterface(Ci.nsISelectionController);
+    let controller = docShell
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsISelectionDisplay)
+      .QueryInterface(Ci.nsISelectionController);
 
-    let docFindSelection =
-      controller.getSelection(ifController.SELECTION_FIND);
+    let docFindSelection = controller.getSelection(ifController.SELECTION_FIND);
 
     range = doc.createRange();
     range.selectNodeContents(doc.body.childNodes[0]);
@@ -101,18 +106,18 @@ add_task(function*() {
   res = compareSnapshots(noHighlightSnapshot, unhighlightSnapshot, true);
   ok(res[0], "Highlighting in iframe correctly removed");
 
-  yield BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(tab);
 });
 
 function toggleHighlightAndWait(shouldHighlight) {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     let listener = {
       onFindResult() {},
       onHighlightFinished() {
         gFindBar.browser.finder.removeResultListener(listener);
         resolve();
       },
-      onMatchesCountResult() {}
+      onMatchesCountResult() {},
     };
     gFindBar.browser.finder.addResultListener(listener);
     gFindBar.toggleHighlight(shouldHighlight);
@@ -127,26 +132,35 @@ function findAgainAndWait() {
         resolve();
       },
       onHighlightFinished() {},
-      onMatchesCountResult() {}
+      onMatchesCountResult() {},
     };
     gFindBar.browser.finder.addResultListener(listener);
     gFindBar.onFindAgainCommand();
   });
 }
 
-function* openFindBarAndWait() {
-  let awaitTransitionEnd = BrowserTestUtils.waitForEvent(gFindBar, "transitionend");
+async function openFindBarAndWait() {
+  await gFindBarPromise;
+  let awaitTransitionEnd = BrowserTestUtils.waitForEvent(
+    gFindBar,
+    "transitionend"
+  );
   gFindBar.open();
-  yield awaitTransitionEnd;
+  await awaitTransitionEnd;
 }
 
 // This test is comparing snapshots. It is necessary to wait for the gFindBar
 // to close before taking the snapshot so the gFindBar does not take up space
 // on the new snapshot.
-function* closeFindBarAndWait() {
-  let awaitTransitionEnd = BrowserTestUtils.waitForEvent(gFindBar, "transitionend", false, event => {
-    return event.propertyName == "visibility";
-  });
+async function closeFindBarAndWait() {
+  let awaitTransitionEnd = BrowserTestUtils.waitForEvent(
+    gFindBar,
+    "transitionend",
+    false,
+    event => {
+      return event.propertyName == "visibility";
+    }
+  );
   gFindBar.close();
-  yield awaitTransitionEnd;
+  await awaitTransitionEnd;
 }

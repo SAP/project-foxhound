@@ -21,10 +21,8 @@ namespace dom {
 
 class SapiCallback;
 
-class SapiService final : public nsISpeechService
-                        , public nsIObserver
-{
-public:
+class SapiService final : public nsISpeechService, public nsIObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSISPEECHSERVICE
   NS_DECL_NSIOBSERVER
@@ -35,11 +33,9 @@ public:
   static SapiService* GetInstance();
   static already_AddRefed<SapiService> GetInstanceForService();
 
-  static void Shutdown();
-
   static void __stdcall SpeechEventCallback(WPARAM aWParam, LPARAM aLParam);
 
-private:
+ private:
   virtual ~SapiService();
 
   already_AddRefed<ISpVoice> InitSapiInstance();
@@ -53,7 +49,7 @@ private:
   static StaticRefPtr<SapiService> sSingleton;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

@@ -10,7 +10,7 @@
 
 #include "GrStencilAttachment.h"
 #include "GrVkImage.h"
-#include "vk/GrVkDefines.h"
+#include "vk/GrVkTypes.h"
 
 class GrVkImageView;
 class GrVkGpu;
@@ -24,13 +24,12 @@ public:
         bool fPacked;
     };
 
-    static GrVkStencilAttachment* Create(GrVkGpu* gpu, GrGpuResource::LifeCycle lifeCycle,
-                                         int width, int height,
+    static GrVkStencilAttachment* Create(GrVkGpu* gpu, int width, int height,
                                          int sampleCnt, const Format& format);
 
     ~GrVkStencilAttachment() override;
 
-    const GrVkImage::Resource* imageResource() const { return this->resource(); }
+    const GrVkResource* imageResource() const { return this->resource(); }
     const GrVkImageView* stencilView() const { return fStencilView; }
 
     VkFormat vkFormat() const { return fFormat.fInternalFormat; }
@@ -43,10 +42,10 @@ private:
     size_t onGpuMemorySize() const override;
 
     GrVkStencilAttachment(GrVkGpu* gpu,
-                          GrGpuResource::LifeCycle lifeCycle,
                           const Format& format,
                           const GrVkImage::ImageDesc&,
-                          const GrVkImage::Resource*,
+                          const GrVkImageInfo&,
+                          sk_sp<GrVkImageLayout> layout,
                           const GrVkImageView* stencilView);
 
     GrVkGpu* getVkGpu() const;

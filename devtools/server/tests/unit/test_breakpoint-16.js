@@ -1,83 +1,67 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check that we can set breakpoints in columns, not just lines.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
-
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
-}
-
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-breakpoints", aServer);
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient,
-                           "test-breakpoints",
-                           function (aResponse, aTabClient, aThreadClient) {
-                             gThreadClient = aThreadClient;
-                             test_column_breakpoint();
-                           });
-  });
-}
-
-function test_column_breakpoint()
-{
-  // Debugger statement
-  gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let source = gThreadClient.source(aPacket.frame.where.source);
-    let location = {
-      line: gDebuggee.line0 + 1,
-      column: 55
+add_task(
+  threadFrontTest(async ({ threadFront, client, debuggee }) => {
+    const packet = await executeOnNextTickAndWaitForPause(
+      () => evaluateTestCode(debuggee),
+      threadFront
+    );
+    const source = await getSourceById(threadFront, packet.frame.where.actor);
+    const location = {
+      sourceUrl: source.url,
+      line: debuggee.line0 + 1,
+      column: 55,
     };
+
     let timesBreakpointHit = 0;
+    threadFront.setBreakpoint(location, {});
 
-    source.setBreakpoint(location, function (aResponse, bpClient) {
-      gThreadClient.addListener("paused", function onPaused(aEvent, aPacket) {
-        do_check_eq(aPacket.type, "paused");
-        do_check_eq(aPacket.why.type, "breakpoint");
-        do_check_eq(aPacket.why.actors[0], bpClient.actor);
-        do_check_eq(aPacket.frame.where.source.actor, source.actor);
-        do_check_eq(aPacket.frame.where.line, location.line);
-        do_check_eq(aPacket.frame.where.column, location.column);
+    while (timesBreakpointHit < 3) {
+      await resume(threadFront);
+      const packet = await waitForPause(threadFront);
+      testAssertions(packet, debuggee, source, location, timesBreakpointHit);
 
-        do_check_eq(gDebuggee.acc, timesBreakpointHit);
-        do_check_eq(aPacket.frame.environment.bindings.variables.i.value,
-                    timesBreakpointHit);
+      timesBreakpointHit++;
+    }
 
-        if (++timesBreakpointHit === 3) {
-          gThreadClient.removeListener("paused", onPaused);
-          bpClient.remove(function (aResponse) {
-            gThreadClient.resume(() => gClient.close().then(gCallback));
-          });
-        } else {
-          gThreadClient.resume();
-        }
-      });
+    threadFront.removeBreakpoint(location);
+    await threadFront.resume();
+  })
+);
 
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
-    });
+function evaluateTestCode(debuggee) {
+  /* eslint-disable */
+      Cu.evalInSandbox(
+        "var line0 = Error().lineNumber;\n" +
+        "(function () { debugger; this.acc = 0; for (var i = 0; i < 3; i++) this.acc++; }());",
+        debuggee
+      );
+      /* eslint-enable */
+}
 
-  });
+function testAssertions(
+  packet,
+  debuggee,
+  source,
+  location,
+  timesBreakpointHit
+) {
+  Assert.equal(packet.why.type, "breakpoint");
+  Assert.equal(packet.frame.where.actor, source.actor);
+  Assert.equal(packet.frame.where.line, location.line);
+  Assert.equal(packet.frame.where.column, location.column);
 
-
-  Components.utils.evalInSandbox(
-    "var line0 = Error().lineNumber;\n" +
-    "(function () { debugger; this.acc = 0; for (var i = 0; i < 3; i++) this.acc++; }());",
-    gDebuggee
+  Assert.equal(debuggee.acc, timesBreakpointHit);
+  Assert.equal(
+    packet.frame.environment.bindings.variables.i.value,
+    timesBreakpointHit
   );
 }

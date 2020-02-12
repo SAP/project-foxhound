@@ -12,59 +12,66 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* jshint esnext:true, maxlen: 100 */
-/* globals Components, Services */
+/* eslint max-len: ["error", 100] */
 
-'use strict';
+"use strict";
 
-this.EXPORTED_SYMBOLS = ['PdfJsTelemetry'];
+var EXPORTED_SYMBOLS = ["PdfJsTelemetry"];
 
-const Cu = Components.utils;
-Cu.import('resource://gre/modules/Services.jsm');
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.PdfJsTelemetry = {
-  onViewerIsUsed: function () {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_USED');
-    histogram.add(true);
+var PdfJsTelemetry = {
+  onViewerIsUsed() {
+    Services.telemetry.scalarAdd("pdf.viewer.used", 1);
   },
-  onFallback: function () {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_FALLBACK_SHOWN');
-    histogram.add(true);
+  onFallback() {
+    Services.telemetry.scalarAdd("pdf.viewer.fallback_shown", 1);
   },
-  onDocumentSize: function (size) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_DOCUMENT_SIZE_KB');
+  onDocumentSize(size) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_DOCUMENT_SIZE_KB"
+    );
     histogram.add(size / 1024);
   },
-  onDocumentVersion: function (versionId) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_DOCUMENT_VERSION');
+  onDocumentVersion(versionId) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_DOCUMENT_VERSION_2"
+    );
     histogram.add(versionId);
   },
-  onDocumentGenerator: function (generatorId) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_DOCUMENT_GENERATOR');
+  onDocumentGenerator(generatorId) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_DOCUMENT_GENERATOR_2"
+    );
     histogram.add(generatorId);
   },
-  onEmbed: function (isObject) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_EMBED');
-    histogram.add(isObject);
+  onEmbed(isObject) {
+    let histogram = Services.telemetry.getHistogramById("PDF_VIEWER_EMBED_2");
+    histogram.add(isObject ? "object_embed" : "iframe");
   },
-  onFontType: function (fontTypeId) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_FONT_TYPES');
+  onFontType(fontTypeId) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_FONT_TYPES_2"
+    );
     histogram.add(fontTypeId);
   },
-  onForm: function (isAcroform) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_FORM');
-    histogram.add(isAcroform);
+  onForm(formType) {
+    let histogram = Services.telemetry.getHistogramById("PDF_VIEWER_FORM_2");
+    histogram.add(formType);
   },
-  onPrint: function () {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_PRINT');
-    histogram.add(true);
+  onPrint() {
+    Services.telemetry.scalarAdd("pdf.viewer.print", 1);
   },
-  onStreamType: function (streamTypeId) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_STREAM_TYPES');
+  onStreamType(streamTypeId) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_STREAM_TYPES_2"
+    );
     histogram.add(streamTypeId);
   },
-  onTimeToView: function (ms) {
-    let histogram = Services.telemetry.getHistogramById('PDF_VIEWER_TIME_TO_VIEW_MS');
+  onTimeToView(ms) {
+    let histogram = Services.telemetry.getHistogramById(
+      "PDF_VIEWER_TIME_TO_VIEW_MS"
+    );
     histogram.add(ms);
-  }
+  },
 };

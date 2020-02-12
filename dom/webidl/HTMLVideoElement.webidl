@@ -11,14 +11,17 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLVideoElement : HTMLMediaElement {
-  [SetterThrows]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterThrows]
            attribute unsigned long width;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute unsigned long height;
   readonly attribute unsigned long videoWidth;
   readonly attribute unsigned long videoHeight;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute DOMString poster;
 };
 
@@ -45,13 +48,33 @@ partial interface HTMLVideoElement {
   // True if the video has an audio track available.
   readonly attribute boolean mozHasAudio;
 
-  // True if the video should use a screen wake lock.
-  [Pref="dom.wakelock.enabled", Func="Navigator::HasWakeLockSupport"]
-  attribute boolean mozUseScreenWakeLock;
+  // Attributes for builtin video controls to lock screen orientation.
+  // True if video controls should lock orientation when fullscreen.
+  [Pref="media.videocontrols.lock-video-orientation", Func="IsChromeOrXBLOrUAWidget"]
+    readonly attribute boolean mozOrientationLockEnabled;
+  // True if screen orientation is locked by video controls.
+  [Pref="media.videocontrols.lock-video-orientation", Func="IsChromeOrXBLOrUAWidget"]
+    attribute boolean mozIsOrientationLocked;
+
+  // Clones the frames playing in this <video> to the target. Cloning
+  // when either node is removed from their DOM trees. Throws if one or
+  // both <video> elements are not attached to a DOM tree.
+  [Throws, Func="IsChromeOrXBLOrUAWidget"]
+    void cloneElementVisually(HTMLVideoElement target);
+
+  // Stops a <video> from cloning visually. Does nothing if the <video>
+  // wasn't cloning in the first place.
+  [Func="IsChromeOrXBLOrUAWidget"]
+    void stopCloningElementVisually();
+
+  // Returns true if the <video> is being cloned visually to another
+  // <video> element (see cloneElementVisually).
+  [Func="IsChromeOrXBLOrUAWidget"]
+    readonly attribute boolean isCloningElementVisually;
 };
 
 // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#idl-def-HTMLVideoElement
 partial interface HTMLVideoElement {
-  [Func="mozilla::dom::MediaSource::Enabled", NewObject]
+  [Pref="media.mediasource.enabled", NewObject]
   VideoPlaybackQuality getVideoPlaybackQuality();
 };

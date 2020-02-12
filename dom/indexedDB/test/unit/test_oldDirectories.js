@@ -5,22 +5,18 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   // This lives in storage/default/http+++www.mozilla.org
   const url = "http://www.mozilla.org";
   const dbName = "dbC";
   const dbVersion = 1;
 
-  let ios = SpecialPowers.Cc["@mozilla.org/network/io-service;1"]
-                         .getService(SpecialPowers.Ci.nsIIOService);
-
-  let ssm = SpecialPowers.Cc["@mozilla.org/scriptsecuritymanager;1"]
-                         .getService(SpecialPowers.Ci.nsIScriptSecurityManager);
-
   function openDatabase() {
-    let uri = ios.newURI(url, null, null);
-    let principal = ssm.createCodebasePrincipal(uri, {});
+    let uri = Services.io.newURI(url);
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
+      uri,
+      {}
+    );
     let request = indexedDB.openForPrincipal(principal, dbName, dbVersion);
     return request;
   }
@@ -49,10 +45,7 @@ function testSteps()
 
   is(event.type, "success", "Correct event type");
 
-  let directoryService = Cc["@mozilla.org/file/directory_service;1"]
-                         .getService(Ci.nsIProperties);
-
-  let profileDir = directoryService.get("ProfD", Ci.nsIFile);
+  let profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
 
   let dir = profileDir.clone();
   dir.append("indexedDB");

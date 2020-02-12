@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=
 -->
 <head>
   <title>Test for Bug </title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="nextTest()">
@@ -25,12 +25,15 @@ var testFiles =
     "file_bug462076_3.html",         // Dynamic frames after onload
     "file_bug508537_1.html",         // Dynamic frames and forward-back
     "file_document_write_1.html",    // Session history + document.write
-    //"file_static_and_dynamic_1.html",// Static and dynamic frames and forward-back
-    "file_bug534178.html",           // Session history transaction clean-up.
+    // "file_static_and_dynamic_1.html",// Static and dynamic frames and forward-back
+    "file_bug534178.html",           // Session history entry clean-up.
     "file_fragment_handling_during_load.html",
     "file_nested_frames.html",
     "file_shiftReload_and_pushState.html",
-    "file_scrollRestoration.html"
+    "file_scrollRestoration.html",
+    "file_bug1300461.html",
+    "file_bug1326251.html",
+    "file_bug1379762-1.html",
   ];
 var testCount = 0; // Used by the test files.
 
@@ -41,20 +44,13 @@ var testWindow;
 function nextTest_() {
   if (testFiles.length) {
     testCount = 0;
-    testWindow = window.open(testFiles.shift(), "", "width=300,height=300");
-    testWindow.onunload = function () { } //XXX
+    let nextFile = testFiles.shift();
+    info("Running " + nextFile);
+    testWindow = window.open(nextFile, "", "width=360,height=480");
+    testWindow.onunload = function() { }; // to prevent bfcache
   } else {
     SimpleTest.finish();
   }
-}
-
-// Needed by file_document_write_1.html
-window.file_document_write_1_loadCount = 0;
-function isTestDynamic() {
-  var dyn = testWindow.document.getElementById("dynamic");
-  is(dyn, null, "Should have gone back to the static page!");
-  nextTest();
-  testWindow.close();
 }
 
 function nextTest() {

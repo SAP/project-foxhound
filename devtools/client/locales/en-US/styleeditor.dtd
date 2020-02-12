@@ -14,7 +14,6 @@
 <!ENTITY newButton.tooltip          "Create and append a new style sheet to the document">
 <!ENTITY newButton.accesskey        "N">
 
-<!ENTITY importButton.label         "Import…">
 <!ENTITY importButton.tooltip       "Import and append an existing style sheet to the document">
 <!ENTITY importButton.accesskey     "I">
 
@@ -26,25 +25,9 @@
 
 <!ENTITY optionsButton.tooltip      "Style Editor options">
 
-<!-- LOCALIZATION NOTE  (showOriginalSources.label): This is the label on the context
-     menu item to toggle showing original sources in the editor. -->
-<!ENTITY showOriginalSources.label     "Show original sources">
-
-<!-- LOCALIZATION NOTE  (showOriginalSources.accesskey): This is the access key for
-     the menu item to toggle showing original sources in the editor. -->
-<!ENTITY showOriginalSources.accesskey  "o">
-
-<!-- LOCALIZATION NOTE  (showMediaSidebar.label): This is the label on the context
-     menu item to toggle showing @media rule shortcuts in a sidebar. -->
-<!ENTITY showMediaSidebar.label     "Show @media sidebar">
-
-<!-- LOCALIZATION NOTE  (showMediaSidebar.accesskey): This is the access key for
-     the menu item to toggle showing the @media sidebar. -->
-<!ENTITY showMediaSidebar.accesskey     "m">
-
 <!-- LOCALICATION NOTE  (mediaRules.label): This is shown above the list of @media rules
      in each stylesheet editor sidebar. -->
-<!ENTITY mediaRules.label           "@media rules">
+<!ENTITY mediaRules.label           "Media Queries">
 
 <!ENTITY editorTextbox.placeholder  "Type CSS here.">
 
@@ -65,3 +48,7 @@
 <!-- LOCALIZATION NOTE (openLinkNewTab.label): This is the text for the
      context menu item that opens a stylesheet in a new tab -->
 <!ENTITY openLinkNewTab.label     "Open Link in New Tab">
+
+<!-- LOCALIZATION NOTE (copyUrl.label): This is the text for the
+     context menu item that copies a stylesheet's URL -->
+<!ENTITY copyUrl.label            "Copy URL">

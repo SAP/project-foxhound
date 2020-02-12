@@ -19,67 +19,64 @@
 namespace mozilla {
 namespace a11y {
 
-class ia2AccessibleRelation final : public IAccessibleRelation
-{
-public:
+class ia2AccessibleRelation final : public IAccessibleRelation {
+ public:
   ia2AccessibleRelation(RelationType aType, Relation* aRel);
 
   ia2AccessibleRelation(RelationType aType,
-                        nsTArray<RefPtr<Accessible>>&& aTargets) :
-    mType(aType), mTargets(Move(aTargets)) {}
+                        nsTArray<RefPtr<Accessible>>&& aTargets)
+      : mType(aType), mTargets(std::move(aTargets)) {}
 
   // IUnknown
   DECL_IUNKNOWN
 
   // IAccessibleRelation
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_relationType(
-      /* [retval][out] */ BSTR *relationType);
+      /* [retval][out] */ BSTR* relationType);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_localizedRelationType(
-      /* [retval][out] */ BSTR *localizedRelationType);
+      /* [retval][out] */ BSTR* localizedRelationType);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_nTargets(
-      /* [retval][out] */ long *nTargets);
+      /* [retval][out] */ long* nTargets);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_target(
       /* [in] */ long targetIndex,
-      /* [retval][out] */ IUnknown **target);
+      /* [retval][out] */ IUnknown** target);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_targets(
       /* [in] */ long maxTargets,
-      /* [length_is][size_is][out] */ IUnknown **target,
-      /* [retval][out] */ long *nTargets);
+      /* [length_is][size_is][out] */ IUnknown** target,
+      /* [retval][out] */ long* nTargets);
 
-  inline bool HasTargets() const
-    { return mTargets.Length(); }
+  inline bool HasTargets() const { return mTargets.Length(); }
 
-private:
+ private:
   ia2AccessibleRelation();
   ia2AccessibleRelation(const ia2AccessibleRelation&);
-  ia2AccessibleRelation& operator = (const ia2AccessibleRelation&);
+  ia2AccessibleRelation& operator=(const ia2AccessibleRelation&);
 
   RelationType mType;
-  nsTArray<RefPtr<Accessible> > mTargets;
+  nsTArray<RefPtr<Accessible>> mTargets;
 };
-
 
 /**
  * Gecko to IAccessible2 relation types map.
  */
 
-const WCHAR *const IA2_RELATION_NULL = L"";
+const WCHAR* const IA2_RELATION_NULL = L"";
 
 #define RELATIONTYPE(geckoType, name, atkType, msaaType, ia2Type) \
-  std::pair<RelationType, const WCHAR *const>(RelationType::geckoType, ia2Type),
+  std::pair<RelationType, const WCHAR* const>(RelationType::geckoType, ia2Type),
 
-static const std::pair<RelationType, const WCHAR *const> sRelationTypePairs[] = {
+static const std::pair<RelationType, const WCHAR* const> sRelationTypePairs[] =
+    {
 #include "RelationTypeMap.h"
 };
 
 #undef RELATIONTYPE
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif
-

@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=567938
 -->
 <head>
   <title>Test for Bug 567938</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -49,17 +49,17 @@ function initializeNextTest()
 function runTests()
 {
   document.getElementById('iframe').addEventListener('load', function(aEvent) {
-    is(frames['submit_frame'].location.href,
+    is(frames.submit_frame.location.href,
        "http://mochi.test:8888/tests/dom/html/test/" + gTestData[gCurrentTest],
        "The form should have been submitted");
     gCurrentTest++;
     if (gCurrentTest < gTestData.length) {
       initializeNextTest();
     } else {
-      aEvent.target.removeEventListener('load', arguments.callee, false);
+      aEvent.target.removeEventListener('load', arguments.callee);
       SimpleTest.finish();
     }
-    }, false);
+    });
 
   initializeNextTest();
 }

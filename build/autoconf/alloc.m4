@@ -16,8 +16,6 @@ for file in $MALLOC_HEADERS; do
   fi
 done
 
-MOZ_CHECK_HEADERS(alloca.h)
-
 AC_CHECK_FUNCS(strndup posix_memalign memalign)
 
 AC_CHECK_FUNCS(malloc_usable_size)
@@ -46,6 +44,12 @@ AC_EGREP_HEADER(valloc, malloc.h,
 AC_MSG_CHECKING([for valloc in unistd.h])
 AC_EGREP_HEADER(valloc, unistd.h,
                 AC_DEFINE(HAVE_VALLOC)
+                AC_MSG_RESULT([yes]),
+                AC_MSG_RESULT([no]))
+
+AC_MSG_CHECKING([for _aligned_malloc in malloc.h])
+AC_EGREP_HEADER(_aligned_malloc, malloc.h,
+                AC_DEFINE(HAVE_ALIGNED_MALLOC)
                 AC_MSG_RESULT([yes]),
                 AC_MSG_RESULT([no]))
 

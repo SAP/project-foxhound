@@ -24,7 +24,7 @@
         // causes an ice restart and then rolls it back
         // (does not result in sending an offer)
         function PC_LOCAL_SETUP_ICE_HANDLER(test) {
-          test.pcLocal.setupIceCandidateHandler(test);
+          test.pcLocal.setupIceCandidateHandler(test, () => {});
           if (test.testOptions.steeplechase) {
             test.pcLocal.endOfTrickleIce.then(() => {
               send_message({"type": "end_of_trickle_ice"});
@@ -42,11 +42,9 @@
           test.pcLocal.iceCheckingIceRollbackExpected = true;
         },
         function PC_LOCAL_ROLLBACK(test) {
-          return test.setLocalDescription(
-              test.pcLocal,
-              new RTCSessionDescription({ type: "rollback",
-                                          sdp: ""}),
-              STABLE);
+          return test.setLocalDescription(test.pcLocal,
+                                          { type: "rollback", sdp: ""},
+                                          STABLE);
         },
         // Rolling back should shut down gathering
         function PC_LOCAL_WAIT_FOR_END_OF_TRICKLE(test) {

@@ -2,12 +2,9 @@
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
 
 <window title="Test disableglobalhistory attribute on remote browsers"
-  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-  onload="run_test();">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
+        onload="run_test()"
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <browser id="inprocess_disabled" src="about:blank" type="content" disableglobalhistory="true" />
   <browser id="inprocess_enabled" src="about:blank" type="content" />
@@ -15,30 +12,28 @@
   <browser id="remote_disabled" src="about:blank" type="content" disableglobalhistory="true" />
   <browser id="remote_enabled" src="about:blank" type="content" />
 
-  <script type="text/javascript;version=1.7">
-  const {interfaces: Ci, classes: Cc, results: Cr, utils: Cu} = Components;
+  <script type="text/javascript">
 
   Cu.import("resource://testing-common/ContentTask.jsm");
-  ContentTask.setTestScope(window.opener.wrappedJSObject);
+  ContentTask.setTestScope(window.arguments[0].wrappedJSObject);
 
   function expectUseGlobalHistory(id, expected) {
     let browser = document.getElementById(id);
-    return ContentTask.spawn(browser, {id, expected}, function*({id, expected}) {
+    return ContentTask.spawn(browser, {id, expected}, function({id, expected}) {
       Assert.equal(docShell.useGlobalHistory, expected,
                    "Got the right useGlobalHistory state in the docShell of " + id);
     });
   }
 
-  function run_test() {
-    spawn_task(function*() {
-      yield expectUseGlobalHistory("inprocess_disabled", false);
-      yield expectUseGlobalHistory("inprocess_enabled", true);
+  async function run_test() {
+    await expectUseGlobalHistory("inprocess_disabled", false);
+    await expectUseGlobalHistory("inprocess_enabled", true);
 
-      yield expectUseGlobalHistory("remote_disabled", false);
-      yield expectUseGlobalHistory("remote_enabled", true);
-      window.opener.done();
-    });
-  };
+    await expectUseGlobalHistory("remote_disabled", false);
+    await expectUseGlobalHistory("remote_enabled", true);
+    window.arguments[0].done();
+    ok(true);
+  }
 
   </script>
 </window>

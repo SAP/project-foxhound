@@ -4,30 +4,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(OpusDecoder_h_)
-#define OpusDecoder_h_
+#  define OpusDecoder_h_
 
-#include "OpusParser.h"
-#include "PlatformDecoderModule.h"
+#  include "PlatformDecoderModule.h"
 
-#include "mozilla/Maybe.h"
-#include "nsAutoPtr.h"
+#  include "mozilla/Maybe.h"
+#  include "nsAutoPtr.h"
+#  include "nsTArray.h"
+
+struct OpusMSDecoder;
 
 namespace mozilla {
 
-class OpusDataDecoder : public MediaDataDecoder
-{
-public:
+class OpusParser;
+
+DDLoggedTypeDeclNameAndBase(OpusDataDecoder, MediaDataDecoder);
+
+class OpusDataDecoder : public MediaDataDecoder,
+                        public DecoderDoctorLifeLogger<OpusDataDecoder> {
+ public:
   explicit OpusDataDecoder(const CreateDecoderParams& aParams);
   ~OpusDataDecoder();
 
   RefPtr<InitPromise> Init() override;
-  void Input(MediaRawData* aSample) override;
-  void Flush() override;
-  void Drain() override;
-  void Shutdown() override;
-  const char* GetDescriptionName() const override
-  {
-    return "opus audio decoder";
+  RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
+  RefPtr<DecodePromise> Drain() override;
+  RefPtr<FlushPromise> Flush() override;
+  RefPtr<ShutdownPromise> Shutdown() override;
+  nsCString GetDescriptionName() const override {
+    return NS_LITERAL_CSTRING("opus audio decoder");
   }
 
   // Return true if mimetype is Opus
@@ -40,22 +45,19 @@ public:
   // values match.
   static void AppendCodecDelay(MediaByteBuffer* config, uint64_t codecDelayUS);
 
-private:
+ private:
   nsresult DecodeHeader(const unsigned char* aData, size_t aLength);
 
-  void ProcessDecode(MediaRawData* aSample);
-  MediaResult DoDecode(MediaRawData* aSample);
-  void ProcessDrain();
+  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
 
   const AudioInfo& mInfo;
   const RefPtr<TaskQueue> mTaskQueue;
-  MediaDataDecoderCallback* mCallback;
 
   // Opus decoder state
   nsAutoPtr<OpusParser> mOpusParser;
   OpusMSDecoder* mOpusDecoder;
 
-  uint16_t mSkip;        // Samples left to trim before playback.
+  uint16_t mSkip;  // Samples left to trim before playback.
   bool mDecodedHeader;
 
   // Opus padding should only be discarded on the final packet.  Once this
@@ -64,10 +66,10 @@ private:
   bool mPaddingDiscarded;
   int64_t mFrames;
   Maybe<int64_t> mLastFrameTime;
-  uint8_t mMappingTable[MAX_AUDIO_CHANNELS]; // Channel mapping table.
-
-  Atomic<bool> mIsFlushing;
+  AutoTArray<uint8_t, 8> mMappingTable;
+  AudioConfig::ChannelLayout::ChannelMap mChannelMap;
+  bool mDefaultPlaybackDeviceMono;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 #endif

@@ -3,11 +3,10 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+include('/media/webrtc/webrtc.mozbuild')
 
 EXPORTS += [
-    'nsIIPCBackgroundChildCreateCallback.h',
     'nsIIPCSerializableInputStream.h',
-    'nsIIPCSerializableURI.h',
 ]
 
 EXPORTS.mozilla.ipc += [
@@ -15,38 +14,47 @@ EXPORTS.mozilla.ipc += [
     'BackgroundParent.h',
     'BackgroundUtils.h',
     'BrowserProcessSubThread.h',
+    'ByteBuf.h',
+    'CrashReporterClient.h',
+    'CrashReporterHelper.h',
+    'CrashReporterHost.h',
+    'CrashReporterMetadataShmem.h',
     'CrossProcessMutex.h',
+    'CrossProcessSemaphore.h',
+    'EnvironmentMap.h',
     'FileDescriptor.h',
     'FileDescriptorSetChild.h',
     'FileDescriptorSetParent.h',
     'FileDescriptorUtils.h',
     'GeckoChildProcessHost.h',
+    'IdleSchedulerChild.h',
+    'IdleSchedulerParent.h',
+    'InProcessChild.h',
+    'InProcessParent.h',
     'InputStreamUtils.h',
     'IOThreadChild.h',
+    'IPCStreamAlloc.h',
+    'IPCStreamDestination.h',
+    'IPCStreamSource.h',
     'IPCStreamUtils.h',
+    'IPDLParamTraits.h',
     'MessageChannel.h',
     'MessageLink.h',
     'Neutering.h',
     'ProcessChild.h',
     'ProtocolUtils.h',
     'ScopedXREEmbed.h',
-    'SendStream.h',
-    'SendStreamAlloc.h',
     'SharedMemory.h',
     'SharedMemoryBasic.h',
     'Shmem.h',
     'TaskFactory.h',
     'Transport.h',
+    'TransportSecurityInfoUtils.h',
     'URIUtils.h',
     'WindowsMessageLoop.h',
 ]
 
-if CONFIG['MOZ_FAULTY'] == '1':
-    EXPORTS.mozilla.ipc += ['Faulty.h']
-    SOURCES += ['Faulty.cpp']
-
 if CONFIG['OS_ARCH'] == 'WINNT':
-    DEFINES['WEBRTC_WIN'] = True
     EXPORTS.mozilla.ipc += [
         'Transport_win.h',
     ]
@@ -56,7 +64,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'WindowsMessageLoop.cpp',
     ]
 else:
-    DEFINES['WEBRTC_POSIX'] = True
     EXPORTS.mozilla.ipc += [
         'Transport_posix.h',
     ]
@@ -76,6 +83,19 @@ elif not CONFIG['OS_ARCH'] in ('NetBSD', 'OpenBSD'):
 else:
     UNIFIED_SOURCES += [
         'CrossProcessMutex_unimplemented.cpp',
+    ]
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    SOURCES += [
+        'CrossProcessSemaphore_windows.cpp',
+    ]
+elif CONFIG['OS_ARCH'] != 'Darwin':
+    UNIFIED_SOURCES += [
+        'CrossProcessSemaphore_posix.cpp',
+    ]
+else:
+    UNIFIED_SOURCES += [
+        'CrossProcessSemaphore_unimplemented.cpp',
     ]
 
 # Android has its own,
@@ -111,6 +131,14 @@ else:
         'ProcessUtils_none.cpp',
     ]
 
+if CONFIG['OS_ARCH'] != 'WINNT':
+    EXPORTS.mozilla.ipc += [
+        'FileDescriptorShuffle.h',
+    ]
+    UNIFIED_SOURCES += [
+        'FileDescriptorShuffle.cpp',
+    ]
+
 EXPORTS.ipc += [
     'IPCMessageUtils.h',
 ]
@@ -119,47 +147,60 @@ UNIFIED_SOURCES += [
     'BackgroundImpl.cpp',
     'BackgroundUtils.cpp',
     'BrowserProcessSubThread.cpp',
+    'CrashReporterClient.cpp',
+    'CrashReporterHost.cpp',
+    'CrashReporterMetadataShmem.cpp',
     'FileDescriptor.cpp',
     'FileDescriptorUtils.cpp',
+    'IdleSchedulerChild.cpp',
+    'IdleSchedulerParent.cpp',
+    'InProcessImpl.cpp',
     'InputStreamUtils.cpp',
     'IPCMessageUtils.cpp',
+    'IPCStreamChild.cpp',
+    'IPCStreamDestination.cpp',
+    'IPCStreamParent.cpp',
+    'IPCStreamSource.cpp',
     'IPCStreamUtils.cpp',
     'MessageChannel.cpp',
     'MessageLink.cpp',
     'MessagePump.cpp',
     'ProcessChild.cpp',
+    'ProcessUtils_common.cpp',
     'ProtocolUtils.cpp',
     'ScopedXREEmbed.cpp',
-    'SendStreamChild.cpp',
-    'SendStreamParent.cpp',
     'SharedMemory.cpp',
     'Shmem.cpp',
     'StringUtil.cpp',
+    'TransportSecurityInfoUtils.cpp',
+    'URIUtils.cpp',
 ]
 
-# GeckoChildProcessHost.cpp cannot be built in unified mode because it uses plarena.h.
-# URIUtils.cpp cannot be built in unified mode because of name clashes on strdup.
 SOURCES += [
     'BackgroundChildImpl.cpp',
     'BackgroundParentImpl.cpp',
     'FileDescriptorSetChild.cpp',
     'FileDescriptorSetParent.cpp',
-    'GeckoChildProcessHost.cpp',
-    'URIUtils.cpp',
 ]
 
-if CONFIG['_MSC_VER']:
-    # This is intended as a temporary hack to support building with VS2015.
-    # 'reinterpret_cast': conversion from 'DWORD' to 'HANDLE' of greater size
-    SOURCES['BackgroundChildImpl.cpp'].flags += ['-wd4312']
-    SOURCES['BackgroundParentImpl.cpp'].flags += ['-wd4312']
+if CONFIG['OS_ARCH'] == 'Darwin':
+    # GeckoChildProcessHost.cpp cannot be built unified due to OSX header
+    # clashes with TextRange.
+    SOURCES += [
+        'GeckoChildProcessHost.cpp',
+    ]
+else:
+    UNIFIED_SOURCES += [
+        'GeckoChildProcessHost.cpp',
+    ]
 
 LOCAL_INCLUDES += [
     '/caps',
     '/dom/broadcastchannel',
     '/dom/indexedDB',
-    '/dom/workers',
+    '/dom/storage',
     '/media/webrtc/trunk',
+    '/media/webrtc/trunk/webrtc',
     '/xpcom/build',
 ]
 
@@ -169,16 +210,20 @@ IPDL_SOURCES = [
     'PBackground.ipdl',
     'PBackgroundSharedTypes.ipdlh',
     'PBackgroundTest.ipdl',
+    'PChildToParentStream.ipdl',
     'PFileDescriptorSet.ipdl',
-    'PProcLoader.ipdl',
+    'PIdleScheduler.ipdl',
+    'PInProcess.ipdl',
+    'PParentToChildStream.ipdl',
     'ProtocolTypes.ipdlh',
-    'PSendStream.ipdl',
     'URIParams.ipdlh',
 ]
 
-
 LOCAL_INCLUDES += [
+    '/dom/ipc',
+    '/toolkit/crashreporter',
     '/toolkit/xre',
+    '/xpcom/base',
     '/xpcom/threads',
 ]
 
@@ -186,13 +231,8 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-for var in ('MOZ_CHILD_PROCESS_NAME', 'MOZ_CHILD_PROCESS_NAME_PIE',
-            'MOZ_CHILD_PROCESS_BUNDLE', 'DLL_PREFIX', 'DLL_SUFFIX'):
+for var in ('MOZ_CHILD_PROCESS_NAME', 'MOZ_CHILD_PROCESS_BUNDLE'):
     DEFINES[var] = '"%s"' % CONFIG[var]
-
-LOCAL_INCLUDES += [
-    '/toolkit/crashreporter',
-]
 
 if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_ARCH'] == 'WINNT':
     LOCAL_INCLUDES += [
@@ -201,5 +241,8 @@ if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_ARCH'] == 'WINNT':
         '/security/sandbox/win/src/sandboxbroker',
     ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow']
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

@@ -25,13 +25,17 @@ if CONFIG['ACCESSIBILITY']:
         '../../xpcom',
     ]
 
-    if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
         LOCAL_INCLUDES += [
             '/accessible/atk',
         ]
     elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         LOCAL_INCLUDES += [
             '/accessible/mac',
+        ]
+    elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+        LOCAL_INCLUDES += [
+            '/accessible/android',
         ]
     else:
         LOCAL_INCLUDES += [
@@ -40,8 +44,10 @@ if CONFIG['ACCESSIBILITY']:
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['GNU_CXX']:
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 FINAL_LIBRARY = 'xul'
-

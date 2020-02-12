@@ -20,10 +20,12 @@
         font-size: 20px
       }
     </style>
-    <script type="application/javascript;version=1.8">
+    <script type="application/javascript">
+      /* exported log */
       function log(msg) {
-        let output = document.getElementById("output");
+        const output = document.getElementById("output");
 
+        // eslint-disable-next-line no-unsanitized/property
         output.innerHTML = msg;
       }
     </script>

@@ -17,11 +17,13 @@
 
 #if defined(MIPS32_LE)
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
 
+#if !defined(MIPS_DSP_R2_LE)
 // allpass filter coefficients.
 static const uint16_t kResampleAllpass1[3] = {3284, 24441, 49528};
 static const uint16_t kResampleAllpass2[3] = {12199, 37471, 60255};
+#endif
 
 // Multiply a 32-bit value with a 16-bit value and accumulate to another input:
 #define MUL_ACCUM_1(a, b, c) WEBRTC_SPL_SCALEDIFF32(a, b, c)
@@ -29,11 +31,11 @@ static const uint16_t kResampleAllpass2[3] = {12199, 37471, 60255};
 
 // decimator
 void WebRtcSpl_DownsampleBy2(const int16_t* in,
-                             int len,
+                             size_t len,
                              int16_t* out,
                              int32_t* filtState) {
   int32_t out32;
-  int i, len1;
+  size_t i, len1;
 
   register int32_t state0 = filtState[0];
   register int32_t state1 = filtState[1];

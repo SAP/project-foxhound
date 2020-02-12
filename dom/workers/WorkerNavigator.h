@@ -7,75 +7,67 @@
 #ifndef mozilla_dom_workernavigator_h__
 #define mozilla_dom_workernavigator_h__
 
-#include "Workers.h"
-#include "RuntimeService.h"
+#include "WorkerCommon.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/StorageManager.h"
+#include "mozilla/dom/workerinternals/RuntimeService.h"
 
 namespace mozilla {
+namespace webgpu {
+class Instance;
+}  // namespace webgpu
 namespace dom {
 class Promise;
 class StorageManager;
+class MediaCapabilities;
 
-class WorkerNavigator final : public nsWrapperCache
-{
-  typedef struct workers::RuntimeService::NavigatorProperties NavigatorProperties;
+namespace network {
+class Connection;
+}  // namespace network
+
+class WorkerNavigator final : public nsWrapperCache {
+  typedef struct workerinternals::RuntimeService::NavigatorProperties
+      NavigatorProperties;
 
   NavigatorProperties mProperties;
   RefPtr<StorageManager> mStorageManager;
+  RefPtr<network::Connection> mConnection;
+  RefPtr<dom::MediaCapabilities> mMediaCapabilities;
+  RefPtr<webgpu::Instance> mWebGpu;
   bool mOnline;
 
-  WorkerNavigator(const NavigatorProperties& aProperties,
-                  bool aOnline)
-    : mProperties(aProperties)
-    , mOnline(aOnline)
-  {
-    MOZ_COUNT_CTOR(WorkerNavigator);
-  }
+  WorkerNavigator(const NavigatorProperties& aProperties, bool aOnline);
+  ~WorkerNavigator();
 
-  ~WorkerNavigator()
-  {
-    MOZ_COUNT_DTOR(WorkerNavigator);
-  }
-
-public:
-
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WorkerNavigator)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WorkerNavigator)
 
-  static already_AddRefed<WorkerNavigator>
-  Create(bool aOnLine);
+  static already_AddRefed<WorkerNavigator> Create(bool aOnLine);
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  nsISupports* GetParentObject() const {
-    return nullptr;
-  }
+  nsISupports* GetParentObject() const { return nullptr; }
 
-  void GetAppCodeName(nsString& aAppCodeName) const
-  {
+  void GetAppCodeName(nsString& aAppCodeName, ErrorResult& /* unused */) const {
     aAppCodeName.AssignLiteral("Mozilla");
   }
-  void GetAppName(nsString& aAppName) const;
+  void GetAppName(nsString& aAppName, CallerType aCallerType) const;
 
-  void GetAppVersion(nsString& aAppVersion) const;
+  void GetAppVersion(nsString& aAppVersion, CallerType aCallerType,
+                     ErrorResult& aRv) const;
 
-  void GetPlatform(nsString& aPlatform) const;
+  void GetPlatform(nsString& aPlatform, CallerType aCallerType,
+                   ErrorResult& aRv) const;
 
-  void GetProduct(nsString& aProduct) const
-  {
-    aProduct.AssignLiteral("Gecko");
-  }
+  void GetProduct(nsString& aProduct) const { aProduct.AssignLiteral("Gecko"); }
 
-  bool TaintEnabled() const
-  {
-    return false;
-  }
+  bool TaintEnabled() const { return false; }
 
-  void GetLanguage(nsString& aLanguage) const
-  {
+  void GetLanguage(nsString& aLanguage) const {
     if (mProperties.mLanguages.Length() >= 1) {
       aLanguage.Assign(mProperties.mLanguages[0]);
     } else {
@@ -83,32 +75,32 @@ public:
     }
   }
 
-  void GetLanguages(nsTArray<nsString>& aLanguages) const
-  {
+  void GetLanguages(nsTArray<nsString>& aLanguages) const {
     aLanguages = mProperties.mLanguages;
   }
 
-  void GetUserAgent(nsString& aUserAgent, ErrorResult& aRv) const;
+  void GetUserAgent(nsString& aUserAgent, CallerType aCallerType,
+                    ErrorResult& aRv) const;
 
-  bool OnLine() const
-  {
-    return mOnline;
-  }
+  bool OnLine() const { return mOnline; }
 
   // Worker thread only!
-  void SetOnLine(bool aOnline)
-  {
-    mOnline = aOnline;
-  }
+  void SetOnLine(bool aOnline) { mOnline = aOnline; }
 
   void SetLanguages(const nsTArray<nsString>& aLanguages);
 
   uint64_t HardwareConcurrency() const;
 
   StorageManager* Storage();
+
+  network::Connection* GetConnection(ErrorResult& aRv);
+
+  dom::MediaCapabilities* MediaCapabilities();
+
+  webgpu::Instance* Gpu();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_workernavigator_h__
+#endif  // mozilla_dom_workernavigator_h__

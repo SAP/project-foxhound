@@ -15,19 +15,20 @@ namespace net {
 
 class WebSocketEventService;
 
-class WebSocketEventListenerParent final : public PWebSocketEventListenerParent
-                                         , public nsIWebSocketEventListener
-{
-public:
+class WebSocketEventListenerParent final : public PWebSocketEventListenerParent,
+                                           public nsIWebSocketEventListener {
+  friend class PWebSocketEventListenerParent;
+
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIWEBSOCKETEVENTLISTENER
 
   explicit WebSocketEventListenerParent(uint64_t aInnerWindowID);
 
-private:
+ private:
   ~WebSocketEventListenerParent();
 
-  virtual bool RecvClose() override;
+  mozilla::ipc::IPCResult RecvClose();
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -37,7 +38,7 @@ private:
   uint64_t mInnerWindowID;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_WebSocketEventListenerParent_h
+#endif  // mozilla_net_WebSocketEventListenerParent_h

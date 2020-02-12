@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_
 
 #include "structs.h"
 
@@ -39,7 +39,7 @@ void WebRtcIsacfix_PitchFilter(int16_t *indatFix,
 
 void WebRtcIsacfix_PitchFilterCore(int loopNumber,
                                    int16_t gain,
-                                   int index,
+                                   size_t index,
                                    int16_t sign,
                                    int16_t* inputState,
                                    int16_t* outputBuff2,
@@ -62,4 +62,4 @@ int32_t WebRtcIsacfix_Log2Q8( uint32_t x );
 
 void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8);
 
-#endif /* WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_ */
+#endif /* MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_PITCH_ESTIMATOR_H_ */

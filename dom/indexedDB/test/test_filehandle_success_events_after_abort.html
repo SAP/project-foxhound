@@ -6,11 +6,11 @@
 <head>
   <title>File Handle Test</title>
 
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 
-  <script type="text/javascript;version=1.7">
-  function testSteps()
+  <script type="text/javascript">
+  function* testSteps()
   {
     const name = window.location.pathname;
 
@@ -43,7 +43,7 @@
       is(event.target.error.name, "AbortError", "Good error");
       sawError = true;
       event.stopPropagation();
-    }
+    };
 
     fileHandle.abort();
 
@@ -53,19 +53,15 @@
     is(sawError, true, "Saw getMetadata() error");
 
     // Make sure the success event isn't queued somehow.
-    let comp = SpecialPowers.wrap(SpecialPowers.Components);
-    var thread = comp.classes["@mozilla.org/thread-manager;1"]
-                     .getService(comp.interfaces.nsIThreadManager)
-                     .currentThread;
+    var thread = SpecialPowers.Services.tm.currentThread;
     while (thread.hasPendingEvents()) {
       thread.processNextEvent(false);
     }
 
     finishTest();
-    yield undefined;
   }
   </script>
-  <script type="text/javascript;version=1.7" src="helpers.js"></script>
+  <script type="text/javascript" src="helpers.js"></script>
 
 </head>
 

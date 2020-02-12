@@ -1,8 +1,6 @@
-// |jit-test| slow;
-if (!('oomTest' in this))
-    quit();
+// |jit-test| slow; skip-if: !('oomTest' in this) || helperThreadCount() === 0
 
-enableSPSProfiling();
+enableGeckoProfiling();
 var lfGlobal = newGlobal();
 for (lfLocal in this) {
     lfGlobal[lfLocal] = this[lfLocal];

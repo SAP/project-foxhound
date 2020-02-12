@@ -8,7 +8,6 @@
 /* Implement shared vtbl methods. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h" 
 
 #if _HPUX
 #error "This code is for HP-PA RISC 32 bit mode only"
@@ -30,7 +29,6 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
   nsXPTCMiniVariant* dispatchParams = nullptr;
   const nsXPTMethodInfo* info;
   int32_t regwords = 1; /* self pointer is not in the variant records */
-  nsresult result = NS_ERROR_FAILURE;
   uint8_t paramCount;
   uint8_t i;
 
@@ -49,14 +47,16 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
   else
     dispatchParams = paramBuffer;
   NS_ASSERTION(dispatchParams,"no place for params");
-  if (!dispatchParams)
-    return NS_ERROR_OUT_OF_MEMORY;
+
+  const uint8_t indexOfJSContext = info->IndexOfJSContext();
 
   for(i = 0; i < paramCount; ++i, --args)
   {
     const nsXPTParamInfo& param = info->GetParam(i);
     const nsXPTType& type = param.GetType();
     nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+    MOZ_CRASH("NYI: support implicit JSContext*, bug 1475699");
 
     if(param.IsOut() || !type.IsArithmetic())
     {
@@ -116,7 +116,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
     ++regwords;
   }
 
-  result = self->mOuter->CallMethod((uint16_t) methodIndex, info, dispatchParams); 
+  nsresult result = self->mOuter->CallMethod((uint16_t) methodIndex, info,
+                                             dispatchParams);
 
   if(dispatchParams != paramBuffer)
     delete [] dispatchParams;
@@ -126,11 +127,21 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
 
 extern "C" nsresult SharedStub(int);
 
+#ifdef __GNUC__
+#define STUB_ENTRY(n)       \
+nsresult nsXPTCStubBase::Stub##n()  \
+{                           \
+    /* Save arg0 in its stack slot.  This assumes the frame size is 64. */ \
+    __asm__ __volatile__ ("STW %r26, -36-64(%sp)"); \
+    return SharedStub(n);   \
+}
+#else
 #define STUB_ENTRY(n)       \
 nsresult nsXPTCStubBase::Stub##n()  \
 {                           \
     return SharedStub(n);   \
 }
+#endif
 
 #define SENTINEL_ENTRY(n) \
 nsresult nsXPTCStubBase::Sentinel##n() \
@@ -140,4 +151,3 @@ nsresult nsXPTCStubBase::Sentinel##n() \
 }
 
 #include "xptcstubsdef.inc"
-

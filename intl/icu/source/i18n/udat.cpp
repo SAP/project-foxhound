@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
 *   Copyright (C) 1996-2015, International Business Machines
@@ -601,7 +603,7 @@ udat_getSymbols(const   UDateFormat     *fmt,
     } else {
         return -1;
     }
-    int32_t count;
+    int32_t count = 0;
     const UnicodeString *res = NULL;
 
     switch(type) {

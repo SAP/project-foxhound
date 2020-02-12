@@ -18,15 +18,17 @@ const PAGE = `data:text/html,<a id="target" href="%23" onclick="window.open('htt
  * Promises infrastructure.
  */
 function promiseNewWindow() {
-  return new Promise((resolve) => {
-    let observer = (subject, topic, data) => {
+  return new Promise(resolve => {
+    let observer = (win, topic, data) => {
       if (topic == "domwindowopened") {
         Services.ww.unregisterNotification(observer);
-        let win = subject.QueryInterface(Ci.nsIDOMWindow);
-        win.addEventListener("load", function onLoad() {
-          win.removeEventListener("load", onLoad);
-          resolve(win);
-        });
+        win.addEventListener(
+          "load",
+          function() {
+            resolve(win);
+          },
+          { once: true }
+        );
       }
     };
 
@@ -39,27 +41,36 @@ function promiseNewWindow() {
  * to the initial browser in that window once the window has finished
  * painting.
  */
-add_task(function* test_focus_browser() {
-  yield BrowserTestUtils.withNewTab({
-    url: PAGE,
-    gBrowser,
-  }, function*(browser) {
-    let newWinPromise = promiseNewWindow();
-    let delayedStartupPromise = BrowserTestUtils.waitForNewWindow();
+add_task(async function test_focus_browser() {
+  await BrowserTestUtils.withNewTab(
+    {
+      url: PAGE,
+      gBrowser,
+    },
+    async function(browser) {
+      let newWinPromise = promiseNewWindow();
+      let delayedStartupPromise = BrowserTestUtils.waitForNewWindow();
 
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#target", {}, browser);
-    let newWin = yield newWinPromise;
-    yield BrowserTestUtils.contentPainted(newWin.gBrowser.selectedBrowser);
-    yield delayedStartupPromise;
+      await BrowserTestUtils.synthesizeMouseAtCenter("#target", {}, browser);
+      let newWin = await newWinPromise;
+      await BrowserTestUtils.contentPainted(newWin.gBrowser.selectedBrowser);
+      await delayedStartupPromise;
 
-    let focusedElement =
-      Services.focus.getFocusedElementForWindow(newWin, false, {});
+      let focusedElement = Services.focus.getFocusedElementForWindow(
+        newWin,
+        false,
+        {}
+      );
 
-    Assert.equal(focusedElement, newWin.gBrowser.selectedBrowser,
-                 "Initial browser should be focused");
+      Assert.equal(
+        focusedElement,
+        newWin.gBrowser.selectedBrowser,
+        "Initial browser should be focused"
+      );
 
-    yield BrowserTestUtils.closeWindow(newWin);
-  });
+      await BrowserTestUtils.closeWindow(newWin);
+    }
+  );
 });
 
 /**
@@ -67,30 +78,39 @@ add_task(function* test_focus_browser() {
  * shifts in that window before the content has a chance to paint
  * that we _don't_ steal focus once content has painted.
  */
-add_task(function* test_no_steal_focus() {
-  yield BrowserTestUtils.withNewTab({
-    url: PAGE,
-    gBrowser,
-  }, function*(browser) {
-    let newWinPromise = promiseNewWindow();
-    let delayedStartupPromise = BrowserTestUtils.waitForNewWindow();
+add_task(async function test_no_steal_focus() {
+  await BrowserTestUtils.withNewTab(
+    {
+      url: PAGE,
+      gBrowser,
+    },
+    async function(browser) {
+      let newWinPromise = promiseNewWindow();
+      let delayedStartupPromise = BrowserTestUtils.waitForNewWindow();
 
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#target", {}, browser);
-    let newWin = yield newWinPromise;
+      await BrowserTestUtils.synthesizeMouseAtCenter("#target", {}, browser);
+      let newWin = await newWinPromise;
 
-    // Because we're switching focus, we shouldn't steal it once
-    // content paints.
-    newWin.gURLBar.focus();
+      // Because we're switching focus, we shouldn't steal it once
+      // content paints.
+      newWin.gURLBar.focus();
 
-    yield BrowserTestUtils.contentPainted(newWin.gBrowser.selectedBrowser);
-    yield delayedStartupPromise;
+      await BrowserTestUtils.contentPainted(newWin.gBrowser.selectedBrowser);
+      await delayedStartupPromise;
 
-    let focusedElement =
-      Services.focus.getFocusedElementForWindow(newWin, false, {});
+      let focusedElement = Services.focus.getFocusedElementForWindow(
+        newWin,
+        false,
+        {}
+      );
 
-    Assert.equal(focusedElement, newWin.gURLBar.inputField,
-                 "URLBar should be focused");
+      Assert.equal(
+        focusedElement,
+        newWin.gURLBar.inputField,
+        "URLBar should be focused"
+      );
 
-    yield BrowserTestUtils.closeWindow(newWin);
-  });
+      await BrowserTestUtils.closeWindow(newWin);
+    }
+  );
 });

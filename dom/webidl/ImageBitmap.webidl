@@ -10,25 +10,10 @@
  * http://w3c.github.io/mediacapture-worker/#imagebitmap-extensions
  */
 
-// Extensions
-// Bug 1141979 - [FoxEye] Extend ImageBitmap with interfaces to access its
-// underlying image data
-//
-// Note:
-// Our overload resolution implementation doesn't deal with a union as the
-// distinguishing argument which means we cannot overload functions via union
-// types, a.k.a. we cannot overload createImageBitmap() via ImageBitmapSource
-// and BufferSource. Here, we work around this issue by adding the BufferSource
-// into ImageBitmapSource.
-
-typedef (HTMLImageElement or
-         HTMLVideoElement or
-         HTMLCanvasElement or
+typedef (CanvasImageSource or
          Blob or
-         ImageData or
-         CanvasRenderingContext2D or
-         ImageBitmap or
-         BufferSource) ImageBitmapSource;
+         CanvasRenderingContext2D or // This is out of spec.
+         ImageData) ImageBitmapSource;
 
 [Exposed=(Window,Worker)]
 interface ImageBitmap {
@@ -48,26 +33,6 @@ interface ImageBitmap {
 partial interface ImageBitmap {
   // Dispose of all graphical resources associated with this ImageBitmap.
   void close();
-};
-
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface ImageBitmapFactories {
-  [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage);
-  [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage, long aSx, long aSy, long aSw, long aSh);
-
-  // Extensions
-  // Bug 1141979 - [FoxEye] Extend ImageBitmap with interfaces to access its
-  // underlying image data
-  //
-  // Note:
-  // Overloaded functions cannot have different "extended attributes",
-  // so I cannot add preference on the extended version of createImageBitmap().
-  // To work around, I will then check the preference at run time and throw if
-  // the preference is set to be false.
-  [Throws]
-  Promise<ImageBitmap> createImageBitmap(ImageBitmapSource aImage, long aOffset, long aLength, ImageBitmapFormat aFormat, ImagePixelLayout aLayout);
 };
 
 // ImageBitmap-extensions
@@ -421,12 +386,3 @@ dictionary ChannelPixelLayout {
 };
 
 typedef sequence<ChannelPixelLayout> ImagePixelLayout;
-
-partial interface ImageBitmap {
-    [Throws, Func="mozilla::dom::ImageBitmap::ExtensionsEnabled"]
-    ImageBitmapFormat               findOptimalFormat (optional sequence<ImageBitmapFormat> aPossibleFormats);
-    [Throws, Func="mozilla::dom::ImageBitmap::ExtensionsEnabled"]
-    long                            mappedDataLength (ImageBitmapFormat aFormat);
-    [Throws, Func="mozilla::dom::ImageBitmap::ExtensionsEnabled"]
-    Promise<ImagePixelLayout> mapDataInto (ImageBitmapFormat aFormat, BufferSource aBuffer, long aOffset);
-};

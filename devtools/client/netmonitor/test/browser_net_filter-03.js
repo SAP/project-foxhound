@@ -20,56 +20,79 @@ const REQUESTS_WITH_MEDIA = BASIC_REQUESTS.concat([
   { url: "sjs_content-type-test-server.sjs?fmt=video" },
 ]);
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(FILTERING_URL);
+add_task(async function() {
+  const { monitor } = await initNetMonitor(FILTERING_URL);
   info("Starting test... ");
 
   // It seems that this test may be slow on Ubuntu builds running on ec2.
   requestLongerTimeout(2);
 
-  let { $, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const {
+    getDisplayedRequests,
+    getSelectedRequest,
+    getSortedRequests,
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
   // The test assumes that the first HTML request here has a longer response
   // body than the other HTML requests performed later during the test.
-  let requests = Cu.cloneInto(REQUESTS_WITH_MEDIA, {});
-  let newres = "res=<p>" + new Array(10).join(Math.random(10)) + "</p>";
+  const requests = Cu.cloneInto(REQUESTS_WITH_MEDIA, {});
+  const newres = "res=<p>" + new Array(10).join(Math.random(10)) + "</p>";
   requests[0].url = requests[0].url.replace("res=undefined", newres);
 
-  loadCommonFrameScript();
+  loadFrameScriptUtils();
 
   let wait = waitForNetworkEvents(monitor, 7);
-  yield performRequestsInContent(requests);
-  yield wait;
+  await performRequestsInContent(requests);
+  await wait;
 
-  EventUtils.sendMouseEvent({ type: "mousedown" }, $("#details-pane-toggle"));
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
 
-  isnot(RequestsMenu.selectedItem, null,
-    "There should be a selected item in the requests menu.");
-  is(RequestsMenu.selectedIndex, 0,
-    "The first item should be selected in the requests menu.");
-  is(NetMonitorView.detailsPaneHidden, false,
-    "The details pane should not be hidden after toggle button was pressed.");
+  isnot(
+    getSelectedRequest(store.getState()),
+    null,
+    "There should be a selected item in the requests menu."
+  );
+  is(
+    getSelectedIndex(store.getState()),
+    0,
+    "The first item should be selected in the requests menu."
+  );
+  is(
+    !!document.querySelector(".network-details-panel"),
+    true,
+    "The network details panel should be visible after toggle button was pressed."
+  );
 
   testFilterButtons(monitor, "all");
   testContents([0, 1, 2, 3, 4, 5, 6], 7, 0);
 
   info("Sorting by size, ascending.");
-  EventUtils.sendMouseEvent({ type: "click" }, $("#requests-menu-size-button"));
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#requests-list-contentSize-button")
+  );
   testFilterButtons(monitor, "all");
   testContents([6, 4, 5, 0, 1, 2, 3], 7, 6);
 
   info("Testing html filtering.");
-  EventUtils.sendMouseEvent({ type: "click" }, $("#requests-menu-filter-html-button"));
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector(".requests-list-filter-html-button")
+  );
   testFilterButtons(monitor, "html");
   testContents([6, 4, 5, 0, 1, 2, 3], 1, 6);
 
   info("Performing more requests.");
   wait = waitForNetworkEvents(monitor, 7);
   performRequestsInContent(REQUESTS_WITH_MEDIA);
-  yield wait;
+  await wait;
 
   info("Testing html filtering again.");
   resetSorting();
@@ -78,108 +101,65 @@ add_task(function* () {
 
   info("Performing more requests.");
   performRequestsInContent(REQUESTS_WITH_MEDIA);
-  yield waitForNetworkEvents(monitor, 7);
+  await waitForNetworkEvents(monitor, 7);
 
   info("Testing html filtering again.");
   resetSorting();
   testFilterButtons(monitor, "html");
-  testContents([12, 13, 20, 14, 16, 18, 15, 17, 19, 0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11],
-    3, 20);
+  testContents(
+    [12, 13, 20, 14, 16, 18, 15, 17, 19, 0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11],
+    3,
+    20
+  );
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   function resetSorting() {
-    EventUtils.sendMouseEvent({ type: "click" }, $("#requests-menu-waterfall-button"));
-    EventUtils.sendMouseEvent({ type: "click" }, $("#requests-menu-size-button"));
+    EventUtils.sendMouseEvent(
+      { type: "click" },
+      document.querySelector("#requests-list-cause-button")
+    );
+    EventUtils.sendMouseEvent(
+      { type: "click" },
+      document.querySelector("#requests-list-contentSize-button")
+    );
+  }
+
+  function getSelectedIndex(state) {
+    if (!state.requests.selectedId) {
+      return -1;
+    }
+    return getSortedRequests(state).findIndex(
+      r => r.id === state.requests.selectedId
+    );
   }
 
   function testContents(order, visible, selection) {
-    isnot(RequestsMenu.selectedItem, null,
-      "There should still be a selected item after filtering.");
-    is(RequestsMenu.selectedIndex, selection,
-      "The first item should be still selected after filtering.");
-    is(NetMonitorView.detailsPaneHidden, false,
-      "The details pane should still be visible after filtering.");
+    isnot(
+      getSelectedRequest(store.getState()),
+      null,
+      "There should still be a selected item after filtering."
+    );
+    is(
+      getSelectedIndex(store.getState()),
+      selection,
+      "The first item should be still selected after filtering."
+    );
+    is(
+      !!document.querySelector(".network-details-panel"),
+      true,
+      "The network details panel should still be visible after filtering."
+    );
 
-    is(RequestsMenu.items.length, order.length,
-      "There should be a specific amount of items in the requests menu.");
-    is(RequestsMenu.visibleItems.length, visible,
-      "There should be a specific amount of visbile items in the requests menu.");
-
-    for (let i = 0; i < order.length; i++) {
-      is(RequestsMenu.getItemAtIndex(i), RequestsMenu.items[i],
-        "The requests menu items aren't ordered correctly. Misplaced item " + i + ".");
-    }
-
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=html", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "html",
-          fullMimeType: "text/html; charset=utf-8"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=css", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "css",
-          fullMimeType: "text/css; charset=utf-8"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len * 2]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=js", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "js",
-          fullMimeType: "application/javascript; charset=utf-8"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len * 3]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=font", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "woff",
-          fullMimeType: "font/woff"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len * 4]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=image", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "png",
-          fullMimeType: "image/png"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len * 5]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=audio", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "ogg",
-          fullMimeType: "audio/ogg"
-        });
-    }
-    for (let i = 0, len = order.length / 7; i < len; i++) {
-      verifyRequestItemTarget(RequestsMenu.getItemAtIndex(order[i + len * 6]),
-        "GET", CONTENT_TYPE_SJS + "?fmt=video", {
-          fuzzyUrl: true,
-          status: 200,
-          statusText: "OK",
-          type: "webm",
-          fullMimeType: "video/webm"
-        });
-    }
+    is(
+      getSortedRequests(store.getState()).length,
+      order.length,
+      "There should be a specific amount of items in the requests menu."
+    );
+    is(
+      getDisplayedRequests(store.getState()).length,
+      visible,
+      "There should be a specific amount of visible items in the requests menu."
+    );
   }
 });

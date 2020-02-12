@@ -4,7 +4,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
 EXPORTS.mozilla.dom += [
+    'Promise-inl.h',
     'Promise.h',
     'PromiseDebugging.h',
     'PromiseNativeHandler.h',
@@ -13,14 +17,14 @@ EXPORTS.mozilla.dom += [
 
 UNIFIED_SOURCES += [
     'Promise.cpp',
-    'PromiseCallback.cpp',
     'PromiseDebugging.cpp',
+    'PromiseNativeHandler.cpp',
 ]
 
 LOCAL_INCLUDES += [
     '../base',
     '../ipc',
-    '../workers',
+    '/js/xpconnect/src',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -33,5 +37,5 @@ MOCHITEST_CHROME_MANIFESTS += ['tests/chrome.ini']
 
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

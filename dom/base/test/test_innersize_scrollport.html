@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Test for Bug 919437</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,9 +23,9 @@ function run()
   var newHeight = oldHeight / 2;
 
   var utils = SpecialPowers.getDOMWindowUtils(window);
-  utils.setScrollPositionClampingScrollPortSize(newWidth, newHeight);
-  is(window.innerWidth, newWidth, "innerWidth not updated to scroll port width");
-  is(window.innerHeight, newHeight, "innerHeight not updated to scroll port height");
+  utils.setVisualViewportSize(newWidth, newHeight);
+  is(window.innerWidth, newWidth, "innerWidth not updated to viewport width");
+  is(window.innerHeight, newHeight, "innerHeight not updated to viewport height");
 
   var innerWidthGetter = Object.getOwnPropertyDescriptor(window, "innerWidth").get;
   var innerHeightGetter = Object.getOwnPropertyDescriptor(window, "innerHeight").get;
@@ -40,7 +40,7 @@ function run()
   SimpleTest.finish();
 }
 
-window.addEventListener("load", run, false);
+window.addEventListener("load", run);
 
 </script>
 </pre>

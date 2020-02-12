@@ -5,90 +5,120 @@
 
 /* globals ContentAreaUtils */
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Prompt",
+  "resource://gre/modules/Prompt.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Prompt",
-                                  "resource://gre/modules/Prompt.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Messaging",
-                                  "resource://gre/modules/Messaging.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "EventDispatcher",
+  "resource://gre/modules/Messaging.jsm"
+);
 
 XPCOMUtils.defineLazyGetter(this, "ContentAreaUtils", function() {
   let ContentAreaUtils = {};
-  Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", ContentAreaUtils);
+  Services.scriptloader.loadSubScript(
+    "chrome://global/content/contentAreaUtils.js",
+    ContentAreaUtils
+  );
   return ContentAreaUtils;
 });
 
-this.EXPORTED_SYMBOLS = ["App","HelperApps"];
+const NON_FILE_URI_IGNORED_MIME_TYPES = new Set([
+  "text/html",
+  "application/xhtml+xml",
+]);
 
-function App(data) {
-  this.name = data.name;
-  this.isDefault = data.isDefault;
-  this.packageName = data.packageName;
-  this.activityName = data.activityName;
-  this.iconUri = "-moz-icon://" + data.packageName;
-}
+var EXPORTED_SYMBOLS = ["App", "HelperApps"];
 
-App.prototype = {
+class App {
+  constructor(data) {
+    this.name = data.name;
+    this.isDefault = data.isDefault;
+    this.packageName = data.packageName;
+    this.activityName = data.activityName;
+    this.iconUri = "-moz-icon://" + data.packageName;
+  }
+
   // callback will be null if a result is not requested
-  launch: function(uri, callback) {
+  launch(uri, callback) {
     HelperApps._launchApp(this, uri, callback);
     return false;
   }
 }
 
-var HelperApps =  {
+var HelperApps = {
   get defaultBrowsers() {
     delete this.defaultBrowsers;
-    this.defaultBrowsers = this._getHandlers("http://www.example.com", {
-      filterBrowsers: false,
-      filterHtml: false
-    });
+    this.defaultBrowsers = this._collectDefaultBrowsers();
     return this.defaultBrowsers;
   },
 
-  // Finds handlers that have registered for text/html pages or urls ending in html. Some apps, like
-  // the Samsung Video player will only appear for these urls, while some Browsers (like Link Bubble)
-  // won't register here because of the text/html mime type.
-  get defaultHtmlHandlers() {
-    delete this.defaultHtmlHandlers;
-    return this.defaultHtmlHandlers = this._getHandlers("http://www.example.com/index.html", {
+  _collectDefaultBrowsers() {
+    let httpHandlers = this._getHandlers("http://www.example.com", {
       filterBrowsers: false,
-      filterHtml: false
+      filterHtml: false,
     });
+    let httpsHandlers = this._getHandlers("https://www.example.com", {
+      filterBrowsers: false,
+      filterHtml: false,
+    });
+    return { ...httpHandlers, ...httpsHandlers };
   },
 
-  _getHandlers: function(url, options) {
+  // Finds handlers that have registered for urls ending in html. Some apps, like
+  // the Samsung Video player, will only appear for these urls.
+  get defaultHtmlHandlers() {
+    delete this.defaultHtmlHandlers;
+    return (this.defaultHtmlHandlers = this._getHandlers(
+      "http://www.example.com/index.html",
+      {
+        filterBrowsers: false,
+        filterHtml: false,
+      }
+    ));
+  },
+
+  _getHandlers(url, options) {
     let values = {};
 
-    let handlers = this.getAppsForUri(Services.io.newURI(url, null, null), options);
-    handlers.forEach(function(app) {
+    let handlers = this.getAppsForUri(Services.io.newURI(url), options);
+    handlers.forEach(app => {
       values[app.name] = app;
-    }, this);
+    });
 
     return values;
   },
 
   get protoSvc() {
     delete this.protoSvc;
-    return this.protoSvc = Cc["@mozilla.org/uriloader/external-protocol-service;1"].getService(Ci.nsIExternalProtocolService);
+    return (this.protoSvc = Cc[
+      "@mozilla.org/uriloader/external-protocol-service;1"
+    ].getService(Ci.nsIExternalProtocolService));
   },
 
   get urlHandlerService() {
     delete this.urlHandlerService;
-    return this.urlHandlerService = Cc["@mozilla.org/uriloader/external-url-handler-service;1"].getService(Ci.nsIExternalURLHandlerService);
+    return (this.urlHandlerService = Cc[
+      "@mozilla.org/uriloader/external-url-handler-service;1"
+    ].getService(Ci.nsIExternalURLHandlerService));
   },
 
-  prompt: function showPicker(apps, promptOptions, callback) {
+  prompt(apps, promptOptions, callback) {
     let p = new Prompt(promptOptions).addIconGrid({ items: apps });
     p.show(callback);
   },
 
-  getAppsForProtocol: function getAppsForProtocol(scheme) {
-    let protoHandlers = this.protoSvc.getProtocolHandlerInfoFromOS(scheme, {}).possibleApplicationHandlers;
+  getAppsForProtocol(scheme) {
+    let protoHandlers = this.protoSvc.getProtocolHandlerInfoFromOS(scheme, {})
+      .possibleApplicationHandlers;
 
     let results = {};
     for (let i = 0; i < protoHandlers.length; i++) {
@@ -98,13 +128,13 @@ var HelperApps =  {
           name: protoApp.name,
           description: protoApp.detailedDescription,
         });
-      } catch(e) {}
+      } catch (e) {}
     }
 
     return results;
   },
 
-  getAppsForUri: function getAppsForUri(uri, flags = { }, callback) {
+  getAppsForUri(uri, flags = {}, callback) {
     // Return early for well-known internal schemes
     if (!uri || uri.schemeIs("about") || uri.schemeIs("chrome")) {
       if (callback) {
@@ -113,23 +143,21 @@ var HelperApps =  {
       return [];
     }
 
-    flags.filterBrowsers = "filterBrowsers" in flags ? flags.filterBrowsers : true;
+    flags.filterBrowsers =
+      "filterBrowsers" in flags ? flags.filterBrowsers : true;
     flags.filterHtml = "filterHtml" in flags ? flags.filterHtml : true;
 
     // Query for apps that can/can't handle the mimetype
     let msg = this._getMessage("Intent:GetHandlers", uri, flags);
-    let parseData = (d) => {
-      let apps = []
-      if (!d) {
-        return apps;
+    let parseData = apps => {
+      if (!apps) {
+        return [];
       }
 
-      apps = this._parseApps(d.apps);
+      apps = this._parseApps(apps);
 
       if (flags.filterBrowsers) {
-        apps = apps.filter((app) => {
-          return app.name && !this.defaultBrowsers[app.name];
-        });
+        apps = apps.filter(app => app.name && !this.defaultBrowsers[app.name]);
       }
 
       // Some apps will register for html files (the Samsung Video player) but should be shown
@@ -137,11 +165,11 @@ var HelperApps =  {
       // file extension.
       if (flags.filterHtml) {
         // Matches from the first '.' to the end of the string, '?', or '#'
-        let ext = /\.([^\?#]*)/.exec(uri.path);
+        let ext = /\.([^\?#]*)/.exec(uri.pathQueryRef);
         if (ext && (ext[1] === "html" || ext[1] === "htm")) {
-          apps = apps.filter(function(app) {
-            return app.name && !this.defaultHtmlHandlers[app.name];
-          }, this);
+          apps = apps.filter(
+            app => app.name && !this.defaultHtmlHandlers[app.name]
+          );
         }
       }
 
@@ -149,81 +177,99 @@ var HelperApps =  {
     };
 
     if (!callback) {
-      let data = this._sendMessageSync(msg);
-      return parseData(data);
-    } else {
-      Messaging.sendRequestForResult(msg).then(function(data) {
-        callback(parseData(data));
+      let data = null;
+      // Use dispatch to enable synchronous callback for Gecko thread event.
+      EventDispatcher.instance.dispatch(msg.type, msg, {
+        onSuccess: result => {
+          data = result;
+        },
+        onError: () => {
+          throw new Error("Intent:GetHandler callback failed");
+        },
       });
+      if (data === null) {
+        throw new Error("Intent:GetHandler did not return data");
+      }
+      return parseData(data);
     }
+    EventDispatcher.instance.sendRequestForResult(msg).then(data => {
+      callback(parseData(data));
+    });
   },
 
-  launchUri: function launchUri(uri) {
+  launchUri(uri) {
     let msg = this._getMessage("Intent:Open", uri);
-    Messaging.sendRequest(msg);
+    EventDispatcher.instance.sendRequest(msg);
   },
 
-  _parseApps: function _parseApps(appInfo) {
+  _parseApps(appInfo) {
     // appInfo -> {apps: [app1Label, app1Default, app1PackageName, app1ActivityName, app2Label, app2Defaut, ...]}
     // see GeckoAppShell.java getHandlersForIntent function for details
     const numAttr = 4; // 4 elements per ResolveInfo: label, default, package name, activity name.
 
     let apps = [];
     for (let i = 0; i < appInfo.length; i += numAttr) {
-      apps.push(new App({"name" : appInfo[i],
-                 "isDefault" : appInfo[i+1],
-                 "packageName" : appInfo[i+2],
-                 "activityName" : appInfo[i+3]}));
+      apps.push(
+        new App({
+          name: appInfo[i],
+          isDefault: appInfo[i + 1],
+          packageName: appInfo[i + 2],
+          activityName: appInfo[i + 3],
+        })
+      );
     }
 
     return apps;
   },
 
-  _getMessage: function(type, uri, options = {}) {
+  _getMessage(type, uri, options = {}) {
     let mimeType = options.mimeType;
     if (uri && mimeType == undefined) {
       mimeType = ContentAreaUtils.getMIMETypeForURI(uri) || "";
+      if (
+        uri.scheme != "file" &&
+        NON_FILE_URI_IGNORED_MIME_TYPES.has(mimeType)
+      ) {
+        // We're guessing the MIME type based on the extension, which especially
+        // with non-local HTML documents will yield inconsistent results, as those
+        // commonly use URLs without any sort of extension, too.
+        // At the same time, apps offering to handle certain URLs in lieu of a
+        // browser often don't expect a MIME type to be used, and correspondingly
+        // register their intent filters without a MIME type.
+        // This means that when we *do* guess a non-empty MIME type because this
+        // time the URL *did* end on .(x)htm(l), Android won't offer any apps whose
+        // intent filter doesn't explicitly include that MIME type.
+        // Therefore, if the MIME type looks like something from that category,
+        // don't bother including it in the Intent for non-local files.
+        mimeType = "";
+      }
     }
 
     return {
       type: type,
       mime: mimeType,
       action: options.action || "", // empty action string defaults to android.intent.action.VIEW
-      url: uri ? uri.spec : "",
+      url: uri ? uri.displaySpec : "",
       packageName: options.packageName || "",
-      className: options.className || ""
+      className: options.className || "",
     };
   },
 
-  _launchApp: function launchApp(app, uri, callback) {
+  _launchApp(app, uri, callback) {
     if (callback) {
-        let msg = this._getMessage("Intent:OpenForResult", uri, {
-            packageName: app.packageName,
-            className: app.activityName
-        });
+      let msg = this._getMessage("Intent:OpenForResult", uri, {
+        packageName: app.packageName,
+        className: app.activityName,
+      });
 
-        Messaging.sendRequestForResult(msg).then(callback);
+      EventDispatcher.instance.sendRequestForResult(msg).then(callback);
     } else {
-        let msg = this._getMessage("Intent:Open", uri, {
-            packageName: app.packageName,
-            className: app.activityName
-        });
+      let msg = this._getMessage("Intent:Open", uri, {
+        packageName: app.packageName,
+        className: app.activityName,
+      });
 
-        Messaging.sendRequest(msg);
+      EventDispatcher.instance.sendRequest(msg);
     }
-  },
-
-  _sendMessageSync: function(msg) {
-    let res = null;
-    Messaging.sendRequestForResult(msg).then(function(data) {
-      res = data;
-    });
-
-    let thread = Services.tm.currentThread;
-    while (res == null) {
-      thread.processNextEvent(true);
-    }
-
-    return res;
   },
 };

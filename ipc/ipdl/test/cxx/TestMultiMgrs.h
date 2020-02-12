@@ -19,232 +19,204 @@ namespace _ipdltest {
 // Parent side
 //
 
-class TestMultiMgrsBottomParent :
-    public PTestMultiMgrsBottomParent
-{
-public:
-    TestMultiMgrsBottomParent() { }
-    virtual ~TestMultiMgrsBottomParent() { }
+class TestMultiMgrsBottomParent : public PTestMultiMgrsBottomParent {
+ public:
+  TestMultiMgrsBottomParent() {}
+  virtual ~TestMultiMgrsBottomParent() {}
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
-class TestMultiMgrsLeftParent :
-    public PTestMultiMgrsLeftParent
-{
-public:
-    TestMultiMgrsLeftParent() { }
-    virtual ~TestMultiMgrsLeftParent() { }
+class TestMultiMgrsLeftParent : public PTestMultiMgrsLeftParent {
+  friend class PTestMultiMgrsLeftParent;
 
-    bool HasChild(TestMultiMgrsBottomParent* c)
-    {
-        return ManagedPTestMultiMgrsBottomParent().Contains(c);
-    }
+ public:
+  TestMultiMgrsLeftParent() {}
+  virtual ~TestMultiMgrsLeftParent() {}
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+  bool HasChild(TestMultiMgrsBottomParent* c) {
+    return ManagedPTestMultiMgrsBottomParent().Contains(c);
+  }
 
-    virtual PTestMultiMgrsBottomParent* AllocPTestMultiMgrsBottomParent() override
-    {
-        return new TestMultiMgrsBottomParent();
-    }
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 
-    virtual bool DeallocPTestMultiMgrsBottomParent(PTestMultiMgrsBottomParent* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsBottomParent* AllocPTestMultiMgrsBottomParent() {
+    return new TestMultiMgrsBottomParent();
+  }
+
+  bool DeallocPTestMultiMgrsBottomParent(PTestMultiMgrsBottomParent* actor) {
+    delete actor;
+    return true;
+  }
 };
 
-class TestMultiMgrsRightParent :
-    public PTestMultiMgrsRightParent
-{
-public:
-    TestMultiMgrsRightParent() { }
-    virtual ~TestMultiMgrsRightParent() { }
+class TestMultiMgrsRightParent : public PTestMultiMgrsRightParent {
+  friend class PTestMultiMgrsRightParent;
 
-    bool HasChild(TestMultiMgrsBottomParent* c)
-    {
-        return ManagedPTestMultiMgrsBottomParent().Contains(c);
-    }
+ public:
+  TestMultiMgrsRightParent() {}
+  virtual ~TestMultiMgrsRightParent() {}
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+  bool HasChild(TestMultiMgrsBottomParent* c) {
+    return ManagedPTestMultiMgrsBottomParent().Contains(c);
+  }
 
-    virtual PTestMultiMgrsBottomParent* AllocPTestMultiMgrsBottomParent() override
-    {
-        return new TestMultiMgrsBottomParent();
-    }
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 
-    virtual bool DeallocPTestMultiMgrsBottomParent(PTestMultiMgrsBottomParent* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsBottomParent* AllocPTestMultiMgrsBottomParent() {
+    return new TestMultiMgrsBottomParent();
+  }
+
+  bool DeallocPTestMultiMgrsBottomParent(PTestMultiMgrsBottomParent* actor) {
+    delete actor;
+    return true;
+  }
 };
 
-class TestMultiMgrsParent :
-    public PTestMultiMgrsParent
-{
-public:
-    TestMultiMgrsParent() { }
-    virtual ~TestMultiMgrsParent() { }
+class TestMultiMgrsParent : public PTestMultiMgrsParent {
+  friend class PTestMultiMgrsParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestMultiMgrsParent() {}
+  virtual ~TestMultiMgrsParent() {}
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:
-    virtual bool RecvOK() override;
+  void Main();
 
-    virtual PTestMultiMgrsLeftParent* AllocPTestMultiMgrsLeftParent() override
-    {
-        return new TestMultiMgrsLeftParent();
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvOK();
 
-    virtual bool DeallocPTestMultiMgrsLeftParent(PTestMultiMgrsLeftParent* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsLeftParent* AllocPTestMultiMgrsLeftParent() {
+    return new TestMultiMgrsLeftParent();
+  }
 
-    virtual PTestMultiMgrsRightParent* AllocPTestMultiMgrsRightParent() override
-    {
-        return new TestMultiMgrsRightParent();
-    }
+  bool DeallocPTestMultiMgrsLeftParent(PTestMultiMgrsLeftParent* actor) {
+    delete actor;
+    return true;
+  }
 
-    virtual bool DeallocPTestMultiMgrsRightParent(PTestMultiMgrsRightParent* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsRightParent* AllocPTestMultiMgrsRightParent() {
+    return new TestMultiMgrsRightParent();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  bool DeallocPTestMultiMgrsRightParent(PTestMultiMgrsRightParent* actor) {
+    delete actor;
+    return true;
+  }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
 //-----------------------------------------------------------------------------
 // Child side
 //
 
-class TestMultiMgrsBottomChild :
-    public PTestMultiMgrsBottomChild
-{
-public:
-    TestMultiMgrsBottomChild() { }
-    virtual ~TestMultiMgrsBottomChild() { }
+class TestMultiMgrsBottomChild : public PTestMultiMgrsBottomChild {
+ public:
+  TestMultiMgrsBottomChild() {}
+  virtual ~TestMultiMgrsBottomChild() {}
 };
 
-class TestMultiMgrsLeftChild :
-    public PTestMultiMgrsLeftChild
-{
-public:
-    TestMultiMgrsLeftChild() { }
-    virtual ~TestMultiMgrsLeftChild() { }
+class TestMultiMgrsLeftChild : public PTestMultiMgrsLeftChild {
+  friend class PTestMultiMgrsLeftChild;
 
-    bool HasChild(PTestMultiMgrsBottomChild* c)
-    {
-        return ManagedPTestMultiMgrsBottomChild().Contains(c);
-    }
+ public:
+  TestMultiMgrsLeftChild() {}
+  virtual ~TestMultiMgrsLeftChild() {}
 
-protected:
-    virtual bool RecvPTestMultiMgrsBottomConstructor(PTestMultiMgrsBottomChild* actor) override;
+  bool HasChild(PTestMultiMgrsBottomChild* c) {
+    return ManagedPTestMultiMgrsBottomChild().Contains(c);
+  }
 
-    virtual PTestMultiMgrsBottomChild* AllocPTestMultiMgrsBottomChild() override
-    {
-        return new TestMultiMgrsBottomChild();
-    }
+ protected:
+  virtual mozilla::ipc::IPCResult RecvPTestMultiMgrsBottomConstructor(
+      PTestMultiMgrsBottomChild* actor) override;
 
-    virtual bool DeallocPTestMultiMgrsBottomChild(PTestMultiMgrsBottomChild* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsBottomChild* AllocPTestMultiMgrsBottomChild() {
+    return new TestMultiMgrsBottomChild();
+  }
+
+  bool DeallocPTestMultiMgrsBottomChild(PTestMultiMgrsBottomChild* actor) {
+    delete actor;
+    return true;
+  }
 };
 
-class TestMultiMgrsRightChild :
-    public PTestMultiMgrsRightChild
-{
-public:
-    TestMultiMgrsRightChild() { }
-    virtual ~TestMultiMgrsRightChild() { }
+class TestMultiMgrsRightChild : public PTestMultiMgrsRightChild {
+  friend class PTestMultiMgrsRightChild;
 
-    bool HasChild(PTestMultiMgrsBottomChild* c)
-    {
-        return ManagedPTestMultiMgrsBottomChild().Contains(c);
-    }
+ public:
+  TestMultiMgrsRightChild() {}
+  virtual ~TestMultiMgrsRightChild() {}
 
-protected:
-    virtual bool RecvPTestMultiMgrsBottomConstructor(PTestMultiMgrsBottomChild* actor) override;
+  bool HasChild(PTestMultiMgrsBottomChild* c) {
+    return ManagedPTestMultiMgrsBottomChild().Contains(c);
+  }
 
-    virtual PTestMultiMgrsBottomChild* AllocPTestMultiMgrsBottomChild() override
-    {
-        return new TestMultiMgrsBottomChild();
-    }
+ protected:
+  virtual mozilla::ipc::IPCResult RecvPTestMultiMgrsBottomConstructor(
+      PTestMultiMgrsBottomChild* actor) override;
 
-    virtual bool DeallocPTestMultiMgrsBottomChild(PTestMultiMgrsBottomChild* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsBottomChild* AllocPTestMultiMgrsBottomChild() {
+    return new TestMultiMgrsBottomChild();
+  }
+
+  bool DeallocPTestMultiMgrsBottomChild(PTestMultiMgrsBottomChild* actor) {
+    delete actor;
+    return true;
+  }
 };
 
-class TestMultiMgrsChild :
-    public PTestMultiMgrsChild
-{
-public:
-    TestMultiMgrsChild() { }
-    virtual ~TestMultiMgrsChild() { }
+class TestMultiMgrsChild : public PTestMultiMgrsChild {
+  friend class PTestMultiMgrsChild;
 
-    void Main();
+ public:
+  TestMultiMgrsChild() {}
+  virtual ~TestMultiMgrsChild() {}
 
-    PTestMultiMgrsBottomChild* mBottomL;
-    PTestMultiMgrsBottomChild* mBottomR;
+  void Main();
 
-protected:
-    virtual bool RecvCheck() override;
+  PTestMultiMgrsBottomChild* mBottomL;
+  PTestMultiMgrsBottomChild* mBottomR;
 
-    virtual PTestMultiMgrsLeftChild* AllocPTestMultiMgrsLeftChild() override
-    {
-        return new TestMultiMgrsLeftChild();
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvCheck();
 
-    virtual bool DeallocPTestMultiMgrsLeftChild(PTestMultiMgrsLeftChild* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsLeftChild* AllocPTestMultiMgrsLeftChild() {
+    return new TestMultiMgrsLeftChild();
+  }
 
-    virtual PTestMultiMgrsRightChild* AllocPTestMultiMgrsRightChild() override
-    {
-        return new TestMultiMgrsRightChild();
-    }
+  bool DeallocPTestMultiMgrsLeftChild(PTestMultiMgrsLeftChild* actor) {
+    delete actor;
+    return true;
+  }
 
-    virtual bool DeallocPTestMultiMgrsRightChild(PTestMultiMgrsRightChild* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestMultiMgrsRightChild* AllocPTestMultiMgrsRightChild() {
+    return new TestMultiMgrsRightChild();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitChild();
-    }
+  bool DeallocPTestMultiMgrsRightChild(PTestMultiMgrsRightChild* actor) {
+    delete actor;
+    return true;
+  }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestMultiMgrs_h
+#endif  // ifndef mozilla__ipdltest_TestMultiMgrs_h

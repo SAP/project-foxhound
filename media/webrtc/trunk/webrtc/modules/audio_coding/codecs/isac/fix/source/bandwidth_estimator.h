@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_
 
 #include "structs.h"
 
@@ -62,7 +62,7 @@ int32_t WebRtcIsacfix_UpdateUplinkBwImpl(BwEstimatorstr       *bwest_str,
                                          const int16_t         frameSize,
                                          const uint32_t        send_ts,
                                          const uint32_t        arr_ts,
-                                         const int16_t         pksize,
+                                         const size_t          pksize,
                                          const uint16_t        Index);
 
 /* Update receiving estimates. Used when we only receive BWE index, no iSAC data packet. */
@@ -95,6 +95,14 @@ int16_t WebRtcIsacfix_GetDownlinkMaxDelay(const BwEstimatorstr *bwest_str);
 /* Returns the max delay value from the other side in ms */
 int16_t WebRtcIsacfix_GetUplinkMaxDelay(const BwEstimatorstr *bwest_str);
 
+/* Fills in an IsacExternalBandwidthInfo struct. */
+void WebRtcIsacfixBw_GetBandwidthInfo(BwEstimatorstr* bwest_str,
+                                      IsacBandwidthInfo* bwinfo);
+
+/* Uses the values from an IsacExternalBandwidthInfo struct. */
+void WebRtcIsacfixBw_SetBandwidthInfo(BwEstimatorstr* bwest_str,
+                                      const IsacBandwidthInfo* bwinfo);
+
 /*
  * update amount of data in bottle neck buffer and burst handling
  * returns minimum payload size (bytes)
@@ -124,4 +132,4 @@ int16_t WebRtcIsacfix_GetNewFrameLength(int16_t bottle_neck, int16_t current_fra
 int16_t WebRtcIsacfix_GetSnr(int16_t bottle_neck, int16_t framesamples);
 
 
-#endif /*  WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_ */
+#endif /*  MODULES_AUDIO_CODING_CODECS_ISAC_FIX_SOURCE_BANDWIDTH_ESTIMATOR_H_ */

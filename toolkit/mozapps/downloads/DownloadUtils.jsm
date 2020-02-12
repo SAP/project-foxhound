@@ -5,7 +5,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "DownloadUtils" ];
+var EXPORTED_SYMBOLS = ["DownloadUtils"];
 
 /**
  * This module provides the DownloadUtils object which contains useful methods
@@ -37,33 +37,28 @@ this.EXPORTED_SYMBOLS = [ "DownloadUtils" ];
  * convertTimeUnits(double aSecs)
  */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PluralForm",
+  "resource://gre/modules/PluralForm.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
-
-this.__defineGetter__("gDecimalSymbol", function() {
-    delete this.gDecimalSymbol;
-      return this.gDecimalSymbol = Number(5.4).toLocaleString().match(/\D/);
-});
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 var localeNumberFormatCache = new Map();
 function getLocaleNumberFormat(fractionDigits) {
-  // Backward compatibility: don't use localized digits
-  let locale = Intl.NumberFormat().resolvedOptions().locale +
-               "-u-nu-latn";
-  let key = locale + "_" + fractionDigits;
-  if (!localeNumberFormatCache.has(key)) {
-    localeNumberFormatCache.set(key,
-      Intl.NumberFormat(locale,
-                        { maximumFractionDigits: fractionDigits,
-                          minimumFractionDigits: fractionDigits }));
+  if (!localeNumberFormatCache.has(fractionDigits)) {
+    localeNumberFormatCache.set(
+      fractionDigits,
+      new Services.intl.NumberFormat(undefined, {
+        maximumFractionDigits: fractionDigits,
+        minimumFractionDigits: fractionDigits,
+      })
+    );
   }
-  return localeNumberFormatCache.get(key);
+  return localeNumberFormatCache.get(fractionDigits);
 }
 
 const kDownloadProperties =
@@ -76,27 +71,28 @@ var gStr = {
   transferSameUnits: "transferSameUnits2",
   transferDiffUnits: "transferDiffUnits2",
   transferNoTotal: "transferNoTotal2",
-  timePair: "timePair2",
-  timeLeftSingle: "timeLeftSingle2",
-  timeLeftDouble: "timeLeftDouble2",
-  timeFewSeconds: "timeFewSeconds",
-  timeUnknown: "timeUnknown",
-  monthDate: "monthDate2",
+  timePair: "timePair3",
+  timeLeftSingle: "timeLeftSingle3",
+  timeLeftDouble: "timeLeftDouble3",
+  timeFewSeconds: "timeFewSeconds2",
+  timeUnknown: "timeUnknown2",
   yesterday: "yesterday",
   doneScheme: "doneScheme2",
   doneFileScheme: "doneFileScheme",
   units: ["bytes", "kilobyte", "megabyte", "gigabyte"],
   // Update timeSize in convertTimeUnits if changing the length of this array
-  timeUnits: ["seconds", "minutes", "hours", "days"],
+  timeUnits: ["shortSeconds", "shortMinutes", "shortHours", "shortDays"],
   infiniteRate: "infiniteRate",
 };
 
 // This lazily initializes the string bundle upon first use.
-this.__defineGetter__("gBundle", function() {
-  delete this.gBundle;
-  return this.gBundle = Cc["@mozilla.org/intl/stringbundle;1"].
-                        getService(Ci.nsIStringBundleService).
-                        createBundle(kDownloadProperties);
+Object.defineProperty(this, "gBundle", {
+  configurable: true,
+  enumerable: true,
+  get() {
+    delete this.gBundle;
+    return (this.gBundle = Services.strings.createBundle(kDownloadProperties));
+  },
 });
 
 // Keep track of at most this many second/lastSec pairs so that multiple calls
@@ -104,7 +100,7 @@ this.__defineGetter__("gBundle", function() {
 const kCachedLastMaxSize = 10;
 var gCachedLast = [];
 
-this.DownloadUtils = {
+var DownloadUtils = {
   /**
    * Generate a full status string for a download given its current progress,
    * total size, speed, last time remaining
@@ -119,25 +115,36 @@ this.DownloadUtils = {
    *        Last time remaining in seconds or Infinity for unknown
    * @return A pair: [download status text, new value of "last seconds"]
    */
-  getDownloadStatus: function DU_getDownloadStatus(aCurrBytes, aMaxBytes,
-                                                   aSpeed, aLastSec)
-  {
-    let [transfer, timeLeft, newLast, normalizedSpeed]
-      = this._deriveTransferRate(aCurrBytes, aMaxBytes, aSpeed, aLastSec);
+  getDownloadStatus: function DU_getDownloadStatus(
+    aCurrBytes,
+    aMaxBytes,
+    aSpeed,
+    aLastSec
+  ) {
+    let [
+      transfer,
+      timeLeft,
+      newLast,
+      normalizedSpeed,
+    ] = this._deriveTransferRate(aCurrBytes, aMaxBytes, aSpeed, aLastSec);
 
     let [rate, unit] = DownloadUtils.convertByteUnits(normalizedSpeed);
 
     let status;
     if (rate === "Infinity") {
       // Infinity download speed doesn't make sense. Show a localized phrase instead.
-      let params = [transfer, gBundle.GetStringFromName(gStr.infiniteRate), timeLeft];
-      status = gBundle.formatStringFromName(gStr.statusFormatInfiniteRate, params,
-                                            params.length);
-    }
-    else {
+      let params = [
+        transfer,
+        gBundle.GetStringFromName(gStr.infiniteRate),
+        timeLeft,
+      ];
+      status = gBundle.formatStringFromName(
+        gStr.statusFormatInfiniteRate,
+        params
+      );
+    } else {
       let params = [transfer, rate, unit, timeLeft];
-      status = gBundle.formatStringFromName(gStr.statusFormat, params,
-                                            params.length);
+      status = gBundle.formatStringFromName(gStr.statusFormat, params);
     }
     return [status, newLast];
   },
@@ -158,16 +165,21 @@ this.DownloadUtils = {
    *        Last time remaining in seconds or Infinity for unknown
    * @return A pair: [download status text, new value of "last seconds"]
    */
-  getDownloadStatusNoRate:
-  function DU_getDownloadStatusNoRate(aCurrBytes, aMaxBytes, aSpeed,
-                                      aLastSec)
-  {
-    let [transfer, timeLeft, newLast]
-      = this._deriveTransferRate(aCurrBytes, aMaxBytes, aSpeed, aLastSec);
+  getDownloadStatusNoRate: function DU_getDownloadStatusNoRate(
+    aCurrBytes,
+    aMaxBytes,
+    aSpeed,
+    aLastSec
+  ) {
+    let [transfer, timeLeft, newLast] = this._deriveTransferRate(
+      aCurrBytes,
+      aMaxBytes,
+      aSpeed,
+      aLastSec
+    );
 
     let params = [transfer, timeLeft];
-    let status = gBundle.formatStringFromName(gStr.statusFormatNoRate, params,
-                                              params.length);
+    let status = gBundle.formatStringFromName(gStr.statusFormatNoRate, params);
     return [status, newLast];
   },
 
@@ -185,20 +197,25 @@ this.DownloadUtils = {
    * @return A triple: [amount transferred string, time remaining string,
    *                    new value of "last seconds"]
    */
-  _deriveTransferRate: function DU__deriveTransferRate(aCurrBytes,
-                                                       aMaxBytes, aSpeed,
-                                                       aLastSec)
-  {
-    if (aMaxBytes == null)
+  _deriveTransferRate: function DU__deriveTransferRate(
+    aCurrBytes,
+    aMaxBytes,
+    aSpeed,
+    aLastSec
+  ) {
+    if (aMaxBytes == null) {
       aMaxBytes = -1;
-    if (aSpeed == null)
+    }
+    if (aSpeed == null) {
       aSpeed = -1;
-    if (aLastSec == null)
+    }
+    if (aLastSec == null) {
       aLastSec = Infinity;
+    }
 
     // Calculate the time remaining if we have valid values
-    let seconds = (aSpeed > 0) && (aMaxBytes > 0) ?
-      (aMaxBytes - aCurrBytes) / aSpeed : -1;
+    let seconds =
+      aSpeed > 0 && aMaxBytes > 0 ? (aMaxBytes - aCurrBytes) / aSpeed : -1;
 
     let transfer = DownloadUtils.getTransferTotal(aCurrBytes, aMaxBytes);
     let [timeLeft, newLast] = DownloadUtils.getTimeLeft(seconds, aLastSec);
@@ -216,10 +233,10 @@ this.DownloadUtils = {
    *        Total number of bytes or -1 for unknown
    * @return The transfer progress text
    */
-  getTransferTotal: function DU_getTransferTotal(aCurrBytes, aMaxBytes)
-  {
-    if (aMaxBytes == null)
+  getTransferTotal: function DU_getTransferTotal(aCurrBytes, aMaxBytes) {
+    if (aMaxBytes == null) {
       aMaxBytes = -1;
+    }
 
     let [progress, progressUnits] = DownloadUtils.convertByteUnits(aCurrBytes);
     let [total, totalUnits] = DownloadUtils.convertByteUnits(aMaxBytes);
@@ -228,28 +245,16 @@ this.DownloadUtils = {
     let name, values;
     if (aMaxBytes < 0) {
       name = gStr.transferNoTotal;
-      values = [
-        progress,
-        progressUnits,
-      ];
+      values = [progress, progressUnits];
     } else if (progressUnits == totalUnits) {
       name = gStr.transferSameUnits;
-      values = [
-        progress,
-        total,
-        totalUnits,
-      ];
+      values = [progress, total, totalUnits];
     } else {
       name = gStr.transferDiffUnits;
-      values = [
-        progress,
-        progressUnits,
-        total,
-        totalUnits,
-      ];
+      values = [progress, progressUnits, total, totalUnits];
     }
 
-    return gBundle.formatStringFromName(name, values, values.length);
+    return gBundle.formatStringFromName(name, values);
   },
 
   /**
@@ -264,22 +269,27 @@ this.DownloadUtils = {
    *        Last time remaining in seconds or Infinity for unknown
    * @return A pair: [time left text, new value of "last seconds"]
    */
-  getTimeLeft: function DU_getTimeLeft(aSeconds, aLastSec)
-  {
-    if (aLastSec == null)
+  getTimeLeft: function DU_getTimeLeft(aSeconds, aLastSec) {
+    let nf = new Services.intl.NumberFormat();
+    if (aLastSec == null) {
       aLastSec = Infinity;
+    }
 
-    if (aSeconds < 0)
+    if (aSeconds < 0) {
       return [gBundle.GetStringFromName(gStr.timeUnknown), aLastSec];
+    }
 
     // Try to find a cached lastSec for the given second
-    aLastSec = gCachedLast.reduce((aResult, aItem) =>
-      aItem[0] == aSeconds ? aItem[1] : aResult, aLastSec);
+    aLastSec = gCachedLast.reduce(
+      (aResult, aItem) => (aItem[0] == aSeconds ? aItem[1] : aResult),
+      aLastSec
+    );
 
     // Add the current second/lastSec pair unless we have too many
     gCachedLast.push([aSeconds, aLastSec]);
-    if (gCachedLast.length > kCachedLastMaxSize)
+    if (gCachedLast.length > kCachedLastMaxSize) {
       gCachedLast.shift();
+    }
 
     // Apply smoothing only if the new time isn't a huge change -- e.g., if the
     // new time is more than half the previous time; this is useful for
@@ -288,13 +298,14 @@ this.DownloadUtils = {
       // Apply hysteresis to favor downward over upward swings
       // 30% of down and 10% of up (exponential smoothing)
       let diff = aSeconds - aLastSec;
-      aSeconds = aLastSec + (diff < 0 ? .3 : .1) * diff;
+      aSeconds = aLastSec + (diff < 0 ? 0.3 : 0.1) * diff;
 
       // If the new time is similar, reuse something close to the last seconds,
       // but subtract a little to provide forward progress
-      let diffPct = diff / aLastSec * 100;
-      if (Math.abs(diff) < 5 || Math.abs(diffPct) < 5)
-        aSeconds = aLastSec - (diff < 0 ? .4 : .2);
+      let diffPct = (diff / aLastSec) * 100;
+      if (Math.abs(diff) < 5 || Math.abs(diffPct) < 5) {
+        aSeconds = aLastSec - (diff < 0 ? 0.4 : 0.2);
+      }
     }
 
     // Decide what text to show for the time
@@ -304,23 +315,29 @@ this.DownloadUtils = {
       timeLeft = gBundle.GetStringFromName(gStr.timeFewSeconds);
     } else {
       // Convert the seconds into its two largest units to display
-      let [time1, unit1, time2, unit2] =
-        DownloadUtils.convertTimeUnits(aSeconds);
+      let [time1, unit1, time2, unit2] = DownloadUtils.convertTimeUnits(
+        aSeconds
+      );
 
-      let pair1 =
-        gBundle.formatStringFromName(gStr.timePair, [time1, unit1], 2);
-      let pair2 =
-        gBundle.formatStringFromName(gStr.timePair, [time2, unit2], 2);
+      let pair1 = gBundle.formatStringFromName(gStr.timePair, [
+        nf.format(time1),
+        unit1,
+      ]);
+      let pair2 = gBundle.formatStringFromName(gStr.timePair, [
+        nf.format(time2),
+        unit2,
+      ]);
 
       // Only show minutes for under 1 hour unless there's a few minutes left;
       // or the second pair is 0.
       if ((aSeconds < 3600 && time1 >= 4) || time2 == 0) {
-        timeLeft = gBundle.formatStringFromName(gStr.timeLeftSingle,
-                                                [pair1], 1);
+        timeLeft = gBundle.formatStringFromName(gStr.timeLeftSingle, [pair1]);
       } else {
         // We've got 2 pairs of times to display
-        timeLeft = gBundle.formatStringFromName(gStr.timeLeftDouble,
-                                                [pair1, pair2], 2);
+        timeLeft = gBundle.formatStringFromName(gStr.timeLeftDouble, [
+          pair1,
+          pair2,
+        ]);
       }
     }
 
@@ -343,50 +360,44 @@ this.DownloadUtils = {
    *        and time of invocation is used if this parameter is omitted.
    * @return A pair: [compact text, complete text]
    */
-  getReadableDates: function DU_getReadableDates(aDate, aNow)
-  {
+  getReadableDates: function DU_getReadableDates(aDate, aNow) {
     if (!aNow) {
       aNow = new Date();
     }
 
-    let dts = Cc["@mozilla.org/intl/scriptabledateformat;1"]
-              .getService(Ci.nsIScriptableDateFormat);
-
     // Figure out when today begins
     let today = new Date(aNow.getFullYear(), aNow.getMonth(), aNow.getDate());
 
-    // Figure out if the time is from today, yesterday, this week, etc.
     let dateTimeCompact;
+    let dateTimeFull;
+
+    // Figure out if the time is from today, yesterday, this week, etc.
     if (aDate >= today) {
-      // After today started, show the time
-      dateTimeCompact = dts.FormatTime("",
-                                       dts.timeFormatNoSeconds,
-                                       aDate.getHours(),
-                                       aDate.getMinutes(),
-                                       0);
-    } else if (today - aDate < (24 * 60 * 60 * 1000)) {
+      let dts = new Services.intl.DateTimeFormat(undefined, {
+        timeStyle: "short",
+      });
+      dateTimeCompact = dts.format(aDate);
+    } else if (today - aDate < MS_PER_DAY) {
       // After yesterday started, show yesterday
       dateTimeCompact = gBundle.GetStringFromName(gStr.yesterday);
-    } else if (today - aDate < (6 * 24 * 60 * 60 * 1000)) {
+    } else if (today - aDate < 6 * MS_PER_DAY) {
       // After last week started, show day of week
-      dateTimeCompact = aDate.toLocaleFormat("%A");
+      dateTimeCompact = aDate.toLocaleDateString(undefined, {
+        weekday: "long",
+      });
     } else {
       // Show month/day
-      let month = aDate.toLocaleFormat("%B");
-      // Remove leading 0 by converting the date string to a number
-      let date = Number(aDate.toLocaleFormat("%d"));
-      dateTimeCompact = gBundle.formatStringFromName(gStr.monthDate, [month, date], 2);
+      dateTimeCompact = aDate.toLocaleString(undefined, {
+        month: "long",
+        day: "numeric",
+      });
     }
 
-    let dateTimeFull = dts.FormatDateTime("",
-                                          dts.dateFormatLong,
-                                          dts.timeFormatNoSeconds,
-                                          aDate.getFullYear(),
-                                          aDate.getMonth() + 1,
-                                          aDate.getDate(),
-                                          aDate.getHours(),
-                                          aDate.getMinutes(),
-                                          0);
+    const dtOptions = { dateStyle: "long", timeStyle: "short" };
+    dateTimeFull = new Services.intl.DateTimeFormat(
+      undefined,
+      dtOptions
+    ).format(aDate);
 
     return [dateTimeCompact, dateTimeFull];
   },
@@ -399,26 +410,23 @@ this.DownloadUtils = {
    *        The URI string to try getting an eTLD + 1, etc.
    * @return A pair: [display host for the URI string, full host name]
    */
-  getURIHost: function DU_getURIHost(aURIString)
-  {
-    let ioService = Cc["@mozilla.org/network/io-service;1"].
-                    getService(Ci.nsIIOService);
-    let eTLDService = Cc["@mozilla.org/network/effective-tld-service;1"].
-                      getService(Ci.nsIEffectiveTLDService);
-    let idnService = Cc["@mozilla.org/network/idn-service;1"].
-                     getService(Ci.nsIIDNService);
+  getURIHost: function DU_getURIHost(aURIString) {
+    let idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
+      Ci.nsIIDNService
+    );
 
     // Get a URI that knows about its components
     let uri;
     try {
-      uri = ioService.newURI(aURIString, null, null);
+      uri = Services.io.newURI(aURIString);
     } catch (ex) {
       return ["", ""];
     }
 
     // Get the inner-most uri for schemes like jar:
-    if (uri instanceof Ci.nsINestedURI)
+    if (uri instanceof Ci.nsINestedURI) {
       uri = uri.innermostURI;
+    }
 
     let fullHost;
     try {
@@ -431,7 +439,7 @@ this.DownloadUtils = {
     let displayHost;
     try {
       // This might fail if it's an IP address or doesn't have more than 1 part
-      let baseDomain = eTLDService.getBaseDomain(uri);
+      let baseDomain = Services.eTLD.getBaseDomain(uri);
 
       // Convert base domain for display; ignore the isAscii out param
       displayHost = idnService.convertToDisplayIDN(baseDomain, {});
@@ -445,10 +453,9 @@ this.DownloadUtils = {
       // Display special text for file protocol
       displayHost = gBundle.GetStringFromName(gStr.doneFileScheme);
       fullHost = displayHost;
-    } else if (displayHost.length == 0) {
+    } else if (!displayHost.length) {
       // Got nothing; show the scheme (data: about: moz-icon:)
-      displayHost =
-        gBundle.formatStringFromName(gStr.doneScheme, [uri.scheme], 1);
+      displayHost = gBundle.formatStringFromName(gStr.doneScheme, [uri.scheme]);
       fullHost = displayHost;
     } else if (uri.port != -1) {
       // Tack on the port if it's not the default port
@@ -468,13 +475,12 @@ this.DownloadUtils = {
    *        Number of bytes to convert
    * @return A pair: [new value with 3 sig. figs., its unit]
    */
-  convertByteUnits: function DU_convertByteUnits(aBytes)
-  {
+  convertByteUnits: function DU_convertByteUnits(aBytes) {
     let unitIndex = 0;
 
     // Convert to next unit if it needs 4 digits (after rounding), but only if
     // we know the name of the next unit
-    while ((aBytes >= 999.5) && (unitIndex < gStr.units.length - 1)) {
+    while (aBytes >= 999.5 && unitIndex < gStr.units.length - 1) {
       aBytes /= 1024;
       unitIndex++;
     }
@@ -482,20 +488,13 @@ this.DownloadUtils = {
     // Get rid of insignificant bits by truncating to 1 or 0 decimal points
     // 0 -> 0; 1.2 -> 1.2; 12.3 -> 12.3; 123.4 -> 123; 234.5 -> 235
     // added in bug 462064: (unitIndex != 0) makes sure that no decimal digit for bytes appears when aBytes < 100
-    let fractionDigits = (aBytes > 0) && (aBytes < 100) && (unitIndex != 0) ? 1 : 0;
+    let fractionDigits = aBytes > 0 && aBytes < 100 && unitIndex != 0 ? 1 : 0;
 
     // Don't try to format Infinity values using NumberFormat.
     if (aBytes === Infinity) {
       aBytes = "Infinity";
-    } else if (typeof Intl != "undefined") {
-      aBytes = getLocaleNumberFormat(fractionDigits)
-                 .format(aBytes);
     } else {
-      // FIXME: Fall back to the old hack, will be fixed in bug 1200494.
-      aBytes = aBytes.toFixed(fractionDigits);
-      if (gDecimalSymbol != ".") {
-        aBytes = aBytes.replace(".", gDecimalSymbol);
-      }
+      aBytes = getLocaleNumberFormat(fractionDigits).format(aBytes);
     }
 
     return [aBytes, gBundle.GetStringFromName(gStr.units[unitIndex])];
@@ -509,8 +508,7 @@ this.DownloadUtils = {
    *        Seconds to convert into the appropriate 2 units
    * @return 4-item array [first value, its unit, second value, its unit]
    */
-  convertTimeUnits: function DU_convertTimeUnits(aSecs)
-  {
+  convertTimeUnits: function DU_convertTimeUnits(aSecs) {
     // These are the maximum values for seconds, minutes, hours corresponding
     // with gStr.timeUnits without the last item
     let timeSize = [60, 60, 24];
@@ -521,7 +519,7 @@ this.DownloadUtils = {
 
     // Keep converting to the next unit while we have units left and the
     // current one isn't the largest unit possible
-    while ((unitIndex < timeSize.length) && (time >= timeSize[unitIndex])) {
+    while (unitIndex < timeSize.length && time >= timeSize[unitIndex]) {
       time /= timeSize[unitIndex];
       scale *= timeSize[unitIndex];
       unitIndex++;
@@ -534,8 +532,9 @@ this.DownloadUtils = {
     let nextIndex = unitIndex - 1;
 
     // Convert the extra time to the next largest unit
-    for (let index = 0; index < nextIndex; index++)
+    for (let index = 0; index < nextIndex; index++) {
       extra /= timeSize[index];
+    }
 
     let value2 = convertTimeUnitsValue(extra);
     let units2 = convertTimeUnitsUnits(value2, nextIndex);
@@ -551,8 +550,7 @@ this.DownloadUtils = {
  *        Time value for display
  * @return An integer value for the time rounded down
  */
-function convertTimeUnitsValue(aTime)
-{
+function convertTimeUnitsValue(aTime) {
   return Math.floor(aTime);
 }
 
@@ -565,13 +563,16 @@ function convertTimeUnitsValue(aTime)
  *        Index into gStr.timeUnits for the appropriate unit
  * @return The appropriate plural form of the unit for the time
  */
-function convertTimeUnitsUnits(aTime, aIndex)
-{
+function convertTimeUnitsUnits(aTime, aIndex) {
   // Negative index would be an invalid unit, so just give empty
-  if (aIndex < 0)
+  if (aIndex < 0) {
     return "";
+  }
 
-  return PluralForm.get(aTime, gBundle.GetStringFromName(gStr.timeUnits[aIndex]));
+  return PluralForm.get(
+    aTime,
+    gBundle.GetStringFromName(gStr.timeUnits[aIndex])
+  );
 }
 
 /**
@@ -580,10 +581,8 @@ function convertTimeUnitsUnits(aTime, aIndex)
  * @param aMsg
  *        Error message to log or an array of strings to concat
  */
-function log(aMsg)
-{
-  let msg = "DownloadUtils.jsm: " + (aMsg.join ? aMsg.join("") : aMsg);
-  Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).
-    logStringMessage(msg);
-  dump(msg + "\n");
-}
+// function log(aMsg) {
+//   let msg = "DownloadUtils.jsm: " + (aMsg.join ? aMsg.join("") : aMsg);
+//   Services.console.logStringMessage(msg);
+//   dump(msg + "\n");
+// }

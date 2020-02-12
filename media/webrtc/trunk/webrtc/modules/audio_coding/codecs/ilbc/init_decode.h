@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_INIT_DECODE_H_
 
 #include "defines.h"
 
@@ -25,7 +25,7 @@
  *  Initiation of decoder instance.
  *---------------------------------------------------------------*/
 
-int16_t WebRtcIlbcfix_InitDecode(  /* (o) Number of decoded samples */
+int WebRtcIlbcfix_InitDecode(  /* (o) Number of decoded samples */
     IlbcDecoder *iLBCdec_inst, /* (i/o) Decoder instance */
     int16_t mode,     /* (i) frame size mode */
     int use_enhancer           /* (i) 1 to use enhancer

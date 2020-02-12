@@ -7,7 +7,7 @@
 #include "seccomon.h"
 #include "secoidt.h"
 #include "secdert.h"
-#include "keyt.h"
+#include "keythi.h"
 #include "certt.h"
 #include "pkcs11t.h"
 #include "secmodt.h"
@@ -76,6 +76,7 @@ PRBool PK11_IsReadOnly(PK11SlotInfo *slot);
 PRBool PK11_IsInternal(PK11SlotInfo *slot);
 PRBool PK11_IsInternalKeySlot(PK11SlotInfo *slot);
 char *PK11_GetTokenName(PK11SlotInfo *slot);
+char *PK11_GetTokenURI(PK11SlotInfo *slot);
 char *PK11_GetSlotName(PK11SlotInfo *slot);
 PRBool PK11_NeedLogin(PK11SlotInfo *slot);
 PRBool PK11_IsFriendly(PK11SlotInfo *slot);
@@ -135,6 +136,7 @@ PK11TokenStatus PK11_WaitForTokenEvent(PK11SlotInfo *slot, PK11TokenEvent event,
 PRBool PK11_NeedPWInit(void);
 PRBool PK11_TokenExists(CK_MECHANISM_TYPE);
 SECStatus PK11_GetModInfo(SECMODModule *mod, CK_INFO *info);
+char *PK11_GetModuleURI(SECMODModule *mod);
 PRBool PK11_IsFIPS(void);
 SECMODModule *PK11_GetModule(PK11SlotInfo *slot);
 
@@ -273,12 +275,9 @@ PK11SymKey *PK11_ImportSymKeyWithFlags(PK11SlotInfo *slot,
 PK11SymKey *PK11_SymKeyFromHandle(PK11SlotInfo *slot, PK11SymKey *parent,
                                   PK11Origin origin, CK_MECHANISM_TYPE type, CK_OBJECT_HANDLE keyID,
                                   PRBool owner, void *wincx);
+/* PK11_GetWrapKey and PK11_SetWrapKey are not thread safe. */
 PK11SymKey *PK11_GetWrapKey(PK11SlotInfo *slot, int wrap,
                             CK_MECHANISM_TYPE type, int series, void *wincx);
-/*
- * This function is not thread-safe.  It can only be called when only
- * one thread has a reference to wrapKey.
- */
 void PK11_SetWrapKey(PK11SlotInfo *slot, int wrap, PK11SymKey *wrapKey);
 CK_MECHANISM_TYPE PK11_GetMechanism(PK11SymKey *symKey);
 /*
@@ -642,6 +641,8 @@ SECStatus PK11_TraverseSlotCerts(
     SECStatus (*callback)(CERTCertificate *, SECItem *, void *),
     void *arg, void *wincx);
 CERTCertificate *PK11_FindCertFromNickname(const char *nickname, void *wincx);
+CERTCertificate *PK11_FindCertFromURI(const char *uri, void *wincx);
+CERTCertList *PK11_FindCertsFromURI(const char *uri, void *wincx);
 CERTCertList *PK11_FindCertsFromEmailAddress(const char *email, void *wincx);
 CERTCertList *PK11_FindCertsFromNickname(const char *nickname, void *wincx);
 CERTCertificate *PK11_GetCertFromPrivateKey(SECKEYPrivateKey *privKey);
@@ -686,6 +687,10 @@ CERTCertList *PK11_ListCerts(PK11CertListType type, void *pwarg);
 CERTCertList *PK11_ListCertsInSlot(PK11SlotInfo *slot);
 CERTSignedCrl *PK11_ImportCRL(PK11SlotInfo *slot, SECItem *derCRL, char *url,
                               int type, void *wincx, PRInt32 importOptions, PLArenaPool *arena, PRInt32 decodeOptions);
+CK_BBOOL PK11_HasAttributeSet(PK11SlotInfo *slot,
+                              CK_OBJECT_HANDLE id,
+                              CK_ATTRIBUTE_TYPE type,
+                              PRBool haslock /* must be set to PR_FALSE */);
 
 /**********************************************************************
  *                   Sign/Verify
@@ -823,6 +828,10 @@ SECStatus PK11_LinkGenericObject(PK11GenericObject *list,
                                  PK11GenericObject *object);
 SECStatus PK11_DestroyGenericObjects(PK11GenericObject *object);
 SECStatus PK11_DestroyGenericObject(PK11GenericObject *object);
+PK11GenericObject *PK11_CreateManagedGenericObject(PK11SlotInfo *slot,
+                                                   const CK_ATTRIBUTE *pTemplate,
+                                                   int count, PRBool token);
+/* deprecated */
 PK11GenericObject *PK11_CreateGenericObject(PK11SlotInfo *slot,
                                             const CK_ATTRIBUTE *pTemplate,
                                             int count, PRBool token);
@@ -862,6 +871,25 @@ SECStatus PK11_WriteRawAttribute(PK11ObjectType type, void *object,
  */
 PK11SlotList *
 PK11_GetAllSlotsForCert(CERTCertificate *cert, void *arg);
+
+/*
+ * Finds all certificates on the given slot with the given subject distinguished
+ * name and returns them as DER bytes. If no such certificates can be found,
+ * returns SECSuccess and sets *results to NULL. If a failure is encountered
+ * while fetching any of the matching certificates, SECFailure is returned and
+ * *results will be NULL.
+ */
+SECStatus
+PK11_FindRawCertsWithSubject(PK11SlotInfo *slot, SECItem *derSubject,
+                             CERTCertificateList **results);
+
+/*
+ * Finds and returns all certificates with a public key that matches the given
+ * private key. May return an empty list if no certificates match. Returns NULL
+ * if a failure is encountered.
+ */
+CERTCertList *
+PK11_GetCertsMatchingPrivateKey(SECKEYPrivateKey *privKey);
 
 /**********************************************************************
  * New functions which are already deprecated....

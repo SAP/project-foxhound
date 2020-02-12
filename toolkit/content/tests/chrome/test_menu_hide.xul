@@ -6,11 +6,11 @@
   onload="setTimeout(runTests, 0);"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <menu id="menu">
-  <menupopup onpopupshown="this.firstChild.open = true" onpopuphidden="if (event.target == this) done()">
+  <menupopup onpopuphidden="if (event.target == this) done()">
     <menu id="submenu" label="One">
       <menupopup onpopupshown="submenuOpened();">
         <menuitem label="Two"/>
@@ -26,12 +26,34 @@ SimpleTest.waitForExplicitFinish();
 
 function runTests()
 {
-  $("menu").open = true;
+  let menu = $("menu");
+  let menuitemAddedWhileHidden = menu.appendItem("Added while hidden");
+  ok(!menuitemAddedWhileHidden.querySelector(".menu-text"), "hidden menuitem hasn't rendered yet.");
+
+  menu.menupopup.addEventListener("popupshown", () => {
+    is(menuitemAddedWhileHidden.querySelector(".menu-text").value, "Added while hidden",
+      "menuitemAddedWhileHidden item has rendered after shown.");
+    let menuitemAddedWhileShown = menu.appendItem("Added while shown");
+    is(menuitemAddedWhileShown.querySelector(".menu-text").value, "Added while shown",
+      "menuitemAddedWhileShown item has eagerly rendered.");
+
+    let submenu = $("submenu");
+    is(submenu.querySelector(".menu-text").value, "One", "submenu has rendered.");
+
+    let submenuDynamic = document.createXULElement("menu");
+    submenuDynamic.setAttribute("label", "Dynamic");
+    ok(!submenuDynamic.querySelector(".menu-text"), "dynamic submenu hasn't rendered yet.");
+    menu.menupopup.append(submenuDynamic);
+    is(submenuDynamic.querySelector(".menu-text").value, "Dynamic", "dynamic submenu has rendered.");
+
+    menu.menupopup.firstElementChild.open = true;
+  }, { once: true });
+  menu.open = true;
 }
 
 function submenuOpened()
 {
-  var submenu = $("submenu")
+  let submenu = $("submenu");
   is(submenu.getAttribute('_moz-menuactive'), "true", "menu highlighted");
   submenu.hidden = true;
   $("menu").open = false;

@@ -4,68 +4,60 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_TimeEvent_h_
-#define mozilla_dom_TimeEvent_h_
+#ifndef mozilla_dom_TimeEvent_h
+#define mozilla_dom_TimeEvent_h
 
+#include "nsDocShell.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/TimeEventBinding.h"
-#include "nsIDOMTimeEvent.h"
+#include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/WindowProxyHolder.h"
 
-class nsGlobalWindow;
+class nsGlobalWindowInner;
 
 namespace mozilla {
 namespace dom {
 
-class TimeEvent final : public Event,
-                        public nsIDOMTimeEvent
-{
-public:
-  TimeEvent(EventTarget* aOwner,
-            nsPresContext* aPresContext,
+class TimeEvent final : public Event {
+ public:
+  TimeEvent(EventTarget* aOwner, nsPresContext* aPresContext,
             InternalSMILTimeEvent* aEvent);
 
   // nsISupports interface:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TimeEvent, Event)
 
-  // nsIDOMTimeEvent interface:
-  NS_DECL_NSIDOMTIMEEVENT
-
-  // Forward to base class
-  NS_FORWARD_TO_EVENT
-
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return TimeEventBinding::Wrap(aCx, this, aGivenProto);
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
+    return TimeEvent_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-  void InitTimeEvent(const nsAString& aType, nsGlobalWindow* aView,
+  void InitTimeEvent(const nsAString& aType, nsGlobalWindowInner* aView,
                      int32_t aDetail);
 
+  int32_t Detail() const { return mDetail; }
 
-  int32_t Detail() const
-  {
-    return mDetail;
+  Nullable<WindowProxyHolder> GetView() const {
+    if (!mView) {
+      return nullptr;
+    }
+    return WindowProxyHolder(mView->GetBrowsingContext());
   }
 
-  nsPIDOMWindowOuter* GetView() const
-  {
-    return mView;
-  }
+  TimeEvent* AsTimeEvent() final { return this; }
 
-private:
+ private:
   ~TimeEvent() {}
 
   nsCOMPtr<nsPIDOMWindowOuter> mView;
   int32_t mDetail;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::TimeEvent>
-NS_NewDOMTimeEvent(mozilla::dom::EventTarget* aOwner,
-                   nsPresContext* aPresContext,
-                   mozilla::InternalSMILTimeEvent* aEvent);
+already_AddRefed<mozilla::dom::TimeEvent> NS_NewDOMTimeEvent(
+    mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,
+    mozilla::InternalSMILTimeEvent* aEvent);
 
-#endif // mozilla_dom_TimeEvent_h_
+#endif  // mozilla_dom_TimeEvent_h

@@ -34,12 +34,11 @@ ASTDEF(AST_ARRAY_EXPR,            "ArrayExpression",                "arrayExpres
 ASTDEF(AST_SPREAD_EXPR,           "SpreadExpression",               "spreadExpression")
 ASTDEF(AST_OBJECT_EXPR,           "ObjectExpression",               "objectExpression")
 ASTDEF(AST_THIS_EXPR,             "ThisExpression",                 "thisExpression")
-ASTDEF(AST_COMP_EXPR,             "ComprehensionExpression",        "comprehensionExpression")
-ASTDEF(AST_GENERATOR_EXPR,        "GeneratorExpression",            "generatorExpression")
 ASTDEF(AST_YIELD_EXPR,            "YieldExpression",                "yieldExpression")
 ASTDEF(AST_CLASS_EXPR,            "ClassExpression",                "classExpression")
 ASTDEF(AST_METAPROPERTY,          "MetaProperty",                   "metaProperty")
 ASTDEF(AST_SUPER,                 "Super",                          "super")
+ASTDEF(AST_CALL_IMPORT,           "CallImport",                     "callImport")
 
 ASTDEF(AST_EMPTY_STMT,            "EmptyStatement",                 "emptyStatement")
 ASTDEF(AST_BLOCK_STMT,            "BlockStatement",                 "blockStatement")
@@ -68,8 +67,6 @@ ASTDEF(AST_EXPORT_BATCH_SPEC,     "ExportBatchSpecifier",           "exportBatch
 
 ASTDEF(AST_CASE,                  "SwitchCase",                     "switchCase")
 ASTDEF(AST_CATCH,                 "CatchClause",                    "catchClause")
-ASTDEF(AST_COMP_BLOCK,            "ComprehensionBlock",             "comprehensionBlock")
-ASTDEF(AST_COMP_IF,               "ComprehensionIf",                "comprehensionIf")
 
 ASTDEF(AST_ARRAY_PATT,            "ArrayPattern",                   "arrayPattern")
 ASTDEF(AST_OBJECT_PATT,           "ObjectPattern",                  "objectPattern")
@@ -81,4 +78,5 @@ ASTDEF(AST_COMPUTED_NAME,         "ComputedName",                   "computedNam
 
 ASTDEF(AST_CLASS_STMT,            "ClassStatement",                 "classStatement")
 ASTDEF(AST_CLASS_METHOD,          "ClassMethod",                    "classMethod")
+ASTDEF(AST_CLASS_FIELD,           "ClassField",                     "classField")
 /* AST_LIMIT = last + 1 */

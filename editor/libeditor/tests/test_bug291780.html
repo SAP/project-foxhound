@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=291780
 -->
 <head>
   <title>Test for Bug 291780</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -26,7 +26,6 @@ editor.innerHTML = original;
 editor.focus();
 
 addLoadEvent(function() {
-
   var sel = window.getSelection();
   sel.removeAllRanges();
   var lis = document.getElementsByTagName("li");
@@ -38,7 +37,7 @@ addLoadEvent(function() {
   var expected = '<ul style="margin-left: 40px;"><li>Item 1</li><ul><li>Item 2</li><li>Item 3</li></ul><li>Item 4</li></ul>';
   is(editor.innerHTML, expected, "indenting part of an already indented bulleted list");
   document.execCommand("outdent", false, false);
-  is(editor.innerHTML, original, "outdenting the partially indented part of an already indented bulleted list"); 
+  is(editor.innerHTML, original, "outdenting the partially indented part of an already indented bulleted list");
 
   // done
   SimpleTest.finish();

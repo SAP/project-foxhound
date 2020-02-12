@@ -7,23 +7,27 @@ package org.mozilla.gecko;
 
 import java.util.Collection;
 
-import org.mozilla.gecko.AppConstants.Versions;
-
 import android.content.Context;
+import android.os.Build;
 import android.provider.Settings.Secure;
+import android.view.View;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 
 final public class InputMethods {
     public static final String METHOD_ANDROID_LATINIME = "com.android.inputmethod.latin/.LatinIME";
-    public static final String METHOD_ATOK = "com.justsystems.atokmobile.service/.AtokInputMethodService";
+    // ATOK has a lot of package names since they release custom versions.
+    public static final String METHOD_ATOK_PREFIX = "com.justsystems.atokmobile";
+    public static final String METHOD_ATOK_OEM_PREFIX = "com.atok.mobile.";
     public static final String METHOD_GOOGLE_JAPANESE_INPUT = "com.google.android.inputmethod.japanese/.MozcService";
+    public static final String METHOD_ATOK_OEM_SOFTBANK = "com.mobiroo.n.justsystems.atok/.AtokInputMethodService";
     public static final String METHOD_GOOGLE_LATINIME = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME";
     public static final String METHOD_HTC_TOUCH_INPUT = "com.htc.android.htcime/.HTCIMEService";
     public static final String METHOD_IWNN = "jp.co.omronsoft.iwnnime.ml/.standardcommon.IWnnLanguageSwitcher";
     public static final String METHOD_OPENWNN_PLUS = "com.owplus.ime.openwnnplus/.OpenWnnJAJP";
     public static final String METHOD_SAMSUNG = "com.sec.android.inputmethod/.SamsungKeypad";
     public static final String METHOD_SIMEJI = "com.adamrocker.android.input.simeji/.OpenWnnSimeji";
+    public static final String METHOD_SONY = "com.sonyericsson.textinput.uxp/.glue.InputMethodServiceGlue";
     public static final String METHOD_SWIFTKEY = "com.touchtype.swiftkey/com.touchtype.KeyboardService";
     public static final String METHOD_SWYPE = "com.swype.android.inputmethod/.SwypeInputMethod";
     public static final String METHOD_SWYPE_BETA = "com.nuance.swype.input/.IME";
@@ -31,12 +35,13 @@ final public class InputMethods {
 
     private InputMethods() {}
 
-    public static String getCurrentInputMethod(Context context) {
+    public static String getCurrentInputMethod(final Context context) {
         String inputMethod = Secure.getString(context.getContentResolver(), Secure.DEFAULT_INPUT_METHOD);
         return (inputMethod != null ? inputMethod : "");
     }
 
-    public static InputMethodInfo getInputMethodInfo(Context context, String inputMethod) {
+    public static InputMethodInfo getInputMethodInfo(final Context context,
+                                                     final String inputMethod) {
         InputMethodManager imm = getInputMethodManager(context);
         Collection<InputMethodInfo> infos = imm.getEnabledInputMethodList();
         for (InputMethodInfo info : infos) {
@@ -47,30 +52,48 @@ final public class InputMethods {
         return null;
     }
 
-    public static InputMethodManager getInputMethodManager(Context context) {
+    public static InputMethodManager getInputMethodManager(final Context context) {
         return (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
     }
 
-    public static boolean needsSoftResetWorkaround(String inputMethod) {
+    public static void restartInput(final Context context, final View view) {
+        final InputMethodManager imm = getInputMethodManager(context);
+        if (imm != null) {
+            imm.restartInput(view);
+        }
+    }
+
+    public static boolean needsSoftResetWorkaround(final String inputMethod) {
         // Stock latin IME on Android 4.2 and above
-        return Versions.feature17Plus &&
+        return Build.VERSION.SDK_INT >= 17 &&
                (METHOD_ANDROID_LATINIME.equals(inputMethod) ||
                 METHOD_GOOGLE_LATINIME.equals(inputMethod));
     }
 
-    public static boolean shouldCommitCharAsKey(String inputMethod) {
+    /**
+     * Check input method if we require a workaround to remove composition in
+     * {@link android.view.inputmethod.InputMethodManager.updateSelection}.
+     *
+     * @param inputMethod The input method name by {@link #getCurrentInputMethod}.
+     * @return true if {@link android.view.inputmethod.InputMethodManager.updateSelection}
+     * doesn't remove the composition, use {@link android.view.inputmethod.InputMehtodManager.restartInput}
+     * to remove it in this case.
+     */
+    public static boolean needsRestartInput(final String inputMethod) {
+        return inputMethod.startsWith(METHOD_ATOK_PREFIX) ||
+               inputMethod.startsWith(METHOD_ATOK_OEM_PREFIX) ||
+               METHOD_ATOK_OEM_SOFTBANK.equals(inputMethod);
+    }
+
+    public static boolean shouldCommitCharAsKey(final String inputMethod) {
         return METHOD_HTC_TOUCH_INPUT.equals(inputMethod);
     }
 
-    public static boolean isGestureKeyboard(Context context) {
-        // SwiftKey is a gesture keyboard, but it doesn't seem to need any special-casing
-        // to do AwesomeBar auto-spacing.
+    public static boolean needsRestartOnReplaceRemove(final Context context) {
         String inputMethod = getCurrentInputMethod(context);
-        return (Versions.feature17Plus &&
-                (METHOD_ANDROID_LATINIME.equals(inputMethod) ||
-                 METHOD_GOOGLE_LATINIME.equals(inputMethod))) ||
-               METHOD_SWYPE.equals(inputMethod) ||
-               METHOD_SWYPE_BETA.equals(inputMethod) ||
-               METHOD_TOUCHPAL_KEYBOARD.equals(inputMethod);
+        return METHOD_SONY.equals(inputMethod);
     }
+
+    // TODO: Replace usages by definition in EditorInfoCompat once available (bug 1385726).
+    public static final int IME_FLAG_NO_PERSONALIZED_LEARNING = 0x1000000;
 }

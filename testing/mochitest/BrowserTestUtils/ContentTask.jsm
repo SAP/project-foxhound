@@ -6,15 +6,12 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "ContentTask"
-];
+var EXPORTED_SYMBOLS = ["ContentTask"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+const { Promise } = ChromeUtils.import("resource://gre/modules/Promise.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const FRAME_SCRIPT = "chrome://mochikit/content/tests/BrowserTestUtils/content-task.js";
+const FRAME_SCRIPT = "resource://testing-common/content-task.js";
 
 /**
  * Keeps track of whether the frame script was already loaded.
@@ -34,7 +31,7 @@ var gMessageID = 1;
 /**
  * This object provides the public module functions.
  */
-this.ContentTask = {
+var ContentTask = {
   /**
    * _testScope saves the current testScope from
    * browser-test.js. This is used to implement SimpleTest functions
@@ -78,13 +75,11 @@ this.ContentTask = {
     let id = gMessageID++;
     gPromises.set(id, deferred);
 
-    browser.messageManager.sendAsyncMessage(
-      "content-task:spawn",
-      {
-        id: id,
-        runnable: task.toString(),
-        arg: arg,
-      });
+    browser.messageManager.sendAsyncMessage("content-task:spawn", {
+      id,
+      runnable: task.toString(),
+      arg,
+    });
 
     return deferred.promise;
   },
@@ -114,15 +109,40 @@ var ContentMessageListener = {
       }
     } else if (aMessage.name == "content-task:test-result") {
       let data = aMessage.data;
-      ContentTask._testScope.ok(data.condition, data.name, null, data.stack);
+      ContentTask._testScope.record(
+        data.condition,
+        data.name,
+        null,
+        data.stack
+      );
     } else if (aMessage.name == "content-task:test-info") {
       ContentTask._testScope.info(aMessage.data.name);
     } else if (aMessage.name == "content-task:test-todo") {
       ContentTask._testScope.todo(aMessage.data.expr, aMessage.data.name);
+    } else if (aMessage.name == "content-task:test-todo_is") {
+      ContentTask._testScope.todo_is(
+        aMessage.data.a,
+        aMessage.data.b,
+        aMessage.data.name
+      );
     }
   },
 };
 
 Services.mm.addMessageListener("content-task:complete", ContentMessageListener);
-Services.mm.addMessageListener("content-task:test-result", ContentMessageListener);
-Services.mm.addMessageListener("content-task:test-info", ContentMessageListener);
+Services.mm.addMessageListener(
+  "content-task:test-result",
+  ContentMessageListener
+);
+Services.mm.addMessageListener(
+  "content-task:test-info",
+  ContentMessageListener
+);
+Services.mm.addMessageListener(
+  "content-task:test-todo",
+  ContentMessageListener
+);
+Services.mm.addMessageListener(
+  "content-task:test-todo_is",
+  ContentMessageListener
+);

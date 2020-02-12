@@ -7,12 +7,13 @@
       :-moz-ui-invalid { background-color:red; }
       * { box-shadow:none; background-color:white; }
     </style>
-    <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
     <script>
       function runTest() {
         var input = document.getElementById('input');
+        input.setSelectionRange(input.value.length, input.value.length)
         input.focus();
-        synthesizeKey('VK_BACK_SPACE', {});
+        synthesizeKey("KEY_Backspace");
         input.blur(); // to hide the caret
         document.documentElement.className='';
       }
@@ -22,4 +23,3 @@
     <input id="input" maxlength="2" value="fooo">
   </body>
 </html>
-

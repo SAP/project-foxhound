@@ -12,22 +12,9 @@
 
 namespace base {
 
-class MessagePumpForUI;
-
-class MessagePumpAndroid {
-
- public:
-  MessagePumpAndroid(MessagePumpForUI &pump);
-  ~MessagePumpAndroid();
-
- private:
-  base::MessagePumpForUI &pump;
-};
-
 // This class implements a MessagePump needed for TYPE_UI MessageLoops on
 // Android
 class MessagePumpForUI : public MessagePump {
-
  public:
   MessagePumpForUI();
   ~MessagePumpForUI();
@@ -65,9 +52,6 @@ class MessagePumpForUI : public MessagePump {
   TimeTicks delayed_work_time_;
 
   bool work_scheduled;
-
-  // MessagePump implementation for Android based on the GLib implement.
-  MessagePumpAndroid pump;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePumpForUI);
 };

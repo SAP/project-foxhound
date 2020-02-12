@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=384632
 -->
 <head>
   <title>Test for Bug 384632</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -24,8 +24,8 @@ var obj = {};
 propBag.setProperty("foopy", obj);
 ok(SpecialPowers.unwrap(propBag.getProperty("foopy")) === obj,
    "nsIVariant works with regular objects");
-propBag.setProperty("foopy1", sidebar);
-ok(SpecialPowers.unwrap(propBag.getProperty("foopy1")) === sidebar,
+propBag.setProperty("foopy1", external);
+ok(SpecialPowers.unwrap(propBag.getProperty("foopy1")) === external,
    "nsIVariant works with bizarre objects");
 
 </script>

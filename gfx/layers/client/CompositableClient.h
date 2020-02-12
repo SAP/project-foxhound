@@ -1,22 +1,23 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_GFX_BUFFERCLIENT_H
 #define MOZILLA_GFX_BUFFERCLIENT_H
 
-#include <stdint.h>                     // for uint64_t
-#include <vector>                       // for vector
-#include <map>                          // for map
-#include "mozilla/Assertions.h"         // for MOZ_CRASH
-#include "mozilla/RefPtr.h"             // for already_AddRefed, RefCounted
-#include "mozilla/gfx/Types.h"          // for SurfaceFormat
-#include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTracker
+#include <stdint.h>              // for uint64_t
+#include <vector>                // for vector
+#include <map>                   // for map
+#include "mozilla/Assertions.h"  // for MOZ_CRASH
+#include "mozilla/RefPtr.h"      // for already_AddRefed, RefCounted
+#include "mozilla/gfx/Types.h"   // for SurfaceFormat
 #include "mozilla/layers/CompositorTypes.h"
-#include "mozilla/layers/LayersTypes.h"  // for LayersBackend, TextureDumpMode
+#include "mozilla/layers/LayersTypes.h"    // for LayersBackend, TextureDumpMode
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
-#include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
+#include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
+#include "nsISupportsImpl.h"                   // for MOZ_COUNT_CTOR, etc
 
 namespace mozilla {
 namespace layers {
@@ -26,57 +27,8 @@ class ImageBridgeChild;
 class ImageContainer;
 class CompositableForwarder;
 class CompositableChild;
-class PCompositableChild;
 class TextureClientRecycleAllocator;
-
-/**
- * Handle RemoveTextureFromCompositableAsync() transaction.
- */
-class RemoveTextureFromCompositableTracker : public AsyncTransactionTracker {
-public:
-  explicit RemoveTextureFromCompositableTracker(AsyncTransactionWaiter* aWaiter = nullptr)
-    : AsyncTransactionTracker(aWaiter)
-  {
-    MOZ_COUNT_CTOR(RemoveTextureFromCompositableTracker);
-  }
-
-protected:
-  ~RemoveTextureFromCompositableTracker()
-  {
-    MOZ_COUNT_DTOR(RemoveTextureFromCompositableTracker);
-    ReleaseTextureClient();
-  }
-
-public:
-  virtual void Complete() override
-  {
-    ReleaseTextureClient();
-  }
-
-  virtual void Cancel() override
-  {
-    ReleaseTextureClient();
-  }
-
-  virtual void SetTextureClient(TextureClient* aTextureClient) override
-  {
-    ReleaseTextureClient();
-    mTextureClient = aTextureClient;
-  }
-
-  virtual void SetReleaseFenceHandle(FenceHandle& aReleaseFenceHandle) override
-  {
-    if (mTextureClient) {
-      mTextureClient->SetReleaseFenceHandle(aReleaseFenceHandle);
-    }
-  }
-
-protected:
-  void ReleaseTextureClient();
-
-private:
-  RefPtr<TextureClient> mTextureClient;
-};
+class ContentClientRemoteBuffer;
 
 /**
  * CompositableClient manages the texture-specific logic for composite layers,
@@ -100,59 +52,55 @@ private:
  *
  * To do in-transaction texture transfer (the default), call
  * ShadowLayerForwarder::Attach(CompositableClient*, ShadowableLayer*). This
- * will let the LayerComposite on the compositor side know which CompositableHost
- * to use for compositing.
+ * will let the LayerComposite on the compositor side know which
+ * CompositableHost to use for compositing.
  *
  * To do async texture transfer (like async-video), the CompositableClient
  * should be created with a different CompositableForwarder (like
  * ImageBridgeChild) and attachment is done with
  * CompositableForwarder::AttachAsyncCompositable that takes an identifier
  * instead of a CompositableChild, since the CompositableClient is not managed
- * by this layer forwarder (the matching uses a global map on the compositor side,
- * see CompositableMap in ImageBridgeParent.cpp)
+ * by this layer forwarder (the matching uses a global map on the compositor
+ * side, see CompositableMap in ImageBridgeParent.cpp)
  *
  * Subclasses: Painted layers use ContentClients, ImageLayers use ImageClients,
- * Canvas layers use CanvasClients (but ImageHosts). We have a different subclass
- * where we have a different way of interfacing with the textures - in terms of
- * drawing into the compositable and/or passing its contents to the compostior.
+ * Canvas layers use CanvasClients (but ImageHosts). We have a different
+ * subclass where we have a different way of interfacing with the textures - in
+ * terms of drawing into the compositable and/or passing its contents to the
+ * compostior.
  */
-class CompositableClient
-{
-protected:
+class CompositableClient {
+ protected:
   virtual ~CompositableClient();
 
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositableClient)
 
-  explicit CompositableClient(CompositableForwarder* aForwarder, TextureFlags aFlags = TextureFlags::NO_FLAGS);
+  explicit CompositableClient(CompositableForwarder* aForwarder,
+                              TextureFlags aFlags = TextureFlags::NO_FLAGS);
 
-  virtual void Dump(std::stringstream& aStream,
-                    const char* aPrefix="",
-                    bool aDumpHtml=false,
-                    TextureDumpMode aCompress=TextureDumpMode::Compress) {};
+  virtual void Dump(std::stringstream& aStream, const char* aPrefix = "",
+                    bool aDumpHtml = false,
+                    TextureDumpMode aCompress = TextureDumpMode::Compress){};
 
   virtual TextureInfo GetTextureInfo() const = 0;
 
   LayersBackend GetCompositorBackendType() const;
 
-  already_AddRefed<TextureClient>
-  CreateBufferTextureClient(gfx::SurfaceFormat aFormat,
-                            gfx::IntSize aSize,
-                            gfx::BackendType aMoz2dBackend = gfx::BackendType::NONE,
-                            TextureFlags aFlags = TextureFlags::DEFAULT);
+  already_AddRefed<TextureClient> CreateBufferTextureClient(
+      gfx::SurfaceFormat aFormat, gfx::IntSize aSize,
+      gfx::BackendType aMoz2dBackend = gfx::BackendType::NONE,
+      TextureFlags aFlags = TextureFlags::DEFAULT);
 
-  already_AddRefed<TextureClient>
-  CreateTextureClientForDrawing(gfx::SurfaceFormat aFormat,
-                                gfx::IntSize aSize,
-                                BackendSelector aSelector,
-                                TextureFlags aTextureFlags,
-                                TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
+  already_AddRefed<TextureClient> CreateTextureClientForDrawing(
+      gfx::SurfaceFormat aFormat, gfx::IntSize aSize, BackendSelector aSelector,
+      TextureFlags aTextureFlags,
+      TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
 
-  already_AddRefed<TextureClient>
-  CreateTextureClientFromSurface(gfx::SourceSurface* aSurface,
-                                 BackendSelector aSelector,
-                                 TextureFlags aTextureFlags,
-                                 TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
+  already_AddRefed<TextureClient> CreateTextureClientFromSurface(
+      gfx::SourceSurface* aSurface, BackendSelector aSelector,
+      TextureFlags aTextureFlags,
+      TextureAllocationFlags aAllocFlags = ALLOC_DEFAULT);
 
   /**
    * Establishes the connection with compositor side through IPDL
@@ -163,22 +111,22 @@ public:
 
   bool IsConnected() const;
 
-  PCompositableChild* GetIPDLActor() const;
-
-  CompositableForwarder* GetForwarder() const
-  {
-    return mForwarder;
-  }
+  CompositableForwarder* GetForwarder() const { return mForwarder; }
 
   /**
    * This identifier is what lets us attach async compositables with a shadow
    * layer. It is not used if the compositable is used with the regular shadow
    * layer forwarder.
    *
-   * If this returns zero, it means the compositable is not async (it is used
+   * If this returns empty, it means the compositable is not async (it is used
    * on the main thread).
    */
-  uint64_t GetAsyncID() const;
+  CompositableHandle GetAsyncHandle() const;
+
+  /**
+   * Handle for IPDL communication.
+   */
+  CompositableHandle GetIPCHandle() const { return mHandle; }
 
   /**
    * Tells the Compositor to create a TextureHost for this TextureClient.
@@ -203,17 +151,16 @@ public:
   virtual void HandleMemoryPressure();
 
   /**
-   * Should be called when deataching a TextureClient from a Compositable, because
-   * some platforms need to do some extra book keeping when this happens (for
-   * example to properly keep track of fences on Gonk).
+   * Should be called when deataching a TextureClient from a Compositable,
+   * because some platforms need to do some extra book keeping when this
+   * happens.
    *
    * See AutoRemoveTexture to automatically invoke this at the end of a scope.
    */
-  virtual void RemoveTexture(TextureClient* aTexture);
+  virtual void RemoveTexture(TextureClient* aTexture,
+                             const Maybe<wr::RenderRoot>& aRenderRoot);
 
-  static RefPtr<CompositableClient> FromIPDLActor(PCompositableChild* aActor);
-
-  void InitIPDLActor(PCompositableChild* aActor, uint64_t aAsyncID = 0);
+  void InitIPDL(const CompositableHandle& aHandle);
 
   TextureFlags GetTextureFlags() const { return mTextureFlags; }
 
@@ -224,13 +171,16 @@ public:
   static void DumpTextureClient(std::stringstream& aStream,
                                 TextureClient* aTexture,
                                 TextureDumpMode aCompress);
-protected:
-  RefPtr<CompositableChild> mCompositableChild;
+
+ protected:
   RefPtr<CompositableForwarder> mForwarder;
   // Some layers may want to enforce some flags to all their textures
   // (like disallowing tiling)
   TextureFlags mTextureFlags;
   RefPtr<TextureClientRecycleAllocator> mTextureClientRecycler;
+
+  CompositableHandle mHandle;
+  bool mIsAsync;
 
   friend class CompositableChild;
 };
@@ -238,22 +188,24 @@ protected:
 /**
  * Helper to call RemoveTexture at the end of a scope.
  */
-struct AutoRemoveTexture
-{
-  explicit AutoRemoveTexture(CompositableClient* aCompositable,
-                             TextureClient* aTexture = nullptr)
-    : mTexture(aTexture)
-    , mCompositable(aCompositable)
-  {}
+struct AutoRemoveTexture {
+  AutoRemoveTexture(CompositableClient* aCompositable,
+                    wr::RenderRoot aRenderRoot,
+                    TextureClient* aTexture = nullptr)
+      : mTexture(aTexture),
+        mCompositable(aCompositable),
+        mRenderRoot(aRenderRoot) {}
 
   ~AutoRemoveTexture();
 
   RefPtr<TextureClient> mTexture;
-private:
+
+ private:
   CompositableClient* mCompositable;
+  wr::RenderRoot mRenderRoot;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

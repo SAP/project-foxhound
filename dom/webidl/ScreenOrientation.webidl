@@ -28,15 +28,15 @@ enum OrientationLockType {
   "landscape-secondary"
 };
 
-[UnsafeInPrerendering]
+[Exposed=Window]
 interface ScreenOrientation : EventTarget {
   [Throws]
   Promise<void> lock(OrientationLockType orientation);
   [Throws]
   void unlock();
-  [Throws]
+  [Throws, NeedsCallerType]
   readonly attribute OrientationType type;
-  [Throws]
+  [Throws, NeedsCallerType]
   readonly attribute unsigned short angle;
   attribute EventHandler onchange;
 };

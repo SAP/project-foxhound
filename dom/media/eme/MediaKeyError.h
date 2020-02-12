@@ -16,23 +16,21 @@
 namespace mozilla {
 namespace dom {
 
-class MediaKeyError final : public Event
-{
-public:
-  NS_FORWARD_TO_EVENT
-
+class MediaKeyError final : public Event {
+ public:
   MediaKeyError(EventTarget* aOwner, uint32_t aSystemCode);
   ~MediaKeyError();
 
-  JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObjectInternal(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   uint32_t SystemCode() const;
 
-private:
+ private:
   uint32_t mSystemCode;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

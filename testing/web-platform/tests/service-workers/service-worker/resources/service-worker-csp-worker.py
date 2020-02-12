@@ -1,7 +1,7 @@
 bodyDefault = '''
 importScripts('worker-testharness.js');
 importScripts('test-helpers.sub.js');
-importScripts('../resources/get-host-info.sub.js');
+importScripts('/common/get-host-info.sub.js');
 
 var host_info = get_host_info();
 
@@ -16,6 +16,15 @@ test(function() {
     assert_true(import_script_failed,
                 'Importing the other origins script should fail.');
   }, 'importScripts test for default-src');
+
+test(function() {
+    assert_throws(EvalError(),
+                  function() { eval('1 + 1'); },
+                  'eval() should throw EvalError.')
+    assert_throws(EvalError(),
+                  function() { new Function('1 + 1'); },
+                  'new Function() should throw EvalError.')
+  }, 'eval test for default-src');
 
 async_test(function(t) {
     fetch(host_info.HTTPS_REMOTE_ORIGIN +
@@ -47,7 +56,7 @@ async_test(function(t) {
 bodyScript = '''
 importScripts('worker-testharness.js');
 importScripts('test-helpers.sub.js');
-importScripts('../resources/get-host-info.sub.js');
+importScripts('/common/get-host-info.sub.js');
 
 var host_info = get_host_info();
 
@@ -62,6 +71,15 @@ test(function() {
     assert_true(import_script_failed,
                 'Importing the other origins script should fail.');
   }, 'importScripts test for script-src');
+
+test(function() {
+    assert_throws(EvalError(),
+                  function() { eval('1 + 1'); },
+                  'eval() should throw EvalError.')
+    assert_throws(EvalError(),
+                  function() { new Function('1 + 1'); },
+                  'new Function() should throw EvalError.')
+  }, 'eval test for script-src');
 
 async_test(function(t) {
     fetch(host_info.HTTPS_REMOTE_ORIGIN +
@@ -93,7 +111,7 @@ async_test(function(t) {
 bodyConnect = '''
 importScripts('worker-testharness.js');
 importScripts('test-helpers.sub.js');
-importScripts('../resources/get-host-info.sub.js');
+importScripts('/common/get-host-info.sub.js');
 
 var host_info = get_host_info();
 
@@ -108,6 +126,18 @@ test(function() {
     assert_false(import_script_failed,
                  'Importing the other origins script should not fail.');
   }, 'importScripts test for connect-src');
+
+test(function() {
+    var eval_failed = false;
+    try {
+      eval('1 + 1');
+      new Function('1 + 1');
+    } catch(e) {
+      eval_failed = true;
+    }
+    assert_false(eval_failed,
+                 'connect-src without unsafe-eval should not block eval().');
+  }, 'eval test for connect-src');
 
 async_test(function(t) {
     fetch(host_info.HTTPS_REMOTE_ORIGIN +

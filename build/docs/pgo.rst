@@ -12,19 +12,18 @@ faster.
 How PGO Builds Work
 ===================
 
-The supported interface for invoking a PGO build is to evaluate the
-*build* target of client.mk with *MOZ_PGO* defined. e.g.::
+The supported interface for invoking a PGO build is to add ``MOZ_PGO=1`` to
+configure flags and then build. e.g. in your mozconfig::
 
-    $ make -f client.mk MOZ_PGO=1
+    ac_add_options MOZ_PGO=1
 
-This is equivalent to::
+Then::
 
-    $ make -f client.mk profiledbuild
+    $ ./mach build
 
-Which is roughly equivalent to:
+This is roughly equivalent to::
 
-#. Perform a build with *MOZ_PROFILE_GENERATE=1* and *MOZ_PGO_INSTRUMENTED=1*
-#. Package with *MOZ_PGO_INSTRUMENTED=1*
+#. Perform a build with *MOZ_PROFILE_GENERATE=1*
 #. Performing a run of the instrumented binaries
 #. $ make maybe_clobber_profiledbuild
 #. Perform a build with *MOZ_PROFILE_USE=1*

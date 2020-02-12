@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800386
 -->
 <window title="Mozilla Bug 800386"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -18,8 +18,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800386
   <script type="application/javascript">
   <![CDATA[
   /** Test for Bug 800386 **/
-  Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
   SimpleTest.waitForExplicitFinish();
 
   var triedForwarding = false;
@@ -28,14 +26,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800386
   var xhr = new XMLHttpRequest;
   var xhr2 = new XMLHttpRequest;
 
-  var eventSink = xhr.getInterface(Components.interfaces.nsIProgressEventSink);
+  var eventSink = xhr.getInterface(Ci.nsIProgressEventSink);
   isnot(eventSink, null, "Should get event sink directly!");
 
   // Now jump through some hoops to get us a getInterface call from C++
 
   var requestor = {
     getInterface: function(aIID) {
-      if (aIID.equals(Components.interfaces.nsIProgressEventSink)) {
+      if (aIID.equals(Ci.nsIProgressEventSink)) {
         triedForwarding = true;
         try {
           return xhr2.getInterface(aIID);
@@ -43,11 +41,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800386
           forwardFailed = true;
         }
       }
-      throw Components.results.NS_ERROR_NO_INTERFACE;
+      throw Cr.NS_ERROR_NO_INTERFACE;
     },
 
-    QueryInterface: XPCOMUtils.generateQI([Components.interfaces.nsISupports,
-                                           Components.interfaces.nsIInterfaceRequestor])
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIInterfaceRequestor])
   };
 
   // HTTP URI so that we get progress callbacks

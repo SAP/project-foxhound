@@ -7,15 +7,16 @@
       :-moz-ui-invalid { background-color:red; }
       * { background-color:white; }
     </style>
-    <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
     <script>
       function runTest() {
         var textarea = document.getElementById('textarea');
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
         textarea.focus();
-        synthesizeKey('o', {}); // so that it becomes invalid first
+        sendString("o"); // so that it becomes invalid first
         textarea.blur();
         textarea.focus();
-        synthesizeKey('o', {});
+        sendString("o");
         textarea.blur(); // to hide the caret
         document.documentElement.className='';
       }
@@ -25,4 +26,3 @@
     <textarea id="textarea" minlength="3">f</textarea>
   </body>
 </html>
-

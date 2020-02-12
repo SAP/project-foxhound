@@ -12,8 +12,7 @@
 #include "nsTArray.h"
 #include "nsIDOMWakeLockListener.h"
 #include "nsIPowerManagerService.h"
-#include "mozilla/Observer.h"
-#include "Types.h"
+#include "mozilla/HalWakeLockInformation.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/WakeLock.h"
 
@@ -24,17 +23,13 @@ class ContentParent;
 
 namespace power {
 
-class PowerManagerService
-  : public nsIPowerManagerService
-  , public WakeLockObserver
-{
-public:
+class PowerManagerService : public nsIPowerManagerService,
+                            public hal::WakeLockObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPOWERMANAGERSERVICE
 
-  PowerManagerService()
-    : mWatchdogTimeoutSecs(0)
-  {}
+  PowerManagerService() {}
 
   static already_AddRefed<PowerManagerService> GetInstance();
 
@@ -55,32 +50,26 @@ public:
    *  - The /given/ process shows up in WakeLockInfo::lockingProcesses.
    *
    */
-  already_AddRefed<WakeLock>
-  NewWakeLockOnBehalfOfProcess(const nsAString& aTopic,
-                               ContentParent* aContentParent);
+  already_AddRefed<WakeLock> NewWakeLockOnBehalfOfProcess(
+      const nsAString& aTopic, ContentParent* aContentParent);
 
-  already_AddRefed<WakeLock>
-  NewWakeLock(const nsAString& aTopic, nsPIDOMWindowInner* aWindow,
-              mozilla::ErrorResult& aRv);
+  already_AddRefed<WakeLock> NewWakeLock(const nsAString& aTopic,
+                                         nsPIDOMWindowInner* aWindow,
+                                         mozilla::ErrorResult& aRv);
 
-private:
-
+ private:
   ~PowerManagerService();
 
   void ComputeWakeLockState(const hal::WakeLockInformation& aWakeLockInfo,
-                            nsAString &aState);
-
-  void SyncProfile();
+                            nsAString& aState);
 
   static StaticRefPtr<PowerManagerService> sSingleton;
 
   nsTArray<nsCOMPtr<nsIDOMMozWakeLockListener>> mWakeLockListeners;
-  
-  int32_t mWatchdogTimeoutSecs;
 };
 
-} // namespace power
-} // namespace dom
-} // namespace mozilla
+}  // namespace power
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_power_PowerManagerService_h
+#endif  // mozilla_dom_power_PowerManagerService_h

@@ -12,7 +12,7 @@
   }
 }
 
-richlistitem {
+.autocomplete-richlistbox > richlistitem {
   -moz-box-orient: horizontal;
   overflow: hidden;
 }
@@ -24,17 +24,4 @@ richlistitem {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ac-tags[empty] {
-  display: none;
-}
-
-.ac-action[actiontype=searchengine]:not([selected]),
-.ac-separator[actiontype=searchengine]:not([selected]) {
-  display: none;
-}
-
-.ac-separator[type=keyword] {
-  display: none;
 }

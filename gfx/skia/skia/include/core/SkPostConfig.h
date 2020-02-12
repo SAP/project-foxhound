@@ -10,18 +10,18 @@
 #ifndef SkPostConfig_DEFINED
 #define SkPostConfig_DEFINED
 
-#if defined(SK_BUILD_FOR_WIN32)
-#  define SK_BUILD_FOR_WIN
+#if !defined(SK_DEBUG) && !defined(SK_RELEASE)
+    #ifdef NDEBUG
+        #define SK_RELEASE
+    #else
+        #define SK_DEBUG
+    #endif
 #endif
 
 #if defined(SK_DEBUG) && defined(SK_RELEASE)
 #  error "cannot define both SK_DEBUG and SK_RELEASE"
 #elif !defined(SK_DEBUG) && !defined(SK_RELEASE)
 #  error "must define either SK_DEBUG or SK_RELEASE"
-#endif
-
-#if defined(SK_SUPPORT_UNITTEST) && !defined(SK_DEBUG)
-#  error "can't have unittests without debug"
 #endif
 
 /**
@@ -38,6 +38,12 @@
 #  error "cannot define both SK_CPU_LENDIAN and SK_CPU_BENDIAN"
 #elif !defined(SK_CPU_LENDIAN) && !defined(SK_CPU_BENDIAN)
 #  error "must define either SK_CPU_LENDIAN or SK_CPU_BENDIAN"
+#endif
+
+#if defined(SK_CPU_BENDIAN) && !defined(I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN)
+    #error "The Skia team is not endian-savvy enough to support big-endian CPUs."
+    #error "If you still want to use Skia,"
+    #error "please define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN."
 #endif
 
 /**
@@ -69,17 +75,14 @@
 #  endif
 #endif
 
-// As usual, there are two ways to increase alignment... the MSVC way and the everyone-else way.
-#ifndef SK_STRUCT_ALIGN
-    #ifdef _MSC_VER
-        #define SK_STRUCT_ALIGN(N) __declspec(align(N))
-    #else
-        #define SK_STRUCT_ALIGN(N) __attribute__((aligned(N)))
-    #endif
-#endif
-
 #if !defined(SK_SUPPORT_GPU)
 #  define SK_SUPPORT_GPU 1
+#endif
+
+#if !defined(SK_SUPPORT_ATLAS_TEXT)
+#  define SK_SUPPORT_ATLAS_TEXT 0
+#elif SK_SUPPORT_ATLAS_TEXT && !SK_SUPPORT_GPU
+#  error "SK_SUPPORT_ATLAS_TEXT requires SK_SUPPORT_GPU"
 #endif
 
 /**
@@ -100,33 +103,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO(mdempsky): Move elsewhere as appropriate.
-#include <new>
-
-
-///////////////////////////////////////////////////////////////////////////////
-
 #ifdef SK_BUILD_FOR_WIN
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#    define WIN32_IS_MEAN_WAS_LOCALLY_DEFINED
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#    define NOMINMAX_WAS_LOCALLY_DEFINED
-#  endif
-#
-#  include <windows.h>
-#
-#  ifdef WIN32_IS_MEAN_WAS_LOCALLY_DEFINED
-#    undef WIN32_IS_MEAN_WAS_LOCALLY_DEFINED
-#    undef WIN32_LEAN_AND_MEAN
-#  endif
-#  ifdef NOMINMAX_WAS_LOCALLY_DEFINED
-#    undef NOMINMAX_WAS_LOCALLY_DEFINED
-#    undef NOMINMAX
-#  endif
-#
 #  ifndef SK_A32_SHIFT
 #    define SK_A32_SHIFT 24
 #    define SK_R32_SHIFT 16
@@ -136,7 +113,7 @@
 #
 #endif
 
-#if defined(GOOGLE3)
+#if defined(SK_BUILD_FOR_GOOGLE3)
     void SkDebugfForDumpStackTrace(const char* data, void* unused);
     void DumpStackTrace(int skip_count, void w(const char*, void*), void* arg);
 #  define SK_DUMP_GOOGLE3_STACK() DumpStackTrace(0, SkDebugfForDumpStackTrace, nullptr)
@@ -144,11 +121,20 @@
 #  define SK_DUMP_GOOGLE3_STACK()
 #endif
 
+#ifdef SK_BUILD_FOR_WIN
+// permits visual studio to follow error back to source
+#define SK_DUMP_LINE_FORMAT(message) \
+    SkDebugf("%s(%d): fatal error: \"%s\"\n", __FILE__, __LINE__, message)
+#else
+#define SK_DUMP_LINE_FORMAT(message) \
+    SkDebugf("%s:%d: fatal error: \"%s\"\n", __FILE__, __LINE__, message)
+#endif
+
 #ifndef SK_ABORT
-#  define SK_ABORT(msg) \
+#  define SK_ABORT(message) \
     do { \
        SkNO_RETURN_HINT(); \
-       SkDebugf("%s:%d: fatal error: \"%s\"\n", __FILE__, __LINE__, #msg); \
+       SK_DUMP_LINE_FORMAT(message); \
        SK_DUMP_GOOGLE3_STACK(); \
        sk_abort_no_print(); \
     } while (false)
@@ -205,63 +191,21 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined SK_DEBUG && defined SK_BUILD_FOR_WIN32
-#  ifdef free
-#    undef free
-#  endif
-#  include <crtdbg.h>
-#  undef free
-#
-#  ifdef SK_DEBUGx
-#    if defined(SK_SIMULATE_FAILED_MALLOC) && defined(__cplusplus)
-       void * operator new(
-           size_t cb,
-           int nBlockUse,
-           const char * szFileName,
-           int nLine,
-           int foo
-           );
-       void * operator new[](
-           size_t cb,
-           int nBlockUse,
-           const char * szFileName,
-           int nLine,
-           int foo
-           );
-       void operator delete(
-           void *pUserData,
-           int, const char*, int, int
-           );
-       void operator delete(
-           void *pUserData
-           );
-       void operator delete[]( void * p );
-#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__, 0)
-#    else
-#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__)
-#    endif
-#    define new DEBUG_CLIENTBLOCK
-#  else
-#    define DEBUG_CLIENTBLOCK
-#  endif
+#if defined SK_DEBUG && defined SK_BUILD_FOR_WIN
+    #ifdef free
+        #undef free
+    #endif
+    #include <crtdbg.h>
+    #undef free
 #endif
 
 //////////////////////////////////////////////////////////////////////
 
 #if !defined(SK_UNUSED)
-#  define SK_UNUSED SK_ATTRIBUTE(unused)
-#endif
-
-#if !defined(SK_ATTR_DEPRECATED)
-   // FIXME: we ignore msg for now...
-#  define SK_ATTR_DEPRECATED(msg) SK_ATTRIBUTE(deprecated)
-#endif
-
-#if !defined(SK_ATTR_EXTERNALLY_DEPRECATED)
-#  if !defined(SK_INTERNAL)
-#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg) SK_ATTR_DEPRECATED(msg)
+#  if !defined(__clang__) && defined(_MSC_VER)
+#    define SK_UNUSED __pragma(warning(suppress:4189))
 #  else
-#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg)
+#    define SK_UNUSED SK_ATTRIBUTE(unused)
 #  endif
 #endif
 
@@ -276,6 +220,18 @@
 #    define SK_ALWAYS_INLINE __forceinline
 #  else
 #    define SK_ALWAYS_INLINE SK_ATTRIBUTE(always_inline) inline
+#  endif
+#endif
+
+/**
+ * If your judgment is better than the compiler's (i.e. you've profiled it),
+ * you can use SK_NEVER_INLINE to prevent inlining.
+ */
+#if !defined(SK_NEVER_INLINE)
+#  if defined(SK_BUILD_FOR_WIN)
+#    define SK_NEVER_INLINE __declspec(noinline)
+#  else
+#    define SK_NEVER_INLINE SK_ATTRIBUTE(noinline)
 #  endif
 #endif
 
@@ -305,7 +261,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #ifndef SK_SIZE_T_SPECIFIER
-#  if defined(_MSC_VER)
+#  if defined(_MSC_VER) && !defined(__clang__)
 #    define SK_SIZE_T_SPECIFIER "%Iu"
 #  else
 #    define SK_SIZE_T_SPECIFIER "%zu"
@@ -320,31 +276,23 @@
 
 //////////////////////////////////////////////////////////////////////
 
-#ifndef SK_EGL
-#  if defined(SK_BUILD_FOR_ANDROID)
-#    define SK_EGL 1
-#  else
-#    define SK_EGL 0
-#  endif
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
-#if defined(SK_GAMMA_EXPONENT) && defined(SK_GAMMA_SRGB)
-#  error "cannot define both SK_GAMMA_EXPONENT and SK_GAMMA_SRGB"
-#elif defined(SK_GAMMA_SRGB)
-#  define SK_GAMMA_EXPONENT (0.0f)
-#elif !defined(SK_GAMMA_EXPONENT)
-#  define SK_GAMMA_EXPONENT (2.2f)
+#if !defined(SK_GAMMA_EXPONENT)
+    #define SK_GAMMA_EXPONENT (0.0f)  // SRGB
 #endif
 
 //////////////////////////////////////////////////////////////////////
 
 #ifndef GR_TEST_UTILS
-#  define GR_TEST_UTILS 1
+#  define GR_TEST_UTILS 0
 #endif
 
 //////////////////////////////////////////////////////////////////////
+
+#if defined(SK_HISTOGRAM_ENUMERATION) && defined(SK_HISTOGRAM_BOOLEAN)
+#  define SK_HISTOGRAMS_ENABLED 1
+#else
+#  define SK_HISTOGRAMS_ENABLED 0
+#endif
 
 #ifndef SK_HISTOGRAM_BOOLEAN
 #  define SK_HISTOGRAM_BOOLEAN(name, value)
@@ -352,6 +300,10 @@
 
 #ifndef SK_HISTOGRAM_ENUMERATION
 #  define SK_HISTOGRAM_ENUMERATION(name, value, boundary_value)
+#endif
+
+#ifndef SK_DISABLE_LEGACY_SHADERCONTEXT
+#define SK_ENABLE_LEGACY_SHADERCONTEXT
 #endif
 
 #endif // SkPostConfig_DEFINED

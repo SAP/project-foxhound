@@ -8,6 +8,7 @@
 #ifndef GrRect_DEFINED
 #define GrRect_DEFINED
 
+#include "SkTo.h"
 #include "SkTypes.h"
 #include "SkRect.h"
 
@@ -54,4 +55,31 @@ struct GrIRect16 {
     }
 };
 
+/** Returns true if the rectangles have a nonzero area of overlap. It assumed that rects can be
+    infinitely small but not "inverted". */
+static inline bool GrRectsOverlap(const SkRect& a, const SkRect& b) {
+    // See skbug.com/6607 about the isFinite() checks.
+    SkASSERT(!a.isFinite() || (a.fLeft <= a.fRight && a.fTop <= a.fBottom));
+    SkASSERT(!b.isFinite() || (b.fLeft <= b.fRight && b.fTop <= b.fBottom));
+    return a.fRight > b.fLeft && a.fBottom > b.fTop && b.fRight > a.fLeft && b.fBottom > a.fTop;
+}
+
+/** Returns true if the rectangles overlap or share an edge or corner. It assumed that rects can be
+    infinitely small but not "inverted". */
+static inline bool GrRectsTouchOrOverlap(const SkRect& a, const SkRect& b) {
+    // See skbug.com/6607 about the isFinite() checks.
+    SkASSERT(!a.isFinite() || (a.fLeft <= a.fRight && a.fTop <= a.fBottom));
+    SkASSERT(!b.isFinite() || (b.fLeft <= b.fRight && b.fTop <= b.fBottom));
+    return a.fRight >= b.fLeft && a.fBottom >= b.fTop && b.fRight >= a.fLeft && b.fBottom >= a.fTop;
+}
+
+/**
+ * Apply the transform from 'inRect' to 'outRect' to each point in 'inPts', storing the mapped point
+ * into the parallel index of 'outPts'.
+ */
+static inline void GrMapRectPoints(const SkRect& inRect, const SkRect& outRect,
+                                   const SkPoint inPts[], SkPoint outPts[], int ptCount) {
+    SkMatrix rectTransform = SkMatrix::MakeRectToRect(inRect, outRect, SkMatrix::kFill_ScaleToFit);
+    rectTransform.mapPoints(outPts, inPts, ptCount);
+}
 #endif

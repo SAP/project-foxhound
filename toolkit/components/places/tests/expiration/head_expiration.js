@@ -4,30 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
 {
+  /* import-globals-from ../head_common.js */
   let commonFile = do_get_file("../head_common.js", false);
   let uri = Services.io.newFileURI(commonFile);
   Services.scriptloader.loadSubScript(uri.spec, this);
 }
 
 // Put any other stuff relative to this test folder below.
-
-
-// Simulates an expiration at shutdown.
-function shutdownExpiration()
-{
-  let expire = Cc["@mozilla.org/places/expiration;1"].getService(Ci.nsIObserver);
-  expire.observe(null, "places-will-close-connection", null);
-}
-
 
 /**
  * Causes expiration component to start, otherwise it would wait for the first
@@ -38,7 +25,6 @@ function force_expiration_start() {
     .getService(Ci.nsIObserver)
     .observe(null, "testing-mode", null);
 }
-
 
 /**
  * Forces an expiration run.
@@ -53,32 +39,39 @@ function force_expiration_start() {
  */
 function promiseForceExpirationStep(aLimit) {
   let promise = promiseTopicObserved(PlacesUtils.TOPIC_EXPIRATION_FINISHED);
-  let expire = Cc["@mozilla.org/places/expiration;1"].getService(Ci.nsIObserver);
+  let expire = Cc["@mozilla.org/places/expiration;1"].getService(
+    Ci.nsIObserver
+  );
   expire.observe(null, "places-debug-start-expiration", aLimit);
   return promise;
 }
-
 
 /**
  * Expiration preferences helpers.
  */
 
 function setInterval(aNewInterval) {
-  Services.prefs.setIntPref("places.history.expiration.interval_seconds", aNewInterval);
+  Services.prefs.setIntPref(
+    "places.history.expiration.interval_seconds",
+    aNewInterval
+  );
 }
 function getInterval() {
-  return Services.prefs.getIntPref("places.history.expiration.interval_seconds");
+  return Services.prefs.getIntPref(
+    "places.history.expiration.interval_seconds"
+  );
 }
 function clearInterval() {
   try {
     Services.prefs.clearUserPref("places.history.expiration.interval_seconds");
-  }
-  catch (ex) {}
+  } catch (ex) {}
 }
 
-
 function setMaxPages(aNewMaxPages) {
-  Services.prefs.setIntPref("places.history.expiration.max_pages", aNewMaxPages);
+  Services.prefs.setIntPref(
+    "places.history.expiration.max_pages",
+    aNewMaxPages
+  );
 }
 function getMaxPages() {
   return Services.prefs.getIntPref("places.history.expiration.max_pages");
@@ -86,10 +79,8 @@ function getMaxPages() {
 function clearMaxPages() {
   try {
     Services.prefs.clearUserPref("places.history.expiration.max_pages");
-  }
-  catch (ex) {}
+  } catch (ex) {}
 }
-
 
 function setHistoryEnabled(aHistoryEnabled) {
   Services.prefs.setBoolPref("places.history.enabled", aHistoryEnabled);
@@ -100,8 +91,7 @@ function getHistoryEnabled() {
 function clearHistoryEnabled() {
   try {
     Services.prefs.clearUserPref("places.history.enabled");
-  }
-  catch (ex) {}
+  } catch (ex) {}
 }
 
 /**

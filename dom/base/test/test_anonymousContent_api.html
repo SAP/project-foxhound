@@ -6,12 +6,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1020244
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1020244 - Test the chrome-only AnonymousContent API</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1020244">Mozilla Bug 1020244</a>
-  <script type="application/javascript;version=1.8">
+  <script type="application/javascript">
 
   // Testing the presence of the chrome-only API
   ok(!document.insertAnonymousContent,
@@ -46,7 +46,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1020244
   let members = ["getTextContentForElement", "setTextContentForElement",
                  "getAttributeForElement", "setAttributeForElement",
                  "removeAttributeForElement", "getCanvasContext",
-                 "setAnimationForElement"];
+                 "setAnimationForElement", "setStyle"];
   for (let member of members) {
     ok(member in anonymousContent, "AnonymousContent object defines " + member);
   }

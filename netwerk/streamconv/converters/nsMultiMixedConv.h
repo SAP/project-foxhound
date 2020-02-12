@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,16 +14,15 @@
 #include "nsIMultiPartChannel.h"
 #include "nsAutoPtr.h"
 #include "mozilla/Attributes.h"
-#include "nsIResponseHeadProvider.h"
+#include "mozilla/IncrementalTokenizer.h"
 #include "nsHttpResponseHead.h"
 
-#define NS_MULTIMIXEDCONVERTER_CID                         \
-{ /* 7584CE90-5B25-11d3-A175-0050041CAF44 */         \
-    0x7584ce90,                                      \
-    0x5b25,                                          \
-    0x11d3,                                          \
-    {0xa1, 0x75, 0x0, 0x50, 0x4, 0x1c, 0xaf, 0x44}       \
-}
+#define NS_MULTIMIXEDCONVERTER_CID                 \
+  { /* 7584CE90-5B25-11d3-A175-0050041CAF44 */     \
+    0x7584ce90, 0x5b25, 0x11d3, {                  \
+      0xa1, 0x75, 0x0, 0x50, 0x4, 0x1c, 0xaf, 0x44 \
+    }                                              \
+  }
 
 //
 // nsPartChannel is a "dummy" channel which represents an individual part of
@@ -34,17 +33,13 @@
 //
 class nsPartChannel final : public nsIChannel,
                             public nsIByteRangeRequest,
-                            public nsIResponseHeadProvider,
-                            public nsIMultiPartChannel
-{
-public:
-  nsPartChannel(nsIChannel *aMultipartChannel, uint32_t aPartID,
+                            public nsIMultiPartChannel {
+ public:
+  nsPartChannel(nsIChannel* aMultipartChannel, uint32_t aPartID,
                 nsIStreamListener* aListener);
 
   void InitializeByteRange(int64_t aStart, int64_t aEnd);
   void SetIsLastPart() { mIsLastPart = true; }
-  void SetPreamble(const nsACString& aPreamble);
-  void SetOriginalResponseHeader(const nsACString& aOriginalResponseHeader);
   nsresult SendOnStartRequest(nsISupports* aContext);
   nsresult SendOnDataAvailable(nsISupports* aContext, nsIInputStream* aStream,
                                uint64_t aOffset, uint32_t aLen);
@@ -52,70 +47,69 @@ public:
   /* SetContentDisposition expects the full value of the Content-Disposition
    * header */
   void SetContentDisposition(const nsACString& aContentDispositionHeader);
-  void SetResponseHead(mozilla::net::nsHttpResponseHead * head) { mResponseHead = head; }
+  void SetResponseHead(mozilla::net::nsHttpResponseHead* head) {
+    mResponseHead = head;
+  }
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUEST
   NS_DECL_NSICHANNEL
   NS_DECL_NSIBYTERANGEREQUEST
-  NS_DECL_NSIRESPONSEHEADPROVIDER
   NS_DECL_NSIMULTIPARTCHANNEL
 
-protected:
-  ~nsPartChannel();
+ protected:
+  ~nsPartChannel() = default;
 
-protected:
-  nsCOMPtr<nsIChannel>    mMultipartChannel;
+ protected:
+  nsCOMPtr<nsIChannel> mMultipartChannel;
   nsCOMPtr<nsIStreamListener> mListener;
   nsAutoPtr<mozilla::net::nsHttpResponseHead> mResponseHead;
 
-  nsresult                mStatus;
-  nsLoadFlags             mLoadFlags;
+  nsresult mStatus;
+  nsLoadFlags mLoadFlags;
 
-  nsCOMPtr<nsILoadGroup>  mLoadGroup;
+  nsCOMPtr<nsILoadGroup> mLoadGroup;
 
-  nsCString               mContentType;
-  nsCString               mContentCharset;
-  uint32_t                mContentDisposition;
-  nsString                mContentDispositionFilename;
-  nsCString               mContentDispositionHeader;
-  uint64_t                mContentLength;
+  nsCString mContentType;
+  nsCString mContentCharset;
+  uint32_t mContentDisposition;
+  nsString mContentDispositionFilename;
+  nsCString mContentDispositionHeader;
+  uint64_t mContentLength;
 
-  bool                    mIsByteRangeRequest;
-  int64_t                 mByteRangeStart;
-  int64_t                 mByteRangeEnd;
+  bool mIsByteRangeRequest;
+  int64_t mByteRangeStart;
+  int64_t mByteRangeEnd;
 
-  uint32_t                mPartID; // unique ID that can be used to identify
-                                   // this part of the multipart document
-  bool                    mIsLastPart;
-
-  nsCString               mPreamble;
-
-  // The original http response header.
-  nsCString               mOriginalResponseHeader;
+  uint32_t mPartID;  // unique ID that can be used to identify
+                     // this part of the multipart document
+  bool mIsLastPart;
 };
 
-// The nsMultiMixedConv stream converter converts a stream of type "multipart/x-mixed-replace"
-// to it's subparts. There was some debate as to whether or not the functionality desired
-// when HTTP confronted this type required a stream converter. After all, this type really
-// prompts various viewer related actions rather than stream conversion. There simply needs
-// to be a piece in place that can strip out the multiple parts of a stream of this type, and 
-// "display" them accordingly.
+// The nsMultiMixedConv stream converter converts a stream of type
+// "multipart/x-mixed-replace" to it's subparts. There was some debate as to
+// whether or not the functionality desired when HTTP confronted this type
+// required a stream converter. After all, this type really prompts various
+// viewer related actions rather than stream conversion. There simply needs to
+// be a piece in place that can strip out the multiple parts of a stream of this
+// type, and "display" them accordingly.
 //
-// With that said, this "stream converter" spends more time packaging up the sub parts of the
-// main stream and sending them off the destination stream listener, than doing any real
-// stream parsing/converting.
+// With that said, this "stream converter" spends more time packaging up the sub
+// parts of the main stream and sending them off the destination stream
+// listener, than doing any real stream parsing/converting.
 //
-// WARNING: This converter requires that it's destination stream listener be able to handle
-//   multiple OnStartRequest(), OnDataAvailable(), and OnStopRequest() call combinations.
-//   Each series represents the beginning, data production, and ending phase of each sub-
-//   part of the original stream.
+// WARNING: This converter requires that it's destination stream listener be
+//   able to handle multiple OnStartRequest(), OnDataAvailable(), and
+//   OnStopRequest() call combinations.  Each series represents the beginning,
+//   data production, and ending phase of each sub- part of the original
+//   stream.
 //
 // NOTE: this MIME-type is used by HTTP, *not* SMTP, or IMAP.
 //
-// NOTE: For reference, a general description of how this MIME type should be handled via
-//   HTTP, see http://home.netscape.com/assist/net_sites/pushpull.html . Note that
-//   real world server content deviates considerably from this overview.
+// NOTE: For reference, a general description of how this MIME type should be
+//   handled via HTTP, see
+//   http://home.netscape.com/assist/net_sites/pushpull.html . Note that real
+//   world server content deviates considerably from this overview.
 //
 // Implementation assumptions:
 //  Assumed structue:
@@ -127,82 +121,137 @@ protected:
 //  --BoundaryToken-- (end delimited by final "--")
 //
 // linebreaks can be either CRLF or LFLF. linebreaks preceding
-// boundary tokens are considered part of the data. BoundaryToken
+// boundary tokens are NOT considered part of the data. BoundaryToken
 // is any opaque string.
-//  
+//
 //
 
 class nsMultiMixedConv : public nsIStreamConverter {
-public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSISTREAMCONVERTER
-    NS_DECL_NSISTREAMLISTENER
-    NS_DECL_NSIREQUESTOBSERVER
+ public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSISTREAMCONVERTER
+  NS_DECL_NSISTREAMLISTENER
+  NS_DECL_NSIREQUESTOBSERVER
 
-    nsMultiMixedConv();
+  explicit nsMultiMixedConv();
 
-protected:
-    virtual ~nsMultiMixedConv();
+ protected:
+  typedef mozilla::IncrementalTokenizer::Token Token;
 
-    nsresult SendStart(nsIChannel *aChannel);
-    nsresult SendStop(nsresult aStatus);
-    nsresult SendData(char *aBuffer, uint32_t aLen);
-    nsresult ParseHeaders(nsIChannel *aChannel, char *&aPtr,
-                          uint32_t &aLen, bool *_retval);
-    int32_t  PushOverLine(char *&aPtr, uint32_t &aLen);
-    char *FindToken(char *aCursor, uint32_t aLen);
-    nsresult BufferData(char *aData, uint32_t aLen);
-    char* ProbeToken(char* aBuffer, uint32_t& aTokenLen);
+  virtual ~nsMultiMixedConv() = default;
 
-    // member data
-    bool                mNewPart;        // Are we processing the beginning of a part?
-    bool                mProcessingHeaders;
-    nsCOMPtr<nsIStreamListener> mFinalListener; // this guy gets the converted data via his OnDataAvailable()
+  nsresult SendStart();
+  void AccumulateData(Token const& aToken);
+  nsresult SendData();
+  nsresult SendStop(nsresult aStatus);
 
-    nsCString           mToken;
-    uint32_t            mTokenLen;
+  // member data
+  nsCOMPtr<nsIStreamListener> mFinalListener;  // this guy gets the converted
+                                               // data via his OnDataAvailable()
 
-    RefPtr<nsPartChannel> mPartChannel;   // the channel for the given part we're processing.
-                                        // one channel per part.
-    nsCOMPtr<nsISupports> mContext;
-    nsCString           mContentType;
-    nsCString           mContentDisposition;
-    uint64_t            mContentLength;
-    
-    char                *mBuffer;
-    uint32_t            mBufLen;
-    uint64_t            mTotalSent;
-    bool                mFirstOnData;   // used to determine if we're in our first OnData callback.
+  nsCOMPtr<nsIChannel>
+      mChannel;  // The channel as we get in in OnStartRequest call
+  RefPtr<nsPartChannel> mPartChannel;  // the channel for the given part we're
+                                       // processing. one channel per part.
+  nsCOMPtr<nsISupports> mContext;
+  nsCString mContentType;
+  nsCString mContentDisposition;
+  nsCString mContentSecurityPolicy;
+  nsCString mRootContentSecurityPolicy;
+  uint64_t mContentLength;
+  uint64_t mTotalSent;
 
-    // The following members are for tracking the byte ranges in
-    // multipart/mixed content which specified the 'Content-Range:'
-    // header...
-    int64_t             mByteRangeStart;
-    int64_t             mByteRangeEnd;
-    bool                mIsByteRangeRequest;
+  // The following members are for tracking the byte ranges in
+  // multipart/mixed content which specified the 'Content-Range:'
+  // header...
+  int64_t mByteRangeStart;
+  int64_t mByteRangeEnd;
+  bool mIsByteRangeRequest;
+  // This flag is set first time we create a part channel.
+  // We use it to prevent duplicated OnStopRequest call on the listener
+  // when we fail from some reason to ever create a part channel that
+  // ensures correct notifications.
+  bool mRequestListenerNotified;
 
-    uint32_t            mCurrentPartID;
+  uint32_t mCurrentPartID;
 
-    // If true, it means the packaged app had an "application/package" header
-    // Otherwise, we remove "Content-Type" headers from files in the package
-    bool                mHasAppContentType;
-    // This is true if the content-type is application/package
-    // Streamable packages don't require the boundary in the header
-    // as it can be ascertained from the package file.
-    bool                mPackagedApp;
-    nsAutoPtr<mozilla::net::nsHttpResponseHead> mResponseHead;
-    // It is necessary to know if the content is coming from the cache
-    // for packaged apps, in the case that only metadata is saved in the cache
-    // entry and OnDataAvailable never gets called.
-    bool                mIsFromCache;
+  // Flag preventing reenter of OnDataAvailable in case the target listener
+  // ends up spinning the event loop.
+  bool mInOnDataAvailable;
 
-    // Preamble is defined as the ASCII-encoding string which appears before the
-    // first boundary. It's only supported by 'application/package' content type
-    // and requires the boundary is defined in the HTTP header.
-    nsCString           mPreamble;
+  // Current state of the incremental parser
+  enum EParserState {
+    PREAMBLE,
+    BOUNDARY_CRLF,
+    HEADER_NAME,
+    HEADER_SEP,
+    HEADER_VALUE,
+    BODY_INIT,
+    BODY,
+    TRAIL_DASH1,
+    TRAIL_DASH2,
+    EPILOGUE,
 
-    // The original http response header of each subresource.
-    nsCString           mOriginalResponseHeader;
+    INIT = PREAMBLE
+  } mParserState;
+
+  // Response part header value, valid when we find a header name
+  // we recognize.
+  enum EHeader : uint32_t {
+    HEADER_FIRST,
+    HEADER_CONTENT_TYPE = HEADER_FIRST,
+    HEADER_CONTENT_LENGTH,
+    HEADER_CONTENT_DISPOSITION,
+    HEADER_SET_COOKIE,
+    HEADER_CONTENT_RANGE,
+    HEADER_RANGE,
+    HEADER_CONTENT_SECURITY_POLICY,
+    HEADER_UNKNOWN
+  } mResponseHeader;
+  // Cumulated value of a response header.
+  nsCString mResponseHeaderValue;
+
+  nsCString mBoundary;
+  mozilla::IncrementalTokenizer mTokenizer;
+
+  // When in the "body parsing" mode, see below, we cumulate raw data
+  // incrementally to mainly avoid any unnecessary granularity.
+  // mRawData points to the first byte in the tokenizer buffer where part
+  // body data begins or continues.  mRawDataLength is a cumulated length
+  // of that data during a single tokenizer input feed.  This is always
+  // flushed right after we fed the tokenizer.
+  nsACString::const_char_iterator mRawData;
+  nsACString::size_type mRawDataLength;
+
+  // At the start we don't know if the server will be sending boundary with
+  // or without the leading dashes.
+  Token mBoundaryToken;
+  Token mBoundaryTokenWithDashes;
+  // We need these custom tokens to allow finding CRLF when in the binary mode.
+  // CRLF before boundary is considered part of the boundary and not part of
+  // the data.
+  Token mLFToken;
+  Token mCRLFToken;
+  // Custom tokens for each of the response headers we recognize.
+  Token mHeaderTokens[HEADER_UNKNOWN];
+
+  // Resets values driven by part headers, like content type, to their defaults,
+  // called at the start of every part processing.
+  void HeadersToDefault();
+  // Processes captured value of mResponseHeader header.
+  nsresult ProcessHeader();
+  // Switches the parser and tokenizer state to "binary mode" which only
+  // searches for the 'CRLF boundary' delimiter.
+  void SwitchToBodyParsing();
+  // Switches to the default mode, we are in this mode when parsing headers and
+  // control data around the boundary delimiters.
+  void SwitchToControlParsing();
+  // Turns on or off recognition of the headers we recognize in part heads.
+  void SetHeaderTokensEnabled(bool aEnable);
+
+  // The main parser callback called by the IncrementalTokenizer
+  // instance from OnDataAvailable or OnStopRequest.
+  nsresult ConsumeToken(Token const& token);
 };
 
 #endif /* __nsmultimixedconv__h__ */

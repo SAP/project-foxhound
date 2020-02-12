@@ -1,18 +1,18 @@
 #ifndef SkTypeface_cairo_DEFINED
 #define SkTypeface_cairo_DEFINED
 
-#include <cairo.h>
-#include <cairo-ft.h>
-
 #include "SkTypeface.h"
+#include "SkSurfaceProps.h"
+
+struct FT_FaceRec_;
+typedef FT_FaceRec_* FT_Face;
 
 SK_API extern void SkInitCairoFT(bool fontHintingEnabled);
 
-SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFont(cairo_scaled_font_t* scaledFont);
-
-#ifdef CAIRO_HAS_FC_FONT
-SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFontWithFontconfig(cairo_scaled_font_t* scaledFont, FcPattern* pattern);
-#endif
+SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFont(
+    FT_Face face = nullptr, void* faceContext = nullptr,
+    SkPixelGeometry pixelGeometry = kUnknown_SkPixelGeometry,
+    uint8_t lcdFilter = 0);
 
 #endif
 

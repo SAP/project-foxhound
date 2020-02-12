@@ -1,142 +1,207 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-"use strict";
+ * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-const { Cc, Ci, Cu, Cr } = require("chrome");
-const promise = require("promise");
-const EventEmitter = require("devtools/shared/event-emitter");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+loader.lazyRequireGetter(
+  this,
+  "openContentLink",
+  "devtools/client/shared/link",
+  true
+);
+
+const DBG_STRINGS_URI = "devtools/client/locales/debugger.properties";
+const L10N = new LocalizationHelper(DBG_STRINGS_URI);
 
 function DebuggerPanel(iframeWindow, toolbox) {
   this.panelWin = iframeWindow;
-  this._toolbox = toolbox;
-  this._destroyer = null;
-
-  this._view = this.panelWin.DebuggerView;
-  this._controller = this.panelWin.DebuggerController;
-  this._view._hostType = this._toolbox.hostType;
-  this._controller._target = this.target;
-  this._controller._toolbox = this._toolbox;
-
-  this.handleHostChanged = this.handleHostChanged.bind(this);
-  EventEmitter.decorate(this);
+  this.panelWin.L10N = L10N;
+  this.toolbox = toolbox;
 }
 
-exports.DebuggerPanel = DebuggerPanel;
+async function getNodeFront(gripOrFront, toolbox) {
+  // Given a NodeFront
+  if ("actorID" in gripOrFront) {
+    return new Promise(resolve => resolve(gripOrFront));
+  }
+  // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
+  // Given a grip
+  const walkerFront = (await toolbox.target.getFront("inspector")).walker;
+  return walkerFront.gripToNodeFront(gripOrFront);
+}
 
 DebuggerPanel.prototype = {
-  /**
-   * Open is effectively an asynchronous constructor.
-   *
-   * @return object
-   *         A promise that is resolved when the Debugger completes opening.
-   */
-  open: function () {
-    let targetPromise;
-
-    // Local debugging needs to make the target remote.
-    if (!this.target.isRemote) {
-      targetPromise = this.target.makeRemote();
-      // Listen for tab switching events to manage focus when the content window
-      // is paused and events suppressed.
-      this.target.tab.addEventListener("TabSelect", this);
-    } else {
-      targetPromise = promise.resolve(this.target);
-    }
-
-    return targetPromise
-      .then(() => this._controller.startupDebugger())
-      .then(() => this._controller.connect())
-      .then(() => {
-        this._toolbox.on("host-changed", this.handleHostChanged);
-        // Add keys from this document's keyset to the toolbox, so they
-        // can work when the split console is focused.
-        let keysToClone = ["resumeKey", "resumeKey2", "stepOverKey",
-                          "stepOverKey2", "stepInKey", "stepInKey2",
-                          "stepOutKey", "stepOutKey2"];
-        for (let key of keysToClone) {
-          let elm = this.panelWin.document.getElementById(key);
-          this._toolbox.useKeyWithSplitConsole(elm, "jsdebugger");
-        }
-        this.isReady = true;
-        this.emit("ready");
-        return this;
-      })
-      .then(null, function onError(aReason) {
-        DevToolsUtils.reportException("DebuggerPanel.prototype.open", aReason);
-      });
-  },
-
-  // DevToolPanel API
-
-  get target() {
-    return this._toolbox.target;
-  },
-
-  destroy: function () {
-    // Make sure this panel is not already destroyed.
-    if (this._destroyer) {
-      return this._destroyer;
-    }
-
-    if (!this.target.isRemote) {
-      this.target.tab.removeEventListener("TabSelect", this);
-    }
-
-    return this._destroyer = this._controller.shutdownDebugger().then(() => {
-      this.emit("destroyed");
+  open: async function() {
+    const {
+      actions,
+      store,
+      selectors,
+      client,
+    } = await this.panelWin.Debugger.bootstrap({
+      threadFront: this.toolbox.threadFront,
+      tabTarget: this.toolbox.target,
+      debuggerClient: this.toolbox.target.client,
+      workers: {
+        sourceMaps: this.toolbox.sourceMapService,
+        evaluationsParser: this.toolbox.parserService,
+      },
+      panel: this,
     });
+
+    this._actions = actions;
+    this._store = store;
+    this._selectors = selectors;
+    this._client = client;
+    this.isReady = true;
+
+    this.panelWin.document.addEventListener(
+      "drag:start",
+      this.toolbox.toggleDragging
+    );
+    this.panelWin.document.addEventListener(
+      "drag:end",
+      this.toolbox.toggleDragging
+    );
+
+    return this;
   },
 
-  // DebuggerPanel API
+  getVarsForTests() {
+    return {
+      store: this._store,
+      selectors: this._selectors,
+      actions: this._actions,
+      client: this._client,
+    };
+  },
 
-  getFrames() {
-    let framesController = this.panelWin.DebuggerController.StackFrames;
-    let thread = framesController.activeThread;
-    if (thread && thread.paused) {
+  _getState: function() {
+    return this._store.getState();
+  },
+
+  getToolboxStore: function() {
+    return this.toolbox.store;
+  },
+
+  openLink: function(url) {
+    openContentLink(url);
+  },
+
+  openConsoleAndEvaluate: async function(input) {
+    const { hud } = await this.toolbox.selectTool("webconsole");
+    hud.ui.wrapper.dispatchEvaluateExpression(input);
+  },
+
+  openInspector: async function() {
+    this.toolbox.selectTool("inspector");
+  },
+
+  openElementInInspector: async function(gripOrFront) {
+    const onSelectInspector = this.toolbox.selectTool("inspector");
+    const onGripNodeToFront = getNodeFront(gripOrFront, this.toolbox);
+
+    const [front, inspector] = await Promise.all([
+      onGripNodeToFront,
+      onSelectInspector,
+    ]);
+
+    const onInspectorUpdated = inspector.once("inspector-updated");
+    const onNodeFrontSet = this.toolbox.selection.setNodeFront(front, {
+      reason: "debugger",
+    });
+
+    return Promise.all([onNodeFrontSet, onInspectorUpdated]);
+  },
+
+  highlightDomElement: async function(gripOrFront) {
+    const nodeFront = await getNodeFront(gripOrFront, this.toolbox);
+    nodeFront.highlighterFront.highlight(nodeFront);
+  },
+
+  unHighlightDomElement: async function(gripOrFront) {
+    try {
+      const nodeFront = await getNodeFront(gripOrFront, this.toolbox);
+      nodeFront.highlighterFront.unhighlight();
+    } catch (e) {
+      // This call might fail if called asynchrously after the toolbox is finished
+      // closing.
+    }
+  },
+
+  getFrames: function() {
+    const thread = this._selectors.getCurrentThread(this._getState());
+    const frames = this._selectors.getFrames(this._getState(), thread);
+
+    // Frames is null when the debugger is not paused.
+    if (!frames) {
       return {
-        frames: thread.cachedFrames,
-        selected: framesController.currentFrameDepth,
+        frames: [],
+        selected: -1,
       };
     }
 
-    return null;
+    const selectedFrame = this._selectors.getSelectedFrame(
+      this._getState(),
+      thread
+    );
+    const selected = frames.findIndex(frame => frame.id == selectedFrame.id);
+
+    frames.forEach(frame => {
+      frame.actor = frame.id;
+    });
+    const target = this._client.lookupTarget(thread);
+
+    return { frames, selected, target };
   },
 
-  addBreakpoint: function (location) {
-    const { actions } = this.panelWin;
-    const { dispatch } = this._controller;
-
-    return dispatch(actions.addBreakpoint(location));
+  getMappedExpression(expression) {
+    return this._actions.getMappedExpression(expression);
   },
 
-  removeBreakpoint: function (location) {
-    const { actions } = this.panelWin;
-    const { dispatch } = this._controller;
-
-    return dispatch(actions.removeBreakpoint(location));
+  isPaused() {
+    const thread = this._selectors.getCurrentThread(this._getState());
+    return this._selectors.getIsPaused(this._getState(), thread);
   },
 
-  blackbox: function (source, flag) {
-    const { actions } = this.panelWin;
-    const { dispatch } = this._controller;
-    return dispatch(actions.blackbox(source, flag));
+  selectSourceURL(url, line, column) {
+    const cx = this._selectors.getContext(this._getState());
+    return this._actions.selectSourceURL(cx, url, { line, column });
   },
 
-  handleHostChanged: function () {
-    this._view.handleHostChanged(this._toolbox.hostType);
+  previewPausedLocation(location) {
+    return this._actions.previewPausedLocation(location);
   },
 
-  // nsIDOMEventListener API
+  clearPreviewPausedLocation() {
+    return this._actions.clearPreviewPausedLocation();
+  },
 
-  handleEvent: function (aEvent) {
-    if (aEvent.target == this.target.tab &&
-        this._controller.activeThread.state == "paused") {
-      // Wait a tick for the content focus event to be delivered.
-      DevToolsUtils.executeSoon(() => this._toolbox.focusTool("jsdebugger"));
+  async selectSource(sourceId, line, column) {
+    const cx = this._selectors.getContext(this._getState());
+    const location = { sourceId, line, column };
+
+    await this._actions.selectSource(cx, sourceId, location);
+    if (this._selectors.hasLogpoint(this._getState(), location)) {
+      this._actions.openConditionalPanel(location, true);
     }
-  }
+  },
+
+  canLoadSource(sourceId) {
+    return this._selectors.canLoadSource(this._getState(), sourceId);
+  },
+
+  getSourceByActorId(sourceId) {
+    return this._selectors.getSourceByActorId(this._getState(), sourceId);
+  },
+
+  getSourceByURL(sourceURL) {
+    return this._selectors.getSourceByURL(this._getState(), sourceURL);
+  },
+
+  destroy: function() {
+    this.panelWin.Debugger.destroy();
+    this.emit("destroyed");
+  },
 };
+
+exports.DebuggerPanel = DebuggerPanel;

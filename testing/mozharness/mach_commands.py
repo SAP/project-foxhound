@@ -9,10 +9,10 @@ import os
 import re
 import subprocess
 import sys
-import urllib
-import urlparse
 
 import mozinfo
+from six.moves.urllib.parse import urljoin
+from six.moves.urllib.request import pathname2url
 
 from mach.decorators import (
     CommandArgument,
@@ -47,8 +47,7 @@ class MozharnessRunner(MozbuildObject):
 
         self.config = {
             "__defaults__": {
-                "config": ["--no-read-buildbot-config",
-                           "--download-symbols", "ondemand",
+                "config": ["--download-symbols", "ondemand",
                            "--installer-url", self.installer_url,
                            "--test-packages-url", self.test_packages_url]
             },
@@ -78,10 +77,10 @@ class MozharnessRunner(MozbuildObject):
                 "config": desktop_unittest_config + [
                     "--mochitest-suite", "mochitest-devtools-chrome"]
             },
-            "reftest": {
+            "mochitest-remote": {
                 "script": "desktop_unittest.py",
                 "config": desktop_unittest_config + [
-                    "--reftest-suite", "reftest"]
+                    "--mochitest-suite", "mochitest-remote"]
             },
             "crashtest": {
                 "script": "desktop_unittest.py",
@@ -93,20 +92,15 @@ class MozharnessRunner(MozbuildObject):
                 "config": desktop_unittest_config + [
                     "--reftest-suite", "jsreftest"]
             },
-            "reftest-ipc": {
+            "reftest": {
                 "script": "desktop_unittest.py",
                 "config": desktop_unittest_config + [
-                    "--reftest-suite", "reftest-ipc"]
+                    "--reftest-suite", "reftest"]
             },
             "reftest-no-accel": {
                 "script": "desktop_unittest.py",
                 "config": desktop_unittest_config + [
                     "--reftest-suite", "reftest-no-accel"]
-            },
-            "crashtest-ipc": {
-                "script": "desktop_unittest.py",
-                "config": desktop_unittest_config + [
-                    "--reftest-suite", "crashtest-ipc"]
             },
             "cppunittest": {
                 "script": "desktop_unittest.py",
@@ -128,11 +122,6 @@ class MozharnessRunner(MozbuildObject):
                 "config": desktop_unittest_config + [
                     "--jittest-suite", "jittest"]
             },
-            "mozbase": {
-                "script": "desktop_unittest.py",
-                "config": desktop_unittest_config + [
-                    "--mozbase-suite", "mozbase"]
-            },
             "marionette": {
                 "script": "marionette.py",
                 "config": ["--config-file", self.config_path("marionette",
@@ -147,7 +136,7 @@ class MozharnessRunner(MozbuildObject):
 
 
     def path_to_url(self, path):
-        return urlparse.urljoin('file:', urllib.pathname2url(path))
+        return urljoin('file:', pathname2url(path))
 
     def _installer_url(self):
         package_re = {
@@ -199,7 +188,7 @@ class MozharnessRunner(MozbuildObject):
 class MozharnessCommands(MachCommandBase):
     @Command('mozharness', category='testing',
              description='Run tests using mozharness.',
-             conditions=[conditions.is_firefox],
+             conditions=[conditions.is_firefox_or_android],
              parser=get_parser)
     def mozharness(self, **kwargs):
         runner = self._spawn(MozharnessRunner)

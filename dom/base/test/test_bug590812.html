@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Test for XML pretty printing, bug 590812</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="runTest()">
@@ -13,14 +13,14 @@
 <iframe src="file_bug590812.xml"></iframe>
 <iframe src="file_bug590812-ref.xhtml"></iframe>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.8">
+<script class="testbody" type="application/javascript">
 
 SimpleTest.waitForExplicitFinish();
 
-function runTest() {
-  sNoXUL = snapshotWindow(window.frames[0], false);
-  sWithXUL = snapshotWindow(window.frames[1], false);
-  sRef = snapshotWindow(window.frames[2], false);
+async function runTest() {
+  let sNoXUL = await snapshotWindow(window.frames[0], false);
+  let sWithXUL = await snapshotWindow(window.frames[1], false);
+  let sRef = await snapshotWindow(window.frames[2], false);
   let res;
   ok(compareSnapshots(sNoXUL, sRef, true)[0],
      "noxul domain same as ref");

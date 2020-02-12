@@ -7,7 +7,7 @@
 #ifndef OscillatorNode_h_
 #define OscillatorNode_h_
 
-#include "AudioNode.h"
+#include "AudioScheduledSourceNode.h"
 #include "AudioParam.h"
 #include "PeriodicWave.h"
 #include "mozilla/dom/OscillatorNodeBinding.h"
@@ -16,31 +16,34 @@ namespace mozilla {
 namespace dom {
 
 class AudioContext;
+struct OscillatorOptions;
 
-class OscillatorNode final : public AudioNode,
-                             public MainThreadMediaStreamListener
-{
-public:
-  explicit OscillatorNode(AudioContext* aContext);
+class OscillatorNode final : public AudioScheduledSourceNode,
+                             public MainThreadMediaTrackListener {
+ public:
+  static already_AddRefed<OscillatorNode> Create(
+      AudioContext& aAudioContext, const OscillatorOptions& aOptions,
+      ErrorResult& aRv);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(OscillatorNode, AudioNode)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(OscillatorNode,
+                                           AudioScheduledSourceNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  void DestroyMediaStream() override;
-
-  uint16_t NumberOfInputs() const final override
-  {
-    return 0;
+  static already_AddRefed<OscillatorNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const OscillatorOptions& aOptions, ErrorResult& aRv) {
+    return Create(aAudioContext, aOptions, aRv);
   }
 
-  OscillatorType Type() const
-  {
-    return mType;
-  }
-  void SetType(OscillatorType aType, ErrorResult& aRv)
-  {
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  void DestroyMediaTrack() override;
+
+  uint16_t NumberOfInputs() const final { return 0; }
+
+  OscillatorType Type() const { return mType; }
+  void SetType(OscillatorType aType, ErrorResult& aRv) {
     if (aType == OscillatorType::Custom) {
       // ::Custom can only be set by setPeriodicWave().
       // https://github.com/WebAudio/web-audio-api/issues/105 for exception.
@@ -48,48 +51,36 @@ public:
       return;
     }
     mType = aType;
-    SendTypeToStream();
+    SendTypeToTrack();
   }
 
-  AudioParam* Frequency() const
-  {
-    return mFrequency;
-  }
-  AudioParam* Detune() const
-  {
-    return mDetune;
-  }
+  AudioParam* Frequency() const { return mFrequency; }
+  AudioParam* Detune() const { return mDetune; }
 
-  void Start(double aWhen, ErrorResult& aRv);
-  void Stop(double aWhen, ErrorResult& aRv);
-  void SetPeriodicWave(PeriodicWave& aPeriodicWave)
-  {
+  void Start(double aWhen, ErrorResult& aRv) override;
+  void Stop(double aWhen, ErrorResult& aRv) override;
+
+  void SetPeriodicWave(PeriodicWave& aPeriodicWave) {
     mPeriodicWave = &aPeriodicWave;
-    // SendTypeToStream will call SendPeriodicWaveToStream for us.
+    // SendTypeToTrack will call SendPeriodicWaveToTrack for us.
     mType = OscillatorType::Custom;
-    SendTypeToStream();
+    SendTypeToTrack();
   }
 
-  IMPL_EVENT_HANDLER(ended)
+  void NotifyMainThreadTrackEnded() override;
 
-  void NotifyMainThreadStreamFinished() override;
-
-  const char* NodeType() const override
-  {
-    return "OscillatorNode";
-  }
+  const char* NodeType() const override { return "OscillatorNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-protected:
-  virtual ~OscillatorNode();
+ private:
+  explicit OscillatorNode(AudioContext* aContext);
+  ~OscillatorNode() = default;
 
-private:
-  void SendTypeToStream();
-  void SendPeriodicWaveToStream();
+  void SendTypeToTrack();
+  void SendPeriodicWaveToTrack();
 
-private:
   OscillatorType mType;
   RefPtr<PeriodicWave> mPeriodicWave;
   RefPtr<AudioParam> mFrequency;
@@ -97,8 +88,7 @@ private:
   bool mStartCalled;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

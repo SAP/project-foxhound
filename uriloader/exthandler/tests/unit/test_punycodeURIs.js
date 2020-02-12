@@ -20,10 +20,14 @@ function checkFile() {
 
   if (!tempFile.exists()) {
     if (gCheckExistsAttempts >= kMaxCheckExistAttempts) {
-      do_throw("Expected File " + tempFile.path + " does not exist after " +
-                 kMaxCheckExistAttempts + " seconds");
-    }
-    else {
+      do_throw(
+        "Expected File " +
+          tempFile.path +
+          " does not exist after " +
+          kMaxCheckExistAttempts +
+          " seconds"
+      );
+    } else {
       ++gCheckExistsAttempts;
       // Wait a bit longer then try again
       do_timeout(1000, checkFile);
@@ -32,12 +36,12 @@ function checkFile() {
   }
 
   // Now read it
-  var fstream =
-    Components.classes["@mozilla.org/network/file-input-stream;1"]
-              .createInstance(Components.interfaces.nsIFileInputStream);
-  var sstream =
-    Components.classes["@mozilla.org/scriptableinputstream;1"]
-              .createInstance(Components.interfaces.nsIScriptableInputStream);
+  var fstream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
+  var sstream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+    Ci.nsIScriptableInputStream
+  );
   fstream.init(tempFile, -1, 0, 0);
   sstream.init(fstream);
 
@@ -56,27 +60,26 @@ function checkFile() {
   // find a way around it.
   // Additionally the lack of OS detection in xpcshell tests sucks, so we'll
   // have to check for the argument mac gives us.
-  if (data.substring(0, 7) != "-psn_0_")
-    do_check_eq(data, kExpectedURI);
+  if (data.substring(0, 7) != "-psn_0_") {
+    Assert.equal(data, kExpectedURI);
+  }
 
   do_test_finished();
 }
 
 function run_test() {
   if (mozinfo.os == "mac") {
-    dump("INFO | test_punycodeURIs.js | Skipping test on mac, bug 599475")
+    dump("INFO | test_punycodeURIs.js | Skipping test on mac, bug 599475");
     return;
   }
 
   // set up the uri to test with
-  var ioService =
-    Components.classes["@mozilla.org/network/io-service;1"]
-              .getService(Components.interfaces.nsIIOService);
+  var ioService = Services.io;
 
   // set up the local handler object
-  var localHandler =
-    Components.classes["@mozilla.org/uriloader/local-handler-app;1"]
-              .createInstance(Components.interfaces.nsILocalHandlerApp);
+  var localHandler = Cc[
+    "@mozilla.org/uriloader/local-handler-app;1"
+  ].createInstance(Ci.nsILocalHandlerApp);
   localHandler.name = "Test Local Handler App";
 
   // WriteArgument will just dump its arguments to a file for us.
@@ -87,36 +90,37 @@ function run_test() {
   if (!exe.exists()) {
     // Maybe we are on windows
     exe.leafName = "WriteArgument.exe";
-    if (!exe.exists())
+    if (!exe.exists()) {
       do_throw("Could not locate the WriteArgument tests executable\n");
+    }
   }
 
   var outFile = tempDir.clone();
   outFile.append(kOutputFile);
 
   // Set an environment variable for WriteArgument to pick up
-  var envSvc =
-    Components.classes["@mozilla.org/process/environment;1"]
-              .getService(Components.interfaces.nsIEnvironment);
+  var envSvc = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
 
   // The Write Argument file needs to know where its libraries are, so
   // just force the path variable
   // For mac
-  var greDir = HandlerServiceTest._dirSvc.get("GreD", Components.interfaces.nsIFile);
+  var greDir = Services.dirsvc.get("GreD", Ci.nsIFile);
 
   envSvc.set("DYLD_LIBRARY_PATH", greDir.path);
   // For Linux
   envSvc.set("LD_LIBRARY_PATH", greDir.path);
-  //XXX: handle windows
+  // XXX: handle windows
 
   // Now tell it where we want the file.
   envSvc.set("WRITE_ARGUMENT_FILE", outFile.path);
 
-  var uri = ioService.newURI(kTestURI, null, null);
+  var uri = ioService.newURI(kTestURI);
 
   // Just check we've got these matching, if we haven't there's a problem
   // with ascii spec or our test case.
-  do_check_eq(uri.asciiSpec, kExpectedURI);
+  Assert.equal(uri.asciiSpec, kExpectedURI);
 
   localHandler.executable = exe;
   localHandler.launchWithURI(uri);

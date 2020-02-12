@@ -3,7 +3,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const dbName = ("window" in this) ? window.location.pathname : "test";
+const dbName = "window" in this ? window.location.pathname : "test";
 const dbVersion = 1;
 const objName1 = "o1";
 const objName2 = "o2";
@@ -17,8 +17,7 @@ const loopCount = 100;
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   let req = indexedDB.open(dbName, dbVersion);
   req.onerror = errorHandler;
   req.onupgradeneeded = grabEventAndContinueHandler;
@@ -37,7 +36,7 @@ function testSteps()
   objectStore2.createIndex(idxName2, idxKeyPathProp);
 
   for (let i = 0; i < objDataCount; i++) {
-    var data = { };
+    var data = {};
     data[objDataProp] = objData;
     data[idxKeyPathProp] = objDataCount - i - 1;
 
@@ -57,19 +56,22 @@ function testSteps()
   yield undefined;
 
   finishTest();
-  yield undefined;
 }
 
-function doReadOnlyTransaction(db, key, remaining)
-{
+function doReadOnlyTransaction(db, key, remaining) {
   if (!remaining) {
     info("Finished all readonly transactions");
     continueToNextStep();
     return;
   }
 
-  info("Starting readonly transaction for key " + key + ", " + remaining +
-       " loops left");
+  info(
+    "Starting readonly transaction for key " +
+      key +
+      ", " +
+      remaining +
+      " loops left"
+  );
 
   let objectStore = db.transaction(objName1, "readonly").objectStore(objName1);
   let index = objectStore.index(idxName1);
@@ -83,20 +85,24 @@ function doReadOnlyTransaction(db, key, remaining)
         key = 0;
       }
       doReadOnlyTransaction(db, key, remaining - 1);
-    }
+    };
   };
 }
 
-function doReadWriteTransaction(db, key, remaining)
-{
+function doReadWriteTransaction(db, key, remaining) {
   if (!remaining) {
     info("Finished all readwrite transactions");
     continueToNextStep();
     return;
   }
 
-  info("Starting readwrite transaction for key " + key + ", " + remaining +
-       " loops left");
+  info(
+    "Starting readwrite transaction for key " +
+      key +
+      ", " +
+      remaining +
+      " loops left"
+  );
 
   let objectStore = db.transaction(objName2, "readwrite").objectStore(objName2);
   objectStore.openCursor(key).onsuccess = function(event) {
@@ -111,6 +117,6 @@ function doReadWriteTransaction(db, key, remaining)
         key = 0;
       }
       doReadWriteTransaction(db, key, remaining - 1);
-    }
+    };
   };
 }

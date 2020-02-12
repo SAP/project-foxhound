@@ -1,4 +1,6 @@
 @echo off
+REM Copyright (C) 2016 and later: Unicode, Inc. and others.
+REM License & terms of use: http://www.unicode.org/copyright.html
 REM  ********************************************************************
 REM  * COPYRIGHT:
 REM  * Copyright (c) 2010-2014, International Business Machines Corporation
@@ -50,7 +52,7 @@ set ICUFAILCNT=0
 @echo ==== %THT% =========================================================================
 %ICUINFO_CMD% %ICUINFO_OPTS%
 
-@IF NOT ERRORLEVEL 1 GOTO OK_%THT%
+@IF %ERRORLEVEL% EQU 0 GOTO OK_%THT%
 @set ICUFAILED=%ICUFAILED% %THT%
 @set ICUFAILCNT=1
 :OK_icuinfo
@@ -61,7 +63,7 @@ set ICUFAILCNT=0
 @cd %ICU_ICUDIR%\source\test\intltest
 %INTLTEST_CMD% %INTLTEST_OPTS%
 
-@IF NOT ERRORLEVEL 1 GOTO OK_%THT%
+@IF %ERRORLEVEL% EQU 0 GOTO OK_%THT%
 @set ICUFAILED=%ICUFAILED% %THT%
 @set ICUFAILCNT=1
 :OK_intltest
@@ -72,7 +74,7 @@ set ICUFAILCNT=0
 @cd %ICU_ICUDIR%\source\test\iotest
 %IOTEST_CMD% %IOTEST_OPTS%
 
-@IF NOT ERRORLEVEL 1 GOTO OK_%THT%
+@IF %ERRORLEVEL% EQU 0 GOTO OK_%THT%
 @set ICUFAILED=%ICUFAILED% %THT%
 @set ICUFAILCNT=1
 :OK_IOTEST
@@ -83,19 +85,19 @@ set ICUFAILCNT=0
 @cd %ICU_ICUDIR%\source\test\cintltst
 %CINTLTST_CMD% %CINTLTST_OPTS%
 
-@IF NOT ERRORLEVEL 1 GOTO OK_%THT%
+@IF %ERRORLEVEL% EQU 0 GOTO OK_%THT%
 @set ICUFAILED=%ICUFAILED% %THT%
 @set ICUFAILCNT=1
 :OK_cintltst
 @set ICURUN=%ICURUN% %THT%
 
-@REM  (Layout is deprecated)
+@REM  (Layout is deprecated - this would require HarfBuzz)
 @REM  @set THT=letest
 @REM  @echo ==== %THT% =========================================================================
 @REM  @cd %ICU_ICUDIR%\source\test\letest
 @REM  %LETST_CMD% %LETEST_OPTS%
 
-@REM  @IF NOT ERRORLEVEL 1 GOTO OK_%THT%
+@REM  @IF %ERRORLEVEL% EQU 0 GOTO OK_%THT%
 @REM  @set ICUFAILED=%ICUFAILED% %THT%
 @REM  @set ICUFAILCNT=1
 @REM  :OK_letest

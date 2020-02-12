@@ -2,7 +2,7 @@
 <html>
   <head>
     <title>Bug 909029 - CSP source-lists ignore some source expressions like 'unsafe-inline' when * or 'none' are used (e.g., style-src, script-src)</title>
-    <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   </head>
   <body>
@@ -25,11 +25,11 @@ window.tests = {
 }
 
 function examiner() {
-  SpecialPowers.addObserver(this, "csp-on-violate-policy", false);
-  SpecialPowers.addObserver(this, "specialpowers-http-notify-request", false);
+  SpecialPowers.addObserver(this, "csp-on-violate-policy");
+  SpecialPowers.addObserver(this, "specialpowers-http-notify-request");
 }
 examiner.prototype  = {
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     var testpat = new RegExp("testid=([a-zA-Z]+)");
 
     if (topic === "specialpowers-http-notify-request") {
@@ -62,7 +62,7 @@ examiner.prototype  = {
 
   // must eventually call this to remove the listener,
   // or mochitests might get borked.
-  remove: function() {
+  remove() {
     SpecialPowers.removeObserver(this, "csp-on-violate-policy");
     SpecialPowers.removeObserver(this, "specialpowers-http-notify-request");
   }
@@ -121,9 +121,9 @@ function checkInlineWithNone() {
 }
 
 document.getElementById('testframe1').src = 'file_bug909029_star.html';
-document.getElementById('testframe1').addEventListener('load', checkInlineWithStar, false);
+document.getElementById('testframe1').addEventListener('load', checkInlineWithStar);
 document.getElementById('testframe2').src = 'file_bug909029_none.html';
-document.getElementById('testframe2').addEventListener('load', checkInlineWithNone, false);
+document.getElementById('testframe2').addEventListener('load', checkInlineWithNone);
     </script>
   </body>
 </html>

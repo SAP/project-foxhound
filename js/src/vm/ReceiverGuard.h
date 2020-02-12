@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +11,8 @@
 
 namespace js {
 
+// [SMDOC] Receiver Guard
+//
 // A ReceiverGuard encapsulates the information about an object that needs to
 // be tested to determine if it has the same 'structure' as another object.
 // The guard includes the shape and/or group of the object, and which of these
@@ -29,109 +31,76 @@ namespace js {
 //   All typed objects with the same group have the same class, prototype, and
 //   own properties.
 //
-// UnboxedPlainObject: The structure of an unboxed plain object is determined
-//   by its group and its expando object's shape, if there is one. All unboxed
-//   plain objects with the same group and expando shape have the same
-//   properties except those stored in the expando's dense elements.
-
+// In all cases, a ReceiverGuard has *either* a shape or a group active, and
+// never both.
 class HeapReceiverGuard;
-class RootedReceiverGuard;
 
-class ReceiverGuard
-{
-  public:
-    ObjectGroup* group;
-    Shape* shape;
+class ReceiverGuard {
+  ObjectGroup* group_;
+  Shape* shape_;
 
-    ReceiverGuard()
-      : group(nullptr), shape(nullptr)
-    {}
+  void MOZ_ALWAYS_INLINE assertInvariants() {
+    // Only one of group_ or shape_ may be active at a time.
+    MOZ_ASSERT_IF(group_ || shape_, !!group_ != !!shape_);
+  }
 
-    inline MOZ_IMPLICIT ReceiverGuard(const HeapReceiverGuard& guard);
-    inline MOZ_IMPLICIT ReceiverGuard(const RootedReceiverGuard& guard);
+ public:
+  ReceiverGuard() : group_(nullptr), shape_(nullptr) {}
 
-    explicit ReceiverGuard(JSObject* obj);
-    ReceiverGuard(ObjectGroup* group, Shape* shape);
+  inline MOZ_IMPLICIT ReceiverGuard(const HeapReceiverGuard& guard);
 
-    bool operator ==(const ReceiverGuard& other) const {
-        return group == other.group && shape == other.shape;
-    }
+  explicit MOZ_ALWAYS_INLINE ReceiverGuard(JSObject* obj);
+  MOZ_ALWAYS_INLINE ReceiverGuard(ObjectGroup* group, Shape* shape);
 
-    bool operator !=(const ReceiverGuard& other) const {
-        return !(*this == other);
-    }
+  bool operator==(const ReceiverGuard& other) const {
+    return group_ == other.group_ && shape_ == other.shape_;
+  }
 
-    uintptr_t hash() const {
-        return (uintptr_t(group) >> 3) ^ (uintptr_t(shape) >> 3);
-    }
+  bool operator!=(const ReceiverGuard& other) const {
+    return !(*this == other);
+  }
+
+  uintptr_t hash() const {
+    return (uintptr_t(group_) >> 3) ^ (uintptr_t(shape_) >> 3);
+  }
+
+  void setShape(Shape* shape) {
+    shape_ = shape;
+    assertInvariants();
+  }
+
+  void setGroup(ObjectGroup* group) {
+    group_ = group;
+    assertInvariants();
+  }
+
+  Shape* getShape() const { return shape_; }
+  ObjectGroup* getGroup() const { return group_; }
 };
 
-class HeapReceiverGuard
-{
-    GCPtrObjectGroup group_;
-    GCPtrShape shape_;
+// Heap storage for ReceiverGuards.
+//
+// This is a storage only class -- all computation is actually
+// done by converting this back to a RecieverGuard, hence why
+// there are no accessors.
+class HeapReceiverGuard {
+  friend class ReceiverGuard;
 
-  public:
-    explicit HeapReceiverGuard(const ReceiverGuard& guard)
-      : group_(guard.group), shape_(guard.shape)
-    {}
+  GCPtrObjectGroup group_;
+  GCPtrShape shape_;
 
-    bool matches(const ReceiverGuard& guard) {
-        return group_ == guard.group && shape_ == guard.shape;
-    }
+ public:
+  explicit HeapReceiverGuard(const ReceiverGuard& guard)
+      : group_(guard.getGroup()), shape_(guard.getShape()) {}
 
-    void update(const ReceiverGuard& other) {
-        group_ = other.group;
-        shape_ = other.shape;
-    }
-
-    void init(const ReceiverGuard& other) {
-        group_.init(other.group);
-        shape_.init(other.shape);
-    }
-
-    void trace(JSTracer* trc);
-
-    Shape* shape() const {
-        return shape_;
-    }
-    ObjectGroup* group() const {
-        return group_;
-    }
-
-    static size_t offsetOfShape() {
-        return offsetof(HeapReceiverGuard, shape_);
-    }
-    static size_t offsetOfGroup() {
-        return offsetof(HeapReceiverGuard, group_);
-    }
-
-    // Bits to munge into Baseline IC compiler keys when that IC has a
-    // HeapReceiverGuard. This uses at most two bits for data.
-    static int32_t keyBits(JSObject* obj);
+  void trace(JSTracer* trc);
 };
 
-class RootedReceiverGuard
-{
-  public:
-    RootedObjectGroup group;
-    RootedShape shape;
+inline ReceiverGuard::ReceiverGuard(const HeapReceiverGuard& guard)
+    : group_(guard.group_), shape_(guard.shape_) {
+  assertInvariants();
+}
 
-    RootedReceiverGuard(JSContext* cx, const ReceiverGuard& guard)
-      : group(cx, guard.group), shape(cx, guard.shape)
-    {}
-};
-
-inline
-ReceiverGuard::ReceiverGuard(const HeapReceiverGuard& guard)
-  : group(guard.group()), shape(guard.shape())
-{}
-
-inline
-ReceiverGuard::ReceiverGuard(const RootedReceiverGuard& guard)
-  : group(guard.group), shape(guard.shape)
-{}
-
-} // namespace js
+}  // namespace js
 
 #endif /* vm_ReceiverGuard_h */

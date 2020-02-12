@@ -6,8 +6,8 @@
   onload="runTests();"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <menubar>
     <menu label="top" id="top">
@@ -55,16 +55,6 @@
     var item = menu.appendItem("item3");
     is(menu.getIndexOfItem(item), 2,
        "nsIDOMXULContainerElement::appendItem() failed.");
-
-    // nsIDOMXULContainerElement::insertItemAt();
-    var item = menu.insertItemAt(0, "itemZero");
-    is(item, menu.getItemAtIndex(0),
-        "nsIDOMXULContainerElement::insertItemAt() failed.");
-
-    // nsIDOMXULContainerElement::removeItemAt();
-    var item = menu.removeItemAt(0);
-    is(3, menu.itemCount,
-       "nsIDOMXULContainerElement::removeItemAt() failed.");
 
     SimpleTest.finish();
   }

@@ -8,31 +8,44 @@ interface nsISimpleEnumerator;
 interface nsIX509Cert;
 
 %{C++
-typedef struct CERTCertListStr CERTCertList;
+namespace IPC {
+  class Message;
+}
+class PickleIterator;
+class nsNSSCertList;
 %}
-[ptr] native CERTCertListPtr(CERTCertList);
 
-[scriptable, uuid(ae74cda5-cd2f-473f-96f5-f0b7fff62c68)]
+[ptr] native nsNSSCertListPtr(nsNSSCertList);
+[ptr] native IpcMessagePtr(IPC::Message);
+[ptr] native PickleIteratorPtr(PickleIterator);
+
+[scriptable, builtinclass, uuid(ae74cda5-cd2f-473f-96f5-f0b7fff62c68)]
 interface nsIX509CertList : nsISupports {
-   void addCert(in nsIX509Cert cert);
-   void deleteCert(in nsIX509Cert cert);
-   nsISimpleEnumerator getEnumerator();
+  [must_use]
+  void addCert(in nsIX509Cert cert);
+  [must_use]
+  nsISimpleEnumerator getEnumerator();
 
-   /**
-    * Returns the raw, backing cert list.
-    * Must be called only from functions where an nsNSSShutDownPreventionLock
-    * has been acquired.
-    */
-   [notxpcom, noscript] CERTCertListPtr getRawCertList();
+  /**
+   * Test whether two certificate list instances represent the same
+   * certificate list.
+   *
+   * @return Whether the certificate lists are equal
+   */
+  [must_use]
+  boolean equals(in nsIX509CertList other);
 
-   /**
-    * Test whether two certificate list instances represent the same
-    * certificate list.
-    *
-    * @return Whether the certificate lists are equal
-    */
-   boolean equals(in nsIX509CertList other);
+  /**
+   * Retrieves the PSM helper class that wraps the NSS certificate list
+   */
+  [notxpcom, noscript, must_use]
+  nsNSSCertListPtr getCertList();
 
+  [notxpcom, noscript]
+  void SerializeToIPC(in IpcMessagePtr aMsg);
+
+  [notxpcom, noscript]
+  bool DeserializeFromIPC([const] in IpcMessagePtr aMsg, in PickleIteratorPtr aIter);
 };
 
 %{C++

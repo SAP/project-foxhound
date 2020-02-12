@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/dz.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 dz{
     Currencies{
         AED{
@@ -290,6 +284,10 @@ dz{
         }
         VEF{
             "VEF",
+            "བེ་ནི་ཛུ་ཝེ་ལ་གི་དངུལ་ བོ་ལི་བར (2008–2018)",
+        }
+        VES{
+            "VES",
             "བེ་ནི་ཛུ་ཝེ་ལ་གི་དངུལ་ བོ་ལི་བར",
         }
         VND{
@@ -301,7 +299,7 @@ dz{
             "XAF",
         }
         XXX{
-            "XXX",
+            "¤",
             "མ་ཤེས་པའི་དངུལ",
         }
         ZAR{
@@ -309,5 +307,5 @@ dz{
             "སཱའུཐ་ ཨཕ་རི་ཀ་གི་དངུལ་ རཱནད",
         }
     }
-    Version{"2.1.19.14"}
+    Version{"2.1.47.82"}
 }

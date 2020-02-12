@@ -3,22 +3,24 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* import-globals-from ../file.js */
+
 var disableWorkerTest = "FileHandle doesn't work in workers yet";
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
 
-  var testString = "Lorem ipsum his ponderum delicatissimi ne, at noster dolores urbanitas pro, cibo elaboraret no his. Ea dicunt maiorum usu. Ad appareat facilisis mediocritatem eos. Tale graeci mentitum in eos, hinc insolens at nam. Graecis nominavi aliquyam eu vix. Id solet assentior sadipscing pro. Et per atqui graecis, usu quot viris repudiandae ei, mollis evertitur an nam. At nam dolor ignota, liber labore omnesque ea mei, has movet voluptaria in. Vel an impetus omittantur. Vim movet option salutandi ex, ne mei ignota corrumpit. Mucius comprehensam id per. Est ea putant maiestatis.";
+  var testString =
+    "Lorem ipsum his ponderum delicatissimi ne, at noster dolores urbanitas pro, cibo elaboraret no his. Ea dicunt maiorum usu. Ad appareat facilisis mediocritatem eos. Tale graeci mentitum in eos, hinc insolens at nam. Graecis nominavi aliquyam eu vix. Id solet assentior sadipscing pro. Et per atqui graecis, usu quot viris repudiandae ei, mollis evertitur an nam. At nam dolor ignota, liber labore omnesque ea mei, has movet voluptaria in. Vel an impetus omittantur. Vim movet option salutandi ex, ne mei ignota corrumpit. Mucius comprehensam id per. Est ea putant maiestatis.";
   for (let i = 0; i < 5; i++) {
     testString += testString;
   }
 
   var testBuffer = getRandomBuffer(100000);
 
-  var testBlob = new Blob([testBuffer], {type: "binary/random"});
+  var testBlob = new Blob([testBuffer], { type: "binary/random" });
 
   let request = indexedDB.open(name, 1);
   request.onerror = errorHandler;
@@ -48,7 +50,7 @@ function testSteps()
 
   fileHandle.location = 0;
   request = fileHandle.readAsText(testString.length);
-  location += testString.length
+  location += testString.length;
   is(fileHandle.location, location, "Correct location");
   request.onsuccess = grabEventAndContinueHandler;
   event = yield undefined;
@@ -94,5 +96,4 @@ function testSteps()
   is(result.size, location, "Correct size");
 
   finishTest();
-  yield undefined;
 }

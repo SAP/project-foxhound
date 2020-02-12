@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1250010
 -->
 <head>
   <title>Test for Bug 1250010</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css">
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <div id="display">
@@ -21,15 +21,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1250010
 
 <script class="testbody" type="application/javascript">
 
-function getImageDataURI()
-{
+function getImageDataURI() {
   return document.getElementsByTagName("img")[0].getAttribute("src");
 }
 
 /** Test for Bug 1250010 **/
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {
-
   // First test: Empty paragraph is split correctly.
   var div = document.getElementById("test1");
   div.focus();
@@ -40,11 +38,11 @@ SimpleTest.waitForFocus(function() {
   is(selRange.endContainer.nodeName, "#text", "selection should be at the end of text node");
   is(selRange.endOffset, 10, "offset should be 10");
 
-  synthesizeKey("VK_RETURN", {});
-  synthesizeKey("VK_RETURN", {});
-  synthesizeKey("b", {});
-  synthesizeKey("VK_UP", {});
-  synthesizeKey("a", {});
+  synthesizeKey("KEY_Enter");
+  synthesizeKey("KEY_Enter");
+  sendString("b");
+  synthesizeKey("KEY_ArrowUp");
+  sendString("a");
 
   is(div.innerHTML, "<p><b><font color=\"red\">1234567890</font></b></p>" +
                     "<p><b><font color=\"red\">a<br></font></b></p>" +
@@ -63,10 +61,10 @@ SimpleTest.waitForFocus(function() {
 
   // Move behind the image and press enter, insert an "A".
   // That should insert a new empty paragraph with the "A" after what we have.
-  synthesizeKey("VK_RIGHT", {});
-  synthesizeKey("VK_RIGHT", {});
-  synthesizeKey("VK_RETURN", {});
-  synthesizeKey("A", {});
+  synthesizeKey("KEY_ArrowRight");
+  synthesizeKey("KEY_ArrowRight");
+  synthesizeKey("KEY_Enter");
+  sendString("A");
 
   // The resulting HTML is sadly less than optimal:
   // A <br> gets inserted after the image and the "A" is followed by an empty <tt></tt>.
@@ -84,7 +82,6 @@ SimpleTest.waitForFocus(function() {
   todo_is(newHTML, expectedHTML, "unexpected HTML");
 
   SimpleTest.finish();
-
 });
 
 </script>

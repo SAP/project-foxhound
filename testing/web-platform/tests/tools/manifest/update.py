@@ -1,120 +1,95 @@
 #!/usr/bin/env python
 import argparse
-import imp
 import os
-import sys
 
-import manifest
+from . import manifest
 from . import vcs
 from .log import get_logger
-from .tree import GitTree, NoVCSTree
+from .download import download_from_github
 
 here = os.path.dirname(__file__)
-localpaths = imp.load_source("localpaths", os.path.abspath(os.path.join(here, os.pardir, "localpaths.py")))
 
-def update(tests_root, url_base, manifest, ignore_local=False):
-    if vcs.is_git_repo(tests_root):
-        tests_tree = GitTree(tests_root, url_base)
-        remove_missing_local = False
-    else:
-        tests_tree = NoVCSTree(tests_root, url_base)
-        remove_missing_local = not ignore_local
+wpt_root = os.path.abspath(os.path.join(here, os.pardir, os.pardir))
 
-    if not ignore_local:
-        local_changes = tests_tree.local_changes()
-    else:
-        local_changes = None
+logger = get_logger()
 
-    manifest.update(tests_root,
-                    url_base,
-                    tests_tree.current_rev(),
-                    tests_tree.committed_changes(manifest.rev),
-                    local_changes,
-                    remove_missing_local=remove_missing_local)
+MYPY = False
+if MYPY:
+    # MYPY is set to True when run under Mypy.
+    from typing import Any
+    from typing import Optional
+    from .manifest import Manifest  # avoid cyclic import
+
+
+def update(tests_root,  # type: str
+           manifest,  # type: Manifest
+           manifest_path=None,  # type: Optional[str]
+           working_copy=True,  # type: bool
+           cache_root=None,  # type: Optional[str]
+           rebuild=False  # type: bool
+           ):
+    # type: (...) -> bool
+    logger.warning("Deprecated; use manifest.load_and_update instead")
+    logger.info("Updating manifest")
+
+    tree = vcs.get_tree(tests_root, manifest, manifest_path, cache_root,
+                        working_copy, rebuild)
+    return manifest.update(tree)
 
 
 def update_from_cli(**kwargs):
+    # type: (**Any) -> None
     tests_root = kwargs["tests_root"]
     path = kwargs["path"]
     assert tests_root is not None
 
-    m = None
-    logger = get_logger()
+    if not kwargs["rebuild"] and kwargs["download"]:
+        download_from_github(path, tests_root)
 
-    if not kwargs.get("rebuild", False):
-        try:
-            m = manifest.load(tests_root, path)
-        except manifest.ManifestVersionMismatch:
-            logger.info("Manifest version changed, rebuilding")
-            m = None
-        else:
-            logger.info("Updating manifest")
-
-    if m is None:
-        m = manifest.Manifest(None)
-
-
-    update(tests_root,
-           kwargs["url_base"],
-           m,
-           ignore_local=kwargs.get("ignore_local", False))
-    manifest.write(m, path)
+    manifest.load_and_update(tests_root,
+                             path,
+                             kwargs["url_base"],
+                             update=True,
+                             rebuild=kwargs["rebuild"],
+                             cache_root=kwargs["cache_root"])
 
 
 def abs_path(path):
+    # type: (str) -> str
     return os.path.abspath(os.path.expanduser(path))
 
 
 def create_parser():
+    # type: () -> argparse.ArgumentParser
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-p", "--path", type=abs_path, help="Path to manifest file.")
     parser.add_argument(
-        "--tests-root", type=abs_path, help="Path to root of tests.")
+        "--tests-root", type=abs_path, default=wpt_root, help="Path to root of tests.")
     parser.add_argument(
         "-r", "--rebuild", action="store_true", default=False,
         help="Force a full rebuild of the manifest.")
     parser.add_argument(
-        "--ignore-local", action="store_true", default=False,
-        help="Don't include uncommitted local changes in the manifest.")
-    parser.add_argument(
         "--url-base", action="store", default="/",
         help="Base url to use as the mount point for tests in this manifest.")
+    parser.add_argument(
+        "--no-download", dest="download", action="store_false", default=True,
+        help="Never attempt to download the manifest.")
+    parser.add_argument(
+        "--cache-root", action="store", default=os.path.join(wpt_root, ".wptcache"),
+        help="Path in which to store any caches (default <tests_root>/.wptcache/)")
     return parser
 
 
-def find_top_repo():
-    path = here
-    rv = None
-    while path != "/":
-        if vcs.is_git_repo(path):
-            rv = path
-        path = os.path.abspath(os.path.join(path, os.pardir))
+def run(*args, **kwargs):
+    # type: (*Any, **Any) -> None
+    if kwargs["path"] is None:
+        kwargs["path"] = os.path.join(kwargs["tests_root"], "MANIFEST.json")
+    update_from_cli(**kwargs)
 
-    return rv
 
-def main(default_tests_root=None):
+def main():
+    # type: () -> None
     opts = create_parser().parse_args()
 
-    if opts.tests_root is None:
-        tests_root = None
-        if default_tests_root is not None:
-            tests_root = default_tests_root
-        else:
-            tests_root = find_top_repo()
-
-        if tests_root is None:
-            print >> sys.stderr, """No git repo found; could not determine test root.
-Run again with --test-root"""
-            sys.exit(1)
-
-        opts.tests_root = tests_root
-
-    if opts.path is None:
-        opts.path = os.path.join(opts.tests_root, "MANIFEST.json")
-
-    update_from_cli(**vars(opts))
-
-
-if __name__ == "__main__":
-    main()
+    run(**vars(opts))

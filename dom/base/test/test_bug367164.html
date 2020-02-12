@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=367164
 -->
 <head>
   <title>Test for Bug 367164</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -27,9 +27,9 @@ var rem1 = false;
 var rem2 = false;
 
 span.addEventListener("DOMNodeInserted", function() { ins1 = true; }, true);
-span.addEventListener("DOMNodeInserted", function() { ins2 = true; }, false);
+span.addEventListener("DOMNodeInserted", function() { ins2 = true; });
 span.addEventListener("DOMNodeRemoved", function() { rem1 = true; }, true);
-span.addEventListener("DOMNodeRemoved", function() { rem2 = true; }, false);
+span.addEventListener("DOMNodeRemoved", function() { rem2 = true; });
 
 $("content").appendChild(span);
 $("content").removeChild(span);

@@ -1,5 +1,9 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const ReferrerInfo = Components.Constructor(
+  "@mozilla.org/referrer-info;1",
+  "nsIReferrerInfo",
+  "init"
+);
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -11,27 +15,27 @@ var redirects = [];
 const numRedirects = 10;
 
 function make_channel(url, callback, ctx) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
 const responseBody = "response body";
 
-function contentHandler(request, response)
-{
+function contentHandler(request, response) {
   response.setHeader("Content-Type", "text/plain");
   response.bodyOutputStream.write(responseBody, responseBody.length);
 }
 
-function finish_test(request, buffer)
-{
-  do_check_eq(buffer, responseBody);
+function finish_test(request, buffer) {
+  Assert.equal(buffer, responseBody);
   let chan = request.QueryInterface(Ci.nsIChannel);
   let redirectChain = chan.loadInfo.redirectChain;
 
-  do_check_eq(numRedirects - 1, redirectChain.length);
+  Assert.equal(numRedirects - 1, redirectChain.length);
   for (let i = 0; i < numRedirects - 1; ++i) {
-    let principal = redirectChain[i];
-    do_check_eq(URL + redirects[i], principal.URI.spec);
+    let principal = redirectChain[i].principal;
+    Assert.equal(URL + redirects[i], principal.URI.spec);
+    Assert.equal(redirectChain[i].referrerURI.spec, "http://test.com/");
+    Assert.equal(redirectChain[i].remoteAddress, "127.0.0.1");
   }
   httpServer.stop(do_test_finished);
 }
@@ -42,8 +46,7 @@ function redirectHandler(index, request, response) {
   response.setHeader("Location", URL + path, false);
 }
 
-function run_test()
-{
+function run_test() {
   httpServer = new HttpServer();
   for (let i = 0; i < numRedirects; ++i) {
     var randomPath = "/redirect/" + Math.random();
@@ -52,13 +55,18 @@ function run_test()
       httpServer.registerPathHandler(randomPath, redirectHandler.bind(this, i));
     } else {
       // The last one doesn't redirect
-      httpServer.registerPathHandler(redirects[numRedirects - 1],
-                                     contentHandler);
+      httpServer.registerPathHandler(
+        redirects[numRedirects - 1],
+        contentHandler
+      );
     }
   }
   httpServer.start(-1);
 
   var chan = make_channel(URL + redirects[0]);
-  chan.asyncOpen2(new ChannelListener(finish_test, null));
+  var uri = NetUtil.newURI("http://test.com");
+  var httpChan = chan.QueryInterface(Ci.nsIHttpChannel);
+  httpChan.referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri);
+  chan.asyncOpen(new ChannelListener(finish_test, null));
   do_test_pending();
 }

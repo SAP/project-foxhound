@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: seek tests</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
   <script type="text/javascript" src="seek_support.js"></script>
@@ -43,8 +43,8 @@ function seeking() {
   v.load(); // Cause the existing stream to close.
 }
 
-v.addEventListener("loadeddata", startTest, false);
-v.addEventListener("seeking", seeking, false);
+v.addEventListener("loadeddata", startTest);
+v.addEventListener("seeking", seeking);
 
 }
 

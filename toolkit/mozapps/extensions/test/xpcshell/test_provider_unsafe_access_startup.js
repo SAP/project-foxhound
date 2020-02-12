@@ -12,8 +12,9 @@ function mockAddonProvider(name) {
     startup() {
       this.hasStarted = true;
       startupOrder.push(this.name);
-      if (this.startupCallback)
+      if (this.startupCallback) {
         this.startupCallback();
+      }
     },
     getAddonByID(id, callback) {
       if (!this.hasStarted) {
@@ -30,26 +31,29 @@ function mockAddonProvider(name) {
   return mockProvider;
 }
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* unsafeProviderStartup() {
+add_task(async function unsafeProviderStartup() {
   let secondProvider = null;
 
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     let firstProvider = mockAddonProvider("Mock1");
     firstProvider.startupCallback = function() {
-      AddonManager.getAddonByID("does-not-exist", resolve);
+      resolve(AddonManager.getAddonByID("does-not-exist"));
     };
     AddonManagerPrivate.registerProvider(firstProvider);
 
     secondProvider = mockAddonProvider("Mock2");
     AddonManagerPrivate.registerProvider(secondProvider);
 
-    startupManager();
+    promiseStartupManager();
   });
 
-  equal(startupOrder.join(","), ["Mock1", "Mock2"].join(","), "Mock providers should have hasStarted in expected order");
-  ok(!secondProvider.unsafeAccess, "Second registered mock provider should not have been accessed unsafely");
+  equal(
+    startupOrder.join(","),
+    ["Mock1", "Mock2"].join(","),
+    "Mock providers should have hasStarted in expected order"
+  );
+  ok(
+    !secondProvider.unsafeAccess,
+    "Second registered mock provider should not have been accessed unsafely"
+  );
 });

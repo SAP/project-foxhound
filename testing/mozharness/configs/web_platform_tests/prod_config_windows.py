@@ -9,40 +9,56 @@
 import os
 import sys
 
+# OS Specifics
+DISABLE_SCREEN_SAVER = False
+ADJUST_MOUSE_AND_SCREEN = True
+#####
+
+
 config = {
     "options": [
         "--prefs-root=%(test_path)s/prefs",
         "--processes=1",
         "--config=%(test_path)s/wptrunner.ini",
-        "--ca-cert-path=%(test_path)s/certs/cacert.pem",
-        "--host-key-path=%(test_path)s/certs/web-platform.test.key",
-        "--host-cert-path=%(test_path)s/certs/web-platform.test.pem",
+        "--ca-cert-path=%(test_path)s/tests/tools/certs/cacert.pem",
+        "--host-key-path=%(test_path)s/tests/tools/certs/web-platform.test.key",
+        "--host-cert-path=%(test_path)s/tests/tools/certs/web-platform.test.pem",
         "--certutil-binary=%(test_install_path)s/bin/certutil",
     ],
 
     "exes": {
         'python': sys.executable,
-        'virtualenv': [sys.executable, 'c:/mozilla-build/buildbotve/virtualenv.py'],
         'hg': 'c:/mozilla-build/hg/hg',
-        'mozinstall': ['%s/build/venv/scripts/python' % os.getcwd(),
-                       '%s/build/venv/scripts/mozinstall-script.py' % os.getcwd()],
-        'tooltool.py': [sys.executable, 'C:/mozilla-build/tooltool.py'],
     },
 
-    "find_links": [
-        "http://pypi.pvt.build.mozilla.org/pub",
-        "http://pypi.pub.build.mozilla.org/pub",
+
+    # this would normally be in "exes", but "exes" is clobbered by remove_executables
+    "geckodriver": os.path.join("%(abs_test_bin_dir)s", "geckodriver.exe"),
+
+    "per_test_category": "web-platform",
+
+    "run_cmd_checks_enabled": True,
+    "preflight_run_cmd_suites": [
+        # NOTE 'enabled' is only here while we have unconsolidated configs
+        {
+            "name": "disable_screen_saver",
+            "cmd": ["xset", "s", "off", "s", "reset"],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
+            "enabled": DISABLE_SCREEN_SAVER
+        },
+        {
+            "name": "run mouse & screen adjustment script",
+            "cmd": [
+                # when configs are consolidated this python path will only show
+                # for windows.
+                sys.executable,
+                "../scripts/external_tools/mouse_and_screen_resolution.py",
+                "--configuration-file",
+                "../scripts/external_tools/machine-configuration.json"],
+            "architectures": ["32bit"],
+            "halt_on_failure": True,
+            "enabled": ADJUST_MOUSE_AND_SCREEN
+        },
     ],
-
-    "pip_index": False,
-
-    "buildbot_json_path": "buildprops.json",
-
-    "default_blob_upload_servers": [
-         "https://blobupload.elasticbeanstalk.com",
-    ],
-
-    "blob_uploader_auth_file" : os.path.join(os.getcwd(), "oauth.txt"),
-
-    "download_minidump_stackwalk": True,
 }

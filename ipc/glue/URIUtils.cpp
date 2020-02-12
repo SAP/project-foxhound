@@ -6,149 +6,132 @@
 
 #include "URIUtils.h"
 
-#include "nsIIPCSerializableURI.h"
-
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/dom/BlobURL.h"
+#include "mozilla/net/SubstitutingURL.h"
+#include "mozilla/NullPrincipalURI.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsID.h"
 #include "nsJARURI.h"
 #include "nsIIconURI.h"
-#include "nsHostObjectURI.h"
-#include "nsNullPrincipalURI.h"
 #include "nsJSProtocolHandler.h"
 #include "nsNetCID.h"
 #include "nsSimpleNestedURI.h"
 #include "nsThreadUtils.h"
+#include "nsIURIMutator.h"
 
 using namespace mozilla::ipc;
 using mozilla::ArrayLength;
 
 namespace {
 
-NS_DEFINE_CID(kSimpleURICID, NS_SIMPLEURI_CID);
-NS_DEFINE_CID(kStandardURLCID, NS_STANDARDURL_CID);
-NS_DEFINE_CID(kJARURICID, NS_JARURI_CID);
-NS_DEFINE_CID(kIconURICID, NS_MOZICONURI_CID);
+NS_DEFINE_CID(kSimpleURIMutatorCID, NS_SIMPLEURIMUTATOR_CID);
+NS_DEFINE_CID(kStandardURLMutatorCID, NS_STANDARDURLMUTATOR_CID);
+NS_DEFINE_CID(kJARURIMutatorCID, NS_JARURIMUTATOR_CID);
+NS_DEFINE_CID(kIconURIMutatorCID, NS_MOZICONURIMUTATOR_CID);
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
 namespace ipc {
 
-void
-SerializeURI(nsIURI* aURI,
-             URIParams& aParams)
-{
+void SerializeURI(nsIURI* aURI, URIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aURI);
 
-  nsCOMPtr<nsIIPCSerializableURI> serializable = do_QueryInterface(aURI);
-  if (!serializable) {
-    MOZ_CRASH("All IPDL URIs must be serializable!");
-  }
-
-  serializable->Serialize(aParams);
+  aURI->Serialize(aParams);
   if (aParams.type() == URIParams::T__None) {
     MOZ_CRASH("Serialize failed!");
   }
 }
 
-void
-SerializeURI(nsIURI* aURI,
-             OptionalURIParams& aParams)
-{
+void SerializeURI(nsIURI* aURI, Maybe<URIParams>& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aURI) {
     URIParams params;
     SerializeURI(aURI, params);
-    aParams = params;
-  }
-  else {
-    aParams = mozilla::void_t();
+    aParams = Some(std::move(params));
+  } else {
+    aParams = Nothing();
   }
 }
 
-already_AddRefed<nsIURI>
-DeserializeURI(const URIParams& aParams)
-{
+already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<nsIIPCSerializableURI> serializable;
+  nsCOMPtr<nsIURIMutator> mutator;
 
   switch (aParams.type()) {
     case URIParams::TSimpleURIParams:
-      serializable = do_CreateInstance(kSimpleURICID);
+      mutator = do_CreateInstance(kSimpleURIMutatorCID);
       break;
 
     case URIParams::TStandardURLParams:
-      serializable = do_CreateInstance(kStandardURLCID);
+      if (aParams.get_StandardURLParams().isSubstituting()) {
+        mutator = new net::SubstitutingURL::Mutator();
+      } else {
+        mutator = do_CreateInstance(kStandardURLMutatorCID);
+      }
       break;
 
     case URIParams::TJARURIParams:
-      serializable = do_CreateInstance(kJARURICID);
+      mutator = do_CreateInstance(kJARURIMutatorCID);
       break;
 
     case URIParams::TJSURIParams:
-      serializable = new nsJSURI();
+      mutator = new nsJSURI::Mutator();
       break;
 
     case URIParams::TIconURIParams:
-      serializable = do_CreateInstance(kIconURICID);
+      mutator = do_CreateInstance(kIconURIMutatorCID);
       break;
 
     case URIParams::TNullPrincipalURIParams:
-      serializable = new nsNullPrincipalURI();
+      mutator = new NullPrincipalURI::Mutator();
       break;
 
     case URIParams::TSimpleNestedURIParams:
-      serializable = new nsSimpleNestedURI();
+      mutator = new net::nsSimpleNestedURI::Mutator();
       break;
 
     case URIParams::THostObjectURIParams:
-      serializable = new nsHostObjectURI();
+      mutator = new mozilla::dom::BlobURL::Mutator();
       break;
 
     default:
       MOZ_CRASH("Unknown params!");
   }
 
-  MOZ_ASSERT(serializable);
+  MOZ_ASSERT(mutator);
 
-  if (!serializable->Deserialize(aParams)) {
+  nsresult rv = mutator->Deserialize(aParams);
+  if (NS_FAILED(rv)) {
     MOZ_ASSERT(false, "Deserialize failed!");
     return nullptr;
   }
 
-  nsCOMPtr<nsIURI> uri = do_QueryInterface(serializable);
+  nsCOMPtr<nsIURI> uri;
+  DebugOnly<nsresult> rv2 = mutator->Finalize(getter_AddRefs(uri));
   MOZ_ASSERT(uri);
+  MOZ_ASSERT(NS_SUCCEEDED(rv2));
 
   return uri.forget();
 }
 
-already_AddRefed<nsIURI>
-DeserializeURI(const OptionalURIParams& aParams)
-{
+already_AddRefed<nsIURI> DeserializeURI(const Maybe<URIParams>& aParams) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURI> uri;
 
-  switch (aParams.type()) {
-    case OptionalURIParams::Tvoid_t:
-      break;
-
-    case OptionalURIParams::TURIParams:
-      uri = DeserializeURI(aParams.get_URIParams());
-      break;
-
-    default:
-      MOZ_CRASH("Unknown params!");
+  if (aParams.isSome()) {
+    uri = DeserializeURI(aParams.ref());
   }
 
   return uri.forget();
 }
 
-} // namespace ipc
-} // namespace mozilla
+}  // namespace ipc
+}  // namespace mozilla

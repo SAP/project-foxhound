@@ -6,9 +6,10 @@
   -->
 <window title="Tabbox Test" width="500" height="600"
         onload="setTimeout(test_tabbox, 0);"
-        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>  
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>  
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <script type="application/javascript" src="xul_selectcontrol.js"/>
 
 <vbox id="tabboxes">
@@ -53,7 +54,7 @@
 </vbox>
 
 <tabbox id="tabbox-nofocus">
-  <textbox id="textbox-extra" hidden="true"/>
+  <html:input id="textbox-extra" hidden="true"/>
   <tabs>
     <tab label="Tab 1" value="one"/>
     <tab id="tab-nofocus" label="Tab 2" value="two"/>
@@ -82,40 +83,40 @@ function test_tabbox()
   var tabs = document.getElementById("tabs");
   var tabpanels = document.getElementById("tabpanels");
 
-  test_tabbox_State(tabbox, "tabbox initial", 0, tabs.firstChild, tabpanels.firstChild);
+  test_tabbox_State(tabbox, "tabbox initial", 0, tabs.allTabs[0], tabpanels.firstChild);
 
   // check the selectedIndex property
   tabbox.selectedIndex = 1;
-  test_tabbox_State(tabbox, "tabbox selectedIndex 1", 1, tabs.lastChild, tabpanels.lastChild);
+  test_tabbox_State(tabbox, "tabbox selectedIndex 1", 1, tabs.allTabs[tabs.allTabs.length - 1], tabpanels.lastChild);
 
   tabbox.selectedIndex = 2;
-  test_tabbox_State(tabbox, "tabbox selectedIndex 2", 1, tabs.lastChild, tabpanels.lastChild);
+  test_tabbox_State(tabbox, "tabbox selectedIndex 2", 1, tabs.allTabs[tabs.allTabs.length - 1], tabpanels.lastChild);
 
   // tabbox must have a selection, so setting to -1 should do nothing
   tabbox.selectedIndex = -1;
-  test_tabbox_State(tabbox, "tabbox selectedIndex -1", 1, tabs.lastChild, tabpanels.lastChild);
+  test_tabbox_State(tabbox, "tabbox selectedIndex -1", 1, tabs.allTabs[tabs.allTabs.length - 1], tabpanels.lastChild);
 
   // check the selectedTab property
-  tabbox.selectedTab = tabs.firstChild;
-  test_tabbox_State(tabbox, "tabbox selected", 0, tabs.firstChild, tabpanels.firstChild);
+  tabbox.selectedTab = tabs.allTabs[0];
+  test_tabbox_State(tabbox, "tabbox selected", 0, tabs.allTabs[0], tabpanels.firstChild);
 
   // setting selectedTab to null should not do anything
   tabbox.selectedTab = null;
-  test_tabbox_State(tabbox, "tabbox selectedTab null", 0, tabs.firstChild, tabpanels.firstChild);
+  test_tabbox_State(tabbox, "tabbox selectedTab null", 0, tabs.allTabs[0], tabpanels.firstChild);
 
   // check the selectedPanel property
   tabbox.selectedPanel = tabpanels.lastChild;
-  test_tabbox_State(tabbox, "tabbox selectedPanel", 0, tabs.firstChild, tabpanels.lastChild);
+  test_tabbox_State(tabbox, "tabbox selectedPanel", 0, tabs.allTabs[0], tabpanels.lastChild);
 
   // setting selectedPanel to null should not do anything
   tabbox.selectedPanel = null;
-  test_tabbox_State(tabbox, "tabbox selectedPanel null", 0, tabs.firstChild, tabpanels.lastChild);
+  test_tabbox_State(tabbox, "tabbox selectedPanel null", 0, tabs.allTabs[0], tabpanels.lastChild);
 
   tabbox.selectedIndex = 0;
   test_tabpanels(tabpanels, tabbox);
 
-  tabs.removeChild(tabs.firstChild);
-  tabs.removeChild(tabs.firstChild);
+  tabs.firstChild.remove();
+  tabs.firstChild.remove();
 
   test_tabs(tabs);
 
@@ -184,18 +185,18 @@ function test_tabbox_focus()
   var tab = $("tab-nofocus");
 
   when_tab_focused(tab, function () {
-    ok(document.activeElement, tab, "focus in tab with no focusable elements");
+    is(document.activeElement, tab, "focus in tab with no focusable elements");
 
     tabbox.selectedIndex = 0;
     $("tab-nofocus-button").focus();
 
     when_tab_focused(tab, function () {
-      ok(document.activeElement, tab, "focus in tab with no focusable elements, but with something in another tab focused");
+      is(document.activeElement, tab, "focus in tab with no focusable elements, but with something in another tab focused");
 
       var textboxExtra = $("textbox-extra");
       textboxExtra.addEventListener("focus", function () {
         textboxExtra.removeEventListener("focus", arguments.callee, true);
-        ok(document.activeElement, textboxExtra, "focus in tab with focus currently in textbox that is sibling of tabs");
+        is(document.activeElement, textboxExtra, "focus in tab with focus currently in textbox that is sibling of tabs");
 
         SimpleTest.finish();
       }, true);

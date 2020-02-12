@@ -93,24 +93,12 @@
  */
 //#define SK_DEFAULT_IMAGE_CACHE_LIMIT (1024 * 1024)
 
-/*  Define this to provide font subsetter in PDF generation.
- */
-//#define SK_SFNTLY_SUBSETTER "sfntly/subsetter/font_subsetter.h"
-
 /*  Define this to set the upper limit for text to support LCD. Values that
     are very large increase the cost in the font cache and draw slower, without
     improving readability. If this is undefined, Skia will use its default
     value (e.g. 48)
  */
 //#define SK_MAX_SIZE_FOR_LCDTEXT     48
-
-/*  If SK_DEBUG is defined, then you can optionally define SK_SUPPORT_UNITTEST
-    which will run additional self-tests at startup. These can take a long time,
-    so this flag is optional.
- */
-#ifdef SK_DEBUG
-//#define SK_SUPPORT_UNITTEST
-#endif
 
 /*  Change the ordering to work in X windows.
  */
@@ -147,16 +135,13 @@
 
 #define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 0
 
-#define SK_SUPPORT_LEGACY_GETDEVICE
-#define SK_SUPPORT_LEGACY_GETTOPDEVICE
-
-#define SK_IGNORE_ETC1_SUPPORT
-
 #define SK_RASTERIZE_EVEN_ROUNDING
 
 #define SK_DISABLE_SLOW_DEBUG_VALIDATION 1
 
-#define MOZ_SKIA 1
+#define SK_SUPPORT_DEPRECATED_CLIPOPS
+
+#define SK_SUPPORT_GPU 0
 
 #ifndef MOZ_IMPLICIT
 #  ifdef MOZ_CLANG_PLUGIN
@@ -166,15 +151,12 @@
 #  endif
 #endif
 
-/* Check if building with either MSVC, libc++, or a sufficiently recent version of libstdc++.
-+ * On platforms like OS X 10.6 or older Android SDKs, we need to work around a lack of certain
-+ * C++11 features.
-+ */
-#include "mozilla/Compiler.h"
-#if MOZ_IS_MSVC || MOZ_USING_LIBCXX || MOZ_LIBSTDCXX_VERSION_AT_LEAST(4, 8, 0)
-#  define MOZ_SKIA_AVOID_CXX11 0
-#else
-#  define MOZ_SKIA_AVOID_CXX11 1
-#endif
+#define MOZ_SKIA
+
+#define SK_IGNORE_MAC_BLENDING_MATCH_FIX
+
+#define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN
+
+#define SK_USE_FREETYPE_EMBOLDEN
 
 #endif

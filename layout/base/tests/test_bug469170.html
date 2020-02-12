@@ -5,14 +5,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=469170
 -->
 <head>
   <title>Test for Bug 469170</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="runTest();">
 <p><a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=469170">Mozilla Bug 469170</a></p>
 
-<iframe id="source" width="50" height="50"
-       src="data:text/html,%3Chtml%3E%3C%2Fhtml%3E"></iframe>
+<iframe id="source" width="50" height="50" srcdoc="<html></html>"></iframe>
 
 <pre id="test">
 <script type="application/javascript">

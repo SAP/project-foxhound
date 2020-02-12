@@ -13,21 +13,15 @@
 #include "nsView.h"
 #include "nsIWidget.h"
 
+using namespace mozilla;
 using namespace mozilla::a11y;
 
-RootAccessibleWrap::
-  RootAccessibleWrap(nsIDocument* aDocument, nsIPresShell* aPresShell) :
-  RootAccessible(aDocument, aPresShell)
-{
-}
+RootAccessibleWrap::RootAccessibleWrap(dom::Document* aDocument, PresShell* aPresShell)
+    : RootAccessible(aDocument, aPresShell) {}
 
-RootAccessibleWrap::~RootAccessibleWrap()
-{
-}
+RootAccessibleWrap::~RootAccessibleWrap() {}
 
-Class
-RootAccessibleWrap::GetNativeType()
-{
+Class RootAccessibleWrap::GetNativeType() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   return [mozRootAccessible class];
@@ -35,18 +29,16 @@ RootAccessibleWrap::GetNativeType()
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
 }
 
-void
-RootAccessibleWrap::GetNativeWidget(void** aOutView)
-{
-  nsIFrame *frame = GetFrame();
+void RootAccessibleWrap::GetNativeWidget(void** aOutView) {
+  nsIFrame* frame = GetFrame();
   if (frame) {
-    nsView *view = frame->GetView();
+    nsView* view = frame->GetView();
     if (view) {
-      nsIWidget *widget = view->GetWidget();
+      nsIWidget* widget = view->GetWidget();
       if (widget) {
-        *aOutView = (void**)widget->GetNativeData (NS_NATIVE_WIDGET);
-        NS_ASSERTION (*aOutView,
-                      "Couldn't get the native NSView parent we need to connect the accessibility hierarchy!");
+        *aOutView = (void**)widget->GetNativeData(NS_NATIVE_WIDGET);
+        NS_ASSERTION(*aOutView, "Couldn't get the native NSView parent we need to connect the "
+                                "accessibility hierarchy!");
       }
     }
   }

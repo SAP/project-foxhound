@@ -8,11 +8,11 @@ function promiseObserve(name, checkFn) {
         Services.obs.removeObserver(observer, name);
         resolve();
       }
-    }, name, false);
+    }, name);
   });
 }
 
-var conn = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase).DBConnection;
+var conn = PlacesUtils.history.DBConnection;
 
 /**
  * Gets a single column value from either the places or historyvisits table.
@@ -28,13 +28,12 @@ function getColumn(table, column, fromColumnName, fromColumnValue) {
     stmt.params.val = fromColumnValue;
     ok(stmt.executeStep(), "Expect to get a row");
     return stmt.row[column];
-  }
-  finally {
+  } finally {
     stmt.reset();
   }
 }
 
-add_task(function* () {
+add_task(async function() {
   // Make sure places visit chains are saved correctly with a redirect
   // transitions.
 
@@ -44,7 +43,7 @@ add_task(function* () {
     "http://example.com/tests/toolkit/components/places/tests/browser/begin.html",
     "http://example.com/tests/toolkit/components/places/tests/browser/redirect_twice.sjs",
     "http://example.com/tests/toolkit/components/places/tests/browser/redirect_once.sjs",
-    "http://example.com/tests/toolkit/components/places/tests/browser/final.html"
+    "http://example.com/tests/toolkit/components/places/tests/browser/final.html",
   ];
   var currentIndex = 0;
 
@@ -54,31 +53,48 @@ add_task(function* () {
     is(uri.spec, expected, "Saved URL visit " + uri.spec);
 
     var placeId = getColumn("moz_places", "id", "url", uri.spec);
-    var fromVisitId = getColumn("moz_historyvisits", "from_visit", "place_id", placeId);
+    var fromVisitId = getColumn(
+      "moz_historyvisits",
+      "from_visit",
+      "place_id",
+      placeId
+    );
 
     if (currentIndex == 0) {
       is(fromVisitId, 0, "First visit has no from visit");
-    }
-    else {
-      var lastVisitId = getColumn("moz_historyvisits", "place_id", "id", fromVisitId);
+    } else {
+      var lastVisitId = getColumn(
+        "moz_historyvisits",
+        "place_id",
+        "id",
+        fromVisitId
+      );
       var fromVisitUrl = getColumn("moz_places", "url", "id", lastVisitId);
-      is(fromVisitUrl, expectedUrls[currentIndex - 1],
-         "From visit was " + expectedUrls[currentIndex - 1]);
+      is(
+        fromVisitUrl,
+        expectedUrls[currentIndex - 1],
+        "From visit was " + expectedUrls[currentIndex - 1]
+      );
     }
 
     currentIndex++;
-    return (currentIndex >= expectedUrls.length);
+    return currentIndex >= expectedUrls.length;
   }
   let visitUriPromise = promiseObserve("uri-visit-saved", checkObserver);
 
-  const testUrl = "http://example.com/tests/toolkit/components/places/tests/browser/begin.html";
-  yield BrowserTestUtils.openNewForegroundTab(gBrowser, testUrl);
+  const testUrl =
+    "http://example.com/tests/toolkit/components/places/tests/browser/begin.html";
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, testUrl);
 
   // Load begin page, click link on page to record visits.
-  yield BrowserTestUtils.synthesizeMouseAtCenter("#clickme", { }, gBrowser.selectedBrowser);
-  yield visitUriPromise;
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#clickme",
+    {},
+    gBrowser.selectedBrowser
+  );
+  await visitUriPromise;
 
-  yield PlacesTestUtils.clearHistory();
+  await PlacesUtils.history.clear();
 
   gBrowser.removeCurrentTab();
 });

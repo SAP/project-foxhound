@@ -5,8 +5,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -17,17 +16,16 @@
 
   <script type="application/javascript">
 
-    function doTest()
-    {
+    function doTest() {
       // And some AT may look for this
-      testAttrs("nav", {"tag" : "nav"}, true);
-      testAttrs("header", {"tag" : "header"}, true);
-      testAttrs("footer", {"tag" : "footer"}, true);
-      testAttrs("article", {"tag" : "article"}, true);
-      testAttrs("aside", {"tag" : "aside"}, true);
-      testAttrs("section", {"tag" : "section"}, true);
-      testAttrs("main", {"tag" : "article"}, true);
-      testAttrs("form", {"tag" : "article"}, true);
+      testAttrs("nav", {"tag": "nav"}, true);
+      testAttrs("header", {"tag": "header"}, true);
+      testAttrs("footer", {"tag": "footer"}, true);
+      testAttrs("article", {"tag": "article"}, true);
+      testAttrs("aside", {"tag": "aside"}, true);
+      testAttrs("section", {"tag": "section"}, true);
+      testAttrs("main", {"tag": "article"}, true);
+      testAttrs("form", {"tag": "article"}, true);
 
       SimpleTest.finish();
     }

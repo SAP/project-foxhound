@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test that lookup() on a system principal doesn't crash</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 
@@ -12,9 +12,6 @@
 <pre id="test">
 
 <script type="text/javascript">
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
 
 var dbService = Cc["@mozilla.org/url-classifier/dbservice;1"]
                 .getService(Ci.nsIUrlClassifierDBService);

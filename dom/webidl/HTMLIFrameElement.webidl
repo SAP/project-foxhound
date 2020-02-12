@@ -6,49 +6,60 @@
  * The origin of this IDL file is
  * http://www.whatwg.org/specs/web-apps/current-work/#the-iframe-element
  * http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
+ * https://wicg.github.io/feature-policy/#policy
+ *
  * © Copyright 2004-2011 Apple Computer, Inc., Mozilla Foundation, and
  * Opera Software ASA. You are granted a license to use, reproduce
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLIFrameElement : HTMLElement {
-  [SetterThrows, Pure]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows, Pure]
            attribute DOMString src;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString srcdoc;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString name;
   [PutForwards=value] readonly attribute DOMTokenList sandbox;
            // attribute boolean seamless;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute boolean allowFullscreen;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
+           attribute boolean allowPaymentRequest;
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString width;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString height;
-  [SetterThrows, Pure, Pref="network.http.enablePerElementReferrer"]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString referrerPolicy;
+  [NeedsSubjectPrincipal]
   readonly attribute Document? contentDocument;
   readonly attribute WindowProxy? contentWindow;
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLIFrameElement {
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString align;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString scrolling;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString frameBorder;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString longDesc;
 
-  [TreatNullAs=EmptyString,SetterThrows,Pure] attribute DOMString marginHeight;
-  [TreatNullAs=EmptyString,SetterThrows,Pure] attribute DOMString marginWidth;
+  [CEReactions, SetterThrows, Pure]
+           attribute [TreatNullAs=EmptyString] DOMString marginHeight;
+  [CEReactions, SetterThrows, Pure]
+           attribute [TreatNullAs=EmptyString] DOMString marginWidth;
 };
 
 partial interface HTMLIFrameElement {
   // GetSVGDocument
+  [NeedsSubjectPrincipal]
   Document? getSVGDocument();
 };
 
@@ -58,11 +69,14 @@ partial interface HTMLIFrameElement {
            attribute boolean mozbrowser;
 };
 
-partial interface HTMLIFrameElement {
-  // nsIMozBrowserFrame
-  [ChromeOnly]
-  readonly attribute DOMString appManifestURL;
-};
+HTMLIFrameElement includes MozFrameLoaderOwner;
+HTMLIFrameElement includes BrowserElement;
 
-HTMLIFrameElement implements MozFrameLoaderOwner;
-HTMLIFrameElement implements BrowserElement;
+// https://w3c.github.io/webappsec-feature-policy/#idl-index
+partial interface HTMLIFrameElement {
+  [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
+  readonly attribute FeaturePolicy featurePolicy;
+
+  [CEReactions, SetterThrows, Pure, Pref="dom.security.featurePolicy.enabled"]
+           attribute DOMString allow;
+};

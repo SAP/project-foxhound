@@ -2,28 +2,40 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import shutil
 import tempfile
 import unittest
 
-from StringIO import StringIO
-
 from mozunit import main
 
-from mozbuild.controller.clobber import Clobberer
-from mozbuild.controller.clobber import main as clobber
+from mozbuild.base import (
+    MozbuildObject,
+)
+from mozbuild.controller.building import (
+    BuildDriver,
+)
+from mozbuild.controller.clobber import (
+    Clobberer,
+)
+from mozbuild.test.common import prepare_tmp_topsrcdir
 
 
 class TestClobberer(unittest.TestCase):
     def setUp(self):
         self._temp_dirs = []
+        self._old_env = dict(os.environ)
+        os.environ.pop('MOZCONFIG', None)
+        os.environ.pop('MOZ_OBJDIR', None)
 
         return unittest.TestCase.setUp(self)
 
     def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._old_env)
+
         for d in self._temp_dirs:
             shutil.rmtree(d, ignore_errors=True)
 
@@ -36,6 +48,7 @@ class TestClobberer(unittest.TestCase):
 
     def get_topsrcdir(self):
         t = self.get_tempdir()
+        prepare_tmp_topsrcdir(t)
         p = os.path.join(t, 'CLOBBER')
         with open(p, 'a'):
             pass
@@ -51,14 +64,13 @@ class TestClobberer(unittest.TestCase):
         c = Clobberer(self.get_topsrcdir(), tmp)
         self.assertFalse(c.clobber_needed())
 
-        # Side-effect is topobjdir is created with CLOBBER file touched.
         required, performed, reason = c.maybe_do_clobber(os.getcwd(), True)
         self.assertFalse(required)
         self.assertFalse(performed)
         self.assertIsNone(reason)
 
-        self.assertTrue(os.path.isdir(tmp))
-        self.assertTrue(os.path.exists(os.path.join(tmp, 'CLOBBER')))
+        self.assertFalse(os.path.isdir(tmp))
+        self.assertFalse(os.path.exists(os.path.join(tmp, 'CLOBBER')))
 
     def test_objdir_no_clobber_file(self):
         """If CLOBBER does not exist in topobjdir, treat as empty."""
@@ -71,7 +83,7 @@ class TestClobberer(unittest.TestCase):
         self.assertFalse(performed)
         self.assertIsNone(reason)
 
-        self.assertTrue(os.path.exists(os.path.join(c.topobjdir, 'CLOBBER')))
+        self.assertFalse(os.path.exists(os.path.join(c.topobjdir, 'CLOBBER')))
 
     def test_objdir_clobber_newer(self):
         """If CLOBBER in topobjdir is newer, do nothing."""
@@ -108,9 +120,7 @@ class TestClobberer(unittest.TestCase):
         self.assertTrue(performed)
 
         self.assertFalse(os.path.exists(dummy_path))
-        self.assertTrue(os.path.exists(c.obj_clobber))
-        self.assertGreaterEqual(os.path.getmtime(c.obj_clobber),
-            os.path.getmtime(c.src_clobber))
+        self.assertFalse(os.path.exists(c.obj_clobber))
 
     def test_objdir_is_srcdir(self):
         """If topobjdir is the topsrcdir, refuse to clobber."""
@@ -168,7 +178,6 @@ class TestClobberer(unittest.TestCase):
         self.assertFalse(performed)
         self.assertIn('Cannot clobber while the shell is inside', reason)
 
-
     def test_mozconfig_opt_in(self):
         """Auto clobber iff AUTOCLOBBER is in the environment."""
 
@@ -193,19 +202,19 @@ class TestClobberer(unittest.TestCase):
         if env.get('AUTOCLOBBER', False):
             del env['AUTOCLOBBER']
 
-        s = StringIO()
-        status = clobber([topsrcdir, topobjdir], env, os.getcwd(), s)
-        self.assertEqual(status, 1)
-        self.assertIn('Automatic clobbering is not enabled', s.getvalue())
+        mbo = MozbuildObject(topsrcdir, None, None, topobjdir)
+        build = mbo._spawn(BuildDriver)
+
+        status = build._check_clobber(build.mozconfig, env)
+
+        self.assertEqual(status, True)
         self.assertTrue(os.path.exists(dummy_file))
 
         # Check auto clobber opt-in works
         env['AUTOCLOBBER'] = '1'
 
-        s = StringIO()
-        status = clobber([topsrcdir, topobjdir], env, os.getcwd(), s)
-        self.assertEqual(status, 0)
-        self.assertIn('Successfully completed auto clobber', s.getvalue())
+        status = build._check_clobber(build.mozconfig, env)
+        self.assertFalse(status)
         self.assertFalse(os.path.exists(dummy_file))
 
 

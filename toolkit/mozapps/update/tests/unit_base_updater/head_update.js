@@ -2,6 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const IS_SERVICE_TEST = false;
-
-load("../data/xpcshellUtilsAUS.js");
+/* import-globals-from ../data/xpcshellUtilsAUS.js */
+load("xpcshellUtilsAUS.js");
+gIsServiceTest = false;

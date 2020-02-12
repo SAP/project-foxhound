@@ -15,73 +15,77 @@
 #include <stdint.h>
 
 class nsContentList;
-class nsHTMLDocument;
-class nsIContent;
 class nsINode;
 
 namespace mozilla {
 namespace dom {
 
-class OwningNodeOrHTMLCollection;
-template<typename> struct Nullable;
+class Document;
+class Element;
+class OwningHTMLCollectionOrElement;
+template <typename>
+struct Nullable;
+template <typename>
+class Optional;
 
-class HTMLAllCollection final : public nsISupports
-                              , public nsWrapperCache
-{
+class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   ~HTMLAllCollection();
 
-public:
-  explicit HTMLAllCollection(nsHTMLDocument* aDocument);
+ public:
+  explicit HTMLAllCollection(mozilla::dom::Document* aDocument);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLAllCollection)
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
   nsINode* GetParentObject() const;
 
   uint32_t Length();
-  nsIContent* Item(uint32_t aIndex);
-  void Item(const nsAString& aName, Nullable<OwningNodeOrHTMLCollection>& aResult)
-  {
-    NamedItem(aName, aResult);
-  }
-  nsIContent* IndexedGetter(uint32_t aIndex, bool& aFound)
-  {
-    nsIContent* result = Item(aIndex);
+  Element* IndexedGetter(uint32_t aIndex, bool& aFound) {
+    Element* result = Item(aIndex);
     aFound = !!result;
     return result;
   }
 
   void NamedItem(const nsAString& aName,
-                 Nullable<OwningNodeOrHTMLCollection>& aResult)
-  {
+                 Nullable<OwningHTMLCollectionOrElement>& aResult) {
     bool found = false;
     NamedGetter(aName, found, aResult);
   }
-  void NamedGetter(const nsAString& aName,
-                   bool& aFound,
-                   Nullable<OwningNodeOrHTMLCollection>& aResult);
+  void NamedGetter(const nsAString& aName, bool& aFound,
+                   Nullable<OwningHTMLCollectionOrElement>& aResult);
   void GetSupportedNames(nsTArray<nsString>& aNames);
-  void LegacyCall(JS::Handle<JS::Value>, const nsAString& aName,
-                  Nullable<OwningNodeOrHTMLCollection>& aResult)
-  {
-    NamedItem(aName, aResult);
+
+  void Item(const Optional<nsAString>& aNameOrIndex,
+            Nullable<OwningHTMLCollectionOrElement>& aResult);
+
+  void LegacyCall(JS::Handle<JS::Value>,
+                  const Optional<nsAString>& aNameOrIndex,
+                  Nullable<OwningHTMLCollectionOrElement>& aResult) {
+    Item(aNameOrIndex, aResult);
   }
 
-private:
+ private:
   nsContentList* Collection();
 
   /**
-   * Returns the HTMLCollection for document.all[aID], or null if there isn't one.
+   * Returns the HTMLCollection for document.all[aID], or null if there isn't
+   * one.
    */
   nsContentList* GetDocumentAllList(const nsAString& aID);
 
-  RefPtr<nsHTMLDocument> mDocument;
+  /**
+   * Helper for indexed getter and spec Item() method.
+   */
+  Element* Item(uint32_t aIndex);
+
+  RefPtr<mozilla::dom::Document> mDocument;
   RefPtr<nsContentList> mCollection;
   nsRefPtrHashtable<nsStringHashKey, nsContentList> mNamedMap;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLAllCollection_h
+#endif  // mozilla_dom_HTMLAllCollection_h

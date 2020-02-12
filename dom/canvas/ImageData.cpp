@@ -29,20 +29,17 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ImageData)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ImageData)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ImageData)
   tmp->DropData();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-//static
-already_AddRefed<ImageData>
-ImageData::Constructor(const GlobalObject& aGlobal,
-                       const uint32_t aWidth,
-                       const uint32_t aHeight,
-                       ErrorResult& aRv)
-{
+// static
+already_AddRefed<ImageData> ImageData::Constructor(const GlobalObject& aGlobal,
+                                                   const uint32_t aWidth,
+                                                   const uint32_t aHeight,
+                                                   ErrorResult& aRv) {
   if (aWidth == 0 || aHeight == 0) {
     aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
@@ -53,8 +50,7 @@ ImageData::Constructor(const GlobalObject& aGlobal,
     return nullptr;
   }
   js::AssertSameCompartment(aGlobal.Context(), aGlobal.Get());
-  JSObject* data = Uint8ClampedArray::Create(aGlobal.Context(),
-                                             length.value());
+  JSObject* data = Uint8ClampedArray::Create(aGlobal.Context(), length.value());
   if (!data) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
@@ -63,14 +59,11 @@ ImageData::Constructor(const GlobalObject& aGlobal,
   return imageData.forget();
 }
 
-//static
-already_AddRefed<ImageData>
-ImageData::Constructor(const GlobalObject& aGlobal,
-                       const Uint8ClampedArray& aData,
-                       const uint32_t aWidth,
-                       const Optional<uint32_t>& aHeight,
-                       ErrorResult& aRv)
-{
+// static
+already_AddRefed<ImageData> ImageData::Constructor(
+    const GlobalObject& aGlobal, const Uint8ClampedArray& aData,
+    const uint32_t aWidth, const Optional<uint32_t>& aHeight,
+    ErrorResult& aRv) {
   aData.ComputeLengthAndData();
 
   uint32_t length = aData.Length();
@@ -91,33 +84,56 @@ ImageData::Constructor(const GlobalObject& aGlobal,
   }
   if (JS_GetTypedArraySharedness(aData.Obj())) {
     // Throw if the object is mapping shared memory (must opt in).
-    aRv.ThrowTypeError<MSG_TYPEDARRAY_IS_SHARED>(NS_LITERAL_STRING("Argument of ImageData constructor"));
+    aRv.ThrowTypeError<MSG_TYPEDARRAY_IS_SHARED>(
+        NS_LITERAL_STRING("Argument of ImageData constructor"));
     return nullptr;
   }
   RefPtr<ImageData> imageData = new ImageData(aWidth, height, *aData.Obj());
   return imageData.forget();
 }
 
-void
-ImageData::HoldData()
-{
-  mozilla::HoldJSObjects(this);
-}
+void ImageData::HoldData() { mozilla::HoldJSObjects(this); }
 
-void
-ImageData::DropData()
-{
+void ImageData::DropData() {
   if (mData) {
     mData = nullptr;
     mozilla::DropJSObjects(this);
   }
 }
 
-bool
-ImageData::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector)
-{
-  return ImageDataBinding::Wrap(aCx, this, aGivenProto, aReflector);
+bool ImageData::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
+                           JS::MutableHandle<JSObject*> aReflector) {
+  return ImageData_Binding::Wrap(aCx, this, aGivenProto, aReflector);
 }
 
-} // namespace dom
-} // namespace mozilla
+// static
+already_AddRefed<ImageData> ImageData::ReadStructuredClone(
+    JSContext* aCx, nsIGlobalObject* aGlobal,
+    JSStructuredCloneReader* aReader) {
+  // Read the information out of the stream.
+  uint32_t width, height;
+  JS::Rooted<JS::Value> dataArray(aCx);
+  if (!JS_ReadUint32Pair(aReader, &width, &height) ||
+      !JS_ReadTypedArray(aReader, &dataArray)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(dataArray.isObject());
+
+  RefPtr<ImageData> imageData =
+      new ImageData(width, height, dataArray.toObject());
+  return imageData.forget();
+}
+
+bool ImageData::WriteStructuredClone(JSContext* aCx,
+                                     JSStructuredCloneWriter* aWriter) const {
+  JS::Rooted<JS::Value> arrayValue(aCx, JS::ObjectValue(*GetDataObject()));
+  if (!JS_WrapValue(aCx, &arrayValue)) {
+    return false;
+  }
+
+  return JS_WriteUint32Pair(aWriter, Width(), Height()) &&
+         JS_WriteTypedArray(aWriter, arrayValue);
+}
+
+}  // namespace dom
+}  // namespace mozilla

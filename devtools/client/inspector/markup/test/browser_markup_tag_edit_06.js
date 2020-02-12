@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_attributes_test_runner.js */
@@ -15,71 +14,82 @@
 loadHelperScript("helper_attributes_test_runner.js");
 
 var TEST_URL = "data:text/html,<div>markup-view attributes addition test</div>";
-var TEST_DATA = [{
-  desc: "Mixed single and double quotes",
-  text: "name=\"hi\" maxlength='not a number'",
-  expectedAttributes: {
-    maxlength: "not a number",
-    name: "hi"
-  }
-}, {
-  desc: "Invalid attribute name",
-  text: "x='y' <why-would-you-do-this>=\"???\"",
-  expectedAttributes: {
-    x: "y"
-  }
-}, {
-  desc: "Double quote wrapped in single quotes",
-  text: "x='h\"i'",
-  expectedAttributes: {
-    x: "h\"i"
-  }
-}, {
-  desc: "Single quote wrapped in double quotes",
-  text: "x=\"h'i\"",
-  expectedAttributes: {
-    x: "h'i"
-  }
-}, {
-  desc: "No quote wrapping",
-  text: "a=b x=y data-test=Some spaced data",
-  expectedAttributes: {
-    a: "b",
-    x: "y",
-    "data-test": "Some",
-    spaced: "",
-    data: ""
-  }
-}, {
-  desc: "Duplicate Attributes",
-  text: "a=b a='c' a=\"d\"",
-  expectedAttributes: {
-    a: "b"
-  }
-}, {
-  desc: "Inline styles",
-  text: "style=\"font-family: 'Lucida Grande', sans-serif; font-size: 75%;\"",
-  expectedAttributes: {
-    style: "font-family: 'Lucida Grande', sans-serif; font-size: 75%;"
-  }
-}, {
-  desc: "Object attribute names",
-  text: "toString=\"true\" hasOwnProperty=\"false\"",
-  expectedAttributes: {
-    tostring: "true",
-    hasownproperty: "false"
-  }
-}, {
-  desc: "Add event handlers",
-  text: "onclick=\"javascript: throw new Error('wont fire');\" " +
-        "onload=\"alert('here');\"",
-  expectedAttributes: {
-    onclick: "javascript: throw new Error('wont fire');",
-    onload: "alert('here');"
-  }
-}];
+var TEST_DATA = [
+  {
+    desc: "Mixed single and double quotes",
+    text: "name=\"hi\" maxlength='not a number'",
+    expectedAttributes: {
+      maxlength: "not a number",
+      name: "hi",
+    },
+  },
+  {
+    desc: "Invalid attribute name",
+    text: "x='y' <why-would-you-do-this>=\"???\"",
+    expectedAttributes: {
+      x: "y",
+    },
+  },
+  {
+    desc: "Double quote wrapped in single quotes",
+    text: "x='h\"i'",
+    expectedAttributes: {
+      x: 'h"i',
+    },
+  },
+  {
+    desc: "Single quote wrapped in double quotes",
+    text: 'x="h\'i"',
+    expectedAttributes: {
+      x: "h'i",
+    },
+  },
+  {
+    desc: "No quote wrapping",
+    text: "a=b x=y data-test=Some spaced data",
+    expectedAttributes: {
+      a: "b",
+      x: "y",
+      "data-test": "Some",
+      spaced: "",
+      data: "",
+    },
+  },
+  {
+    desc: "Duplicate Attributes",
+    text: "a=b a='c' a=\"d\"",
+    expectedAttributes: {
+      a: "b",
+    },
+  },
+  {
+    desc: "Inline styles",
+    text: "style=\"font-family: 'Lucida Grande', sans-serif; font-size: 75%;\"",
+    expectedAttributes: {
+      style: "font-family: 'Lucida Grande', sans-serif; font-size: 75%;",
+    },
+  },
+  {
+    desc: "Object attribute names",
+    text: 'toString="true" hasOwnProperty="false"',
+    expectedAttributes: {
+      tostring: "true",
+      hasownproperty: "false",
+    },
+  },
+  {
+    desc: "Add event handlers",
+    text:
+      "onclick=\"javascript: throw new Error('wont fire');\" " +
+      "onload=\"alert('here');\"",
+    expectedAttributes: {
+      onclick: "javascript: throw new Error('wont fire');",
+      onload: "alert('here');",
+    },
+  },
+];
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_URL);
-  yield runAddAttributesTests(TEST_DATA, "div", inspector, testActor);
+add_task(async function() {
+  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  await runAddAttributesTests(TEST_DATA, "div", inspector, testActor);
 });

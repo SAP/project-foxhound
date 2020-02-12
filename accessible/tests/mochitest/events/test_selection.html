@@ -6,10 +6,8 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -21,17 +19,16 @@
           src="../states.js"></script>
 
   <script type="application/javascript">
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
     // Invokers
 
-    ////////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////////
     // Do tests
 
-    //gA11yEventDumpToConsole = true; // debuggin
+    // gA11yEventDumpToConsole = true; // debuggin
 
     var gQueue = null;
-    function doTests()
-    {
+    function doTests() {
       gQueue = new eventQueue();
 
       // open combobox

@@ -1,3 +1,7 @@
+function testnamePrefix( qualifier, keysystem ) {
+    return ( qualifier || '' ) + ( keysystem === 'org.w3.clearkey' ? keysystem : 'drm' );
+}
+
 function getInitData(initDataType) {
 
     // FIXME: This is messed up, because here we are hard coding the key ids for the different content
@@ -92,6 +96,12 @@ function waitForEventAndRunStep(eventName, element, func, stepTest)
     element.addEventListener(eventName, stepTest.step_func(eventCallback), true);
 }
 
+function waitForEvent(eventName, element) {
+    return new Promise(function(resolve) {
+        element.addEventListener(eventName, resolve, true);
+    })
+}
+
 var consoleDiv = null;
 
 function consoleWrite(text)
@@ -108,16 +118,7 @@ function consoleWrite(text)
 
 function forceTestFailureFromPromise(test, error, message)
 {
-    // Promises convert exceptions into rejected Promises. Since there is
-    // currently no way to report a failed test in the test harness, errors
-    // are reported using force_timeout().
-    if (message)
-        consoleWrite(message + ': ' + error.message);
-    else if (error)
-        consoleWrite(error);
-
-    test.force_timeout();
-    test.done();
+    test.step_func(assert_unreached)(message ? message + ': ' + error.message : error);
 }
 
 // Returns an array of audioCapabilities that includes entries for a set of
@@ -172,28 +173,38 @@ function arrayBufferAsString(buffer)
     return '0x' + array.map( function( x ) { return x < 16 ? '0'+x.toString(16) : x.toString(16); } ).join('');
 }
 
-function dumpKeyStatuses(keyStatuses)
+function dumpKeyStatuses(keyStatuses,short)
 {
-    consoleWrite("for (var entry of keyStatuses)");
-    for (var entry of keyStatuses) {
-        consoleWrite(arrayBufferAsString(entry[0]) + ": " + entry[1]);
+    var userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.indexOf('edge') === -1) {
+        if (!short) { consoleWrite("for (var entry of keyStatuses)"); }
+        for (var entry of keyStatuses) {
+            consoleWrite(arrayBufferAsString(entry[0]) + ": " + entry[1]);
+        }
+        if (!short) {
+            consoleWrite("for (var keyId of keyStatuses.keys())");
+            for (var keyId of keyStatuses.keys()) {
+                consoleWrite(arrayBufferAsString(keyId));
+            }
+            consoleWrite("for (var status of keyStatuses.values())");
+            for (var status of keyStatuses.values()) {
+                consoleWrite(status);
+            }
+            consoleWrite("for (var entry of keyStatuses.entries())");
+            for (var entry of keyStatuses.entries()) {
+                consoleWrite(arrayBufferAsString(entry[0]) + ": " + entry[1]);
+            }
+            consoleWrite("keyStatuses.forEach()");
+            keyStatuses.forEach(function(status, keyId) {
+                consoleWrite(arrayBufferAsString(keyId) + ": " + status);
+            });
+        }
+    } else {
+        if (!short) { consoleWrite("keyStatuses.forEach()"); }
+        keyStatuses.forEach(function(keyId, status) {
+            consoleWrite(arrayBufferAsString(keyId) + ": " + status);
+        });
     }
-    consoleWrite("for (var keyId of keyStatuses.keys())");
-    for (var keyId of keyStatuses.keys()) {
-        consoleWrite(arrayBufferAsString(keyId));
-    }
-    consoleWrite("for (var status of keyStatuses.values())");
-    for (var status of keyStatuses.values()) {
-        consoleWrite(status);
-    }
-    consoleWrite("for (var entry of keyStatuses.entries())");
-    for (var entry of keyStatuses.entries()) {
-        consoleWrite(arrayBufferAsString(entry[0]) + ": " + entry[1]);
-    }
-    consoleWrite("keyStatuses.forEach()");
-    keyStatuses.forEach(function(status, keyId) {
-        consoleWrite(arrayBufferAsString(keyId) + ": " + status);
-    });
 }
 
 // Verify that |keyStatuses| contains just the keys in |keys.expected|
@@ -206,19 +217,77 @@ function verifyKeyStatuses(keyStatuses, keys)
     var unexpected = keys.unexpected || [];
 
     // |keyStatuses| should have same size as number of |keys.expected|.
-    assert_equals(keyStatuses.size, expected.length);
+    assert_equals(keyStatuses.size, expected.length, "keystatuses should have expected size");
 
     // All |keys.expected| should be found.
     expected.map(function(key) {
-        assert_true(keyStatuses.has(key));
-        assert_equals(keyStatuses.get(key), 'usable');
+        assert_true(keyStatuses.has(key), "keystatuses should have the expected keys");
+        assert_equals(keyStatuses.get(key), 'usable', "keystatus value should be 'usable'");
     });
 
     // All |keys.unexpected| should not be found.
     unexpected.map(function(key) {
-        assert_false(keyStatuses.has(key));
-        assert_equals(keyStatuses.get(key), undefined);
+        assert_false(keyStatuses.has(key), "keystatuses should not have unexpected keys");
+        assert_equals(keyStatuses.get(key), undefined, "keystatus for unexpected key should be undefined");
     });
+}
+
+// This function checks that calling |testCase.func| returns a
+// rejected Promise with the error.name equal to
+// |testCase.exception|.
+function test_exception(testCase /*...*/) {
+    var func = testCase.func;
+    var exception = testCase.exception;
+    var args = Array.prototype.slice.call(arguments, 1);
+
+    // This should really be rewritten in terms of the promise_rejects_*
+    // testharness utility functions, but that needs the async test involved
+    // passed in, and we don't have that here.
+    return func.apply(null, args).then(
+        function (result) {
+            assert_unreached(format_value(func));
+        },
+        function (error) {
+            assert_not_equals(error.message, "", format_value(func));
+            // `exception` is a string name for the error.  We can differentiate
+            // JS Errors from DOMExceptions by checking whether
+            // window[exception] exists.  If it does, expectedError is the name
+            // of a JS Error subclass and window[exception] is the constructor
+            // for that subclass.  Otherwise it's a name for a DOMException.
+            if (window[exception]) {
+                assert_throws_js(window[exception],
+                                 () => { throw error; },
+                                 format_value(func));
+            } else {
+                assert_throws_dom(exception,
+                                  () => { throw error; },
+                                  format_value(func));
+            }
+        }
+    );
+}
+
+// Check that the events sequence (array of strings) matches the pattern (array of either strings, or
+// arrays of strings, with the latter representing a possibly repeating sub-sequence)
+function checkEventSequence(events,pattern) {
+    function th(i) { return i + (i < 4 ? ["th", "st", "nd", "rd"][i] : "th"); }
+    var i = 0, j=0, k=0;
+    while(i < events.length && j < pattern.length) {
+        if (!Array.isArray(pattern[j])) {
+            assert_equals(events[i], pattern[j], "Expected " + th(i+1) + " event to be '" + pattern[j] + "'");
+            ++i;
+            ++j;
+        } else {
+            assert_equals(events[i], pattern[j][k], "Expected " + th(i+1) + " event to be '" + pattern[j][k] + "'");
+            ++i;
+            k = (k+1)%pattern[j].length;
+            if (k === 0 && events[i] !== pattern[j][0]) {
+                ++j;
+            }
+        }
+    }
+    assert_equals(i,events.length,"Received more events than expected");
+    assert_equals(j,pattern.length,"Expected more events than received");
 }
 
 

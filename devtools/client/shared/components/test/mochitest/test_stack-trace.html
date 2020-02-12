@@ -1,3 +1,6 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <!DOCTYPE HTML>
 <html>
 <!--
@@ -7,47 +10,51 @@ Test the rendering of a stack trace
   <meta charset="utf-8">
   <title>StackTrace component test</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
 <script src="head.js"></script>
 <script>
+"use strict";
+
 window.onload = function() {
-  let ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-  let React = browserRequire("devtools/client/shared/vendor/react");
-  let StackTrace = React.createFactory(browserRequire("devtools/client/shared/components/stack-trace"));
+  const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
+  const React = browserRequire("devtools/client/shared/vendor/react");
+  const StackTrace = React.createFactory(
+    browserRequire("devtools/client/shared/components/StackTrace")
+  );
   ok(StackTrace, "Got the StackTrace factory");
 
-  add_task(function* () {
-    let stacktrace = [
+  add_task(async function() {
+    const stacktrace = [
       {
         filename: "http://myfile.com/mahscripts.js",
         lineNumber: 55,
-        columnNumber: 10
+        columnNumber: 10,
       },
       {
         asyncCause: "because",
         functionName: "loadFunc",
-        filename: "http://myfile.com/loader.js -> http://myfile.com/loadee.js",
-        lineNumber: 10
-      }
+        filename: "http://myfile.com/loadee.js",
+        lineNumber: 10,
+      },
     ];
 
-    let props = {
+    const props = {
       stacktrace,
-      onViewSourceInDebugger: () => {}
+      onViewSourceInDebugger: () => {},
+      onViewSourceInScratchpad: () => {},
     };
 
-    let trace = ReactDOM.render(StackTrace(props), window.document.body);
-    yield forceRender(trace);
+    const trace = ReactDOM.render(StackTrace(props), window.document.body);
+    await forceRender(trace);
 
-    let traceEl = trace.getDOMNode();
+    const traceEl = ReactDOM.findDOMNode(trace);
     ok(traceEl, "Rendered StackTrace has an element");
 
     // Get the child nodes and filter out the text-only whitespace ones
-    let frameEls = Array.from(traceEl.childNodes)
-      .filter(n => n.className.includes("frame"));
+    const frameEls = Array.from(traceEl.childNodes)
+      .filter(n => n.className && n.className.includes("frame"));
     ok(frameEls, "Rendered StackTrace has frames");
     is(frameEls.length, 3, "StackTrace has 3 frames");
 
@@ -64,7 +71,8 @@ window.onload = function() {
     });
 
     // Check the async cause node
-    is(frameEls[1].className, "frame-link-async-cause", "Async cause has the right class");
+    is(frameEls[1].className, "frame-link-async-cause",
+       "Async cause has the right class");
     is(frameEls[1].textContent, "(Async: because)", "Async cause has the right label");
 
     // Check the third frame, the source should be parsed into a valid source URL
@@ -80,14 +88,14 @@ window.onload = function() {
     });
 
     // Check the tabs and newlines in the stack trace textContent
-    let traceText = traceEl.textContent;
-    let traceLines = traceText.split("\n");
+    const traceText = traceEl.textContent;
+    const traceLines = traceText.split("\n");
     ok(traceLines.length > 0, "There are newlines in the stack trace text");
     is(traceLines.pop(), "", "There is a newline at the end of the stack trace text");
     is(traceLines.length, 3, "The stack trace text has 3 lines");
     ok(traceLines.every(l => l[0] == "\t"), "Every stack trace line starts with tab");
   });
-}
+};
 </script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         onpopupshown="popupshown(event.target)" onpopuphidden="nextTest()">
 
-<script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
 
 <label value="Popup Test"/>
 
@@ -76,7 +76,7 @@ function nextTest()
 {
   if (!tests.length) {
     window.close();
-    window.opener.SimpleTest.finish();
+    window.arguments[0].SimpleTest.finish();
     return;
   }
 
@@ -92,15 +92,15 @@ function popupshown(popup)
 
 function is(left, right, message)
 {
-  window.opener.SimpleTest.is(left, right, message);
+  window.arguments[0].SimpleTest.is(left, right, message);
 }
 
 function ok(value, message)
 {
-  window.opener.SimpleTest.ok(value, message);
+  window.arguments[0].SimpleTest.ok(value, message);
 }
 
-window.opener.wrappedJSObject.SimpleTest.waitForFocus(runTest, window);
+window.arguments[0].SimpleTest.waitForFocus(runTest, window);
 
 ]]>
 </script>

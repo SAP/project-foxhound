@@ -4,6 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+[Exposed=Window]
 interface MouseScrollEvent : MouseEvent
 {
   const long HORIZONTAL_AXIS = 1;
@@ -12,19 +13,19 @@ interface MouseScrollEvent : MouseEvent
   readonly attribute long axis;
 
   void initMouseScrollEvent(DOMString type,
-                            boolean canBubble,
-                            boolean cancelable,
-                            Window? view,
-                            long detail,
-                            long screenX,
-                            long screenY,
-                            long clientX,
-                            long clientY,
-                            boolean ctrlKey,
-                            boolean altKey,
-                            boolean shiftKey,
-                            boolean metaKey,
-                            unsigned short button,
-                            EventTarget? relatedTarget,
-                            long axis);
+                            optional boolean canBubble = false,
+                            optional boolean cancelable = false,
+                            optional Window? view = null,
+                            optional long detail = 0,
+                            optional long screenX = 0,
+                            optional long screenY = 0,
+                            optional long clientX = 0,
+                            optional long clientY = 0,
+                            optional boolean ctrlKey = false,
+                            optional boolean altKey = false,
+                            optional boolean shiftKey = false,
+                            optional boolean metaKey = false,
+                            optional short button = 0,
+                            optional EventTarget? relatedTarget = null,
+                            optional long axis = 0);
 };

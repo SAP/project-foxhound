@@ -20,15 +20,6 @@ interface nsITLSServerSocket : nsIServerSocket
   attribute nsIX509Cert serverCert;
 
   /**
-   * setSessionCache
-   *
-   * Whether the server should use a session cache.  Defaults to true.  This
-   * should be set before calling |asyncListen| if you wish to change the
-   * default.
-   */
-  void setSessionCache(in boolean aSessionCache);
-
-  /**
    * setSessionTickets
    *
    * Whether the server should support session tickets.  Defaults to true.  This
@@ -60,15 +51,6 @@ interface nsITLSServerSocket : nsIServerSocket
    * change the default.
    */
   void setRequestClientCertificate(in unsigned long aRequestClientCert);
-
-  /**
-   * setCipherSuites
-   *
-   * The server's cipher suites that is used by the TLS handshake.
-   * This is required to be set before calling |asyncListen|.
-   */
-  void setCipherSuites([array, size_is(aLength)] in unsigned short aCipherSuites,
-                       in unsigned long aLength);
 
   /**
    * setVersionRange

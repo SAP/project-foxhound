@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=417384
 -->
 <head>
   <title>Test for Bug 417384</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -31,9 +31,7 @@ function testSerializer() {
   span.appendChild(doc.createElement("head"));
   span.appendChild(doc.createTextNode("\nafter inner head"));
 
-  var encoder =
-    SpecialPowers.Cc["@mozilla.org/layout/documentEncoder;1?type=text/html"]
-      .createInstance(SpecialPowers.Ci.nsIDocumentEncoder);
+  var encoder = SpecialPowers.Cu.createDocumentEncoder("text/html");
   encoder.init(doc, "text/plain", 0);
   encoder.setCharset("UTF-8");
   var out = encoder.encodeToString();

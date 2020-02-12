@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378670
 -->
 <head>
   <title>Test for Bug 378670</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ Clicking on the select should not crash Mozilla
 
 <pre id="test">
 <script>
-document.body.addEventListener('popupshowing', function(e) {e.target.parentNode.removeChild(e.target) }, true);
+document.body.addEventListener('popupshowing', function(e) {e.target.remove() }, true);
 </script>
 <script type="application/javascript">
 
@@ -42,7 +42,7 @@ function clickit() {
   setTimeout(finish, 200);
 }
 
-window.addEventListener('load', clickit, false);
+window.addEventListener('load', clickit);
 
 function finish()
 {

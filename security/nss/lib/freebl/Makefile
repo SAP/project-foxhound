@@ -110,11 +110,34 @@ endif
 # NSS_X86_OR_X64 means the target is either x86 or x64
 ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
         DEFINES += -DNSS_X86_OR_X64
+        EXTRA_SRCS += gcm-x86.c aes-x86.c
+$(OBJDIR)/gcm-x86.o: CFLAGS += -mpclmul -maes
+$(OBJDIR)/aes-x86.o: CFLAGS += -mpclmul -maes
 ifneq (,$(USE_64)$(USE_X32))
         DEFINES += -DNSS_X64
 else
         DEFINES += -DNSS_X86
 endif
+endif
+ifeq ($(CPU_ARCH),aarch64)
+    DEFINES += -DUSE_HW_AES
+    EXTRA_SRCS += aes-armv8.c gcm-aarch64.c
+endif
+ifeq ($(CPU_ARCH),arm)
+    ifdef CC_IS_CLANG
+        DEFINES += -DUSE_HW_AES
+        EXTRA_SRCS += aes-armv8.c
+    else ifeq (1,$(CC_IS_GCC))
+        # Old compiler doesn't support ARM AES.
+        ifneq (,$(filter 4.9,$(word 1,$(GCC_VERSION)).$(word 2,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+        ifeq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+    endif
 endif
 
 ifeq ($(OS_TARGET),OSF1)
@@ -232,8 +255,6 @@ ifeq ($(CPU_ARCH),x86)
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE 
     DEFINES += -DMP_ASSEMBLY_DIV_2DX1D -DMP_USE_UINT_DIGIT
     DEFINES += -DMP_IS_LITTLE_ENDIAN
-    # The floating point ECC code doesn't work on Linux x86 (bug 311432).
-    #ECL_USE_FP = 1
 endif
 ifeq ($(CPU_ARCH),arm)
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_ASSEMBLY_SQUARE 
@@ -430,7 +451,6 @@ ifeq ($(CPU_ARCH),sparc)
 	ASFILES  = mpv_sparcv8.s montmulfv8.s
 	DEFINES  += -DMP_NO_MP_WORD -DMP_USE_UINT_DIGIT -DMP_ASSEMBLY_MULTIPLY
 	DEFINES  += -DMP_USING_MONT_MULF -DMP_MONT_USE_MP_MUL
-	ECL_USE_FP = 1
     endif
     ifdef USE_ABI64_INT
 	# this builds for Sparc v9a pure 64-bit architecture
@@ -443,7 +463,6 @@ ifeq ($(CPU_ARCH),sparc)
 	ASFILES   = mpv_sparcv9.s montmulfv9.s
 	DEFINES  += -DMP_NO_MP_WORD -DMP_USE_UINT_DIGIT -DMP_ASSEMBLY_MULTIPLY
 	DEFINES  += -DMP_USING_MONT_MULF -DMP_MONT_USE_MP_MUL
-	ECL_USE_FP = 1
     endif
 
 else
@@ -491,20 +510,12 @@ else
  	endif
     endif
 endif # Solaris for non-sparc family CPUs
-endif # target == SunOS
+endif # target == SunO
 
-ifndef NSS_DISABLE_ECC
-    ifdef ECL_USE_FP
-	#enable floating point ECC code	
-	DEFINES  += -DECL_USE_FP
-	ECL_SRCS += ecp_fp160.c ecp_fp192.c ecp_fp224.c ecp_fp.c
-	ECL_HDRS += ecp_fp.h
-    endif
-endif
-
-# poly1305-donna-x64-sse2-incremental-source.c requires __int128 support
-# in GCC 4.6.0.
 ifdef USE_64
+# no __int128 at least up to lcc 1.23 (pretending to be gcc5)
+# NB: CC_NAME is not defined here
+ifneq ($(shell $(CC) -? 2>&1 >/dev/null </dev/null | sed -e 's/:.*//;1q'),lcc)
     ifdef CC_IS_CLANG
             HAVE_INT128_SUPPORT = 1
             DEFINES += -DHAVE_INT128_SUPPORT
@@ -518,38 +529,44 @@ ifdef USE_64
             DEFINES += -DHAVE_INT128_SUPPORT
         endif
     endif
+endif # lcc
+endif # USE_64
+
+ifndef HAVE_INT128_SUPPORT
+    DEFINES += -DKRML_NOUINT128
 endif
 
 ifndef NSS_DISABLE_CHACHAPOLY
     ifeq ($(CPU_ARCH),x86_64)
         ifdef HAVE_INT128_SUPPORT
-            EXTRA_SRCS += poly1305-donna-x64-sse2-incremental-source.c
+            EXTRA_SRCS += Hacl_Poly1305_64.c
         else
-            EXTRA_SRCS += poly1305.c
-        endif
-
-        ifneq (1,$(CC_IS_GCC))
-            EXTRA_SRCS += chacha20.c
-        else
-            EXTRA_SRCS += chacha20_vec.c
+            EXTRA_SRCS += Hacl_Poly1305_32.c
         endif
     else
-        EXTRA_SRCS += poly1305.c
-        EXTRA_SRCS += chacha20.c
+        ifeq ($(CPU_ARCH),aarch64)
+            EXTRA_SRCS += Hacl_Poly1305_64.c
+        else
+            EXTRA_SRCS += Hacl_Poly1305_32.c
+        endif
     endif # x86_64
+
+    VERIFIED_SRCS += Hacl_Chacha20.c
+    VERIFIED_SRCS += Hacl_Chacha20_Vec128.c
 endif # NSS_DISABLE_CHACHAPOLY
 
-ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
+ifeq (,$(filter-out i386 x386 x86 x86_64 aarch64,$(CPU_ARCH)))
     # All intel architectures get the 64 bit version
     # With custom uint128 if necessary (faster than generic 32 bit version).
     ECL_SRCS += curve25519_64.c
+    VERIFIED_SRCS += Hacl_Curve25519.c
 else
     # All non intel architectures get the generic 32 bit implementation (slow!)
     ECL_SRCS += curve25519_32.c
 endif
 
 ifndef HAVE_INT128_SUPPORT
-    ECL_SRCS += uint128.c
+    VERIFIED_SRCS += FStar.c
 endif
 
 #######################################################################
@@ -575,12 +592,12 @@ rijndael_tables:
 	         $(DEFINES) $(INCLUDES) $(OBJDIR)/libfreebl.a
 	$(OBJDIR)/make_rijndael_tab
 
-vpath %.h mpi ecl
-vpath %.c mpi ecl
+vpath %.h mpi ecl verified
+vpath %.c mpi ecl verified
 vpath %.S mpi ecl
 vpath %.s mpi ecl
 vpath %.asm mpi ecl
-INCLUDES += -Impi -Iecl
+INCLUDES += -Impi -Iecl -Iverified
 
 
 DEFINES += -DMP_API_COMPATIBLE
@@ -599,9 +616,7 @@ ECL_OBJS += $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(ECL_USERS:.c=$(OBJ_SUFFIX)))
 
 $(ECL_OBJS): $(ECL_HDRS)
 
-
-
-$(OBJDIR)/sysrand$(OBJ_SUFFIX): sysrand.c unix_rand.c win_rand.c os2_rand.c
+$(OBJDIR)/sysrand$(OBJ_SUFFIX): sysrand.c unix_rand.c win_rand.c
 
 $(OBJDIR)/$(PROG_PREFIX)mpprime$(OBJ_SUFFIX): primes.c
 
@@ -761,4 +776,12 @@ ifdef INTEL_GCM_CLANG_CL
 # clang-cl needs -mssse3
 #
 $(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
+endif
+
+ifeq ($(CPU_ARCH),arm)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=crypto-neon-fp-armv8
+endif
+ifeq ($(CPU_ARCH),aarch64)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
+$(OBJDIR)/$(PROG_PREFIX)gcm-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 endif

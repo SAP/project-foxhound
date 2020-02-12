@@ -22,7 +22,7 @@ li ul, li ol, li dir, li menu {
   ol ul,   ol ol,   ol dir,   ol menu,   ol li,
  dir ul,  dir ol,  dir dir,  dir menu,  dir li,
 menu ul, menu ol, menu dir, menu menu, menu li {
-  list-style-position: inherit;
+  list-style-position: unset;
 }
 
 
@@ -49,14 +49,6 @@ table {
   font-weight: initial;
   font-style: initial;
   font-variant: initial;
-}
-
-/*
- * Make table borders gray for compatibility with what other browsers do
- * in all modes, rather than using the foreground color.
- */
-table, td, th, tr, thead, tbody, tfoot, colgroup, col {
-  border-color: gray;
 }
 
 
@@ -151,39 +143,13 @@ td > ol:-moz-only-whitespace:-moz-last-node, th > ol:-moz-only-whitespace:-moz-l
   margin-block-start: 0;
 }
 
-
-/* Quirk: DD not in DL has text-indent instead of margin (b=5119) */
-
-:not(dl) > dd {
-  display: inline;
-  margin: 0;
-}
-
-:not(dl) > dd:before {
-  display: inline;
-  white-space: pre;
-  font-size: 1px;
-  line-height: 0;
-  content: "\A  ";
-  margin-inline-end: 40px;
-}
-
-
-/* quirk to indent nested DL elements (b=8749) */
-
-dl > dl {
-  display: block;
-  margin-inline-start: 40px;
-}
-
-
 /* Quirk: Make floated images have a margin  (b=58899) */
-img[align=left]:dir(ltr), img[align=right]:dir(rtl) {
-  margin-inline-end: 3px;
+img[align=left] {
+  margin-right: 3px;
 }
 
-img[align=right]:dir(ltr), img[align=left]:dir(rtl) {
-  margin-inline-start: 3px;
+img[align=right] {
+  margin-left: 3px;
 }
 
 /*

@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 // Original authors: jib@mozilla.com, ekr@rtfm.com
 
 // Some of this code is cut-and-pasted from nICEr. Copyright is:
@@ -54,7 +53,7 @@ extern "C" {
 #include "transport_addr.h"
 }
 
-#include "mozilla/net/DNS.h" // TODO(jib@mozilla.com) down here because bug 848578
+#include "mozilla/net/DNS.h"  // TODO(jib@mozilla.com) down here because bug 848578
 #include "nsThreadUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIDNSService.h"
@@ -70,10 +69,11 @@ namespace mozilla {
 
 MOZ_MTLOG_MODULE("mtransport")
 
-NrIceResolver::NrIceResolver() :
-    vtbl_(new nr_resolver_vtbl())
+NrIceResolver::NrIceResolver()
+    : vtbl_(new nr_resolver_vtbl())
 #ifdef DEBUG
-    , allocated_resolvers_(0)
+      ,
+      allocated_resolvers_(0)
 #endif
 {
   vtbl_->destroy = &NrIceResolver::destroy;
@@ -98,12 +98,12 @@ nsresult NrIceResolver::Init() {
   return rv;
 }
 
-nr_resolver *NrIceResolver::AllocateResolver() {
-  nr_resolver *resolver;
+nr_resolver* NrIceResolver::AllocateResolver() {
+  nr_resolver* resolver;
 
-  int r = nr_resolver_create_int((void *)this, vtbl_, &resolver);
+  int r = nr_resolver_create_int((void*)this, vtbl_, &resolver);
   MOZ_ASSERT(!r);
-  if(r) {
+  if (r) {
     MOZ_MTLOG(ML_ERROR, "nr_resolver_create_int failed");
     return nullptr;
   }
@@ -124,47 +124,43 @@ void NrIceResolver::DestroyResolver() {
   Release();
 }
 
-int NrIceResolver::destroy(void **objp) {
-  if (!objp || !*objp)
-    return 0;
-  NrIceResolver *resolver = static_cast<NrIceResolver *>(*objp);
-  *objp = 0;
+int NrIceResolver::destroy(void** objp) {
+  if (!objp || !*objp) return 0;
+  NrIceResolver* resolver = static_cast<NrIceResolver*>(*objp);
+  *objp = nullptr;
   resolver->DestroyResolver();
   return 0;
 }
 
-int NrIceResolver::resolve(void *obj,
-                           nr_resolver_resource *resource,
-                           int (*cb)(void *cb_arg, nr_transport_addr *addr),
-                           void *cb_arg,
-                           void **handle) {
+int NrIceResolver::resolve(void* obj, nr_resolver_resource* resource,
+                           int (*cb)(void* cb_arg, nr_transport_addr* addr),
+                           void* cb_arg, void** handle) {
   MOZ_ASSERT(obj);
-  return static_cast<NrIceResolver *>(obj)->resolve(resource, cb, cb_arg, handle);
+  return static_cast<NrIceResolver*>(obj)->resolve(resource, cb, cb_arg,
+                                                   handle);
 }
 
-int NrIceResolver::resolve(nr_resolver_resource *resource,
-                           int (*cb)(void *cb_arg, nr_transport_addr *addr),
-                           void *cb_arg,
-                           void **handle) {
+int NrIceResolver::resolve(nr_resolver_resource* resource,
+                           int (*cb)(void* cb_arg, nr_transport_addr* addr),
+                           void* cb_arg, void** handle) {
   int _status;
   MOZ_ASSERT(allocated_resolvers_ > 0);
   ASSERT_ON_THREAD(sts_thread_);
   RefPtr<PendingResolution> pr;
   uint32_t resolve_flags = 0;
+  OriginAttributes attrs;
 
   if (resource->transport_protocol != IPPROTO_UDP &&
       resource->transport_protocol != IPPROTO_TCP) {
     MOZ_MTLOG(ML_ERROR, "Only UDP and TCP are supported.");
     ABORT(R_NOT_FOUND);
   }
-  pr = new PendingResolution(sts_thread_,
-                             resource->port? resource->port : 3478,
-                             resource->transport_protocol ?
-                             resource->transport_protocol :
-                             IPPROTO_UDP,
-                             cb, cb_arg);
+  pr = new PendingResolution(
+      sts_thread_, resource->port ? resource->port : 3478,
+      resource->transport_protocol ? resource->transport_protocol : IPPROTO_UDP,
+      cb, cb_arg);
 
-  switch(resource->address_family) {
+  switch (resource->address_family) {
     case AF_INET:
       resolve_flags |= nsIDNSService::RESOLVE_DISABLE_IPV6;
       break;
@@ -175,9 +171,9 @@ int NrIceResolver::resolve(nr_resolver_resource *resource,
       ABORT(R_BAD_ARGS);
   }
 
-  if (NS_FAILED(dns_->AsyncResolve(nsAutoCString(resource->domain_name),
-                                   resolve_flags, pr,
-                                   sts_thread_, getter_AddRefs(pr->request_)))) {
+  if (NS_FAILED(dns_->AsyncResolveNative(nsAutoCString(resource->domain_name),
+                                         resolve_flags, pr, sts_thread_, attrs,
+                                         getter_AddRefs(pr->request_)))) {
     MOZ_MTLOG(ML_ERROR, "AsyncResolve failed.");
     ABORT(R_NOT_FOUND);
   }
@@ -189,25 +185,25 @@ int NrIceResolver::resolve(nr_resolver_resource *resource,
   // OnLookupComplete to release it only once.
   pr.forget(handle);
 
-  _status=0;
+  _status = 0;
 abort:
   return _status;
 }
 
 nsresult NrIceResolver::PendingResolution::OnLookupComplete(
-    nsICancelable *request, nsIDNSRecord *record, nsresult status) {
+    nsICancelable* request, nsIDNSRecord* record, nsresult status) {
   ASSERT_ON_THREAD(thread_);
   // First check if we've been canceled. This is single-threaded on the STS
   // thread, but cancel() cannot guarantee this event isn't on the queue.
   if (request_) {
-    nr_transport_addr *cb_addr = nullptr;
+    nr_transport_addr* cb_addr = nullptr;
     nr_transport_addr ta;
     // TODO(jib@mozilla.com): Revisit when we do TURN.
     if (NS_SUCCEEDED(status)) {
       net::NetAddr na;
       if (NS_SUCCEEDED(record->GetNextAddr(port_, &na))) {
-        MOZ_ALWAYS_TRUE (nr_netaddr_to_transport_addr(&na, &ta,
-                                                      transport_) == 0);
+        MOZ_ALWAYS_TRUE(nr_netaddr_to_transport_addr(&na, &ta, transport_) ==
+                        0);
         cb_addr = &ta;
       }
     }
@@ -218,15 +214,15 @@ nsresult NrIceResolver::PendingResolution::OnLookupComplete(
   return NS_OK;
 }
 
-int NrIceResolver::cancel(void *obj, void *handle) {
+int NrIceResolver::cancel(void* obj, void* handle) {
   MOZ_ALWAYS_TRUE(obj);
   MOZ_ASSERT(handle);
-  ASSERT_ON_THREAD(static_cast<NrIceResolver *>(obj)->sts_thread_);
-  return static_cast<PendingResolution *>(handle)->cancel();
+  ASSERT_ON_THREAD(static_cast<NrIceResolver*>(obj)->sts_thread_);
+  return static_cast<PendingResolution*>(handle)->cancel();
 }
 
 int NrIceResolver::PendingResolution::cancel() {
-  request_->Cancel (NS_ERROR_ABORT);
+  request_->Cancel(NS_ERROR_ABORT);
   request_ = nullptr;
   Release();
   return 0;

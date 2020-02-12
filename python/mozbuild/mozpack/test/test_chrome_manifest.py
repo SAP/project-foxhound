@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function, unicode_literals
+
 import unittest
 import mozunit
 import os
@@ -52,7 +54,7 @@ class TestManifest(unittest.TestCase):
             'category command-line-handler m-browser' +
             ' @mozilla.org/browser/clh;1' +
             ' application={ec8030f7-c20a-464f-9b0e-13a3a9e97384}',
-            'style chrome://global/content/customizeToolbar.xul' +
+            'style chrome://global/content/viewSource.xul' +
             ' chrome://browser/skin/',
             'overlay chrome://global/content/viewSource.xul' +
             ' chrome://browser/content/viewSourceOverlay.xul',
@@ -83,7 +85,7 @@ class TestManifest(unittest.TestCase):
             ManifestCategory('', 'command-line-handler', 'm-browser',
                              '@mozilla.org/browser/clh;1', 'application=' +
                              '{ec8030f7-c20a-464f-9b0e-13a3a9e97384}'),
-            ManifestStyle('', 'chrome://global/content/customizeToolbar.xul',
+            ManifestStyle('', 'chrome://global/content/viewSource.xul',
                           'chrome://browser/skin/'),
             ManifestOverlay('', 'chrome://global/content/viewSource.xul',
                             'chrome://browser/content/viewSourceOverlay.xul'),

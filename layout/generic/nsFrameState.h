@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +12,7 @@
 #include <stdint.h>
 
 #ifdef DEBUG
-#include "nsString.h"
+#  include "nsString.h"
 
 class nsIFrame;
 #endif
@@ -27,53 +28,47 @@ enum nsFrameState : nsFrameState_size_t {
 #undef FRAME_STATE_BIT
 };
 
-inline nsFrameState operator|(nsFrameState aLeft, nsFrameState aRight)
-{
+inline nsFrameState operator|(nsFrameState aLeft, nsFrameState aRight) {
   return nsFrameState(nsFrameState_size_t(aLeft) | nsFrameState_size_t(aRight));
 }
 
-inline nsFrameState operator&(nsFrameState aLeft, nsFrameState aRight)
-{
+inline nsFrameState operator&(nsFrameState aLeft, nsFrameState aRight) {
   return nsFrameState(nsFrameState_size_t(aLeft) & nsFrameState_size_t(aRight));
 }
 
-inline nsFrameState& operator|=(nsFrameState& aLeft, nsFrameState aRight)
-{
+inline nsFrameState& operator|=(nsFrameState& aLeft, nsFrameState aRight) {
   aLeft = aLeft | aRight;
   return aLeft;
 }
 
-inline nsFrameState& operator&=(nsFrameState& aLeft, nsFrameState aRight)
-{
+inline nsFrameState& operator&=(nsFrameState& aLeft, nsFrameState aRight) {
   aLeft = aLeft & aRight;
   return aLeft;
 }
 
-inline nsFrameState operator~(nsFrameState aRight)
-{
+inline nsFrameState operator~(nsFrameState aRight) {
   return nsFrameState(~nsFrameState_size_t(aRight));
 }
 
-inline nsFrameState operator^(nsFrameState aLeft, nsFrameState aRight)
-{
+inline nsFrameState operator^(nsFrameState aLeft, nsFrameState aRight) {
   return nsFrameState(nsFrameState_size_t(aLeft) ^ nsFrameState_size_t(aRight));
 }
 
-inline nsFrameState& operator^=(nsFrameState& aLeft, nsFrameState aRight)
-{
+inline nsFrameState& operator^=(nsFrameState& aLeft, nsFrameState aRight) {
   aLeft = aLeft ^ aRight;
   return aLeft;
 }
 
 // Bits 20-31 and 60-63 of the frame state are reserved for implementations.
-#define NS_FRAME_IMPL_RESERVED                      nsFrameState(0xF0000000FFF00000)
-#define NS_FRAME_RESERVED                           ~NS_FRAME_IMPL_RESERVED
+#define NS_FRAME_IMPL_RESERVED nsFrameState(0xF0000000FFF00000)
+#define NS_FRAME_RESERVED ~NS_FRAME_IMPL_RESERVED
 
 namespace mozilla {
 #ifdef DEBUG
 nsCString GetFrameState(nsIFrame* aFrame);
 void PrintFrameState(nsIFrame* aFrame);
+void DebugVerifyFrameStateBits();
 #endif
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif /* nsFrameState_h_ */ 
+#endif /* nsFrameState_h_ */

@@ -1,4 +1,7 @@
-this.EXPORTED_SYMBOLS = ["Ajv"];
+"use strict";
+const global = this;
+
+var EXPORTED_SYMBOLS = ["Ajv"];
 
 /*
  * ajv 4.1.1: Another JSON Schema Validator

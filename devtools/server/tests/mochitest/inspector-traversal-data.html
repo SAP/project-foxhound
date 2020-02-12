@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -17,26 +18,38 @@
     }
   </style>
   <script type="text/javascript">
-    window.onload = function() {
+    "use strict";
 
+    window.onload = function() {
       // Set up a basic shadow DOM
-      var host = document.querySelector('#shadow');
-      if (host.createShadowRoot) {
-        var root = host.createShadowRoot();
-        root.innerHTML = '<h3>Shadow <em>DOM</em></h3><select multiple></select>';
+      const host = document.querySelector("#shadow");
+      if (host.attachShadow) {
+        const root = host.attachShadow({ mode: "open" });
+
+        const h3 = document.createElement("h3");
+        h3.append("Shadow ");
+
+        const em = document.createElement("em");
+        em.append("DOM");
+
+        const select = document.createElement("select");
+        select.setAttribute("multiple", "");
+        h3.appendChild(em);
+        root.appendChild(h3);
+        root.appendChild(select);
       }
 
       // Put a copy of the body in an iframe to test frame traversal.
-      var body = document.querySelector("body");
-      var data = "data:text/html,<html>" + body.outerHTML + "<html>";
-      var iframe = document.createElement("iframe");
+      const body = document.querySelector("body");
+      const data = "data:text/html,<html>" + body.outerHTML + "<html>";
+      const iframe = document.createElement("iframe");
       iframe.setAttribute("id", "childFrame");
       iframe.onload = function() {
-        window.opener.postMessage('ready', '*')
+        window.opener.postMessage("ready", "*");
       };
       iframe.src = data;
       body.appendChild(iframe);
-    }
+    };
   </script>
 </head>
 <body style="background-color:white">

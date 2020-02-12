@@ -1,10 +1,8 @@
 <html>
 <body onload="runTest()">
 
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
 <script>
 // This test checks that the dom.event.clipboardevents.enabled does not apply to chrome shells.
@@ -13,8 +11,7 @@ SimpleTest.waitForExplicitFinish();
 function runTest()
 {
   SpecialPowers.pushPrefEnv({"set": [['dom.event.clipboardevents.enabled', false]]}, function() {
-    window.open("data:text/html,<body onload='window.opener.doChecks(this)'><input id='i' value='Sample Text'></body>",
-                "_blank", "chrome,width=200,height=200");
+    window.openDialog("file_clipboard_events_chrome.html", "_blank", "chrome,width=200,height=200,noopener", window);
   });
 }
 

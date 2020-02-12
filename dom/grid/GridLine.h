@@ -17,48 +17,47 @@ namespace dom {
 
 class GridLines;
 
-class GridLine : public nsISupports
-               , public nsWrapperCache
-{
-public:
+class GridLine : public nsISupports, public nsWrapperCache {
+ public:
   explicit GridLine(GridLines* aParent);
 
-protected:
+ protected:
   virtual ~GridLine();
 
-public:
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GridLine)
 
   void GetNames(nsTArray<nsString>& aNames) const;
+  const nsTArray<RefPtr<nsAtom>>& Names() const { return mNames; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-  GridLines* GetParentObject()
-  {
-    return mParent;
-  }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
+  GridLines* GetParentObject() { return mParent; }
 
   double Start() const;
   double Breadth() const;
   GridDeclaration Type() const;
   uint32_t Number() const;
+  int32_t NegativeNumber() const;
 
-  void SetLineValues(const nsTArray<nsString>& aNames,
-                     double aStart,
-                     double aBreadth,
-                     uint32_t aNumber,
+  void SetLineValues(const nsTArray<RefPtr<nsAtom>>& aNames, double aStart,
+                     double aBreadth, uint32_t aNumber, int32_t aNegativeNumber,
                      GridDeclaration aType);
 
-protected:
+  void SetLineNames(const nsTArray<RefPtr<nsAtom>>& aNames);
+
+ protected:
   RefPtr<GridLines> mParent;
-  nsTArray<nsString> mNames;
+  nsTArray<RefPtr<nsAtom>> mNames;
   double mStart;
   double mBreadth;
   GridDeclaration mType;
   uint32_t mNumber;
+  int32_t mNegativeNumber;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_GridLine_h */

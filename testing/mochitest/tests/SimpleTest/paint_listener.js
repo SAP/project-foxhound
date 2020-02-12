@@ -1,20 +1,28 @@
 (function() {
   var accumulatedRect = null;
   var onpaint = new Array();
-  var debug = false;
+  var debug = SpecialPowers.getBoolPref("testing.paint_listener.debug", false);
   const FlushModes = {
     FLUSH: 0,
     NOFLUSH: 1
   };
 
   function paintListener(event) {
-    if (event.target != window)
+    if (event.target != window) {
+      if (debug) {
+        dump("got MozAfterPaint for wrong window\n");
+      }
       return;
-    var eventRect =
-      [ event.boundingClientRect.left,
-        event.boundingClientRect.top,
-        event.boundingClientRect.right,
-        event.boundingClientRect.bottom ];
+    }
+    var clientRect = event.boundingClientRect;
+    var eventRect;
+    if (clientRect) {
+      eventRect =
+        [ clientRect.left, clientRect.top,
+          clientRect.right, clientRect.bottom ];
+    } else {
+      eventRect = [ 0, 0, 0, 0 ];
+    }
     if (debug) {
       dump("got MozAfterPaint: " + eventRect.join(",") + "\n");
     }
@@ -24,11 +32,14 @@
                         Math.max(accumulatedRect[2], eventRect[2]),
                         Math.max(accumulatedRect[3], eventRect[3]) ]
                     : eventRect;
+    if (debug) {
+      dump("Dispatching " + onpaint.length + " onpaint listeners\n");
+    }
     while (onpaint.length > 0) {
       window.setTimeout(onpaint.pop(), 0);
     }
   }
-  window.addEventListener("MozAfterPaint", paintListener, false);
+  window.addEventListener("MozAfterPaint", paintListener);
 
   function waitForPaints(callback, subdoc, flushMode) {
     // Wait until paint suppression has ended
@@ -80,4 +91,13 @@
   window.waitForAllPaints = function(callback) {
     waitForPaints(callback, null, FlushModes.NOFLUSH);
   };
+
+  window.promiseAllPaintsDone = function(subdoc = null, flush = false) {
+    var flushmode = flush ? FlushModes.FLUSH : FlushModes.NOFLUSH;
+    return new Promise(function (resolve, reject) {
+      // The callback is given the components of the rect, but resolve() can
+      // only be given one arg, so we turn it back into an array.
+      waitForPaints((l, r, t, b) => resolve([l, r, t, b]), subdoc, flushmode);
+    });
+  }
 })();

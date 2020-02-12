@@ -11,6 +11,7 @@
 
 #include "nsDataHashtable.h"
 
+#include "Client.h"
 #include "PersistenceType.h"
 
 BEGIN_QUOTA_NAMESPACE
@@ -18,51 +19,42 @@ BEGIN_QUOTA_NAMESPACE
 class OriginInfo;
 class QuotaManager;
 
-class QuotaObject
-{
+class QuotaObject {
   friend class OriginInfo;
   friend class QuotaManager;
 
-public:
-  void
-  AddRef();
+  class StoragePressureRunnable;
 
-  void
-  Release();
+ public:
+  void AddRef();
 
-  const nsAString&
-  Path() const
-  {
-    return mPath;
-  }
+  void Release();
 
-  bool
-  MaybeUpdateSize(int64_t aSize, bool aTruncate);
+  const nsAString& Path() const { return mPath; }
 
-  void
-  DisableQuotaCheck();
+  bool MaybeUpdateSize(int64_t aSize, bool aTruncate);
 
-  void
-  EnableQuotaCheck();
+  bool IncreaseSize(int64_t aDelta);
 
-private:
-  QuotaObject(OriginInfo* aOriginInfo, const nsAString& aPath, int64_t aSize)
-    : mOriginInfo(aOriginInfo)
-    , mPath(aPath)
-    , mSize(aSize)
-    , mQuotaCheckDisabled(false)
-  {
+  void DisableQuotaCheck();
+
+  void EnableQuotaCheck();
+
+ private:
+  QuotaObject(OriginInfo* aOriginInfo, Client::Type aClientType,
+              const nsAString& aPath, int64_t aSize)
+      : mOriginInfo(aOriginInfo),
+        mPath(aPath),
+        mSize(aSize),
+        mClientType(aClientType),
+        mQuotaCheckDisabled(false),
+        mWritingDone(false) {
     MOZ_COUNT_CTOR(QuotaObject);
   }
 
-  ~QuotaObject()
-  {
-    MOZ_COUNT_DTOR(QuotaObject);
-  }
+  ~QuotaObject() { MOZ_COUNT_DTOR(QuotaObject); }
 
-  already_AddRefed<QuotaObject>
-  LockedAddRef()
-  {
+  already_AddRefed<QuotaObject> LockedAddRef() {
     AssertCurrentThreadOwnsQuotaMutex();
 
     ++mRefCnt;
@@ -71,15 +63,18 @@ private:
     return result.forget();
   }
 
+  bool LockedMaybeUpdateSize(int64_t aSize, bool aTruncate);
+
   mozilla::ThreadSafeAutoRefCnt mRefCnt;
 
   OriginInfo* mOriginInfo;
   nsString mPath;
   int64_t mSize;
-
+  Client::Type mClientType;
   bool mQuotaCheckDisabled;
+  bool mWritingDone;
 };
 
 END_QUOTA_NAMESPACE
 
-#endif // mozilla_dom_quota_quotaobject_h__
+#endif  // mozilla_dom_quota_quotaobject_h__

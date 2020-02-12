@@ -18,9 +18,10 @@ namespace mozilla {
 
 namespace _ipdltest {
 
-class TestEndpointOpensParent : public PTestEndpointOpensParent
-{
-public:
+class TestEndpointOpensParent : public PTestEndpointOpensParent {
+  friend class PTestEndpointOpensParent;
+
+ public:
   TestEndpointOpensParent() {}
   virtual ~TestEndpointOpensParent() {}
 
@@ -29,73 +30,73 @@ public:
 
   void Main();
 
-protected:
-  virtual bool RecvStartSubprotocol(mozilla::ipc::Endpoint<PTestEndpointOpensOpenedParent>&& endpoint);
+ protected:
+  mozilla::ipc::IPCResult RecvStartSubprotocol(
+      mozilla::ipc::Endpoint<PTestEndpointOpensOpenedParent>&& endpoint);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
 
-} // namespace _ipdltest
+}  // namespace _ipdltest
 
 namespace _ipdltest2 {
 
-class TestEndpointOpensOpenedParent : public PTestEndpointOpensOpenedParent
-{
-public:
-  explicit TestEndpointOpensOpenedParent()
-  {}
+class TestEndpointOpensOpenedParent : public PTestEndpointOpensOpenedParent {
+  friend class PTestEndpointOpensOpenedParent;
+
+ public:
+  explicit TestEndpointOpensOpenedParent() {}
   virtual ~TestEndpointOpensOpenedParent() {}
 
-protected:
-  virtual bool RecvHello() override;
-  virtual bool RecvHelloSync() override;
-  virtual bool AnswerHelloRpc() override;
+ protected:
+  mozilla::ipc::IPCResult RecvHello();
+  mozilla::ipc::IPCResult RecvHelloSync();
+  mozilla::ipc::IPCResult AnswerHelloRpc();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
 
-} // namespace _ipdltest2
+}  // namespace _ipdltest2
 
 // child process
 
 namespace _ipdltest {
 
-class TestEndpointOpensChild : public PTestEndpointOpensChild
-{
-public:
+class TestEndpointOpensChild : public PTestEndpointOpensChild {
+  friend class PTestEndpointOpensChild;
+
+ public:
   TestEndpointOpensChild();
   virtual ~TestEndpointOpensChild() {}
 
-protected:
-  virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
 
-} // namespace _ipdltest
+}  // namespace _ipdltest
 
 namespace _ipdltest2 {
 
-class TestEndpointOpensOpenedChild : public PTestEndpointOpensOpenedChild
-{
-public:
-  explicit TestEndpointOpensOpenedChild()
-   : mGotHi(false)
-  {}
+class TestEndpointOpensOpenedChild : public PTestEndpointOpensOpenedChild {
+  friend class PTestEndpointOpensOpenedChild;
+
+ public:
+  explicit TestEndpointOpensOpenedChild() : mGotHi(false) {}
   virtual ~TestEndpointOpensOpenedChild() {}
 
-protected:
-  virtual bool RecvHi() override;
-  virtual bool AnswerHiRpc() override;
+ protected:
+  mozilla::ipc::IPCResult RecvHi();
+  mozilla::ipc::IPCResult AnswerHiRpc();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   bool mGotHi;
 };
 
-} // namespace _ipdltest2
+}  // namespace _ipdltest2
 
-} // namespace mozilla
+}  // namespace mozilla
 
-
-#endif // ifndef mozilla__ipdltest_TestEndpointOpens_h
+#endif  // ifndef mozilla__ipdltest_TestEndpointOpens_h

@@ -11,16 +11,11 @@ const FRAME_SCRIPT_URL = getRootDirectory(gTestPath) + "frame_script.js";
  * that will be resolved when the tab finished loading.
  */
 function addTab(url) {
-  let tab = gBrowser.addTab(TAB_URL);
+  let tab = BrowserTestUtils.addTab(gBrowser, TAB_URL);
   gBrowser.selectedTab = tab;
   let linkedBrowser = tab.linkedBrowser;
   linkedBrowser.messageManager.loadFrameScript(FRAME_SCRIPT_URL, false);
-  return new Promise(function (resolve) {
-    linkedBrowser.addEventListener("load", function onload() {
-      linkedBrowser.removeEventListener("load", onload, true);
-      resolve(tab);
-    }, true);
-  });
+  return BrowserTestUtils.browserLoaded(linkedBrowser).then(() => tab);
 }
 
 /**
@@ -42,10 +37,10 @@ function jsonrpc(tab, method, params) {
   let messageManager = tab.linkedBrowser.messageManager;
   messageManager.sendAsyncMessage("jsonrpc", {
     id: currentId,
-    method: method,
-    params: params
+    method,
+    params,
   });
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     messageManager.addMessageListener("jsonrpc", function listener(event) {
       let { id, result, error } = event.data;
       if (id !== currentId) {

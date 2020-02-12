@@ -4,13 +4,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'General')
+
 XPIDL_MODULE = 'toolkit_securityreporter'
 
 XPIDL_SOURCES += [
     'nsISecurityReporter.idl',
 ]
 
-EXTRA_COMPONENTS += [
-    'SecurityReporter.js',
-    'SecurityReporter.manifest',
+EXTRA_JS_MODULES += [
+    'SecurityReporter.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]

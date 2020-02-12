@@ -2,25 +2,26 @@
 <html>
 <head>
   <title>Test for SpecialPowers extension</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="starttest();">
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-function starttest() {
+async function starttest() {
   try {
-    SpecialPowers.setBoolPref("test.bool", 1);
+    await SpecialPowers.setBoolPref("test.bool", 1);
   } catch(e) {
-    SpecialPowers.setBoolPref("test.bool", true);
+    await SpecialPowers.setBoolPref("test.bool", true);
   }
   try {
-    SpecialPowers.setIntPref("test.int", true);
+    await SpecialPowers.setIntPref("test.int", true);
   } catch(e) {
-    SpecialPowers.setIntPref("test.int", 1);
+    await SpecialPowers.setIntPref("test.int", 1);
   }
-  SpecialPowers.setCharPref("test.char", 'test');
+  await SpecialPowers.setCharPref("test.char", 'test');
+  await SpecialPowers.setBoolPref("test.cleanup", false);
 
   setTimeout(test1, 0, 0);
 }
@@ -200,9 +201,29 @@ function test11(aCount) {
     SpecialPowers.getCharPref('test.char');
     setTimeout(test11, 0, ++aCount);
   } catch(e) {
-    SimpleTest.finish();
+    test12();
   }
 }
+
+function test12() {
+  // Set test.cleanup to true via pushPrefEnv, while its default value is false.
+  SpecialPowers.pushPrefEnv({"set": [["test.cleanup", true]]}, () => {
+    // Update the preference manually back to its original value.
+    SpecialPowers.setBoolPref("test.cleanup", false);
+    setTimeout(test13, 0);
+  });
+}
+
+function test13() {
+  // Try to flush preferences. Since test.cleanup has manually been set to false, there
+  // will not be any visible update. Check that the flush does not timeout.
+  SpecialPowers.flushPrefEnv(() => {
+    ok(true, 'flushPrefEnv did not time out');
+    is(SpecialPowers.getBoolPref('test.cleanup'), false, 'test.cleanup should be false');
+    SimpleTest.finish();
+  });
+}
+
 // todo - test non-changing values, test complex values, test mixing of pushprefEnv 'set' and 'clear'
 // When bug 776424 gets fixed, getPref doesn't throw anymore, so this test would have to be changed accordingly
 </script>

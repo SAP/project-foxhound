@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/bm.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 bm{
     Currencies{
         AED{
@@ -130,6 +124,10 @@ bm{
         }
         MRO{
             "MRO",
+            "mɔritani Uguwiya (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "mɔritani Uguwiya",
         }
         MUR{
@@ -186,6 +184,10 @@ bm{
         }
         STD{
             "STD",
+            "sawotome Dobra (1977–2017)",
+        }
+        STN{
+            "STN",
             "sawotome Dobra",
         }
         SZL{
@@ -233,5 +235,5 @@ bm{
             "zimbabuwe Dolar",
         }
     }
-    Version{"2.1.19.14"}
+    Version{"2.1.47.82"}
 }

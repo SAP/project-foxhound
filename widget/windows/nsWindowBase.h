@@ -17,15 +17,14 @@
  * nsWindowBase - Base class of common methods other classes need to access
  * in both win32 and winrt window classes.
  */
-class nsWindowBase : public nsBaseWidget
-{
-public:
+class nsWindowBase : public nsBaseWidget {
+ public:
   typedef mozilla::WidgetEventTime WidgetEventTime;
 
   /*
    * Return the HWND or null for this widget.
    */
-  virtual HWND GetWindowHandle() final {
+  HWND GetWindowHandle() {
     return static_cast<HWND>(GetNativeData(NS_NATIVE_WINDOW));
   }
 
@@ -78,12 +77,18 @@ public:
    * is called by ScrollHandler to dispatch gecko events.
    * Returns true if it's consumed.  Otherwise, false.
    */
-  virtual bool DispatchContentCommandEvent(mozilla::WidgetContentCommandEvent* aEvent) = 0;
+  virtual bool DispatchContentCommandEvent(
+      mozilla::WidgetContentCommandEvent* aEvent) = 0;
 
   /*
    * Default dispatch of a plugin event.
    */
   virtual bool DispatchPluginEvent(const MSG& aMsg);
+
+  /*
+   * Returns true if this should dispatch a plugin event.
+   */
+  bool ShouldDispatchPluginEvent();
 
   /*
    * Touch input injection apis
@@ -101,9 +106,11 @@ public:
    * Sends events via NativeKey::HandleAppCommandMessage().
    */
   virtual bool HandleAppCommandMsg(const MSG& aAppCommandMsg,
-                                   LRESULT *aRetValue);
+                                   LRESULT* aRetValue);
 
-protected:
+  const InputContext& InputContextRef() const { return mInputContext; }
+
+ protected:
   virtual int32_t LogToPhys(double aValue) = 0;
   void ChangedDPI();
 
@@ -112,14 +119,10 @@ protected:
                         POINTER_FLAGS aFlags, uint32_t aPressure = 1024,
                         uint32_t aOrientation = 90);
 
-  class PointerInfo
-  {
-  public:
-    PointerInfo(int32_t aPointerId, LayoutDeviceIntPoint& aPoint) :
-      mPointerId(aPointerId),
-      mPosition(aPoint)
-    {
-    }
+  class PointerInfo {
+   public:
+    PointerInfo(int32_t aPointerId, LayoutDeviceIntPoint& aPoint)
+        : mPointerId(aPointerId), mPosition(aPoint) {}
 
     int32_t mPointerId;
     LayoutDeviceIntPoint mPosition;
@@ -133,8 +136,9 @@ protected:
   // multiple synthesized points, in the case where we can't call InjectTouch
   // directly.
   mozilla::UniquePtr<mozilla::MultiTouchInput> mSynthesizedTouchInput;
-protected:
+
+ protected:
   InputContext mInputContext;
 };
 
-#endif // nsWindowBase_h_
+#endif  // nsWindowBase_h_

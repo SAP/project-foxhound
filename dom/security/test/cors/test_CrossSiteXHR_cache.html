@@ -3,7 +3,7 @@
 <head>
   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
   <title>Test for Cross Site XMLHttpRequest</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="gen.next()">
@@ -14,18 +14,22 @@
   
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.7">
+<script class="testbody" type="application/javascript">
 
+let gen;
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestFlakyTimeout("This test needs to generate artificial pauses, hence it uses timeouts.  There is no way around it, unfortunately. :(");
 
+SpecialPowers.pushPrefEnv({"set": [["security.allow_eval_with_system_principal",
+                                     true]]});
+
 window.addEventListener("message", function(e) {
-  gen.send(e.data);
-}, false);
+  gen.next(e.data);
+});
 
 gen = runTest();
 
-function runTest() {
+function* runTest() {
   var loader = document.getElementById('loader');
   var loaderWindow = loader.contentWindow;
   loader.onload = function () { gen.next() };
@@ -569,7 +573,7 @@ function runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + testName);
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + testName);
       is(res.progressEvents, 0,
          "wrong events in test for " + testName);
@@ -577,8 +581,6 @@ function runTest() {
   }
 
   SimpleTest.finish();
-
-  yield undefined;
 }
 
 </script>

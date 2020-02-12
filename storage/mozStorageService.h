@@ -18,18 +18,16 @@
 #include "mozIStorageService.h"
 
 class nsIMemoryReporter;
-class nsIXPConnect;
 struct sqlite3_vfs;
 
 namespace mozilla {
 namespace storage {
 
 class Connection;
-class Service : public mozIStorageService
-              , public nsIObserver
-              , public nsIMemoryReporter
-{
-public:
+class Service : public mozIStorageService,
+                public nsIObserver,
+                public nsIMemoryReporter {
+ public:
   /**
    * Initializes the service.  This must be called before any other function!
    */
@@ -48,22 +46,15 @@ public:
    *         number.  If aStr1 > aStr2, returns a positive number.  If
    *         aStr1 == aStr2, returns 0.
    */
-  int localeCompareStrings(const nsAString &aStr1,
-                           const nsAString &aStr2,
+  int localeCompareStrings(const nsAString& aStr1, const nsAString& aStr2,
                            int32_t aComparisonStrength);
 
-  static Service *getSingleton();
+  static already_AddRefed<Service> getSingleton();
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_MOZISTORAGESERVICE
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIMEMORYREPORTER
-
-  /**
-   * Obtains an already AddRefed pointer to XPConnect.  This is used by
-   * language helpers.
-   */
-  static already_AddRefed<nsIXPConnect> getXPConnect();
 
   /**
    * Obtains the cached data for the toolkit.storage.synchronous preference.
@@ -75,17 +66,13 @@ public:
    * specified in the SQLite makefile (SQLITE_DEFAULT_PAGE_SIZE) but it may be
    * overriden with the PREF_TS_PAGESIZE hidden preference.
    */
-  static int32_t getDefaultPageSize()
-  {
-    return sDefaultPageSize;
-  }
+  static int32_t getDefaultPageSize() { return sDefaultPageSize; }
 
   /**
    * Returns a boolean value indicating whether or not the given page size is
    * valid (currently understood as a power of 2 between 512 and 65536).
    */
-  static bool pageSizeIsValid(int32_t aPageSize)
-  {
+  static bool pageSizeIsValid(int32_t aPageSize) {
     return aPageSize == 512 || aPageSize == 1024 || aPageSize == 2048 ||
            aPageSize == 4096 || aPageSize == 8192 || aPageSize == 16384 ||
            aPageSize == 32768 || aPageSize == 65536;
@@ -100,7 +87,7 @@ public:
    * @param  aConnection
    *         The connection to register.
    */
-  void registerConnection(Connection *aConnection);
+  void registerConnection(Connection* aConnection);
 
   /**
    * Unregisters the connection with the storage service.
@@ -110,7 +97,7 @@ public:
    * @param  aConnection
    *         The connection to unregister.
    */
-  void unregisterConnection(Connection *aConnection);
+  void unregisterConnection(Connection* aConnection);
 
   /**
    * Gets the list of open connections.  Note that you must test each
@@ -126,7 +113,7 @@ public:
    */
   void getConnections(nsTArray<RefPtr<Connection> >& aConnections);
 
-private:
+ private:
   Service();
   virtual ~Service();
 
@@ -136,8 +123,8 @@ private:
    * synchronizing access to mLocaleCollation.
    */
   Mutex mMutex;
-  
-  sqlite3_vfs *mSqliteVFS;
+
+  sqlite3_vfs* mSqliteVFS;
 
   /**
    * Protects mConnections.
@@ -157,18 +144,13 @@ private:
   void minimizeMemory();
 
   /**
-   * Shuts down the storage service, freeing all of the acquired resources.
-   */
-  void shutdown();
-
-  /**
    * Lazily creates and returns a collation created from the application's
    * locale that all statements of all Connections of this Service may use.
    * Since the collation's lifetime is that of the Service and no statement may
    * execute outside the lifetime of the Service, this method returns a raw
    * pointer.
    */
-  nsICollation *getLocaleCollation();
+  nsICollation* getLocaleCollation();
 
   /**
    * Lazily created collation that all statements of all Connections of this
@@ -183,15 +165,13 @@ private:
 
   nsCOMPtr<nsIMemoryReporter> mStorageSQLiteReporter;
 
-  static Service *gService;
-
-  static nsIXPConnect *sXPConnect;
+  static Service* gService;
 
   static int32_t sSynchronousPref;
   static int32_t sDefaultPageSize;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
 #endif /* MOZSTORAGESERVICE_H */

@@ -5,11 +5,14 @@ function test() {
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
 
-  var pm = Services.perms;
-  pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    "http://example.com/",
+    "install",
+    Services.perms.ALLOW_ACTION
+  );
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "bug540558.html");
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "bug540558.html");
 }
 
 function check_xpi_install(install, addon) {
@@ -18,7 +21,7 @@ function check_xpi_install(install, addon) {
 
 function finish_test(count) {
   is(count, 1, "1 Add-on should have been successfully installed");
-  Services.perms.remove(makeURI("http://example.com"), "install");
+  PermissionTestUtils.remove("http://example.com", "install");
 
   gBrowser.removeCurrentTab();
   Harness.finish();

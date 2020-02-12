@@ -7,8 +7,8 @@
 #ifndef jstaint_h
 #define jstaint_h
 
-#include "Taint.h"
 #include "jsapi.h"
+#include "Taint.h"
 
 //
 // Taint related helper functions.
@@ -16,8 +16,11 @@
 
 namespace js {
 
+// Converts a raw char pointer into the argument type for a taint operation.
+std::u16string taintarg(JSContext* cx, const char16_t* str);
+
 // Converts a JS string into the argument type for a taint operation.
-std::u16string taintarg(ExclusiveContext* cx, JS::HandleString str);
+std::u16string taintarg(JSContext* cx, JS::HandleString str);
 
 // Stringifies a JS object for use as a taint argument.
 std::u16string taintarg(JSContext* cx, JS::HandleObject obj);
@@ -28,12 +31,22 @@ std::u16string taintarg(JSContext* cx, JS::HandleValue str);
 // Converts an integer to a taint argument string.
 std::u16string taintarg(JSContext* cx, int32_t num);
 
+// Converts a JS Handle to a taint argument string.
+std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str);
+
+// Extracts the current filename, linenumber and function from the JSContext
+TaintLocation TaintLocationFromContext(JSContext* cx);
+
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args);
+
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
+
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.
-void MarkTaintedFunctionArguments(JSContext* cx, const JSFunction* function, const JS::CallArgs& args);
+void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
 // Print a message to stdout.
-void TaintFoxReport(const char* msg);
+void TaintFoxReport(JSContext* cx, const char* msg);
 
 }
 

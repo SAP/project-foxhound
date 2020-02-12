@@ -2,13 +2,13 @@
 <html>
 <head>
   <title>window.console test</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
 </head>
 
 <body id="body">
 
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 
 function doTest() {
   ok(window.console, "console exists");
@@ -32,17 +32,16 @@ function doTest() {
     "groupCollapsed": "function",
     "groupEnd": "function",
     "time": "function",
+    "timeLog": "function",
     "timeEnd": "function",
     "profile": "function",
     "profileEnd": "function",
     "assert": "function",
     "count": "function",
+    "countReset": "function",
     "table": "function",
     "clear": "function",
     "dirxml": "function",
-    "markTimeline": "function",
-    "timeline": "function",
-    "timelineEnd": "function",
     "timeStamp": "function",
   };
 

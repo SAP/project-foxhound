@@ -4,16 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Networking: Cache")
+
 XPIDL_SOURCES += [
     'nsIOfflineCacheUpdate.idl',
     'nsIPrefetchService.idl',
 ]
 
 XPIDL_MODULE = 'prefetch'
-
-EXPORTS += [
-    'nsCPrefetchService.h',
-]
 
 EXPORTS.mozilla.docshell += [
     'OfflineCacheUpdateChild.h',
@@ -41,5 +40,5 @@ LOCAL_INCLUDES += [
     '/dom/base',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

@@ -13,79 +13,71 @@ namespace dom {
 
 DetailedPromise::DetailedPromise(nsIGlobalObject* aGlobal,
                                  const nsACString& aName)
-  : Promise(aGlobal)
-  , mName(aName)
-  , mResponded(false)
-  , mStartTime(TimeStamp::Now())
-{
-}
+    : Promise(aGlobal),
+      mName(aName),
+      mResponded(false),
+      mStartTime(TimeStamp::Now()) {}
 
 DetailedPromise::DetailedPromise(nsIGlobalObject* aGlobal,
                                  const nsACString& aName,
-                                 Telemetry::ID aSuccessLatencyProbe,
-                                 Telemetry::ID aFailureLatencyProbe)
-  : DetailedPromise(aGlobal, aName)
-{
+                                 Telemetry::HistogramID aSuccessLatencyProbe,
+                                 Telemetry::HistogramID aFailureLatencyProbe)
+    : DetailedPromise(aGlobal, aName) {
   mSuccessLatencyProbe.Construct(aSuccessLatencyProbe);
   mFailureLatencyProbe.Construct(aFailureLatencyProbe);
 }
 
-DetailedPromise::~DetailedPromise()
-{
+DetailedPromise::~DetailedPromise() {
   // It would be nice to assert that mResponded is identical to
   // GetPromiseState() == PromiseState::Rejected.  But by now we've been
   // unlinked, so don't have a reference to our actual JS Promise object
   // anymore.
-  MaybeReportTelemetry(Failed);
+  MaybeReportTelemetry(kFailed);
 }
 
-void
-DetailedPromise::MaybeReject(nsresult aArg, const nsACString& aReason)
-{
-  nsPrintfCString msg("%s promise rejected 0x%x '%s'", mName.get(), aArg,
-                      PromiseFlatCString(aReason).get());
-  EME_LOG(msg.get());
+void DetailedPromise::LogRejectionReason(uint32_t aErrorCode,
+                                         const nsACString& aReason) {
+  nsPrintfCString msg("%s promise rejected 0x%" PRIx32 " '%s'", mName.get(),
+                      aErrorCode, PromiseFlatCString(aReason).get());
+  EME_LOG("%s", msg.get());
 
-  MaybeReportTelemetry(Failed);
+  MaybeReportTelemetry(kFailed);
 
   LogToBrowserConsole(NS_ConvertUTF8toUTF16(msg));
-
-  ErrorResult rv;
-  rv.ThrowDOMException(aArg, aReason);
-  Promise::MaybeReject(rv);
 }
 
-void
-DetailedPromise::MaybeReject(ErrorResult&, const nsACString& aReason)
-{
-  NS_NOTREACHED("nsresult expected in MaybeReject()");
+void DetailedPromise::MaybeReject(nsresult aArg, const nsACString& aReason) {
+  LogRejectionReason(static_cast<uint32_t>(aArg), aReason);
+
+  Promise::MaybeRejectWithDOMException(aArg, aReason);
 }
 
-/* static */ already_AddRefed<DetailedPromise>
-DetailedPromise::Create(nsIGlobalObject* aGlobal,
-                        ErrorResult& aRv,
-                        const nsACString& aName)
-{
+void DetailedPromise::MaybeReject(ErrorResult& aArg,
+                                  const nsACString& aReason) {
+  LogRejectionReason(aArg.ErrorCodeAsInt(), aReason);
+  Promise::MaybeReject(aArg);
+}
+
+/* static */
+already_AddRefed<DetailedPromise> DetailedPromise::Create(
+    nsIGlobalObject* aGlobal, ErrorResult& aRv, const nsACString& aName) {
   RefPtr<DetailedPromise> promise = new DetailedPromise(aGlobal, aName);
   promise->CreateWrapper(nullptr, aRv);
   return aRv.Failed() ? nullptr : promise.forget();
 }
 
-/* static */ already_AddRefed<DetailedPromise>
-DetailedPromise::Create(nsIGlobalObject* aGlobal,
-                        ErrorResult& aRv,
-                        const nsACString& aName,
-                        Telemetry::ID aSuccessLatencyProbe,
-                        Telemetry::ID aFailureLatencyProbe)
-{
-  RefPtr<DetailedPromise> promise = new DetailedPromise(aGlobal, aName, aSuccessLatencyProbe, aFailureLatencyProbe);
+/* static */
+already_AddRefed<DetailedPromise> DetailedPromise::Create(
+    nsIGlobalObject* aGlobal, ErrorResult& aRv, const nsACString& aName,
+    Telemetry::HistogramID aSuccessLatencyProbe,
+    Telemetry::HistogramID aFailureLatencyProbe) {
+  RefPtr<DetailedPromise> promise = new DetailedPromise(
+      aGlobal, aName, aSuccessLatencyProbe, aFailureLatencyProbe);
   promise->CreateWrapper(nullptr, aRv);
   return aRv.Failed() ? nullptr : promise.forget();
 }
 
-void
-DetailedPromise::MaybeReportTelemetry(Status aStatus)
-{
+void DetailedPromise::MaybeReportTelemetry(eStatus aStatus) {
   if (mResponded) {
     return;
   }
@@ -95,11 +87,12 @@ DetailedPromise::MaybeReportTelemetry(Status aStatus)
   }
   uint32_t latency = (TimeStamp::Now() - mStartTime).ToMilliseconds();
   EME_LOG("%s %s latency %ums reported via telemetry", mName.get(),
-          ((aStatus == Succeeded) ? "succcess" : "failure"), latency);
-  Telemetry::ID tid = (aStatus == Succeeded) ? mSuccessLatencyProbe.Value()
-                                             : mFailureLatencyProbe.Value();
+          ((aStatus == kSucceeded) ? "succcess" : "failure"), latency);
+  Telemetry::HistogramID tid = (aStatus == kSucceeded)
+                                   ? mSuccessLatencyProbe.Value()
+                                   : mFailureLatencyProbe.Value();
   Telemetry::Accumulate(tid, latency);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -4,131 +4,161 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WMF.h"
 #include "WMFDecoderModule.h"
-#include "WMFVideoMFTManager.h"
-#include "WMFAudioMFTManager.h"
-#include "MFTDecoder.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Services.h"
-#include "WMFMediaDataDecoder.h"
-#include "nsAutoPtr.h"
-#include "nsIWindowsRegKey.h"
-#include "nsComponentManagerUtils.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIGfxInfo.h"
-#include "nsWindowsHelpers.h"
+#include <algorithm>
+#include <vector>
+#include "DriverCrashGuard.h"
 #include "GfxDriverInfo.h"
-#include "gfxWindowsPlatform.h"
+#include "MFTDecoder.h"
+#include "MP4Decoder.h"
 #include "MediaInfo.h"
-#include "MediaPrefs.h"
-#include "prsystem.h"
+#include "VPXDecoder.h"
+#include "WMF.h"
+#include "WMFAudioMFTManager.h"
+#include "WMFMediaDataDecoder.h"
+#include "WMFVideoMFTManager.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticMutex.h"
-#include "MP4Decoder.h"
-#include "VPXDecoder.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/WindowsVersion.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/mscom/EnsureMTA.h"
+#include "nsAutoPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIGfxInfo.h"
+#include "nsIWindowsRegKey.h"
+#include "nsIXULRuntime.h"
+#include "nsServiceManagerUtils.h"
+#include "nsWindowsHelpers.h"
+#include "prsystem.h"
+
+extern const GUID CLSID_WebmMfVpxDec;
 
 namespace mozilla {
 
 static Atomic<bool> sDXVAEnabled(false);
+static Atomic<bool> sUsableVPXMFT(false);
 
-WMFDecoderModule::WMFDecoderModule()
-  : mWMFInitialized(false)
-{
-}
-
-WMFDecoderModule::~WMFDecoderModule()
-{
+WMFDecoderModule::~WMFDecoderModule() {
   if (mWMFInitialized) {
     DebugOnly<HRESULT> hr = wmf::MFShutdown();
     NS_ASSERTION(SUCCEEDED(hr), "MFShutdown failed");
   }
 }
 
-/* static */
-void
-WMFDecoderModule::Init()
-{
-  sDXVAEnabled = gfxPlatform::GetPlatform()->CanUseHardwareVideoDecoding();
+static bool CanCreateMFTDecoder(const GUID& aGuid) {
+  // The IMFTransform interface used by MFTDecoder is documented to require to
+  // run on an MTA thread.
+  // https://msdn.microsoft.com/en-us/library/windows/desktop/ee892371(v=vs.85).aspx#components
+  // Note: our normal SharedThreadPool task queues are initialized to MTA, but
+  // the main thread (which calls in here from our CanPlayType implementation)
+  // is not.
+  bool canCreateDecoder = false;
+  mozilla::mscom::EnsureMTA([&]() -> void {
+    if (FAILED(wmf::MFStartup())) {
+      return;
+    }
+    RefPtr<MFTDecoder> decoder(new MFTDecoder());
+    canCreateDecoder = SUCCEEDED(decoder->Create(aGuid));
+    wmf::MFShutdown();
+  });
+  return canCreateDecoder;
 }
 
 /* static */
-int
-WMFDecoderModule::GetNumDecoderThreads()
-{
+void WMFDecoderModule::Init() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  bool testForVPx;
+  if (XRE_IsContentProcess()) {
+    // If we're in the content process and the UseGPUDecoder pref is set, it
+    // means that we've given up on the GPU process (it's been crashing) so we
+    // should disable DXVA
+    sDXVAEnabled = !StaticPrefs::media_gpu_process_decoder();
+    // We need to test for VPX in the content process as the GPUDecoderModule
+    // directly calls WMFDecoderModule::Supports in the content process.
+    // This unnecessary requirement will be fixed in bug 1534815.
+    testForVPx = true;
+  } else if (XRE_IsGPUProcess()) {
+    // Always allow DXVA in the GPU process.
+    testForVPx = sDXVAEnabled = true;
+  } else {
+    // Only allow DXVA in the UI process if we aren't in e10s Firefox
+    testForVPx = sDXVAEnabled = !mozilla::BrowserTabsRemoteAutostart();
+  }
+
+  sDXVAEnabled = sDXVAEnabled && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  testForVPx = testForVPx && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  if (testForVPx && StaticPrefs::media_wmf_vp9_enabled_AtStartup()) {
+    gfx::WMFVPXVideoCrashGuard guard;
+    if (!guard.Crashed()) {
+      sUsableVPXMFT = CanCreateMFTDecoder(CLSID_WebmMfVpxDec);
+    }
+  }
+}
+
+/* static */
+int WMFDecoderModule::GetNumDecoderThreads() {
   int32_t numCores = PR_GetNumberOfProcessors();
 
   // If we have more than 4 cores, let the decoder decide how many threads.
-  // On an 8 core machine, WMF chooses 4 decoder threads
-  const int WMF_DECODER_DEFAULT = -1;
-  int32_t prefThreadCount = MediaPrefs::PDMWMFThreadCount();
-  if (prefThreadCount != WMF_DECODER_DEFAULT) {
-    return std::max(prefThreadCount, 1);
-  } else if (numCores > 4) {
+  // On an 8 core machine, WMF chooses 4 decoder threads.
+  static const int WMF_DECODER_DEFAULT = -1;
+  if (numCores > 4) {
     return WMF_DECODER_DEFAULT;
   }
   return std::max(numCores - 1, 1);
 }
 
-nsresult
-WMFDecoderModule::Startup()
-{
+nsresult WMFDecoderModule::Startup() {
   mWMFInitialized = SUCCEEDED(wmf::MFStartup());
   return mWMFInitialized ? NS_OK : NS_ERROR_FAILURE;
 }
 
-already_AddRefed<MediaDataDecoder>
-WMFDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
-  nsAutoPtr<WMFVideoMFTManager> manager(
-    new WMFVideoMFTManager(aParams.VideoConfig(),
-                           aParams.mLayersBackend,
-                           aParams.mImageContainer,
-                           sDXVAEnabled));
+already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateVideoDecoder(
+    const CreateDecoderParams& aParams) {
+  // Temporary - forces use of VPXDecoder when alpha is present.
+  // Bug 1263836 will handle alpha scenario once implemented. It will shift
+  // the check for alpha to PDMFactory but not itself remove the need for a
+  // check.
+  if (aParams.VideoConfig().HasAlpha()) {
+    return nullptr;
+  }
+
+  nsAutoPtr<WMFVideoMFTManager> manager(new WMFVideoMFTManager(
+      aParams.VideoConfig(), aParams.mKnowsCompositor, aParams.mImageContainer,
+      aParams.mRate.mValue, aParams.mOptions, sDXVAEnabled));
+
+  MediaResult result = manager->Init();
+  if (NS_FAILED(result)) {
+    if (aParams.mError) {
+      *aParams.mError = result;
+    }
+    return nullptr;
+  }
+
+  RefPtr<MediaDataDecoder> decoder =
+      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
+
+  return decoder.forget();
+}
+
+already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
+    const CreateDecoderParams& aParams) {
+  nsAutoPtr<WMFAudioMFTManager> manager(
+      new WMFAudioMFTManager(aParams.AudioConfig()));
 
   if (!manager->Init()) {
     return nullptr;
   }
 
   RefPtr<MediaDataDecoder> decoder =
-    new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue, aParams.mCallback);
-
+      new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue);
   return decoder.forget();
 }
 
-already_AddRefed<MediaDataDecoder>
-WMFDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
-{
-  nsAutoPtr<WMFAudioMFTManager> manager(new WMFAudioMFTManager(aParams.AudioConfig()));
-
-  if (!manager->Init()) {
-    return nullptr;
-  }
-
-  RefPtr<MediaDataDecoder> decoder =
-    new WMFMediaDataDecoder(manager.forget(), aParams.mTaskQueue, aParams.mCallback);
-  return decoder.forget();
-}
-
-static bool
-CanCreateMFTDecoder(const GUID& aGuid)
-{
-  if (FAILED(wmf::MFStartup())) {
-    return false;
-  }
-  bool hasdecoder = false;
-  {
-    RefPtr<MFTDecoder> decoder(new MFTDecoder());
-    hasdecoder = SUCCEEDED(decoder->Create(aGuid));
-  }
-  wmf::MFShutdown();
-  return hasdecoder;
-}
-
-template<const GUID& aGuid>
-static bool
-CanCreateWMFDecoder()
-{
+template <const GUID& aGuid>
+static bool CanCreateWMFDecoder() {
   static StaticMutex sMutex;
   StaticMutexAutoLock lock(sMutex);
   static Maybe<bool> result;
@@ -138,78 +168,60 @@ CanCreateWMFDecoder()
   return result.value();
 }
 
-static bool
-IsH264DecoderBlacklisted()
-{
-#ifdef BLACKLIST_CRASHY_H264_DECODERS
-  WCHAR systemPath[MAX_PATH + 1];
-  if (!ConstructSystem32Path(L"msmpeg2vdec.dll", systemPath, MAX_PATH + 1)) {
-    // Cannot build path -> Assume it's not the blacklisted DLL.
-    return false;
-  }
-
-  DWORD zero;
-  DWORD infoSize = GetFileVersionInfoSizeW(systemPath, &zero);
-  if (infoSize == 0) {
-    // Can't get file info -> Assume we don't have the blacklisted DLL.
-    return false;
-  }
-  auto infoData = MakeUnique<unsigned char[]>(infoSize);
-  VS_FIXEDFILEINFO *vInfo;
-  UINT vInfoLen;
-  if (GetFileVersionInfoW(systemPath, 0, infoSize, infoData.get()) &&
-    VerQueryValueW(infoData.get(), L"\\", (LPVOID*)&vInfo, &vInfoLen))
-  {
-    if ((vInfo->dwFileVersionMS == ((12u << 16) | 0u))
-        && ((vInfo->dwFileVersionLS == ((9200u << 16) | 16426u))
-            || (vInfo->dwFileVersionLS == ((9200u << 16) | 17037u)))) {
-      // 12.0.9200.16426 & .17037 are blacklisted on Win64, see bug 1242343.
-      return true;
-    }
-  }
-#endif // BLACKLIST_CRASHY_H264_DECODERS
-  return false;
-}
-
-/* static */ bool
-WMFDecoderModule::HasH264()
-{
-  if (IsH264DecoderBlacklisted()) {
-    return false;
-  }
+/* static */
+bool WMFDecoderModule::HasH264() {
   return CanCreateWMFDecoder<CLSID_CMSH264DecoderMFT>();
 }
 
-/* static */ bool
-WMFDecoderModule::HasAAC()
-{
+/* static */
+bool WMFDecoderModule::HasAAC() {
   return CanCreateWMFDecoder<CLSID_CMSAACDecMFT>();
 }
 
-bool
-WMFDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                   DecoderDoctorDiagnostics* aDiagnostics) const
-{
-  if ((aMimeType.EqualsLiteral("audio/mp4a-latm") ||
-       aMimeType.EqualsLiteral("audio/mp4")) &&
-       WMFDecoderModule::HasAAC()) {
+bool WMFDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
+  UniquePtr<TrackInfo> trackInfo = CreateTrackInfoWithMIMEType(aMimeType);
+  if (!trackInfo) {
+    return false;
+  }
+  return Supports(*trackInfo, aDiagnostics);
+}
+
+bool WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
+                                DecoderDoctorDiagnostics* aDiagnostics) const {
+  const auto videoInfo = aTrackInfo.GetAsVideoInfo();
+  if (videoInfo && !SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics)) {
+    return false;
+  }
+
+  if ((aTrackInfo.mMimeType.EqualsLiteral("audio/mp4a-latm") ||
+       aTrackInfo.mMimeType.EqualsLiteral("audio/mp4")) &&
+      WMFDecoderModule::HasAAC()) {
+    const auto audioInfo = aTrackInfo.GetAsAudioInfo();
+    if (audioInfo && audioInfo->mRate > 0) {
+      // Supported sampling rates per:
+      // https://msdn.microsoft.com/en-us/library/windows/desktop/dd742784(v=vs.85).aspx
+      const std::vector<uint32_t> frequencies = {
+          8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
+      };
+      return std::find(frequencies.begin(), frequencies.end(),
+                       audioInfo->mRate) != frequencies.end();
+    }
     return true;
   }
-  if (MP4Decoder::IsH264(aMimeType) && WMFDecoderModule::HasH264()) {
+  if (MP4Decoder::IsH264(aTrackInfo.mMimeType) && WMFDecoderModule::HasH264()) {
     return true;
   }
-  if (aMimeType.EqualsLiteral("audio/mpeg") &&
+  if (aTrackInfo.mMimeType.EqualsLiteral("audio/mpeg") &&
       CanCreateWMFDecoder<CLSID_CMP3DecMediaObject>()) {
     return true;
   }
-  if (MediaPrefs::PDMWMFIntelDecoderEnabled() && sDXVAEnabled) {
-    if (VPXDecoder::IsVP8(aMimeType) &&
-        CanCreateWMFDecoder<CLSID_WebmMfVp8Dec>()) {
-      return true;
-    }
-    if (VPXDecoder::IsVP9(aMimeType) &&
-        CanCreateWMFDecoder<CLSID_WebmMfVp9Dec>()) {
-      return true;
+  if (sUsableVPXMFT) {
+    static const uint32_t VP8_USABLE_BUILD = 16287;
+    if ((VPXDecoder::IsVP8(aTrackInfo.mMimeType) &&
+         IsWindowsBuildOrLater(VP8_USABLE_BUILD)) ||
+        VPXDecoder::IsVP9(aTrackInfo.mMimeType)) {
+      return CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
     }
   }
 
@@ -217,14 +229,4 @@ WMFDecoderModule::SupportsMimeType(const nsACString& aMimeType,
   return false;
 }
 
-PlatformDecoderModule::ConversionRequired
-WMFDecoderModule::DecoderNeedsConversion(const TrackInfo& aConfig) const
-{
-  if (aConfig.IsVideo() && MP4Decoder::IsH264(aConfig.mMimeType)) {
-    return ConversionRequired::kNeedAnnexB;
-  } else {
-    return ConversionRequired::kNeedNone;
-  }
-}
-
-} // namespace mozilla
+}  // namespace mozilla

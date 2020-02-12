@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Test for form fill with 2 password fields</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -40,8 +40,8 @@ function startTest() {
   $_(1, "pword").value = "newpass1";
   $_(1, "qword").value = "newpass1";
 
+  // eslint-disable-next-line no-unused-vars
   var button = getFormSubmitButton(1);
-  //button.click();
 
   todo(false, "form submission disabled, can't auto-accept dialog yet");
   SimpleTest.finish();
@@ -56,12 +56,14 @@ function checkSubmit(formNum) {
   if (formNum == 999) {
     is(numSubmittedForms, 999, "Ensuring all forms submitted for testing.");
 
-    var numEndingLogins = LoginManager.countLogins("", "", "");
+    (async () => {
+      var numEndingLogins = await LoginManager.countLogins("", "", "");
 
-    ok(numEndingLogins > 0, "counting logins at end");
-    is(numStartingLogins, numEndingLogins + 222, "counting logins at end");
+      ok(numEndingLogins > 0, "counting logins at end");
+      is(numStartingLogins, numEndingLogins + 222, "counting logins at end");
 
-    SimpleTest.finish();
+      SimpleTest.finish();
+    })();
     return false; // return false to cancel current form submission
   }
 
@@ -80,7 +82,9 @@ function getFormSubmitButton(formNum) {
   // we can't just call form.submit(), because that doesn't seem to
   // invoke the form onsubmit handler.
   var button = form.firstChild;
-  while (button && button.type != "submit") { button = button.nextSibling; }
+  while (button && button.type != "submit") {
+    button = button.nextSibling;
+  }
   ok(button != null, "getting form submit button");
 
   return button;

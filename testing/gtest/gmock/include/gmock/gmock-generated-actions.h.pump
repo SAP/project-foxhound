@@ -1,5 +1,5 @@
 $$ -*- mode: c++; -*-
-$$ This is a Pump source file.  Please use Pump to convert it to
+$$ This is a Pump source file. Please use Pump to convert it to
 $$ gmock-generated-actions.h.
 $$
 $var n = 10  $$ The maximum arity we support.
@@ -32,12 +32,13 @@ $$}} This meta comment fixes auto-indentation in editors.
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: wan@google.com (Zhanyong Wan)
+
 
 // Google Mock - a framework for writing C++ mock classes.
 //
 // This file implements some commonly used variadic actions.
+
+// GOOGLETEST_CM0002 DO NOT DELETE
 
 #ifndef GMOCK_INCLUDE_GMOCK_GMOCK_GENERATED_ACTIONS_H_
 #define GMOCK_INCLUDE_GMOCK_GMOCK_GENERATED_ACTIONS_H_
@@ -49,100 +50,79 @@ namespace testing {
 namespace internal {
 
 // InvokeHelper<F> knows how to unpack an N-tuple and invoke an N-ary
-// function or method with the unpacked values, where F is a function
-// type that takes N arguments.
+// function, method, or callback with the unpacked values, where F is
+// a function type that takes N arguments.
 template <typename Result, typename ArgumentTuple>
 class InvokeHelper;
 
 
+$var max_callback_arity = 5
 $range i 0..n
 $for i [[
 $range j 1..i
 $var types = [[$for j [[, typename A$j]]]]
 $var as = [[$for j, [[A$j]]]]
 $var args = [[$if i==0 [[]] $else [[ args]]]]
-$var import = [[$if i==0 [[]] $else [[
-    using ::std::tr1::get;
-
-]]]]
 $var gets = [[$for j, [[get<$(j - 1)>(args)]]]]
 template <typename R$types>
-class InvokeHelper<R, ::std::tr1::tuple<$as> > {
+class InvokeHelper<R, ::testing::tuple<$as> > {
  public:
   template <typename Function>
-  static R Invoke(Function function, const ::std::tr1::tuple<$as>&$args) {
-$import    return function($gets);
+  static R Invoke(Function function, const ::testing::tuple<$as>&$args) {
+           return function($gets);
   }
 
   template <class Class, typename MethodPtr>
   static R InvokeMethod(Class* obj_ptr,
                         MethodPtr method_ptr,
-                        const ::std::tr1::tuple<$as>&$args) {
-$import    return (obj_ptr->*method_ptr)($gets);
+                        const ::testing::tuple<$as>&$args) {
+           return (obj_ptr->*method_ptr)($gets);
   }
+
+
+$if i <= max_callback_arity [[
+  template <typename CallbackType>
+  static R InvokeCallback(CallbackType* callback,
+                          const ::testing::tuple<$as>&$args) {
+           return callback->Run($gets);
+  }
+]] $else [[
+  // There is no InvokeCallback() for $i-tuples
+]]
+
 };
 
 
 ]]
-// CallableHelper has static methods for invoking "callables",
-// i.e. function pointers and functors.  It uses overloading to
-// provide a uniform interface for invoking different kinds of
-// callables.  In particular, you can use:
-//
-//   CallableHelper<R>::Call(callable, a1, a2, ..., an)
-//
-// to invoke an n-ary callable, where R is its return type.  If an
-// argument, say a2, needs to be passed by reference, you should write
-// ByRef(a2) instead of a2 in the above expression.
-template <typename R>
-class CallableHelper {
+// Implements the Invoke(callback) action.
+template <typename CallbackType>
+class InvokeCallbackAction {
  public:
-  // Calls a nullary callable.
-  template <typename Function>
-  static R Call(Function function) { return function(); }
-
-  // Calls a unary callable.
-
-  // We deliberately pass a1 by value instead of const reference here
-  // in case it is a C-string literal.  If we had declared the
-  // parameter as 'const A1& a1' and write Call(function, "Hi"), the
-  // compiler would've thought A1 is 'char[3]', which causes trouble
-  // when you need to copy a value of type A1.  By declaring the
-  // parameter as 'A1 a1', the compiler will correctly infer that A1
-  // is 'const char*' when it sees Call(function, "Hi").
-  //
-  // Since this function is defined inline, the compiler can get rid
-  // of the copying of the arguments.  Therefore the performance won't
-  // be hurt.
-  template <typename Function, typename A1>
-  static R Call(Function function, A1 a1) { return function(a1); }
-
-$range i 2..n
-$for i
-[[
-$var arity = [[$if i==2 [[binary]] $elif i==3 [[ternary]] $else [[$i-ary]]]]
-
-  // Calls a $arity callable.
-
-$range j 1..i
-$var typename_As = [[$for j, [[typename A$j]]]]
-$var Aas = [[$for j, [[A$j a$j]]]]
-$var as = [[$for j, [[a$j]]]]
-$var typename_Ts = [[$for j, [[typename T$j]]]]
-$var Ts = [[$for j, [[T$j]]]]
-  template <typename Function, $typename_As>
-  static R Call(Function function, $Aas) {
-    return function($as);
+  // The c'tor takes ownership of the callback.
+  explicit InvokeCallbackAction(CallbackType* callback)
+      : callback_(callback) {
+    callback->CheckIsRepeatable();  // Makes sure the callback is permanent.
   }
 
-]]
-
-};  // class CallableHelper
+  // This type conversion operator template allows Invoke(callback) to
+  // be used wherever the callback's type is compatible with that of
+  // the mock function, i.e. if the mock function's arguments can be
+  // implicitly converted to the callback's arguments and the
+  // callback's result can be implicitly converted to the mock
+  // function's result.
+  template <typename Result, typename ArgumentTuple>
+  Result Perform(const ArgumentTuple& args) const {
+    return InvokeHelper<Result, ArgumentTuple>::InvokeCallback(
+        callback_.get(), args);
+  }
+ private:
+  const linked_ptr<CallbackType> callback_;
+};
 
 // An INTERNAL macro for extracting the type of a tuple field.  It's
 // subject to change without notice - DO NOT USE IN USER CODE!
 #define GMOCK_FIELD_(Tuple, N) \
-    typename ::std::tr1::tuple_element<N, Tuple>::type
+    typename ::testing::tuple_element<N, Tuple>::type
 
 $range i 1..n
 
@@ -150,15 +130,15 @@ $range i 1..n
 // type of an n-ary function whose i-th (1-based) argument type is the
 // k{i}-th (0-based) field of ArgumentTuple, which must be a tuple
 // type, and whose return type is Result.  For example,
-//   SelectArgs<int, ::std::tr1::tuple<bool, char, double, long>, 0, 3>::type
+//   SelectArgs<int, ::testing::tuple<bool, char, double, long>, 0, 3>::type
 // is int(bool, long).
 //
 // SelectArgs<Result, ArgumentTuple, k1, k2, ..., k_n>::Select(args)
 // returns the selected fields (k1, k2, ..., k_n) of args as a tuple.
 // For example,
-//   SelectArgs<int, ::std::tr1::tuple<bool, char, double>, 2, 0>::Select(
-//       ::std::tr1::make_tuple(true, 'a', 2.5))
-// returns ::std::tr1::tuple (2.5, true).
+//   SelectArgs<int, tuple<bool, char, double>, 2, 0>::Select(
+//       ::testing::make_tuple(true, 'a', 2.5))
+// returns tuple (2.5, true).
 //
 // The numbers in list k1, k2, ..., k_n must be >= 0, where n can be
 // in the range [0, $n].  Duplicates are allowed and they don't have
@@ -170,7 +150,6 @@ class SelectArgs {
   typedef Result type($for i, [[GMOCK_FIELD_(ArgumentTuple, k$i)]]);
   typedef typename Function<type>::ArgumentTuple SelectedArgs;
   static SelectedArgs Select(const ArgumentTuple& args) {
-    using ::std::tr1::get;
     return SelectedArgs($for i, [[get<k$i>(args)]]);
   }
 };
@@ -187,7 +166,6 @@ class SelectArgs<Result, ArgumentTuple,
   typedef typename Function<type>::ArgumentTuple SelectedArgs;
   static SelectedArgs Select(const ArgumentTuple& [[]]
 $if i == 1 [[/* args */]] $else [[args]]) {
-    using ::std::tr1::get;
     return SelectedArgs($for j1, [[get<k$j1>(args)]]);
   }
 };
@@ -267,8 +245,7 @@ $range k 1..n-i
 $var eas = [[$for k, [[ExcessiveArg()]]]]
 $var arg_list = [[$if (i==0) | (i==n) [[$as$eas]] $else [[$as, $eas]]]]
 $template
-  static Result Perform(Impl* impl, const ::std::tr1::tuple<$As>& args) {
-    using ::std::tr1::get;
+  static Result Perform(Impl* impl, const ::testing::tuple<$As>& args) {
     return impl->template gmock_PerformImpl<$As>(args, $arg_list);
   }
 
@@ -419,7 +396,7 @@ $range j2 2..i
 // MORE INFORMATION:
 //
 // To learn more about using these macros, please search for 'ACTION'
-// on http://code.google.com/p/googlemock/wiki/CookBook.
+// on https://github.com/google/googletest/blob/master/googlemock/docs/CookBook.md
 
 $range i 0..n
 $range k 0..n-1
@@ -427,7 +404,7 @@ $range k 0..n-1
 // An internal macro needed for implementing ACTION*().
 #define GMOCK_ACTION_ARG_TYPES_AND_NAMES_UNUSED_\
     const args_type& args GTEST_ATTRIBUTE_UNUSED_
-$for k [[,\
+$for k [[, \
     arg$k[[]]_type arg$k GTEST_ATTRIBUTE_UNUSED_]]
 
 
@@ -455,7 +432,7 @@ $for k [[,\
 //   ACTION_TEMPLATE(DuplicateArg,
 //                   HAS_2_TEMPLATE_PARAMS(int, k, typename, T),
 //                   AND_1_VALUE_PARAMS(output)) {
-//     *output = T(std::tr1::get<k>(args));
+//     *output = T(::testing::get<k>(args));
 //   }
 //   ...
 //     int n;
@@ -548,7 +525,7 @@ _VALUE_PARAMS($for j, [[p$j]]) $for j [[, typename p$j##_type]]
 $for i [[
 $range j 0..i-1
 #define GMOCK_INTERNAL_INIT_AND_$i[[]]_VALUE_PARAMS($for j, [[p$j]])\
-    ($for j, [[p$j##_type gmock_p$j]])$if i>0 [[ : ]]$for j, [[p$j(gmock_p$j)]]
+    ($for j, [[p$j##_type gmock_p$j]])$if i>0 [[ : ]]$for j, [[p$j(::testing::internal::move(gmock_p$j))]]
 
 
 ]]
@@ -614,7 +591,7 @@ $range k 0..n-1
             GMOCK_INTERNAL_DECL_TYPE_##value_params>\
   class GMOCK_ACTION_CLASS_(name, value_params) {\
    public:\
-    GMOCK_ACTION_CLASS_(name, value_params)\
+    explicit GMOCK_ACTION_CLASS_(name, value_params)\
         GMOCK_INTERNAL_INIT_##value_params {}\
     template <typename F>\
     class gmock_Impl : public ::testing::ActionInterface<F> {\
@@ -657,9 +634,9 @@ $for k [[, arg$k[[]]_type arg$k]]) const;\
   template <GMOCK_INTERNAL_DECL_##template_params\
             GMOCK_INTERNAL_DECL_TYPE_##value_params>\
   template <typename F>\
-  template <typename arg0_type, typename arg1_type, typename arg2_type,\
-      typename arg3_type, typename arg4_type, typename arg5_type,\
-      typename arg6_type, typename arg7_type, typename arg8_type,\
+  template <typename arg0_type, typename arg1_type, typename arg2_type, \
+      typename arg3_type, typename arg4_type, typename arg5_type, \
+      typename arg6_type, typename arg7_type, typename arg8_type, \
       typename arg9_type>\
   typename ::testing::internal::Function<F>::Result\
       GMOCK_ACTION_CLASS_(name, value_params)<\
@@ -681,7 +658,7 @@ $var class_name = [[name##Action[[$if i==0 [[]] $elif i==1 [[P]]
 $range j 0..i-1
 $var ctor_param_list = [[$for j, [[p$j##_type gmock_p$j]]]]
 $var param_types_and_names = [[$for j, [[p$j##_type p$j]]]]
-$var inits = [[$if i==0 [[]] $else [[ : $for j, [[p$j(gmock_p$j)]]]]]]
+$var inits = [[$if i==0 [[]] $else [[ : $for j, [[p$j(::testing::internal::forward<p$j##_type>(gmock_p$j))]]]]]]
 $var param_field_decls = [[$for j
 [[
 
@@ -702,7 +679,7 @@ $var macro_name = [[$if i==0 [[ACTION]] $elif i==1 [[ACTION_P]]
 #define $macro_name(name$for j [[, p$j]])\$template
   class $class_name {\
    public:\
-    $class_name($ctor_param_list)$inits {}\
+    [[$if i==1 [[explicit ]]]]$class_name($ctor_param_list)$inits {}\
     template <typename F>\
     class gmock_Impl : public ::testing::ActionInterface<F> {\
      public:\
@@ -740,10 +717,8 @@ $$ }  // This meta comment fixes auto-indentation in Emacs.  It won't
 $$    // show up in the generated code.
 
 
-// TODO(wan@google.com): move the following to a different .h file
-// such that we don't have to run 'pump' every time the code is
-// updated.
 namespace testing {
+
 
 // The ACTION*() macros trigger warning C4100 (unreferenced formal
 // parameter) in MSVC with -W4.  Unfortunately they cannot be fixed in
@@ -785,6 +760,32 @@ namespace testing {
 //   InvokeArgument action from temporary values and have it performed
 //   later.
 
+namespace internal {
+namespace invoke_argument {
+
+// Appears in InvokeArgumentAdl's argument list to help avoid
+// accidental calls to user functions of the same name.
+struct AdlTag {};
+
+// InvokeArgumentAdl - a helper for InvokeArgument.
+// The basic overloads are provided here for generic functors.
+// Overloads for other custom-callables are provided in the
+// internal/custom/callback-actions.h header.
+
+$range i 0..n
+$for i
+[[
+$range j 1..i
+
+template <typename R, typename F[[$for j [[, typename A$j]]]]>
+R InvokeArgumentAdl(AdlTag, F f[[$for j [[, A$j a$j]]]]) {
+  return f([[$for j, [[a$j]]]]);
+}
+]]
+
+}  // namespace invoke_argument
+}  // namespace internal
+
 $range i 0..n
 $for i [[
 $range j 0..i-1
@@ -792,8 +793,10 @@ $range j 0..i-1
 ACTION_TEMPLATE(InvokeArgument,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_$i[[]]_VALUE_PARAMS($for j, [[p$j]])) {
-  return internal::CallableHelper<return_type>::Call(
-      ::std::tr1::get<k>(args)$for j [[, p$j]]);
+  using internal::invoke_argument::InvokeArgumentAdl;
+  return InvokeArgumentAdl<return_type>(
+      internal::invoke_argument::AdlTag(),
+      ::testing::get<k>(args)$for j [[, p$j]]);
 }
 
 ]]
@@ -821,5 +824,10 @@ ACTION_TEMPLATE(ReturnNew,
 #endif
 
 }  // namespace testing
+
+// Include any custom callback actions added by the local installation.
+// We must include this header at the end to make sure it can use the
+// declarations from this file.
+#include "gmock/internal/custom/gmock-generated-actions.h"
 
 #endif  // GMOCK_INCLUDE_GMOCK_GMOCK_GENERATED_ACTIONS_H_

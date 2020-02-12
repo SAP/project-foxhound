@@ -15,23 +15,22 @@ XPIDL_MODULE = 'places'
 
 if CONFIG['MOZ_PLACES']:
     XPIDL_SOURCES += [
-        'mozIAsyncFavicons.idl',
         'mozIAsyncHistory.idl',
-        'mozIAsyncLivemarks.idl',
-        'mozIColorAnalyzer.idl',
         'mozIPlacesAutoComplete.idl',
         'mozIPlacesPendingOperation.idl',
+        'mozISyncedBookmarksMirror.idl',
         'nsIAnnotationService.idl',
-        'nsIBrowserHistory.idl',
         'nsIFaviconService.idl',
         'nsINavBookmarksService.idl',
         'nsITaggingService.idl',
-        'nsPIPlacesDatabase.idl',
     ]
 
     EXPORTS.mozilla.places = [
         'Database.h',
         'History.h',
+        'INativePlacesEventCallback.h',
+        'Shutdown.h',
+        'SyncedBookmarksMirror.h',
     ]
 
     UNIFIED_SOURCES += [
@@ -46,7 +45,6 @@ if CONFIG['MOZ_PLACES']:
         'nsNavHistory.cpp',
         'nsNavHistoryQuery.cpp',
         'nsNavHistoryResult.cpp',
-        'nsPlacesModule.cpp',
         'PlaceInfo.cpp',
         'Shutdown.cpp',
         'SQLFunctions.cpp',
@@ -61,35 +59,26 @@ if CONFIG['MOZ_PLACES']:
         'BookmarkHTMLUtils.jsm',
         'BookmarkJSONUtils.jsm',
         'Bookmarks.jsm',
-        'ClusterLib.js',
-        'ColorAnalyzer_worker.js',
-        'ColorConversion.js',
+        'ExtensionSearchHandler.jsm',
         'History.jsm',
+        'PageIconProtocolHandler.jsm',
         'PlacesBackups.jsm',
+        'PlacesCategoriesStarter.jsm',
         'PlacesDBUtils.jsm',
+        'PlacesExpiration.jsm',
         'PlacesRemoteTabsAutocompleteProvider.jsm',
         'PlacesSearchAutocompleteProvider.jsm',
         'PlacesSyncUtils.jsm',
         'PlacesTransactions.jsm',
         'PlacesUtils.jsm',
+        'SyncedBookmarksMirror.jsm',
+        'TaggingService.jsm',
+        'UnifiedComplete.jsm',
     ]
 
-    EXTRA_COMPONENTS += [
-        'ColorAnalyzer.js',
-        'nsLivemarkService.js',
-        'nsPlacesExpiration.js',
-        'nsTaggingService.js',
-        'PageIconProtocolHandler.js',
-        'PlacesCategoriesStarter.js',
-        'toolkitplaces.manifest',
-        'UnifiedComplete.js',
+    XPCOM_MANIFESTS += [
+        'components.conf',
     ]
-
-    if CONFIG['MOZ_SUITE']:
-        EXTRA_COMPONENTS += [
-            'nsPlacesAutoComplete.js',
-            'nsPlacesAutoComplete.manifest',
-        ]
 
     FINAL_LIBRARY = 'xul'
 
@@ -98,5 +87,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 with Files('**'):
     BUG_COMPONENT = ('Toolkit', 'Places')
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+JAR_MANIFESTS += ['jar.mn']

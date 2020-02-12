@@ -4,10 +4,29 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += [
-    'compiledtest',
-    'gtest'
-]
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Canvas: 2D')
+
+with Files('TexUnpackBlob.cpp'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('WebGL*'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('test/webgl-conf/**'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('test/webgl-mochitest/**'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('test/reftest/webgl*'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('test/chrome/*webgl*'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
+
+with Files('test/crossorigin/*webgl*'):
+    BUG_COMPONENT = ('Core', 'Canvas: WebGL')
 
 # Change the following line(s) to avoid bug 1081323 (clobber after changing a manifest):
 # * Adjust failure errata for webgl-conf.
@@ -26,12 +45,8 @@ EXPORTS += [
     'nsICanvasRenderingContextInternal.h',
 ]
 
-EXPORTS.mozilla.ipc += [
-    'DocumentRendererChild.h',
-    'DocumentRendererParent.h',
-]
-
 EXPORTS.mozilla.dom += [
+    'BasicRenderingContext2D.h',
     'CanvasGradient.h',
     'CanvasPath.h',
     'CanvasPattern.h',
@@ -42,6 +57,7 @@ EXPORTS.mozilla.dom += [
     'ImageBitmapRenderingContext.h',
     'ImageBitmapSource.h',
     'ImageData.h',
+    'ImageUtils.h',
     'OffscreenCanvas.h',
     'TextMetrics.h',
     'WebGLVertexArrayObject.h',
@@ -53,12 +69,8 @@ UNIFIED_SOURCES += [
     'CanvasRenderingContext2D.cpp',
     'CanvasRenderingContextHelper.cpp',
     'CanvasUtils.cpp',
-    'DocumentRendererChild.cpp',
-    'DocumentRendererParent.cpp',
     'ImageBitmap.cpp',
-    'ImageBitmapColorUtils.cpp',
     'ImageBitmapRenderingContext.cpp',
-    'ImageBitmapUtils.cpp',
     'ImageData.cpp',
     'OffscreenCanvas.cpp',
 ]
@@ -69,9 +81,9 @@ SOURCES += [
 
 # WebGL Sources
 UNIFIED_SOURCES += [
+    'CacheInvalidator.cpp',
     'TexUnpackBlob.cpp',
     'WebGL1Context.cpp',
-    'WebGL1ContextUniforms.cpp',
     'WebGL2Context.cpp',
     'WebGL2ContextBuffers.cpp',
     'WebGL2ContextFramebuffers.cpp',
@@ -86,7 +98,6 @@ UNIFIED_SOURCES += [
     'WebGL2ContextTransformFeedback.cpp',
     'WebGL2ContextUniforms.cpp',
     'WebGL2ContextVAOs.cpp',
-    'WebGL2ContextVertices.cpp',
     'WebGLActiveInfo.cpp',
     'WebGLBuffer.cpp',
     'WebGLContext.cpp',
@@ -98,21 +109,21 @@ UNIFIED_SOURCES += [
     'WebGLContextLossHandler.cpp',
     'WebGLContextState.cpp',
     'WebGLContextTextures.cpp',
-    'WebGLContextUnchecked.cpp',
     'WebGLContextUtils.cpp',
     'WebGLContextValidate.cpp',
     'WebGLContextVertexArray.cpp',
     'WebGLContextVertices.cpp',
-    'WebGLElementArrayCache.cpp',
-    'WebGLExtensionBase.cpp',
     'WebGLExtensionBlendMinMax.cpp',
     'WebGLExtensionColorBufferFloat.cpp',
     'WebGLExtensionColorBufferHalfFloat.cpp',
-    'WebGLExtensionCompressedTextureATC.cpp',
+    'WebGLExtensionCompressedTextureASTC.cpp',
+    'WebGLExtensionCompressedTextureBPTC.cpp',
     'WebGLExtensionCompressedTextureES3.cpp',
     'WebGLExtensionCompressedTextureETC1.cpp',
     'WebGLExtensionCompressedTexturePVRTC.cpp',
+    'WebGLExtensionCompressedTextureRGTC.cpp',
     'WebGLExtensionCompressedTextureS3TC.cpp',
+    'WebGLExtensionCompressedTextureS3TC_SRGB.cpp',
     'WebGLExtensionDebugRendererInfo.cpp',
     'WebGLExtensionDebugShaders.cpp',
     'WebGLExtensionDepthTexture.cpp',
@@ -123,6 +134,8 @@ UNIFIED_SOURCES += [
     'WebGLExtensionFragDepth.cpp',
     'WebGLExtensionInstancedArrays.cpp',
     'WebGLExtensionLoseContext.cpp',
+    'WebGLExtensionMOZDebug.cpp',
+    'WebGLExtensions.cpp',
     'WebGLExtensionShaderTextureLod.cpp',
     'WebGLExtensionSRGB.cpp',
     'WebGLExtensionStandardDerivatives.cpp',
@@ -134,7 +147,6 @@ UNIFIED_SOURCES += [
     'WebGLExtensionVertexArray.cpp',
     'WebGLFormats.cpp',
     'WebGLFramebuffer.cpp',
-    'WebGLFramebufferAttachable.cpp',
     'WebGLMemoryTracker.cpp',
     'WebGLObjectModel.cpp',
     'WebGLProgram.cpp',
@@ -163,7 +175,7 @@ SOURCES += [
 ]
 
 # Suppress warnings from third-party code.
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     SOURCES['MurmurHash3.cpp'].flags += ['-Wno-implicit-fallthrough']
 
 LOCAL_INCLUDES += [
@@ -172,21 +184,24 @@ LOCAL_INCLUDES += [
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
+
+USE_LIBS += [ 'translator' ] # Grab the Angle shader translator.
+
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
-    '../workers',
     '/dom/base',
     '/dom/html',
     '/dom/svg',
     '/dom/workers',
     '/dom/xul',
+    '/gfx/angle/checkout/include',
     '/gfx/gl',
     '/image',
     '/js/xpconnect/src',
     '/layout/generic',
     '/layout/style',
     '/layout/xul',
-    '/media/libyuv/include',
+    '/media/libyuv/libyuv/include',
 ]
 
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
@@ -194,10 +209,8 @@ CXXFLAGS += CONFIG['TK_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
-if CONFIG['GNU_CXX']:
-    CXXFLAGS += ['-Wno-error=shadow']
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    CXXFLAGS += ['-Wno-error=shadow', '-Wno-missing-braces']
 
-if CONFIG['_MSC_VER']:
-    # This is intended as a temporary workaround to unblock compilation
-    # on VS2015 in warnings as errors mode.
-    CXXFLAGS += ['-wd4312']
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
+    CXXFLAGS += ['-Werror=implicit-int-conversion']

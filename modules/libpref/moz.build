@@ -4,6 +4,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Preferences: Backend')
+
+if CONFIG['ENABLE_TESTS']:
+    DIRS += ['test/gtest']
+
 XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell.ini',
     'test/unit_ipc/xpcshell.ini',
@@ -11,8 +17,6 @@ XPCSHELL_TESTS_MANIFESTS += [
 
 XPIDL_SOURCES += [
     'nsIPrefBranch.idl',
-    'nsIPrefBranch2.idl',
-    'nsIPrefBranchInternal.idl',
     'nsIPrefLocalizedString.idl',
     'nsIPrefService.idl',
     'nsIRelativeFilePref.idl',
@@ -20,21 +24,115 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'pref'
 
-EXPORTS.mozilla += [
-    'Preferences.h',
+pref_groups = [
+    'accessibility',
+    'apz',
+    'beacon',
+    'bidi',
+    'browser',
+    'canvas',
+    'channelclassifier',
+    'clipboard',
+    'content',
+    'device',
+    'devtools',
+    'dom',
+    'editor',
+    'extensions',
+    'findbar',
+    'fission',
+    'font',
+    'full_screen_api',
+    'general',
+    'geo',
+    'gfx',
+    'gl',
+    'html5',
+    'idle_period',
+    'image',
+    'intl',
+    'javascript',
+    'keyword',
+    'layers',
+    'layout',
+    'mathml',
+    'media',
+    'mousewheel',
+    'network',
+    'nglayout',
+    'page_load',
+    'permissions',
+    'plain_text',
+    'plugins',
+    'preferences',
+    'print',
+    'privacy',
+    'security',
+    'slider',
+    'svg',
+    'telemetry',
+    'test',
+    'threads',
+    'toolkit',
+    'ui',
+    'view_source',
+    'webgl',
+    'widget',
+    'xul',
+    'zoom',
 ]
+if CONFIG['OS_TARGET'] == 'Android':
+    pref_groups += [
+        'android',
+        'consoleservice',
+    ]
+if CONFIG['FUZZING']:
+    pref_groups += [
+        'fuzzing'
+    ]
+pref_groups = tuple(sorted(pref_groups))
+
+# Note: generate_static_pref_list.py relies on StaticPrefListAll.h being first.
+gen_h = ['init/StaticPrefListAll.h']
+gen_h += ['StaticPrefsAll.h']
+gen_h += ['init/StaticPrefList_{}.h'.format(pg) for pg in pref_groups]
+gen_h += ['StaticPrefs_{}.h'.format(pg) for pg in pref_groups]
+
+gen_cpp = ['init/StaticPrefsCGetters.cpp']
+
+gen_rs = ['static_prefs.rs']
+
+EXPORTS.mozilla += [
+    'init/StaticPrefListBegin.h',
+    'init/StaticPrefListEnd.h',
+    'nsRelativeFilePref.h',
+    'Preferences.h',
+    'StaticPrefsBase.h',
+]
+EXPORTS.mozilla += sorted(['!' + g for g in gen_h])
 
 UNIFIED_SOURCES += [
-    'nsPrefBranch.cpp',
-    'nsPrefsFactory.cpp',
     'Preferences.cpp',
-    'prefread.cpp',
+    'SharedPrefMap.cpp',
 ]
 
-# prefapi.cpp cannot be built in unified mode because it uses plarena.h
-SOURCES += [
-    'prefapi.cpp',
+gen_all_tuple = tuple(gen_h + gen_cpp + gen_rs)
+
+GENERATED_FILES += [gen_all_tuple]
+
+static_pref_list = GENERATED_FILES[gen_all_tuple]
+static_pref_list.script = 'init/generate_static_pref_list.py:emit_code'
+static_pref_list.inputs = ['init/StaticPrefList.yaml']
+
+PYTHON_UNITTEST_MANIFESTS += [
+    'test/python.ini',
 ]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+SPHINX_TREES['libpref'] = 'docs'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -43,6 +141,23 @@ FINAL_LIBRARY = 'xul'
 DEFINES['OS_ARCH'] = CONFIG['OS_ARCH']
 DEFINES['MOZ_WIDGET_TOOLKIT'] = CONFIG['MOZ_WIDGET_TOOLKIT']
 
-FINAL_TARGET_PP_FILES += [
-    'greprefs.js',
-]
+if CONFIG['MOZ_SERVICES_SYNC']:
+  DEFINES['MOZ_SERVICES_SYNC'] = True
+
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DEFINES['MOZ_BUILD_APP_IS_BROWSER'] = True
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    if not CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:
+        FINAL_TARGET_PP_FILES[CONFIG['ANDROID_CPU_ARCH']] += [
+            'greprefs.js',
+        ]
+    else:
+        for arch in CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:
+            FINAL_TARGET_FILES[arch] += [
+                 '!/dist/fat-aar/output/{arch}/greprefs.js'.format(arch=arch),
+            ]
+else:
+    FINAL_TARGET_PP_FILES += [
+        'greprefs.js',
+    ]

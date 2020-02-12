@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=561634
 -->
 <head>
   <title>Test for Bug 561634</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -91,11 +91,11 @@ function checkInvalidEvent()
     invalidEventForInvalidElement = true;
     ok(e.cancelable, "invalid event should be cancelable");
     ok(!e.bubbles, "invalid event should not bubble");
-  }, false);
+  });
 
   i2.addEventListener("invalid", function (e) {
     invalidEventForValidElement = true;
-  }, false);
+  });
 
   f.checkValidity();
 

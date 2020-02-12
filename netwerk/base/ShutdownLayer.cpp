@@ -13,11 +13,17 @@
 
 static PRDescIdentity sWinSockShutdownLayerIdentity;
 static PRIOMethods sWinSockShutdownLayerMethods;
-static PRIOMethods *sWinSockShutdownLayerMethodsPtr = nullptr;
+static PRIOMethods* sWinSockShutdownLayerMethodsPtr = nullptr;
 
-PRStatus
-WinSockClose(PRFileDesc *aFd)
-{
+namespace mozilla {
+namespace net {
+
+extern PRDescIdentity nsNamedPipeLayerIdentity;
+
+}  // namespace net
+}  // namespace mozilla
+
+PRStatus WinSockClose(PRFileDesc* aFd) {
   MOZ_RELEASE_ASSERT(aFd->identity == sWinSockShutdownLayerIdentity,
                      "Windows shutdown layer not on the top of the stack");
 
@@ -35,18 +41,24 @@ WinSockClose(PRFileDesc *aFd)
   }
 }
 
-nsresult mozilla::net::AttachShutdownLayer(PRFileDesc *aFd)
-{
+nsresult mozilla::net::AttachShutdownLayer(PRFileDesc* aFd) {
   if (!sWinSockShutdownLayerMethodsPtr) {
     sWinSockShutdownLayerIdentity =
-      PR_GetUniqueIdentity("windows shutdown call layer");
+        PR_GetUniqueIdentity("windows shutdown call layer");
     sWinSockShutdownLayerMethods = *PR_GetDefaultIOMethods();
     sWinSockShutdownLayerMethods.close = WinSockClose;
     sWinSockShutdownLayerMethodsPtr = &sWinSockShutdownLayerMethods;
   }
 
-  PRFileDesc * layer;
-  PRStatus     status;
+  if (mozilla::net::nsNamedPipeLayerIdentity &&
+      PR_GetIdentitiesLayer(aFd, mozilla::net::nsNamedPipeLayerIdentity)) {
+    // Do not attach shutdown layer on named pipe layer,
+    // it is for PR_NSPR_IO_LAYER only.
+    return NS_OK;
+  }
+
+  PRFileDesc* layer;
+  PRStatus status;
 
   layer = PR_CreateIOLayerStub(sWinSockShutdownLayerIdentity,
                                sWinSockShutdownLayerMethodsPtr);
@@ -57,7 +69,7 @@ nsresult mozilla::net::AttachShutdownLayer(PRFileDesc *aFd)
   status = PR_PushIOLayer(aFd, PR_NSPR_IO_LAYER, layer);
 
   if (status == PR_FAILURE) {
-    PR_DELETE(layer);
+    PR_Free(layer);  // PR_CreateIOLayerStub() uses PR_Malloc().
     return NS_ERROR_FAILURE;
   }
   return NS_OK;

@@ -5,10 +5,22 @@
  * found in the LICENSE file.
  */
 
+#include "../private/SkLeanWindows.h"
 #include "../private/SkSemaphore.h"
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     #include <mach/mach.h>
+
+    // We've got to teach TSAN that there is a happens-before edge beteween
+    // semaphore_signal() and semaphore_wait().
+    #if __has_feature(thread_sanitizer)
+        extern "C" void AnnotateHappensBefore(const char*, int, void*);
+        extern "C" void AnnotateHappensAfter (const char*, int, void*);
+    #else
+        static void AnnotateHappensBefore(const char*, int, void*) {}
+        static void AnnotateHappensAfter (const char*, int, void*) {}
+    #endif
+
     struct SkBaseSemaphore::OSSemaphore {
         semaphore_t fSemaphore;
 
@@ -17,10 +29,18 @@
         }
         ~OSSemaphore() { semaphore_destroy(mach_task_self(), fSemaphore); }
 
-        void signal(int n) { while (n --> 0) { semaphore_signal(fSemaphore); } }
-        void wait() { semaphore_wait(fSemaphore); }
+        void signal(int n) {
+            while (n --> 0) {
+                AnnotateHappensBefore(__FILE__, __LINE__, &fSemaphore);
+                semaphore_signal(fSemaphore);
+            }
+        }
+        void wait() {
+            semaphore_wait(fSemaphore);
+            AnnotateHappensAfter(__FILE__, __LINE__, &fSemaphore);
+        }
     };
-#elif defined(SK_BUILD_FOR_WIN32)
+#elif defined(SK_BUILD_FOR_WIN)
     struct SkBaseSemaphore::OSSemaphore {
         HANDLE fSemaphore;
 
@@ -57,43 +77,24 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void SkBaseSemaphore::signal(int n) {
-    SkASSERT(n >= 0);
+void SkBaseSemaphore::osSignal(int n) {
+    fOSSemaphoreOnce([this] { fOSSemaphore = new OSSemaphore; });
+    fOSSemaphore->signal(n);
+}
 
-    // We only want to call the OS semaphore when our logical count crosses
-    // from <= 0 to >0 (when we need to wake sleeping threads).
-    //
-    // This is easiest to think about with specific examples of prev and n.
-    // If n == 5 and prev == -3, there are 3 threads sleeping and we signal
-    // SkTMin(-(-3), 5) == 3 times on the OS semaphore, leaving the count at 2.
-    //
-    // If prev >= 0, no threads are waiting, SkTMin(-prev, n) is always <= 0,
-    // so we don't call the OS semaphore, leaving the count at (prev + n).
-    int prev = sk_atomic_fetch_add(&fCount, n, sk_memory_order_release);
-    int toSignal = SkTMin(-prev, n);
-    if (toSignal > 0) {
-        this->osSignal(toSignal);
+void SkBaseSemaphore::osWait() {
+    fOSSemaphoreOnce([this] { fOSSemaphore = new OSSemaphore; });
+    fOSSemaphore->wait();
+}
+
+void SkBaseSemaphore::cleanup() {
+    delete fOSSemaphore;
+}
+
+bool SkBaseSemaphore::try_wait() {
+    int count = fCount.load(std::memory_order_relaxed);
+    if (count > 0) {
+        return fCount.compare_exchange_weak(count, count-1, std::memory_order_acquire);
     }
+    return false;
 }
-
-static SkBaseSemaphore::OSSemaphore* semaphore(SkBaseSemaphore* semaphore) {
-    return semaphore->fOSSemaphore.get([](){ return new SkBaseSemaphore::OSSemaphore(); });
-}
-
-void SkBaseSemaphore::osSignal(int n) { semaphore(this)->signal(n); }
-
-void SkBaseSemaphore::osWait() { semaphore(this)->wait(); }
-
-void SkBaseSemaphore::deleteSemaphore() {
-    delete (OSSemaphore*) fOSSemaphore;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-SkSemaphore::SkSemaphore(){ fBaseSemaphore = {0, {0}}; }
-
-SkSemaphore::~SkSemaphore() { fBaseSemaphore.deleteSemaphore(); }
-
-void SkSemaphore::wait() { fBaseSemaphore.wait(); }
-
-void SkSemaphore::signal(int n) {fBaseSemaphore.signal(n); }

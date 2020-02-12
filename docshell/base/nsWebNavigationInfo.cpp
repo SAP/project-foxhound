@@ -12,16 +12,11 @@
 #include "nsIDocShell.h"
 #include "nsContentUtils.h"
 #include "imgLoader.h"
+#include "nsPluginHost.h"
 
 NS_IMPL_ISUPPORTS(nsWebNavigationInfo, nsIWebNavigationInfo)
 
-#define CONTENT_DLF_CONTRACT "@mozilla.org/content/document-loader-factory;1"
-#define PLUGIN_DLF_CONTRACT \
-  "@mozilla.org/content/plugin/document-loader-factory;1"
-
-nsresult
-nsWebNavigationInfo::Init()
-{
+nsresult nsWebNavigationInfo::Init() {
   nsresult rv;
   mCategoryManager = do_GetService(NS_CATEGORYMANAGER_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -32,9 +27,8 @@ nsWebNavigationInfo::Init()
 NS_IMETHODIMP
 nsWebNavigationInfo::IsTypeSupported(const nsACString& aType,
                                      nsIWebNavigation* aWebNav,
-                                     uint32_t* aIsTypeSupported)
-{
-  NS_PRECONDITION(aIsTypeSupported, "null out param?");
+                                     uint32_t* aIsTypeSupported) {
+  MOZ_ASSERT(aIsTypeSupported, "null out param?");
 
   // Note to self: aWebNav could be an nsWebBrowser or an nsDocShell here (or
   // an nsSHistory, but not much we can do with that).  So if we start using
@@ -51,13 +45,6 @@ nsWebNavigationInfo::IsTypeSupported(const nsACString& aType,
     return NS_OK;
   }
 
-  // We want to claim that the type for SWF movies is unsupported,
-  // so that the internal SWF player's stream converter will get used.
-  if (aType.LowerCaseEqualsLiteral("application/x-shockwave-flash") &&
-      nsContentUtils::IsSWFPlayerEnabled()) {
-    return NS_OK;
-  }
-
   const nsCString& flatType = PromiseFlatCString(aType);
   nsresult rv = IsTypeSupportedInternal(flatType, aIsTypeSupported);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -66,18 +53,24 @@ nsWebNavigationInfo::IsTypeSupported(const nsACString& aType,
     return rv;
   }
 
+  // As of FF 52, we only support flash and test plugins, so if the mime types
+  // don't match for that, exit before we start loading plugins.
+  if (!nsPluginHost::CanUsePluginForMIMEType(aType)) {
+    return NS_OK;
+  }
+
   // If this request is for a docShell that isn't going to allow plugins,
   // there's no need to try and find a plugin to handle it.
   nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(aWebNav));
   bool allowed;
-  if (docShell &&
-      NS_SUCCEEDED(docShell->GetAllowPlugins(&allowed)) && !allowed) {
+  if (docShell && NS_SUCCEEDED(docShell->GetAllowPlugins(&allowed)) &&
+      !allowed) {
     return NS_OK;
   }
 
   // Try reloading plugins in case they've changed.
   nsCOMPtr<nsIPluginHost> pluginHost =
-    do_GetService(MOZ_PLUGIN_HOST_CONTRACTID);
+      do_GetService(MOZ_PLUGIN_HOST_CONTRACTID);
   if (pluginHost) {
     // false will ensure that currently running plugins will not
     // be shut down
@@ -94,16 +87,14 @@ nsWebNavigationInfo::IsTypeSupported(const nsACString& aType,
   return NS_OK;
 }
 
-nsresult
-nsWebNavigationInfo::IsTypeSupportedInternal(const nsCString& aType,
-                                             uint32_t* aIsSupported)
-{
-  NS_PRECONDITION(aIsSupported, "Null out param?");
+nsresult nsWebNavigationInfo::IsTypeSupportedInternal(const nsCString& aType,
+                                                      uint32_t* aIsSupported) {
+  MOZ_ASSERT(aIsSupported, "Null out param?");
 
   nsContentUtils::ContentViewerType vtype = nsContentUtils::TYPE_UNSUPPORTED;
 
   nsCOMPtr<nsIDocumentLoaderFactory> docLoaderFactory =
-    nsContentUtils::FindInternalContentViewer(aType, &vtype);
+      nsContentUtils::FindInternalContentViewer(aType, &vtype);
 
   switch (vtype) {
     case nsContentUtils::TYPE_UNSUPPORTED:

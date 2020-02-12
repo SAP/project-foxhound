@@ -10,110 +10,39 @@
  * liability, trademark and document use rules apply.
  */
 
-callback DecodeSuccessCallback = void (AudioBuffer decodedData);
-callback DecodeErrorCallback = void ();
-
-enum AudioContextState {
-    "suspended",
-    "running",
-    "closed"
+dictionary AudioContextOptions {
+             float        sampleRate = 0;
 };
 
-dictionary PeriodicWaveConstraints {
-  boolean disableNormalization = false;
+dictionary AudioTimestamp {
+  double contextTime;
+  DOMHighResTimeStamp performanceTime;
 };
 
-[Constructor,
- Constructor(AudioChannel audioChannelType),
- Pref="dom.webaudio.enabled"]
-interface AudioContext : EventTarget {
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface AudioContext : BaseAudioContext {
+    [Throws]
+    constructor(optional AudioContextOptions contextOptions = {});
 
-    readonly attribute AudioDestinationNode destination;
-    readonly attribute float sampleRate;
-    readonly attribute double currentTime;
-    readonly attribute AudioListener listener;
-    readonly attribute AudioContextState state;
+    readonly        attribute double               baseLatency;
+    readonly        attribute double               outputLatency;
+    AudioTimestamp                  getOutputTimestamp();
+
     [Throws]
     Promise<void> suspend();
     [Throws]
-    Promise<void> resume();
-    [Throws]
     Promise<void> close();
-    attribute EventHandler onstatechange;
 
     [NewObject, Throws]
-    AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long length, float sampleRate);
+    MediaElementAudioSourceNode createMediaElementSource(HTMLMediaElement mediaElement);
 
-    [Throws]
-    Promise<AudioBuffer> decodeAudioData(ArrayBuffer audioData,
-                                         optional DecodeSuccessCallback successCallback,
-                                         optional DecodeErrorCallback errorCallback);
-
-    // AudioNode creation
     [NewObject, Throws]
-    AudioBufferSourceNode createBufferSource();
+    MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
+
+    [NewObject, Throws]
+    MediaStreamTrackAudioSourceNode createMediaStreamTrackSource(MediaStreamTrack mediaStreamTrack);
 
     [NewObject, Throws]
     MediaStreamAudioDestinationNode createMediaStreamDestination();
-
-    [NewObject, Throws]
-    ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize = 0,
-                                              optional unsigned long numberOfInputChannels = 2,
-                                              optional unsigned long numberOfOutputChannels = 2);
-
-    [NewObject, Throws]
-    StereoPannerNode createStereoPanner();
-    [NewObject, Throws]
-    AnalyserNode createAnalyser();
-    [NewObject, Throws, UnsafeInPrerendering]
-    MediaElementAudioSourceNode createMediaElementSource(HTMLMediaElement mediaElement);
-    [NewObject, Throws, UnsafeInPrerendering]
-    MediaStreamAudioSourceNode createMediaStreamSource(MediaStream mediaStream);
-    [NewObject, Throws]
-    GainNode createGain();
-    [NewObject, Throws]
-    DelayNode createDelay(optional double maxDelayTime = 1);
-    [NewObject, Throws]
-    BiquadFilterNode createBiquadFilter();
-    [NewObject, Throws]
-    IIRFilterNode createIIRFilter(sequence<double> feedforward, sequence<double> feedback);
-    [NewObject, Throws]
-    WaveShaperNode createWaveShaper();
-    [NewObject, Throws]
-    PannerNode createPanner();
-    [NewObject, Throws]
-    ConvolverNode createConvolver();
-
-    [NewObject, Throws]
-    ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs = 6);
-    [NewObject, Throws]
-    ChannelMergerNode createChannelMerger(optional unsigned long numberOfInputs = 6);
-
-    [NewObject, Throws]
-    DynamicsCompressorNode createDynamicsCompressor();
-
-    [NewObject, Throws]
-    OscillatorNode createOscillator();
-    [NewObject, Throws]
-    PeriodicWave createPeriodicWave(Float32Array real, Float32Array imag, optional PeriodicWaveConstraints constraints);
-
-};
-
-// Mozilla extensions
-partial interface AudioContext {
-  // Read AudioChannel.webidl for more information about this attribute.
-  [Pref="media.useAudioChannelAPI"]
-  readonly attribute AudioChannel mozAudioChannelType;
-
-  // These 2 events are dispatched when the AudioContext object is muted by
-  // the AudioChannelService. It's call 'interrupt' because when this event is
-  // dispatched on a HTMLMediaElement, the audio stream is paused.
-  [Pref="media.useAudioChannelAPI"]
-  attribute EventHandler onmozinterruptbegin;
-
-  [Pref="media.useAudioChannelAPI"]
-  attribute EventHandler onmozinterruptend;
-
-  // This method is for test only.
-  [ChromeOnly] AudioChannel testAudioChannelInAudioNodeStream();
 };

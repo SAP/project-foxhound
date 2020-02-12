@@ -5,9 +5,13 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Snackbars",
+  "resource://gre/modules/Snackbars.jsm"
+);
 
-/*globals MAX_URI_LENGTH, MAX_TITLE_LENGTH */
+/* globals MAX_URI_LENGTH, MAX_TITLE_LENGTH */
 
 var Reader = {
   // These values should match those defined in BrowserContract.java.
@@ -19,7 +23,9 @@ var Reader = {
 
   get _hasUsedToolbar() {
     delete this._hasUsedToolbar;
-    return this._hasUsedToolbar = Services.prefs.getBoolPref("reader.has_used_toolbar");
+    return (this._hasUsedToolbar = Services.prefs.getBoolPref(
+      "reader.has_used_toolbar"
+    ));
   },
 
   /**
@@ -52,26 +58,34 @@ var Reader = {
    */
   onBackPress: function(tabId) {
     let listener = this._backPressListeners[tabId];
-    return { handled: (listener ? listener() : false) };
+    return { handled: listener ? listener() : false };
   },
 
-  observe: function Reader_observe(aMessage, aTopic, aData) {
-    switch (aTopic) {
+  onEvent: function Reader_onEvent(event, data, callback) {
+    switch (event) {
       case "Reader:RemoveFromCache": {
-        ReaderMode.removeArticleFromCache(aData).catch(e => Cu.reportError("Error removing article from cache: " + e));
+        ReaderMode.removeArticleFromCache(data.url).catch(e =>
+          Cu.reportError("Error removing article from cache: " + e)
+        );
         break;
       }
 
       case "Reader:AddToCache": {
-        let tab = BrowserApp.getTabForId(aData);
+        let tab = BrowserApp.getTabForId(data.tabID);
         if (!tab) {
-          throw new Error("No tab for tabID = " + aData + " when trying to save reader view article");
+          throw new Error(
+            "No tab for tabID = " +
+              data.tabID +
+              " when trying to save reader view article"
+          );
         }
 
         // If the article is coming from reader mode, we must have fetched it already.
-        this._getArticleData(tab.browser).then((article) => {
-          ReaderMode.storeArticleInCache(article);
-        }).catch(e => Cu.reportError("Error storing article in cache: " + e));
+        this._getArticleData(tab.browser)
+          .then(article => {
+            ReaderMode.storeArticleInCache(article);
+          })
+          .catch(e => Cu.reportError("Error storing article in cache: " + e));
         break;
       }
     }
@@ -80,16 +94,24 @@ var Reader = {
   receiveMessage: function(message) {
     switch (message.name) {
       case "Reader:ArticleGet":
-        this._getArticle(message.data.url).then((article) => {
-          // Make sure the target browser is still alive before trying to send data back.
-          if (message.target.messageManager) {
-            message.target.messageManager.sendAsyncMessage("Reader:ArticleData", { article: article });
+        this._getArticle(message.data.url).then(
+          article => {
+            // Make sure the target browser is still alive before trying to send data back.
+            if (message.target.messageManager) {
+              message.target.messageManager.sendAsyncMessage(
+                "Reader:ArticleData",
+                { article: article }
+              );
+            }
+          },
+          e => {
+            if (e && e.newURL) {
+              message.target.loadURI(
+                "about:reader?url=" + encodeURIComponent(e.newURL)
+              );
+            }
           }
-        }, e => {
-          if (e && e.newURL) {
-            message.target.loadURI("about:reader?url=" + encodeURIComponent(e.newURL));
-          }
-        });
+        );
         break;
 
       // On DropdownClosed in ReaderView, we cleanup / clear existing BackPressListener.
@@ -105,7 +127,9 @@ var Reader = {
           // User hit BACK key while ReaderView has the banner font-dropdown opened.
           // Close it and return prevent-default.
           if (message.target.messageManager) {
-            message.target.messageManager.sendAsyncMessage("Reader:CloseDropdown");
+            message.target.messageManager.sendAsyncMessage(
+              "Reader:CloseDropdown"
+            );
             return true;
           }
           // We can assume ReaderView banner's font-dropdown doesn't need to be closed.
@@ -116,25 +140,28 @@ var Reader = {
       }
 
       case "Reader:FaviconRequest": {
-        Messaging.sendRequestForResult({
+        GlobalEventDispatcher.sendRequestForResult({
           type: "Reader:FaviconRequest",
-          url: message.data.url
+          url: message.data.url,
         }).then(data => {
-          message.target.messageManager.sendAsyncMessage("Reader:FaviconReturn", JSON.parse(data));
+          message.target.messageManager.sendAsyncMessage(
+            "Reader:FaviconReturn",
+            data
+          );
         });
         break;
       }
 
       case "Reader:SystemUIVisibility":
-        Messaging.sendRequest({
-          type: "SystemUI:Visibility",
-          visible: message.data.visible
-        });
+        this._showSystemUI(message.data.visible);
         break;
 
       case "Reader:ToolbarHidden":
         if (!this._hasUsedToolbar) {
-          Snackbars.show(Strings.browser.GetStringFromName("readerMode.toolbarTip"), Snackbars.LENGTH_LONG);
+          Snackbars.show(
+            Strings.browser.GetStringFromName("readerMode.toolbarTip"),
+            Snackbars.LENGTH_LONG
+          );
           Services.prefs.setBoolPref("reader.has_used_toolbar", true);
           this._hasUsedToolbar = true;
         }
@@ -171,33 +198,59 @@ var Reader = {
       delete this.pageAction.id;
     }
 
-    let showPageAction = (icon, title) => {
+    let showPageAction = (icon, title, useTint) => {
       this.pageAction.id = PageActions.add({
         icon: icon,
         title: title,
         clickCallback: () => this.pageAction.readerModeCallback(browser),
-        important: true
+        important: true,
+        useTint: useTint,
       });
     };
 
     let browser = tab.browser;
     if (browser.currentURI.spec.startsWith("about:reader")) {
-      showPageAction("drawable://reader_active", Strings.reader.GetStringFromName("readerView.close"));
+      showPageAction(
+        "drawable://ic_readermode_on",
+        Strings.reader.GetStringFromName("readerView.close"),
+        false
+      );
       // Only start a reader session if the viewer is in the foreground. We do
       // not track background reader viewers.
       UITelemetry.startSession("reader.1", null);
       return;
     }
 
+    // not in ReaderMode, to make sure System UI is visible, not dimmed.
+    this._showSystemUI(true);
+
     // Only stop a reader session if the foreground viewer is not visible.
     UITelemetry.stopSession("reader.1", "", null);
 
     if (browser.isArticle) {
-      showPageAction("drawable://reader", Strings.reader.GetStringFromName("readerView.enter"));
+      showPageAction(
+        "drawable://ic_readermode",
+        Strings.reader.GetStringFromName("readerView.enter"),
+        true
+      );
       UITelemetry.addEvent("show.1", "button", null, "reader_available");
+      this._sendMmaEvent("reader_available");
     } else {
       UITelemetry.addEvent("show.1", "button", null, "reader_unavailable");
     }
+  },
+
+  _sendMmaEvent: function(event) {
+    WindowEventDispatcher.sendRequest({
+      type: "Mma:" + event,
+    });
+  },
+
+  _showSystemUI: function(visibility) {
+    WindowEventDispatcher.sendRequest({
+      type: "SystemUI:Visibility",
+      visible: visibility,
+    });
   },
 
   /**
@@ -208,16 +261,16 @@ var Reader = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  _getArticle: Task.async(function* (url) {
+  async _getArticle(url) {
     // First try to find a parsed article in the cache.
-    let article = yield ReaderMode.getArticleFromCache(url);
+    let article = await ReaderMode.getArticleFromCache(url);
     if (article) {
       return article;
     }
 
     // Article hasn't been found in the cache, we need to
     // download the page and parse the article out of it.
-    return yield ReaderMode.downloadAndParseDocument(url).catch(e => {
+    return ReaderMode.downloadAndParseDocument(url).catch(e => {
       if (e && e.newURL) {
         // Pass up the error so we can navigate the browser in question to the new URL:
         throw e;
@@ -225,7 +278,7 @@ var Reader = {
       Cu.reportError("Error downloading and parsing document: " + e);
       return null;
     });
-  }),
+  },
 
   _getArticleData: function(browser) {
     return new Promise((resolve, reject) => {
@@ -234,7 +287,7 @@ var Reader = {
       }
 
       let mm = browser.messageManager;
-      let listener = (message) => {
+      let listener = message => {
         mm.removeMessageListener("Reader:StoredArticleData", listener);
         resolve(message.data.article);
       };
@@ -243,12 +296,11 @@ var Reader = {
     });
   },
 
-
   /**
    * Migrates old indexedDB reader mode cache to new JSON cache.
    */
-  migrateCache: Task.async(function* () {
-    let cacheDB = yield new Promise((resolve, reject) => {
+  async migrateCache() {
+    let cacheDB = await new Promise((resolve, reject) => {
       let request = window.indexedDB.open("about:reader", 1);
       request.onsuccess = event => resolve(event.target.result);
       request.onerror = event => reject(request.error);
@@ -261,7 +313,7 @@ var Reader = {
       return;
     }
 
-    let articles = yield new Promise((resolve, reject) => {
+    let articles = await new Promise((resolve, reject) => {
       let articles = [];
 
       let transaction = cacheDB.transaction(cacheDB.objectStoreNames);
@@ -281,10 +333,10 @@ var Reader = {
     });
 
     for (let article of articles) {
-      yield ReaderMode.storeArticleInCache(article);
+      await ReaderMode.storeArticleInCache(article);
     }
 
     // Delete the database.
     window.indexedDB.deleteDatabase("about:reader");
-  }),
+  },
 };

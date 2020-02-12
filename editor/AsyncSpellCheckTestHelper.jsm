@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = [
-  "onSpellCheck",
-];
+var EXPORTED_SYMBOLS = ["onSpellCheck"];
 
 const SPELL_CHECK_ENDED_TOPIC = "inlineSpellChecker-spellCheck-ended";
 const SPELL_CHECK_STARTED_TOPIC = "inlineSpellChecker-spellCheck-started";
-
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 /**
  * Waits until spell checking has stopped on the given element.
@@ -31,22 +27,18 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 function onSpellCheck(editableElement, callback) {
   let editor = editableElement.editor;
   if (!editor) {
-    let win = editableElement.ownerDocument.defaultView;
-    editor = win.QueryInterface(Ci.nsIInterfaceRequestor).
-                 getInterface(Ci.nsIWebNavigation).
-                 QueryInterface(Ci.nsIInterfaceRequestor).
-                 getInterface(Ci.nsIEditingSession).
-                 getEditorForWindow(win);
+    let win = editableElement.ownerGlobal;
+    editor = win.docShell.editingSession.getEditorForWindow(win);
   }
-  if (!editor)
+  if (!editor) {
     throw new Error("Unable to find editor for element " + editableElement);
+  }
 
   try {
     // False is important here.  Pass false so that the inline spell checker
     // isn't created if it doesn't already exist.
     var isc = editor.getInlineSpellChecker(false);
-  }
-  catch (err) {
+  } catch (err) {
     // getInlineSpellChecker throws if spell checking is not enabled instead of
     // just returning null, which seems kind of lame.  (Spell checking is not
     // enabled on Android.)  The point here is only to determine whether spell
@@ -57,30 +49,40 @@ function onSpellCheck(editableElement, callback) {
   let count = 0;
 
   function observe(subj, topic, data) {
-    if (subj != editor)
+    if (subj != editor) {
       return;
+    }
     count = 0;
-    let expectedTopic = waitingForEnded ? SPELL_CHECK_ENDED_TOPIC :
-                        SPELL_CHECK_STARTED_TOPIC;
-    if (topic != expectedTopic)
+    let expectedTopic = waitingForEnded
+      ? SPELL_CHECK_ENDED_TOPIC
+      : SPELL_CHECK_STARTED_TOPIC;
+    if (topic != expectedTopic) {
       Cu.reportError("Expected " + expectedTopic + " but got " + topic + "!");
+    }
     waitingForEnded = !waitingForEnded;
   }
 
-  let os = Cc["@mozilla.org/observer-service;1"].
-           getService(Ci.nsIObserverService);
-  os.addObserver(observe, SPELL_CHECK_STARTED_TOPIC, false);
-  os.addObserver(observe, SPELL_CHECK_ENDED_TOPIC, false);
+  // eslint-disable-next-line mozilla/use-services
+  let os = Cc["@mozilla.org/observer-service;1"].getService(
+    Ci.nsIObserverService
+  );
+  os.addObserver(observe, SPELL_CHECK_STARTED_TOPIC);
+  os.addObserver(observe, SPELL_CHECK_ENDED_TOPIC);
 
   let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-  timer.init(function tick() {
-    // Wait an arbitrarily large number -- 50 -- turns of the event loop before
-    // declaring that no spell checks will start.
-    if (waitingForEnded || ++count < 50)
-      return;
-    timer.cancel();
-    os.removeObserver(observe, SPELL_CHECK_STARTED_TOPIC);
-    os.removeObserver(observe, SPELL_CHECK_ENDED_TOPIC);
-    callback();
-  }, 0, Ci.nsITimer.TYPE_REPEATING_SLACK);
-};
+  timer.init(
+    function tick() {
+      // Wait an arbitrarily large number -- 50 -- turns of the event loop before
+      // declaring that no spell checks will start.
+      if (waitingForEnded || ++count < 50) {
+        return;
+      }
+      timer.cancel();
+      os.removeObserver(observe, SPELL_CHECK_STARTED_TOPIC);
+      os.removeObserver(observe, SPELL_CHECK_ENDED_TOPIC);
+      callback();
+    },
+    0,
+    Ci.nsITimer.TYPE_REPEATING_SLACK
+  );
+}

@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -19,27 +18,31 @@ const TEST_URI = `
   <div id='testid' class='testclass'>Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testMarkOverridden(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testMarkOverridden(inspector, view);
 });
 
-function* testMarkOverridden(inspector, view) {
-  let elementStyle = view._elementStyle;
+function testMarkOverridden(inspector, view) {
+  const elementStyle = view._elementStyle;
 
-  let classRule = elementStyle.rules[2];
-  let classProp = classRule.textProps[0];
-  ok(!classProp.overridden,
-    "Class prop shouldn't be overridden, some props are still being used.");
+  const classRule = elementStyle.rules[2];
+  const classProp = classRule.textProps[0];
+  ok(
+    !classProp.overridden,
+    "Class prop shouldn't be overridden, some props are still being used."
+  );
 
-  for (let computed of classProp.computed) {
+  for (const computed of classProp.computed) {
     if (computed.name.indexOf("margin-left") == 0) {
       ok(computed.overridden, "margin-left props should be overridden.");
     } else {
-      ok(!computed.overridden,
-        "Non-margin-left props should not be overridden.");
+      ok(
+        !computed.overridden,
+        "Non-margin-left props should not be overridden."
+      );
     }
   }
 }

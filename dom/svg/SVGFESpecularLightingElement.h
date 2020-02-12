@@ -7,50 +7,50 @@
 #ifndef mozilla_dom_SVGFESpecularLightingElement_h
 #define mozilla_dom_SVGFESpecularLightingElement_h
 
-#include "nsSVGFilters.h"
+#include "SVGFilters.h"
 
-nsresult NS_NewSVGFESpecularLightingElement(nsIContent **aResult,
-                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGFESpecularLightingElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
 //---------------------SpecularLighting------------------------
 
-typedef nsSVGFELightingElement SVGFESpecularLightingElementBase;
+typedef SVGFELightingElement SVGFESpecularLightingElementBase;
 
-class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase
-{
-  friend nsresult (::NS_NewSVGFESpecularLightingElement(nsIContent **aResult,
-                                                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-protected:
-  explicit SVGFESpecularLightingElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : SVGFESpecularLightingElementBase(aNodeInfo)
-  {
-  }
-  virtual JSObject* WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+class SVGFESpecularLightingElement : public SVGFESpecularLightingElementBase {
+  friend nsresult(::NS_NewSVGFESpecularLightingElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
-public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+ protected:
+  explicit SVGFESpecularLightingElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : SVGFESpecularLightingElementBase(std::move(aNodeInfo)) {}
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual FilterPrimitiveDescription
-    GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
-                            const IntRect& aFilterSubregion,
-                            const nsTArray<bool>& aInputsAreTainted,
-                            nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
-  virtual bool AttributeAffectsRendering(
-          int32_t aNameSpaceID, nsIAtom* aAttribute) const override;
+ public:
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      const nsTArray<bool>& aInputsAreTainted,
+      nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
+  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                         nsAtom* aAttribute) const override;
 
   // WebIDL
-  already_AddRefed<SVGAnimatedString> In1();
-  already_AddRefed<SVGAnimatedNumber> SurfaceScale();
-  already_AddRefed<SVGAnimatedNumber> SpecularConstant();
-  already_AddRefed<SVGAnimatedNumber> SpecularExponent();
-  already_AddRefed<SVGAnimatedNumber> KernelUnitLengthX();
-  already_AddRefed<SVGAnimatedNumber> KernelUnitLengthY();
+  already_AddRefed<DOMSVGAnimatedString> In1();
+  already_AddRefed<DOMSVGAnimatedNumber> SurfaceScale();
+  already_AddRefed<DOMSVGAnimatedNumber> SpecularConstant();
+  already_AddRefed<DOMSVGAnimatedNumber> SpecularExponent();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthX();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthY();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGFESpecularLightingElement_h
+#endif  // mozilla_dom_SVGFESpecularLightingElement_h

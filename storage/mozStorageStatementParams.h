@@ -7,37 +7,57 @@
 #ifndef MOZSTORAGESTATEMENTPARAMS_H
 #define MOZSTORAGESTATEMENTPARAMS_H
 
-#include "mozIStorageStatementParams.h"
-#include "nsIXPCScriptable.h"
 #include "mozilla/Attributes.h"
-
-class mozIStorageStatement;
+#include "mozilla/ErrorResult.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace storage {
 
-class StatementParams final : public mozIStorageStatementParams
-                            , public nsIXPCScriptable
-{
-public:
-  explicit StatementParams(mozIStorageStatement *aStatement);
+class Statement;
 
-  // interfaces
-  NS_DECL_ISUPPORTS
-  NS_DECL_MOZISTORAGESTATEMENTPARAMS
-  NS_DECL_NSIXPCSCRIPTABLE
+class StatementParams final : public nsISupports, public nsWrapperCache {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(StatementParams)
 
-protected:
+  explicit StatementParams(nsPIDOMWindowInner* aWindow, Statement* aStatement);
+
+  void NamedGetter(JSContext* aCx, const nsAString& aName, bool& aFound,
+                   JS::MutableHandle<JS::Value> aResult,
+                   mozilla::ErrorResult& aRv);
+
+  void NamedSetter(JSContext* aCx, const nsAString& aName,
+                   JS::Handle<JS::Value> aValue, mozilla::ErrorResult& aRv);
+
+  uint32_t Length() const { return mParamCount; }
+
+  void IndexedGetter(JSContext* aCx, uint32_t aIndex, bool& aFound,
+                     JS::MutableHandle<JS::Value> aResult,
+                     mozilla::ErrorResult& aRv);
+
+  void IndexedSetter(JSContext* aCx, uint32_t aIndex,
+                     JS::Handle<JS::Value> aValue, mozilla::ErrorResult& aRv);
+
+  void GetSupportedNames(nsTArray<nsString>& aNames);
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
+
+ private:
   ~StatementParams() {}
 
-  mozIStorageStatement *mStatement;
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
+  Statement* mStatement;
   uint32_t mParamCount;
 
   friend class StatementParamsHolder;
-  friend class StatementRowHolder;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
 #endif /* MOZSTORAGESTATEMENTPARAMS_H */

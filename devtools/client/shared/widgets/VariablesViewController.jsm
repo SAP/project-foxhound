@@ -1,38 +1,25 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { utils: Cu } = Components;
-
-var {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-var {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
-var {VariablesView} = require("resource://devtools/client/shared/widgets/VariablesView.jsm");
+var { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+var { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
+var {
+  VariablesView,
+} = require("resource://devtools/client/shared/widgets/VariablesView.jsm");
 var Services = require("Services");
 var promise = require("promise");
 var defer = require("devtools/shared/defer");
-var {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
-
-Object.defineProperty(this, "WebConsoleUtils", {
-  get: function () {
-    return require("devtools/client/webconsole/utils").Utils;
-  },
-  configurable: true,
-  enumerable: true
-});
+var { LocalizationHelper, ELLIPSIS } = require("devtools/shared/l10n");
 
 XPCOMUtils.defineLazyGetter(this, "VARIABLES_SORTING_ENABLED", () =>
   Services.prefs.getBoolPref("devtools.debugger.ui.variables-sorting-enabled")
 );
 
-XPCOMUtils.defineLazyModuleGetter(this, "console",
-  "resource://gre/modules/Console.jsm");
-
 const MAX_LONG_STRING_LENGTH = 200000;
 const MAX_PROPERTY_ITEMS = 2000;
-const DBG_STRINGS_URI = "devtools/locale/debugger.properties";
+const DBG_STRINGS_URI = "devtools/client/locales/debugger.properties";
 
 this.EXPORTED_SYMBOLS = ["VariablesViewController", "StackFrameUtils"];
 
@@ -52,7 +39,7 @@ var L10N = new LocalizationHelper(DBG_STRINGS_URI);
  *        Options for configuring the controller. Supported options:
  *        - getObjectClient: @see this._setClientGetters
  *        - getLongStringClient: @see this._setClientGetters
- *        - getEnvironmentClient: @see this._setClientGetters
+ *        - getEnvironmentFront: @see this._setClientGetters
  *        - releaseActor: @see this._setClientGetters
  *        - overrideValueEvalMacro: @see _setEvaluationMacros
  *        - getterOrSetterEvalMacro: @see _setEvaluationMacros
@@ -93,18 +80,18 @@ VariablesViewController.prototype = {
    *        Options for getting the client grips. Supported options:
    *        - getObjectClient: callback for creating an object grip client
    *        - getLongStringClient: callback for creating a long string grip client
-   *        - getEnvironmentClient: callback for creating an environment client
+   *        - getEnvironmentFront: callback for creating an environment front
    *        - releaseActor: callback for releasing an actor when it's no longer needed
    */
-  _setClientGetters: function (aOptions) {
+  _setClientGetters: function(aOptions) {
     if (aOptions.getObjectClient) {
       this._getObjectClient = aOptions.getObjectClient;
     }
     if (aOptions.getLongStringClient) {
       this._getLongStringClient = aOptions.getLongStringClient;
     }
-    if (aOptions.getEnvironmentClient) {
-      this._getEnvironmentClient = aOptions.getEnvironmentClient;
+    if (aOptions.getEnvironmentFront) {
+      this._getEnvironmentFront = aOptions.getEnvironmentFront;
     }
     if (aOptions.releaseActor) {
       this._releaseActor = aOptions.releaseActor;
@@ -120,7 +107,7 @@ VariablesViewController.prototype = {
    *        - getterOrSetterEvalMacro: callback for creating a getter/setter eval macro
    *        - simpleValueEvalMacro: callback for creating a simple value eval macro
    */
-  _setEvaluationMacros: function (aOptions) {
+  _setEvaluationMacros: function(aOptions) {
     if (aOptions.overrideValueEvalMacro) {
       this._overrideValueEvalMacro = aOptions.overrideValueEvalMacro;
     }
@@ -142,11 +129,11 @@ VariablesViewController.prototype = {
    * @return Promise
    *         The promise that will be resolved when the string is retrieved.
    */
-  _populateFromLongString: function (aTarget, aGrip) {
-    let deferred = defer();
+  _populateFromLongString: function(aTarget, aGrip) {
+    const deferred = defer();
 
-    let from = aGrip.initial.length;
-    let to = Math.min(aGrip.length, MAX_LONG_STRING_LENGTH);
+    const from = aGrip.initial.length;
+    const to = Math.min(aGrip.length, MAX_LONG_STRING_LENGTH);
 
     this._getLongStringClient(aGrip).substring(from, to, aResponse => {
       // Stop tracking the actor because it's no longer needed.
@@ -172,32 +159,32 @@ VariablesViewController.prototype = {
    * @param object aGrip
    *        The property iterator grip.
    */
-  _populatePropertySlices: function (aTarget, aGrip) {
+  _populatePropertySlices: function(aTarget, aGrip) {
     if (aGrip.count < MAX_PROPERTY_ITEMS) {
       return this._populateFromPropertyIterator(aTarget, aGrip);
     }
 
     // Divide the keys into quarters.
-    let items = Math.ceil(aGrip.count / 4);
-    let iterator = aGrip.propertyIterator;
-    let promises = [];
+    const items = Math.ceil(aGrip.count / 4);
+    const iterator = aGrip.propertyIterator;
+    const promises = [];
     for (let i = 0; i < 4; i++) {
-      let start = aGrip.start + i * items;
-      let count = i != 3 ? items : aGrip.count - i * items;
+      const start = aGrip.start + i * items;
+      const count = i != 3 ? items : aGrip.count - i * items;
 
       // Create a new kind of grip, with additional fields to define the slice
-      let sliceGrip = {
+      const sliceGrip = {
         type: "property-iterator",
         propertyIterator: iterator,
         start: start,
-        count: count
+        count: count,
       };
 
       // Query the name of the first and last items for this slice
-      let deferred = defer();
+      const deferred = defer();
       iterator.names([start, start + count - 1], ({ names }) => {
-          let label = "[" + names[0] + ELLIPSIS + names[1] + "]";
-        let item = aTarget.addItem(label, {}, { internalItem: true });
+        const label = "[" + names[0] + ELLIPSIS + names[1] + "]";
+        const item = aTarget.addItem(label, {}, { internalItem: true });
         item.showArrow();
         this.addExpander(item, sliceGrip);
         deferred.resolve();
@@ -217,25 +204,29 @@ VariablesViewController.prototype = {
    * @param object aGrip
    *        The property iterator grip.
    */
-  _populateFromPropertyIterator: function (aTarget, aGrip) {
+  _populateFromPropertyIterator: function(aTarget, aGrip) {
     if (aGrip.count >= MAX_PROPERTY_ITEMS) {
       // We already started to split, but there is still too many properties, split again.
       return this._populatePropertySlices(aTarget, aGrip);
     }
     // We started slicing properties, and the slice is now small enough to be displayed
-    let deferred = defer();
-    aGrip.propertyIterator.slice(aGrip.start, aGrip.count,
+    const deferred = defer();
+    // eslint-disable-next-line mozilla/use-returnValue
+    aGrip.propertyIterator.slice(
+      aGrip.start,
+      aGrip.count,
       ({ ownProperties }) => {
         // Add all the variable properties.
         if (Object.keys(ownProperties).length > 0) {
           aTarget.addItems(ownProperties, {
             sorted: true,
             // Expansion handlers must be set after the properties are added.
-            callback: this.addExpander
+            callback: this.addExpander,
           });
         }
         deferred.resolve();
-      });
+      }
+    );
     return deferred.promise;
   },
 
@@ -250,56 +241,55 @@ VariablesViewController.prototype = {
    * @param string aQuery [optional]
    *        The query string used to fetch only a subset of properties
    */
-  _populateFromObjectWithIterator: function (aTarget, aGrip, aQuery) {
+  _populateFromObjectWithIterator: function(aTarget, aGrip, aQuery) {
     // FF40+ starts exposing `ownPropertyLength` on ObjectActor's grip,
     // as well as `enumProperties` request.
-    let deferred = defer();
-    let objectClient = this._getObjectClient(aGrip);
-    let isArray = aGrip.preview && aGrip.preview.kind === "ArrayLike";
+    const deferred = defer();
+    const objectClient = this._getObjectClient(aGrip);
+    const isArray = aGrip.preview && aGrip.preview.kind === "ArrayLike";
     if (isArray) {
       // First enumerate array items, e.g. properties from `0` to `array.length`.
-      let options = {
+      const options = {
         ignoreNonIndexedProperties: true,
-        query: aQuery
+        query: aQuery,
       };
-      objectClient.enumProperties(options, ({ iterator }) => {
-        let sliceGrip = {
+      objectClient.enumProperties(options).then(iterator => {
+        const sliceGrip = {
           type: "property-iterator",
           propertyIterator: iterator,
           start: 0,
-          count: iterator.count
+          count: iterator.count,
         };
-        this._populatePropertySlices(aTarget, sliceGrip)
-            .then(() => {
+        this._populatePropertySlices(aTarget, sliceGrip).then(() => {
           // Then enumerate the rest of the properties, like length, buffer, etc.
-              let options = {
-                ignoreIndexedProperties: true,
-                sort: true,
-                query: aQuery
-              };
-              objectClient.enumProperties(options, ({ iterator }) => {
-                let sliceGrip = {
-                  type: "property-iterator",
-                  propertyIterator: iterator,
-                  start: 0,
-                  count: iterator.count
-                };
-                deferred.resolve(this._populatePropertySlices(aTarget, sliceGrip));
-              });
-            });
+          const options = {
+            ignoreIndexedProperties: true,
+            sort: true,
+            query: aQuery,
+          };
+          objectClient.enumProperties(options).then(iterator => {
+            const sliceGrip = {
+              type: "property-iterator",
+              propertyIterator: iterator,
+              start: 0,
+              count: iterator.count,
+            };
+            deferred.resolve(this._populatePropertySlices(aTarget, sliceGrip));
+          });
+        });
       });
     } else {
+      const options = { sort: true, query: aQuery };
       // For objects, we just enumerate all the properties sorted by name.
-      objectClient.enumProperties({ sort: true, query: aQuery }, ({ iterator }) => {
-        let sliceGrip = {
+      objectClient.enumProperties(options).then(iterator => {
+        const sliceGrip = {
           type: "property-iterator",
           propertyIterator: iterator,
           start: 0,
-          count: iterator.count
+          count: iterator.count,
         };
         deferred.resolve(this._populatePropertySlices(aTarget, sliceGrip));
       });
-
     }
     return deferred.promise;
   },
@@ -312,10 +302,10 @@ VariablesViewController.prototype = {
    * @param object aProtype
    *        The prototype grip.
    */
-  _populateObjectPrototype: function (aTarget, aPrototype) {
+  _populateObjectPrototype: function(aTarget, aPrototype) {
     // Add the variable's __proto__.
     if (aPrototype && aPrototype.type != "null") {
-      let proto = aTarget.addItem("__proto__", { value: aPrototype });
+      const proto = aTarget.addItem("__proto__", { value: aPrototype });
       this.addExpander(proto, aPrototype);
     }
   },
@@ -329,18 +319,26 @@ VariablesViewController.prototype = {
    * @param object aGrip
    *        The grip to use to populate the target.
    */
-  _populateFromObject: function (aTarget, aGrip) {
+  _populateFromObject: function(aTarget, aGrip) {
     if (aGrip.class === "Proxy") {
-      this.addExpander(
-        aTarget.addItem("<target>", { value: aGrip.proxyTarget }, { internalItem: true }),
-        aGrip.proxyTarget);
-      this.addExpander(
-        aTarget.addItem("<handler>", { value: aGrip.proxyHandler }, { internalItem: true }),
-        aGrip.proxyHandler);
-
-      // Refuse to play the proxy's stupid game and return immediately
-      let deferred = defer();
-      deferred.resolve();
+      // Refuse to play the proxy's stupid game and just expose the target and handler.
+      const deferred = defer();
+      const objectClient = this._getObjectClient(aGrip);
+      objectClient.getProxySlots().then(aResponse => {
+        const target = aTarget.addItem(
+          "<target>",
+          { value: aResponse.proxyTarget },
+          { internalItem: true }
+        );
+        this.addExpander(target, aResponse.proxyTarget);
+        const handler = aTarget.addItem(
+          "<handler>",
+          { value: aResponse.proxyHandler },
+          { internalItem: true }
+        );
+        this.addExpander(handler, aResponse.proxyHandler);
+        deferred.resolve();
+      });
       return deferred.promise;
     }
 
@@ -350,54 +348,66 @@ VariablesViewController.prototype = {
       if (state === "fulfilled") {
         this.addExpander(
           aTarget.addItem("<value>", { value }, { internalItem: true }),
-          value);
+          value
+        );
       } else if (state === "rejected") {
         this.addExpander(
-          aTarget.addItem("<reason>", { value: reason }, { internalItem: true }),
-          reason);
+          aTarget.addItem(
+            "<reason>",
+            { value: reason },
+            { internalItem: true }
+          ),
+          reason
+        );
       }
     } else if (["Map", "WeakMap", "Set", "WeakSet"].includes(aGrip.class)) {
-      let entriesList = aTarget.addItem("<entries>", {}, { internalItem: true });
+      const entriesList = aTarget.addItem(
+        "<entries>",
+        {},
+        { internalItem: true }
+      );
       entriesList.showArrow();
       this.addExpander(entriesList, {
         type: "entries-list",
-        obj: aGrip
+        obj: aGrip,
       });
     }
 
     // Fetch properties by slices if there is too many in order to prevent UI freeze.
-    if ("ownPropertyLength" in aGrip && aGrip.ownPropertyLength >= MAX_PROPERTY_ITEMS) {
-      return this._populateFromObjectWithIterator(aTarget, aGrip)
-                 .then(() => {
-                   let deferred = defer();
-                   let objectClient = this._getObjectClient(aGrip);
-                   objectClient.getPrototype(({ prototype }) => {
-                     this._populateObjectPrototype(aTarget, prototype);
-                     deferred.resolve();
-                   });
-                   return deferred.promise;
-                 });
+    if (
+      "ownPropertyLength" in aGrip &&
+      aGrip.ownPropertyLength >= MAX_PROPERTY_ITEMS
+    ) {
+      return this._populateFromObjectWithIterator(aTarget, aGrip).then(() => {
+        const deferred = defer();
+        const objectClient = this._getObjectClient(aGrip);
+        objectClient.getPrototype().then(prototype => {
+          this._populateObjectPrototype(aTarget, prototype);
+          deferred.resolve();
+        });
+        return deferred.promise;
+      });
     }
 
     return this._populateProperties(aTarget, aGrip);
   },
 
-  _populateProperties: function (aTarget, aGrip, aOptions) {
-    let deferred = defer();
+  _populateProperties: function(aTarget, aGrip, aOptions) {
+    const deferred = defer();
 
-    let objectClient = this._getObjectClient(aGrip);
-    objectClient.getPrototypeAndProperties(aResponse => {
-      let ownProperties = aResponse.ownProperties || {};
-      let prototype = aResponse.prototype || null;
+    const objectClient = this._getObjectClient(aGrip);
+    objectClient.getPrototypeAndProperties().then(aResponse => {
+      const ownProperties = aResponse.ownProperties || {};
+      const prototype = aResponse.prototype || null;
       // 'safeGetterValues' is new and isn't necessary defined on old actors.
-      let safeGetterValues = aResponse.safeGetterValues || {};
-      let sortable = VariablesView.isSortable(aGrip.class);
+      const safeGetterValues = aResponse.safeGetterValues || {};
+      const sortable = VariablesView.isSortable(aGrip.class);
 
       // Merge the safe getter values into one object such that we can use it
       // in VariablesView.
-      for (let name of Object.keys(safeGetterValues)) {
+      for (const name of Object.keys(safeGetterValues)) {
         if (name in ownProperties) {
-          let { getterValue, getterPrototypeLevel } = safeGetterValues[name];
+          const { getterValue, getterPrototypeLevel } = safeGetterValues[name];
           ownProperties[name].getterValue = getterValue;
           ownProperties[name].getterPrototypeLevel = getterPrototypeLevel;
         } else {
@@ -410,7 +420,7 @@ VariablesViewController.prototype = {
         // Not all variables need to force sorted properties.
         sorted: sortable,
         // Expansion handlers must be set after the properties are added.
-        callback: this.addExpander
+        callback: this.addExpander,
       });
 
       // Add the variable's __proto__.
@@ -419,7 +429,7 @@ VariablesViewController.prototype = {
       // If the object is a function we need to fetch its scope chain
       // to show them as closures for the respective function.
       if (aGrip.class == "Function") {
-        objectClient.getScope(aResponse => {
+        objectClient.getScope().then(aResponse => {
           if (aResponse.error) {
             // This function is bound to a built-in object or it's not present
             // in the current scope chain. Not necessarily an actual error,
@@ -427,7 +437,9 @@ VariablesViewController.prototype = {
             console.warn(aResponse.error + ": " + aResponse.message);
             return void deferred.resolve();
           }
-          this._populateWithClosure(aTarget, aResponse.scope).then(deferred.resolve);
+          this._populateWithClosure(aTarget, aResponse.scope).then(
+            deferred.resolve
+          );
         });
       } else {
         deferred.resolve();
@@ -445,19 +457,19 @@ VariablesViewController.prototype = {
    * @param Scope aScope
    *        The lexical environment form as specified in the protocol.
    */
-  _populateWithClosure: function (aTarget, aScope) {
-    let objectScopes = [];
+  _populateWithClosure: function(aTarget, aScope) {
+    const objectScopes = [];
     let environment = aScope;
-    let funcScope = aTarget.addItem("<Closure>");
+    const funcScope = aTarget.addItem("<Closure>");
     funcScope.target.setAttribute("scope", "");
     funcScope.showArrow();
 
     do {
       // Create a scope to contain all the inspected variables.
-      let label = StackFrameUtils.getScopeLabel(environment);
+      const label = StackFrameUtils.getScopeLabel(environment);
 
       // Block scopes may have the same label, so make addItem allow duplicates.
-      let closure = funcScope.addItem(label, undefined, {relaxed: true});
+      const closure = funcScope.addItem(label, undefined, { relaxed: true });
       closure.target.setAttribute("scope", "");
       closure.showArrow();
 
@@ -465,12 +477,14 @@ VariablesViewController.prototype = {
       if (environment.bindings) {
         this._populateWithEnvironmentBindings(closure, environment.bindings);
       } else {
-        let deferred = defer();
+        const deferred = defer();
         objectScopes.push(deferred.promise);
-        this._getEnvironmentClient(environment).getBindings(response => {
-          this._populateWithEnvironmentBindings(closure, response.bindings);
-          deferred.resolve();
-        });
+        this._getEnvironmentFront(environment)
+          .getBindings()
+          .then(response => {
+            this._populateWithEnvironmentBindings(closure, response.bindings);
+            deferred.resolve();
+          });
       }
     } while ((environment = environment.parent));
 
@@ -488,45 +502,49 @@ VariablesViewController.prototype = {
    * @param object aBindings
    *        The bindings form as specified in the protocol.
    */
-  _populateWithEnvironmentBindings: function (aTarget, aBindings) {
+  _populateWithEnvironmentBindings: function(aTarget, aBindings) {
     // Add nodes for every argument in the scope.
-    aTarget.addItems(aBindings.arguments.reduce((accumulator, arg) => {
-      let name = Object.getOwnPropertyNames(arg)[0];
-      let descriptor = arg[name];
-      accumulator[name] = descriptor;
-      return accumulator;
-    }, {}), {
-      // Arguments aren't sorted.
-      sorted: false,
-      // Expansion handlers must be set after the properties are added.
-      callback: this.addExpander
-    });
+    aTarget.addItems(
+      aBindings.arguments.reduce((accumulator, arg) => {
+        const name = Object.getOwnPropertyNames(arg)[0];
+        const descriptor = arg[name];
+        accumulator[name] = descriptor;
+        return accumulator;
+      }, {}),
+      {
+        // Arguments aren't sorted.
+        sorted: false,
+        // Expansion handlers must be set after the properties are added.
+        callback: this.addExpander,
+      }
+    );
 
     // Add nodes for every other variable in the scope.
     aTarget.addItems(aBindings.variables, {
       // Not all variables need to force sorted properties.
       sorted: VARIABLES_SORTING_ENABLED,
       // Expansion handlers must be set after the properties are added.
-      callback: this.addExpander
+      callback: this.addExpander,
     });
   },
 
-  _populateFromEntries: function (target, grip) {
-    let objGrip = grip.obj;
-    let objectClient = this._getObjectClient(objGrip);
+  _populateFromEntries: function(target, grip) {
+    const objGrip = grip.obj;
+    const objectClient = this._getObjectClient(objGrip);
 
+    // eslint-disable-next-line new-cap
     return new promise((resolve, reject) => {
-      objectClient.enumEntries((response) => {
+      objectClient.enumEntries().then(response => {
         if (response.error) {
           // Older server might not support the enumEntries method
           console.warn(response.error + ": " + response.message);
           resolve();
         } else {
-          let sliceGrip = {
+          const sliceGrip = {
             type: "property-iterator",
             propertyIterator: response.iterator,
             start: 0,
-            count: response.iterator.count
+            count: response.iterator.count,
           };
 
           resolve(this._populatePropertySlices(target, sliceGrip));
@@ -544,15 +562,15 @@ VariablesViewController.prototype = {
    * @param any aSource
    *        The source to use to populate the target.
    */
-  addExpander: function (aTarget, aSource) {
+  addExpander: function(aTarget, aSource) {
     // Attach evaluation macros as necessary.
     if (aTarget.getter || aTarget.setter) {
       aTarget.evaluationMacro = this._overrideValueEvalMacro;
-      let getter = aTarget.get("get");
+      const getter = aTarget.get("get");
       if (getter) {
         getter.evaluationMacro = this._getterOrSetterEvalMacro;
       }
-      let setter = aTarget.get("set");
+      const setter = aTarget.get("set");
       if (setter) {
         setter.evaluationMacro = this._getterOrSetterEvalMacro;
       }
@@ -566,7 +584,7 @@ VariablesViewController.prototype = {
     }
 
     // If the source is a long string then show the arrow.
-    if (WebConsoleUtils.isActorGrip(aSource) && aSource.type == "longString") {
+    if (isActorGrip(aSource) && aSource.type == "longString") {
       aTarget.showArrow();
     }
 
@@ -576,12 +594,12 @@ VariablesViewController.prototype = {
     // Some variables are likely to contain a very large number of properties.
     // It's a good idea to be prepared in case of an expansion.
     if (aTarget.shouldPrefetch) {
-      aTarget.addEventListener("mouseover", aTarget.onexpand, false);
+      aTarget.addEventListener("mouseover", aTarget.onexpand);
     }
 
     // Register all the actors that this controller now depends on.
-    for (let grip of [aTarget.value, aTarget.getter, aTarget.setter]) {
-      if (WebConsoleUtils.isActorGrip(grip)) {
+    for (const grip of [aTarget.value, aTarget.getter, aTarget.setter]) {
+      if (isActorGrip(grip)) {
         this._actors.add(grip.actor);
       }
     }
@@ -600,17 +618,19 @@ VariablesViewController.prototype = {
    * @return Promise
    *         The promise that is resolved once the target has been expanded.
    */
-  populate: function (aTarget, aSource) {
+  populate: function(aTarget, aSource) {
     // Fetch the variables only once.
     if (aTarget._fetched) {
       return aTarget._fetched;
     }
     // Make sure the source grip is available.
     if (!aSource) {
-      return promise.reject(new Error("No actor grip was given for the variable."));
+      return promise.reject(
+        new Error("No actor grip was given for the variable.")
+      );
     }
 
-    let deferred = defer();
+    const deferred = defer();
     aTarget._fetched = deferred.promise;
 
     if (aSource.type === "property-iterator") {
@@ -621,13 +641,16 @@ VariablesViewController.prototype = {
       return this._populateFromEntries(aTarget, aSource);
     }
 
-    if (aSource.type === "mapEntry") {
-      aTarget.addItems({
-        key: { value: aSource.preview.key },
-        value: { value: aSource.preview.value }
-      }, {
-        callback: this.addExpander
-      });
+    if (aSource.type === "mapEntry" || aSource.type === "storageEntry") {
+      aTarget.addItems(
+        {
+          key: { value: aSource.preview.key },
+          value: { value: aSource.preview.value },
+        },
+        {
+          callback: this.addExpander,
+        }
+      );
 
       return promise.resolve();
     }
@@ -673,7 +696,7 @@ VariablesViewController.prototype = {
         deferred.resolve();
         break;
       default:
-        let error = "Unknown Debugger.Environment type: " + aSource.type;
+        const error = "Unknown Debugger.Environment type: " + aSource.type;
         console.error(error);
         deferred.reject(error);
     }
@@ -686,10 +709,10 @@ VariablesViewController.prototype = {
    *
    * @return boolean True, if the actor supports enumProperty request
    */
-  supportsSearch: function () {
+  supportsSearch: function() {
     // FF40+ starts exposing ownPropertyLength on object actor's grip
     // as well as enumProperty which allows to query a subset of properties.
-    return this.objectActor && ("ownPropertyLength" in this.objectActor);
+    return this.objectActor && "ownPropertyLength" in this.objectActor;
   },
 
   /**
@@ -700,11 +723,12 @@ VariablesViewController.prototype = {
    * @param string aToken
    *        The query string
    */
-  performSearch: function (aScope, aToken) {
-    this._populateFromObjectWithIterator(aScope, this.objectActor, aToken)
-        .then(() => {
-          this.view.emit("fetched", "search", aScope);
-        });
+  performSearch: function(aScope, aToken) {
+    this._populateFromObjectWithIterator(aScope, this.objectActor, aToken).then(
+      () => {
+        this.view.emit("fetched", "search", aScope);
+      }
+    );
   },
 
   /**
@@ -713,7 +737,7 @@ VariablesViewController.prototype = {
    * @param object aActor
    *        The actor to release.
    */
-  releaseActor: function (aActor) {
+  releaseActor: function(aActor) {
     if (this._releaseActor) {
       this._releaseActor(aActor);
     }
@@ -726,8 +750,8 @@ VariablesViewController.prototype = {
    * @param function aFilter [optional]
    *        Callback to filter which actors are released.
    */
-  releaseActors: function (aFilter) {
-    for (let actor of this._actors) {
+  releaseActors: function(aFilter) {
+    for (const actor of this._actors) {
       if (!aFilter || aFilter(actor)) {
         this.releaseActor(actor);
       }
@@ -754,15 +778,15 @@ VariablesViewController.prototype = {
    *         - variable: the created Variable.
    *         - expanded: the Promise that resolves when the variable expands.
    */
-  setSingleVariable: function (options, configuration = {}) {
+  setSingleVariable: function(options, configuration = {}) {
     this._setEvaluationMacros(configuration);
     this.view.empty();
 
-    let scope = this.view.addScope(options.label);
+    const scope = this.view.addScope(options.label);
     scope.expanded = true; // Expand the scope by default.
     scope.locked = true; // Prevent collapsing the scope.
 
-    let variable = scope.addItem(undefined, { enumerable: true });
+    const variable = scope.addItem(undefined, { enumerable: true });
     let populated;
 
     if (options.objectActor) {
@@ -783,7 +807,6 @@ VariablesViewController.prototype = {
   },
 };
 
-
 /**
  * Attaches a VariablesViewController to a VariablesView if it doesn't already
  * have one.
@@ -794,7 +817,7 @@ VariablesViewController.prototype = {
  *        The options to use in creating the controller.
  * @return VariablesViewController
  */
-VariablesViewController.attach = function (aView, aOptions) {
+VariablesViewController.attach = function(aView, aOptions) {
   if (aView.controller) {
     return aView.controller;
   }
@@ -804,7 +827,7 @@ VariablesViewController.attach = function (aView, aOptions) {
 /**
  * Utility functions for handling stackframes.
  */
-var StackFrameUtils = this.StackFrameUtils = {
+var StackFrameUtils = (this.StackFrameUtils = {
   /**
    * Create a textual representation for the specified stack frame
    * to display in the stackframes container.
@@ -812,10 +835,10 @@ var StackFrameUtils = this.StackFrameUtils = {
    * @param object aFrame
    *        The stack frame to label.
    */
-  getFrameTitle: function (aFrame) {
+  getFrameTitle: function(aFrame) {
     if (aFrame.type == "call") {
-      let c = aFrame.callee;
-      return (c.name || c.userDisplayName || c.displayName || "(anonymous)");
+      const c = aFrame.callee;
+      return c.name || c.userDisplayName || c.displayName || "(anonymous)";
     }
     return "(" + aFrame.type + ")";
   },
@@ -828,15 +851,14 @@ var StackFrameUtils = this.StackFrameUtils = {
    * @return string
    *         The scope's label.
    */
-  getScopeLabel: function (aEnv) {
+  getScopeLabel: function(aEnv) {
     let name = "";
 
     // Name the outermost scope Global.
     if (!aEnv.parent) {
       name = L10N.getStr("globalScopeLabel");
-    }
-    // Otherwise construct the scope name.
-    else {
+    } else {
+      // Otherwise construct the scope name.
       name = aEnv.type.charAt(0).toUpperCase() + aEnv.type.slice(1);
     }
 
@@ -847,12 +869,25 @@ var StackFrameUtils = this.StackFrameUtils = {
         label += " [" + aEnv.object.class + "]";
         break;
       case "function":
-        let f = aEnv.function;
-        label += " [" +
+        const f = aEnv.function;
+        label +=
+          " [" +
           (f.name || f.userDisplayName || f.displayName || "(anonymous)") +
-        "]";
+          "]";
         break;
     }
     return label;
-  }
-};
+  },
+});
+
+/**
+ * Check if the given value is a grip with an actor.
+ *
+ * @param mixed grip
+ *        Value you want to check if it is a grip with an actor.
+ * @return boolean
+ *         True if the given value is a grip with an actor.
+ */
+function isActorGrip(grip) {
+  return grip && typeof grip == "object" && grip.actor;
+}

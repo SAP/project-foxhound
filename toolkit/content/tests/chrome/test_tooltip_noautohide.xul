@@ -5,8 +5,8 @@
 <window title="Tooltip Noautohide Tests"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <tooltip id="thetooltip" noautohide="true"
          onpopupshown="setTimeout(tooltipStillShown, 6000)"
@@ -24,8 +24,7 @@ var gChecked = false;
 function runTests()
 {
   var button = document.getElementById("button");
-  var windowUtils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                          .getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var windowUtils = window.windowUtils;
   windowUtils.disableNonTestMouseEvents(true);
   synthesizeMouse(button, 2, 2, { type: "mouseover" });
   synthesizeMouse(button, 4, 4, { type: "mousemove" });

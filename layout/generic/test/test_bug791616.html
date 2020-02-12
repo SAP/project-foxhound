@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Test bug 791616</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style>
 #t {
@@ -43,7 +43,7 @@ function runTest() {
 
     // Move the caret to scroll it into view
     sel.collapse(target.firstChild, 2);
-    synthesizeKey("VK_LEFT", {});
+    synthesizeKey("KEY_ArrowLeft");
 
     // Delay until next repaint in case stuff is asynchronous. Also
     // take a trip through the event loop.

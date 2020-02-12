@@ -1,5 +1,4 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 const BUGID = "369787";
 var server = null;
@@ -9,25 +8,24 @@ function change_content_type() {
   var origType = channel.contentType;
   const newType = "x-foo/x-bar";
   channel.contentType = newType;
-  do_check_eq(channel.contentType, newType);
+  Assert.equal(channel.contentType, newType);
   channel.contentType = origType;
-  do_check_eq(channel.contentType, origType);
+  Assert.equal(channel.contentType, origType);
 }
 
-function TestListener() {
-}
-TestListener.prototype.onStartRequest = function(request, context) {
+function TestListener() {}
+TestListener.prototype.onStartRequest = function(request) {
   try {
     // request might be different from channel
-    channel = request.QueryInterface(Components.interfaces.nsIChannel);
+    channel = request.QueryInterface(Ci.nsIChannel);
 
     change_content_type();
   } catch (ex) {
     print(ex);
     throw ex;
   }
-}
-TestListener.prototype.onStopRequest = function(request, context, status) {
+};
+TestListener.prototype.onStopRequest = function(request, status) {
   try {
     change_content_type();
   } catch (ex) {
@@ -36,7 +34,7 @@ TestListener.prototype.onStopRequest = function(request, context, status) {
   }
 
   do_timeout(0, after_channel_closed);
-}
+};
 
 function after_channel_closed() {
   try {
@@ -57,10 +55,10 @@ function run_test() {
   // make request
   channel = NetUtil.newChannel({
     uri: "http://localhost:" + server.identity.primaryPort + "/bug" + BUGID,
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
-  channel.QueryInterface(Components.interfaces.nsIHttpChannel);
-  channel.asyncOpen2(new TestListener());
+  channel.QueryInterface(Ci.nsIHttpChannel);
+  channel.asyncOpen(new TestListener());
 
   do_test_pending();
 }

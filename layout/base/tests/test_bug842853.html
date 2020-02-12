@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=842853
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 842853</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
@@ -40,7 +40,7 @@ function runTest() {
 <script>
 
 var e = document.createElement('iframe');
-var url = 'data:text/html,<a href="%23anchor">Click to scroll to anchor</a><div style="height:5000px"></div><a name="anchor">FAIL</a>'
+var url = 'file_bug842853-frame.html';
 e.setAttribute('src',url);
 e.setAttribute('onload','runTest()');
 document.body.appendChild(e);

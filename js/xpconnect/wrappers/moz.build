@@ -10,7 +10,6 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     'AccessCheck.cpp',
-    'AddonWrapper.cpp',
     'ChromeObjectWrapper.cpp',
     'FilteringWrapper.cpp',
     'WaiveXrayWrapper.cpp',
@@ -22,12 +21,6 @@ SOURCES += [
     'XrayWrapper.cpp',
 ]
 
-# warning C4661 for FilteringWrapper
-if CONFIG['_MSC_VER']:
-    CXXFLAGS += [
-        '-wd4661', # no suitable definition provided for explicit template instantiation request
-    ]
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -35,7 +28,8 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '../../../dom/base',
     '../src',
+    '/caps',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-shadow']

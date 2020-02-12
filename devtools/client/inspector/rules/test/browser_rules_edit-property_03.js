@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -22,29 +21,31 @@ const TEST_URI = `
   <div id="testid2">Styled Node</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
 
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let propEditor = ruleEditor.rule.textProps[1].editor;
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const propEditor = ruleEditor.rule.textProps[1].editor;
 
-  yield focusEditableField(view, propEditor.valueSpan);
+  await focusEditableField(view, propEditor.valueSpan);
 
   info("Deleting all the text out of a value field");
   let onRuleViewChanged = view.once("ruleview-changed");
-  yield sendKeysAndWaitForFocus(view, ruleEditor.element,
-    ["DELETE", "RETURN"]);
-  yield onRuleViewChanged;
+  await sendKeysAndWaitForFocus(view, ruleEditor.element, ["DELETE", "RETURN"]);
+  await onRuleViewChanged;
 
   info("Pressing enter a couple times to cycle through editors");
-  yield sendKeysAndWaitForFocus(view, ruleEditor.element, ["RETURN"]);
+  await sendKeysAndWaitForFocus(view, ruleEditor.element, ["RETURN"]);
   onRuleViewChanged = view.once("ruleview-changed");
-  yield sendKeysAndWaitForFocus(view, ruleEditor.element, ["RETURN"]);
-  yield onRuleViewChanged;
+  await sendKeysAndWaitForFocus(view, ruleEditor.element, ["RETURN"]);
+  await onRuleViewChanged;
 
-  isnot(ruleEditor.rule.textProps[1].editor.nameSpan.style.display, "none",
-    "The name span is visible");
+  isnot(
+    ruleEditor.rule.textProps[1].editor.nameSpan.style.display,
+    "none",
+    "The name span is visible"
+  );
   is(ruleEditor.rule.textProps.length, 2, "Correct number of props");
 });

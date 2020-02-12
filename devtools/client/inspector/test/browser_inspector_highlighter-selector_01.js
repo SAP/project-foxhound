@@ -7,55 +7,70 @@
 // Test that the custom selector highlighter creates as many box-model
 // highlighters as there are nodes that match the given selector
 
-const TEST_URL = "data:text/html;charset=utf-8," +
-                 "<div id='test-node'>test node</div>" +
-                 "<ul>" +
-                  "  <li class='item'>item</li>" +
-                  "  <li class='item'>item</li>" +
-                  "  <li class='item'>item</li>" +
-                  "  <li class='item'>item</li>" +
-                  "  <li class='item'>item</li>" +
-                 "</ul>";
+const TEST_URL =
+  "data:text/html;charset=utf-8," +
+  "<div id='test-node'>test node</div>" +
+  "<ul>" +
+  "  <li class='item'>item</li>" +
+  "  <li class='item'>item</li>" +
+  "  <li class='item'>item</li>" +
+  "  <li class='item'>item</li>" +
+  "  <li class='item'>item</li>" +
+  "</ul>";
 
-const TEST_DATA = [{
-  selector: "#test-node",
-  containerCount: 1
-}, {
-  selector: null,
-  containerCount: 0,
-}, {
-  selector: undefined,
-  containerCount: 0,
-}, {
-  selector: ".invalid-class",
-  containerCount: 0
-}, {
-  selector: ".item",
-  containerCount: 5
-}, {
-  selector: "#test-node, ul, .item",
-  containerCount: 7
-}];
+const TEST_DATA = [
+  {
+    selector: "#test-node",
+    containerCount: 1,
+  },
+  {
+    selector: null,
+    containerCount: 0,
+  },
+  {
+    selector: undefined,
+    containerCount: 0,
+  },
+  {
+    selector: ".invalid-class",
+    containerCount: 0,
+  },
+  {
+    selector: ".item",
+    containerCount: 5,
+  },
+  {
+    selector: "#test-node, ul, .item",
+    containerCount: 7,
+  },
+];
 
-add_task(function* () {
-  let {inspector, testActor} = yield openInspectorForURL(TEST_URL);
-  let front = inspector.inspector;
-  let highlighter = yield front.getHighlighterByType("SelectorHighlighter");
+requestLongerTimeout(5);
 
-  let contextNode = yield getNodeFront("body", inspector);
+add_task(async function() {
+  const { inspector, testActor } = await openInspectorForURL(TEST_URL);
+  const front = inspector.inspectorFront;
+  const highlighter = await front.getHighlighterByType("SelectorHighlighter");
 
-  for (let {selector, containerCount} of TEST_DATA) {
-    info("Showing the highlighter on " + selector + ". Expecting " +
-      containerCount + " highlighter containers");
+  const contextNode = await getNodeFront("body", inspector);
 
-    yield highlighter.show(contextNode, {selector});
+  for (const { selector, containerCount } of TEST_DATA) {
+    info(
+      "Showing the highlighter on " +
+        selector +
+        ". Expecting " +
+        containerCount +
+        " highlighter containers"
+    );
 
-    let nb = yield testActor.getSelectorHighlighterBoxNb(highlighter.actorID);
+    await highlighter.show(contextNode, { selector });
+
+    const nb = await testActor.getSelectorHighlighterBoxNb(highlighter.actorID);
     ok(nb !== null, "The number of highlighters was retrieved");
 
     is(nb, containerCount, "The correct number of highlighers were created");
-    yield highlighter.hide();
+    await highlighter.hide();
   }
 
-  yield highlighter.finalize();
+  await highlighter.finalize();
 });

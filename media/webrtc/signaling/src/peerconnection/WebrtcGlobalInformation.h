@@ -6,7 +6,7 @@
 #define _WEBRTC_GLOBAL_INFORMATION_H_
 
 #include "nsString.h"
-#include "mozilla/dom/BindingDeclarations.h" // for Optional
+#include "mozilla/dom/BindingDeclarations.h"  // for Optional
 
 namespace mozilla {
 class PeerConnectionImpl;
@@ -18,9 +18,9 @@ class GlobalObject;
 class WebrtcGlobalStatisticsCallback;
 class WebrtcGlobalLoggingCallback;
 
-class WebrtcGlobalInformation
-{
-public:
+class WebrtcGlobalInformation {
+ public:
+  MOZ_CAN_RUN_SCRIPT
   static void GetAllStats(const GlobalObject& aGlobal,
                           WebrtcGlobalStatisticsCallback& aStatsCallback,
                           const Optional<nsAString>& pcIdFilter,
@@ -28,8 +28,8 @@ public:
 
   static void ClearAllStats(const GlobalObject& aGlobal);
 
-  static void GetLogging(const GlobalObject& aGlobal,
-                         const nsAString& aPattern,
+  MOZ_CAN_RUN_SCRIPT
+  static void GetLogging(const GlobalObject& aGlobal, const nsAString& aPattern,
                          WebrtcGlobalLoggingCallback& aLoggingCallback,
                          ErrorResult& aRv);
 
@@ -40,17 +40,18 @@ public:
 
   static void SetAecDebug(const GlobalObject& aGlobal, bool aEnable);
   static bool AecDebug(const GlobalObject& aGlobal);
+  static void GetAecDebugLogDir(const GlobalObject& aGlobal, nsAString& aDir);
 
   static void StoreLongTermICEStatistics(PeerConnectionImpl& aPc);
 
-private:
+ private:
   WebrtcGlobalInformation() = delete;
   WebrtcGlobalInformation(const WebrtcGlobalInformation& aOrig) = delete;
-  WebrtcGlobalInformation& operator=(
-    const WebrtcGlobalInformation& aRhs) = delete;
+  WebrtcGlobalInformation& operator=(const WebrtcGlobalInformation& aRhs) =
+      delete;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // _WEBRTC_GLOBAL_INFORMATION_H_

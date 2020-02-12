@@ -24,21 +24,30 @@
 
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components; /*global Components */
-
-Cu.import("resource://gre/modules/Accounts.jsm"); /*global Accounts */
-Cu.import("resource://gre/modules/PromiseUtils.jsm"); /*global PromiseUtils */
-Cu.import("resource://gre/modules/Services.jsm"); /*global Services */
-Cu.import("resource://gre/modules/XPCOMUtils.jsm"); /*global XPCOMUtils */
+const { Accounts } = ChromeUtils.import("resource://gre/modules/Accounts.jsm");
+const { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 const ACTION_URL_PARAM = "action";
 
 const COMMAND_LOADED = "fxaccounts:loaded";
 
-const log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccounts");
+const log = ChromeUtils.import(
+  "resource://gre/modules/AndroidLog.jsm",
+  {}
+).AndroidLog.bind("FxAccounts");
 
-XPCOMUtils.defineLazyServiceGetter(this, "ParentalControls",
-  "@mozilla.org/parental-controls-service;1", "nsIParentalControlsService");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "ParentalControls",
+  "@mozilla.org/parental-controls-service;1",
+  "nsIParentalControlsService"
+);
 
 // Shows the toplevel element with |id| to be shown - all other top-level
 // elements are hidden.
@@ -47,14 +56,14 @@ function show(id) {
   let allTop = document.querySelectorAll(".toplevel");
   for (let elt of allTop) {
     if (elt.getAttribute("id") == id) {
-      elt.style.display = 'block';
+      elt.style.display = "block";
     } else {
-      elt.style.display = 'none';
+      elt.style.display = "none";
     }
   }
-  if (id == 'spinner') {
-    document.getElementById('remote').style.display = 'block';
-    document.getElementById('remote').style.opacity = 0;
+  if (id == "spinner") {
+    document.getElementById("remote").style.display = "block";
+    document.getElementById("remote").style.opacity = 0;
   }
 }
 
@@ -65,78 +74,95 @@ var loadedDeferred = null;
 // We have a new load starting.  Replace the existing promise with a new one,
 // and queue up the transition to remote content.
 function deferTransitionToRemoteAfterLoaded() {
-  log.d('Waiting for LOADED message.');
+  log.d("Waiting for LOADED message.");
 
   loadedDeferred = PromiseUtils.defer();
-  loadedDeferred.promise.then(() => {
-    log.d('Got LOADED message!');
-    document.getElementById("remote").style.opacity = 0;
-    show("remote");
-    document.getElementById("remote").style.opacity = 1;
-  })
-  .catch((e) => {
-    log.w('Did not get LOADED message: ' + e.toString());
-  });
+  loadedDeferred.promise
+    .then(() => {
+      log.d("Got LOADED message!");
+      document.getElementById("remote").style.opacity = 0;
+      show("remote");
+      document.getElementById("remote").style.opacity = 1;
+    })
+    .catch(e => {
+      log.w("Did not get LOADED message: " + e.toString());
+    });
 }
 
 function handleLoadedMessage(message) {
   loadedDeferred.resolve();
-};
+}
 
 var wrapper = {
   iframe: null,
 
   url: null,
 
-  init: function (url) {
+  init: function(url) {
     this.url = url;
     deferTransitionToRemoteAfterLoaded();
 
     let iframe = document.getElementById("remote");
     this.iframe = iframe;
-    this.iframe.QueryInterface(Ci.nsIFrameLoaderOwner);
     let docShell = this.iframe.frameLoader.docShell;
     docShell.QueryInterface(Ci.nsIWebProgress);
-    docShell.addProgressListener(this.iframeListener, Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT);
+    docShell.addProgressListener(
+      this.iframeListener,
+      Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT |
+        Ci.nsIWebProgress.NOTIFY_LOCATION
+    );
 
     // Set the iframe's location with loadURI/LOAD_FLAGS_BYPASS_HISTORY to
     // avoid having a new history entry being added.
-    let webNav = iframe.frameLoader.docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(url, Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY, null, null, null);
+    let webNav = iframe.frameLoader.docShell.QueryInterface(
+      Ci.nsIWebNavigation
+    );
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+    };
+    webNav.loadURI(url, loadURIOptions);
   },
 
-  retry: function () {
+  retry: function() {
     deferTransitionToRemoteAfterLoaded();
 
-    let webNav = this.iframe.frameLoader.docShell.QueryInterface(Ci.nsIWebNavigation);
-    webNav.loadURI(this.url, Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY, null, null, null);
+    let webNav = this.iframe.frameLoader.docShell.QueryInterface(
+      Ci.nsIWebNavigation
+    );
+    let loadURIOptions = {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY,
+    };
+    webNav.loadURI(this.url, loadURIOptions);
   },
 
   iframeListener: {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                         Ci.nsISupportsWeakReference,
-                                         Ci.nsISupports]),
+    QueryInterface: ChromeUtils.generateQI([
+      Ci.nsIWebProgressListener,
+      Ci.nsISupportsWeakReference,
+    ]),
 
     onStateChange: function(aWebProgress, aRequest, aState, aStatus) {
       let failure = false;
 
       // Captive portals sometimes redirect users
-      if ((aState & Ci.nsIWebProgressListener.STATE_REDIRECTING)) {
+      if (aState & Ci.nsIWebProgressListener.STATE_REDIRECTING) {
         failure = true;
-      } else if ((aState & Ci.nsIWebProgressListener.STATE_STOP)) {
+      } else if (aState & Ci.nsIWebProgressListener.STATE_STOP) {
         if (aRequest instanceof Ci.nsIHttpChannel) {
           try {
             failure = aRequest.responseStatus != 200;
           } catch (e) {
-            failure = aStatus != Components.results.NS_OK;
+            failure = aStatus != Cr.NS_OK;
           }
         }
       }
 
       // Calling cancel() will raise some OnStateChange notifications by itself,
       // so avoid doing that more than once
-      if (failure && aStatus != Components.results.NS_BINDING_ABORTED) {
-        aRequest.cancel(Components.results.NS_BINDING_ABORTED);
+      if (failure && aStatus != Cr.NS_BINDING_ABORTED) {
+        aRequest.cancel(Cr.NS_BINDING_ABORTED);
         // Since after a promise is fulfilled, subsequent fulfillments are
         // treated as no-ops, we don't care that we might see multiple failures
         // due to multiple listener callbacks.  (It's not easy to extract this
@@ -148,20 +174,18 @@ var wrapper = {
     },
 
     onLocationChange: function(aWebProgress, aRequest, aLocation, aFlags) {
-      if (aRequest && aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE) {
-        aRequest.cancel(Components.results.NS_BINDING_ABORTED);
+      if (
+        aRequest &&
+        aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE
+      ) {
+        aRequest.cancel(Cr.NS_BINDING_ABORTED);
         // As above, we're not concerned by multiple listener callbacks.
         loadedDeferred.reject(new Error("Failed in onLocationChange!"));
         show("networkError");
       }
     },
-
-    onProgressChange: function() {},
-    onStatusChange: function() {},
-    onSecurityChange: function() {},
   },
 };
-
 
 function retry() {
   log.i("Retrying.");
@@ -178,14 +202,16 @@ function openPrefs() {
 }
 
 function getURLForAction(action, urlParams) {
-  let url = Services.urlFormatter.formatURLPref("identity.fxaccounts.remote.webchannel.uri");
+  let url = Services.urlFormatter.formatURLPref(
+    "identity.fxaccounts.remote.webchannel.uri"
+  );
   url = url + (url.endsWith("/") ? "" : "/") + action;
   const CONTEXT = "fx_fennec_v1";
   // The only service managed by Fennec, to date, is Firefox Sync.
   const SERVICE = "sync";
   urlParams = urlParams || new URLSearchParams("");
-  urlParams.set('service', SERVICE);
-  urlParams.set('context', CONTEXT);
+  urlParams.set("service", SERVICE);
+  urlParams.set("context", CONTEXT);
   // Ideally we'd just merge urlParams with new URL(url).searchParams, but our
   // URLSearchParams implementation doesn't support iteration (bug 1085284).
   let urlParamStr = urlParams.toString();
@@ -211,116 +237,116 @@ function init() {
     // restricted, this way they'll discover as much and may be able to get
     // out of their restricted profile.  If we remove about:accounts entirely,
     // it will look like Fennec is buggy, and the user will be very confused.
-    log.e("This profile cannot connect to Firefox Accounts: showing restricted error.");
+    log.e(
+      "This profile cannot connect to Firefox Accounts: showing restricted error."
+    );
     show("restrictedError");
     return;
   }
 
-  Accounts.getFirefoxAccount().then(user => {
-    // It's possible for the window to start closing before getting the user
-    // completes.  Tests in particular can cause this.
-    if (window.closed) {
-      return;
-    }
+  Accounts.getFirefoxAccount()
+    .then(user => {
+      // It's possible for the window to start closing before getting the user
+      // completes.  Tests in particular can cause this.
+      if (window.closed) {
+        return;
+      }
 
-    updateDisplayedEmail(user);
+      updateDisplayedEmail(user);
 
-    // Ideally we'd use new URL(document.URL).searchParams, but for about: URIs,
-    // searchParams is empty.
-    let urlParams = new URLSearchParams(document.URL.split("?")[1] || "");
-    let action = urlParams.get(ACTION_URL_PARAM);
-    urlParams.delete(ACTION_URL_PARAM);
+      // Ideally we'd use new URL(document.URL).searchParams, but for about: URIs,
+      // searchParams is empty.
+      let urlParams = new URLSearchParams(document.URL.split("?")[1] || "");
+      let action = urlParams.get(ACTION_URL_PARAM);
+      urlParams.delete(ACTION_URL_PARAM);
 
-    switch (action) {
-    case "signup":
-      if (user) {
-        // Asking to sign-up when already signed in just shows prefs.
-        show("prefs");
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signup", urlParams));
+      switch (action) {
+        case "signup":
+          if (user) {
+            // Asking to sign-up when already signed in just shows prefs.
+            show("prefs");
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signup", urlParams));
+          }
+          break;
+        case "signin":
+          if (user) {
+            // Asking to sign-in when already signed in just shows prefs.
+            show("prefs");
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signin", urlParams));
+          }
+          break;
+        case "force_auth":
+          if (user) {
+            show("spinner");
+            urlParams.set("email", user.email); // In future, pin using the UID.
+            wrapper.init(getURLForAction("force_auth", urlParams));
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signup", urlParams));
+          }
+          break;
+        case "manage":
+          if (user) {
+            show("spinner");
+            urlParams.set("email", user.email); // In future, pin using the UID.
+            wrapper.init(getURLForAction("settings", urlParams));
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signup", urlParams));
+          }
+          break;
+        case "avatar":
+          if (user) {
+            show("spinner");
+            urlParams.set("email", user.email); // In future, pin using the UID.
+            wrapper.init(getURLForAction("settings/avatar/change", urlParams));
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signup", urlParams));
+          }
+          break;
+        default:
+          // Unrecognized or no action specified.
+          if (action) {
+            log.w("Ignoring unrecognized action: " + action);
+          }
+          if (user) {
+            show("prefs");
+          } else {
+            show("spinner");
+            wrapper.init(getURLForAction("signup", urlParams));
+          }
+          break;
       }
-      break;
-    case "signin":
-      if (user) {
-        // Asking to sign-in when already signed in just shows prefs.
-        show("prefs");
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signin", urlParams));
-      }
-      break;
-    case "force_auth":
-      if (user) {
-        show("spinner");
-        urlParams.set("email", user.email); // In future, pin using the UID.
-        wrapper.init(getURLForAction("force_auth", urlParams));
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signup", urlParams));
-      }
-      break;
-    case "manage":
-      if (user) {
-        show("spinner");
-        urlParams.set("email", user.email); // In future, pin using the UID.
-        wrapper.init(getURLForAction("settings", urlParams));
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signup", urlParams));
-      }
-      break;
-    case "avatar":
-      if (user) {
-        show("spinner");
-        urlParams.set("email", user.email); // In future, pin using the UID.
-        wrapper.init(getURLForAction("settings/avatar/change", urlParams));
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signup", urlParams));
-      }
-      break;
-    default:
-      // Unrecognized or no action specified.
-      if (action) {
-        log.w("Ignoring unrecognized action: " + action);
-      }
-      if (user) {
-        show("prefs");
-      } else {
-        show("spinner");
-        wrapper.init(getURLForAction("signup", urlParams));
-      }
-      break;
-    }
-  }).catch(e => {
-    log.e("Failed to get the signed in user: " + e.toString());
-  });
+    })
+    .catch(e => {
+      log.e("Failed to get the signed in user: " + e.toString());
+    });
 }
 
-document.addEventListener("DOMContentLoaded", function onload() {
-  document.removeEventListener("DOMContentLoaded", onload, true);
-  init();
-  var buttonRetry = document.getElementById('buttonRetry');
-  buttonRetry.addEventListener('click', retry);
+document.addEventListener(
+  "DOMContentLoaded",
+  function() {
+    init();
+    var buttonRetry = document.getElementById("buttonRetry");
+    buttonRetry.addEventListener("click", retry);
 
-  var buttonOpenPrefs = document.getElementById('buttonOpenPrefs');
-  buttonOpenPrefs.addEventListener('click', openPrefs);
-}, true);
+    var buttonOpenPrefs = document.getElementById("buttonOpenPrefs");
+    buttonOpenPrefs.addEventListener("click", openPrefs);
+  },
+  { capture: true, once: true }
+);
 
 // This window is contained in a XUL <browser> element.  Return the
 // messageManager of that <browser> element, or null.
 function getBrowserMessageManager() {
-  let browser = window
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIWebNavigation)
-        .QueryInterface(Ci.nsIDocShellTreeItem)
-        .rootTreeItem
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIDOMWindow)
-        .QueryInterface(Ci.nsIDOMChromeWindow)
-        .BrowserApp
-        .getBrowserForDocument(document);
+  let browser = window.docShell.rootTreeItem.domWindow.BrowserApp.getBrowserForDocument(
+    document
+  );
   if (browser) {
     return browser.messageManager;
   }
@@ -334,7 +360,7 @@ var mm = getBrowserMessageManager();
 if (mm) {
   mm.addMessageListener(COMMAND_LOADED, handleLoadedMessage);
 } else {
-  log.e('No messageManager, not listening for LOADED message!');
+  log.e("No messageManager, not listening for LOADED message!");
 }
 
 window.addEventListener("unload", function(event) {
@@ -346,6 +372,6 @@ window.addEventListener("unload", function(event) {
   } catch (e) {
     // This could fail if the page is being torn down, the tab is being
     // destroyed, etc.
-    log.w('Not removing listener for LOADED message: ' + e.toString());
+    log.w("Not removing listener for LOADED message: " + e.toString());
   }
 });

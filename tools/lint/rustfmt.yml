@@ -1,0 +1,14 @@
+---
+rust:
+    description: Reformat rust
+    include:
+        - js/src/wasm/cranelift/
+        - testing/geckodriver/
+        - testing/mozbase/rust/
+        - testing/webdriver/
+    extensions:
+        - rs
+    support-files:
+        - 'tools/lint/rust/**'
+    type: external
+    payload: rust:lint

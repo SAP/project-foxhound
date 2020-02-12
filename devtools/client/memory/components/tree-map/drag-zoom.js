@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { debounce } = require("sdk/lang/functional");
+const { debounce } = require("devtools/shared/debounce");
 const { lerp } = require("devtools/client/memory/utils");
 const EventEmitter = require("devtools/shared/event-emitter");
 
@@ -45,7 +45,7 @@ function DragZoom(container, debounceRate, requestAnimationFrame) {
 
   // The size of the offset between the top/left of the container, and the
   // top/left of the containing element. This value takes into account
-  // the devicePixelRatio for canvas draws.
+  // the device pixel ratio for canvas draws.
   this.offsetX = 0;
   this.offsetY = 0;
 
@@ -59,7 +59,7 @@ function DragZoom(container, debounceRate, requestAnimationFrame) {
   this.ZOOM_SPEED = ZOOM_SPEED;
   this.ZOOM_EPSILON = ZOOM_EPSILON;
 
-  let update = createUpdateLoop(container, this, requestAnimationFrame);
+  const update = createUpdateLoop(container, this, requestAnimationFrame);
 
   this.destroy = setHandlers(this, container, update, debounceRate);
 }
@@ -88,38 +88,45 @@ function createUpdateLoop(container, dragZoom, requestAnimationFrame) {
   let isLooping = false;
 
   function update() {
-    let isScrollChanging = (
-      Math.abs(dragZoom.smoothZoom - dragZoom.zoom) > ZOOM_EPSILON
-    );
-    let isTranslateChanging = (
-      Math.abs(dragZoom.smoothTranslateX - dragZoom.translateX)
-      > TRANSLATE_EPSILON ||
-      Math.abs(dragZoom.smoothTranslateY - dragZoom.translateY)
-      > TRANSLATE_EPSILON
-    );
+    const isScrollChanging =
+      Math.abs(dragZoom.smoothZoom - dragZoom.zoom) > ZOOM_EPSILON;
+    const isTranslateChanging =
+      Math.abs(dragZoom.smoothTranslateX - dragZoom.translateX) >
+        TRANSLATE_EPSILON ||
+      Math.abs(dragZoom.smoothTranslateY - dragZoom.translateY) >
+        TRANSLATE_EPSILON;
 
     isLooping = isScrollChanging || isTranslateChanging;
 
     if (isScrollChanging) {
-      dragZoom.smoothZoom = lerp(dragZoom.smoothZoom, dragZoom.zoom,
-                                 LERP_SPEED);
+      dragZoom.smoothZoom = lerp(
+        dragZoom.smoothZoom,
+        dragZoom.zoom,
+        LERP_SPEED
+      );
     } else {
       dragZoom.smoothZoom = dragZoom.zoom;
     }
 
     if (isTranslateChanging) {
-      dragZoom.smoothTranslateX = lerp(dragZoom.smoothTranslateX,
-                                       dragZoom.translateX, LERP_SPEED);
-      dragZoom.smoothTranslateY = lerp(dragZoom.smoothTranslateY,
-                                       dragZoom.translateY, LERP_SPEED);
+      dragZoom.smoothTranslateX = lerp(
+        dragZoom.smoothTranslateX,
+        dragZoom.translateX,
+        LERP_SPEED
+      );
+      dragZoom.smoothTranslateY = lerp(
+        dragZoom.smoothTranslateY,
+        dragZoom.translateY,
+        LERP_SPEED
+      );
     } else {
       dragZoom.smoothTranslateX = dragZoom.translateX;
       dragZoom.smoothTranslateY = dragZoom.translateY;
     }
 
-    let zoom = 1 + dragZoom.smoothZoom;
-    let x = dragZoom.smoothTranslateX;
-    let y = dragZoom.smoothTranslateY;
+    const zoom = 1 + dragZoom.smoothZoom;
+    const x = dragZoom.smoothTranslateX;
+    const y = dragZoom.smoothTranslateY;
     container.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
 
     if (isLooping) {
@@ -146,12 +153,20 @@ function createUpdateLoop(container, dragZoom, requestAnimationFrame) {
  * @return {Function}  The function to remove the handlers
  */
 function setHandlers(dragZoom, container, update, debounceRate) {
-  let emitChanged = debounce(() => dragZoom.emit("change"), debounceRate);
+  const emitChanged = debounce(() => dragZoom.emit("change"), debounceRate);
 
-  let removeDragHandlers =
-    setDragHandlers(container, dragZoom, emitChanged, update);
-  let removeScrollHandlers =
-    setScrollHandlers(container, dragZoom, emitChanged, update);
+  const removeDragHandlers = setDragHandlers(
+    container,
+    dragZoom,
+    emitChanged,
+    update
+  );
+  const removeScrollHandlers = setScrollHandlers(
+    container,
+    dragZoom,
+    emitChanged,
+    update
+  );
 
   return function removeHandlers() {
     removeDragHandlers();
@@ -169,7 +184,7 @@ function setHandlers(dragZoom, container, update, debounceRate) {
  * @param  {Function} update
  */
 function setDragHandlers(container, dragZoom, emitChanged, update) {
-  let parentEl = container.parentElement;
+  const parentEl = container.parentElement;
 
   function startDrag() {
     dragZoom.isDragging = true;
@@ -182,8 +197,8 @@ function setDragHandlers(container, dragZoom, emitChanged, update) {
   }
 
   function drag(event) {
-    let prevMouseX = dragZoom.mouseX;
-    let prevMouseY = dragZoom.mouseY;
+    const prevMouseX = dragZoom.mouseX;
+    const prevMouseY = dragZoom.mouseY;
 
     dragZoom.mouseX = event.clientX - parentEl.offsetLeft;
     dragZoom.mouseY = event.clientY - parentEl.offsetTop;
@@ -201,16 +216,16 @@ function setDragHandlers(container, dragZoom, emitChanged, update) {
     update();
   }
 
-  parentEl.addEventListener("mousedown", startDrag, false);
-  parentEl.addEventListener("mouseup", stopDrag, false);
-  parentEl.addEventListener("mouseout", stopDrag, false);
-  parentEl.addEventListener("mousemove", drag, false);
+  parentEl.addEventListener("mousedown", startDrag);
+  parentEl.addEventListener("mouseup", stopDrag);
+  parentEl.addEventListener("mouseout", stopDrag);
+  parentEl.addEventListener("mousemove", drag);
 
   return function removeListeners() {
-    parentEl.removeEventListener("mousedown", startDrag, false);
-    parentEl.removeEventListener("mouseup", stopDrag, false);
-    parentEl.removeEventListener("mouseout", stopDrag, false);
-    parentEl.removeEventListener("mousemove", drag, false);
+    parentEl.removeEventListener("mousedown", startDrag);
+    parentEl.removeEventListener("mouseup", stopDrag);
+    parentEl.removeEventListener("mouseout", stopDrag);
+    parentEl.removeEventListener("mousemove", drag);
   };
 }
 
@@ -225,7 +240,7 @@ function setDragHandlers(container, dragZoom, emitChanged, update) {
  * @param  {Function} update
  */
 function setScrollHandlers(container, dragZoom, emitChanged, update) {
-  let window = container.ownerDocument.defaultView;
+  const window = container.ownerDocument.defaultView;
 
   function handleWheel(event) {
     event.preventDefault();
@@ -235,28 +250,29 @@ function setScrollHandlers(container, dragZoom, emitChanged, update) {
     }
 
     // Update the zoom level
-    let scrollDelta = getScrollDelta(event, window);
-    let prevZoom = dragZoom.zoom;
+    const scrollDelta = getScrollDelta(event, window);
+    const prevZoom = dragZoom.zoom;
     dragZoom.zoom = Math.max(0, dragZoom.zoom - scrollDelta * ZOOM_SPEED);
-    let deltaZoom = dragZoom.zoom - prevZoom;
 
     // Calculate the updated width and height
-    let prevZoomedWidth = container.offsetWidth * (1 + prevZoom);
-    let prevZoomedHeight = container.offsetHeight * (1 + prevZoom);
+    const prevZoomedWidth = container.offsetWidth * (1 + prevZoom);
+    const prevZoomedHeight = container.offsetHeight * (1 + prevZoom);
     dragZoom.zoomedWidth = container.offsetWidth * (1 + dragZoom.zoom);
     dragZoom.zoomedHeight = container.offsetHeight * (1 + dragZoom.zoom);
-    let deltaWidth = dragZoom.zoomedWidth - prevZoomedWidth;
-    let deltaHeight = dragZoom.zoomedHeight - prevZoomedHeight;
+    const deltaWidth = dragZoom.zoomedWidth - prevZoomedWidth;
+    const deltaHeight = dragZoom.zoomedHeight - prevZoomedHeight;
 
-    let mouseOffsetX = dragZoom.mouseX - container.offsetWidth / 2;
-    let mouseOffsetY = dragZoom.mouseY - container.offsetHeight / 2;
+    const mouseOffsetX = dragZoom.mouseX - container.offsetWidth / 2;
+    const mouseOffsetY = dragZoom.mouseY - container.offsetHeight / 2;
 
     // The ratio of where the center of the mouse is in regards to the total
     // zoomed width/height
-    let ratioZoomX = (prevZoomedWidth / 2 + mouseOffsetX - dragZoom.translateX)
-      / prevZoomedWidth;
-    let ratioZoomY = (prevZoomedHeight / 2 + mouseOffsetY - dragZoom.translateY)
-      / prevZoomedHeight;
+    const ratioZoomX =
+      (prevZoomedWidth / 2 + mouseOffsetX - dragZoom.translateX) /
+      prevZoomedWidth;
+    const ratioZoomY =
+      (prevZoomedHeight / 2 + mouseOffsetY - dragZoom.translateY) /
+      prevZoomedHeight;
 
     // Distribute the change in width and height based on the above ratio
     dragZoom.translateX -= lerp(-deltaWidth / 2, deltaWidth / 2, ratioZoomX);
@@ -268,10 +284,10 @@ function setScrollHandlers(container, dragZoom, emitChanged, update) {
     update();
   }
 
-  container.addEventListener("wheel", handleWheel, false);
+  container.addEventListener("wheel", handleWheel);
 
   return function removeListener() {
-    container.removeEventListener("wheel", handleWheel, false);
+    container.removeEventListener("wheel", handleWheel);
   };
 }
 
@@ -298,19 +314,24 @@ function getScrollDelta(event, window) {
  * @param  {Object} dragZoom
  */
 function keepInView(container, dragZoom) {
-  let { devicePixelRatio } = container.ownerDocument.defaultView;
-  let overdrawX = (dragZoom.zoomedWidth - container.offsetWidth) / 2;
-  let overdrawY = (dragZoom.zoomedHeight - container.offsetHeight) / 2;
+  const { devicePixelRatio } = container.ownerDocument.defaultView;
+  const overdrawX = (dragZoom.zoomedWidth - container.offsetWidth) / 2;
+  const overdrawY = (dragZoom.zoomedHeight - container.offsetHeight) / 2;
 
-  dragZoom.translateX = Math.max(-overdrawX,
-                                 Math.min(overdrawX, dragZoom.translateX));
-  dragZoom.translateY = Math.max(-overdrawY,
-                                 Math.min(overdrawY, dragZoom.translateY));
+  dragZoom.translateX = Math.max(
+    -overdrawX,
+    Math.min(overdrawX, dragZoom.translateX)
+  );
+  dragZoom.translateY = Math.max(
+    -overdrawY,
+    Math.min(overdrawY, dragZoom.translateY)
+  );
 
-  dragZoom.offsetX = devicePixelRatio * (
-    (dragZoom.zoomedWidth - container.offsetWidth) / 2 - dragZoom.translateX
-  );
-  dragZoom.offsetY = devicePixelRatio * (
-    (dragZoom.zoomedHeight - container.offsetHeight) / 2 - dragZoom.translateY
-  );
+  dragZoom.offsetX =
+    devicePixelRatio *
+    ((dragZoom.zoomedWidth - container.offsetWidth) / 2 - dragZoom.translateX);
+  dragZoom.offsetY =
+    devicePixelRatio *
+    ((dragZoom.zoomedHeight - container.offsetHeight) / 2 -
+      dragZoom.translateY);
 }

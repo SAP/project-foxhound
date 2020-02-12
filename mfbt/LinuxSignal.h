@@ -7,7 +7,7 @@
 
 namespace mozilla {
 
-#if defined(__arm__)
+#if defined(__arm__) && defined(__ANDROID__)
 
 // Some (old) Linux kernels on ARM have a bug where a signal handler
 // can be called without clearing the IT bits in CPSR first. The result
@@ -18,28 +18,21 @@ namespace mozilla {
 // will be skipped over.
 
 template <void (*H)(int, siginfo_t*, void*)>
-__attribute__((naked)) void
-SignalTrampoline(int aSignal, siginfo_t* aInfo, void* aContext)
-{
-  asm volatile (
-    "nop; nop; nop; nop"
-    : : : "memory");
+__attribute__((naked)) void SignalTrampoline(int aSignal, siginfo_t* aInfo,
+                                             void* aContext) {
+  asm volatile("nop; nop; nop; nop" : : : "memory");
 
-  asm volatile (
-    "b %0"
-    :
-    : "X"(H)
-    : "memory");
+  asm volatile("b %0" : : "X"(H) : "memory");
 }
 
-# define MOZ_SIGNAL_TRAMPOLINE(h) (mozilla::SignalTrampoline<h>)
+#  define MOZ_SIGNAL_TRAMPOLINE(h) (mozilla::SignalTrampoline<h>)
 
-#else // __arm__
+#else  // __arm__
 
-# define MOZ_SIGNAL_TRAMPOLINE(h) (h)
+#  define MOZ_SIGNAL_TRAMPOLINE(h) (h)
 
-#endif // __arm__
+#endif  // __arm__
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_LinuxSignal_h
+#endif  // mozilla_LinuxSignal_h

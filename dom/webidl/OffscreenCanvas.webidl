@@ -7,10 +7,11 @@
  * https://wiki.whatwg.org/wiki/OffscreenCanvas
  */
 
-[Constructor(unsigned long width, unsigned long height),
- Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabled"]
+[Exposed=(Window,Worker),
+ Pref="gfx.offscreencanvas.enabled"]
 interface OffscreenCanvas : EventTarget {
+  constructor(unsigned long width, unsigned long height);
+
   [Pure, SetterThrows]
   attribute unsigned long width;
   [Pure, SetterThrows]
@@ -20,10 +21,10 @@ interface OffscreenCanvas : EventTarget {
   nsISupports? getContext(DOMString contextId,
                           optional any contextOptions = null);
 
+  [Throws]
   ImageBitmap transferToImageBitmap();
   [Throws]
   Promise<Blob> toBlob(optional DOMString type = "",
                        optional any encoderOptions);
 };
 
-// OffscreenCanvas implements Transferable;

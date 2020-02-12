@@ -4,71 +4,109 @@
 "use strict";
 
 /**
- * Test if the summary text displayed in the network requests menu footer
- * is correct.
+ * Test if the summary text displayed in the network requests menu footer is correct.
  */
 
-add_task(function* () {
-  requestLongerTimeout(2);
-  let { PluralForm } = require("devtools/shared/plural-form");
+add_task(async function() {
+  const {
+    getFormattedSize,
+    getFormattedTime,
+  } = require("devtools/client/netmonitor/src/utils/format-utils");
 
-  let { tab, monitor } = yield initNetMonitor(FILTERING_URL);
+  requestLongerTimeout(2);
+
+  const { tab, monitor } = await initNetMonitor(FILTERING_URL);
   info("Starting test... ");
 
-  let { $, L10N, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getDisplayedRequestsSummary } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
+  const { L10N } = windowRequire("devtools/client/netmonitor/src/utils/l10n");
+  const { PluralForm } = windowRequire("devtools/shared/plural-form");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
   testStatus();
 
   for (let i = 0; i < 2; i++) {
     info(`Performing requests in batch #${i}`);
-    let wait = waitForNetworkEvents(monitor, 8);
-    yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-      content.wrappedJSObject.performRequests('{ "getMedia": true, "getFlash": true }');
+    const wait = waitForNetworkEvents(monitor, 8);
+    await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+      content.wrappedJSObject.performRequests(
+        '{ "getMedia": true, "getFlash": true }'
+      );
     });
-    yield wait;
+    await wait;
 
     testStatus();
 
-    let buttons = ["html", "css", "js", "xhr", "fonts", "images", "media", "flash"];
-    for (let button of buttons) {
-      let buttonEl = $(`#requests-menu-filter-${button}-button`);
+    const buttons = ["html", "css", "js", "xhr", "fonts", "images", "media"];
+    for (const button of buttons) {
+      const buttonEl = document.querySelector(
+        `.requests-list-filter-${button}-button`
+      );
       EventUtils.sendMouseEvent({ type: "click" }, buttonEl);
       testStatus();
     }
   }
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   function testStatus() {
-    let summary = $("#requests-menu-network-summary-button");
-    let value = summary.getAttribute("label");
-    info("Current summary: " + value);
+    const state = store.getState();
+    const totalRequestsCount = state.requests.requests.size;
+    const requestsSummary = getDisplayedRequestsSummary(state);
+    info(
+      `Current requests: ${requestsSummary.count} of ${totalRequestsCount}.`
+    );
 
-    let visibleItems = RequestsMenu.visibleItems;
-    let visibleRequestsCount = visibleItems.length;
-    let totalRequestsCount = RequestsMenu.itemCount;
-    info("Current requests: " + visibleRequestsCount + " of " + totalRequestsCount + ".");
+    const valueCount = document.querySelector(
+      ".requests-list-network-summary-count"
+    ).textContent;
+    info("Current summary count: " + valueCount);
+    const expectedCount = PluralForm.get(
+      requestsSummary.count,
+      L10N.getStr("networkMenu.summary.requestsCount2")
+    ).replace("#1", requestsSummary.count);
 
-    if (!totalRequestsCount || !visibleRequestsCount) {
-      is(value, L10N.getStr("networkMenu.empty"),
-        "The current summary text is incorrect, expected an 'empty' label.");
+    if (!totalRequestsCount || !requestsSummary.count) {
+      is(
+        valueCount,
+        L10N.getStr("networkMenu.summary.requestsCountEmpty"),
+        "The current summary text is incorrect, expected an 'empty' label."
+      );
       return;
     }
 
-    let totalBytes = RequestsMenu._getTotalBytesOfRequests(visibleItems);
-    let totalMillis =
-      RequestsMenu._getNewestRequest(visibleItems).attachment.endedMillis -
-      RequestsMenu._getOldestRequest(visibleItems).attachment.startedMillis;
+    const valueTransfer = document.querySelector(
+      ".requests-list-network-summary-transfer"
+    ).textContent;
+    info("Current summary transfer: " + valueTransfer);
+    const expectedTransfer = L10N.getFormatStrWithNumbers(
+      "networkMenu.summary.transferred",
+      getFormattedSize(requestsSummary.contentSize),
+      getFormattedSize(requestsSummary.transferredSize)
+    );
 
-    info("Computed total bytes: " + totalBytes);
-    info("Computed total millis: " + totalMillis);
+    const valueFinish = document.querySelector(
+      ".requests-list-network-summary-finish"
+    ).textContent;
+    info("Current summary finish: " + valueFinish);
+    const expectedFinish = L10N.getFormatStrWithNumbers(
+      "networkMenu.summary.finish",
+      getFormattedTime(requestsSummary.ms)
+    );
 
-    is(value, PluralForm.get(visibleRequestsCount, L10N.getStr("networkMenu.summary"))
-      .replace("#1", visibleRequestsCount)
-      .replace("#2", L10N.numberWithDecimals((totalBytes || 0) / 1024, 2))
-      .replace("#3", L10N.numberWithDecimals((totalMillis || 0) / 1000, 2))
-    , "The current summary text is incorrect.");
+    info(`Computed total bytes: ${requestsSummary.bytes}`);
+    info(`Computed total ms: ${requestsSummary.ms}`);
+
+    is(valueCount, expectedCount, "The current summary count is correct.");
+    is(
+      valueTransfer,
+      expectedTransfer,
+      "The current summary transfer is correct."
+    );
+    is(valueFinish, expectedFinish, "The current summary finish is correct.");
   }
 });

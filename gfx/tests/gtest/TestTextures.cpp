@@ -5,6 +5,7 @@
 
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
+#include "TestLayers.h"
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Tools.h"
@@ -40,7 +41,7 @@ namespace mozilla {
 namespace layers {
 
 // fills the surface with values betwee 0 and 100.
-void SetupSurface(gfxImageSurface* surface) {
+static void SetupSurface(gfxImageSurface* surface) {
   int bpp = gfxASurface::BytePerPixelFromFormat(surface->Format());
   int stride = surface->Stride();
   uint8_t val = 0;
@@ -48,7 +49,7 @@ void SetupSurface(gfxImageSurface* surface) {
   for (int y = 0; y < surface->Height(); ++y) {
     for (int x = 0; x < surface->Height(); ++x) {
       for (int b = 0; b < bpp; ++b) {
-        data[y*stride + x*bpp + b] = val;
+        data[y * stride + x * bpp + b] = val;
         if (val == 100) {
           val = 0;
         } else {
@@ -60,9 +61,8 @@ void SetupSurface(gfxImageSurface* surface) {
 }
 
 // return true if two surfaces contain the same data
-void AssertSurfacesEqual(gfxImageSurface* surface1,
-                         gfxImageSurface* surface2)
-{
+static void AssertSurfacesEqual(gfxImageSurface* surface1,
+                                gfxImageSurface* surface2) {
   ASSERT_EQ(surface1->GetSize(), surface2->GetSize());
   ASSERT_EQ(surface1->Format(), surface2->Format());
 
@@ -75,16 +75,15 @@ void AssertSurfacesEqual(gfxImageSurface* surface1,
   for (int y = 0; y < surface1->Height(); ++y) {
     for (int x = 0; x < surface1->Width(); ++x) {
       for (int b = 0; b < bpp; ++b) {
-        ASSERT_EQ(data1[y*stride1 + x*bpp + b],
-                  data2[y*stride2 + x*bpp + b]);
+        ASSERT_EQ(data1[y * stride1 + x * bpp + b],
+                  data2[y * stride2 + x * bpp + b]);
       }
     }
   }
 }
 
-void AssertSurfacesEqual(SourceSurface* surface1,
-                         SourceSurface* surface2)
-{
+static void AssertSurfacesEqual(SourceSurface* surface1,
+                                SourceSurface* surface2) {
   ASSERT_EQ(surface1->GetSize(), surface2->GetSize());
   ASSERT_EQ(surface1->GetFormat(), surface2->GetFormat());
 
@@ -110,8 +109,8 @@ void AssertSurfacesEqual(SourceSurface* surface1,
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       for (int b = 0; b < bpp; ++b) {
-        ASSERT_EQ(data1[y*stride1 + x*bpp + b],
-                  data2[y*stride2 + x*bpp + b]);
+        ASSERT_EQ(data1[y * stride1 + x * bpp + b],
+                  data2[y * stride2 + x * bpp + b]);
       }
     }
   }
@@ -121,8 +120,8 @@ void AssertSurfacesEqual(SourceSurface* surface1,
 }
 
 // Run the test for a texture client and a surface
-void TestTextureClientSurface(TextureClient* texture, gfxImageSurface* surface) {
-
+void TestTextureClientSurface(TextureClient* texture,
+                              gfxImageSurface* surface) {
   // client allocation
   ASSERT_TRUE(texture->CanExposeDrawTarget());
 
@@ -130,14 +129,14 @@ void TestTextureClientSurface(TextureClient* texture, gfxImageSurface* surface) 
   // client painting
   RefPtr<DrawTarget> dt = texture->BorrowDrawTarget();
   RefPtr<SourceSurface> source =
-    gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(dt, surface);
+      gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(dt, surface);
   dt->CopySurface(source, IntRect(IntPoint(), source->GetSize()), IntPoint());
 
   RefPtr<SourceSurface> snapshot = dt->Snapshot();
 
   AssertSurfacesEqual(snapshot, source);
 
-  dt = nullptr; // drop reference before calling Unlock()
+  dt = nullptr;  // drop reference before calling Unlock()
   texture->Unlock();
 
   // client serialization
@@ -147,8 +146,9 @@ void TestTextureClientSurface(TextureClient* texture, gfxImageSurface* surface) 
   ASSERT_NE(descriptor.type(), SurfaceDescriptor::Tnull_t);
 
   // host deserialization
-  RefPtr<TextureHost> host = CreateBackendIndependentTextureHost(descriptor, nullptr,
-                                                                 texture->GetFlags());
+  RefPtr<TestSurfaceAllocator> deallocator = new TestSurfaceAllocator();
+  RefPtr<TextureHost> host = CreateBackendIndependentTextureHost(
+      descriptor, deallocator, LayersBackend::LAYERS_NONE, texture->GetFlags());
 
   ASSERT_TRUE(host.get() != nullptr);
   ASSERT_EQ(host->GetFlags(), texture->GetFlags());
@@ -160,13 +160,13 @@ void TestTextureClientSurface(TextureClient* texture, gfxImageSurface* surface) 
   // not sure it'll be worth it. Maybe always test against a BasicCompositor,
   // but the latter needs a widget...
   if (host->Lock()) {
-    RefPtr<mozilla::gfx::DataSourceSurface> hostDataSurface = host->GetAsSurface();
+    RefPtr<mozilla::gfx::DataSourceSurface> hostDataSurface =
+        host->GetAsSurface();
 
-    RefPtr<gfxImageSurface> hostSurface =
-      new gfxImageSurface(hostDataSurface->GetData(),
-                          hostDataSurface->GetSize(),
-                          hostDataSurface->Stride(),
-                          SurfaceFormatToImageFormat(hostDataSurface->GetFormat()));
+    DataSourceSurface::ScopedMap map(hostDataSurface, DataSourceSurface::READ);
+    RefPtr<gfxImageSurface> hostSurface = new gfxImageSurface(
+        map.GetData(), hostDataSurface->GetSize(), map.GetStride(),
+        SurfaceFormatToImageFormat(hostDataSurface->GetFormat()));
     AssertSurfacesEqual(surface, hostSurface.get());
     host->Unlock();
   }
@@ -191,10 +191,12 @@ void TestTextureClientYCbCr(TextureClient* client, PlanarYCbCrData& ycbcrData) {
   ASSERT_EQ(ycbcrDesc.stereoMode(), ycbcrData.mStereoMode);
 
   // host deserialization
-  RefPtr<TextureHost> textureHost = CreateBackendIndependentTextureHost(descriptor, nullptr,
-                                                                        client->GetFlags());
+  RefPtr<TestSurfaceAllocator> deallocator = new TestSurfaceAllocator();
+  RefPtr<TextureHost> textureHost = CreateBackendIndependentTextureHost(
+      descriptor, deallocator, LayersBackend::LAYERS_NONE, client->GetFlags());
 
-  RefPtr<BufferTextureHost> host = static_cast<BufferTextureHost*>(textureHost.get());
+  RefPtr<BufferTextureHost> host =
+      static_cast<BufferTextureHost*>(textureHost.get());
 
   ASSERT_TRUE(host.get() != nullptr);
   ASSERT_EQ(host->GetFlags(), client->GetFlags());
@@ -208,32 +210,32 @@ void TestTextureClientYCbCr(TextureClient* client, PlanarYCbCrData& ycbcrData) {
   }
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-TEST(Layers, TextureSerialization) {
+TEST(Layers, TextureSerialization)
+{
   // the test is run on all the following image formats
   gfxImageFormat formats[3] = {
-    SurfaceFormat::A8R8G8B8_UINT32,
-    SurfaceFormat::X8R8G8B8_UINT32,
-    SurfaceFormat::A8,
+      SurfaceFormat::A8R8G8B8_UINT32,
+      SurfaceFormat::X8R8G8B8_UINT32,
+      SurfaceFormat::A8,
   };
 
   for (int f = 0; f < 3; ++f) {
-    RefPtr<gfxImageSurface> surface = new gfxImageSurface(IntSize(400,300), formats[f]);
+    RefPtr<gfxImageSurface> surface =
+        new gfxImageSurface(IntSize(400, 300), formats[f]);
     SetupSurface(surface.get());
     AssertSurfacesEqual(surface, surface);
 
-    auto texData = BufferTextureData::Create(surface->GetSize(),
-      gfx::ImageFormatToSurfaceFormat(surface->Format()),
-      gfx::BackendType::CAIRO, LayersBackend::LAYERS_NONE,
-      TextureFlags::DEALLOCATE_CLIENT, ALLOC_DEFAULT, nullptr
-    );
+    auto texData = BufferTextureData::Create(
+        surface->GetSize(), gfx::ImageFormatToSurfaceFormat(surface->Format()),
+        gfx::BackendType::CAIRO, LayersBackend::LAYERS_NONE,
+        TextureFlags::DEALLOCATE_CLIENT, ALLOC_DEFAULT, nullptr);
     ASSERT_TRUE(!!texData);
 
-    RefPtr<TextureClient> client = new TextureClient(
-      texData, TextureFlags::DEALLOCATE_CLIENT, nullptr
-    );
+    RefPtr<TextureClient> client =
+        new TextureClient(texData, TextureFlags::DEALLOCATE_CLIENT, nullptr);
 
     TestTextureClientSurface(client, surface);
 
@@ -241,10 +243,14 @@ TEST(Layers, TextureSerialization) {
   }
 }
 
-TEST(Layers, TextureYCbCrSerialization) {
-  RefPtr<gfxImageSurface> ySurface = new gfxImageSurface(IntSize(400,300), SurfaceFormat::A8);
-  RefPtr<gfxImageSurface> cbSurface = new gfxImageSurface(IntSize(200,150), SurfaceFormat::A8);
-  RefPtr<gfxImageSurface> crSurface = new gfxImageSurface(IntSize(200,150), SurfaceFormat::A8);
+TEST(Layers, TextureYCbCrSerialization)
+{
+  RefPtr<gfxImageSurface> ySurface =
+      new gfxImageSurface(IntSize(400, 300), SurfaceFormat::A8);
+  RefPtr<gfxImageSurface> cbSurface =
+      new gfxImageSurface(IntSize(200, 150), SurfaceFormat::A8);
+  RefPtr<gfxImageSurface> crSurface =
+      new gfxImageSurface(IntSize(200, 150), SurfaceFormat::A8);
   SetupSurface(ySurface.get());
   SetupSurface(cbSurface.get());
   SetupSurface(crSurface.get());
@@ -259,6 +265,8 @@ TEST(Layers, TextureYCbCrSerialization) {
   clientData.mYStride = ySurface->Stride();
   clientData.mCbCrStride = cbSurface->Stride();
   clientData.mStereoMode = StereoMode::MONO;
+  clientData.mYUVColorSpace = YUVColorSpace::BT601;
+  clientData.mColorDepth = ColorDepth::COLOR_8;
   clientData.mYSkip = 0;
   clientData.mCbSkip = 0;
   clientData.mCrSkip = 0;
@@ -266,11 +274,12 @@ TEST(Layers, TextureYCbCrSerialization) {
   clientData.mPicX = 0;
   clientData.mPicX = 0;
 
-  ImageBridgeChild::InitSameProcess();
+  uint32_t namespaceId = 1;
+  ImageBridgeChild::InitSameProcess(namespaceId);
 
   RefPtr<ImageBridgeChild> imageBridge = ImageBridgeChild::GetSingleton();
   static int retry = 5;
-  while(!imageBridge->IPCOpen() && retry) {
+  while (!imageBridge->IPCOpen() && retry) {
     // IPDL connection takes time especially in slow testing environment, like
     // VM machines. Here we added retry mechanism to wait for IPDL connnection.
 #ifdef XP_WIN
@@ -286,8 +295,11 @@ TEST(Layers, TextureYCbCrSerialization) {
     return;
   }
 
-  RefPtr<TextureClient> client = TextureClient::CreateForYCbCr(imageBridge, clientData.mYSize, clientData.mCbCrSize,
-                                                               StereoMode::MONO, TextureFlags::DEALLOCATE_CLIENT);
+  RefPtr<TextureClient> client = TextureClient::CreateForYCbCr(
+      imageBridge, clientData.mYSize, clientData.mYStride, clientData.mCbCrSize,
+      clientData.mCbCrStride, StereoMode::MONO, ColorDepth::COLOR_8,
+      YUVColorSpace::BT601, ColorRange::LIMITED,
+      TextureFlags::DEALLOCATE_CLIENT);
 
   TestTextureClientYCbCr(client, clientData);
 

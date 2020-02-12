@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=346659
 -->
 <head>
   <title>Test for Bug 346659</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -37,14 +37,11 @@ function handleCmd(evt) {
     return false;
   }  
 
-  // Grab privileges so we can access cross-domain windows
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
   if ("load" in cmd) {
     var testNum = cmd.load;
-    var win = wins[testNum];
+    var win = SpecialPowers.wrap(wins[testNum]).wrappedJSObject;
     win.childWin.x = testNum;
-    if (win.childWin.opener == win) {
+    if (SpecialPowers.unwrap(win.childWin.opener) == SpecialPowers.unwrap(win)) {
       if ("xsite" in cmd) {
         var loc = r(window.location.href, "bug346659-opener-echoer.html");
       } else {
@@ -69,7 +66,10 @@ function handleCmd(evt) {
       } else {
         win.childWin.document.write('<script>window.parent.opener.postMessage(window.parent.testNum + " - " + window.x, "http://mochi.test:8888/"); window.parent.close();<' + '/script>');
       }
-    } catch (e if (e.name == "SecurityError" && e.code == 18)) {
+    } catch (e) {
+      if (e.name != "SecurityError" || e.code != 18) {
+        throw e;
+      }
       // Security error on cross-site write() is fine
       if (win.childWin.opener == win) {
         win.childWin.close();
@@ -108,7 +108,7 @@ function messageReceiver(evt) {
       is(testResult, "undefined", "Props on new window's child should go away when loading");
       break;
     case 6:
-      is(testResult, "undefined", "Props on new window's child should go away when writing");
+      is(testResult, "6", "Props on new window's child should not go away when writing");
       break;
     case 7:
       is(testResult, "7", "Props on different-domain window opened from different-domain new window can stay");
@@ -134,7 +134,7 @@ function handleTestEnd() {
     SimpleTest.finish();
   }
 }
-window.addEventListener("message", messageReceiver, false);
+window.addEventListener("message", messageReceiver);
 
 var win = window.open("");
 win.x = 1;

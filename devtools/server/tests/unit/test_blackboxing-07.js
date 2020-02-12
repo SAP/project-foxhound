@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Test that sources whose URL ends with ".min.js" automatically get black
  * boxed.
@@ -8,16 +10,19 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-black-box", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront = threadFront;
       testBlackBox();
     });
   });
@@ -27,10 +32,10 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/black-boxed.min.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-const testBlackBox = Task.async(function* () {
-  yield executeOnNextTickAndWaitForPause(evalCode, gClient);
+const testBlackBox = async function() {
+  await executeOnNextTickAndWaitForPause(evalCode, gThreadFront);
 
-  const { sources } = yield getSources(gThreadClient);
+  const { sources } = await getSources(gThreadFront);
   equal(sources.length, 2);
 
   const blackBoxedSource = sources.filter(s => s.url === BLACK_BOXED_URL)[0];
@@ -39,11 +44,12 @@ const testBlackBox = Task.async(function* () {
   const regularSource = sources.filter(s => s.url === SOURCE_URL)[0];
   equal(regularSource.isBlackBoxed, false);
 
+  await gThreadFront.resume();
   finishClient(gClient);
-});
+};
 
 function evalCode() {
-  Components.utils.evalInSandbox(
+  Cu.evalInSandbox(
     "" + function blackBoxed() {},
     gDebuggee,
     "1.8",
@@ -51,9 +57,8 @@ function evalCode() {
     1
   );
 
-  Components.utils.evalInSandbox(
-    "" + function source() {}
-      + "\ndebugger;",
+  Cu.evalInSandbox(
+    "" + function source() {} + "\ndebugger;",
     gDebuggee,
     "1.8",
     SOURCE_URL,

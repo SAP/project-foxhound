@@ -1,14 +1,14 @@
 <html>
 <head>
   <title>Test for backspace key and delete key shouldn't remove another editing host's text</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
 <div id="display"></div>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 </pre>
@@ -18,25 +18,20 @@
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(runTests);
 
-function runTests()
-{
-
+function runTests() {
   var container = document.getElementById("display");
 
-  function reset()
-  {
+  function reset() {
     document.execCommand("Undo", false, null);
   }
 
   var selection = window.getSelection();
-  function moveCaretToStartOf(aEditor)
-  {
+  function moveCaretToStartOf(aEditor) {
     selection.selectAllChildren(aEditor);
     selection.collapseToStart();
   }
 
-  function moveCaretToEndOf(aEditor)
-  {
+  function moveCaretToEndOf(aEditor) {
     selection.selectAllChildren(aEditor);
     selection.collapseToEnd();
   }
@@ -80,28 +75,28 @@ function runTests()
    */
   editor2.focus();
   moveCaretToStartOf(editor2);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase1,
      "Pressing backspace key at start of editor2 changes the content");
   reset();
 
   editor3.focus();
   moveCaretToStartOf(editor3);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase1,
      "Pressing backspace key at start of editor3 changes the content");
   reset();
 
   editor4.focus();
   moveCaretToStartOf(editor4);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase1,
      "Pressing backspace key at start of editor4 changes the content");
   reset();
 
   editor5.focus();
   moveCaretToStartOf(editor5);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase1,
      "Pressing backspace key at start of editor5 changes the content");
   reset();
@@ -111,28 +106,28 @@ function runTests()
    */
   editor1.focus();
   moveCaretToEndOf(editor1);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase1,
      "Pressing delete key at end of editor1 changes the content");
   reset();
 
   editor2.focus();
   moveCaretToEndOf(editor2);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase1,
      "Pressing delete key at end of editor2 changes the content");
   reset();
 
   editor3.focus();
   moveCaretToEndOf(editor3);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase1,
           "Pressing delete key at end of editor3 changes the content");
   reset();
 
   editor4.focus();
   moveCaretToEndOf(editor4);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase1,
      "Pressing delete key at end of editor4 changes the content");
   reset();
@@ -144,26 +139,18 @@ function runTests()
    */
   editor3.focus();
   moveCaretToStartOf(editor3);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase1_editor3_deleteAtStart,
      "Pressing delete key at start of editor3 changes adjacent elements"
      + " and/or does not remove the first character.");
   reset();
 
-  // Backspace doesn't work here yet.
   editor3.focus();
   moveCaretToEndOf(editor3);
-  synthesizeKey("VK_BACK_SPACE", { });
-  todo_is(container.innerHTML, kTestCase1_editor3_backspaceAtEnd,
-          "Pressing backspace key at end of editor3 changes adjacent elements"
-          + " and/or does not remove the last character.");
-  reset();
-  //  We can still check that adjacent elements are not affected.
-  editor3.focus();
-  moveCaretToEndOf(editor3);
-  synthesizeKey("VK_BACK_SPACE", { });
-  is(container.innerHTML, kTestCase1,
-     "Pressing backspace key at end of editor3 changes the content");
+  synthesizeKey("KEY_Backspace");
+  is(container.innerHTML, kTestCase1_editor3_backspaceAtEnd,
+     "Pressing backspace key at end of editor3 changes adjacent elements"
+     + " and/or does not remove the last character.");
   reset();
 
   /* TestCase #2:
@@ -178,14 +165,14 @@ function runTests()
 
   editor2.focus();
   moveCaretToStartOf(editor2);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase2,
      "Pressing backspace key at the start of editor2 changes the content for kTestCase2");
   reset();
 
   editor1.focus();
   moveCaretToEndOf(editor1);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase2,
      "Pressing delete key at the end of editor1 changes the content for kTestCase2");
   reset();
@@ -202,14 +189,14 @@ function runTests()
 
   editor2.focus();
   moveCaretToStartOf(editor2);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase3,
      "Pressing backspace key at the start of editor2 changes the content for kTestCase3");
   reset();
 
   editor1.focus();
   moveCaretToEndOf(editor1);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase3,
      "Pressing delete key at the end of editor1 changes the content for kTestCase3");
   reset();
@@ -226,14 +213,14 @@ function runTests()
 
   editor2.focus();
   moveCaretToStartOf(editor2);
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   is(container.innerHTML, kTestCase4,
      "Pressing backspace key at the start of editor2 changes the content for kTestCase4");
   reset();
 
   editor1.focus();
   moveCaretToEndOf(editor1);
-  synthesizeKey("VK_DELETE", { });
+  synthesizeKey("KEY_Delete");
   is(container.innerHTML, kTestCase4,
      "Pressing delete key at the end of editor1 changes the content for kTestCase4");
   reset();

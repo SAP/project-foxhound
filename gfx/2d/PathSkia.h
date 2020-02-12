@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,31 +15,30 @@ namespace gfx {
 
 class PathSkia;
 
-class PathBuilderSkia : public PathBuilder
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathBuilderSkia)
-  PathBuilderSkia(const Matrix& aTransform, const SkPath& aPath, FillRule aFillRule);
+class PathBuilderSkia : public PathBuilder {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathBuilderSkia, override)
+
+  PathBuilderSkia(const Matrix& aTransform, const SkPath& aPath,
+                  FillRule aFillRule);
   explicit PathBuilderSkia(FillRule aFillRule);
 
-  virtual void MoveTo(const Point &aPoint);
-  virtual void LineTo(const Point &aPoint);
-  virtual void BezierTo(const Point &aCP1,
-                        const Point &aCP2,
-                        const Point &aCP3);
-  virtual void QuadraticBezierTo(const Point &aCP1,
-                                 const Point &aCP2);
-  virtual void Close();
-  virtual void Arc(const Point &aOrigin, float aRadius, float aStartAngle,
-                   float aEndAngle, bool aAntiClockwise = false);
-  virtual Point CurrentPoint() const;
-  virtual already_AddRefed<Path> Finish();
+  void MoveTo(const Point& aPoint) override;
+  void LineTo(const Point& aPoint) override;
+  void BezierTo(const Point& aCP1, const Point& aCP2,
+                const Point& aCP3) override;
+  void QuadraticBezierTo(const Point& aCP1, const Point& aCP2) override;
+  void Close() override;
+  void Arc(const Point& aOrigin, float aRadius, float aStartAngle,
+           float aEndAngle, bool aAntiClockwise = false) override;
+  already_AddRefed<Path> Finish() override;
 
-  void AppendPath(const SkPath &aPath);
+  void AppendPath(const SkPath& aPath);
 
-  virtual BackendType GetBackendType() const { return BackendType::SKIA; }
+  BackendType GetBackendType() const override { return BackendType::SKIA; }
 
-private:
+ private:
+  friend class PathSkia;
 
   void SetFillRule(FillRule aFillRule);
 
@@ -46,47 +46,53 @@ private:
   FillRule mFillRule;
 };
 
-class PathSkia : public Path
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathSkia)
-  PathSkia(SkPath& aPath, FillRule aFillRule)
-    : mFillRule(aFillRule)
-  {
+class PathSkia : public Path {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathSkia, override)
+
+  PathSkia(SkPath& aPath, FillRule aFillRule, Point aCurrentPoint = Point(),
+           Point aBeginPoint = Point())
+      : mFillRule(aFillRule),
+        mCurrentPoint(aCurrentPoint),
+        mBeginPoint(aBeginPoint) {
     mPath.swap(aPath);
   }
-  
-  virtual BackendType GetBackendType() const { return BackendType::SKIA; }
 
-  virtual already_AddRefed<PathBuilder> CopyToBuilder(FillRule aFillRule) const;
-  virtual already_AddRefed<PathBuilder> TransformedCopyToBuilder(const Matrix &aTransform,
-                                                             FillRule aFillRule) const;
+  BackendType GetBackendType() const override { return BackendType::SKIA; }
 
-  virtual bool ContainsPoint(const Point &aPoint, const Matrix &aTransform) const;
-  
-  virtual bool StrokeContainsPoint(const StrokeOptions &aStrokeOptions,
-                                   const Point &aPoint,
-                                   const Matrix &aTransform) const;
+  already_AddRefed<PathBuilder> CopyToBuilder(
+      FillRule aFillRule) const override;
+  already_AddRefed<PathBuilder> TransformedCopyToBuilder(
+      const Matrix& aTransform, FillRule aFillRule) const override;
 
-  virtual Rect GetBounds(const Matrix &aTransform = Matrix()) const;
-  
-  virtual Rect GetStrokedBounds(const StrokeOptions &aStrokeOptions,
-                                const Matrix &aTransform = Matrix()) const;
+  bool ContainsPoint(const Point& aPoint,
+                     const Matrix& aTransform) const override;
 
-  virtual void StreamToSink(PathSink *aSink) const;
+  bool StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
+                           const Point& aPoint,
+                           const Matrix& aTransform) const override;
 
-  virtual FillRule GetFillRule() const { return mFillRule; }
+  Rect GetBounds(const Matrix& aTransform = Matrix()) const override;
+
+  Rect GetStrokedBounds(const StrokeOptions& aStrokeOptions,
+                        const Matrix& aTransform = Matrix()) const override;
+
+  void StreamToSink(PathSink* aSink) const override;
+
+  FillRule GetFillRule() const override { return mFillRule; }
 
   const SkPath& GetPath() const { return mPath; }
 
-private:
+ private:
   friend class DrawTargetSkia;
-  
+
   SkPath mPath;
   FillRule mFillRule;
+  Point mCurrentPoint;
+  Point mBeginPoint;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_PATH_SKIA_H_ */

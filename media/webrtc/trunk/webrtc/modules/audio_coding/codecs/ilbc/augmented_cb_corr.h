@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_AUGMENTED_CB_CORR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_AUGMENTED_CB_CORR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_AUGMENTED_CB_CORR_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_AUGMENTED_CB_CORR_H_
 
 #include "defines.h"
 
@@ -33,10 +33,9 @@ void WebRtcIlbcfix_AugmentedCbCorr(
     int32_t *crossDot,  /* (o) The cross correlation between
                                            the target and the Augmented
                                            vector */
-    int16_t low,    /* (i) Lag to start from (typically
+    size_t low,    /* (i) Lag to start from (typically
                                                    20) */
-    int16_t high,   /* (i) Lag to end at (typically 39 */
-    int16_t scale);   /* (i) Scale factor to use for
-                                                   the crossDot */
+    size_t high,   /* (i) Lag to end at (typically 39 */
+    int scale);   /* (i) Scale factor to use for the crossDot */
 
 #endif

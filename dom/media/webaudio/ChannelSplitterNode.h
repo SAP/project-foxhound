@@ -13,38 +13,53 @@ namespace mozilla {
 namespace dom {
 
 class AudioContext;
+struct ChannelSplitterOptions;
 
-class ChannelSplitterNode final : public AudioNode
-{
-public:
-  ChannelSplitterNode(AudioContext* aContext,
-                      uint16_t aOutputCount);
+class ChannelSplitterNode final : public AudioNode {
+ public:
+  static already_AddRefed<ChannelSplitterNode> Create(
+      AudioContext& aAudioContext, const ChannelSplitterOptions& aOptions,
+      ErrorResult& aRv);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ChannelSplitterNode, AudioNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  static already_AddRefed<ChannelSplitterNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const ChannelSplitterOptions& aOptions, ErrorResult& aRv) {
+    return Create(aAudioContext, aOptions, aRv);
+  }
+
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  }
+  void SetChannelCountModeValue(ChannelCountMode aMode,
+                                ErrorResult& aRv) override {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  }
+  void SetChannelInterpretationValue(ChannelInterpretation aMode,
+                                     ErrorResult& aRv) override {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  }
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   uint16_t NumberOfOutputs() const override { return mOutputCount; }
 
-  const char* NodeType() const override
-  {
-    return "ChannelSplitterNode";
-  }
+  const char* NodeType() const override { return "ChannelSplitterNode"; }
 
-  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override
-  {
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-protected:
-  virtual ~ChannelSplitterNode();
+ private:
+  ChannelSplitterNode(AudioContext* aContext, uint16_t aOutputCount);
+  ~ChannelSplitterNode() = default;
 
-private:
   const uint16_t mOutputCount;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

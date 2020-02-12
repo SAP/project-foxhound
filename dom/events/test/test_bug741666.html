@@ -5,17 +5,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741666
 -->
 <head>
   <title>Test for Bug 741666</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=741666">Mozilla Bug 741666</a>
 <p id="display"></p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.8">
+<script class="testbody" type="application/javascript">
 
 /** Test for Bug 306008 - Touch events with a reference held should retain their touch lists **/
 
@@ -74,7 +74,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
 
   for (var touchType of ["touches", "changedTouches", "targetTouches"]) {
     for (var i = 0; i < aEvent[touchType].length; i++) {
-      if (ids.indexOf(aEvent[touchType][i].identifier) == -1) {
+      if (!ids.includes(aEvent[touchType][i].identifier)) {
         ids.push(aEvent[touchType][i].identifier);
         xs.push(aEvent[touchType][i].page.x);
         ys.push(aEvent[touchType][i].page.y);
@@ -88,7 +88,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces,
-                                    ids.length, aModifiers, 0);
+                                    aModifiers, 0);
 }
 
 function touchEvent(aOptions) {
@@ -123,7 +123,7 @@ function testPreventDefault(name) {
   let touch1 = new testtouch({
     page: {x: Math.round(bcr.left + bcr.width/2),
            y: Math.round(bcr.top  + bcr.height/2)},
-    target: target
+    target
   });
 
   let event = new touchEvent({
@@ -133,15 +133,15 @@ function testPreventDefault(name) {
   });
 
   // test touchstart event fires correctly
-  var checkTouches = checkEvent(event, "touches");
+  var checkTouchesEvent = checkEvent(event, "touches");
   var checkTargetTouches = checkEvent(event, "targetTouches");
 
   /* This is the heart of the test. Verify that the touch event
      looks correct both in and outside of a setTimeout */
   window.addEventListener("touchstart", function(firedEvent) {
-    checkTouches(firedEvent, true);
+    checkTouchesEvent(firedEvent, true);
     setTimeout(function() {
-      checkTouches(firedEvent, true);
+      checkTouchesEvent(firedEvent, true);
       checkTargetTouches(firedEvent, true);
 
       event.touches = [];
@@ -150,7 +150,7 @@ function testPreventDefault(name) {
 
       nextTest();
     }, 0);
-  }, false);
+  });
   sendTouchEvent(cwu, "touchstart", event, 0);
 }
 

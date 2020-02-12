@@ -8,42 +8,19 @@
 # produced by NS_FormatCodeAddress(), which on Linux often lack a function
 # name, a file name and a line number.
 
+from __future__ import absolute_import
+
+import json
+import os
+import re
 import subprocess
 import sys
-import re
-import os
-import pty
-import termios
 from StringIO import StringIO
 
-class unbufferedLineConverter:
-    """
-    Wrap a child process that responds to each line of input with one line of
-    output.  Uses pty to trick the child into providing unbuffered output.
-    """
-    def __init__(self, command, args = []):
-        pid, fd = pty.fork()
-        if pid == 0:
-            # We're the child.  Transfer control to command.
-            os.execvp(command, [command] + args)
-        else:
-            # Disable echoing.
-            attr = termios.tcgetattr(fd)
-            attr[3] = attr[3] & ~termios.ECHO
-            termios.tcsetattr(fd, termios.TCSANOW, attr)
-            # Set up a file()-like interface to the child process
-            self.r = os.fdopen(fd, "r", 1)
-            self.w = os.fdopen(os.dup(fd), "w", 1)
-    def convert(self, line):
-        self.w.write(line + "\n")
-        return (self.r.readline().rstrip("\r\n"), self.r.readline().rstrip("\r\n"))
-    @staticmethod
-    def test():
-        assert unbufferedLineConverter("rev").convert("123") == "321"
-        assert unbufferedLineConverter("cut", ["-c3"]).convert("abcde") == "c"
-        print "Pass"
+objdump_section_re = re.compile(
+    "^ [0-9a-f]* ([0-9a-f ]{8}) ([0-9a-f ]{8}) ([0-9a-f ]{8}) ([0-9a-f ]{8}).*")
 
-objdump_section_re = re.compile("^ [0-9a-f]* ([0-9a-f ]{8}) ([0-9a-f ]{8}) ([0-9a-f ]{8}) ([0-9a-f ]{8}).*")
+
 def elf_section(file, section):
     """
     Return the requested ELF section of the file as a str, representing
@@ -71,11 +48,12 @@ def elf_section(file, section):
                 word = m.groups()[gnum]
                 if word != "        ":
                     for idx in [0, 2, 4, 6]:
-                        result += chr(int(word[idx:idx+2], 16))
+                        result += chr(int(word[idx:idx + 2], 16))
     return result
 
+
 # FIXME: Hard-coded to gdb defaults (works on Fedora and Ubuntu).
-global_debug_dir = '/usr/lib/debug';
+global_debug_dir = '/usr/lib/debug'
 
 endian_re = re.compile("\s*Data:\s+.*(little|big) endian.*$")
 
@@ -135,6 +113,7 @@ gnu_debuglink_crc32_table = [
     0x2d02ef8d
 ]
 
+
 def gnu_debuglink_crc32(stream):
     # Note that python treats bitwise operators as though integers have
     # an infinite number of bits (and thus such that negative integers
@@ -148,6 +127,7 @@ def gnu_debuglink_crc32(stream):
         for byte in bytes:
             crc = gnu_debuglink_crc32_table[(crc ^ ord(byte)) & 0xff] ^ (crc >> 8)
     return ~crc & 0xffffffff
+
 
 def separate_debug_file_for(file):
     """
@@ -174,13 +154,13 @@ def separate_debug_file_for(file):
 
     def word32(s):
         if type(s) != str or len(s) != 4:
-            raise StandardError("expected 4 byte string input")
+            raise Exception("expected 4 byte string input")
         s = list(s)
         if endian == "big":
             s.reverse()
         return sum(map(lambda idx: ord(s[idx]) * (256 ** idx), range(0, 4)))
 
-    buildid = elf_section(file, ".note.gnu.build-id");
+    buildid = elf_section(file, ".note.gnu.build-id")
     if buildid is not None:
         # The build ID is an ELF note section, so it begins with a
         # name size (4), a description size (size of contents), a
@@ -198,7 +178,7 @@ def separate_debug_file_for(file):
             if have_debug_file(f):
                 return f
 
-    debuglink = elf_section(file, ".gnu_debuglink");
+    debuglink = elf_section(file, ".gnu_debuglink")
     if debuglink is not None:
         # The debuglink section contains a string, ending with a
         # null-terminator and then 0 to three bytes of padding to fill the
@@ -229,8 +209,10 @@ def separate_debug_file_for(file):
                     return f
     return None
 
+
 elf_type_re = re.compile("^\s*Type:\s+(\S+)")
 elf_text_section_re = re.compile("^\s*\[\s*\d+\]\s+\.text\s+\w+\s+(\w+)\s+(\w+)\s+")
+
 
 def address_adjustment_for(file):
     """
@@ -263,34 +245,49 @@ def address_adjustment_for(file):
         if m:
             # Subtract the .text section's offset within the
             # file from its base address.
-            adjustment = int(m.groups()[0], 16) - int(m.groups()[1], 16);
+            adjustment = int(m.groups()[0], 16) - int(m.groups()[1], 16)
             break
     readelf.terminate()
     return adjustment
 
-addr2lines = {}
+
+devnull = open(os.devnull)
+file_stuff = {}
+
+
 def addressToSymbol(file, address):
-    converter = None
-    address_adjustment = None
-    cache = None
-    if not file in addr2lines:
+    if file not in file_stuff:
         debug_file = separate_debug_file_for(file) or file
-        converter = unbufferedLineConverter('/usr/bin/addr2line', ['-C', '-f', '-e', debug_file])
+
+        # Start an addr2line process for this file. Note that addr2line
+        # sometimes prints error messages, which we want to suppress.
+        args = ['/usr/bin/addr2line', '-C', '-f', '-e', debug_file]
+        addr2line = subprocess.Popen(args, stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE,
+                                     stderr=devnull)
         address_adjustment = address_adjustment_for(file)
         cache = {}
-        addr2lines[file] = (converter, address_adjustment, cache)
+        file_stuff[file] = (addr2line, address_adjustment, cache)
     else:
-        (converter, address_adjustment, cache) = addr2lines[file]
+        (addr2line, address_adjustment, cache) = file_stuff[file]
+
     if address in cache:
         return cache[address]
-    result = converter.convert(hex(int(address, 16) + address_adjustment))
+
+    # For each line of input, addr2line produces two lines of output.
+    addr2line.stdin.write(hex(int(address, 16) + address_adjustment) + '\n')
+    addr2line.stdin.flush()
+    result = (addr2line.stdout.readline().rstrip("\r\n"),
+              addr2line.stdout.readline().rstrip("\r\n"))
     cache[address] = result
     return result
+
 
 # Matches lines produced by NS_FormatCodeAddress().
 line_re = re.compile("^(.*#\d+: )(.+)\[(.+) \+(0x[0-9A-Fa-f]+)\](.*)$")
 
-def fixSymbols(line):
+
+def fixSymbols(line, jsonEscape=False):
     result = line_re.match(line)
     if result is not None:
         (before, fn, file, address, after) = result.groups()
@@ -304,6 +301,10 @@ def fixSymbols(line):
             if fileline == "??:0" or fileline == "??:?":
                 fileline = file
 
+            if jsonEscape:
+                name = json.dumps(name)[1:-1]         # [1:-1] strips the quotes
+                fileline = json.dumps(fileline)[1:-1]
+
             nl = '\n' if line[-1] == '\n' else ''
             return "%s%s (%s)%s%s" % (before, name, fileline, after, nl)
         else:
@@ -311,6 +312,7 @@ def fixSymbols(line):
             return line
     else:
         return line
+
 
 if __name__ == "__main__":
     for line in sys.stdin:

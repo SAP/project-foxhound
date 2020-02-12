@@ -4,33 +4,40 @@
 function test() {
   waitForExplicitFinish();
 
-  window.addEventListener("SSWindowStateBusy", function onBusy() {
-    window.removeEventListener("SSWindowStateBusy", onBusy, false);
-
-    let state = JSON.parse(ss.getWindowState(window));
-    ok(state.windows[0].busy, "window is busy");
-
-    window.addEventListener("SSWindowStateReady", function onReady() {
-      window.removeEventListener("SSWindowStateReady", onReady, false);
-
+  window.addEventListener(
+    "SSWindowStateBusy",
+    function() {
       let state = JSON.parse(ss.getWindowState(window));
-      ok(!state.windows[0].busy, "window is not busy");
+      ok(state.windows[0].busy, "window is busy");
 
-      executeSoon(() => {
-        gBrowser.removeTab(gBrowser.tabs[1]);
-        finish();
-      });
-    }, false);
-  }, false);
+      window.addEventListener(
+        "SSWindowStateReady",
+        function() {
+          let state2 = JSON.parse(ss.getWindowState(window));
+          ok(!state2.windows[0].busy, "window is not busy");
+
+          executeSoon(() => {
+            gBrowser.removeTab(gBrowser.tabs[1]);
+            finish();
+          });
+        },
+        { once: true }
+      );
+    },
+    { once: true }
+  );
 
   // create a new tab
-  let tab = gBrowser.addTab("about:mozilla");
+  let tab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
   let browser = tab.linkedBrowser;
 
   // close and restore it
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    gBrowser.removeTab(tab);
-    ss.undoCloseTab(window, 0);
-  }, true);
+  browser.addEventListener(
+    "load",
+    function() {
+      gBrowser.removeTab(tab);
+      ss.undoCloseTab(window, 0);
+    },
+    { capture: true, once: true }
+  );
 }

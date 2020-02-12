@@ -8,11 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_
+#ifndef MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_
+#define MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_processing/transient/wpd_node.h"
+#include <memory>
+
+#include "modules/audio_processing/transient/wpd_node.h"
 
 namespace webrtc {
 
@@ -83,9 +84,9 @@ class WPDTree {
   size_t data_length_;
   int levels_;
   int num_nodes_;
-  rtc::scoped_ptr<rtc::scoped_ptr<WPDNode>[]> nodes_;
+  std::unique_ptr<std::unique_ptr<WPDNode>[]> nodes_;
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_
+#endif  // MODULES_AUDIO_PROCESSING_TRANSIENT_WPD_TREE_H_

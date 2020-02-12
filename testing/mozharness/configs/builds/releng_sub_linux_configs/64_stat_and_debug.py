@@ -1,50 +1,36 @@
 import os
 
-MOZ_OBJDIR = 'obj-firefox'
-
 config = {
+    # note: overridden by MOZHARNESS_ACTIONS in TaskCluster tasks
     'default_actions': [
         'clobber',
-        'clone-tools',
-        'checkout-sources',
-        'setup-mock',
         'build',
-        'upload-files',
-        'sendchange',
-        # 'generate-build-stats',
-        'update',  # decided by query_is_nightly()
     ],
-    'debug_build': True,
-    'stage_platform': 'linux64-st-an-debug',
-    'build_type': 'st-an-debug',
-    'tooltool_manifest_src': "browser/config/tooltool-manifests/linux64/\
-clang.manifest",
-    'platform_supports_post_upload_to_latest': False,
-    'enable_signing': False,
-    'enable_talos_sendchange': False,
-    'enable_unittest_sendchange': False,
-    #### 64 bit build specific #####
+    'app_ini_path': '%(obj_dir)s/dist/bin/application.ini',
+    'vcs_share_base': '/builds/hg-shared',
+    #########################################################################
+
+
+    #########################################################################
+    ###### 64 bit specific ######
+    'platform': 'linux64',
+    'stage_platform': 'linux64-st-an-opt',
     'env': {
         'MOZBUILD_STATE_PATH': os.path.join(os.getcwd(), '.mozbuild'),
-        'MOZ_AUTOMATION': '1',
         'DISPLAY': ':2',
         'HG_SHARE_BASE_DIR': '/builds/hg-shared',
-        'MOZ_OBJDIR': MOZ_OBJDIR,
+        'MOZ_OBJDIR': '%(abs_obj_dir)s',
         'TINDERBOX_OUTPUT': '1',
-        'TOOLTOOL_CACHE': '/builds/tooltool_cache',
+        'TOOLTOOL_CACHE': '/builds/worker/tooltool-cache',
         'TOOLTOOL_HOME': '/builds',
         'MOZ_CRASHREPORTER_NO_REPORT': '1',
-        'CCACHE_DIR': '/builds/ccache',
-        'CCACHE_COMPRESS': '1',
-        'CCACHE_UMASK': '002',
         'LC_ALL': 'C',
-        'XPCOM_DEBUG_BREAK': 'stack-and-abort',
-        # 64 bit specific
-        'PATH': '/tools/buildbot/bin:/usr/local/bin:/usr/lib64/ccache:/bin:\
-/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:/tools/git/bin:/tools/python27/bin:\
-/tools/python27-mercurial/bin:/home/cltbld/bin',
+        ## 64 bit specific
+        'PATH': '/usr/local/bin:/bin:\
+/usr/bin:/usr/local/sbin:/usr/sbin:/sbin',
+        ##
     },
-    'src_mozconfig': 'browser/config/mozconfigs/linux64/\
-debug-static-analysis-clang',
-    #######################
+    # This doesn't actually inherit from anything.
+    'mozconfig_platform': 'linux64',
+    'mozconfig_variant': 'debug-static-analysis-clang',
 }

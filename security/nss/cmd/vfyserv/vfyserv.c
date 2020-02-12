@@ -327,9 +327,7 @@ do_connects(void *a, int connection)
 }
 
 void
-client_main(unsigned short port,
-            int connections,
-            const char *hostName)
+client_main(int connections)
 {
     int i;
     SECStatus secStatus;
@@ -546,14 +544,19 @@ main(int argc, char **argv)
                 }
             }
             if (cipher > 0) {
-                SSL_CipherPrefSetDefault(cipher, PR_TRUE);
+                SECStatus rv = SSL_CipherPrefSetDefault(cipher, PR_TRUE);
+                if (rv != SECSuccess) {
+                    SECU_PrintError(progName,
+                                    "error setting cipher default preference");
+                    goto cleanup;
+                }
             } else {
                 Usage(progName);
             }
         }
     }
 
-    client_main(port, connections, hostName);
+    client_main(connections);
 
 cleanup:
     if (doOcspCheck) {

@@ -1,6 +1,7 @@
 # Test the unwinder and the frame filter.
-
+# flake8:  NOQA: F821
 import platform
+
 
 def do_unwinder_test():
     # The unwinder is disabled by default for the moment. Turn it on to check
@@ -17,18 +18,24 @@ def do_unwinder_test():
     found_entry = False
     found_exit = False
     found_main = False
+    found_inner = False
+    found_outer = False
     frames = list(gdb.frames.execute_frame_filters(gdb.newest_frame(), 0, -1))
     for frame in frames:
         print("examining " + frame.function())
         if first:
             assert_eq(frame.function().startswith("Something"), True)
             first = False
-        elif frame.function() == "<<JitFrame_Exit>>":
+        elif frame.function() == "<<FrameType::Exit>>":
             found_exit = True
-        elif frame.function() == "<<JitFrame_Entry>>":
+        elif frame.function() == "<<FrameType::CppToJSJit>>":
             found_entry = True
         elif frame.function() == "main":
             found_main = True
+        elif "unwindFunctionInner" in frame.function():
+            found_inner = True
+        elif "unwindFunctionOuter" in frame.function():
+            found_outer = True
 
     # Had to have found a frame.
     assert_eq(first, False)
@@ -37,13 +44,16 @@ def do_unwinder_test():
     # Had to have found the entry and exit frames.
     assert_eq(found_exit, True)
     assert_eq(found_entry, True)
+    # Had to have found the names of the two JS functions.
+    assert_eq(found_inner, True)
+    assert_eq(found_outer, True)
+
 
 # Only on the right platforms.
 if platform.machine() == 'x86_64' and platform.system() == 'Linux':
     # Only test when gdb has the unwinder feature.
     try:
-        import gdb.unwinder
-        import gdb.frames
+        import gdb.unwinder  # NOQA: F401
         do_unwinder_test()
-    except:
+    except Exception:
         pass

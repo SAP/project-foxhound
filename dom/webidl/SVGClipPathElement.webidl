@@ -10,12 +10,11 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGClipPathElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedEnumeration clipPathUnits;
   [Constant]
   readonly attribute SVGAnimatedTransformList transform;
 };
-
-SVGClipPathElement implements SVGUnitTypes;
 

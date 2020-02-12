@@ -4,8 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
-         getService(Ci.nsINavHistoryService);
+var hs = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
+  Ci.nsINavHistoryService
+);
 
 /**
  * Checks to see that a search has exactly one result in the database.
@@ -14,8 +15,7 @@ var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
  *        The terms to search for.
  * @returns true if the search returns one result, false otherwise.
  */
-function search_has_result(aTerms)
-{
+function search_has_result(aTerms) {
   var options = hs.getNewQueryOptions();
   options.maxResults = 1;
   options.resultType = options.RESULTS_AS_URI;
@@ -26,18 +26,12 @@ function search_has_result(aTerms)
   root.containerOpen = true;
   var cc = root.childCount;
   root.containerOpen = false;
-  return (cc == 1);
+  return cc == 1;
 }
 
-function run_test()
-{
-  run_next_test();
-}
-
-add_task(function* test_execute()
-{
+add_task(async function test_execute() {
   const SEARCH_TERM = "ユニコード";
   const TEST_URL = "http://example.com/" + SEARCH_TERM + "/";
-  yield PlacesTestUtils.addVisits(uri(TEST_URL));
-  do_check_true(search_has_result(SEARCH_TERM));
+  await PlacesTestUtils.addVisits(uri(TEST_URL));
+  Assert.ok(search_has_result(SEARCH_TERM));
 });

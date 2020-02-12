@@ -10,14 +10,16 @@
 #include "build/build_config.h"
 
 #if defined(OS_POSIX)
-#include <sys/types.h>
-#include <semaphore.h>
-#include "base/file_descriptor_posix.h"
+#  include <sys/types.h>
+#  include <semaphore.h>
+#  include "base/file_descriptor_posix.h"
 #endif
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/process.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 namespace base {
 
@@ -25,15 +27,8 @@ namespace base {
 // the underlying OS handle to a shared memory segment.
 #if defined(OS_WIN)
 typedef HANDLE SharedMemoryHandle;
-typedef HANDLE SharedMemoryLock;
 #elif defined(OS_POSIX)
-// A SharedMemoryId is sufficient to identify a given shared memory segment on a
-// system, but insufficient to map it.
 typedef FileDescriptor SharedMemoryHandle;
-typedef ino_t SharedMemoryId;
-// On POSIX, the lock is implemented as a lockf() on the mapped file,
-// so no additional member (or definition of SharedMemoryLock) is
-// needed.
 #endif
 
 // Platform abstraction for shared memory.  Provides a C++ wrapper
@@ -46,9 +41,12 @@ class SharedMemory {
   // Create a new SharedMemory object from an existing, open
   // shared memory file.
   SharedMemory(SharedMemoryHandle init_handle, bool read_only)
-    : SharedMemory() {
+      : SharedMemory() {
     SetHandle(init_handle, read_only);
   }
+
+  // Move constructor; transfers ownership.
+  SharedMemory(SharedMemory&& other);
 
   // Destructor.  Will close any open files.
   ~SharedMemory();
@@ -61,32 +59,30 @@ class SharedMemory {
   // invalid value; NULL for a HANDLE and -1 for a file descriptor)
   static bool IsHandleValid(const SharedMemoryHandle& handle);
 
+  // IsHandleValid applied to this object's handle.
+  bool IsValid() const;
+
   // Return invalid handle (see comment above for exact definition).
   static SharedMemoryHandle NULLHandle();
 
-  // Creates or opens a shared memory segment based on a name.
-  // If read_only is true, opens the memory as read-only.
-  // If open_existing is true, and the shared memory already exists,
-  // opens the existing shared memory and ignores the size parameter.
-  // If name is the empty string, use a unique name.
+  // Creates a shared memory segment.
   // Returns true on success, false on failure.
-  bool Create(const std::string& name, bool read_only, bool open_existing,
-              size_t size);
+  bool Create(size_t size) { return CreateInternal(size, false); }
 
-  // Deletes resources associated with a shared memory segment based on name.
-  // Not all platforms require this call.
-  bool Delete(const std::wstring& name);
-
-  // Opens a shared memory segment based on a name.
-  // If read_only is true, opens for read-only access.
-  // If name is the empty string, use a unique name.
+  // Creates a shared memory segment that supports the Freeze()
+  // method; see below.  (Warning: creating freezeable shared memory
+  // within a sandboxed process isn't possible on some platforms.)
   // Returns true on success, false on failure.
-  bool Open(const std::wstring& name, bool read_only);
+  bool CreateFreezeable(size_t size) { return CreateInternal(size, true); }
 
   // Maps the shared memory into the caller's address space.
   // Returns true on success, false otherwise.  The memory address
   // is accessed via the memory() accessor.
-  bool Map(size_t bytes);
+  //
+  // If the specified fixed address is not null, it is the address that the
+  // shared memory must be mapped at.  Returns false if the shared memory
+  // could not be mapped at that address.
+  bool Map(size_t bytes, void* fixed_address = nullptr);
 
   // Unmaps the shared memory from the caller's address space.
   // Returns true if successful; returns false on error or if the
@@ -102,24 +98,44 @@ class SharedMemory {
 
   // Gets a pointer to the opened memory space if it has been
   // Mapped via Map().  Returns NULL if it is not mapped.
-  void *memory() const { return memory_; }
+  void* memory() const { return memory_; }
 
-  // Get access to the underlying OS handle for this segment.
-  // Use of this handle for anything other than an opaque
-  // identifier is not portable.
-  SharedMemoryHandle handle() const;
+  // Extracts the underlying file handle; similar to
+  // GiveToProcess(GetCurrentProcId(), ...) but returns a RAII type.
+  // Like GiveToProcess, this unmaps the memory as a side-effect.
+  mozilla::UniqueFileHandle TakeHandle();
 
-#if defined(OS_POSIX)
-  // Return a unique identifier for this shared memory segment. Inode numbers
-  // are technically only unique to a single filesystem. However, we always
-  // allocate shared memory backing files from the same directory, so will end
-  // up on the same filesystem.
-  SharedMemoryId id() const { return inode_; }
+#ifdef OS_WIN
+  // Used only in gfx/ipc/SharedDIBWin.cpp; should be removable once
+  // NPAPI goes away.
+  HANDLE GetHandle() {
+    freezeable_ = false;
+    return mapped_file_;
+  }
 #endif
+
+  // Make the shared memory object read-only, such that it cannot be
+  // written even if it's sent to an untrusted process.  If it was
+  // mapped in this process, it will be unmapped.  The object must
+  // have been created with CreateFreezeable(), and must not have
+  // already been shared to another process.
+  //
+  // (See bug 1479960 comment #0 for OS-specific implementation
+  // details.)
+  MOZ_MUST_USE bool Freeze();
 
   // Closes the open shared memory segment.
   // It is safe to call Close repeatedly.
   void Close(bool unmap_view = true);
+
+  // Returns a page-aligned address at which the given number of bytes could
+  // probably be mapped.  Returns NULL on error or if there is insufficient
+  // contiguous address space to map the required number of pages.
+  //
+  // Note that there is no guarantee that the given address space will actually
+  // be free by the time this function returns, since another thread might map
+  // something there in the meantime.
+  static void* FindFreeAddressSpace(size_t size);
 
   // Share the shared memory to another process.  Attempts
   // to create a platform-specific new_handle which can be
@@ -138,70 +154,40 @@ class SharedMemory {
   //   return ok;
   // Note that the memory is unmapped by calling this method, regardless of the
   // return value.
-  bool GiveToProcess(ProcessId target_pid,
-                     SharedMemoryHandle* new_handle) {
+  bool GiveToProcess(ProcessId target_pid, SharedMemoryHandle* new_handle) {
     return ShareToProcessCommon(target_pid, new_handle, true);
   }
 
-  // Lock the shared memory.
-  // This is a cross-process lock which may be recursively
-  // locked by the same thread.
-  // TODO(port):
-  // WARNING: on POSIX the lock only works across processes, not
-  // across threads.  2 threads in the same process can both grab the
-  // lock at the same time.  There are several solutions for this
-  // (futex, lockf+anon_semaphore) but none are both clean and common
-  // across Mac and Linux.
-  void Lock();
-
-  // Release the shared memory lock.
-  void Unlock();
+#ifdef OS_POSIX
+  // If named POSIX shm is being used, append the prefix (including
+  // the leading '/') that would be used by a process with the given
+  // pid to the given string and return true.  If not, return false.
+  // (This is public so that the Linux sandboxing code can use it.)
+  static bool AppendPosixShmPrefix(std::string* str, pid_t pid);
+#endif
 
  private:
-#if defined(OS_POSIX)
-  bool CreateOrOpen(const std::wstring &name, int posix_flags, size_t size);
-  bool FilenameForMemoryName(const std::wstring &memname,
-                             std::wstring *filename);
-  void LockOrUnlockCommon(int function);
-
-#endif
   bool ShareToProcessCommon(ProcessId target_pid,
-                            SharedMemoryHandle* new_handle,
-                            bool close_self);
+                            SharedMemoryHandle* new_handle, bool close_self);
+
+  bool CreateInternal(size_t size, bool freezeable);
 
 #if defined(OS_WIN)
-  std::wstring       name_;
-  HANDLE             mapped_file_;
+  // If true indicates this came from an external source so needs extra checks
+  // before being mapped.
+  bool external_section_;
+  HANDLE mapped_file_;
 #elif defined(OS_POSIX)
-  int                mapped_file_;
-  ino_t              inode_;
+  int mapped_file_;
+  int frozen_file_;
+  size_t mapped_size_;
 #endif
-  void*              memory_;
-  bool               read_only_;
-  size_t             max_size_;
-#if !defined(OS_POSIX)
-  SharedMemoryLock   lock_;
-#endif
+  void* memory_;
+  bool read_only_;
+  bool freezeable_;
+  size_t max_size_;
 
   DISALLOW_EVIL_CONSTRUCTORS(SharedMemory);
-};
-
-// A helper class that acquires the shared memory lock while
-// the SharedMemoryAutoLock is in scope.
-class SharedMemoryAutoLock {
- public:
-  explicit SharedMemoryAutoLock(SharedMemory* shared_memory)
-      : shared_memory_(shared_memory) {
-    shared_memory_->Lock();
-  }
-
-  ~SharedMemoryAutoLock() {
-    shared_memory_->Unlock();
-  }
-
- private:
-  SharedMemory* shared_memory_;
-  DISALLOW_EVIL_CONSTRUCTORS(SharedMemoryAutoLock);
 };
 
 }  // namespace base

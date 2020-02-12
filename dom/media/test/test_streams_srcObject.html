@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test interactions of src and srcObject</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -49,9 +49,7 @@ var doTest = srcObject => new Promise(resolve => {
   b.play();
 });
 
-// TODO: remove prefixed version soon (1183495).
-
-var doTests = () => doTest("srcObject").then(() => doTest("mozSrcObject"))
+var doTests = () => doTest("srcObject")
   .catch(e => ok(false, "Unexpected error: " + e))
   .then(() => SimpleTest.finish())
   .catch(e => ok(false, "Coding error: " + e));

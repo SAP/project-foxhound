@@ -2,12 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+
+from __future__ import absolute_import
+
 import json
 
-from base import BaseFormatter
+from .base import BaseFormatter
+
 
 class ErrorSummaryFormatter(BaseFormatter):
+
     def __init__(self):
+        self.groups = {}
         self.line_count = 0
 
     def __call__(self, data):
@@ -23,11 +29,16 @@ class ErrorSummaryFormatter(BaseFormatter):
     def _output_test(self, test, subtest, item):
         data = {"test": test,
                 "subtest": subtest,
+                "group": self.groups.get(test, ''),
                 "status": item["status"],
                 "expected": item["expected"],
                 "message": item.get("message"),
                 "stack": item.get("stack")}
         return self._output("test_result", data)
+
+    def suite_start(self, item):
+        self.groups = {v: k for k in item["tests"] for v in item["tests"][k]}
+        return self._output("test_groups", {"groups": list(item["tests"].keys())})
 
     def test_status(self, item):
         if "expected" not in item:

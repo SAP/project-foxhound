@@ -4,23 +4,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'Shell Integration')
+
 SOURCES += [
     'nsAlertsIconListener.cpp',
     'nsGnomeModule.cpp',
     'nsSystemAlertsService.cpp',
 ]
 
-if CONFIG['MOZ_ENABLE_GCONF']:
-    SOURCES += [
-        'nsGConfService.cpp',
-    ]
+SOURCES += [
+    'nsGIOService.cpp',
+    'nsGSettingsService.cpp',
+]
 
-if CONFIG['MOZ_ENABLE_GIO']:
-    SOURCES += [
-        'nsGIOService.cpp',
-        'nsGSettingsService.cpp',
-        'nsPackageKitService.cpp'
-    ]
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
 
 FINAL_LIBRARY = 'xul'
 
@@ -28,10 +28,6 @@ LOCAL_INCLUDES += [
     '/toolkit/components/build/',
 ]
 
-CXXFLAGS += CONFIG['MOZ_GCONF_CFLAGS']
-CXXFLAGS += CONFIG['MOZ_GIO_CFLAGS']
 CXXFLAGS += CONFIG['GLIB_CFLAGS']
 CXXFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']
-
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
-    CXXFLAGS += CONFIG['TK_CFLAGS']
+CXXFLAGS += CONFIG['TK_CFLAGS']

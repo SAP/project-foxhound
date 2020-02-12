@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=718573
 -->
 <head>
   <title>Test for Bug 718573</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -89,7 +89,7 @@ function lastTest(frame)
 
 function testDecoding(frame)
 {
-    var iframeDoc = $(frame).contentDocument;
+    var iframeDoc = SpecialPowers.wrap($(frame)).contentDocument;
     var outString = iframeDoc.getElementById("testPara").innerHTML;
     is(outString, inString, "content decoded as " + frame);
 }

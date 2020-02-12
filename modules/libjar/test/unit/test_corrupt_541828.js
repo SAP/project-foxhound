@@ -4,14 +4,12 @@
 
 // Check that files can be read from after closing zipreader
 function run_test() {
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-
   // the build script have created the zip we can test on in the current dir.
   var file = do_get_file("data/test_corrupt2.zip");
 
-  var zipreader = Cc["@mozilla.org/libjar/zip-reader;1"].
-                  createInstance(Ci.nsIZipReader);
+  var zipreader = Cc["@mozilla.org/libjar/zip-reader;1"].createInstance(
+    Ci.nsIZipReader
+  );
   var failed = false;
   try {
     zipreader.open(file);
@@ -19,6 +17,5 @@ function run_test() {
   } catch (ex) {
     failed = true;
   }
-  do_check_true(failed);
+  Assert.ok(failed);
 }
-

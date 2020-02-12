@@ -1,89 +1,69 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
-const TEST_URI = "data:text/html;charset=utf-8," +
+const TEST_URI =
+  "data:text/html;charset=utf-8," +
   "<p>browser_telemetry_button_paintflashing.js</p>";
 
 // Because we need to gather stats for the period of time that a tool has been
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-add_task(function* () {
-  yield addTab(TEST_URI);
-  let Telemetry = loadTelemetryAndRecordLogs();
+add_task(async function() {
+  await addTab(TEST_URI);
+  startTelemetry();
 
-  let target = TargetFactory.forTab(gBrowser.selectedTab);
-  let toolbox = yield gDevTools.showToolbox(target, "inspector");
+  await pushPref("devtools.command-button-paintflashing.enabled", true);
+
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  const toolbox = await gDevTools.showToolbox(target, "inspector");
   info("inspector opened");
 
   info("testing the paintflashing button");
-  yield testButton(toolbox, Telemetry);
+  await testButton(toolbox);
 
-  stopRecordingTelemetryLogs(Telemetry);
-  yield gDevTools.closeToolbox(target);
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
 });
 
-function* testButton(toolbox, Telemetry) {
+async function testButton(toolbox) {
   info("Testing command-button-paintflashing");
 
-  let button = toolbox.doc.querySelector("#command-button-paintflashing");
+  const button = toolbox.doc.querySelector("#command-button-paintflashing");
   ok(button, "Captain, we have the button");
 
-  yield* delayedClicks(toolbox, button, 4);
-  checkResults("_PAINTFLASHING_", Telemetry);
+  await delayedClicks(toolbox, button, 4);
+  await toolbox.target.client.waitForRequestsToSettle();
+  checkResults();
 }
 
-function* delayedClicks(toolbox, node, clicks) {
+async function delayedClicks(toolbox, node, clicks) {
   for (let i = 0; i < clicks; i++) {
-    yield new Promise(resolve => {
+    await new Promise(resolve => {
       // See TOOL_DELAY for why we need setTimeout here
       setTimeout(() => resolve(), TOOL_DELAY);
     });
-
-    // this event will fire once the command execution starts and
-    // the output object is created
-    let clicked = toolbox._requisition.commandOutputManager.onOutput.once();
-
     info("Clicking button " + node.id);
     node.click();
-
-    let outputEvent = yield clicked;
-    // promise gets resolved once execution finishes and output is ready
-    yield outputEvent.output.promise;
   }
 }
 
-function checkResults(histIdFocus, Telemetry) {
-  let result = Telemetry.prototype.telemetryInfo;
-
-  for (let [histId, value] of Object.entries(result)) {
-    if (histId.startsWith("DEVTOOLS_INSPECTOR_") ||
-        !histId.includes(histIdFocus)) {
-      // Inspector stats are tested in
-      // browser_telemetry_toolboxtabs_{toolname}.js so we skip them here
-      // because we only open the inspector once for this test.
-      continue;
-    }
-
-    if (histId.endsWith("OPENED_COUNT")) {
-      ok(value.length > 1, histId + " has more than one entry");
-
-      let okay = value.every(function (element) {
-        return element === true;
-      });
-
-      ok(okay, "All " + histId + " entries are === true");
-    } else if (histId.endsWith("TIME_ACTIVE_SECONDS")) {
-      ok(value.length > 1, histId + " has more than one entry");
-
-      let okay = value.every(function (element) {
-        return element > 0;
-      });
-
-      ok(okay, "All " + histId + " entries have time > 0");
-    }
-  }
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_PAINTFLASHING_")
+  // here.
+  checkTelemetry(
+    "DEVTOOLS_PAINTFLASHING_OPENED_COUNT",
+    "",
+    { 0: 2, 1: 0 },
+    "array"
+  );
+  checkTelemetry(
+    "DEVTOOLS_PAINTFLASHING_TIME_ACTIVE_SECONDS",
+    "",
+    null,
+    "hasentries"
+  );
 }

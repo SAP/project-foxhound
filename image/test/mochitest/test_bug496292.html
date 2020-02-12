@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=496292
 <head>
   <title>Test for Bug 496292</title>
   <script type="application/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ SimpleTest.waitForExplicitFinish();
 var canvas = document.getElementById('canvas');
 var first, second, third, ref;
 
-RemoteCanvas = function(url) {
+var RemoteCanvas = function(url) {
     this.url = url;
 };
 
@@ -44,7 +44,7 @@ RemoteCanvas.prototype.load = function(cb) {
     // Here is where the magic happens... add a listener to the
     // frame's onload event - it will call handleEvent
     iframe.addEventListener("load", this, true);
-    //append to the end of the page
+    // append to the end of the page
     window.document.body.appendChild(iframe);
 };
 
@@ -60,7 +60,7 @@ RemoteCanvas.prototype.handleEvent = function() {
     // SpecialPowers.snapshotRect method
     var remoteWindow = ldrFrame.contentWindow;
 
-    //Draw canvas
+    // Draw canvas
     canvas.style.width = RemoteCanvas.CANVAS_WIDTH + "px";
     canvas.style.height = RemoteCanvas.CANVAS_HEIGHT + "px";
     canvas.width = RemoteCanvas.CANVAS_WIDTH;

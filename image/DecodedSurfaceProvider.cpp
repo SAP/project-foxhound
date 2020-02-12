@@ -5,7 +5,7 @@
 
 #include "DecodedSurfaceProvider.h"
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "nsProxyRelease.h"
 
 #include "Decoder.h"
@@ -18,26 +18,20 @@ namespace image {
 DecodedSurfaceProvider::DecodedSurfaceProvider(NotNull<RasterImage*> aImage,
                                                const SurfaceKey& aSurfaceKey,
                                                NotNull<Decoder*> aDecoder)
-  : ISurfaceProvider(ImageKey(aImage.get()), aSurfaceKey,
-                     AvailabilityState::StartAsPlaceholder())
-  , mImage(aImage.get())
-  , mMutex("mozilla::image::DecodedSurfaceProvider")
-  , mDecoder(aDecoder.get())
-{
+    : ISurfaceProvider(ImageKey(aImage.get()), aSurfaceKey,
+                       AvailabilityState::StartAsPlaceholder()),
+      mImage(aImage.get()),
+      mMutex("mozilla::image::DecodedSurfaceProvider"),
+      mDecoder(aDecoder.get()) {
   MOZ_ASSERT(!mDecoder->IsMetadataDecode(),
              "Use MetadataDecodingTask for metadata decodes");
   MOZ_ASSERT(mDecoder->IsFirstFrameDecode(),
              "Use AnimationSurfaceProvider for animation decodes");
 }
 
-DecodedSurfaceProvider::~DecodedSurfaceProvider()
-{
-  DropImageReference();
-}
+DecodedSurfaceProvider::~DecodedSurfaceProvider() { DropImageReference(); }
 
-void
-DecodedSurfaceProvider::DropImageReference()
-{
+void DecodedSurfaceProvider::DropImageReference() {
   if (!mImage) {
     return;  // Nothing to do.
   }
@@ -49,12 +43,10 @@ DecodedSurfaceProvider::DropImageReference()
   // get evicted is holding the surface cache lock, causing deadlock.
   RefPtr<RasterImage> image = mImage;
   mImage = nullptr;
-  NS_ReleaseOnMainThread(image.forget(), /* aAlwaysProxy = */ true);
+  NS_ReleaseOnMainThreadSystemGroup(image.forget(), /* aAlwaysProxy = */ true);
 }
 
-DrawableFrameRef
-DecodedSurfaceProvider::DrawableRef(size_t aFrame)
-{
+DrawableFrameRef DecodedSurfaceProvider::DrawableRef(size_t aFrame) {
   MOZ_ASSERT(aFrame == 0,
              "Requesting an animation frame from a DecodedSurfaceProvider?");
 
@@ -76,9 +68,7 @@ DecodedSurfaceProvider::DrawableRef(size_t aFrame)
   return mSurface->DrawableRef();
 }
 
-bool
-DecodedSurfaceProvider::IsFinished() const
-{
+bool DecodedSurfaceProvider::IsFinished() const {
   // See DrawableRef() for commentary on these assertions.
   if (Availability().IsPlaceholder()) {
     MOZ_ASSERT_UNREACHABLE("Calling IsFinished() on a placeholder");
@@ -93,9 +83,7 @@ DecodedSurfaceProvider::IsFinished() const
   return mSurface->IsFinished();
 }
 
-void
-DecodedSurfaceProvider::SetLocked(bool aLocked)
-{
+void DecodedSurfaceProvider::SetLocked(bool aLocked) {
   // See DrawableRef() for commentary on these assertions.
   if (Availability().IsPlaceholder()) {
     MOZ_ASSERT_UNREACHABLE("Calling SetLocked() on a placeholder");
@@ -113,21 +101,16 @@ DecodedSurfaceProvider::SetLocked(bool aLocked)
 
   // If we're locked, hold a DrawableFrameRef to |mSurface|, which will keep any
   // volatile buffer it owns in memory.
-  mLockRef = aLocked ? mSurface->DrawableRef()
-                     : DrawableFrameRef();
+  mLockRef = aLocked ? mSurface->DrawableRef() : DrawableFrameRef();
 }
 
-size_t
-DecodedSurfaceProvider::LogicalSizeInBytes() const
-{
+size_t DecodedSurfaceProvider::LogicalSizeInBytes() const {
   // Single frame images are always 32bpp.
   IntSize size = GetSurfaceKey().Size();
-  return size.width * size.height * sizeof(uint32_t);
+  return size_t(size.width) * size_t(size.height) * sizeof(uint32_t);
 }
 
-void
-DecodedSurfaceProvider::Run()
-{
+void DecodedSurfaceProvider::Run() {
   MutexAutoLock lock(mMutex);
 
   if (!mDecoder || !mImage) {
@@ -165,9 +148,7 @@ DecodedSurfaceProvider::Run()
   FinishDecoding();
 }
 
-void
-DecodedSurfaceProvider::CheckForNewSurface()
-{
+void DecodedSurfaceProvider::CheckForNewSurface() {
   mMutex.AssertCurrentThreadOwns();
   MOZ_ASSERT(mDecoder);
 
@@ -190,15 +171,19 @@ DecodedSurfaceProvider::CheckForNewSurface()
   SurfaceCache::SurfaceAvailable(WrapNotNull(this));
 }
 
-void
-DecodedSurfaceProvider::FinishDecoding()
-{
+void DecodedSurfaceProvider::FinishDecoding() {
   mMutex.AssertCurrentThreadOwns();
   MOZ_ASSERT(mImage);
   MOZ_ASSERT(mDecoder);
 
   // Send notifications.
   NotifyDecodeComplete(WrapNotNull(mImage), WrapNotNull(mDecoder));
+
+  // If we have a new and complete surface, we can try to prune similarly sized
+  // surfaces if the cache supports it.
+  if (mSurface && mSurface->IsFinished()) {
+    SurfaceCache::PruneImage(ImageKey(mImage));
+  }
 
   // Destroy our decoder; we don't need it anymore. (And if we don't destroy it,
   // our surface can never be optimized, because the decoder has a
@@ -214,11 +199,10 @@ DecodedSurfaceProvider::FinishDecoding()
   DropImageReference();
 }
 
-bool
-DecodedSurfaceProvider::ShouldPreferSyncRun() const
-{
-  return mDecoder->ShouldSyncDecode(gfxPrefs::ImageMemDecodeBytesAtATime());
+bool DecodedSurfaceProvider::ShouldPreferSyncRun() const {
+  return mDecoder->ShouldSyncDecode(
+      StaticPrefs::image_mem_decode_bytes_at_a_time_AtStartup());
 }
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla

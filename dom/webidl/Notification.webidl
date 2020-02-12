@@ -4,18 +4,19 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://notifications.spec.whatwg.org/
+ * https://notifications.spec.whatwg.org/
  *
  * Copyright:
  * To the extent possible under law, the editors have waived all copyright and
  * related or neighboring rights to this work.
  */
 
-[Constructor(DOMString title, optional NotificationOptions options),
- Exposed=(Window,Worker),
- Func="mozilla::dom::Notification::PrefEnabled",
- UnsafeInPrerendering]
+[Exposed=(Window,Worker),
+ Func="mozilla::dom::Notification::PrefEnabled"]
 interface Notification : EventTarget {
+  [Throws]
+  constructor(DOMString title, optional NotificationOptions options = {});
+
   [GetterThrows]
   static readonly attribute NotificationPermission permission;
 
@@ -23,7 +24,7 @@ interface Notification : EventTarget {
   static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback permissionCallback);
 
   [Throws, Func="mozilla::dom::Notification::IsGetEnabled"]
-  static Promise<sequence<Notification>> get(optional GetNotificationOptions filter);
+  static Promise<sequence<Notification>> get(optional GetNotificationOptions filter = {});
 
   attribute EventHandler onclick;
 
@@ -51,6 +52,9 @@ interface Notification : EventTarget {
   [Pure]
   readonly attribute DOMString? icon;
 
+  [Constant, Pref="dom.webnotifications.requireinteraction.enabled"]
+  readonly attribute boolean requireInteraction;
+
   [Constant]
   readonly attribute any data;
 
@@ -63,8 +67,9 @@ dictionary NotificationOptions {
   DOMString body = "";
   DOMString tag = "";
   DOMString icon = "";
+  boolean requireInteraction = false;
   any data = null;
-  NotificationBehavior mozbehavior = null;
+  NotificationBehavior mozbehavior = {};
 };
 
 dictionary GetNotificationOptions {
@@ -91,11 +96,4 @@ enum NotificationDirection {
   "auto",
   "ltr",
   "rtl"
-};
-
-partial interface ServiceWorkerRegistration {
-  [Throws, Func="mozilla::dom::ServiceWorkerRegistration::NotificationAPIVisible"]
-  Promise<void> showNotification(DOMString title, optional NotificationOptions options);
-  [Throws, Func="mozilla::dom::ServiceWorkerRegistration::NotificationAPIVisible"]
-  Promise<sequence<Notification>> getNotifications(optional GetNotificationOptions filter);
 };

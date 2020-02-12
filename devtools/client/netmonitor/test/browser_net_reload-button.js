@@ -7,19 +7,24 @@
  * Tests if the empty-requests reload button works.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(SINGLE_GET_URL);
+add_task(async function() {
+  const { monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document } = monitor.panelWin;
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  let button = document.querySelector("#requests-menu-reload-notice-button");
-  button.click();
-  yield wait;
+  const wait = waitForNetworkEvents(monitor, 1);
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector(".requests-list-reload-notice-button")
+  );
+  await wait;
 
-  is(RequestsMenu.itemCount, 2, "The request menu should have two items after reloading");
+  is(
+    document.querySelectorAll(".request-list-item").length,
+    1,
+    "The request list should have one item after reloading"
+  );
 
   return teardown(monitor);
 });

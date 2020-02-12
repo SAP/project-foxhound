@@ -2,6 +2,55 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function, unicode_literals
+
+import re
+
+
+INTEGRATION_PROJECTS = {
+    'mozilla-inbound',
+    'autoland',
+}
+
+TRUNK_PROJECTS = INTEGRATION_PROJECTS | {'mozilla-central', 'comm-central'}
+
+RELEASE_PROJECTS = {
+    'mozilla-central',
+    'mozilla-beta',
+    'mozilla-release',
+    'mozilla-esr60',
+    'mozilla-esr68',
+    'comm-central',
+    'comm-beta',
+    'comm-esr60',
+    'comm-esr68',
+    'oak',
+}
+
+RELEASE_PROMOTION_PROJECTS = {
+    'jamun',
+    'maple',
+    'try',
+    'try-comm-central',
+} | RELEASE_PROJECTS
+
+_OPTIONAL_ATTRIBUTES = (
+    'accepted-mar-channel-ids',
+    'artifact_map',
+    'artifact_prefix',
+    'l10n_chunk',
+    'locale',
+    'mar-channel-id',
+    'nightly',
+    'required_signoffs',
+    'shippable',
+    'shipping_phase',
+    'shipping_product',
+    'signed',
+    'stub-installer',
+    'update-channel',
+)
+
 
 def attrmatch(attributes, **kwargs):
     """Determine whether the given set of task attributes matches.  The
@@ -24,3 +73,85 @@ def attrmatch(attributes, **kwargs):
         elif kwval != attributes[kwkey]:
             return False
     return True
+
+
+def keymatch(attributes, target):
+    """Determine if any keys in attributes are a match to target, then return
+    a list of matching values. First exact matches will be checked. Failing
+    that, regex matches and finally a default key.
+    """
+    # exact match
+    if target in attributes:
+        return [attributes[target]]
+
+    # regular expression match
+    matches = [v for k, v in attributes.iteritems() if re.match(k + '$', target)]
+    if matches:
+        return matches
+
+    # default
+    if 'default' in attributes:
+        return [attributes['default']]
+
+    return []
+
+
+def match_run_on_projects(project, run_on_projects):
+    """Determine whether the given project is included in the `run-on-projects`
+    parameter, applying expansions for things like "integration" mentioned in
+    the attribute documentation."""
+    if 'all' in run_on_projects:
+        return True
+    if 'integration' in run_on_projects:
+        if project in INTEGRATION_PROJECTS:
+            return True
+    if 'release' in run_on_projects:
+        if project in RELEASE_PROJECTS:
+            return True
+    if 'trunk' in run_on_projects:
+        if project in TRUNK_PROJECTS:
+            return True
+
+    return project in run_on_projects
+
+
+def match_run_on_hg_branches(hg_branch, run_on_hg_branches):
+    """Determine whether the given project is included in the `run-on-hg-branches`
+    parameter. Allows 'all'."""
+    if 'all' in run_on_hg_branches:
+        return True
+
+    for expected_hg_branch_pattern in run_on_hg_branches:
+        if re.match(expected_hg_branch_pattern, hg_branch):
+            return True
+
+    return False
+
+
+def copy_attributes_from_dependent_job(dep_job):
+    attributes = {
+        'build_platform': dep_job.attributes.get('build_platform'),
+        'build_type': dep_job.attributes.get('build_type'),
+    }
+
+    attributes.update({
+        attr: dep_job.attributes[attr]
+        for attr in _OPTIONAL_ATTRIBUTES if attr in dep_job.attributes
+    })
+
+    return attributes
+
+
+def sorted_unique_list(*args):
+    """Join one or more lists, and return a sorted list of unique members"""
+    combined = set().union(*args)
+    return sorted(combined)
+
+
+def release_level(project):
+    """
+    Whether this is a staging release or not.
+
+    :return six.text_type: One of "production" or "staging".
+    """
+    return 'production' if project in RELEASE_PROJECTS else 'staging'

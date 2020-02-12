@@ -4,24 +4,23 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["SyncedTabs"];
+var EXPORTED_SYMBOLS = ["SyncedTabs"];
 
-
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/PlacesUtils.jsm", this);
-Cu.import("resource://services-sync/main.js");
-Cu.import("resource://gre/modules/Preferences.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
 
 // The Sync XPCOM service
 XPCOMUtils.defineLazyGetter(this, "weaveXPCService", function() {
-  return Cc["@mozilla.org/weave/service;1"]
-           .getService(Ci.nsISupports)
-           .wrappedJSObject;
+  return Cc["@mozilla.org/weave/service;1"].getService(
+    Ci.nsISupports
+  ).wrappedJSObject;
 });
 
 // from MDN...
@@ -39,62 +38,54 @@ const TOPIC_TABS_CHANGED = "services.sync.tabs.changed";
 // of tabs "fresh enough" and don't force a new sync.
 const TABS_FRESH_ENOUGH_INTERVAL = 30;
 
-let log = Log.repository.getLogger("Sync.RemoteTabs");
-// A new scope to do the logging thang...
-(function() {
-  let level = Preferences.get("services.sync.log.logger.tabs");
-  if (level) {
-    let appender = new Log.DumpAppender();
-    log.level = appender.level = Log.Level[level] || Log.Level.Debug;
-    log.addAppender(appender);
-  }
-})();
-
+XPCOMUtils.defineLazyGetter(this, "log", function() {
+  let log = Log.repository.getLogger("Sync.RemoteTabs");
+  log.manageLevelFromPref("services.sync.log.logger.tabs");
+  return log;
+});
 
 // A private singleton that does the work.
 let SyncedTabsInternal = {
   /* Make a "tab" record. Returns a promise */
-  _makeTab: Task.async(function* (client, tab, url, showRemoteIcons) {
+  async _makeTab(client, tab, url, showRemoteIcons) {
     let icon;
     if (showRemoteIcons) {
       icon = tab.icon;
     }
     if (!icon) {
-      try {
-        icon = (yield PlacesUtils.promiseFaviconLinkUrl(url)).spec;
-      } catch (ex) { /* no favicon avaiable */ }
-    }
-    if (!icon) {
-      icon = "";
+      // By not specifying a size the favicon service will pick the default,
+      // that is usually set through setDefaultIconURIPreferredSize by the
+      // first browser window. Commonly it's 16px at current dpi.
+      icon = "page-icon:" + url;
     }
     return {
-      type:  "tab",
+      type: "tab",
       title: tab.title || url,
       url,
       icon,
       client: client.id,
       lastUsed: tab.lastUsed,
     };
-  }),
+  },
 
   /* Make a "client" record. Returns a promise for consistency with _makeTab */
-  _makeClient: Task.async(function* (client) {
+  async _makeClient(client) {
     return {
       id: client.id,
       type: "client",
       name: Weave.Service.clientsEngine.getClientName(client.id),
-      isMobile: Weave.Service.clientsEngine.isMobile(client.id),
+      clientType: Weave.Service.clientsEngine.getClientType(client.id),
       lastModified: client.lastModified * 1000, // sec to ms
-      tabs: []
+      tabs: [],
     };
-  }),
+  },
 
   _tabMatchesFilter(tab, filter) {
     let reFilter = new RegExp(escapeRegExp(filter), "i");
-    return tab.url.match(reFilter) || tab.title.match(reFilter);
+    return reFilter.test(tab.url) || reFilter.test(tab.title);
   },
 
-  getTabClients: Task.async(function* (filter) {
+  async getTabClients(filter) {
     log.info("Generating tab list with filter", filter);
     let result = [];
 
@@ -105,42 +96,33 @@ let SyncedTabsInternal = {
     }
 
     // A boolean that controls whether we should show the icon from the remote tab.
-    const showRemoteIcons = Preferences.get("services.sync.syncedTabs.showRemoteIcons", true);
+    const showRemoteIcons = Preferences.get(
+      "services.sync.syncedTabs.showRemoteIcons",
+      true
+    );
 
     let engine = Weave.Service.engineManager.get("tabs");
 
-    let seenURLs = new Set();
-    let parentIndex = 0;
     let ntabs = 0;
 
-    for (let [guid, client] of Object.entries(engine.getAllClients())) {
+    for (let client of Object.values(engine.getAllClients())) {
       if (!Weave.Service.clientsEngine.remoteClientExists(client.id)) {
         continue;
       }
-      let clientRepr = yield this._makeClient(client);
+      let clientRepr = await this._makeClient(client);
       log.debug("Processing client", clientRepr);
 
       for (let tab of client.tabs) {
         let url = tab.urlHistory[0];
-        log.debug("remote tab", url);
-        // Note there are some issues with tracking "seen" tabs, including:
-        // * We really can't return the entire urlHistory record as we are
-        //   only checking the first entry - others might be different.
-        // * We don't update the |lastUsed| timestamp to reflect the
-        //   most-recently-seen time.
-        // In a followup we should consider simply dropping this |seenUrls|
-        // check and return duplicate records - it seems the user will be more
-        // confused by tabs not showing up on a device (because it was detected
-        // as a dupe so it only appears on a different device) than being
-        // confused by seeing the same tab on different clients.
-        if (!url || seenURLs.has(url)) {
+        log.trace("remote tab", url);
+
+        if (!url) {
           continue;
         }
-        let tabRepr = yield this._makeTab(client, tab, url, showRemoteIcons);
+        let tabRepr = await this._makeTab(client, tab, url, showRemoteIcons);
         if (filter && !this._tabMatchesFilter(tabRepr, filter)) {
           continue;
         }
-        seenURLs.add(url);
         clientRepr.tabs.push(tabRepr);
       }
       // We return all clients, even those without tabs - the consumer should
@@ -150,16 +132,16 @@ let SyncedTabsInternal = {
     }
     log.info(`Final tab list has ${result.length} clients with ${ntabs} tabs.`);
     return result;
-  }),
+  },
 
-  syncTabs(force) {
+  async syncTabs(force) {
     if (!force) {
       // Don't bother refetching tabs if we already did so recently
       let lastFetch = Preferences.get("services.sync.lastTabFetch", 0);
       let now = Math.floor(Date.now() / 1000);
       if (now - lastFetch < TABS_FRESH_ENOUGH_INTERVAL) {
         log.info("_refetchTabs was done recently, do not doing it again");
-        return Promise.resolve(false);
+        return false;
       }
     }
 
@@ -167,23 +149,17 @@ let SyncedTabsInternal = {
     // of a login failure.
     if (Weave.Status.checkSetup() == Weave.CLIENT_NOT_CONFIGURED) {
       log.info("Sync client is not configured, so not attempting a tab sync");
-      return Promise.resolve(false);
+      return false;
     }
     // Ask Sync to just do the tabs engine if it can.
-    // Sync is currently synchronous, so do it after an event-loop spin to help
-    // keep the UI responsive.
-    return new Promise((resolve, reject) => {
-      Services.tm.currentThread.dispatch(() => {
-        try {
-          log.info("Doing a tab sync.");
-          Weave.Service.sync(["tabs"]);
-          resolve(true);
-        } catch (ex) {
-          log.error("Sync failed", ex);
-          reject(ex);
-        };
-      }, Ci.nsIThread.DISPATCH_NORMAL);
-    });
+    try {
+      log.info("Doing a tab sync.");
+      await Weave.Service.sync({ why: "tabs", engines: ["tabs"] });
+      return true;
+    } catch (ex) {
+      log.error("Sync failed", ex);
+      throw ex;
+    }
   },
 
   observe(subject, topic, data) {
@@ -196,16 +172,19 @@ let SyncedTabsInternal = {
         // The tabs engine just finished syncing
         // Set our lastTabFetch pref here so it tracks both explicit sync calls
         // and normally scheduled ones.
-        Preferences.set("services.sync.lastTabFetch", Math.floor(Date.now() / 1000));
-        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED, null);
+        Preferences.set(
+          "services.sync.lastTabFetch",
+          Math.floor(Date.now() / 1000)
+        );
+        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED);
         break;
       case "weave:service:start-over":
         // start-over needs to notify so consumers find no tabs.
         Preferences.reset("services.sync.lastTabFetch");
-        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED, null);
+        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED);
         break;
       case "nsPref:changed":
-        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED, null);
+        Services.obs.notifyObservers(null, TOPIC_TABS_CHANGED);
         break;
       default:
         break;
@@ -229,15 +208,15 @@ let SyncedTabsInternal = {
   },
 };
 
-Services.obs.addObserver(SyncedTabsInternal, "weave:engine:sync:finish", false);
-Services.obs.addObserver(SyncedTabsInternal, "weave:service:start-over", false);
+Services.obs.addObserver(SyncedTabsInternal, "weave:engine:sync:finish");
+Services.obs.addObserver(SyncedTabsInternal, "weave:service:start-over");
 // Observe the pref the indicates the state of the tabs engine has changed.
 // This will force consumers to re-evaluate the state of sync and update
 // accordingly.
-Services.prefs.addObserver("services.sync.engine.tabs", SyncedTabsInternal, false);
+Services.prefs.addObserver("services.sync.engine.tabs", SyncedTabsInternal);
 
 // The public interface.
-this.SyncedTabs = {
+var SyncedTabs = {
   // A mock-point for tests.
   _internal: SyncedTabsInternal,
 
@@ -273,16 +252,13 @@ this.SyncedTabs = {
     return this._internal.syncTabs(force);
   },
 
-  sortTabClientsByLastUsed(clients, maxTabs = Infinity) {
-    // First sort and filter the list of tabs for each client. Note that
+  sortTabClientsByLastUsed(clients) {
+    // First sort the list of tabs for each client. Note that
     // this module promises that the objects it returns are never
     // shared, so we are free to mutate those objects directly.
     for (let client of clients) {
       let tabs = client.tabs;
       tabs.sort((a, b) => b.lastUsed - a.lastUsed);
-      if (Number.isFinite(maxTabs)) {
-        client.tabs = tabs.slice(0, maxTabs);
-      }
     }
     // Now sort the clients - the clients are sorted in the order of the
     // most recent tab for that client (ie, it is important the tabs for
@@ -298,4 +274,3 @@ this.SyncedTabs = {
     });
   },
 };
-

@@ -28,6 +28,7 @@ include $(CORE_DEPTH)/coreconf/config.mk
 
 ifdef NSS_DISABLE_GTESTS
 DIRS := $(filter-out gtests,$(DIRS))
+DIRS := $(filter-out cpputil,$(DIRS))
 endif
 
 #######################################################################
@@ -85,24 +86,13 @@ endif
 ifdef NS_USE_GCC
 NSPR_CONFIGURE_ENV = CC=gcc CXX=g++
 endif
+# Make sure to remove -arch arguments. NSPR can't handle that.
+remove_arch = $(filter-out __REMOVEME%,$(subst $(NULL) -arch , __REMOVEME,$(1)))
 ifdef CC
-NSPR_CONFIGURE_ENV = CC=$(CC)
+NSPR_CONFIGURE_ENV = CC="$(call remove_arch,$(CC))"
 endif
 ifdef CCC
-NSPR_CONFIGURE_ENV += CXX=$(CCC)
-endif
-# Remove -arch definitions. NSPR can't handle that.
-NSPR_CONFIGURE_ENV := $(filter-out -arch x86_64,$(NSPR_CONFIGURE_ENV))
-NSPR_CONFIGURE_ENV := $(filter-out -arch i386,$(NSPR_CONFIGURE_ENV))
-NSPR_CONFIGURE_ENV := $(filter-out -arch ppc,$(NSPR_CONFIGURE_ENV))
-
-ifdef SANITIZER_CFLAGS
-ifdef BUILD_OPT
-NSPR_CONFIGURE_OPTS += --enable-debug-symbols
-endif
-NSPR_CONFIGURE_ENV += CFLAGS='$(SANITIZER_CFLAGS)' \
-                      CXXFLAGS='$(SANITIZER_CFLAGS)' \
-                      LDFLAGS='$(SANITIZER_LDFLAGS)'
+NSPR_CONFIGURE_ENV += CXX="$(call remove_arch,$(CCC))"
 endif
 
 #
@@ -145,6 +135,7 @@ endif
 
 build_nspr: $(NSPR_CONFIG_STATUS)
 	$(MAKE) -C $(CORE_DEPTH)/../nspr/$(OBJDIR_NAME)
+	$(MAKE) -C $(CORE_DEPTH)/../nspr/$(OBJDIR_NAME)/pr/tests
 
 install_nspr: build_nspr
 	$(MAKE) -C $(CORE_DEPTH)/../nspr/$(OBJDIR_NAME) install
@@ -165,4 +156,3 @@ package:
 
 latest:
 	echo $(OBJDIR_NAME) > $(CORE_DEPTH)/../dist/latest
-

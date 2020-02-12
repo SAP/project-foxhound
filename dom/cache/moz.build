@@ -4,6 +4,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Service Workers")
+
 EXPORTS.mozilla.dom.cache += [
     'Action.h',
     'ActorChild.h',
@@ -19,7 +23,7 @@ EXPORTS.mozilla.dom.cache += [
     'CacheStorageParent.h',
     'CacheStreamControlChild.h',
     'CacheStreamControlParent.h',
-    'CacheWorkerHolder.h',
+    'CacheWorkerRef.h',
     'Connection.h',
     'Context.h',
     'DBAction.h',
@@ -52,7 +56,7 @@ UNIFIED_SOURCES += [
     'CacheStorageParent.cpp',
     'CacheStreamControlChild.cpp',
     'CacheStreamControlParent.cpp',
-    'CacheWorkerHolder.cpp',
+    'CacheWorkerRef.cpp',
     'Connection.cpp',
     'Context.cpp',
     'DBAction.cpp',
@@ -78,10 +82,6 @@ IPDL_SOURCES += [
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-LOCAL_INCLUDES += [
-    '../workers',
-]
-
 FINAL_LIBRARY = 'xul'
 
 MOCHITEST_MANIFESTS += [
@@ -89,12 +89,12 @@ MOCHITEST_MANIFESTS += [
 ]
 
 BROWSER_CHROME_MANIFESTS += [
-    'test/mochitest/browser.ini',
+    'test/browser/browser.ini',
 ]
 
 XPCSHELL_TESTS_MANIFESTS += [
     'test/xpcshell/xpcshell.ini',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

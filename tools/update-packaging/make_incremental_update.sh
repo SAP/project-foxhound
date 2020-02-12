@@ -50,6 +50,22 @@ check_for_forced_update() {
     return 0;
   fi
 
+  if [ "$forced_file_chk" = "chrome.manifest" ]; then
+    ## "true" *giggle*
+    return 0;
+  fi
+
+  if [ "$forced_file_chk" = "Contents/Resources/chrome.manifest" ]; then
+    ## "true" *giggle*
+    return 0;
+  fi
+
+  # notarization ticket
+  if [ "$forced_file_chk" = "Contents/CodeResources" ]; then
+    ## "true" *giggle*
+    return 0;
+  fi
+
   if [ "${forced_file_chk##*.}" = "chk" ]; then
     ## "true" *giggle*
     return 0;
@@ -159,7 +175,11 @@ for ((i=0; $i<$num_oldfiles; i=$i+1)); do
     if check_for_add_if_not_update "$f"; then
       # The full workdir may not exist yet, so create it if necessary.
       mkdir -p `dirname "$workdir/$f"`
-      $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      if [[ -n $MAR_OLD_FORMAT ]]; then
+        $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      else
+        $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force --stdout "$newdir/$f" > "$workdir/$f"
+      fi
       copy_perm "$newdir/$f" "$workdir/$f"
       make_add_if_not_instruction "$f" "$updatemanifestv3"
       archivefiles="$archivefiles \"$f\""
@@ -169,7 +189,11 @@ for ((i=0; $i<$num_oldfiles; i=$i+1)); do
     if check_for_forced_update "$requested_forced_updates" "$f"; then
       # The full workdir may not exist yet, so create it if necessary.
       mkdir -p `dirname "$workdir/$f"`
-      $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      if [[ -n $MAR_OLD_FORMAT ]]; then
+        $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      else
+        $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force --stdout "$newdir/$f" > "$workdir/$f"
+      fi
       copy_perm "$newdir/$f" "$workdir/$f"
       make_add_instruction "$f" "$updatemanifestv2" "$updatemanifestv3" 1
       archivefiles="$archivefiles \"$f\""
@@ -192,26 +216,49 @@ for ((i=0; $i<$num_oldfiles; i=$i+1)); do
       # myscript.sh -A SERVER-URL [-c LOCAL-CACHE-DIR-PATH] [-g] [-u] \
       #   PATH-FROM-URL PATH-TO-URL PATH-PATCH SERVER-URL
       #
-      # Note: patches are bzipped stashed in funsize to gain more speed
+      # Note: patches are bzipped or xz stashed in funsize to gain more speed
 
       # if service is not enabled then default to old behavior
       if [ -z "$MBSDIFF_HOOK" ]; then
         $MBSDIFF "$olddir/$f" "$newdir/$f" "$workdir/$f.patch"
-        $BZIP2 -z9 "$workdir/$f.patch"
+        if [[ -n $MAR_OLD_FORMAT ]]; then
+          $BZIP2 -z9 "$workdir/$f.patch"
+        else
+          $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$workdir/$f.patch"
+        fi
       else
         # if service enabled then check patch existence for retrieval
-        if $MBSDIFF_HOOK -g "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.bz2"; then
-          notice "file \"$f\" found in funsize, diffing skipped"
+        if [[ -n $MAR_OLD_FORMAT ]]; then
+          if $MBSDIFF_HOOK -g "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.bz2"; then
+            notice "file \"$f\" found in funsize, diffing skipped"
+          else
+            # if not found already - compute it and cache it for future use
+            $MBSDIFF "$olddir/$f" "$newdir/$f" "$workdir/$f.patch"
+            $BZIP2 -z9 "$workdir/$f.patch"
+            $MBSDIFF_HOOK -u "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.bz2"
+          fi
         else
-          # if not found already - compute it and cache it for future use
-          $MBSDIFF "$olddir/$f" "$newdir/$f" "$workdir/$f.patch"
-          $BZIP2 -z9 "$workdir/$f.patch"
-          $MBSDIFF_HOOK -u "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.bz2"
+          if $MBSDIFF_HOOK -g "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.xz"; then
+            notice "file \"$f\" found in funsize, diffing skipped"
+          else
+            # if not found already - compute it and cache it for future use
+            $MBSDIFF "$olddir/$f" "$newdir/$f" "$workdir/$f.patch"
+            $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$workdir/$f.patch"
+            $MBSDIFF_HOOK -u "$olddir/$f" "$newdir/$f" "$workdir/$f.patch.xz"
+          fi
         fi
       fi
-      $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      if [[ -n $MAR_OLD_FORMAT ]]; then
+        $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+      else
+        $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force --stdout "$newdir/$f" > "$workdir/$f"
+      fi
       copy_perm "$newdir/$f" "$workdir/$f"
-      patchfile="$workdir/$f.patch.bz2"
+      if [[ -n $MAR_OLD_FORMAT ]]; then
+        patchfile="$workdir/$f.patch.bz2"
+      else
+        patchfile="$workdir/$f.patch.xz"
+      fi
       patchsize=$(get_file_size "$patchfile")
       fullsize=$(get_file_size "$workdir/$f")
 
@@ -252,7 +299,11 @@ for ((i=0; $i<$num_newfiles; i=$i+1)); do
   dir=$(dirname "$workdir/$f")
   mkdir -p "$dir"
 
-  $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+  if [[ -n $MAR_OLD_FORMAT ]]; then
+    $BZIP2 -cz9 "$newdir/$f" > "$workdir/$f"
+  else
+    $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force --stdout "$newdir/$f" > "$workdir/$f"
+  fi
   copy_perm "$newdir/$f" "$workdir/$f"
 
   if check_for_add_if_not_update "$f"; then
@@ -293,17 +344,22 @@ for ((i=0; $i<$num_olddirs; i=$i+1)); do
   fi
 done
 
-$BZIP2 -z9 "$updatemanifestv2" && mv -f "$updatemanifestv2.bz2" "$updatemanifestv2"
-$BZIP2 -z9 "$updatemanifestv3" && mv -f "$updatemanifestv3.bz2" "$updatemanifestv3"
+if [[ -n $MAR_OLD_FORMAT ]]; then
+  $BZIP2 -z9 "$updatemanifestv2" && mv -f "$updatemanifestv2.bz2" "$updatemanifestv2"
+  $BZIP2 -z9 "$updatemanifestv3" && mv -f "$updatemanifestv3.bz2" "$updatemanifestv3"
+else
+  $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$updatemanifestv2" && mv -f "$updatemanifestv2.xz" "$updatemanifestv2"
+  $XZ --compress $BCJ_OPTIONS --lzma2 --format=xz --check=crc64 --force "$updatemanifestv3" && mv -f "$updatemanifestv3.xz" "$updatemanifestv3"
+fi
 
 mar_command="$MAR"
 if [[ -n $MOZ_PRODUCT_VERSION ]]
 then
   mar_command="$mar_command -V $MOZ_PRODUCT_VERSION"
 fi
-if [[ -n $MOZ_CHANNEL_ID ]]
+if [[ -n $MAR_CHANNEL_ID ]]
 then
-  mar_command="$mar_command -H $MOZ_CHANNEL_ID"
+  mar_command="$mar_command -H $MAR_CHANNEL_ID"
 fi
 mar_command="$mar_command -C \"$workdir\" -c output.mar"
 eval "$mar_command $archivefiles"

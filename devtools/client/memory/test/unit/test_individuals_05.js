@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 // Test showing individual objects that do not have allocation stacks.
@@ -14,16 +15,10 @@ const {
   fetchIndividuals,
   takeSnapshotAndCensus,
 } = require("devtools/client/memory/actions/snapshot");
-const {
-  changeView,
-} = require("devtools/client/memory/actions/view");
+const { changeView } = require("devtools/client/memory/actions/view");
 const {
   setCensusDisplay,
 } = require("devtools/client/memory/actions/census-display");
-
-function run_test() {
-  run_next_test();
-}
 
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
@@ -31,11 +26,11 @@ const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
   dispatch(changeView(viewState.CENSUS));
@@ -44,7 +39,7 @@ add_task(function* () {
   // Take a snapshot and wait for the census to finish.
 
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   // Fetch individuals.
 
@@ -60,23 +55,28 @@ add_task(function* () {
   const breakdown = getState().censusDisplay.breakdown;
   ok(breakdown, "Should have a breakdown");
 
-  dispatch(fetchIndividuals(heapWorker, snapshotId, breakdown,
-                            reportLeafIndex));
+  dispatch(
+    fetchIndividuals(heapWorker, snapshotId, breakdown, reportLeafIndex)
+  );
 
-  for (let state of EXPECTED_INDIVIDUAL_STATES) {
-    yield waitUntilState(store, s => {
-      return s.view.state === viewState.INDIVIDUALS &&
-             s.individuals &&
-             s.individuals.state === state;
+  for (const state of EXPECTED_INDIVIDUAL_STATES) {
+    await waitUntilState(store, s => {
+      return (
+        s.view.state === viewState.INDIVIDUALS &&
+        s.individuals &&
+        s.individuals.state === state
+      );
     });
     ok(true, `Reached state = ${state}`);
   }
 
   ok(getState().individuals, "Should have individuals state");
   ok(getState().individuals.nodes, "Should have individuals nodes");
-  ok(getState().individuals.nodes.length > 0,
-     "Should have a positive number of nodes");
+  ok(
+    getState().individuals.nodes.length > 0,
+    "Should have a positive number of nodes"
+  );
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

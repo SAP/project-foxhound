@@ -19,13 +19,13 @@ enum IDBTransactionMode {
     "versionchange"
 };
 
-[Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface IDBTransaction : EventTarget {
     [Throws]
     readonly    attribute IDBTransactionMode mode;
     readonly    attribute IDBDatabase        db;
 
-    readonly    attribute DOMError?          error;
+    readonly    attribute DOMException?      error;
 
     [Throws]
     IDBObjectStore objectStore (DOMString name);

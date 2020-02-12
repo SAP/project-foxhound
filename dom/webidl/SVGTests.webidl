@@ -10,13 +10,9 @@
  * liability, trademark and document use rules apply.
  */
 
-[NoInterfaceObject]
-interface SVGTests {
+interface mixin SVGTests {
 
-  readonly attribute SVGStringList requiredFeatures;
   readonly attribute SVGStringList requiredExtensions;
   readonly attribute SVGStringList systemLanguage;
-
-  boolean hasExtension(DOMString extension);
 };
 

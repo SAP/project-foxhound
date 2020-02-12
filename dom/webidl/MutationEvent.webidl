@@ -9,11 +9,14 @@
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
  */
+[Exposed=Window]
 interface MutationEvent : Event
 {
   const unsigned short MODIFICATION = 1;
   const unsigned short ADDITION     = 2;
   const unsigned short REMOVAL      = 3;
+  [ChromeOnly]
+  const unsigned short SMIL         = 4;
 
   readonly attribute Node?          relatedNode;
   readonly attribute DOMString      prevValue;
@@ -23,11 +26,11 @@ interface MutationEvent : Event
 
   [Throws]
   void initMutationEvent(DOMString type,
-                         boolean canBubble,
-                         boolean cancelable,
-                         Node? relatedNode,
-                         DOMString prevValue,
-                         DOMString newValue,
-                         DOMString attrName,
-                         unsigned short attrChange);
+                         optional boolean canBubble = false,
+                         optional boolean cancelable = false,
+                         optional Node? relatedNode = null,
+                         optional DOMString prevValue = "",
+                         optional DOMString newValue = "",
+                         optional DOMString attrName = "",
+                         optional unsigned short attrChange = 0);
 };

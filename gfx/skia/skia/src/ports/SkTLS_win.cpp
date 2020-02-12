@@ -5,10 +5,11 @@
  * found in the LICENSE file.
  */
 #include "SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 
-#include "SkTLS.h"
+#include "SkLeanWindows.h"
 #include "SkMutex.h"
+#include "SkTLS.h"
 
 static bool gOnce = false;
 static DWORD gTlsIndex;
@@ -76,4 +77,4 @@ PIMAGE_TLS_CALLBACK skia_tls_callback = onTLSCallback;
 #endif
 }
 
-#endif//defined(SK_BUILD_FOR_WIN32)
+#endif//defined(SK_BUILD_FOR_WIN)

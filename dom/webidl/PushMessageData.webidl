@@ -7,7 +7,7 @@
  * https://w3c.github.io/push-api/
  */
 
-[Func="nsContentUtils::PushEnabled",
+[Pref="dom.push.enabled",
  Exposed=ServiceWorker]
 interface PushMessageData
 {

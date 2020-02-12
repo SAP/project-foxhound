@@ -9,10 +9,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
   onload="init()">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/chrome-harness.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/chrome-harness.js"></script>
 <body  xmlns="http://www.w3.org/1999/xhtml">
   <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=415498">Mozilla Bug 415498</a>
 
@@ -20,14 +18,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
 
   <pre id="test">
   <script class="testbody" type="application/javascript"><![CDATA[
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
     /** Test for Bug 415498 **/
-    if (Cc === undefined) {
-      var Cc = Components.classes;
-      var Ci = Components.interfaces;
-    }
-    var Cr = Components.results;
-
     SimpleTest.waitForExplicitFinish();
 
     var gTestsIterator;
@@ -52,12 +45,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
     }
 
     function nextTest() {
-      try {
-        gTestsIterator.next();
-      } catch (err) {
-          ok(err instanceof StopIteration,
-             "Some other exception was thrown than what we expected!");
-
+      let {done} = gTestsIterator.next();
+      if (done) {
         if (gConsole && gConsoleListener) {
           gConsole.unregisterListener(gConsoleListener);
         }
@@ -65,7 +54,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
       }
     }
 
-    function testsIterator() {
+    function* testsIterator() {
 
       var browser = $("browser");
       browser.addEventListener("load", function() {
@@ -74,7 +63,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
 
       // 1) This document uses addEventListener to register a method throwing an exception
       var chromeDir = getRootDirectory(window.location.href);
-      browser.loadURI(chromeDir + "bug415498-doc1.html");
+      BrowserTestUtils.loadURI(browser, chromeDir + "bug415498-doc1.html");
       yield undefined;
 
       ok(verifyErrorReceived("HierarchyRequestError"),
@@ -83,7 +72,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
 
       // 2) This document sets window.onload to register a method throwing an exception
       var chromeDir = getRootDirectory(window.location.href);
-      browser.loadURI(chromeDir + "bug415498-doc2.html");
+      BrowserTestUtils.loadURI(browser, chromeDir + "bug415498-doc2.html");
       yield undefined;
 
       ok(verifyErrorReceived("HierarchyRequestError"),
@@ -92,7 +81,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=415498
     
     function verifyErrorReceived(errorString) {
       for (var i = 0; i < gMessages.length; i++) {
-        if (gMessages[i].message.indexOf(errorString) != -1)
+        if (gMessages[i].message.includes(errorString))
           return true;
       }
       return false;

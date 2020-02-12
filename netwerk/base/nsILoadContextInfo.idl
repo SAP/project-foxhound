@@ -8,7 +8,7 @@
 %{ C++
 #include "mozilla/BasePrincipal.h"
 %}
-native OriginAttributesNativePtr(const mozilla::NeckoOriginAttributes*);
+native OriginAttributesNativePtr(const mozilla::OriginAttributes*);
 
 interface nsILoadContext;
 interface nsIDOMWindow;
@@ -23,9 +23,6 @@ interface nsIDOMWindow;
 [scriptable, builtinclass, uuid(555e2f8a-a1f6-41dd-88ca-ed4ed6b98a22)]
 interface nsILoadContextInfo : nsISupports
 {
-  const unsigned long NO_APP_ID = 0;
-  const unsigned long UNKNOWN_APP_ID = 4294967295; // UINT32_MAX
-
   /**
    * Whether the context is in a Private Browsing mode
    */
@@ -37,7 +34,7 @@ interface nsILoadContextInfo : nsISupports
   readonly attribute boolean isAnonymous;
 
   /**
-   * NeckoOriginAttributes hiding all the security context attributes
+   * OriginAttributes hiding all the security context attributes
    */
   [implicit_jscontext]
   readonly attribute jsval originAttributes;
@@ -71,7 +68,7 @@ interface nsILoadContextInfo : nsISupports
 };
 
 /**
- * Since NeckoOriginAttributes struct limits the implementation of
+ * Since OriginAttributes struct limits the implementation of
  * nsILoadContextInfo (that needs to be thread safe) to C++,
  * we need a scriptable factory to create instances of that
  * interface from JS.

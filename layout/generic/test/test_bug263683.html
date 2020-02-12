@@ -10,10 +10,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=263683
 <head>
   <title>Test for Bug 263683</title>
   <script type="application/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="application/javascript"
-          src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 
@@ -52,8 +50,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=263683
         var noHighlight = snapshotWindow(window);
 
         var controller = SpecialPowers.wrap(window).
-           QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-           getInterface(SpecialPowers.Ci.nsIWebNavigation).
+           docShell.
            QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
            getInterface(SpecialPowers.Ci.nsISelectionDisplay).
            QueryInterface(SpecialPowers.Ci.nsISelectionController);

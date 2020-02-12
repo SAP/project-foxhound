@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=557087
 -->
 <head>
   <title>Test for Bug 557087</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -42,10 +42,10 @@ var form = document.forms[0];
 form.addEventListener("submit", function() {
   ok(gEnd, gEnd ? "expected submit" : "non expected submit");
   if (++gSubmitReceived >= gExpectedSubmits) {
-    form.removeEventListener("submit", arguments.callee, false);
+    form.removeEventListener("submit", arguments.callee);
     SimpleTest.finish();
   }
-}, false);
+});
 
 var inputs = [
   document.getElementById('a'),
@@ -57,7 +57,7 @@ function doSubmit()
 {
   for (e of inputs) {
     e.focus();
-    synthesizeKey("VK_RETURN", {});
+    synthesizeKey("KEY_Enter");
   }
 }
 

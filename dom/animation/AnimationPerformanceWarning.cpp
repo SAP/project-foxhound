@@ -10,43 +10,37 @@
 
 namespace mozilla {
 
-template<uint32_t N> nsresult
-AnimationPerformanceWarning::ToLocalizedStringWithIntParams(
-  const char* aKey, nsXPIDLString& aLocalizedString) const
-{
-  nsAutoString strings[N];
-  const char16_t* charParams[N];
+template <uint32_t N>
+nsresult AnimationPerformanceWarning::ToLocalizedStringWithIntParams(
+    const char* aKey, nsAString& aLocalizedString) const {
+  AutoTArray<nsString, N> strings;
 
+  MOZ_DIAGNOSTIC_ASSERT(mParams->Length() == N);
   for (size_t i = 0, n = mParams->Length(); i < n; i++) {
-    strings[i].AppendInt((*mParams)[i]);
-    charParams[i] = strings[i].get();
+    strings.AppendElement()->AppendInt((*mParams)[i]);
   }
 
   return nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eLAYOUT_PROPERTIES, aKey, charParams, aLocalizedString);
+      nsContentUtils::eLAYOUT_PROPERTIES, aKey, strings, aLocalizedString);
 }
 
-bool
-AnimationPerformanceWarning::ToLocalizedString(
-  nsXPIDLString& aLocalizedString) const
-{
+bool AnimationPerformanceWarning::ToLocalizedString(
+    nsAString& aLocalizedString) const {
   const char* key = nullptr;
 
   switch (mType) {
-    case Type::ContentTooSmall:
-      MOZ_ASSERT(mParams && mParams->Length() == 2,
-                 "Parameter's length should be 2 for ContentTooSmall");
-
-      return NS_SUCCEEDED(
-        ToLocalizedStringWithIntParams<2>(
-          "CompositorAnimationWarningContentTooSmall", aLocalizedString));
     case Type::ContentTooLarge:
-      MOZ_ASSERT(mParams && mParams->Length() == 7,
-                 "Parameter's length should be 7 for ContentTooLarge");
+      MOZ_ASSERT(mParams && mParams->Length() == 6,
+                 "Parameter's length should be 6 for ContentTooLarge2");
 
-      return NS_SUCCEEDED(
-        ToLocalizedStringWithIntParams<7>(
-          "CompositorAnimationWarningContentTooLarge", aLocalizedString));
+      return NS_SUCCEEDED(ToLocalizedStringWithIntParams<6>(
+          "CompositorAnimationWarningContentTooLarge2", aLocalizedString));
+    case Type::ContentTooLargeArea:
+      MOZ_ASSERT(mParams && mParams->Length() == 2,
+                 "Parameter's length should be 2 for ContentTooLargeArea");
+
+      return NS_SUCCEEDED(ToLocalizedStringWithIntParams<2>(
+          "CompositorAnimationWarningContentTooLargeArea", aLocalizedString));
     case Type::TransformBackfaceVisibilityHidden:
       key = "CompositorAnimationWarningTransformBackfaceVisibilityHidden";
       break;
@@ -59,8 +53,14 @@ AnimationPerformanceWarning::ToLocalizedString(
     case Type::TransformWithGeometricProperties:
       key = "CompositorAnimationWarningTransformWithGeometricProperties";
       break;
+    case Type::TransformWithSyncGeometricAnimations:
+      key = "CompositorAnimationWarningTransformWithSyncGeometricAnimations";
+      break;
     case Type::TransformFrameInactive:
       key = "CompositorAnimationWarningTransformFrameInactive";
+      break;
+    case Type::TransformIsBlockedByImportantRules:
+      key = "CompositorAnimationWarningTransformIsBlockedByImportantRules";
       break;
     case Type::OpacityFrameInactive:
       key = "CompositorAnimationWarningOpacityFrameInactive";
@@ -68,12 +68,14 @@ AnimationPerformanceWarning::ToLocalizedString(
     case Type::HasRenderingObserver:
       key = "CompositorAnimationWarningHasRenderingObserver";
       break;
+    case Type::None:
+      MOZ_ASSERT_UNREACHABLE("Uninitialized type shouldn't be used");
+      return false;
   }
 
-  nsresult rv =
-    nsContentUtils::GetLocalizedString(nsContentUtils::eLAYOUT_PROPERTIES,
-                                       key, aLocalizedString);
+  nsresult rv = nsContentUtils::GetLocalizedString(
+      nsContentUtils::eLAYOUT_PROPERTIES, key, aLocalizedString);
   return NS_SUCCEEDED(rv);
 }
 
-} // namespace mozilla
+}  // namespace mozilla

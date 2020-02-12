@@ -1,25 +1,25 @@
-let Cu = Components.utils;
-let {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
+let { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 const NUM_USER_CONTEXTS = 3;
 
 let gHits = 0;
 
 let server = new HttpServer();
-server.registerPathHandler('/image.png', imageHandler);
-server.registerPathHandler('/file.html', fileHandler);
+server.registerPathHandler("/image.png", imageHandler);
+server.registerPathHandler("/file.html", fileHandler);
 server.start(-1);
 
-let BASE_URI = 'http://localhost:' + server.identity.primaryPort;
-let IMAGE_URI = BASE_URI + '/image.png';
-let FILE_URI = BASE_URI + '/file.html';
+let BASE_URI = "http://localhost:" + server.identity.primaryPort;
+let IMAGE_URI = BASE_URI + "/image.png";
+let FILE_URI = BASE_URI + "/file.html";
 
 function imageHandler(metadata, response) {
   gHits++;
   response.setHeader("Cache-Control", "max-age=10000", false);
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.setHeader("Content-Type", "image/png", false);
-  var body = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEUlEQVQImWP4z8AAQTAamQkAhpcI+DeMzFcAAAAASUVORK5CYII=";
+  var body =
+    "iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEUlEQVQImWP4z8AAQTAamQkAhpcI+DeMzFcAAAAASUVORK5CYII=";
   response.bodyOutputStream.write(body, body.length);
 }
 
@@ -30,30 +30,40 @@ function fileHandler(metadata, response) {
   response.bodyOutputStream.write(body, body.length);
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   // make sure userContext is enabled.
-  yield SpecialPowers.pushPrefEnv({"set": [["privacy.userContext.enabled", true]]});
+  await SpecialPowers.pushPrefEnv({
+    set: [["privacy.userContext.enabled", true]],
+  });
 });
 
 // opens `uri' in a new tab with the provided userContextId and focuses it.
 // returns the newly opened tab
-function* openTabInUserContext(uri, userContextId) {
+async function openTabInUserContext(uri, userContextId) {
   // open the tab in the correct userContextId
-  let tab = gBrowser.addTab(uri, {userContextId});
+  let tab = BrowserTestUtils.addTab(gBrowser, uri, { userContextId });
 
   // select tab and make sure its browser is focused
   gBrowser.selectedTab = tab;
-  tab.ownerDocument.defaultView.focus();
+  tab.ownerGlobal.focus();
 
   let browser = gBrowser.getBrowserForTab(tab);
-  yield BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser);
   return tab;
 }
 
-add_task(function* test() {
-  for (let userContextId = 0; userContextId < NUM_USER_CONTEXTS; userContextId++) {
-    let tab = yield* openTabInUserContext(FILE_URI, userContextId);
+add_task(async function test() {
+  for (
+    let userContextId = 0;
+    userContextId < NUM_USER_CONTEXTS;
+    userContextId++
+  ) {
+    let tab = await openTabInUserContext(FILE_URI, userContextId);
     gBrowser.removeTab(tab);
   }
-  is(gHits, NUM_USER_CONTEXTS, "should get an image request for each user contexts");
+  is(
+    gHits,
+    NUM_USER_CONTEXTS,
+    "should get an image request for each user contexts"
+  );
 });

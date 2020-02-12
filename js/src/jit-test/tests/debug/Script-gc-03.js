@@ -1,6 +1,6 @@
 // Referents of Debugger.Scripts in other compartments always survive per-compartment GC.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = Debugger(g);
 var arr = [];
 dbg.onDebuggerStatement = function (frame) { arr.push(frame.script); };
@@ -10,6 +10,6 @@ assertEq(arr.length, 100);
 gc(g);
 
 for (var i = 0; i < arr.length; i++)
-    assertEq(arr[i].lineCount, 1);
+    assertEq(arr[i].lineCount, 4);
 
 gc();

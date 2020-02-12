@@ -10,6 +10,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGRadialGradientElement : SVGGradientElement {
   [Constant]
   readonly attribute SVGAnimatedLength cx;
@@ -21,5 +22,7 @@ interface SVGRadialGradientElement : SVGGradientElement {
   readonly attribute SVGAnimatedLength fx;
   [Constant]
   readonly attribute SVGAnimatedLength fy;
-  // readonly attribute SVGAnimatedLength fr;
+  // XXX: Bug 1242048
+  // [SameObject]
+  readonly attribute SVGAnimatedLength fr;
 };

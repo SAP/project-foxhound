@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=460740
 -->
 <head>
   <title>Test for Bug 460740</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -74,7 +74,7 @@ function split(element, caretPos) {
       pos = 0;
       break;
     case CARET_MIDDLE:
-      pos = Math.floor(len/2);
+      pos = Math.floor(len / 2);
       break;
     case CARET_END:
       pos = len;
@@ -87,9 +87,9 @@ function split(element, caretPos) {
   range.setStart(element.firstChild, pos);
   range.setEnd(element.firstChild, pos);
   sel.addRange(range);
-  
+
   // simulates a [Return] keypress
-  synthesizeKey("VK_RETURN", {});
+  synthesizeKey("VK_RETURN", {shiftKey: true});
 }
 
 // count the number of non-BR elements in #content

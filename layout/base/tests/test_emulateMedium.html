@@ -6,8 +6,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=819930
   <head>
     <meta charset="utf-8">
     <title>Test for Bug 819930</title>
-    <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-    <script type="text/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
     <style>
       @media braille {
@@ -71,7 +71,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=819930
 
     <div id="content" style="display: none"></div>
     <pre id="test">
-      <script type="application/javascript;version=1.7">
+      <script type="application/javascript">
         let tests = [{name: 'braille', value: 'rgb(255, 255, 0)'},
                      {name: 'embossed', value: 'rgb(210, 180, 140)'},
                      {name: 'handheld', value: 'rgb(0, 255, 0)'},

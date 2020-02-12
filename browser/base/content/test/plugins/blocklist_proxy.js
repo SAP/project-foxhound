@@ -1,13 +1,17 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
 var Cm = Components.manager;
 
 const kBlocklistServiceUUID = "{66354bc9-7ed1-4692-ae1d-8da97d6b205e}";
 const kBlocklistServiceContractID = "@mozilla.org/extensions/blocklist;1";
-const kBlocklistServiceFactory = Cm.getClassObject(Cc[kBlocklistServiceContractID], Ci.nsIFactory);
+const kBlocklistServiceFactory = Cm.getClassObject(
+  Cc[kBlocklistServiceContractID],
+  Ci.nsIFactory
+);
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+
+SimpleTest.requestFlakyTimeout(
+  "Need to simulate blocklist calls actually taking non-0 time to return"
+);
 
 /*
  * A lightweight blocklist proxy for the testing purposes.
@@ -15,62 +19,58 @@ Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 var BlocklistProxy = {
   _uuid: null,
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsIBlocklistService,
-                                         Ci.nsITimerCallback]),
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIObserver,
+    Ci.nsIBlocklistService,
+    Ci.nsITimerCallback,
+  ]),
 
-  init: function() {
+  init() {
     if (!this._uuid) {
-      this._uuid =
-        Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator)
-                                           .generateUUID();
-      Cm.nsIComponentRegistrar.registerFactory(this._uuid, "",
-                                               "@mozilla.org/extensions/blocklist;1",
-                                               this);
+      this._uuid = Cc["@mozilla.org/uuid-generator;1"]
+        .getService(Ci.nsIUUIDGenerator)
+        .generateUUID();
+      Cm.nsIComponentRegistrar.registerFactory(
+        this._uuid,
+        "",
+        "@mozilla.org/extensions/blocklist;1",
+        this
+      );
     }
   },
 
-  uninit: function() {
+  uninit() {
     if (this._uuid) {
       Cm.nsIComponentRegistrar.unregisterFactory(this._uuid, this);
-      Cm.nsIComponentRegistrar.registerFactory(Components.ID(kBlocklistServiceUUID),
-                                               "Blocklist Service",
-                                               "@mozilla.org/extensions/blocklist;1",
-                                               kBlocklistServiceFactory);
+      Cm.nsIComponentRegistrar.registerFactory(
+        Components.ID(kBlocklistServiceUUID),
+        "Blocklist Service",
+        "@mozilla.org/extensions/blocklist;1",
+        kBlocklistServiceFactory
+      );
       this._uuid = null;
     }
   },
 
-  notify: function (aTimer) {
-  },
+  notify(aTimer) {},
 
-  observe: function (aSubject, aTopic, aData) {
-  },
+  observe(aSubject, aTopic, aData) {},
 
-  isAddonBlocklisted: function (aAddon, aAppVersion, aToolkitVersion) {
-    return false;
-  },
-
-  getAddonBlocklistState: function (aAddon, aAppVersion, aToolkitVersion) {
+  async getAddonBlocklistState(aAddon, aAppVersion, aToolkitVersion) {
+    await new Promise(r => setTimeout(r, 150));
     return 0; // STATE_NOT_BLOCKED
   },
 
-  getPluginBlocklistState: function (aPluginTag, aAppVersion, aToolkitVersion) {
+  async getPluginBlocklistState(aPluginTag, aAppVersion, aToolkitVersion) {
+    await new Promise(r => setTimeout(r, 150));
     return 0; // STATE_NOT_BLOCKED
   },
 
-  getAddonBlocklistURL: function (aAddon, aAppVersion, aToolkitVersion) {
+  async getPluginBlockURL(aPluginTag) {
+    await new Promise(r => setTimeout(r, 150));
     return "";
   },
-
-  getPluginBlocklistURL: function (aPluginTag) {
-    return "";
-  },
-
-  getPluginInfoURL: function (aPluginTag) {
-    return "";
-  },
-}
+};
 
 BlocklistProxy.init();
 addEventListener("unload", () => {

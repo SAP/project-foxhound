@@ -6,11 +6,12 @@
 #ifndef SplitNodeTransaction_h
 #define SplitNodeTransaction_h
 
-#include "mozilla/EditTransactionBase.h" // for EditTxn, etc.
-#include "nsCOMPtr.h"                   // for nsCOMPtr
+#include "mozilla/EditorDOMPoint.h"  // for RangeBoundary, EditorRawDOMPoint
+#include "mozilla/EditTransactionBase.h"  // for EditTxn, etc.
+#include "nsCOMPtr.h"                     // for nsCOMPtr
 #include "nsCycleCollectionParticipant.h"
-#include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS_INHERITED
-#include "nscore.h"                     // for NS_IMETHOD
+#include "nsISupportsImpl.h"  // for NS_DECL_ISUPPORTS_INHERITED
+#include "nscore.h"           // for NS_IMETHOD
 
 class nsIContent;
 class nsINode;
@@ -23,18 +24,28 @@ class EditorBase;
  * A transaction that splits a node into two identical nodes, with the children
  * divided between the new nodes.
  */
-class SplitNodeTransaction final : public EditTransactionBase
-{
-public:
+class SplitNodeTransaction final : public EditTransactionBase {
+ private:
+  template <typename PT, typename CT>
+  SplitNodeTransaction(EditorBase& aEditorBase,
+                       const EditorDOMPointBase<PT, CT>& aStartOfRightNode);
+
+ public:
   /**
-   * @param aEditorBase The provider of core editing operations
-   * @param aNode       The node to split
-   * @param aOffset     The location within aNode to do the split.  aOffset may
-   *                    refer to children of aNode, or content of aNode.  The
-   *                    left node will have child|content 0..aOffset-1.
+   * Creates a transaction to create a new node (left node) identical to an
+   * existing node (right node), and split the contents between the same point
+   * in both nodes.
+   *
+   * @param aEditorBase         The provider of core editing operations.
+   * @param aStartOfRightNode   The point to split.  Its container will be
+   *                            the right node, i.e., become the new node's
+   *                            next sibling.  And the point will be start
+   *                            of the right node.
    */
-  SplitNodeTransaction(EditorBase& aEditorBase, nsIContent& aNode,
-                       int32_t aOffset);
+  template <typename PT, typename CT>
+  static already_AddRefed<SplitNodeTransaction> Create(
+      EditorBase& aEditorBase,
+      const EditorDOMPointBase<PT, CT>& aStartOfRightNode);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SplitNodeTransaction,
@@ -46,18 +57,14 @@ public:
 
   nsIContent* GetNewNode();
 
-protected:
+ protected:
   virtual ~SplitNodeTransaction();
 
-  EditorBase& mEditorBase;
+  RefPtr<EditorBase> mEditorBase;
 
-  // The node to operate upon.
-  nsCOMPtr<nsIContent> mExistingRightNode;
-
-  // The offset into mExistingRightNode where its children are split.  mOffset
-  // is the index of the first child in the right node.  -1 means the new node
-  // gets no children.
-  int32_t mOffset;
+  // The container is existing right node (will be split).
+  // The point referring this is start of the right node after it's split.
+  EditorDOMPoint mStartOfRightNode;
 
   // The node we create when splitting mExistingRightNode.
   nsCOMPtr<nsIContent> mNewLeftNode;
@@ -66,6 +73,6 @@ protected:
   nsCOMPtr<nsINode> mParent;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef SplitNodeTransaction_h
+#endif  // #ifndef SplitNodeTransaction_h

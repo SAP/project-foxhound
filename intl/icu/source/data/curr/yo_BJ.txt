@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/yo_BJ.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 yo_BJ{
     Currencies{
         AED{
@@ -27,6 +21,10 @@ yo_BJ{
         BIF{
             "BIF",
             "Faransi ti Orílɛ́ède Bùùrúndì",
+        }
+        BRL{
+            "R$",
+            "Owó ti Orílɛ̀-èdè Brazil",
         }
         BWP{
             "BWP",
@@ -74,11 +72,11 @@ yo_BJ{
         }
         EUR{
             "€",
-            "Uro",
+            "owó Yúrò",
         }
         GBP{
             "£",
-            "Pɔɔn ti Orílɛ́ède Bírítísì",
+            "Pɔ́n-ùn ti Orilɛ̀-èdè Gɛ̀ɛ́sì",
         }
         GHC{
             "GHC",
@@ -130,6 +128,10 @@ yo_BJ{
         }
         MRO{
             "MRO",
+            "Ouguiya ti Orílɛ́ède Maritania (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "Ouguiya ti Orílɛ́ède Maritania",
         }
         MUR{
@@ -150,7 +152,11 @@ yo_BJ{
         }
         NGN{
             "₦",
-            "Naira ti Orílɛ́ède Nàìjíríà",
+            "Náìrà ti Orílɛ̀-èdè Nàìjíríà",
+        }
+        RUB{
+            "₽",
+            "Owó ruble ti ilɛ̀ Rɔ́shíà",
         }
         RWF{
             "RWF",
@@ -186,6 +192,10 @@ yo_BJ{
         }
         STD{
             "STD",
+            "Dobira ti Orílɛ́ède Sao tome Ati Pirisipe (1977–2017)",
+        }
+        STN{
+            "STN",
             "Dobira ti Orílɛ́ède Sao tome Ati Pirisipe",
         }
         SZL{
@@ -205,8 +215,8 @@ yo_BJ{
             "Siile ti Orílɛ́ède Uganda",
         }
         USD{
-            "US$",
-            "Dɔla ti Orílɛ́ède Amerika",
+            "$",
+            "Dɔ́là",
         }
         XAF{
             "FCFA",
@@ -215,6 +225,10 @@ yo_BJ{
         XOF{
             "CFA",
             "Faransi ti Orílɛ́ède BIKEAO",
+        }
+        XXX{
+            "¤",
+            "owóníná àìmɔ̀",
         }
         ZAR{
             "ZAR",
@@ -233,5 +247,35 @@ yo_BJ{
             "Dɔla ti Orílɛ́ède Siibabuwe",
         }
     }
-    Version{"2.1.19.80"}
+    Currencies%narrow{
+        BRL{"R$"}
+        CNY{"¥"}
+        EUR{"€"}
+        GBP{"£"}
+        INR{"₹"}
+        JPY{"¥"}
+        RUB{"₽"}
+        USD{"$"}
+    }
+    CurrencyPlurals{
+        BRL{
+            other{"Awon owó ti Orílɛ̀-èdè Brazil"}
+        }
+        EUR{
+            other{"Awon owó Yúrò"}
+        }
+        RUB{
+            other{"Owó ruble ti ilɛ̀ Rɔ́shíà"}
+        }
+        USD{
+            other{"Dɔ́là ti Orílɛ̀-Èdè Amɛ́ríkà"}
+        }
+        XXX{
+            other{"owóníná àìmɔ̀"}
+        }
+    }
+    CurrencyUnitPatterns{
+        other{"{0} {1}"}
+    }
+    Version{"2.1.48.77"}
 }

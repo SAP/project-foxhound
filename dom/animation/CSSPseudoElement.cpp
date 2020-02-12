@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,84 +7,79 @@
 #include "mozilla/dom/CSSPseudoElement.h"
 #include "mozilla/dom/CSSPseudoElementBinding.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/KeyframeEffectBinding.h"
 #include "mozilla/AnimationComparator.h"
 
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CSSPseudoElement, mParentElement)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CSSPseudoElement, mOriginatingElement)
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(CSSPseudoElement, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(CSSPseudoElement, Release)
 
-CSSPseudoElement::CSSPseudoElement(Element* aElement,
-                                   CSSPseudoElementType aType)
-  : mParentElement(aElement)
-  , mPseudoType(aType)
-{
+CSSPseudoElement::CSSPseudoElement(dom::Element* aElement,
+                                   PseudoStyleType aType)
+    : mOriginatingElement(aElement), mPseudoType(aType) {
   MOZ_ASSERT(aElement);
-  MOZ_ASSERT(aType == CSSPseudoElementType::after ||
-             aType == CSSPseudoElementType::before,
+  MOZ_ASSERT(aType == PseudoStyleType::after ||
+                 aType == PseudoStyleType::before ||
+                 aType == PseudoStyleType::marker,
              "Unexpected Pseudo Type");
 }
 
-CSSPseudoElement::~CSSPseudoElement()
-{
+CSSPseudoElement::~CSSPseudoElement() {
   // Element might have been unlinked already, so we have to do null check.
-  if (mParentElement) {
-    mParentElement->DeleteProperty(
-      GetCSSPseudoElementPropertyAtom(mPseudoType));
+  if (mOriginatingElement) {
+    mOriginatingElement->DeleteProperty(
+        GetCSSPseudoElementPropertyAtom(mPseudoType));
   }
 }
 
-ParentObject
-CSSPseudoElement::GetParentObject() const
-{
-  return mParentElement->GetParentObject();
+ParentObject CSSPseudoElement::GetParentObject() const {
+  return mOriginatingElement->GetParentObject();
 }
 
-JSObject*
-CSSPseudoElement::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return CSSPseudoElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* CSSPseudoElement::WrapObject(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return CSSPseudoElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-CSSPseudoElement::GetAnimations(const AnimationFilter& filter,
-                                nsTArray<RefPtr<Animation>>& aRetVal)
-{
-  nsIDocument* doc = mParentElement->GetComposedDoc();
+void CSSPseudoElement::GetAnimations(const GetAnimationsOptions& aOptions,
+                                     nsTArray<RefPtr<Animation>>& aRetVal) {
+  Document* doc = mOriginatingElement->GetComposedDoc();
   if (doc) {
-    doc->FlushPendingNotifications(Flush_Style);
+    // We don't need to explicitly flush throttled animations here, since
+    // updating the animation style of (pseudo-)elements will never affect the
+    // set of running animations and it's only the set of running animations
+    // that is important here.
+    doc->FlushPendingNotifications(
+        ChangesToFlush(FlushType::Style, false /* flush animations */));
   }
 
-  Element::GetAnimationsUnsorted(mParentElement, mPseudoType, aRetVal);
+  Element::GetAnimationsUnsorted(mOriginatingElement, mPseudoType, aRetVal);
   aRetVal.Sort(AnimationPtrComparator<RefPtr<Animation>>());
 }
 
-already_AddRefed<Animation>
-CSSPseudoElement::Animate(
-    JSContext* aContext,
-    JS::Handle<JSObject*> aKeyframes,
+already_AddRefed<Animation> CSSPseudoElement::Animate(
+    JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
     const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-    ErrorResult& aError)
-{
+    ErrorResult& aError) {
   Nullable<ElementOrCSSPseudoElement> target;
   target.SetValue().SetAsCSSPseudoElement() = this;
   return Element::Animate(target, aContext, aKeyframes, aOptions, aError);
 }
 
-/* static */ already_AddRefed<CSSPseudoElement>
-CSSPseudoElement::GetCSSPseudoElement(Element* aElement,
-                                      CSSPseudoElementType aType)
-{
+/* static */
+already_AddRefed<CSSPseudoElement> CSSPseudoElement::GetCSSPseudoElement(
+    dom::Element* aElement, PseudoStyleType aType) {
   if (!aElement) {
     return nullptr;
   }
 
-  nsIAtom* propName = CSSPseudoElement::GetCSSPseudoElementPropertyAtom(aType);
+  nsAtom* propName = CSSPseudoElement::GetCSSPseudoElementPropertyAtom(aType);
   RefPtr<CSSPseudoElement> pseudo =
-    static_cast<CSSPseudoElement*>(aElement->GetProperty(propName));
+      static_cast<CSSPseudoElement*>(aElement->GetProperty(propName));
   if (pseudo) {
     return pseudo.forget();
   }
@@ -102,22 +97,26 @@ CSSPseudoElement::GetCSSPseudoElement(Element* aElement,
   return pseudo.forget();
 }
 
-/* static */ nsIAtom*
-CSSPseudoElement::GetCSSPseudoElementPropertyAtom(CSSPseudoElementType aType)
-{
+/* static */
+nsAtom* CSSPseudoElement::GetCSSPseudoElementPropertyAtom(
+    PseudoStyleType aType) {
   switch (aType) {
-    case CSSPseudoElementType::before:
+    case PseudoStyleType::before:
       return nsGkAtoms::cssPseudoElementBeforeProperty;
 
-    case CSSPseudoElementType::after:
+    case PseudoStyleType::after:
       return nsGkAtoms::cssPseudoElementAfterProperty;
 
+    case PseudoStyleType::marker:
+      return nsGkAtoms::cssPseudoElementMarkerProperty;
+
     default:
-      NS_NOTREACHED("Should not try to get CSSPseudoElement "
-                    "other than ::before or ::after");
+      MOZ_ASSERT_UNREACHABLE(
+          "Should not try to get CSSPseudoElement "
+          "other than ::before, ::after or ::marker");
       return nullptr;
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

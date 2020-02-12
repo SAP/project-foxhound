@@ -52,13 +52,12 @@ fetch: function(callback)
   var self = this;
 
   var cacheStorage = OfflineTest.getActiveStorage();
-  cacheStorage.asyncOpenURI(CommonUtils.makeURI(url), "", Ci.nsICacheStorage.OPEN_READONLY, this);
+  cacheStorage.asyncOpenURI(CommonUtils.makeURI(url), "", Ci.nsICacheStorage.OPEN_READONLY,
+                            SpecialPowers.wrapCallbackObject(this));
 }
 };
 
 var OfflineTest = {
-
-_allowedByDefault: false,
 
 _hasSlave: false,
 
@@ -73,17 +72,7 @@ _SJSsStated: [],
 
 setupChild: function()
 {
-  if (this._allowedByDefault) {
-    this._masterWindow = window;
-    return true;
-  }
-
-  if (window.parent.OfflineTest._hasSlave) {
-    return false;
-  }
-
-  this._masterWindow = window.top;
-
+  this._masterWindow = window;
   return true;
 },
 
@@ -96,43 +85,8 @@ setupChild: function()
  */
 setup: function()
 {
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
-  try {
-    this._allowedByDefault = SpecialPowers.getBoolPref("offline-apps.allow_by_default");
-  } catch (e) {}
-
-  if (this._allowedByDefault) {
     this._masterWindow = window;
-
     return true;
-  }
-
-  if (!window.opener || !window.opener.OfflineTest ||
-      !window.opener.OfflineTest._hasSlave) {
-    // Offline applications must be toplevel windows and have the
-    // offline-app permission.  Because we were loaded without the
-    // offline-app permission and (probably) in an iframe, we need to
-    // enable the pref and spawn a new window to perform the actual
-    // tests.  It will use this window to report successes and
-    // failures.
-
-    if (SpecialPowers.testPermission("offline-app", Ci.nsIPermissionManager.ALLOW_ACTION, document)) {
-      ok(false, "Previous test failed to clear offline-app permission!  Expect failures.");
-    }
-    SpecialPowers.addPermission("offline-app", Ci.nsIPermissionManager.ALLOW_ACTION, document);
-
-    // Tests must run as toplevel windows.  Open a slave window to run
-    // the test.
-    this._hasSlave = true;
-    window.open(window.location, "offlinetest");
-
-    return false;
-  }
-
-  this._masterWindow = window.opener;
-
-  return true;
 },
 
 teardownAndFinish: function()
@@ -161,24 +115,18 @@ teardown: function(callback)
 
 finish: function()
 {
-  if (this._allowedByDefault) {
-    SimpleTest.executeSoon(SimpleTest.finish);
-  } else if (this._masterWindow) {
-    // Slave window: pass control back to master window, close itself.
-    this._masterWindow.SimpleTest.executeSoon(this._masterWindow.OfflineTest.finish);
-    window.close();
-  } else {
-    // Master window: finish test.
-    SimpleTest.finish();
-  }
+  SimpleTest.executeSoon(SimpleTest.finish);
 },
 
 //
 // Mochitest wrappers - These forward tests to the proper mochitest window.
 //
-ok: function(condition, name, diag)
+ok: function(condition, name)
 {
-  return this._masterWindow.SimpleTest.ok(condition, name, diag);
+  // Forward all arguments to SimpleTest.ok where we will check that ok() was
+  // called with at most 2 arguments.
+  return this._masterWindow.SimpleTest.ok.apply(this._masterWindow.SimpleTest,
+    arguments);
 },
 
 is: function(a, b, name)
@@ -256,7 +204,7 @@ waitForAdd: function(url, onFinished) {
   // Check every half second for ten seconds.
   var numChecks = 20;
 
-  var waitForAddListener = {
+  var waitForAddListener = SpecialPowers.wrapCallbackObject({
     onCacheEntryCheck: function() { return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED; },
     onCacheEntryAvailable: function(entry, isnew, applicationCache, status) {
       if (entry) {
@@ -272,7 +220,7 @@ waitForAdd: function(url, onFinished) {
 
       setTimeout(OfflineTest.priv(waitFunc), 500);
     }
-  };
+  });
 
   var waitFunc = function() {
     var cacheStorage = OfflineTest.getActiveStorage();
@@ -301,16 +249,14 @@ manifestURL: function(overload)
   var ios = Cc["@mozilla.org/network/io-service;1"]
             .getService(Ci.nsIIOService)
 
-  var baseURI = ios.newURI(window.location.href, null, null);
+  var baseURI = ios.newURI(window.location.href);
   return ios.newURI(manifestURLspec, null, baseURI);
 },
 
 loadContext: function()
 {
-  return SpecialPowers.wrap(window).QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                                   .getInterface(SpecialPowers.Ci.nsIWebNavigation)
-                                   .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-                                   .getInterface(SpecialPowers.Ci.nsILoadContext);
+  return SpecialPowers.wrap(window).docShell
+                                   .QueryInterface(SpecialPowers.Ci.nsILoadContext);
 },
 
 loadContextInfo: function()
@@ -324,8 +270,16 @@ getActiveCache: function(overload)
   // one associated with this window.
   var serv = Cc["@mozilla.org/network/application-cache-service;1"]
              .getService(Ci.nsIApplicationCacheService);
+
   var groupID = serv.buildGroupIDForInfo(this.manifestURL(overload), this.loadContextInfo());
-  return serv.getActiveCache(groupID);
+  var cache;
+  // Sometimes this throws a NS_ERROR_UNEXPECTED when cache isn't init
+  try {
+    cache = serv.getActiveCache(groupID);
+  } catch (e) {
+    cache = false;
+  }
+  return cache;
 },
 
 getActiveStorage: function()
@@ -380,7 +334,7 @@ _checkCache: function(cacheStorage, url, expectEntry, callback)
     return;
   }
 
-  var _checkCacheListener = {
+  var _checkCacheListener = SpecialPowers.wrapCallbackObject({
     onCacheEntryCheck: function() { return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED; },
     onCacheEntryAvailable: function(entry, isnew, applicationCache, status) {
       if (entry) {
@@ -410,7 +364,7 @@ _checkCache: function(cacheStorage, url, expectEntry, callback)
       }
       if (callback) setTimeout(OfflineTest.priv(callback), 0);
     }
-  };
+  });
 
   cacheStorage.asyncOpenURI(CommonUtils.makeURI(url), "", Ci.nsICacheStorage.OPEN_READONLY, _checkCacheListener);
 },

@@ -5,16 +5,45 @@
 /* globals DebuggerServer */
 "use strict";
 
+XPCOMUtils.defineLazyGetter(this, "require", () => {
+  let { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+  return require;
+});
+
 XPCOMUtils.defineLazyGetter(this, "DebuggerServer", () => {
-  let { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-  let { DebuggerServer } = require("devtools/server/main");
+  let { DebuggerServer } = require("devtools/server/debugger-server");
   return DebuggerServer;
+});
+XPCOMUtils.defineLazyGetter(this, "SocketListener", () => {
+  let { SocketListener } = require("devtools/shared/security/socket");
+  return SocketListener;
 });
 
 var RemoteDebugger = {
-  init() {
+  init(aWindow) {
+    this._windowType = "navigator:browser";
+
     USBRemoteDebugger.init();
     WiFiRemoteDebugger.init();
+
+    const listener = event => {
+      if (event.target !== aWindow) {
+        return;
+      }
+
+      const newType =
+        event.type === "activate" ? "navigator:browser" : "navigator:geckoview";
+      if (this._windowType === newType) {
+        return;
+      }
+
+      this._windowType = newType;
+      if (this.isAnyEnabled) {
+        this.initServer();
+      }
+    };
+    aWindow.addEventListener("activate", listener, { mozSystemGroup: true });
+    aWindow.addEventListener("deactivate", listener, { mozSystemGroup: true });
   },
 
   get isAnyEnabled() {
@@ -54,22 +83,26 @@ var RemoteDebugger = {
     } else {
       this._promptingForAllow = this._promptForTCP(session);
     }
-    this._promptingForAllow.then(() => this._promptingForAllow = null);
+    this._promptingForAllow.then(() => (this._promptingForAllow = null));
 
     return this._promptingForAllow;
   },
 
   _promptForUSB(session) {
-    if (session.authentication !== 'PROMPT') {
+    if (session.authentication !== "PROMPT") {
       // This dialog is not prepared for any other authentication method at
       // this time.
       return DebuggerServer.AuthenticationResult.DENY;
     }
 
     return new Promise(resolve => {
-      let title = Strings.browser.GetStringFromName("remoteIncomingPromptTitle");
+      let title = Strings.browser.GetStringFromName(
+        "remoteIncomingPromptTitle"
+      );
       let msg = Strings.browser.GetStringFromName("remoteIncomingPromptUSB");
-      let allow = Strings.browser.GetStringFromName("remoteIncomingPromptAllow");
+      let allow = Strings.browser.GetStringFromName(
+        "remoteIncomingPromptAllow"
+      );
       let deny = Strings.browser.GetStringFromName("remoteIncomingPromptDeny");
 
       // Make prompt. Note: button order is in reverse.
@@ -78,8 +111,8 @@ var RemoteDebugger = {
         hint: "remotedebug",
         title: title,
         message: msg,
-        buttons: [ allow, deny ],
-        priority: 1
+        buttons: [allow, deny],
+        priority: 1,
       });
 
       prompt.show(data => {
@@ -94,20 +127,24 @@ var RemoteDebugger = {
   },
 
   _promptForTCP(session) {
-    if (session.authentication !== 'OOB_CERT' || !session.client.cert) {
+    if (session.authentication !== "OOB_CERT" || !session.client.cert) {
       // This dialog is not prepared for any other authentication method at
       // this time.
       return DebuggerServer.AuthenticationResult.DENY;
     }
 
     return new Promise(resolve => {
-      let title = Strings.browser.GetStringFromName("remoteIncomingPromptTitle");
-      let msg = Strings.browser.formatStringFromName("remoteIncomingPromptTCP", [
-        session.client.host,
-        session.client.port
-      ], 2);
+      let title = Strings.browser.GetStringFromName(
+        "remoteIncomingPromptTitle"
+      );
+      let msg = Strings.browser.formatStringFromName(
+        "remoteIncomingPromptTCP",
+        [session.client.host, session.client.port]
+      );
       let scan = Strings.browser.GetStringFromName("remoteIncomingPromptScan");
-      let scanAndRemember = Strings.browser.GetStringFromName("remoteIncomingPromptScanAndRemember");
+      let scanAndRemember = Strings.browser.GetStringFromName(
+        "remoteIncomingPromptScanAndRemember"
+      );
       let deny = Strings.browser.GetStringFromName("remoteIncomingPromptDeny");
 
       // Make prompt. Note: button order is in reverse.
@@ -116,8 +153,8 @@ var RemoteDebugger = {
         hint: "remotedebug",
         title: title,
         message: msg,
-        buttons: [ scan, scanAndRemember, deny ],
-        priority: 1
+        buttons: [scan, scanAndRemember, deny],
+        priority: 1,
       });
 
       prompt.show(data => {
@@ -151,55 +188,65 @@ var RemoteDebugger = {
       return this._receivingOOB;
     }
 
-    this._receivingOOB = Messaging.sendRequestForResult({
-      type: "DevToolsAuth:Scan"
-    }).then(data => {
-      return JSON.parse(data);
-    }, () => {
-      let title = Strings.browser.GetStringFromName("remoteQRScanFailedPromptTitle");
-      let msg = Strings.browser.GetStringFromName("remoteQRScanFailedPromptMessage");
-      let ok = Strings.browser.GetStringFromName("remoteQRScanFailedPromptOK");
-      let prompt = new Prompt({
-        window: null,
-        hint: "remotedebug",
-        title: title,
-        message: msg,
-        buttons: [ ok ],
-        priority: 1
-      });
-      prompt.show();
-    });
+    this._receivingOOB = WindowEventDispatcher.sendRequestForResult({
+      type: "DevToolsAuth:Scan",
+    }).then(
+      data => {
+        return JSON.parse(data);
+      },
+      () => {
+        let title = Strings.browser.GetStringFromName(
+          "remoteQRScanFailedPromptTitle"
+        );
+        let msg = Strings.browser.GetStringFromName(
+          "remoteQRScanFailedPromptMessage"
+        );
+        let ok = Strings.browser.GetStringFromName(
+          "remoteQRScanFailedPromptOK"
+        );
+        let prompt = new Prompt({
+          window: null,
+          hint: "remotedebug",
+          title: title,
+          message: msg,
+          buttons: [ok],
+          priority: 1,
+        });
+        prompt.show();
+      }
+    );
 
-    this._receivingOOB.then(() => this._receivingOOB = null);
+    this._receivingOOB.then(() => (this._receivingOOB = null));
 
     return this._receivingOOB;
   },
 
   initServer: function() {
-    if (DebuggerServer.initialized) {
-      return;
-    }
-
     DebuggerServer.init();
 
     // Add browser and Fennec specific actors
-    DebuggerServer.addBrowserActors();
-    DebuggerServer.registerModule("resource://gre/modules/dbg-browser-actors.js");
+    DebuggerServer.registerAllActors();
+    const {
+      createRootActor,
+    } = require("resource://gre/modules/dbg-browser-actors.js");
+    DebuggerServer.setRootActor(createRootActor);
 
     // Allow debugging of chrome for any process
     DebuggerServer.allowChromeProcess = true;
-  }
+    DebuggerServer.chromeWindowType = this._windowType;
+    // Force the Server to stay alive even if there are no connections at the moment.
+    DebuggerServer.keepAlive = true;
+  },
 };
 
-RemoteDebugger.allowConnection =
-  RemoteDebugger.allowConnection.bind(RemoteDebugger);
-RemoteDebugger.receiveOOB =
-  RemoteDebugger.receiveOOB.bind(RemoteDebugger);
+RemoteDebugger.allowConnection = RemoteDebugger.allowConnection.bind(
+  RemoteDebugger
+);
+RemoteDebugger.receiveOOB = RemoteDebugger.receiveOOB.bind(RemoteDebugger);
 
 var USBRemoteDebugger = {
-
   init() {
-    Services.prefs.addObserver("devtools.", this, false);
+    Services.prefs.addObserver("devtools.", this);
 
     if (this.isEnabled) {
       this.start();
@@ -213,8 +260,10 @@ var USBRemoteDebugger = {
 
     switch (data) {
       case "devtools.remote.usb.enabled":
-        Services.prefs.setBoolPref("devtools.debugger.remote-enabled",
-                                   RemoteDebugger.isAnyEnabled);
+        Services.prefs.setBoolPref(
+          "devtools.debugger.remote-enabled",
+          RemoteDebugger.isAnyEnabled
+        );
         if (this.isEnabled) {
           this.start();
         } else {
@@ -243,18 +292,17 @@ var USBRemoteDebugger = {
 
     RemoteDebugger.initServer();
 
-    let portOrPath =
+    const portOrPath =
       Services.prefs.getCharPref("devtools.debugger.unix-domain-socket") ||
       Services.prefs.getIntPref("devtools.debugger.remote-port");
 
     try {
       dump("Starting USB debugger on " + portOrPath);
-      let AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("PROMPT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = RemoteDebugger.allowConnection;
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = portOrPath;
-      this._listener.authenticator = authenticator;
+      const socketOptions = { authenticator, portOrPath };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
     } catch (e) {
       dump("Unable to start USB debugger server: " + e);
@@ -272,14 +320,12 @@ var USBRemoteDebugger = {
     } catch (e) {
       dump("Unable to stop USB debugger server: " + e);
     }
-  }
-
+  },
 };
 
 var WiFiRemoteDebugger = {
-
   init() {
-    Services.prefs.addObserver("devtools.", this, false);
+    Services.prefs.addObserver("devtools.", this);
 
     if (this.isEnabled) {
       this.start();
@@ -293,13 +339,17 @@ var WiFiRemoteDebugger = {
 
     switch (data) {
       case "devtools.remote.wifi.enabled":
-        Services.prefs.setBoolPref("devtools.debugger.remote-enabled",
-                                   RemoteDebugger.isAnyEnabled);
+        Services.prefs.setBoolPref(
+          "devtools.debugger.remote-enabled",
+          RemoteDebugger.isAnyEnabled
+        );
         // Allow remote debugging on non-local interfaces when WiFi debug is
         // enabled
         // TODO: Bug 1034411: Lock down to WiFi interface only
-        Services.prefs.setBoolPref("devtools.debugger.force-local",
-                                   !this.isEnabled);
+        Services.prefs.setBoolPref(
+          "devtools.debugger.force-local",
+          !this.isEnabled
+        );
         if (this.isEnabled) {
           this.start();
         } else {
@@ -322,15 +372,17 @@ var WiFiRemoteDebugger = {
 
     try {
       dump("Starting WiFi debugger");
-      let AuthenticatorType = DebuggerServer.Authenticators.get("OOB_CERT");
-      let authenticator = new AuthenticatorType.Server();
+      const AuthenticatorType = DebuggerServer.Authenticators.get("OOB_CERT");
+      const authenticator = new AuthenticatorType.Server();
       authenticator.allowConnection = RemoteDebugger.allowConnection;
       authenticator.receiveOOB = RemoteDebugger.receiveOOB;
-      this._listener = DebuggerServer.createListener();
-      this._listener.portOrPath = -1 /* any available port */;
-      this._listener.authenticator = authenticator;
-      this._listener.discoverable = true;
-      this._listener.encryption = true;
+      const socketOptions = {
+        authenticator,
+        discoverable: true,
+        encryption: true,
+        portOrPath: -1,
+      };
+      this._listener = new SocketListener(DebuggerServer, socketOptions);
       this._listener.open();
       let port = this._listener.port;
       dump("Started WiFi debugger on " + port);
@@ -350,6 +402,5 @@ var WiFiRemoteDebugger = {
     } catch (e) {
       dump("Unable to stop WiFi debugger server: " + e);
     }
-  }
-
+  },
 };

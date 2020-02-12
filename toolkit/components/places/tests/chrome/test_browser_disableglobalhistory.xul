@@ -5,17 +5,16 @@
 
 <window title="Test disableglobalhistory attribute on remote browsers"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
   </body>
 
-  <script type="text/javascript;version=1.7">
+  <script type="text/javascript">
   SimpleTest.waitForExplicitFinish();
 
-  let w = window.open('browser_disableglobalhistory.xul', '_blank', 'chrome,resizable=yes,width=400,height=600');
+  let w = docShell.rootTreeItem.domWindow.openDialog('browser_disableglobalhistory.xul', '_blank', 'chrome,resizable=yes,width=400,height=600', window);
 
   function done() {
     w.close();

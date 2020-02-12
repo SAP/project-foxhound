@@ -4,11 +4,11 @@
 
 /* globals chrome */
 
-function* testPermission(options) {
-  function background(options) {
+async function testPermission(options) {
+  function background(bgOptions) {
     browser.test.sendMessage("typeof-namespace", {
-      browser: typeof browser[options.namespace],
-      chrome: typeof chrome[options.namespace],
+      browser: typeof browser[bgOptions.namespace],
+      chrome: typeof chrome[bgOptions.namespace],
     });
   }
 
@@ -18,28 +18,44 @@ function* testPermission(options) {
 
   let extension = ExtensionTestUtils.loadExtension(extensionDetails);
 
-  yield extension.startup();
+  await extension.startup();
 
-  let types = yield extension.awaitMessage("typeof-namespace");
-  equal(types.browser, "undefined", `Type of browser.${options.namespace} without manifest entry`);
-  equal(types.chrome, "undefined", `Type of chrome.${options.namespace} without manifest entry`);
+  let types = await extension.awaitMessage("typeof-namespace");
+  equal(
+    types.browser,
+    "undefined",
+    `Type of browser.${options.namespace} without manifest entry`
+  );
+  equal(
+    types.chrome,
+    "undefined",
+    `Type of chrome.${options.namespace} without manifest entry`
+  );
 
-  yield extension.unload();
+  await extension.unload();
 
   extensionDetails.manifest = options.manifest;
   extension = ExtensionTestUtils.loadExtension(extensionDetails);
 
-  yield extension.startup();
+  await extension.startup();
 
-  types = yield extension.awaitMessage("typeof-namespace");
-  equal(types.browser, "object", `Type of browser.${options.namespace} with manifest entry`);
-  equal(types.chrome, "object", `Type of chrome.${options.namespace} with manifest entry`);
+  types = await extension.awaitMessage("typeof-namespace");
+  equal(
+    types.browser,
+    "object",
+    `Type of browser.${options.namespace} with manifest entry`
+  );
+  equal(
+    types.chrome,
+    "object",
+    `Type of chrome.${options.namespace} with manifest entry`
+  );
 
-  yield extension.unload();
+  await extension.unload();
 }
 
-add_task(function* test_browserAction() {
-  yield testPermission({
+add_task(async function test_browserAction() {
+  await testPermission({
     namespace: "browserAction",
     manifest: {
       browser_action: {},
@@ -47,8 +63,8 @@ add_task(function* test_browserAction() {
   });
 });
 
-add_task(function* test_pageAction() {
-  yield testPermission({
+add_task(async function test_pageAction() {
+  await testPermission({
     namespace: "pageAction",
     manifest: {
       page_action: {},

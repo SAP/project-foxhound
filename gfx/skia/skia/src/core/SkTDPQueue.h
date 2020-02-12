@@ -9,6 +9,9 @@
 #define SkTDPQueue_DEFINED
 
 #include "SkTDArray.h"
+#include "SkTSort.h"
+
+#include <utility>
 
 /**
  * This class implements a priority queue. T is the type of the elements in the queue. LESS is a
@@ -24,9 +27,16 @@
 template <typename T,
           bool (*LESS)(const T&, const T&),
           int* (*INDEX)(const T&) = (int* (*)(const T&))nullptr>
-class SkTDPQueue : public SkNoncopyable {
+class SkTDPQueue {
 public:
     SkTDPQueue() {}
+    SkTDPQueue(int reserve) { fArray.setReserve(reserve); }
+
+    SkTDPQueue(SkTDPQueue&&) = default;
+    SkTDPQueue& operator =(SkTDPQueue&&) = default;
+
+    SkTDPQueue(const SkTDPQueue&) = delete;
+    SkTDPQueue& operator=(const SkTDPQueue&) = delete;
 
     /** Number of items in the queue. */
     int count() const { return fArray.count(); }
@@ -96,6 +106,19 @@ public:
         to peek(). Otherwise, there is no guarantee about ordering of elements in the queue. */
     T at(int i) const { return fArray[i]; }
 
+    /** Sorts the queue into priority order.  The queue is only guarenteed to remain in sorted order
+     *  until any other operation, other than at(), is performed.
+     */
+    void sort() {
+        if (fArray.count() > 1) {
+            SkTQSort<T>(fArray.begin(), fArray.end() - 1, LESS);
+            for (int i = 0; i < fArray.count(); i++) {
+                this->setIndex(i);
+            }
+            this->validate();
+        }
+    }
+
 private:
     static int LeftOf(int x) { SkASSERT(x >= 0); return 2 * x + 1; }
     static int ParentOf(int x) { SkASSERT(x > 0); return (x - 1) >> 1; }
@@ -118,7 +141,8 @@ private:
             }
             int p = ParentOf(index);
             if (LESS(fArray[index], fArray[p])) {
-                SkTSwap(fArray[index], fArray[p]);
+                using std::swap;
+                swap(fArray[index], fArray[p]);
                 this->setIndex(index);
                 index = p;
                 percolated = true;
@@ -144,7 +168,8 @@ private:
             if (child + 1 >= fArray.count()) {
                 // We only have a left child.
                 if (LESS(fArray[child], fArray[index])) {
-                    SkTSwap(fArray[child], fArray[index]);
+                    using std::swap;
+                    swap(fArray[child], fArray[index]);
                     this->setIndex(child);
                     this->setIndex(index);
                     return;
@@ -156,7 +181,8 @@ private:
 
             // Check if we need to swap.
             if (LESS(fArray[child], fArray[index])) {
-                SkTSwap(fArray[child], fArray[index]);
+                using std::swap;
+                swap(fArray[child], fArray[index]);
                 this->setIndex(index);
                 index = child;
             } else {
@@ -188,8 +214,6 @@ private:
     }
 
     SkTDArray<T> fArray;
-
-    typedef SkNoncopyable INHERITED;
 };
 
 #endif

@@ -4,103 +4,105 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ComputedStyle.h"
 #include "mozilla/dom/SVGEllipseElement.h"
 #include "mozilla/dom/SVGEllipseElementBinding.h"
+#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/RefPtr.h"
+#include "SVGGeometryProperty.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Ellipse)
+NS_IMPL_NS_NEW_SVG_ELEMENT(Ellipse)
 
 using namespace mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGEllipseElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGEllipseElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGEllipseElement::WrapNode(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return SVGEllipseElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsSVGElement::LengthInfo SVGEllipseElement::sLengthInfo[4] =
-{
-  { &nsGkAtoms::cx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::cy, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
-  { &nsGkAtoms::rx, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::X },
-  { &nsGkAtoms::ry, 0, nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER, SVGContentUtils::Y },
+SVGElement::LengthInfo SVGEllipseElement::sLengthInfo[4] = {
+    {nsGkAtoms::cx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::cy, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
+    {nsGkAtoms::rx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::X},
+    {nsGkAtoms::ry, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
+     SVGContentUtils::Y},
 };
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGEllipseElement::SVGEllipseElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGEllipseElementBase(aNodeInfo)
-{
+SVGEllipseElement::SVGEllipseElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGEllipseElementBase(std::move(aNodeInfo)) {}
+
+bool SVGEllipseElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  return IsInLengthInfo(aAttribute, sLengthInfo) ||
+         SVGEllipseElementBase::IsAttributeMapped(aAttribute);
 }
 
+namespace SVGT = SVGGeometryProperty::Tags;
+
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGEllipseElement)
 
 //----------------------------------------------------------------------
 // nsIDOMSVGEllipseElement methods
 
-already_AddRefed<SVGAnimatedLength>
-SVGEllipseElement::Cx()
-{
+already_AddRefed<DOMSVGAnimatedLength> SVGEllipseElement::Cx() {
   return mLengthAttributes[CX].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGEllipseElement::Cy()
-{
+already_AddRefed<DOMSVGAnimatedLength> SVGEllipseElement::Cy() {
   return mLengthAttributes[CY].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGEllipseElement::Rx()
-{
+already_AddRefed<DOMSVGAnimatedLength> SVGEllipseElement::Rx() {
   return mLengthAttributes[RX].ToDOMAnimatedLength(this);
 }
 
-already_AddRefed<SVGAnimatedLength>
-SVGEllipseElement::Ry()
-{
+already_AddRefed<DOMSVGAnimatedLength> SVGEllipseElement::Ry() {
   return mLengthAttributes[RY].ToDOMAnimatedLength(this);
 }
 
 //----------------------------------------------------------------------
-// nsSVGElement methods
+// SVGElement methods
 
-/* virtual */ bool
-SVGEllipseElement::HasValidDimensions() const
-{
-  return mLengthAttributes[RX].IsExplicitlySet() &&
-         mLengthAttributes[RX].GetAnimValInSpecifiedUnits() > 0 &&
-         mLengthAttributes[RY].IsExplicitlySet() &&
-         mLengthAttributes[RY].GetAnimValInSpecifiedUnits() > 0;
+/* virtual */
+bool SVGEllipseElement::HasValidDimensions() const {
+  float rx, ry;
+
+  MOZ_ASSERT(GetPrimaryFrame());
+  SVGGeometryProperty::ResolveAll<SVGT::Rx, SVGT::Ry>(this, &rx, &ry);
+
+  return rx > 0 && ry > 0;
 }
 
-nsSVGElement::LengthAttributesInfo
-SVGEllipseElement::GetLengthInfo()
-{
+SVGElement::LengthAttributesInfo SVGEllipseElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
                               ArrayLength(sLengthInfo));
 }
 
 //----------------------------------------------------------------------
-// nsSVGPathGeometryElement methods
+// SVGGeometryElement methods
 
-bool
-SVGEllipseElement::GetGeometryBounds(Rect* aBounds,
-                                     const StrokeOptions& aStrokeOptions,
-                                     const Matrix& aToBoundsSpace,
-                                     const Matrix* aToNonScalingStrokeSpace)
-{
+bool SVGEllipseElement::GetGeometryBounds(
+    Rect* aBounds, const StrokeOptions& aStrokeOptions,
+    const Matrix& aToBoundsSpace, const Matrix* aToNonScalingStrokeSpace) {
   float x, y, rx, ry;
-  GetAnimatedLengthValues(&x, &y, &rx, &ry, nullptr);
+
+  MOZ_ASSERT(GetPrimaryFrame());
+  SVGGeometryProperty::ResolveAll<SVGT::Cx, SVGT::Cy, SVGT::Rx, SVGT::Ry>(
+      this, &x, &y, &rx, &ry);
 
   if (rx <= 0.f || ry <= 0.f) {
     // Rendering of the element is disabled
@@ -117,8 +119,8 @@ SVGEllipseElement::GetGeometryBounds(Rect* aBounds,
           MOZ_ASSERT(!aToNonScalingStrokeSpace->IsSingular());
           Rect userBounds(x - rx, y - ry, 2 * rx, 2 * ry);
           SVGContentUtils::RectilinearGetStrokeBounds(
-            userBounds, aToBoundsSpace, *aToNonScalingStrokeSpace,
-            aStrokeOptions.mLineWidth, aBounds);
+              userBounds, aToBoundsSpace, *aToNonScalingStrokeSpace,
+              aStrokeOptions.mLineWidth, aBounds);
           return true;
         }
         return false;
@@ -134,11 +136,12 @@ SVGEllipseElement::GetGeometryBounds(Rect* aBounds,
   return false;
 }
 
-already_AddRefed<Path>
-SVGEllipseElement::BuildPath(PathBuilder* aBuilder)
-{
+already_AddRefed<Path> SVGEllipseElement::BuildPath(PathBuilder* aBuilder) {
   float x, y, rx, ry;
-  GetAnimatedLengthValues(&x, &y, &rx, &ry, nullptr);
+
+  SVGGeometryProperty::ResolveAllAllowFallback<SVGT::Cx, SVGT::Cy, SVGT::Rx,
+                                               SVGT::Ry>(this, &x, &y, &rx,
+                                                         &ry);
 
   if (rx <= 0.0f || ry <= 0.0f) {
     return nullptr;
@@ -149,5 +152,33 @@ SVGEllipseElement::BuildPath(PathBuilder* aBuilder)
   return aBuilder->Finish();
 }
 
-} // namespace dom
-} // namespace mozilla
+bool SVGEllipseElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
+                                              const ComputedStyle& aOldStyle) {
+  auto *newSVGReset = aNewStyle.StyleSVGReset(),
+       *oldSVGReset = aOldStyle.StyleSVGReset();
+
+  return newSVGReset->mCx != oldSVGReset->mCx ||
+         newSVGReset->mCy != oldSVGReset->mCy ||
+         newSVGReset->mRx != oldSVGReset->mRx ||
+         newSVGReset->mRy != oldSVGReset->mRy;
+}
+
+nsCSSPropertyID SVGEllipseElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
+  switch (aAttrEnum) {
+    case CX:
+      return eCSSProperty_cx;
+    case CY:
+      return eCSSProperty_cy;
+    case RX:
+      return eCSSProperty_rx;
+    case RY:
+      return eCSSProperty_ry;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown attr enum");
+      return eCSSProperty_UNKNOWN;
+  }
+}
+
+}  // namespace dom
+}  // namespace mozilla

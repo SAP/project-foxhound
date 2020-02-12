@@ -4,8 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsSVGElement.h"
 #include "DOMSVGLengthList.h"
+
+#include "SVGElement.h"
 #include "DOMSVGLength.h"
 #include "nsError.h"
 #include "SVGAnimatedLengthList.h"
@@ -18,11 +19,10 @@
 // local helper functions
 namespace {
 
-using mozilla::DOMSVGLength;
+using mozilla::dom::DOMSVGLength;
 
 void UpdateListIndicesFromIndex(FallibleTArray<DOMSVGLength*>& aItemsArray,
-                                uint32_t aStartingIndex)
-{
+                                uint32_t aStartingIndex) {
   uint32_t length = aItemsArray.Length();
 
   for (uint32_t i = aStartingIndex; i < length; ++i) {
@@ -32,9 +32,10 @@ void UpdateListIndicesFromIndex(FallibleTArray<DOMSVGLength*>& aItemsArray,
   }
 }
 
-} // namespace
+}  // namespace
 
 namespace mozilla {
+namespace dom {
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
 // clear our DOMSVGAnimatedLengthList's weak ref to us to be safe. (The other
@@ -55,7 +56,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGLengthList)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DOMSVGLengthList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAList)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(DOMSVGLengthList)
   NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
@@ -69,30 +69,27 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLengthList)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-JSObject*
-DOMSVGLengthList::WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto)
-{
-  return mozilla::dom::SVGLengthListBinding::Wrap(cx, this, aGivenProto);
+JSObject* DOMSVGLengthList::WrapObject(JSContext* cx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return mozilla::dom::SVGLengthList_Binding::Wrap(cx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Helper class: AutoChangeLengthListNotifier
 // Stack-based helper class to pair calls to WillChangeLengthList and
 // DidChangeLengthList.
-class MOZ_RAII AutoChangeLengthListNotifier
-{
-public:
-  explicit AutoChangeLengthListNotifier(DOMSVGLengthList* aLengthList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : mLengthList(aLengthList)
-  {
+class MOZ_RAII AutoChangeLengthListNotifier {
+ public:
+  explicit AutoChangeLengthListNotifier(
+      DOMSVGLengthList* aLengthList MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mLengthList(aLengthList) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_ASSERT(mLengthList, "Expecting non-null lengthList");
     mEmptyOrOldValue =
-      mLengthList->Element()->WillChangeLengthList(mLengthList->AttrEnum());
+        mLengthList->Element()->WillChangeLengthList(mLengthList->AttrEnum());
   }
 
-  ~AutoChangeLengthListNotifier()
-  {
+  ~AutoChangeLengthListNotifier() {
     mLengthList->Element()->DidChangeLengthList(mLengthList->AttrEnum(),
                                                 mEmptyOrOldValue);
     if (mLengthList->IsAnimating()) {
@@ -100,15 +97,13 @@ public:
     }
   }
 
-private:
+ private:
   DOMSVGLengthList* const mLengthList;
-  nsAttrValue       mEmptyOrOldValue;
+  nsAttrValue mEmptyOrOldValue;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-void
-DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength)
-{
+void DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength) {
   uint32_t oldLength = mItems.Length();
 
   if (aNewLength > DOMSVGLength::MaxListIndex()) {
@@ -144,18 +139,15 @@ DOMSVGLengthList::InternalListLengthWillChange(uint32_t aNewLength)
   }
 }
 
-SVGLengthList&
-DOMSVGLengthList::InternalList() const
-{
-  SVGAnimatedLengthList *alist = Element()->GetAnimatedLengthList(AttrEnum());
-  return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal : alist->mBaseVal;
+SVGLengthList& DOMSVGLengthList::InternalList() const {
+  SVGAnimatedLengthList* alist = Element()->GetAnimatedLengthList(AttrEnum());
+  return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal
+                                            : alist->mBaseVal;
 }
 
 // ----------------------------------------------------------------------------
 
-void
-DOMSVGLengthList::Clear(ErrorResult& aError)
-{
+void DOMSVGLengthList::Clear(ErrorResult& aError) {
   if (IsAnimValList()) {
     aError.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return;
@@ -173,10 +165,8 @@ DOMSVGLengthList::Clear(ErrorResult& aError)
   }
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::Initialize(DOMSVGLength& newItem,
-                             ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::Initialize(
+    DOMSVGLength& newItem, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -191,10 +181,6 @@ DOMSVGLengthList::Initialize(DOMSVGLength& newItem,
   // prevent that from happening we have to do the clone here, if necessary.
 
   RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
   if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
     domItem = domItem->Copy();
   }
@@ -205,9 +191,8 @@ DOMSVGLengthList::Initialize(DOMSVGLength& newItem,
   return InsertItemBefore(*domItem, 0, error);
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::GetItem(uint32_t index, ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::GetItem(uint32_t index,
+                                                         ErrorResult& error) {
   bool found;
   RefPtr<DOMSVGLength> item = IndexedGetter(index, found, error);
   if (!found) {
@@ -216,9 +201,8 @@ DOMSVGLengthList::GetItem(uint32_t index, ErrorResult& error)
   return item.forget();
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::IndexedGetter(uint32_t index, bool& found, ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::IndexedGetter(
+    uint32_t index, bool& found, ErrorResult& error) {
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
@@ -229,11 +213,8 @@ DOMSVGLengthList::IndexedGetter(uint32_t index, bool& found, ErrorResult& error)
   return nullptr;
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
-                                   uint32_t index,
-                                   ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
+    DOMSVGLength& newItem, uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -246,12 +227,8 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
   }
 
   RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
   if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
-    domItem = domItem->Copy(); // must do this before changing anything!
+    domItem = domItem->Copy();  // must do this before changing anything!
   }
 
   // Ensure we have enough memory so we can avoid complex error handling below:
@@ -262,7 +239,7 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
   }
   if (AnimListMirrorsBaseList()) {
     if (!mAList->mAnimVal->mItems.SetCapacity(
-          mAList->mAnimVal->mItems.Length() + 1, fallible)) {
+            mAList->mAnimVal->mItems.Length() + 1, fallible)) {
       error.Throw(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
@@ -285,27 +262,21 @@ DOMSVGLengthList::InsertItemBefore(DOMSVGLength& newItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::ReplaceItem(DOMSVGLength& newItem,
-                              uint32_t index,
-                              ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::ReplaceItem(
+    DOMSVGLength& newItem, uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
   }
 
-  RefPtr<DOMSVGLength> domItem = &newItem;
-  if (!domItem) {
-    error.Throw(NS_ERROR_DOM_SVG_WRONG_TYPE_ERR);
-    return nullptr;
-  }
   if (index >= LengthNoFlush()) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
   }
+
+  RefPtr<DOMSVGLength> domItem = &newItem;
   if (domItem->HasOwner() || domItem->IsReflectingAttribute()) {
-    domItem = domItem->Copy(); // must do this before changing anything!
+    domItem = domItem->Copy();  // must do this before changing anything!
   }
 
   AutoChangeLengthListNotifier notifier(this);
@@ -325,10 +296,8 @@ DOMSVGLengthList::ReplaceItem(DOMSVGLength& newItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::RemoveItem(uint32_t index,
-                             ErrorResult& error)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::RemoveItem(
+    uint32_t index, ErrorResult& error) {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
     return nullptr;
@@ -360,21 +329,18 @@ DOMSVGLengthList::RemoveItem(uint32_t index,
   return result.forget();
 }
 
-already_AddRefed<DOMSVGLength>
-DOMSVGLengthList::GetItemAt(uint32_t aIndex)
-{
+already_AddRefed<DOMSVGLength> DOMSVGLengthList::GetItemAt(uint32_t aIndex) {
   MOZ_ASSERT(aIndex < mItems.Length());
 
   if (!mItems[aIndex]) {
-    mItems[aIndex] = new DOMSVGLength(this, AttrEnum(), aIndex, IsAnimValList());
+    mItems[aIndex] =
+        new DOMSVGLength(this, AttrEnum(), aIndex, IsAnimValList());
   }
   RefPtr<DOMSVGLength> result = mItems[aIndex];
   return result.forget();
 }
 
-void
-DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
-{
+void DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -391,9 +357,7 @@ DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
 }
 
-void
-DOMSVGLengthList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex)
-{
+void DOMSVGLengthList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
@@ -416,4 +380,5 @@ DOMSVGLengthList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex)
   UpdateListIndicesFromIndex(animVal->mItems, aIndex);
 }
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

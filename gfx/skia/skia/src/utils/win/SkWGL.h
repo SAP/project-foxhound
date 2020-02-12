@@ -10,6 +10,8 @@
 #ifndef SkWGL_DEFINED
 #define SkWGL_DEFINED
 
+#include "SkLeanWindows.h"
+
 /**
  * Working with WGL extensions can be a pain. Among the reasons is that You must
  * have a GL context to get the proc addresses, but you want to use the procs to
@@ -22,21 +24,14 @@
  * an extension.
  */
 
-#if !defined(WIN32_LEAN_AND_MEAN)
-    #define WIN32_LEAN_AND_MEAN
-    #define SK_LOCAL_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#if defined(SK_LOCAL_LEAN_AND_MEAN)
-    #undef WIN32_LEAN_AND_MEAN
-    #undef SK_LOCAL_LEAN_AND_MEAN
-#endif
-
 #define SK_WGL_DRAW_TO_WINDOW                       0x2001
 #define SK_WGL_ACCELERATION                         0x2003
 #define SK_WGL_SUPPORT_OPENGL                       0x2010
 #define SK_WGL_DOUBLE_BUFFER                        0x2011
 #define SK_WGL_COLOR_BITS                           0x2014
+#define SK_WGL_RED_BITS                             0x2015
+#define SK_WGL_GREEN_BITS                           0x2017
+#define SK_WGL_BLUE_BITS                            0x2019
 #define SK_WGL_ALPHA_BITS                           0x201B
 #define SK_WGL_STENCIL_BITS                         0x2023
 #define SK_WGL_FULL_ACCELERATION                    0x2027
@@ -88,7 +83,8 @@ public:
      * priority are:
      *     * Choose formats with the smallest sample count that is >=
      *       desiredSampleCount (or the largest sample count if all formats have
-     *       fewer samples than desiredSampleCount.)
+     *       fewer samples than desiredSampleCount.) If desiredSampleCount is 1 then
+     *       all msaa formats are excluded from consideration.
      *     * Choose formats with the fewest color samples when coverage sampling
      *       is available.
      *     * If the above rules leave multiple formats, choose the one that
@@ -110,16 +106,16 @@ private:
     typedef int (WINAPI* ReleasePbufferDCProc)(HPBUFFER, HDC);
     typedef BOOL (WINAPI* DestroyPbufferProc)(HPBUFFER);
 
-    GetExtensionsStringProc fGetExtensionsString;
-    ChoosePixelFormatProc fChoosePixelFormat;
-    GetPixelFormatAttribfvProc fGetPixelFormatAttribfv;
-    GetPixelFormatAttribivProc fGetPixelFormatAttribiv;
-    CreateContextAttribsProc fCreateContextAttribs;
-    SwapIntervalProc fSwapInterval;
-    CreatePbufferProc fCreatePbuffer;
-    GetPbufferDCProc fGetPbufferDC;
-    ReleasePbufferDCProc fReleasePbufferDC;
-    DestroyPbufferProc fDestroyPbuffer;
+    static GetExtensionsStringProc fGetExtensionsString;
+    static ChoosePixelFormatProc fChoosePixelFormat;
+    static GetPixelFormatAttribfvProc fGetPixelFormatAttribfv;
+    static GetPixelFormatAttribivProc fGetPixelFormatAttribiv;
+    static CreateContextAttribsProc fCreateContextAttribs;
+    static SwapIntervalProc fSwapInterval;
+    static CreatePbufferProc fCreatePbuffer;
+    static GetPbufferDCProc fGetPbufferDC;
+    static ReleasePbufferDCProc fReleasePbufferDC;
+    static DestroyPbufferProc fDestroyPbuffer;
 };
 
 enum SkWGLContextRequest {
@@ -135,10 +131,12 @@ enum SkWGLContextRequest {
 /**
  * Helper to create an OpenGL context for a DC using WGL. Configs with a sample count >= to
  * msaaSampleCount are preferred but if none is available then a context with a lower sample count
- * (including non-MSAA) will be created. If preferCoreProfile is true but a core profile cannot be
- * created then a compatible profile context will be created.
+ * (including non-MSAA) will be created. If msaaSampleCount is 1 then this will fail if a non-msaa
+ * context cannot be created. If preferCoreProfile is true but a core profile cannot be created
+ * then a compatible profile context will be created.
  */
-HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, SkWGLContextRequest context);
+HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, bool deepColor, SkWGLContextRequest context,
+                         HGLRC shareContext = nullptr);
 
 /**
  * Helper class for creating a pbuffer context and deleting all the handles when finished. This
@@ -147,8 +145,8 @@ HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, SkWGLContextRequest contex
  */
 class SkWGLPbufferContext : public SkRefCnt {
 public:
-    static SkWGLPbufferContext* Create(HDC parentDC, int msaaSampleCount,
-                                       SkWGLContextRequest contextType);
+    static sk_sp<SkWGLPbufferContext> Create(HDC parentDC, SkWGLContextRequest contextType,
+                                             HGLRC shareContext);
 
     virtual ~SkWGLPbufferContext();
 

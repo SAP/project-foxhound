@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -24,30 +23,40 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
 
   info("Select the DIV node and verify the rule-view shows rules");
-  yield selectNode("div", inspector);
-  ok(view.element.querySelectorAll(".ruleview-rule").length,
-    "The rule-view shows rules for the div element");
+  await selectNode("div", inspector);
+  ok(
+    view.element.querySelectorAll(".ruleview-rule").length,
+    "The rule-view shows rules for the div element"
+  );
 
   info("Select various MathML nodes and verify the rule-view is empty");
-  yield selectNode("math", inspector);
-  ok(!view.element.querySelectorAll(".ruleview-rule").length,
-    "The rule-view is empty for the math element");
+  await selectNode("math", inspector);
+  ok(
+    !view.element.querySelectorAll(".ruleview-rule").length,
+    "The rule-view is empty for the math element"
+  );
 
-  yield selectNode("msubsup", inspector);
-  ok(!view.element.querySelectorAll(".ruleview-rule").length,
-    "The rule-view is empty for the msubsup element");
+  await selectNode("msubsup", inspector);
+  ok(
+    !view.element.querySelectorAll(".ruleview-rule").length,
+    "The rule-view is empty for the msubsup element"
+  );
 
-  yield selectNode("mn", inspector);
-  ok(!view.element.querySelectorAll(".ruleview-rule").length,
-    "The rule-view is empty for the mn element");
+  await selectNode("mn", inspector);
+  ok(
+    !view.element.querySelectorAll(".ruleview-rule").length,
+    "The rule-view is empty for the mn element"
+  );
 
   info("Select again the DIV node and verify the rule-view shows rules");
-  yield selectNode("div", inspector);
-  ok(view.element.querySelectorAll(".ruleview-rule").length,
-    "The rule-view shows rules for the div element");
+  await selectNode("div", inspector);
+  ok(
+    view.element.querySelectorAll(".ruleview-rule").length,
+    "The rule-view shows rules for the div element"
+  );
 });

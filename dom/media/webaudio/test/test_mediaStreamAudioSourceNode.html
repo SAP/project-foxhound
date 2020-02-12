@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <head>
   <title>Test MediaStreamAudioSourceNode processing is correct</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="webaudio.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -23,7 +23,7 @@ function createBuffer(context) {
 var gTest = {
   length: 2048,
   skipOfflineContextTests: true,
-  createGraph: function(context) {
+  createGraph(context) {
     var sourceGraph = new AudioContext();
     var source = sourceGraph.createBufferSource();
     source.buffer = createBuffer(context);
@@ -31,13 +31,13 @@ var gTest = {
     source.connect(dest);
     source.start(0);
 
-    var mediaStreamSource = context.createMediaStreamSource(dest.stream);
+    var mediaStreamSource = new MediaStreamAudioSourceNode(context, { mediaStream: dest.stream });
     // channelCount and channelCountMode should have no effect
     mediaStreamSource.channelCount = 1;
     mediaStreamSource.channelCountMode = "explicit";
     return mediaStreamSource;
   },
-  createExpectedBuffers: function(context) {
+  createExpectedBuffers(context) {
     return createBuffer(context);
   },
 };

@@ -1,11 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 /**
  * Dummy nsIAutoCompleteInput source that returns
@@ -17,7 +15,6 @@ function AutoCompleteInputBase(aSearches) {
   this.searches = aSearches;
 }
 AutoCompleteInputBase.prototype = {
-
   // Array of AutoCompleteSearch names
   searches: null,
 
@@ -37,7 +34,7 @@ AutoCompleteInputBase.prototype = {
   get selectionEnd() {
     return this._selEnd;
   },
-  selectTextRange: function(aStart, aEnd) {
+  selectTextRange(aStart, aEnd) {
     this._selStart = aStart;
     this._selEnd = aEnd;
   },
@@ -46,12 +43,12 @@ AutoCompleteInputBase.prototype = {
     return this.searches.length;
   },
 
-  getSearchAt: function(aIndex) {
+  getSearchAt(aIndex) {
     return this.searches[aIndex];
   },
 
-  onSearchBegin: function() {},
-  onSearchComplete: function() {},
+  onSearchBegin() {},
+  onSearchComplete() {},
 
   popupOpen: false,
 
@@ -63,8 +60,8 @@ AutoCompleteInputBase.prototype = {
   },
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteInput])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteInput]),
+};
 
 /**
  * nsIAutoCompleteResult implementation
@@ -73,7 +70,6 @@ function AutoCompleteResultBase(aValues) {
   this._values = aValues;
 }
 AutoCompleteResultBase.prototype = {
-
   // Arrays
   _values: null,
   _comments: [],
@@ -85,44 +81,39 @@ AutoCompleteResultBase.prototype = {
 
   defaultIndex: -1,
 
-  _typeAheadResult: false,
-  get typeAheadResult() {
-    return this._typeAheadResult;
-  },
-
   get matchCount() {
     return this._values.length;
   },
 
-  getValueAt: function(aIndex) {
+  getValueAt(aIndex) {
     return this._values[aIndex];
   },
 
-  getLabelAt: function(aIndex) {
+  getLabelAt(aIndex) {
     return this.getValueAt(aIndex);
   },
 
-  getCommentAt: function(aIndex) {
+  getCommentAt(aIndex) {
     return this._comments[aIndex];
   },
 
-  getStyleAt: function(aIndex) {
+  getStyleAt(aIndex) {
     return this._styles[aIndex];
   },
 
-  getImageAt: function(aIndex) {
+  getImageAt(aIndex) {
     return "";
   },
 
-  getFinalCompleteValueAt: function(aIndex) {
+  getFinalCompleteValueAt(aIndex) {
     return this._finalCompleteValues[aIndex] || this._values[aIndex];
   },
 
-  removeValueAt: function (aRowIndex, aRemoveFromDb) {},
+  removeValueAt(aRowIndex, aRemoveFromDb) {},
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult])
-}
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompleteResult]),
+};
 
 /**
  * nsIAutoCompleteSearch implementation that always returns
@@ -133,34 +124,32 @@ function AutoCompleteSearchBase(aName, aResult) {
   this._result = aResult;
 }
 AutoCompleteSearchBase.prototype = {
-
   // Search name. Used by AutoCompleteController
   name: null,
 
   // AutoCompleteResult
   _result: null,
 
-  startSearch: function(aSearchString,
-                        aSearchParam,
-                        aPreviousResult,
-                        aListener) {
+  startSearch(aSearchString, aSearchParam, aPreviousResult, aListener) {
     var result = this._result;
 
     result.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
     aListener.onSearchResult(this, result);
   },
 
-  stopSearch: function() {},
+  stopSearch() {},
 
   // nsISupports implementation
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory,
-                                         Ci.nsIAutoCompleteSearch]),
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIFactory,
+    Ci.nsIAutoCompleteSearch,
+  ]),
 
   // nsIFactory implementation
-  createInstance: function(outer, iid) {
+  createInstance(outer, iid) {
     return this.QueryInterface(iid);
-  }
-}
+  },
+};
 
 function AutocompletePopupBase(input) {
   this.input = input;
@@ -178,7 +167,7 @@ AutocompletePopupBase.prototype = {
       }
     }
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompletePopup]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIAutoCompletePopup]),
 };
 
 /**
@@ -187,13 +176,14 @@ AutocompletePopupBase.prototype = {
  */
 function registerAutoCompleteSearch(aSearch) {
   var name = "@mozilla.org/autocomplete/search;1?name=" + aSearch.name;
-  var cid = Cc["@mozilla.org/uuid-generator;1"].
-            getService(Ci.nsIUUIDGenerator).
-            generateUUID();
+  var cid = Cc["@mozilla.org/uuid-generator;1"]
+    .getService(Ci.nsIUUIDGenerator)
+    .generateUUID();
 
   var desc = "Test AutoCompleteSearch";
-  var componentManager = Components.manager
-                                   .QueryInterface(Ci.nsIComponentRegistrar);
+  var componentManager = Components.manager.QueryInterface(
+    Ci.nsIComponentRegistrar
+  );
   componentManager.registerFactory(cid, desc, name, aSearch);
 
   // Keep the id on the object so we can unregister later
@@ -204,8 +194,8 @@ function registerAutoCompleteSearch(aSearch) {
  * Helper to unregister an AutoCompleteSearch.
  */
 function unregisterAutoCompleteSearch(aSearch) {
-  var componentManager = Components.manager
-                                   .QueryInterface(Ci.nsIComponentRegistrar);
+  var componentManager = Components.manager.QueryInterface(
+    Ci.nsIComponentRegistrar
+  );
   componentManager.unregisterFactory(aSearch.cid, aSearch);
 }
-

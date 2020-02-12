@@ -4,15 +4,13 @@
                  type="text/css"?>
 <window title="NPAPI Private Mode Tests"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
-  <script type="application/javascript"
-          src="chrome://mochikit/content/chrome-harness.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/chrome-harness.js" />
   <script type="application/javascript" src="plugin-utils.js"></script>
   <script type="application/javascript">
     setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
   </script>
-<body xmlns="http://www.w3.org/1999/xhtml" onload="runTests()">
+<body xmlns="http://www.w3.org/1999/xhtml" onload="runTestsCallback()">
 <embed id="plugin1" type="application/x-test" width="200" height="200"></embed>
 <embed id="plugin2" type="application/x-test" width="200" height="200"></embed>
 </body>
@@ -20,16 +18,7 @@
 <![CDATA[
 SimpleTest.waitForExplicitFinish();
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
-function runTests() {
-  // Allow all cookies, then run the actual tests
-  SpecialPowers.pushPrefEnv({"set": [["network.cookie.cookieBehavior", 0]]}, runTestsCallback);
-}
-
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
 function whenDelayedStartupFinished(aWindow, aCallback) {
   Services.obs.addObserver(function observer(aSubject, aTopic) {
@@ -37,12 +26,18 @@ function whenDelayedStartupFinished(aWindow, aCallback) {
       Services.obs.removeObserver(observer, aTopic);
       SimpleTest.executeSoon(aCallback);
     }
-  }, "browser-delayed-startup-finished", false);
+  }, "browser-delayed-startup-finished");
 }
 
-function runTestsCallback() {
+async function runTestsCallback() {
   var pluginElement1 = document.getElementById("plugin1");
   var pluginElement2 = document.getElementById("plugin2");
+
+  await SimpleTest.promiseWaitForCondition(() => pluginElement1.queryPrivateModeState !== undefined,
+                                           "Waited too long for plugin to activate");
+  await SimpleTest.promiseWaitForCondition(() => pluginElement2.queryPrivateModeState !== undefined,
+                                           "Waited too long for plugin to activate");
+
 
   var state1 = false;
   var state2 = false;
@@ -58,16 +53,8 @@ function runTestsCallback() {
   is(state1, false, "Browser returned incorrect private mode state.");
   is(state2, false, "Browser returned incorrect private mode state.");
 
-  pluginElement1.setCookie("foo");
-  is(pluginElement1.getCookie(), "foo", "Cookie was set and retrieved correctly in public mode.");
-
   // open a window with private mode and get the references of the elements.
-  var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIWebNavigation)
-                    .QueryInterface(Ci.nsIDocShellTreeItem)
-                    .rootTreeItem
-                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindow);
+  var mainWindow = window.docShell.rootTreeItem.domWindow;
   var contentPage = getRootDirectory(window.location.href) + "privatemode_perwindowpb.xul";
 
   function testOnWindow(aIsPrivate, aCallback) {
@@ -75,14 +62,14 @@ function runTestsCallback() {
     whenDelayedStartupFinished(win, function () {
       win.addEventListener("DOMContentLoaded", function onInnerLoad() {
         if (win.content.location.href == "about:privatebrowsing") {
-          win.gBrowser.loadURI(contentPage);
+          BrowserTestUtils.loadURI(win.gBrowser, contentPage)
           return;
         }
         win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
         win.gBrowser.selectedBrowser.focus();
         SimpleTest.executeSoon(function() { aCallback(win); });
       }, true);
-      SimpleTest.executeSoon(function() { win.gBrowser.loadURI(contentPage); });
+      SimpleTest.executeSoon(function() { BrowserTestUtils.loadURI(win.gBrowser, contentPage); });
     });
   }
 
@@ -101,16 +88,9 @@ function runTestsCallback() {
     is(officialState1, true, "Querying private mode reported incorrectly");
     is(officialState2, true, "Querying private mode reported incorrectly");
 
-    // It would be nice to assert that we don't see the public cookie in private mode,
-    // but the NPAPI complains when the resulting string is empty.
-    // is(pluginElement1.getCookie(), "", "Public cookie was not retrieved in private mode.");
-    pluginElement1.setCookie("bar");
-    is(pluginElement1.getCookie(), "bar", "Cookie was set and retrieved correctly in private mode.");
-
     aWin.close();
 
     pluginElement1 = document.getElementById("plugin1");
-    is(pluginElement1.getCookie(), "foo", "Private cookie was not retrieved in public mode.");
 
     SimpleTest.finish();
   });

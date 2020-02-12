@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -15,47 +14,67 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.toolbox.host");
 });
 
-add_task(function* () {
-  let { inspector, toolbox } = yield openInspectorForURL(TEST_URL);
-  yield runTests(inspector);
+add_task(async function() {
+  info(
+    "Switch to 2 pane inspector to avoid sidebar width issues with opening events"
+  );
+  await pushPref("devtools.inspector.three-pane-enabled", false);
+  const { inspector, toolbox } = await openInspectorForURL(TEST_URL);
+  await runTests(inspector);
 
-  yield toolbox.switchHost("window");
-  yield runTests(inspector);
+  await toolbox.switchHost("window");
 
-  yield toolbox.switchHost("bottom");
-  yield runTests(inspector);
+  // Switching hosts is not correctly waiting when DevTools run in content frame
+  // See Bug 1571421.
+  await wait(1000);
 
-  yield toolbox.destroy();
+  await runTests(inspector);
+
+  await toolbox.switchHost("bottom");
+
+  // Switching hosts is not correctly waiting when DevTools run in content frame
+  // See Bug 1571421.
+  await wait(1000);
+
+  await runTests(inspector);
+
+  await toolbox.destroy();
 });
 
-function* runTests(inspector) {
-  let markupContainer = yield getContainerForSelector("#events", inspector);
-  let evHolder = markupContainer.elt.querySelector(".markupview-events");
-  let tooltip = inspector.markup.eventDetailsTooltip;
+async function runTests(inspector) {
+  const markupContainer = await getContainerForSelector("#events", inspector);
+  const evHolder = markupContainer.elt.querySelector(
+    ".inspector-badge.interactive[data-event]"
+  );
+  const tooltip = inspector.markup.eventDetailsTooltip;
 
   info("Clicking to open event tooltip.");
 
   let onInspectorUpdated = inspector.once("inspector-updated");
-  let onTooltipShown = tooltip.once("shown");
-  EventUtils.synthesizeMouseAtCenter(evHolder, {}, inspector.markup.doc.defaultView);
+  const onTooltipShown = tooltip.once("shown");
+  EventUtils.synthesizeMouseAtCenter(
+    evHolder,
+    {},
+    inspector.markup.doc.defaultView
+  );
 
-  yield onTooltipShown;
+  await onTooltipShown;
   // New node is selected when clicking on the events bubble, wait for inspector-updated.
-  yield onInspectorUpdated;
+  await onInspectorUpdated;
 
   ok(tooltip.isVisible(), "EventTooltip visible.");
 
   onInspectorUpdated = inspector.once("inspector-updated");
-  let onTooltipHidden = tooltip.once("hidden");
+  const onTooltipHidden = tooltip.once("hidden");
 
   info("Click on another tag to hide the event tooltip");
-  let h1 = yield getContainerForSelector("h1", inspector);
-  let tag = h1.elt.querySelector(".tag");
+  const script = await getContainerForSelector("script", inspector);
+  const tag = script.elt.querySelector(".tag");
   EventUtils.synthesizeMouseAtCenter(tag, {}, inspector.markup.doc.defaultView);
 
-  yield onTooltipHidden;
+  await onTooltipHidden;
   // New node is selected, wait for inspector-updated.
-  yield onInspectorUpdated;
+  await onInspectorUpdated;
 
   ok(!tooltip.isVisible(), "EventTooltip hidden.");
 }

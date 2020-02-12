@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=288789
 -->
 <head>
   <title>Test for Bug 288789</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -43,12 +43,12 @@ function test() {
   }
 
   function testRight(offset) {
-    synthesizeKey("VK_RIGHT", {});
+    synthesizeKey("KEY_ArrowRight");
     is(textarea.selectionStart, offset, "Right movement broken");
   }
 
   function testLeft(offset) {
-    synthesizeKey("VK_LEFT", {});
+    synthesizeKey("KEY_ArrowLeft");
     is(textarea.selectionStart, offset, "Left movement broken");
   }
 

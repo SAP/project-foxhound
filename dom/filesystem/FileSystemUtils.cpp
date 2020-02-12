@@ -11,43 +11,25 @@ namespace dom {
 
 namespace {
 
-bool
-TokenizerIgnoreNothing(char16_t /* aChar */)
-{
-  return false;
-}
+bool TokenizerIgnoreNothing(char16_t /* aChar */) { return false; }
 
-} // anonymous namespace
+}  // anonymous namespace
 
-/* static */ bool
-FileSystemUtils::IsDescendantPath(nsIFile* aFile,
-                                  nsIFile* aDescendantFile)
-{
-  nsAutoString path;
-  nsresult rv = aFile->GetPath(path);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
-  }
-
-  nsAutoString descendantPath;
-  rv = aDescendantFile->GetPath(descendantPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
-  }
-
+/* static */
+bool FileSystemUtils::IsDescendantPath(const nsAString& aPath,
+                                       const nsAString& aDescendantPath) {
   // Check the sub-directory path to see if it has the parent path as prefix.
-  if (descendantPath.Length() <= path.Length() ||
-      !StringBeginsWith(descendantPath, path)) {
+  if (!aDescendantPath.Equals(aPath) &&
+      !StringBeginsWith(aDescendantPath, aPath)) {
     return false;
   }
 
   return true;
 }
 
-/* static */ bool
-FileSystemUtils::IsValidRelativeDOMPath(const nsAString& aPath,
-                                        nsTArray<nsString>& aParts)
-{
+/* static */
+bool FileSystemUtils::IsValidRelativeDOMPath(const nsAString& aPath,
+                                             nsTArray<nsString>& aParts) {
   // We don't allow empty relative path to access the root.
   if (aPath.IsEmpty()) {
     return false;
@@ -63,16 +45,15 @@ FileSystemUtils::IsValidRelativeDOMPath(const nsAString& aPath,
   NS_NAMED_LITERAL_STRING(kParentDir, "..");
 
   // Split path and check each path component.
-  nsCharSeparatedTokenizerTemplate<TokenizerIgnoreNothing>
-    tokenizer(aPath, FILESYSTEM_DOM_PATH_SEPARATOR_CHAR);
+  nsCharSeparatedTokenizerTemplate<TokenizerIgnoreNothing> tokenizer(
+      aPath, FILESYSTEM_DOM_PATH_SEPARATOR_CHAR);
 
   while (tokenizer.hasMoreTokens()) {
     nsDependentSubstring pathComponent = tokenizer.nextToken();
     // The path containing empty components, such as "foo//bar", is invalid.
     // We don't allow paths, such as "../foo", "foo/./bar" and "foo/../bar",
     // to walk up the directory.
-    if (pathComponent.IsEmpty() ||
-        pathComponent.Equals(kCurrentDir) ||
+    if (pathComponent.IsEmpty() || pathComponent.Equals(kCurrentDir) ||
         pathComponent.Equals(kParentDir)) {
       return false;
     }
@@ -83,5 +64,27 @@ FileSystemUtils::IsValidRelativeDOMPath(const nsAString& aPath,
   return true;
 }
 
-} // namespace dom
-} // namespace mozilla
+/* static */
+nsresult FileSystemUtils::DispatchRunnable(
+    nsIGlobalObject* aGlobal, already_AddRefed<nsIRunnable>&& aRunnable) {
+  nsCOMPtr<nsIRunnable> runnable = aRunnable;
+
+  nsCOMPtr<nsIEventTarget> target;
+  if (!aGlobal) {
+    target = SystemGroup::EventTargetFor(TaskCategory::Other);
+  } else {
+    target = aGlobal->EventTargetFor(TaskCategory::Other);
+  }
+
+  MOZ_ASSERT(target);
+
+  nsresult rv = target->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+}  // namespace dom
+}  // namespace mozilla

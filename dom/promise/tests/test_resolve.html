@@ -5,7 +5,7 @@
 <html>
 <head>
   <title>Promise.resolve(anything) Test</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -28,7 +28,7 @@ var tests = [
   function() {},
   window,
   undefined,
-  document.createElement('input'),
+  document.createElement("input"),
   new Date(),
 ];
 
@@ -50,7 +50,7 @@ function runTest() {
     ok(test === what, "What is: " + what);
   }, cbError).then(function() {
     new Promise(function(resolve, reject) {
-      reject(test)
+      reject(test);
     }).then(cbError, function(what) {
       ok(test === what, "What is: " + what);
     }).then(runTest, cbError);

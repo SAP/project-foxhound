@@ -10,6 +10,17 @@
   <textarea id="b">abcde</textarea>
 </div>
 <script>
+var expected_direction_none;
+setup(function() {
+  var input = document.createElement("input");
+  input.setSelectionRange(0, 1, "none");
+  var direction = input.selectionDirection;
+  if (direction !== "none" && direction !== "forward") {
+    throw new Error("Unexpected direction");
+  }
+  expected_direction_none = direction;
+});
+
 test(function() {
   var input = document.getElementById("a");
   test(function() {
@@ -41,7 +52,7 @@ test(function() {
     input.setSelectionRange(input.value.length+1,1)
     assert_equals(input.selectionStart, 1, "If end is less than or equal to start then the start of the selection and the end of the selection must both be placed immediately before the character with offset end");
     assert_equals(input.selectionEnd, 1, "element.selectionEnd should be 1");
-  },'input setSelectionRange(input.value.length+1,input.value.length+1)');
+  },'input setSelectionRange(input.value.length+1,1)');
 
   test(function() {
     input.setSelectionRange(2,2)
@@ -67,22 +78,22 @@ test(function() {
 
   test(function() {
     input.setSelectionRange(0,1,"none")
-    assert_equals(input.selectionDirection, "none", 'The direction of the selection must be set to forward if direction is a case-sensitive match for the string "none"');
+    assert_equals(input.selectionDirection, expected_direction_none);
   },'input direction of setSelectionRange(0,1,"none")');
 
   test(function() {
     input.setSelectionRange(0,1,"hoge")
-    assert_equals(input.selectionDirection, "none", "otherwise");
+    assert_equals(input.selectionDirection, expected_direction_none);
   },'input direction of setSelectionRange(0,1,"hoge")');
 
   test(function() {
     input.setSelectionRange(0,1,"BACKWARD")
-    assert_equals(input.selectionDirection, "none", "selectionDirection should be 'none'");
+    assert_equals(input.selectionDirection, expected_direction_none);
   },'input direction of setSelectionRange(0,1,"BACKWARD")');
 
   test(function() {
     input.setSelectionRange(0,1)
-    assert_equals(input.selectionDirection, "none", "if the argument is omitted");
+    assert_equals(input.selectionDirection, expected_direction_none);
   },'input direction of setSelectionRange(0,1)');
 
   test(function() {
@@ -138,6 +149,22 @@ test(function() {
     assert_equals(input.selectionStart, 0, "element.selectionStart should be 0");
     assert_equals(input.selectionEnd, 1, "element.selectionEnd should be 1");
   },'input setSelectionRange(undefined,1)');
+
+  test(function() {
+    input.setSelectionRange(Math.pow(2,32) - 2, Math.pow(2,32) - 1);
+    assert_equals(input.selectionStart, input.value.length,
+                 "element.selectionStart should be value.length");
+    assert_equals(input.selectionEnd, input.value.length,
+                  "element.selectionEnd should be value.length");
+  }, 'input setSelectionRange(Math.pow(2,32) - 2, Math.pow(2,32) - 1)');
+
+  test(function() {
+    input.setSelectionRange(Math.pow(2,31), Math.pow(2,32) - 1);
+    assert_equals(input.selectionStart, input.value.length,
+                 "element.selectionStart should be value.length");
+    assert_equals(input.selectionEnd, input.value.length,
+                  "element.selectionEnd should be value.length");
+  }, 'input setSelectionRange(Math.pow(2,31), Math.pow(2,32) - 1)');
 },"test of input.setSelectionRange");
 
 async_test(function() {
@@ -198,22 +225,22 @@ test(function() {
 
   test(function() {
     textarea.setSelectionRange(0,1,"none")
-    assert_equals(textarea.selectionDirection, "none", 'The direction of the selection must be set to forward if direction is a case-sensitive match for the string "none"');
+    assert_equals(textarea.selectionDirection, expected_direction_none);
   },'textarea direction of setSelectionRange(0,1,"none")');
 
   test(function() {
     textarea.setSelectionRange(0,1,"hoge")
-    assert_equals(textarea.selectionDirection, "none", "otherwise");
+    assert_equals(textarea.selectionDirection, expected_direction_none);
   },'textarea direction of setSelectionRange(0,1,"hoge")');
 
   test(function() {
     textarea.setSelectionRange(0,1,"BACKWARD")
-    assert_equals(textarea.selectionDirection, "none", "selectionDirection should be 'none'");
+    assert_equals(textarea.selectionDirection, expected_direction_none);
   },'textarea direction of setSelectionRange(0,1,"BACKWARD")');
 
   test(function() {
     textarea.setSelectionRange(0,1)
-    assert_equals(textarea.selectionDirection, "none", "if the argument is omitted");
+    assert_equals(textarea.selectionDirection, expected_direction_none);
   },'textarea direction of setSelectionRange(0,1)');
 
   test(function() {
@@ -257,18 +284,21 @@ test(function() {
     assert_equals(textarea.selectionStart, 0, "element.selectionStart should be 0");
     assert_equals(textarea.selectionEnd, 1, "element.selectionStart should be 1");
   },'textarea setSelectionRange(undefined,1)');
-},"test of textarea.setSelectionRange");
 
-async_test(function() {
-  var q = false;
-  var textarea = document.getElementById("b");
-  textarea.addEventListener("select", this.step_func_done(function(e) {
-    assert_true(q, "event should be queued");
-    assert_true(e.isTrusted, "event is trusted");
-    assert_true(e.bubbles, "event bubbles");
-    assert_false(e.cancelable, "event is not cancelable");
-  }));
-  textarea.setSelectionRange(0, 1);
-  q = true;
-}, "textarea setSelectionRange fires a select event");
+  test(function() {
+    textarea.setSelectionRange(Math.pow(2,32) - 2, Math.pow(2,32) - 1);
+    assert_equals(textarea.selectionStart, textarea.value.length,
+                 "element.selectionStart should be value.length");
+    assert_equals(textarea.selectionEnd, textarea.value.length,
+                  "element.selectionEnd should be value.length");
+  }, 'textarea setSelectionRange(Math.pow(2,32) - 2, Math.pow(2,32) - 1)');
+
+  test(function() {
+    textarea.setSelectionRange(Math.pow(2,31), Math.pow(2,32) - 1);
+    assert_equals(textarea.selectionStart, textarea.value.length,
+                 "element.selectionStart should be value.length");
+    assert_equals(textarea.selectionEnd, textarea.value.length,
+                  "element.selectionEnd should be value.length");
+  }, 'textarea setSelectionRange(Math.pow(2,31), Math.pow(2,32) - 1)');
+},"test of textarea.setSelectionRange");
 </script>

@@ -5,21 +5,23 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "ContentPrefServiceChild" ];
+var EXPORTED_SYMBOLS = ["ContentPrefServiceChild"];
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/ContentPrefUtils.jsm");
-Cu.import("resource://gre/modules/ContentPrefStore.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const {
+  ContentPref,
+  _methodsCallableFromChild,
+  cbHandleCompletion,
+  cbHandleError,
+  cbHandleResult,
+  safeCallback,
+} = ChromeUtils.import("resource://gre/modules/ContentPrefUtils.jsm");
 
 // We only need one bit of information out of the context.
 function contextArg(context) {
-  return (context && context.usePrivateBrowsing) ?
-            { usePrivateBrowsing: true } :
-            null;
+  return context && context.usePrivateBrowsing
+    ? { usePrivateBrowsing: true }
+    : null;
 }
 
 function NYI() {
@@ -31,46 +33,52 @@ function CallbackCaller(callback) {
 }
 
 CallbackCaller.prototype = {
-  handleResult: function(contentPref) {
-    cbHandleResult(this._callback,
-                   new ContentPref(contentPref.domain,
-                                   contentPref.name,
-                                   contentPref.value));
+  handleResult(contentPref) {
+    cbHandleResult(
+      this._callback,
+      new ContentPref(contentPref.domain, contentPref.name, contentPref.value)
+    );
   },
 
-  handleError: function(result) {
+  handleError(result) {
     cbHandleError(this._callback, result);
   },
 
-  handleCompletion: function(reason) {
+  handleCompletion(reason) {
     cbHandleCompletion(this._callback, reason);
   },
 };
 
 var ContentPrefServiceChild = {
-  QueryInterface: XPCOMUtils.generateQI([ Ci.nsIContentPrefService2 ]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPrefService2]),
 
   // Map from pref name -> set of observers
   _observers: new Map(),
 
-  _mm: Cc["@mozilla.org/childprocessmessagemanager;1"]
-         .getService(Ci.nsIMessageSender),
-
-  _getRandomId: function() {
+  _getRandomId() {
     return Cc["@mozilla.org/uuid-generator;1"]
-             .getService(Ci.nsIUUIDGenerator).generateUUID().toString();
+      .getService(Ci.nsIUUIDGenerator)
+      .generateUUID()
+      .toString();
   },
 
   // Map from random ID string -> CallbackCaller, per request
   _requests: new Map(),
 
-  init: function() {
-    this._mm.addMessageListener("ContentPrefs:HandleResult", this);
-    this._mm.addMessageListener("ContentPrefs:HandleError", this);
-    this._mm.addMessageListener("ContentPrefs:HandleCompletion", this);
+  init() {
+    Services.cpmm.addMessageListener("ContentPrefs:HandleResult", this);
+    Services.cpmm.addMessageListener("ContentPrefs:HandleError", this);
+    Services.cpmm.addMessageListener("ContentPrefs:HandleCompletion", this);
+    Services.obs.addObserver(this, "xpcom-shutdown");
   },
 
-  receiveMessage: function(msg) {
+  observe() {
+    Services.obs.removeObserver(this, "xpcom-shutdown");
+    delete this._observers;
+    delete this._requests;
+  },
+
+  receiveMessage(msg) {
     let data = msg.data;
     let callback;
     switch (msg.name) {
@@ -92,8 +100,9 @@ var ContentPrefServiceChild = {
 
       case "ContentPrefs:NotifyObservers": {
         let observerList = this._observers.get(data.name);
-        if (!observerList)
+        if (!observerList) {
           break;
+        }
 
         for (let observer of observerList) {
           safeCallback(observer, data.callback, data.args);
@@ -104,133 +113,91 @@ var ContentPrefServiceChild = {
     }
   },
 
-  _callFunction: function(call, args, callback) {
+  _callFunction(call, args, callback) {
     let requestId = this._getRandomId();
-    let data = { call: call, args: args, requestId: requestId };
+    let data = { call, args, requestId };
 
-    this._mm.sendAsyncMessage("ContentPrefs:FunctionCall", data);
+    Services.cpmm.sendAsyncMessage("ContentPrefs:FunctionCall", data);
 
     this._requests.set(requestId, new CallbackCaller(callback));
-  },
-
-  getByName: function(name, context, callback) {
-    return this._callFunction("getByName",
-                              [ name, contextArg(context) ],
-                              callback);
-  },
-
-  getByDomainAndName: function(domain, name, context, callback) {
-    return this._callFunction("getByDomainAndName",
-                              [ domain, name, contextArg(context) ],
-                              callback);
-  },
-
-  getBySubdomainAndName: function(domain, name, context, callback) {
-    return this._callFunction("getBySubdomainAndName",
-                              [ domain, name, contextArg(context) ],
-                              callback);
-  },
-
-  getGlobal: function(name, context, callback) {
-    return this._callFunction("getGlobal",
-                              [ name, contextArg(context) ],
-                              callback);
   },
 
   getCachedByDomainAndName: NYI,
   getCachedBySubdomainAndName: NYI,
   getCachedGlobal: NYI,
 
-  set: function(domain, name, value, context, callback) {
-    this._callFunction("set",
-                       [ domain, name, value, contextArg(context) ],
-                       callback);
-  },
-
-  setGlobal: function(name, value, context, callback) {
-    this._callFunction("setGlobal",
-                       [ name, value, contextArg(context) ],
-                       callback);
-  },
-
-  removeByDomainAndName: function(domain, name, context, callback) {
-    this._callFunction("removeByDomainAndName",
-                       [ domain, name, contextArg(context) ],
-                       callback);
-  },
-
-  removeBySubdomainAndName: function(domain, name, context, callback) {
-    this._callFunction("removeBySubdomainAndName",
-                       [ domain, name, contextArg(context) ],
-                       callback);
-  },
-
-  removeGlobal: function(name, context, callback) {
-    this._callFunction("removeGlobal", [ name, contextArg(context) ], callback);
-  },
-
-  removeByDomain: function(domain, context, callback) {
-    this._callFunction("removeByDomain", [ domain, contextArg(context) ],
-                       callback);
-  },
-
-  removeBySubdomain: function(domain, context, callback) {
-    this._callFunction("removeBySubdomain", [ domain, contextArg(context) ],
-                       callback);
-  },
-
-  removeByName: function(name, context, callback) {
-    this._callFunction("removeByName", [ name, value, contextArg(context) ],
-                       callback);
-  },
-
-  removeAllDomains: function(context, callback) {
-    this._callFunction("removeAllDomains", [ contextArg(context) ], callback);
-  },
-
-  removeAllGlobals: function(context, callback) {
-    this._callFunction("removeAllGlobals", [ contextArg(context) ],
-                       callback);
-  },
-
-  addObserverForName: function(name, observer) {
+  addObserverForName(name, observer) {
     let set = this._observers.get(name);
     if (!set) {
       set = new Set();
       if (this._observers.size === 0) {
         // This is the first observer of any kind. Start listening for changes.
-        this._mm.addMessageListener("ContentPrefs:NotifyObservers", this);
+        Services.cpmm.addMessageListener("ContentPrefs:NotifyObservers", this);
       }
 
       // This is the first observer for this name. Start listening for changes
       // to it.
-      this._mm.sendAsyncMessage("ContentPrefs:AddObserverForName", { name: name });
+      Services.cpmm.sendAsyncMessage("ContentPrefs:AddObserverForName", {
+        name,
+      });
       this._observers.set(name, set);
     }
 
     set.add(observer);
   },
 
-  removeObserverForName: function(name, observer) {
+  removeObserverForName(name, observer) {
     let set = this._observers.get(name);
-    if (!set)
+    if (!set) {
       return;
+    }
 
     set.delete(observer);
     if (set.size === 0) {
       // This was the last observer for this name. Stop listening for changes.
-      this._mm.sendAsyncMessage("ContentPrefs:RemoveObserverForName", { name: name });
+      Services.cpmm.sendAsyncMessage("ContentPrefs:RemoveObserverForName", {
+        name,
+      });
 
       this._observers.delete(name);
       if (this._observers.size === 0) {
         // This was the last observer for this process. Stop listing for all
         // changes.
-        this._mm.removeMessageListener("ContentPrefs:NotifyObservers", this);
+        Services.cpmm.removeMessageListener(
+          "ContentPrefs:NotifyObservers",
+          this
+        );
       }
     }
   },
 
-  extractDomain: NYI
+  extractDomain: NYI,
 };
+
+function forwardMethodToParent(method, signature, ...args) {
+  // Ignore superfluous arguments
+  args = args.slice(0, signature.length);
+
+  // Process context argument for forwarding
+  let contextIndex = signature.indexOf("context");
+  if (contextIndex > -1) {
+    args[contextIndex] = contextArg(args[contextIndex]);
+  }
+  // Take out the callback argument, if present.
+  let callbackIndex = signature.indexOf("callback");
+  let callback = null;
+  if (callbackIndex > -1 && args.length > callbackIndex) {
+    callback = args.splice(callbackIndex, 1)[0];
+  }
+  this._callFunction(method, args, callback);
+}
+
+for (let [method, signature] of _methodsCallableFromChild) {
+  ContentPrefServiceChild[method] = forwardMethodToParent.bind(
+    ContentPrefServiceChild,
+    method,
+    signature
+  );
+}
 
 ContentPrefServiceChild.init();

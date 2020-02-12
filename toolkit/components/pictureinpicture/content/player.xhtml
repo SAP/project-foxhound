@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html [
+  <!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+  %htmlDTD;
+]>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      windowtype="Toolkit:PictureInPicture"
+      chromemargin="0,0,0,0">
+  <head>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" type="text/css"
+          href="chrome://global/skin/pictureinpicture/player.css"/>
+    <link rel="localization" href="toolkit/pictureinpicture/pictureinpicture.ftl"/>
+    <script src="chrome://global/content/pictureinpicture/player.js"></script>
+    <title data-l10n-id="pictureinpicture-player-title"></title>
+  </head>
+
+  <body>
+    <div class="player-holder">
+      <xul:browser type="content" primary="true" remote="true" remoteType="web" id="browser" tabindex="-1"></xul:browser>
+    </div>
+    <div id="controls">
+      <button id="close" class="control-item" tabindex="3"></button>
+
+      <div id="controls-bottom">
+        <button id="unpip" class="control-item" tabindex="2"></button>
+        <div id="gap"></div>
+        <button id="playpause" class="control-item" tabindex="1" autofocus="true"></button>
+      </div>
+    </div>
+  </body>
+</html>

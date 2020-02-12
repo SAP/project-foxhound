@@ -8,10 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_COMMON_AUDIO_WINDOW_GENERATOR_H_
-#define WEBRTC_COMMON_AUDIO_WINDOW_GENERATOR_H_
+#ifndef COMMON_AUDIO_WINDOW_GENERATOR_H_
+#define COMMON_AUDIO_WINDOW_GENERATOR_H_
 
-#include "webrtc/base/constructormagic.h"
+#include <stddef.h>
+
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 
@@ -19,13 +21,13 @@ namespace webrtc {
 class WindowGenerator {
  public:
   static void Hanning(int length, float* window);
-  static void KaiserBesselDerived(float alpha, int length, float* window);
+  static void KaiserBesselDerived(float alpha, size_t length, float* window);
 
  private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(WindowGenerator);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(WindowGenerator);
 };
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_COMMON_AUDIO_WINDOW_GENERATOR_H_
+#endif  // COMMON_AUDIO_WINDOW_GENERATOR_H_
 

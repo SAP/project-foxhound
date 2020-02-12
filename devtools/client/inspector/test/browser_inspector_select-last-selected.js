@@ -1,9 +1,9 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
+
+requestLongerTimeout(2);
 
 // Checks that the expected default node is selected after a page navigation or
 // a reload.
@@ -19,81 +19,77 @@ var TEST_DATA = [
   {
     url: PAGE_1,
     nodeToSelect: "#id1",
-    selectedNode: "#id1"
+    selectedNode: "#id1",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id2",
-    selectedNode: "#id2"
+    selectedNode: "#id2",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id3",
-    selectedNode: "#id3"
+    selectedNode: "#id3",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id4",
-    selectedNode: "#id4"
+    selectedNode: "#id4",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_1,
     nodeToSelect: "#id5",
-    selectedNode: "body"
+    selectedNode: "body",
   },
   {
     url: PAGE_2,
     nodeToSelect: null,
-    selectedNode: "body"
-  }
+    selectedNode: "body",
+  },
 ];
 
-add_task(function* () {
-  let { inspector, toolbox, testActor } = yield openInspectorForURL(PAGE_1);
+add_task(async function() {
+  const { inspector, toolbox, testActor } = await openInspectorForURL(PAGE_1);
 
-  for (let { url, nodeToSelect, selectedNode } of TEST_DATA) {
+  for (const { url, nodeToSelect, selectedNode } of TEST_DATA) {
     if (nodeToSelect) {
       info("Selecting node " + nodeToSelect + " before navigation.");
-      yield selectNode(nodeToSelect, inspector);
+      await selectNode(nodeToSelect, inspector);
     }
 
-    let onNewRoot = inspector.once("new-root");
-    yield navigateToAndWaitForNewRoot(url);
+    await navigateToAndWaitForNewRoot(url);
 
-    info("Waiting for new root.");
-    yield onNewRoot;
-
-    info("Waiting for inspector to update after new-root event.");
-    yield inspector.once("inspector-updated");
-
-    let nodeFront = yield getNodeFront(selectedNode, inspector);
+    const nodeFront = await getNodeFront(selectedNode, inspector);
     ok(nodeFront, "Got expected node front");
-    is(inspector.selection.nodeFront, nodeFront,
-       selectedNode + " is selected after navigation.");
+    is(
+      inspector.selection.nodeFront,
+      nodeFront,
+      selectedNode + " is selected after navigation."
+    );
   }
 
-  function navigateToAndWaitForNewRoot(url) {
+  async function navigateToAndWaitForNewRoot(url) {
     info("Navigating and waiting for new-root event after navigation.");
 
-    let newRoot = inspector.once("new-root");
+    const current = await testActor.eval("location.href");
+    if (url == current) {
+      info("Reloading page.");
+      const markuploaded = inspector.once("markuploaded");
+      const onNewRoot = inspector.once("new-root");
+      const onUpdated = inspector.once("inspector-updated");
 
-    return testActor.eval("location.href")
-      .then(current => {
-        if (url == current) {
-          info("Reloading page.");
-          let activeTab = toolbox.target.activeTab;
-          return activeTab.reload();
-        }
-
-        info("Navigating to " + url);
-        navigateTo(toolbox, url);
-
-        return newRoot;
-      });
+      await toolbox.target.reload();
+      info("Waiting for inspector to be ready.");
+      await markuploaded;
+      await onNewRoot;
+      await onUpdated;
+    } else {
+      await navigateTo(inspector, url);
+    }
   }
 });

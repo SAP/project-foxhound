@@ -4,92 +4,59 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WidevineUtils.h"
-#include "WidevineDecryptor.h"
-
+#include "GMPLog.h"
 #include "gmp-api/gmp-errors.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 namespace mozilla {
 
-#ifdef ENABLE_WIDEVINE_LOG
-void
-Log(const char* aFormat, ...)
-{
-  va_list ap;
-  va_start(ap, aFormat);
-  const size_t len = 1024;
-  char buf[len];
-  vsnprintf(buf, len, aFormat, ap);
-  va_end(ap);
-  if (getenv("GMP_LOG_FILE")) {
-    FILE* f = fopen(getenv("GMP_LOG_FILE"), "a");
-    if (f) {
-      fprintf(f, "%s\n", buf);
-      fflush(f);
-      fclose(f);
-      f = nullptr;
-    }
-  } else {
-    printf("LOG: %s\n", buf);
-  }
+WidevineBuffer::WidevineBuffer(size_t aSize) {
+  GMP_LOG_DEBUG("WidevineBuffer(size=%zu) created", aSize);
+  mBuffer.SetLength(aSize);
 }
-#endif // ENABLE_WIDEVINE_LOG
 
-GMPErr
-ToGMPErr(cdm::Status aStatus)
-{
-  switch (aStatus) {
-    case cdm::kSuccess: return GMPNoErr;
-    case cdm::kNeedMoreData: return GMPGenericErr;
-    case cdm::kNoKey: return GMPNoKeyErr;
-    case cdm::kSessionError: return GMPGenericErr;
-    case cdm::kDecryptError: return GMPCryptoErr;
-    case cdm::kDecodeError: return GMPDecodeErr;
-    case cdm::kDeferredInitialization: return GMPGenericErr;
-    default: return GMPGenericErr;
+WidevineBuffer::~WidevineBuffer() {
+  GMP_LOG_DEBUG("WidevineBuffer(size=%" PRIu32 ") destroyed", Size());
+}
+
+void WidevineBuffer::Destroy() { delete this; }
+
+uint32_t WidevineBuffer::Capacity() const { return mBuffer.Length(); }
+
+uint8_t* WidevineBuffer::Data() { return mBuffer.Elements(); }
+
+void WidevineBuffer::SetSize(uint32_t aSize) { mBuffer.SetLength(aSize); }
+
+uint32_t WidevineBuffer::Size() const { return mBuffer.Length(); }
+
+nsTArray<uint8_t> WidevineBuffer::ExtractBuffer() {
+  nsTArray<uint8_t> out;
+  out.SwapElements(mBuffer);
+  return out;
+}
+
+WidevineDecryptedBlock::WidevineDecryptedBlock()
+    : mBuffer(nullptr), mTimestamp(0) {}
+
+WidevineDecryptedBlock::~WidevineDecryptedBlock() {
+  if (mBuffer) {
+    mBuffer->Destroy();
+    mBuffer = nullptr;
   }
 }
 
-void InitInputBuffer(const GMPEncryptedBufferMetadata* aCrypto,
-                     int64_t aTimestamp,
-                     const uint8_t* aData,
-                     size_t aDataSize,
-                     cdm::InputBuffer &aInputBuffer,
-                     nsTArray<cdm::SubsampleEntry> &aSubsamples)
-{
-  if (aCrypto) {
-    aInputBuffer.key_id = aCrypto->KeyId();
-    aInputBuffer.key_id_size = aCrypto->KeyIdSize();
-    aInputBuffer.iv = aCrypto->IV();
-    aInputBuffer.iv_size = aCrypto->IVSize();
-    aInputBuffer.num_subsamples = aCrypto->NumSubsamples();
-    aSubsamples.SetCapacity(aInputBuffer.num_subsamples);
-    const uint16_t* clear = aCrypto->ClearBytes();
-    const uint32_t* cipher = aCrypto->CipherBytes();
-    for (size_t i = 0; i < aCrypto->NumSubsamples(); i++) {
-      aSubsamples.AppendElement(cdm::SubsampleEntry(clear[i], cipher[i]));
-    }
-  }
-  aInputBuffer.data = aData;
-  aInputBuffer.data_size = aDataSize;
-  aInputBuffer.subsamples = aSubsamples.Elements();
-  aInputBuffer.timestamp = aTimestamp;
+void WidevineDecryptedBlock::SetDecryptedBuffer(cdm::Buffer* aBuffer) {
+  mBuffer = aBuffer;
 }
 
-CDMWrapper::CDMWrapper(cdm::ContentDecryptionModule_8* aCDM,
-                       WidevineDecryptor* aDecryptor)
-  : mCDM(aCDM)
-  , mDecryptor(aDecryptor)
-{
-  MOZ_ASSERT(mCDM);
+cdm::Buffer* WidevineDecryptedBlock::DecryptedBuffer() { return mBuffer; }
+
+void WidevineDecryptedBlock::SetTimestamp(int64_t aTimestamp) {
+  mTimestamp = aTimestamp;
 }
 
-CDMWrapper::~CDMWrapper()
-{
-  Log("CDMWrapper destroying CDM=%p", mCDM);
-  mCDM->Destroy();
-  mCDM = nullptr;
-}
+int64_t WidevineDecryptedBlock::Timestamp() const { return mTimestamp; }
 
-} // namespace mozilla
+}  // namespace mozilla

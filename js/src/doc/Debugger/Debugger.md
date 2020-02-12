@@ -15,7 +15,7 @@ its prototype:
 
 `enabled`
 :   A boolean value indicating whether this `Debugger` instance's handlers,
-    breakpoints, watchpoints, and the like are currently enabled. It is an
+    breakpoints, and the like are currently enabled. It is an
     accessor property with a getter and setter: assigning to it enables or
     disables this `Debugger` instance; reading it produces true if the
     instance is enabled, or false otherwise. This property is initially
@@ -57,7 +57,7 @@ its prototype:
 
 `uncaughtExceptionHook`
 :   Either `null` or a function that SpiderMonkey calls when a call to a
-    debug event handler, breakpoint handler, watchpoint handler, or similar
+    debug event handler, breakpoint handler, or similar
     function throws some exception, which we refer to as
     <i>debugger-exception</i> here. Exceptions thrown in the debugger are
     not propagated to debuggee code; instead, SpiderMonkey calls this
@@ -113,6 +113,14 @@ compartment.
 :   New code, represented by the [`Debugger.Script`][script] instance
     <i>script</i>, has been loaded in the scope of the debuggees.
 
+    Since each function has its own [`Debugger.Script`][script], separate from
+    the top-level code or function that encloses it, loading JavaScript code
+    typically introduces not just a single script, but a tree of scripts
+    representing the top-level code and any functions it includes. The
+    `onNewScript` hook reports only the root script of such a tree. If
+    necessary, the handler function can use the scripts' `getChildScripts`
+    method to walk the tree and obtain all the newly introduced scripts.
+
     This method's return value is ignored.
 
 <code>onNewPromise(<i>promise</i>)</code>
@@ -154,28 +162,23 @@ compartment.
     SpiderMonkey only calls `onEnterFrame` to report
     [visible][vf], non-`"debugger"` frames.
 
-<code>onThrow(<i>frame</i>, <i>value</i>) <i>(future plan)</i></code>
-:   The exception <i>value</i> is being thrown by <i>frame</i>, which is
-    running debuggee code. This method should return a
-    [resumption value][rv] specifying how the debuggee's execution should
-    proceed. If it returns `undefined`, the exception is thrown as normal.
+<code>onNativeCall(<i>callee</i>, <i>reason</i>)</code>
+:   A call to a native function is being made from a debuggee realm.
+    <i>callee</i> is a [`Debugger.Object`] for the function being called, and
+    <i>reason</i> is a string describing the reason the call was made, and
+    has one of the following values:
 
-    A call to the `onThrow` handler is typically followed by one or more
-    calls to the `onExceptionUnwind` handler.
+    `get`: The native is the getter for a property which is being accessed.
+    `set`: The native is the setter for a property being written to.
+    `call`: Any call not fitting into the above categories.
 
-    *(pending discussion)* If the debuggee executes
-    `try { throw 0; } finally { f(); }` and `f()` executes without error,
-    the `onThrow` handler is called only once. The debugger is not notified
-    when the exception is set aside in order to execute the `finally` block,
-    nor when it is restored after the `finally` block completes normally.
+    This method should return a [resumption value][rv] specifying how the
+    debuggee's execution should proceed.
 
-    *(An alternative design here would be: onException(status, frame, value)
-    where status is one of the strings "throw", "unwind", "catch",
-    "finally", "rethrow". JS\_SaveExceptionState would trigger a "finally"
-    event, JS\_RestoreExceptionState would trigger a "rethrow",
-    JS\_ClearPendingException would trigger a "catch"; not sure what
-    JS\_DropExceptionState or a return/throw from a finally block should
-    do.)*
+    SpiderMonkey only calls `onNativeCall` hooks when execution is inside a
+    debugger evaluation associated with the debugger that has the `onNativeCall`
+    hook.  Such evaluation methods include `Debugger.Object.executeInGlobal`,
+    `Debugger.Frame.eval`, and associated methods.
 
 <code>onExceptionUnwind(<i>frame</i>, <i>value</i>)</code>
 :   The exception <i>value</i> has been thrown, and has propagated to
@@ -257,6 +260,12 @@ compartment.
     thereby escaping the capability-based limits. For this reason,
     `onNewGlobalObject` is only available to privileged code.
 
+    Note that, even though the presence of a `Debugger`'s `onNewGlobalObject`
+    hook can have arbitrary side effects, the garbage collector does not
+    consider the presence of the hook sufficient reason to keep the `Debugger`
+    alive. Thus, the behavior of code that uses `onNewGlobalObject` on unrooted,
+    enabled `Debugger`s may be affected by the garbage collector's activity, and
+    is not entirely deterministic.
 
 
 ## Function Properties of the Debugger Prototype Object
@@ -362,25 +371,9 @@ other kinds of objects.
     [visible frame][vf] currently on the calling thread's stack, or `null`
     if there are no visible frames on the stack.
 
-<code>findSources([<i>query</i>]) <i>(not yet implemented)</i></code>
-:   Return an array of all [`Debugger.Source`][source] instances matching
-    <i>query</i>. Each source appears only once in the array. <i>Query</i>
-    is an object whose properties restrict which sources are returned; a
-    source must meet all the criteria given by <i>query</i> to be returned.
-    If <i>query</i> is omitted, we return all sources of all debuggee
+<code>findSources()</code>
+:   Return an array of all [`Debugger.Source`][source] instances of all debuggee
     scripts.
-
-    <i>Query</i> may have the following properties:
-
-    `url`
-    :   The source's `url` property must be equal to this value.
-
-    `global`
-    :   The source must have been evaluated in the scope of the given global
-        object. If this property's value is a [`Debugger.Object`][object] instance
-        belonging to this `Debugger` instance, then its referent is used. If the
-        object is not a global object, then the global in whose scope it was
-        allocated is used.
 
     Note that the result may include sources that can no longer ever be
     used by the debuggee: say, eval code that has finished running, or
@@ -433,6 +426,12 @@ other kinds of objects.
     such scripts appear can be affected by the garbage collector's
     behavior, so this function's behavior is not entirely deterministic.
 
+<code>findSourceURLs()</code>
+:   Return an array of strings containing the URLs of all known sources that
+    have been created in any debuggee realm.  The array will have one entry for
+    each source, so may have duplicates.  The URLs for the realms are
+    occasionally purged and the returned array might not be complete.
+
 <code>findObjects([<i>query</i>])</code>
 :   Return an array of [`Debugger.Object`][object] instances referring to each
     live object allocated in the scope of the debuggee globals that matches
@@ -467,9 +466,6 @@ other kinds of objects.
 
 `clearAllBreakpoints()`
 :   Remove all breakpoints set using this `Debugger` instance.
-
-`clearAllWatchpoints()` <i>(future plan)</i>
-:   Clear all watchpoints owned by this `Debugger` instance.
 
 `findAllGlobals()`
 :   Return an array of [`Debugger.Object`][object] instances referring to all the
@@ -510,6 +506,10 @@ other kinds of objects.
      other kind of object, and hence not a proper debuggee value, throw a
      TypeError instead.
 
+<code>adoptSource(<i>source</i>)</code>
+:    Given `source` of type `Debugger.Source` which is owned by an arbitrary
+     `Debugger`, return an equivalent `Debugger.Source` owned by this `Debugger`.
+
 ## Static methods of the Debugger Object
 
 The functions described below are not called with a `this` value.
@@ -520,3 +520,9 @@ The functions described below are not called with a `this` value.
     more lines. Otherwise return true. The intent is to support interactive
     compilation - accumulate lines in a buffer until isCompilableUnit is true,
     then pass it to the compiler.
+
+<code id="recordReplayProcessKind">recordReplayProcessKind()</code>
+:   Return the kind of record/replay firefox process that is currently
+    running: the string "RecordingReplaying" if this is a recording or
+    replaying process, the string "Middleman" if this is a middleman
+    process, or undefined for normal firefox content or UI processes.

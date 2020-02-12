@@ -3,32 +3,38 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-this.EXPORTED_SYMBOLS = ["RemoteSecurityUI"];
+var EXPORTED_SYMBOLS = ["RemoteSecurityUI"];
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-function RemoteSecurityUI()
-{
-    this._SSLStatus = null;
-    this._state = 0;
+function RemoteSecurityUI() {
+  this._secInfo = null;
+  this._state = 0;
+  this._event = 0;
+  this._isSecureContext = false;
 }
 
 RemoteSecurityUI.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsISSLStatusProvider, Ci.nsISecureBrowserUI]),
-
-  // nsISSLStatusProvider
-  get SSLStatus() { return this._SSLStatus; },
+  QueryInterface: ChromeUtils.generateQI([Ci.nsISecureBrowserUI]),
 
   // nsISecureBrowserUI
-  get state() { return this._state; },
-  get tooltipText() { return ""; },
+  get state() {
+    return this._state;
+  },
+  get contentBlockingEvent() {
+    return this._event;
+  },
+  get secInfo() {
+    return this._secInfo;
+  },
+  get isSecureContext() {
+    return this._isSecureContext;
+  },
 
-  _update: function (aStatus, aState) {
-    this._SSLStatus = aStatus;
+  _update(aSecInfo, aState, aIsSecureContext) {
+    this._secInfo = aSecInfo;
     this._state = aState;
-  }
+    this._isSecureContext = aIsSecureContext;
+  },
+  _updateContentBlockingEvent(aEvent) {
+    this._event = aEvent;
+  },
 };

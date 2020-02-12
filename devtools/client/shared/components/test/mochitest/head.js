@@ -1,67 +1,119 @@
-/* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+
+/* global _snapshots */
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+var { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 var { Assert } = require("resource://testing-common/Assert.jsm");
 var { gDevTools } = require("devtools/client/framework/devtools");
-var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
+var { BrowserLoader } = ChromeUtils.import(
+  "resource://devtools/client/shared/browser-loader.js"
+);
 var promise = require("promise");
 var defer = require("devtools/shared/defer");
 var Services = require("Services");
-var { DebuggerServer } = require("devtools/server/main");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerServer } = require("devtools/server/debugger-server");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var flags = require("devtools/shared/flags");
-var { Task } = require("devtools/shared/task");
 var { TargetFactory } = require("devtools/client/framework/target");
 var { Toolbox } = require("devtools/client/framework/toolbox");
 
-flags.testing = true;
 var { require: browserRequire } = BrowserLoader({
   baseURI: "resource://devtools/client/shared/",
-  window: this
+  window,
 });
 
-let ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
-let React = browserRequire("devtools/client/shared/vendor/react");
-var TestUtils = React.addons.TestUtils;
+const React = browserRequire("devtools/client/shared/vendor/react");
+const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
+const dom = browserRequire("devtools/client/shared/vendor/react-dom-factories");
+const TestUtils = browserRequire(
+  "devtools/client/shared/vendor/react-dom-test-utils"
+);
+
+const ShallowRenderer = browserRequire(
+  "devtools/client/shared/vendor/react-test-renderer-shallow"
+);
+const TestRenderer = browserRequire(
+  "devtools/client/shared/vendor/react-test-renderer"
+);
 
 var EXAMPLE_URL = "http://example.com/browser/browser/devtools/shared/test/";
 
+SimpleTest.registerCleanupFunction(() => {
+  window._snapshots = null;
+});
+
 function forceRender(comp) {
-  return setState(comp, {})
-    .then(() => setState(comp, {}));
+  return setState(comp, {}).then(() => setState(comp, {}));
 }
 
 // All tests are asynchronous.
 SimpleTest.waitForExplicitFinish();
 
 function onNextAnimationFrame(fn) {
-  return () =>
-    requestAnimationFrame(() =>
-      requestAnimationFrame(fn));
+  return () => requestAnimationFrame(() => requestAnimationFrame(fn));
 }
 
 function setState(component, newState) {
-  var deferred = defer();
-  component.setState(newState, onNextAnimationFrame(deferred.resolve));
-  return deferred.promise;
-}
-
-function setProps(component, newState) {
-  var deferred = defer();
-  component.setProps(newState, onNextAnimationFrame(deferred.resolve));
-  return deferred.promise;
+  return new Promise(resolve => {
+    component.setState(newState, onNextAnimationFrame(resolve));
+  });
 }
 
 function dumpn(msg) {
   dump(`SHARED-COMPONENTS-TEST: ${msg}\n`);
 }
+
+/**
+ * Tree View
+ */
+
+const TEST_TREE_VIEW = {
+  A: { label: "A", value: "A" },
+  B: { label: "B", value: "B" },
+  C: { label: "C", value: "C" },
+  D: { label: "D", value: "D" },
+  E: { label: "E", value: "E" },
+  F: { label: "F", value: "F" },
+  G: { label: "G", value: "G" },
+  H: { label: "H", value: "H" },
+  I: { label: "I", value: "I" },
+  J: { label: "J", value: "J" },
+  K: { label: "K", value: "K" },
+  L: { label: "L", value: "L" },
+};
+
+TEST_TREE_VIEW.children = {
+  A: [TEST_TREE_VIEW.B, TEST_TREE_VIEW.C, TEST_TREE_VIEW.D],
+  B: [TEST_TREE_VIEW.E, TEST_TREE_VIEW.F, TEST_TREE_VIEW.G],
+  C: [TEST_TREE_VIEW.H, TEST_TREE_VIEW.I],
+  D: [TEST_TREE_VIEW.J],
+  E: [TEST_TREE_VIEW.K, TEST_TREE_VIEW.L],
+  F: [],
+  G: [],
+  H: [],
+  I: [],
+  J: [],
+  K: [],
+  L: [],
+};
+
+const TEST_TREE_VIEW_INTERFACE = {
+  provider: {
+    getChildren: x => TEST_TREE_VIEW.children[x.label],
+    hasChildren: x => TEST_TREE_VIEW.children[x.label].length > 0,
+    getLabel: x => x.label,
+    getValue: x => x.value,
+    getKey: x => x.label,
+    getType: () => "string",
+  },
+  object: TEST_TREE_VIEW.A,
+  columns: [{ id: "default" }, { id: "value" }],
+};
 
 /**
  * Tree
@@ -70,7 +122,8 @@ function dumpn(msg) {
 var TEST_TREE_INTERFACE = {
   getParent: x => TEST_TREE.parent[x],
   getChildren: x => TEST_TREE.children[x],
-  renderItem: (x, depth, focused, arrow) => "-".repeat(depth) + x + ":" + focused + "\n",
+  renderItem: (x, depth, focused) =>
+    "-".repeat(depth) + x + ":" + focused + "\n",
   getRoots: () => ["A", "M"],
   getKey: x => "key-" + x,
   itemHeight: 1,
@@ -84,6 +137,29 @@ function isRenderedTree(actual, expectedDescription, msg) {
   dumpn(`Expected tree:\n${expected}`);
   dumpn(`Actual tree:\n${actual}`);
   is(actual, expected, msg);
+}
+
+function isAccessibleTree(tree, options = {}) {
+  const treeNode = tree.refs.tree;
+  is(treeNode.getAttribute("tabindex"), "0", "Tab index is set");
+  is(treeNode.getAttribute("role"), "tree", "Tree semantics is present");
+  if (options.hasActiveDescendant) {
+    ok(
+      treeNode.hasAttribute("aria-activedescendant"),
+      "Tree has an active descendant set"
+    );
+  }
+
+  const treeNodes = [...treeNode.querySelectorAll(".tree-node")];
+  for (const node of treeNodes) {
+    ok(node.id, "TreeNode has an id");
+    is(node.getAttribute("role"), "treeitem", "Tree item semantics is present");
+    is(
+      parseInt(node.getAttribute("aria-level"), 10),
+      parseInt(node.getAttribute("data-depth"), 10) + 1,
+      "Aria level attribute is set correctly"
+    );
+  }
 }
 
 // Encoding of the following tree/forest:
@@ -119,7 +195,7 @@ var TEST_TREE = {
     L: [],
     M: ["N"],
     N: ["O"],
-    O: []
+    O: [],
   },
   parent: {
     A: null,
@@ -136,7 +212,7 @@ var TEST_TREE = {
     L: "E",
     M: null,
     N: "M",
-    O: "N"
+    O: "N",
   },
   expanded: new Set(),
 };
@@ -144,18 +220,37 @@ var TEST_TREE = {
 /**
  * Frame
  */
-function checkFrameString({ el, file, line, column, source, functionName, shouldLink, tooltip }) {
-  let $ = selector => el.querySelector(selector);
+function checkFrameString({
+  el,
+  file,
+  line,
+  column,
+  source,
+  functionName,
+  shouldLink,
+  tooltip,
+  locationPrefix,
+}) {
+  const $ = selector => el.querySelector(selector);
 
-  let $func = $(".frame-link-function-display-name");
-  let $source = $(".frame-link-source");
-  let $sourceInner = $(".frame-link-source-inner");
-  let $filename = $(".frame-link-filename");
-  let $line = $(".frame-link-line");
+  const $func = $(".frame-link-function-display-name");
+  const $source = $(".frame-link-source");
+  const $sourceInner = $(".frame-link-source-inner");
+  const $locationPrefix = $(".frame-link-prefix");
+  const $filename = $(".frame-link-filename");
+  const $line = $(".frame-link-line");
 
   is($filename.textContent, file, "Correct filename");
-  is(el.getAttribute("data-line"), line ? `${line}` : null, "Expected `data-line` found");
-  is(el.getAttribute("data-column"), column ? `${column}` : null, "Expected `data-column` found");
+  is(
+    el.getAttribute("data-line"),
+    line ? `${line}` : null,
+    "Expected `data-line` found"
+  );
+  is(
+    el.getAttribute("data-column"),
+    column ? `${column}` : null,
+    "Expected `data-column` found"
+  );
   is($sourceInner.getAttribute("title"), tooltip, "Correct tooltip");
   is($source.tagName, shouldLink ? "A" : "SPAN", "Correct linkable status");
   if (shouldLink) {
@@ -178,6 +273,27 @@ function checkFrameString({ el, file, line, column, source, functionName, should
   } else {
     ok(!$func, "Should not have an element for `functionName`");
   }
+
+  if (locationPrefix != null) {
+    is($locationPrefix.textContent, locationPrefix, "Correct prefix");
+  } else {
+    ok(!$locationPrefix, "Should not have an element for `locationPrefix`");
+  }
+}
+
+function checkSmartFrameString({ el, location, functionName, tooltip }) {
+  const $ = selector => el.querySelector(selector);
+
+  const $func = $(".title");
+  const $location = $(".location");
+
+  is($location.textContent, location, "Correct filename");
+  is(el.getAttribute("title"), tooltip, "Correct tooltip");
+  if (functionName != null) {
+    is($func.textContent, functionName, "Correct function name");
+  } else {
+    ok(!$func, "Should not have an element for `functionName`");
+  }
 }
 
 function renderComponent(component, props) {
@@ -185,29 +301,76 @@ function renderComponent(component, props) {
   // By default, renderIntoDocument() won't work for stateless components, but
   // it will work if the stateless component is wrapped in a stateful one.
   // See https://github.com/facebook/react/issues/4839
-  const wrappedEl = React.DOM.span({}, [el]);
+  const wrappedEl = dom.span({}, [el]);
   const renderedComponent = TestUtils.renderIntoDocument(wrappedEl);
   return ReactDOM.findDOMNode(renderedComponent).children[0];
 }
 
 function shallowRenderComponent(component, props) {
   const el = React.createElement(component, props);
-  const renderer = TestUtils.createRenderer();
+  const renderer = new ShallowRenderer();
   renderer.render(el, {});
   return renderer.getRenderOutput();
 }
 
 /**
- * Test that a rep renders correctly across different modes.
+ * Creates a React Component for testing
+ *
+ * @param {string} factory - factory object of the component to be created
+ * @param {object} props - React props for the component
+ * @returns {object} - container Node, Object with React component
+ * and querySelector function with $ as name.
  */
-function testRepRenderModes(modeTests, testName, componentUnderTest, gripStub) {
-  modeTests.forEach(({mode, expectedOutput, message}) => {
-    const modeString = typeof mode === "undefined" ? "no mode" : mode;
-    if (!message) {
-      message = `${testName}: ${modeString} renders correctly.`;
-    }
+async function createComponentTest(factory, props) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
 
-    const rendered = renderComponent(componentUnderTest.rep, { object: gripStub, mode });
-    is(rendered.textContent, expectedOutput, message);
-  });
+  const component = ReactDOM.render(factory(props), container);
+  await forceRender(component);
+
+  return {
+    container,
+    component,
+    $: s => container.querySelector(s),
+  };
+}
+
+async function waitFor(condition = () => true, delay = 50) {
+  do {
+    const res = condition();
+    if (res) {
+      return res;
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+  } while (true);
+}
+
+/**
+ * Matches a component tree rendererd using TestRenderer to a given expected JSON
+ * snapshot.
+ * @param  {String} name
+ *         Name of the function derived from a test [step] name.
+ * @param  {Object} el
+ *         React element to be rendered using TestRenderer.
+ */
+function matchSnapshot(name, el) {
+  if (!_snapshots) {
+    is(false, "No snapshots were loaded into test.");
+  }
+
+  const snapshot = _snapshots[name];
+  if (snapshot === undefined) {
+    is(false, `Snapshot for "${name}" not found.`);
+  }
+
+  const renderer = TestRenderer.create(el, {});
+  const tree = renderer.toJSON();
+
+  is(
+    JSON.stringify(tree, (key, value) =>
+      typeof value === "function" ? value.toString() : value
+    ),
+    JSON.stringify(snapshot),
+    name
+  );
 }

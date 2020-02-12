@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,9 +6,12 @@
 #ifndef MOZILLA_GFX_PRINTTARGET_H
 #define MOZILLA_GFX_PRINTTARGET_H
 
+#include <functional>
+
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/2D.h"
 #include "nsISupportsImpl.h"
+#include "nsStringFwd.h"
 
 namespace mozilla {
 namespace gfx {
@@ -24,25 +27,35 @@ class DrawEventRecorder;
  * platform specific cairo_surface_t*.
  */
 class PrintTarget {
-public:
+ public:
+  typedef std::function<void(nsresult)> PageDoneCallback;
 
   NS_INLINE_DECL_REFCOUNTING(PrintTarget);
 
   /// Must be matched 1:1 by an EndPrinting/AbortPrinting call.
   virtual nsresult BeginPrinting(const nsAString& aTitle,
-                                 const nsAString& aPrintToFileName) {
+                                 const nsAString& aPrintToFileName,
+                                 int32_t aStartPage, int32_t aEndPage) {
     return NS_OK;
   }
-  virtual nsresult EndPrinting() {
-    return NS_OK;
-  }
+  virtual nsresult EndPrinting() { return NS_OK; }
   virtual nsresult AbortPrinting() {
+#ifdef DEBUG
+    mHasActivePage = false;
+#endif
     return NS_OK;
   }
   virtual nsresult BeginPage() {
+#ifdef DEBUG
+    MOZ_ASSERT(!mHasActivePage, "Missing EndPage() call");
+    mHasActivePage = true;
+#endif
     return NS_OK;
   }
   virtual nsresult EndPage() {
+#ifdef DEBUG
+    mHasActivePage = false;
+#endif
     return NS_OK;
   }
 
@@ -60,13 +73,9 @@ public:
    * Returns true if to print landscape our consumers must apply a 90 degrees
    * rotation to our DrawTarget.
    */
-  virtual bool RotateNeededForLandscape() const {
-    return false;
-  }
+  virtual bool RotateNeededForLandscape() const { return false; }
 
-  const IntSize& GetSize() const {
-    return mSize;
-  }
+  const IntSize& GetSize() const { return mSize; }
 
   /**
    * Makes a DrawTarget to draw the printer output to, or returns null on
@@ -77,6 +86,10 @@ public:
    * subclass of this class.  This argument is only intended to be used in
    * the e10s content process if printing output can't otherwise be transfered
    * over to the parent process using the normal DrawTarget type.
+   *
+   * NOTE: this should only be called between BeginPage()/EndPage() calls, and
+   * the returned DrawTarget should not be drawn to after EndPage() has been
+   * called.
    *
    * XXX For consistency with the old code this takes a size parameter even
    * though we already have the size passed to our subclass's CreateOrNull
@@ -107,28 +120,55 @@ public:
    * TODO: Consider adding a SetDPI method that calls
    * cairo_surface_set_fallback_resolution.
    */
-  virtual already_AddRefed<DrawTarget>
-  MakeDrawTarget(const IntSize& aSize,
-                 DrawEventRecorder* aRecorder = nullptr);
+  virtual already_AddRefed<DrawTarget> MakeDrawTarget(
+      const IntSize& aSize, DrawEventRecorder* aRecorder = nullptr);
 
-protected:
+  /**
+   * Returns a reference DrawTarget. Unlike MakeDrawTarget, this method is not
+   * restricted to being called between BeginPage()/EndPage() calls, and the
+   * returned DrawTarget is still valid to use after EndPage() has been called.
+   */
+  virtual already_AddRefed<DrawTarget> GetReferenceDrawTarget();
 
+  /**
+   * If IsSyncPagePrinting returns true, then a user can assume the content of
+   * a page was already printed after EndPage().
+   * If IsSyncPagePrinting returns false, then a user should register a
+   * callback function using RegisterPageDoneCallback to receive page print
+   * done notifications.
+   */
+  virtual bool IsSyncPagePrinting() const { return true; }
+  void RegisterPageDoneCallback(PageDoneCallback&& aCallback);
+  void UnregisterPageDoneCallback();
+
+  static void AdjustPrintJobNameForIPP(const nsAString& aJobName,
+                                       nsCString& aAdjustedJobName);
+  static void AdjustPrintJobNameForIPP(const nsAString& aJobName,
+                                       nsString& aAdjustedJobName);
+
+ protected:
   // Only created via subclass's constructors
   explicit PrintTarget(cairo_surface_t* aCairoSurface, const IntSize& aSize);
 
   // Protected because we're refcounted
   virtual ~PrintTarget();
 
-  already_AddRefed<DrawTarget>
-  CreateRecordingDrawTarget(DrawEventRecorder* aRecorder,
-                            DrawTarget* aDrawTarget);
+  static already_AddRefed<DrawTarget> CreateWrapAndRecordDrawTarget(
+      DrawEventRecorder* aRecorder, DrawTarget* aDrawTarget);
 
   cairo_surface_t* mCairoSurface;
+  RefPtr<DrawTarget> mRefDT;  // reference DT
+
   IntSize mSize;
   bool mIsFinished;
+#ifdef DEBUG
+  bool mHasActivePage;
+#endif
+
+  PageDoneCallback mPageDoneCallback;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_PRINTTARGET_H */

@@ -4,11 +4,7 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["TabStateFlusher"];
-
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Promise.jsm", this);
+var EXPORTED_SYMBOLS = ["TabStateFlusher"];
 
 /**
  * A module that enables async flushes. Updates from frame scripts are
@@ -17,7 +13,7 @@ Cu.import("resource://gre/modules/Promise.jsm", this);
  * wait until the frame scripts reported back. At this point the parent has the
  * latest data and the action can continue.
  */
-this.TabStateFlusher = Object.freeze({
+var TabStateFlusher = Object.freeze({
   /**
    * Requests an async flush for the given browser. Returns a promise that will
    * resolve when we heard back from the content process and the parent has
@@ -48,7 +44,7 @@ this.TabStateFlusher = Object.freeze({
    *        An error message that will be sent to the Console in the
    *        event that a flush failed.
    */
-  resolve(browser, flushID, success=true, message="") {
+  resolve(browser, flushID, success = true, message = "") {
     TabStateFlusherInternal.resolve(browser, flushID, success, message);
   },
 
@@ -66,9 +62,9 @@ this.TabStateFlusher = Object.freeze({
    *        An error message that will be sent to the Console in the
    *        event that the flushes failed.
    */
-  resolveAll(browser, success=true, message="") {
+  resolveAll(browser, success = true, message = "") {
     TabStateFlusherInternal.resolveAll(browser, success, message);
-  }
+  },
 });
 
 var TabStateFlusherInternal = {
@@ -78,6 +74,9 @@ var TabStateFlusherInternal = {
   // A map storing all active requests per browser.
   _requests: new WeakMap(),
 
+  // A map storing if there is requests to native listener per browser.
+  _requestsToNativeListener: new WeakMap(),
+
   /**
    * Requests an async flush for the given browser. Returns a promise that will
    * resolve when we heard back from the content process and the parent has
@@ -85,29 +84,49 @@ var TabStateFlusherInternal = {
    */
   flush(browser) {
     let id = ++this._lastRequestID;
+    let requestNativeListener = false;
+    if (browser && browser.frameLoader) {
+      /*
+        Request native listener to flush the tabState.
+        True if the flush is involved async ipc call.
+       */
+      requestNativeListener = browser.frameLoader.requestTabStateFlush(id);
+    }
+
     let mm = browser.messageManager;
-    mm.sendAsyncMessage("SessionStore:flush", {id});
+    mm.sendAsyncMessage("SessionStore:flush", { id });
 
     // Retrieve active requests for given browser.
     let permanentKey = browser.permanentKey;
     let perBrowserRequests = this._requests.get(permanentKey) || new Map();
+    let perBrowserRequestsToNative =
+      this._requestsToNativeListener.get(permanentKey) || new Map();
 
     return new Promise(resolve => {
       // Store resolve() so that we can resolve the promise later.
       perBrowserRequests.set(id, resolve);
+      perBrowserRequestsToNative.set(id, requestNativeListener);
 
       // Update the flush requests stored per browser.
       this._requests.set(permanentKey, perBrowserRequests);
+      this._requestsToNativeListener.set(
+        permanentKey,
+        perBrowserRequestsToNative
+      );
     });
   },
 
   /**
-   * Requests an async flush for all browsers of a given window. Returns a Promise
-   * that will resolve when we've heard back from all browsers.
+   * Requests an async flush for all non-lazy browsers of a given window.
+   * Returns a Promise that will resolve when we've heard back from all browsers.
    */
   flushWindow(window) {
-    let browsers = window.gBrowser.browsers;
-    let promises = browsers.map((browser) => this.flush(browser));
+    let promises = [];
+    for (let browser of window.gBrowser.browsers) {
+      if (window.gBrowser.getTabForBrowser(browser).linkedPanel) {
+        promises.push(this.flush(browser));
+      }
+    }
     return Promise.all(promises);
   },
 
@@ -124,9 +143,26 @@ var TabStateFlusherInternal = {
    *        An error message that will be sent to the Console in the
    *        event that a flush failed.
    */
-  resolve(browser, flushID, success=true, message="") {
+  resolve(browser, flushID, success = true, message = "") {
     // Nothing to do if there are no pending flushes for the given browser.
     if (!this._requests.has(browser.permanentKey)) {
+      return;
+    }
+
+    // Check if there is request to native listener for given browser.
+    let perBrowserRequestsForNativeListener = this._requestsToNativeListener.get(
+      browser.permanentKey
+    );
+    if (!perBrowserRequestsForNativeListener.has(flushID)) {
+      return;
+    }
+    let waitForNextResolve = perBrowserRequestsForNativeListener.get(flushID);
+    if (waitForNextResolve) {
+      perBrowserRequestsForNativeListener.set(flushID, false);
+      this._requestsToNativeListener.set(
+        browser.permanentKey,
+        perBrowserRequestsForNativeListener
+      );
       return;
     }
 
@@ -160,7 +196,7 @@ var TabStateFlusherInternal = {
    *        An error message that will be sent to the Console in the
    *        event that the flushes failed.
    */
-  resolveAll(browser, success=true, message="") {
+  resolveAll(browser, success = true, message = "") {
     // Nothing to do if there are no pending flushes for the given browser.
     if (!this._requests.has(browser.permanentKey)) {
       return;
@@ -180,5 +216,5 @@ var TabStateFlusherInternal = {
 
     // Clear active requests.
     perBrowserRequests.clear();
-  }
+  },
 };

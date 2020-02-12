@@ -6,10 +6,10 @@
 <head>
   <title>Indexed Database Property Test</title>
 
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 
-  <script type="text/javascript;version=1.7">
+  <script type="text/javascript">
     let testGenerator = testSteps();
 
     function ok(val, message) {
@@ -23,7 +23,7 @@
     }
 
     function grabEventAndContinueHandler(event) {
-      testGenerator.send(event);
+      testGenerator.next(event);
     }
 
     function errorHandler(event) {
@@ -40,7 +40,7 @@
       // Let window.onerror have a chance to fire
       setTimeout(function() {
         setTimeout(function() {
-          testGenerator.close();
+          testGenerator.return();
           window.parent.postMessage("SimpleTest.finish();", "*");
         }, 0);
       }, 0);
@@ -50,7 +50,7 @@
       return false;
     };
 
-    function testSteps() {
+    function* testSteps() {
       window.parent.SpecialPowers.addPermission("indexedDB", true, document);
 
       // Test 1: Throwing an exception in an upgradeneeded handler should
@@ -58,11 +58,11 @@
       let request = indexedDB.open(window.location.pathname, 1);
       request.onerror = errorHandler;
       request.onsuccess = unexpectedSuccessHandler;
-      request.onupgradeneeded = function () {
+      request.onupgradeneeded = function() {
         let transaction = request.transaction;
         transaction.oncomplete = unexpectedSuccessHandler;
-        transaction.onabort = grabEventAndContinueHandler
-        throw "STOP";
+        transaction.onabort = grabEventAndContinueHandler;
+        throw new Error("STOP");
       };
 
       let event = yield undefined;
@@ -106,7 +106,7 @@
 
       request = objectStore.add({}, 1);
       request.onsuccess = function(event) {
-        throw "foo";
+        throw new Error("foo");
       };
 
       event = yield undefined;
@@ -153,9 +153,9 @@
       request.onerror = errorHandler;
       request = objectStore.add({}, 1);
       request.onsuccess = unexpectedSuccessHandler;
-      request.onerror = function (event) {
+      request.onerror = function(event) {
         event.preventDefault();
-        throw "STOP";
+        throw new Error("STOP");
       };
 
       event = yield undefined;

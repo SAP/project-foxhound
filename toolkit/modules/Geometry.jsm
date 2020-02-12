@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Point", "Rect"];
+var EXPORTED_SYMBOLS = ["Point", "Rect"];
 
 /**
  * Simple Point class.
  *
  * Any method that takes an x and y may also take a point.
  */
-this.Point = function Point(x, y) {
+function Point(x, y) {
   this.set(x, y);
 }
 
@@ -56,24 +56,25 @@ Point.prototype = {
     return this;
   },
 
-  isZero: function() {
+  isZero() {
     return this.x == 0 && this.y == 0;
-  }
+  },
 };
 
 (function() {
   function takePointOrArgs(f) {
     return function(arg1, arg2) {
-      if (arg2 === undefined)
+      if (arg2 === undefined) {
         return f.call(this, arg1.x, arg1.y);
+      }
       return f.call(this, arg1, arg2);
     };
   }
 
-  for (let f of ['add', 'subtract', 'equals', 'set'])
+  for (let f of ["add", "subtract", "equals", "set"]) {
     Point.prototype[f] = takePointOrArgs(Point.prototype[f]);
+  }
 })();
-
 
 /**
  * Rect is a simple data structure for representation of a rectangle supporting
@@ -83,22 +84,30 @@ Point.prototype = {
  * non-positive widths and heights in that case.
  */
 
-this.Rect = function Rect(x, y, w, h) {
+function Rect(x, y, w, h) {
   this.left = x;
   this.top = y;
   this.right = x + w;
   this.bottom = y + h;
-};
+}
 
 Rect.fromRect = function fromRect(r) {
   return new Rect(r.left, r.top, r.right - r.left, r.bottom - r.top);
 };
 
 Rect.prototype = {
-  get x() { return this.left; },
-  get y() { return this.top; },
-  get width() { return this.right - this.left; },
-  get height() { return this.bottom - this.top; },
+  get x() {
+    return this.left;
+  },
+  get y() {
+    return this.top;
+  },
+  get width() {
+    return this.right - this.left;
+  },
+  get height() {
+    return this.bottom - this.top;
+  },
   set x(v) {
     let diff = this.left - v;
     this.left = v;
@@ -109,23 +118,27 @@ Rect.prototype = {
     this.top = v;
     this.bottom -= diff;
   },
-  set width(v) { this.right = this.left + v; },
-  set height(v) { this.bottom = this.top + v; },
+  set width(v) {
+    this.right = this.left + v;
+  },
+  set height(v) {
+    this.bottom = this.top + v;
+  },
 
   isEmpty: function isEmpty() {
     return this.left >= this.right || this.top >= this.bottom;
   },
 
-  setRect: function(x, y, w, h) {
+  setRect(x, y, w, h) {
     this.left = x;
     this.top = y;
-    this.right = x+w;
-    this.bottom = y+h;
+    this.right = x + w;
+    this.bottom = y + h;
 
     return this;
   },
 
-  setBounds: function(l, t, r, b) {
+  setBounds(l, t, r, b) {
     this.top = t;
     this.left = l;
     this.bottom = b;
@@ -135,26 +148,36 @@ Rect.prototype = {
   },
 
   equals: function equals(other) {
-    return other != null &&
-            (this.isEmpty() && other.isEmpty() ||
-            this.top == other.top &&
-            this.left == other.left &&
-            this.bottom == other.bottom &&
-            this.right == other.right);
+    return (
+      other != null &&
+      ((this.isEmpty() && other.isEmpty()) ||
+        (this.top == other.top &&
+          this.left == other.left &&
+          this.bottom == other.bottom &&
+          this.right == other.right))
+    );
   },
 
   clone: function clone() {
-    return new Rect(this.left, this.top, this.right - this.left, this.bottom - this.top);
+    return new Rect(
+      this.left,
+      this.top,
+      this.right - this.left,
+      this.bottom - this.top
+    );
   },
 
   center: function center() {
-    if (this.isEmpty())
-      throw "Empty rectangles do not have centers";
-    return new Point(this.left + (this.right - this.left) / 2,
-                          this.top + (this.bottom - this.top) / 2);
+    if (this.isEmpty()) {
+      throw new Error("Empty rectangles do not have centers");
+    }
+    return new Point(
+      this.left + (this.right - this.left) / 2,
+      this.top + (this.bottom - this.top) / 2
+    );
   },
 
-  copyFrom: function(other) {
+  copyFrom(other) {
     this.top = other.top;
     this.left = other.left;
     this.bottom = other.bottom;
@@ -163,7 +186,7 @@ Rect.prototype = {
     return this;
   },
 
-  translate: function(x, y) {
+  translate(x, y) {
     this.left += x;
     this.right += x;
     this.top += y;
@@ -172,32 +195,41 @@ Rect.prototype = {
     return this;
   },
 
-  toString: function() {
-    return "[" + this.x + "," + this.y + "," + this.width + "," + this.height + "]";
+  toString() {
+    return (
+      "[" + this.x + "," + this.y + "," + this.width + "," + this.height + "]"
+    );
   },
 
   /** return a new rect that is the union of that one and this one */
-  union: function(other) {
+  union(other) {
     return this.clone().expandToContain(other);
   },
 
-  contains: function(other) {
-    if (other.isEmpty()) return true;
-    if (this.isEmpty()) return false;
+  contains(other) {
+    if (other.isEmpty()) {
+      return true;
+    }
+    if (this.isEmpty()) {
+      return false;
+    }
 
-    return (other.left >= this.left &&
-            other.right <= this.right &&
-            other.top >= this.top &&
-            other.bottom <= this.bottom);
+    return (
+      other.left >= this.left &&
+      other.right <= this.right &&
+      other.top >= this.top &&
+      other.bottom <= this.bottom
+    );
   },
 
-  intersect: function(other) {
+  intersect(other) {
     return this.clone().restrictTo(other);
   },
 
-  intersects: function(other) {
-    if (this.isEmpty() || other.isEmpty())
+  intersects(other) {
+    if (this.isEmpty() || other.isEmpty()) {
       return false;
+    }
 
     let x1 = Math.max(this.left, other.left);
     let x2 = Math.min(this.right, other.right);
@@ -208,8 +240,9 @@ Rect.prototype = {
 
   /** Restrict area of this rectangle to the intersection of both rectangles. */
   restrictTo: function restrictTo(other) {
-    if (this.isEmpty() || other.isEmpty())
+    if (this.isEmpty() || other.isEmpty()) {
       return this.setRect(0, 0, 0, 0);
+    }
 
     let x1 = Math.max(this.left, other.left);
     let x2 = Math.min(this.right, other.right);
@@ -221,14 +254,18 @@ Rect.prototype = {
 
   /** Expand this rectangle to the union of both rectangles. */
   expandToContain: function expandToContain(other) {
-    if (this.isEmpty()) return this.copyFrom(other);
-    if (other.isEmpty()) return this;
+    if (this.isEmpty()) {
+      return this.copyFrom(other);
+    }
+    if (other.isEmpty()) {
+      return this;
+    }
 
     let l = Math.min(this.left, other.left);
     let r = Math.max(this.right, other.right);
     let t = Math.min(this.top, other.top);
     let b = Math.max(this.bottom, other.bottom);
-    return this.setRect(l, t, r-l, b-t);
+    return this.setRect(l, t, r - l, b - t);
   },
 
   /**
@@ -262,16 +299,18 @@ Rect.prototype = {
   /** Ensure this rectangle is inside the other, if possible. Preserves w, h. */
   translateInside: function translateInside(other) {
     let offsetX = 0;
-    if (this.left <= other.left)
+    if (this.left <= other.left) {
       offsetX = other.left - this.left;
-    else if (this.right > other.right)
+    } else if (this.right > other.right) {
       offsetX = other.right - this.right;
+    }
 
     let offsetY = 0;
-    if (this.top <= other.top)
+    if (this.top <= other.top) {
       offsetY = other.top - this.top;
-    else if (this.bottom > other.bottom)
+    } else if (this.bottom > other.bottom) {
       offsetY = other.bottom - this.bottom;
+    }
 
     return this.translate(offsetX, offsetY);
   },
@@ -281,24 +320,29 @@ Rect.prototype = {
     let r = new Rect(0, 0, 0, 0);
     let result = [];
     other = other.intersect(this);
-    if (other.isEmpty())
+    if (other.isEmpty()) {
       return [this.clone()];
+    }
 
     // left strip
     r.setBounds(this.left, this.top, other.left, this.bottom);
-    if (!r.isEmpty())
+    if (!r.isEmpty()) {
       result.push(r.clone());
+    }
     // inside strip
     r.setBounds(other.left, this.top, other.right, other.top);
-    if (!r.isEmpty())
+    if (!r.isEmpty()) {
       result.push(r.clone());
+    }
     r.setBounds(other.left, other.bottom, other.right, this.bottom);
-    if (!r.isEmpty())
+    if (!r.isEmpty()) {
       result.push(r.clone());
+    }
     // right strip
     r.setBounds(other.right, this.top, this.right, this.bottom);
-    if (!r.isEmpty())
+    if (!r.isEmpty()) {
       result.push(r.clone());
+    }
 
     return result;
   },
@@ -311,10 +355,11 @@ Rect.prototype = {
    */
   blend: function blend(rect, scalar) {
     return new Rect(
-      this.left   + (rect.left   - this.left  ) * scalar,
-      this.top    + (rect.top    - this.top   ) * scalar,
-      this.width  + (rect.width  - this.width ) * scalar,
-      this.height + (rect.height - this.height) * scalar);
+      this.left + (rect.left - this.left) * scalar,
+      this.top + (rect.top - this.top) * scalar,
+      this.width + (rect.width - this.width) * scalar,
+      this.height + (rect.height - this.height) * scalar
+    );
   },
 
   /**
@@ -323,12 +368,24 @@ Rect.prototype = {
    */
   inflate: function inflate(xscl, yscl) {
     let xAdj = (this.width * xscl - this.width) / 2;
-    let s = (arguments.length > 1) ? yscl : xscl;
+    let s = arguments.length > 1 ? yscl : xscl;
     let yAdj = (this.height * s - this.height) / 2;
     this.left -= xAdj;
     this.right += xAdj;
     this.top -= yAdj;
     this.bottom += yAdj;
     return this;
-  }
+  },
+
+  /**
+   * Grows or shrinks the rectangle by fixed amount while keeping the center point.
+   * Accepts single fixed amount
+   */
+  inflateFixed: function inflateFixed(fixed) {
+    this.left -= fixed;
+    this.right += fixed;
+    this.top -= fixed;
+    this.bottom += fixed;
+    return this;
+  },
 };

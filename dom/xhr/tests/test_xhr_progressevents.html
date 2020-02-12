@@ -2,13 +2,12 @@
 <html>
 <head>
   <title>Test for XMLHttpRequest Progress Events</title>
-  <script type="text/javascript" src="/MochiKit/packed.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="gen.next();">
 <pre id=l></pre>
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 SimpleTest.waitForExplicitFinish();
 
 var gen = runTests();
@@ -23,7 +22,7 @@ function log(s) {
 
 function getEvent(e) {
   log("got event: " + e.type + " (" + e.target.readyState + ")");
-  gen.send(e);
+  gen.next(e);
 }
 
 function startsWith(a, b) {
@@ -57,12 +56,8 @@ function updateProgress(e, data, testName) {
     if (data.blob) {
       is(e.loaded, response.size, "event.loaded matches response size" + test);
     }
-    else if (!data.chunked) {
-      is(e.loaded, response.length, "event.loaded matches response size" + test);
-    }
     else {
-      is(e.loaded - data.receivedBytes, response.length,
-         "event.loaded grew by response size" + test);
+      is(e.loaded, response.length, "event.loaded matches response size" + test);
     }
   }
   ok(e.loaded > data.receivedBytes, "event.loaded increased" + test);
@@ -126,26 +121,23 @@ function bufferToString(buffer) {
   return String.fromCharCode.apply(String, new Uint8Array(buffer));
 }
 
-function runTests() {
+function* runTests() {
   var xhr = new XMLHttpRequest();
   xhr.onprogress = xhr.onload = xhr.onerror = xhr.onreadystatechange = xhr.onloadend = getEvent;
 
   var responseTypes = [{ type: "text", text: true },
                        { type: "arraybuffer", text: false, nodata: true },
                        { type: "blob", text: false, nodata: true, blob: true },
-                       { type: "moz-blob", text: false, nodata: false, blob: true },
                        { type: "document", text: true, nodata: true },
                        { type: "json", text: true, nodata: true },
                        { type: "", text: true },
-                       { type: "moz-chunked-text", text: true, chunked: true },
-                       { type: "moz-chunked-arraybuffer", text: false, chunked: true },
                       ];
   var responseType;
   var fileExpectedResult = "";
-  for (var i = 0; i < 65536; i++) {
+  for (let i = 0; i < 65536; i++) {
     fileExpectedResult += String.fromCharCode(i & 255);
   }
-  while (responseType = responseTypes.shift()) {
+  while ((responseType = responseTypes.shift())) {
     let tests = [{ open: "Content-Type=text/plain", name: "simple test" },
                  { data: "hello world" },
                  { data: "\u0000\u0001\u0002\u0003" },
@@ -195,7 +187,6 @@ function runTests() {
                       total: test.total,
                       encoded: test.encoded,
                       nodata: responseType.nodata,
-                      chunked: responseType.chunked,
                       text: responseType.text,
                       blob: responseType.blob,
                       file: test.file };
@@ -229,24 +220,15 @@ function runTests() {
         if (!testState.file)
           xhrClose = closeConn();
 
-        e = yield undefined;
+        let e = yield undefined;
         is(e.type, "readystatechange", "should readystate to done closing " + testState.name);
         is(xhr.readyState, xhr.DONE, "should be in state DONE closing " + testState.name);
         log("readystate to 4");
-
-        if (responseType.chunked) {
-          xhr.responseType;
-          is(xhr.response, null, "chunked data has null response for " + testState.name);
-        }
 
         e = yield undefined;
         is(e.type, "load", "should fire load closing " + testState.name);
         is(e.lengthComputable, e.total != 0, "length should " + (e.total == 0 ? "not " : "") + "be computable during load closing " + testState.name);
         log("got load");
-
-        if (responseType.chunked) {
-          is(xhr.response, null, "chunked data has null response for " + testState.name);
-        }
 
         e = yield undefined;
         is(e.type, "loadend", "should fire loadend closing " + testState.name);
@@ -263,11 +245,7 @@ function runTests() {
           is(xhrClose.readyState, xhrClose.DONE, "closeConn finished");
         }
 
-        if (responseType.chunked) {
-          is(xhr.response, null, "chunked data has null response for " + testState.name);
-        }
-
-        if (!testState.nodata && !responseType.blob || responseType.chunked) {
+        if (!testState.nodata && !responseType.blob) {
           // This branch intentionally left blank
           // Under these conditions we check the response during updateProgress
         }
@@ -301,15 +279,12 @@ function runTests() {
 
       while(testState.pendingBytes) {
         log("waiting for more bytes: " + testState.pendingBytes);
-        e = yield undefined;
+        let e = yield undefined;
         // Readystate can fire several times between each progress event.
         if (e.type === "readystatechange")
           continue;
 
         updateProgress(e, testState, "data for " + testState.name + "[" + testState.index + "]");
-        if (responseType.chunked) {
-          testState.receivedResult = "";
-        }
       }
 
       if (!testState.nodata && !testState.blob) {
@@ -324,7 +299,6 @@ function runTests() {
   }
 
   SimpleTest.finish();
-  yield undefined;
 }
 
 </script>

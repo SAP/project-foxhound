@@ -3,6 +3,7 @@
 <style>
 
 body, input { font-size: 10px }
+body { line-height: 1.5 }
 input { padding: 0 1px; border: 1px solid maroon; font-family: monospace }
 
 td:first-child {
@@ -16,6 +17,7 @@ td:nth-child(2) {
 }
 
 td:nth-child(1) > * { vertical-align: bottom }
+td:nth-child(1) > div > * { vertical-align: bottom }
 
 canvas {
   background: blue
@@ -89,14 +91,14 @@ canvas {
 </tr></table>
 
 <table><tr>
-  <!-- 2px border, 2px padding, 4px ::-moz-focus-inner padding, 2px ::-moz-focus-inner border -->
-  <td><div style="width: 10px"><input type="button" style="width: 5px"></div></td>
+  <!-- 2px border, 2px padding -->
+  <td><div style="width: 4px"><input type="button" style="width: 2px"></div></td>
   <td>empty input type="button", width: 50%</td>
 </tr></table>
 
 <table><tr>
-  <!-- 2px border, 2px padding, 4px ::-moz-focus-inner padding, 2px ::-moz-focus-inner border -->
-  <td><div style="width: 10px"><input type="button" style="width: 5px"></div></td>
+  <!-- 2px border, 2px padding -->
+  <td><div style="width: 4px"><input type="button" style="width: 2px"></div></td>
   <td>empty input type="button", max-width: 50%</td>
 </tr></table>
 

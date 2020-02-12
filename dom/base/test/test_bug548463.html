@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=548463
 -->
 <head>
   <title>Test for Bug 548463</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -33,11 +33,11 @@ function testAdoptFromDOMNodeRemoved(nodeToAppend, nodeRemoved, nodeToAdopt)
   function reparent(event)
   {
     if (event.target == nodeRemoved) {
-      nodeRemoved.removeEventListener("DOMNodeRemoved", arguments.callee, false);
+      nodeRemoved.removeEventListener("DOMNodeRemoved", arguments.callee);
       otherDoc.adoptNode(nodeToAdopt);
     }
   }
-  nodeRemoved.addEventListener("DOMNodeRemoved", reparent, false);
+  nodeRemoved.addEventListener("DOMNodeRemoved", reparent);
 
   var thrown = false;
   try {
@@ -59,23 +59,6 @@ content.appendChild(elem1);
 testAdoptFromDOMNodeRemoved(elem1, elem1, content);
 
 content.appendChild(elem1);
-
-var thrown = false;
-
-function changeOwnerDocument()
-{
-  SpecialPowers.wrap(elem1).setUserData("foo", null, null);
-  otherDoc.adoptNode(elem1);
-}
-SpecialPowers.wrap(elem1).setUserData("foo", "bar", changeOwnerDocument);
-try {
-  document.adoptNode(elem1);
-}
-catch (e) {
-  thrown = true;
-}
-
-ok(!thrown, "adoptNode while adopting should not throw");
 
 </script>
 </pre>

@@ -1,6 +1,6 @@
 // Tests that freshened blocks behave correctly in Debugger.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = Debugger(g);
 var log = '';
 var oldEnv = null;
@@ -14,6 +14,6 @@ dbg.onDebuggerStatement = function (frame) {
   }
   log += frame.environment.getVariable("x");
 };
-g.eval("for (let x = 0; x < 2; x++) debugger;");
+g.eval("for (let x = 0; x < 2; x++) { eval(\"\"); debugger; }");
 gc();
 assertEq(log, "0false1");

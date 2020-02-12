@@ -10,52 +10,50 @@
 #include <stdint.h>
 #include "mozilla/Maybe.h"
 #include "nsSize.h"
+#include "nsTArray.h"
 #include "Orientation.h"
+#include "FrameTimeout.h"
 
 namespace mozilla {
 namespace image {
 
-class RasterImage;
-
 // The metadata about an image that decoders accumulate as they decode.
-class ImageMetadata
-{
-public:
+class ImageMetadata {
+ public:
   ImageMetadata()
-    : mLoopCount(-1)
-    , mFirstFrameTimeout(FrameTimeout::Forever())
-    , mHasAnimation(false)
-  { }
+      : mLoopCount(-1),
+        mFirstFrameTimeout(FrameTimeout::Forever()),
+        mHasAnimation(false) {}
 
-  void SetHotspot(uint16_t aHotspotX, uint16_t aHotspotY)
-  {
+  void SetHotspot(uint16_t aHotspotX, uint16_t aHotspotY) {
     mHotspot = Some(gfx::IntPoint(aHotspotX, aHotspotY));
   }
   gfx::IntPoint GetHotspot() const { return *mHotspot; }
   bool HasHotspot() const { return mHotspot.isSome(); }
 
-  void SetLoopCount(int32_t loopcount)
-  {
-    mLoopCount = loopcount;
-  }
+  void SetLoopCount(int32_t loopcount) { mLoopCount = loopcount; }
   int32_t GetLoopCount() const { return mLoopCount; }
 
   void SetLoopLength(FrameTimeout aLength) { mLoopLength = Some(aLength); }
   FrameTimeout GetLoopLength() const { return *mLoopLength; }
   bool HasLoopLength() const { return mLoopLength.isSome(); }
 
-  void SetFirstFrameTimeout(FrameTimeout aTimeout) { mFirstFrameTimeout = aTimeout; }
+  void SetFirstFrameTimeout(FrameTimeout aTimeout) {
+    mFirstFrameTimeout = aTimeout;
+  }
   FrameTimeout GetFirstFrameTimeout() const { return mFirstFrameTimeout; }
 
-  void SetFirstFrameRefreshArea(const gfx::IntRect& aRefreshArea)
-  {
+  void SetFirstFrameRefreshArea(const gfx::IntRect& aRefreshArea) {
     mFirstFrameRefreshArea = Some(aRefreshArea);
   }
-  gfx::IntRect GetFirstFrameRefreshArea() const { return *mFirstFrameRefreshArea; }
-  bool HasFirstFrameRefreshArea() const { return mFirstFrameRefreshArea.isSome(); }
+  gfx::IntRect GetFirstFrameRefreshArea() const {
+    return *mFirstFrameRefreshArea;
+  }
+  bool HasFirstFrameRefreshArea() const {
+    return mFirstFrameRefreshArea.isSome();
+  }
 
-  void SetSize(int32_t width, int32_t height, Orientation orientation)
-  {
+  void SetSize(int32_t width, int32_t height, Orientation orientation) {
     if (!HasSize()) {
       mSize.emplace(nsIntSize(width, height));
       mOrientation.emplace(orientation);
@@ -64,13 +62,19 @@ public:
   nsIntSize GetSize() const { return *mSize; }
   bool HasSize() const { return mSize.isSome(); }
 
+  void AddNativeSize(const nsIntSize& aSize) {
+    mNativeSizes.AppendElement(aSize);
+  }
+
+  const nsTArray<nsIntSize>& GetNativeSizes() const { return mNativeSizes; }
+
   Orientation GetOrientation() const { return *mOrientation; }
   bool HasOrientation() const { return mOrientation.isSome(); }
 
   void SetHasAnimation() { mHasAnimation = true; }
   bool HasAnimation() const { return mHasAnimation; }
 
-private:
+ private:
   /// The hotspot found on cursors, if present.
   Maybe<gfx::IntPoint> mHotspot;
 
@@ -90,10 +94,13 @@ private:
   Maybe<nsIntSize> mSize;
   Maybe<Orientation> mOrientation;
 
+  // Sizes the image can natively decode to.
+  nsTArray<nsIntSize> mNativeSizes;
+
   bool mHasAnimation : 1;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_ImageMetadata_h
+#endif  // mozilla_image_ImageMetadata_h

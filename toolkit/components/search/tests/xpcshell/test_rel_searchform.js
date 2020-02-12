@@ -7,15 +7,12 @@
 
 "use strict";
 
-function run_test() {
-  removeMetadata();
-  updateAppInfo();
+add_task(async function setup() {
   useHttpServer();
+  await AddonTestUtils.promiseStartupManager();
+});
 
-  run_next_test();
-}
-
-add_task(function* test_rel_searchform() {
+add_task(async function test_rel_searchform() {
   let engineNames = [
     "engine-rel-searchform.xml",
     "engine-rel-searchform-post.xml",
@@ -27,7 +24,7 @@ add_task(function* test_rel_searchform() {
   // returned as a last resort by Engine's searchForm getter, which is simply
   // the prePath of the engine's first HTML <Url>.
   let items = engineNames.map(e => ({ name: e, xmlFileName: e }));
-  for (let engine of yield addTestEngines(items)) {
-    do_check_eq(engine.searchForm, "http://" + engine.name + "/?search");
+  for (let engine of await addTestEngines(items)) {
+    Assert.equal(engine.searchForm, "http://" + engine.name + "/?search");
   }
 });

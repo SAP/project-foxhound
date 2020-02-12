@@ -7,14 +7,12 @@ var testGenerator = testSteps();
 
 var abortFired = false;
 
-function abortListener(evt)
-{
+function abortListener(evt) {
   abortFired = true;
   is(evt.target.error, null, "Expect a null error for an aborted transaction");
 }
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
 
   let request = indexedDB.open(name, 1);
@@ -65,8 +63,7 @@ function testSteps()
   try {
     is(transaction.objectStore("foo").name, "foo", "Can't get stores");
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Out of scope transaction can't make stores");
   }
 
@@ -79,86 +76,79 @@ function testSteps()
   try {
     objectStore.add({});
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Add threw");
   }
 
   try {
     objectStore.put({}, 1);
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Put threw");
   }
 
   try {
     objectStore.put({}, 1);
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Put threw");
   }
 
   try {
     objectStore.delete(1);
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Remove threw");
   }
 
   try {
     objectStore.get(1);
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Get threw");
   }
 
   try {
     objectStore.getAll(null);
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "GetAll threw");
   }
 
   try {
     objectStore.openCursor();
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "OpenCursor threw");
   }
 
   try {
     objectStore.createIndex("bar", "id");
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "CreateIndex threw");
   }
 
   try {
     objectStore.index("bar");
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "Index threw");
   }
 
   try {
     objectStore.deleteIndex("bar");
     ok(false, "Should have thrown");
-  }
-  catch (e) {
+  } catch (e) {
     ok(true, "RemoveIndex threw");
   }
 
   yield undefined;
 
-  request = db.transaction("foo", "readwrite").objectStore("foo").add({});
+  request = db
+    .transaction("foo", "readwrite")
+    .objectStore("foo")
+    .add({});
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
   event = yield undefined;
@@ -173,7 +163,10 @@ function testSteps()
 
   let key;
 
-  request = db.transaction("foo", "readwrite").objectStore("foo").add({});
+  request = db
+    .transaction("foo", "readwrite")
+    .objectStore("foo")
+    .add({});
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
   event = yield undefined;
@@ -191,24 +184,28 @@ function testSteps()
 
   is(event.type, "abort", "Right kind of event");
 
-  request = db.transaction("foo").objectStore("foo").get(key);
+  request = db
+    .transaction("foo")
+    .objectStore("foo")
+    .get(key);
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
   event = yield undefined;
 
   is(event.target.result, undefined, "Object was removed");
 
-  executeSoon(function() { testGenerator.next(); });
+  executeSoon(function() {
+    testGenerator.next();
+  });
   yield undefined;
 
   let keys = [];
   let abortEventCount = 0;
   function abortErrorHandler(event) {
-      is(event.target.error.name, "AbortError",
-         "Good error");
-      abortEventCount++;
-      event.preventDefault();
-  };
+    is(event.target.error.name, "AbortError", "Good error");
+    abortEventCount++;
+    event.preventDefault();
+  }
   objectStore = db.transaction("foo", "readwrite").objectStore("foo");
 
   for (let i = 0; i < 10; i++) {
@@ -229,7 +226,10 @@ function testSteps()
   is(abortEventCount, 5, "Got 5 abort error events");
 
   for (let i in keys) {
-    request = db.transaction("foo").objectStore("foo").get(keys[i]);
+    request = db
+      .transaction("foo")
+      .objectStore("foo")
+      .get(keys[i]);
     request.onerror = errorHandler;
     request.onsuccess = grabEventAndContinueHandler;
     event = yield undefined;
@@ -246,11 +246,11 @@ function testSteps()
   request = objectStore.add({}, 1);
   request.onsuccess = function() {
     ok(false, "inserting duplicate key should fail");
-  }
+  };
   request.onerror = function(event) {
     ok(true, "inserting duplicate key should fail");
     event.preventDefault();
-  }
+  };
   transaction.oncomplete = grabEventAndContinueHandler;
   yield undefined;
 
@@ -264,8 +264,7 @@ function testSteps()
   try {
     transaction.abort();
     ok(false, "second abort should throw an error");
-  }
-  catch (ex) {
+  } catch (ex) {
     ok(true, "second abort should throw an error");
   }
 
@@ -277,8 +276,7 @@ function testSteps()
   try {
     transaction.abort();
     ok(false, "second abort should throw an error");
-  }
-  catch (ex) {
+  } catch (ex) {
     ok(true, "second abort should throw an error");
   }
 
@@ -287,13 +285,12 @@ function testSteps()
   transaction.objectStore("foo").get(1).onsuccess = grabEventAndContinueHandler;
   event = yield undefined;
   transaction.objectStore("foo").get(1).onerror = abortErrorHandler;
-  expectedAbortEventCount++
+  expectedAbortEventCount++;
   transaction.abort();
   try {
     transaction.abort();
     ok(false, "second abort should throw an error");
-  }
-  catch (ex) {
+  } catch (ex) {
     ok(true, "second abort should throw an error");
   }
 
@@ -303,11 +300,11 @@ function testSteps()
     event.preventDefault();
 
     transaction.objectStore("foo").get(1).onerror = abortErrorHandler;
-    expectedAbortEventCount++
+    expectedAbortEventCount++;
 
     transaction.abort();
     continueToNextStep();
-  }
+  };
   yield undefined;
 
   // In between callbacks
@@ -329,15 +326,16 @@ function testSteps()
 
   // During COMMITTING
   transaction = db.transaction("foo", "readwrite");
-  transaction.objectStore("foo").put({hello: "world"}, 1).onsuccess = function(event) {
+  transaction
+    .objectStore("foo")
+    .put({ hello: "world" }, 1).onsuccess = function(event) {
     continueToNextStep();
   };
   yield undefined;
   try {
     transaction.abort();
     ok(false, "second abort should throw an error");
-  }
-  catch (ex) {
+  } catch (ex) {
     ok(true, "second abort should throw an error");
   }
   transaction.oncomplete = grabEventAndContinueHandler;
@@ -345,16 +343,17 @@ function testSteps()
 
   // Since the previous transaction shouldn't have caused any error events,
   // we know that all events should have fired by now.
-  is(abortEventCount, expectedAbortEventCount,
-     "All abort errors fired");
+  is(abortEventCount, expectedAbortEventCount, "All abort errors fired");
 
   // Abort both failing and succeeding requests
   transaction = db.transaction("foo", "readwrite");
   transaction.onabort = transaction.oncomplete = grabEventAndContinueHandler;
-  transaction.objectStore("foo").add({indexKey: "key"}).onsuccess = function(event) {
+  transaction.objectStore("foo").add({ indexKey: "key" }).onsuccess = function(
+    event
+  ) {
     transaction.abort();
   };
-  let request1 = transaction.objectStore("foo").add({indexKey: "key"});
+  let request1 = transaction.objectStore("foo").add({ indexKey: "key" });
   request1.onsuccess = grabEventAndContinueHandler;
   request1.onerror = grabEventAndContinueHandler;
   let request2 = transaction.objectStore("foo").get(1);
@@ -364,13 +363,21 @@ function testSteps()
   event = yield undefined;
   is(event.type, "error", "abort() should make all requests fail");
   is(event.target, request1, "abort() should make all requests fail");
-  is(event.target.error.name, "AbortError", "abort() should make all requests fail");
+  is(
+    event.target.error.name,
+    "AbortError",
+    "abort() should make all requests fail"
+  );
   event.preventDefault();
 
   event = yield undefined;
   is(event.type, "error", "abort() should make all requests fail");
   is(event.target, request2, "abort() should make all requests fail");
-  is(event.target.error.name, "AbortError", "abort() should make all requests fail");
+  is(
+    event.target.error.name,
+    "AbortError",
+    "abort() should make all requests fail"
+  );
   event.preventDefault();
 
   event = yield undefined;
@@ -380,5 +387,4 @@ function testSteps()
   ok(abortFired, "Abort should have fired!");
 
   finishTest();
-  yield undefined;
 }

@@ -4,31 +4,49 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Document Navigation')
+
+with Files('crashtests/430628*'):
+    BUG_COMPONENT = ('Core', 'Editor')
+
+with Files('crashtests/432114*'):
+    BUG_COMPONENT = ('Core', 'Editor')
+
+with Files('crashtests/500328*'):
+    BUG_COMPONENT = ('Firefox', 'Bookmarks & History')
+
+with Files('IHistory.h'):
+    BUG_COMPONENT = ('Toolkit', 'Places')
+
+with Files('*LoadContext.*'):
+    BUG_COMPONENT = ('Core', 'Networking')
+
+with Files('nsAboutRedirector.*'):
+    BUG_COMPONENT = ('Core', 'General')
+
+with Files('nsIScrollObserver.*'):
+    BUG_COMPONENT = ('Core', 'Panning and Zooming')
+
 DIRS += [
     'timeline',
 ]
 
 XPIDL_SOURCES += [
-    'nsCDefaultURIFixup.idl',
-    'nsIClipboardCommands.idl',
     'nsIContentViewer.idl',
-    'nsIContentViewerContainer.idl',
     'nsIContentViewerEdit.idl',
-    'nsIContentViewerFile.idl',
-    'nsIDocCharset.idl',
     'nsIDocShell.idl',
-    'nsIDocShellLoadInfo.idl',
     'nsIDocShellTreeItem.idl',
     'nsIDocShellTreeOwner.idl',
     'nsIDocumentLoaderFactory.idl',
-    'nsIDownloadHistory.idl',
-    'nsIGlobalHistory2.idl',
     'nsILoadContext.idl',
+    'nsILoadURIDelegate.idl',
     'nsIPrivacyTransitionObserver.idl',
     'nsIReflowObserver.idl',
     'nsIRefreshURI.idl',
     'nsIScrollable.idl',
-    'nsITextScroll.idl',
+    'nsITooltipListener.idl',
+    'nsITooltipTextProvider.idl',
     'nsIURIFixup.idl',
     'nsIWebNavigation.idl',
     'nsIWebNavigationInfo.idl',
@@ -38,10 +56,12 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'docshell'
 
 EXPORTS += [
+    'nsCTooltipTextProvider.h',
+    'nsDocShell.h',
+    'nsDocShellLoadState.h',
     'nsDocShellLoadTypes.h',
-    'nsILinkHandler.h',
+    'nsDocShellTreeOwner.h',
     'nsIScrollObserver.h',
-    'nsIWebShellServices.h',
     'SerializedLoadContext.h',
 ]
 
@@ -50,17 +70,30 @@ EXPORTS.mozilla += [
     'LoadContext.h',
 ]
 
+EXPORTS.mozilla.dom += [
+    'BrowsingContext.h',
+    'BrowsingContextFieldList.h',
+    'BrowsingContextGroup.h',
+    'CanonicalBrowsingContext.h',
+    'ChildProcessChannelListener.h',
+]
+
 UNIFIED_SOURCES += [
+    'BrowsingContext.cpp',
+    'BrowsingContextGroup.cpp',
+    'CanonicalBrowsingContext.cpp',
+    'ChildProcessChannelListener.cpp',
     'LoadContext.cpp',
     'nsAboutRedirector.cpp',
     'nsDefaultURIFixup.cpp',
     'nsDocShell.cpp',
     'nsDocShellEditorData.cpp',
     'nsDocShellEnumerator.cpp',
-    'nsDocShellLoadInfo.cpp',
-    'nsDocShellTransferableHooks.cpp',
-    'nsDownloadHistory.cpp',
+    'nsDocShellLoadState.cpp',
+    'nsDocShellTreeOwner.cpp',
     'nsDSURIContentListener.cpp',
+    'nsPingListener.cpp',
+    'nsRefreshTimer.cpp',
     'nsWebNavigationInfo.cpp',
     'SerializedLoadContext.cpp',
 ]
@@ -71,18 +104,18 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/docshell/shistory',
     '/dom/base',
+    '/dom/bindings',
+    '/js/xpconnect/src',
     '/layout/base',
     '/layout/generic',
+    '/layout/style',
     '/layout/xul',
+    '/netwerk/base',
     '/netwerk/protocol/viewsource',
+    '/toolkit/components/browser',
+    '/toolkit/components/find',
     '/tools/profiler',
 ]
 
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    DEFINES['MOZ_TOOLKIT_SEARCH'] = True
-
-if CONFIG['MOZ_DEVTOOLS'] == 'all':
-    DEFINES['MOZ_DEVTOOLS_ALL'] = True
-
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

@@ -1,3 +1,5 @@
+gczeal(0);
+
 function testGetParam(key) {
     gcparam(key);
 }
@@ -5,16 +7,25 @@ function testGetParam(key) {
 function testChangeParam(key) {
     let prev = gcparam(key);
     let value = prev - 1;
-    gcparam(key, value);
-    assertEq(gcparam(key), value);
-    gcparam(key, prev);
+    try {
+        gcparam(key, value);
+        assertEq(gcparam(key), value);
+        gcparam(key, prev);
+        assertEq(gcparam(key), prev);
+    } catch {
+        assertEq(gcparam(key), prev);
+    }
 }
 
-function testLargeParamValue(key) {
+function testMBParamValue(key) {
     let prev = gcparam(key);
-    const value = 1000000;
-    gcparam(key, value);
-    assertEq(gcparam(key), value);
+    const value = 1024;
+    try {
+        gcparam(key, value);
+        assertEq(gcparam(key), value);
+    } catch {
+        assertEq(gcparam(key), prev);
+    }
     gcparam(key, prev);
 }
 
@@ -24,9 +35,8 @@ testGetParam("unusedChunks");
 testGetParam("totalChunks");
 
 testChangeParam("maxBytes");
-testChangeParam("maxMallocBytes");
 testChangeParam("mode");
-testChangeParam("sliceTimeBudget");
+testChangeParam("sliceTimeBudgetMS");
 testChangeParam("markStackLimit");
 testChangeParam("highFrequencyTimeLimit");
 testChangeParam("highFrequencyLowLimit");
@@ -37,9 +47,13 @@ testChangeParam("lowFrequencyHeapGrowth");
 testChangeParam("dynamicHeapGrowth");
 testChangeParam("dynamicMarkSlice");
 testChangeParam("allocationThreshold");
+testChangeParam("nonIncrementalFactor");
+testChangeParam("avoidInterruptFactor");
 testChangeParam("minEmptyChunkCount");
 testChangeParam("maxEmptyChunkCount");
 testChangeParam("compactingEnabled");
+testChangeParam("mallocThresholdBase");
+testChangeParam("mallocGrowthFactor");
 
-testLargeParamValue("highFrequencyLowLimit");
-testLargeParamValue("highFrequencyHighLimit");
+testMBParamValue("highFrequencyLowLimit");
+testMBParamValue("highFrequencyHighLimit");

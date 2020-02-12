@@ -6,8 +6,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -15,8 +14,7 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       // Ensure that flexbox ordering and absolute positioning do not affect
       // the accessibility tree.
       // Note that there is no accessible for a div with display:flex style.
@@ -25,29 +23,29 @@
         children: [
           { // Bug 1277559. Button outside the flexed content
             role: ROLE_PUSHBUTTON,
-            name: "Button"
+            name: "Button",
           },
           { // Visually first button in the 3 button row
             role: ROLE_PUSHBUTTON,
-            name: "First"
+            name: "First",
           },
           { // Flushed right third button in the 3 button row
             role: ROLE_PUSHBUTTON,
-            name: "Second"
+            name: "Second",
           },
           { // Middle button in the 3 button row
             role: ROLE_PUSHBUTTON,
-            name: "Third"
+            name: "Third",
           }, // end bug 1277559
           { // Bug 962558: DOM first, Order 2.
             role: ROLE_PUSHBUTTON,
-            name: "two, tab first"
+            name: "two, tab first",
           },
           { // DOM order second, flex order 1
             role: ROLE_PUSHBUTTON,
-            name: "one, tab second"
-          } // end bug 962558
-        ]
+            name: "one, tab second",
+          }, // end bug 962558
+        ],
       };
       testAccessibleTree("flex_elements", accTree);
 

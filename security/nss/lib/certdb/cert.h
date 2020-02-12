@@ -18,7 +18,7 @@
 #include "seccomon.h"
 #include "secdert.h"
 #include "secoidt.h"
-#include "keyt.h"
+#include "keythi.h"
 #include "certt.h"
 
 SEC_BEGIN_PROTOS
@@ -214,6 +214,12 @@ extern void CERT_DestroyCertificate(CERTCertificate *cert);
 ** reference count on "c".
 */
 extern CERTCertificate *CERT_DupCertificate(CERTCertificate *c);
+
+/* Access the DER of the certificate. This only creates a reference to the DER
+ * in the outparam not a copy.  To avoid the pointer becoming invalid, use
+ * CERT_DupCertificate() and keep a reference to the duplicate alive.
+ */
+extern SECStatus CERT_GetCertificateDer(const CERTCertificate *c, SECItem *der);
 
 /*
 ** Create a new certificate request. This result must be wrapped with an
@@ -504,6 +510,8 @@ extern CERTCertificate *CERT_FindCertByKeyID(CERTCertDBHandle *handle,
 */
 extern CERTCertificate *CERT_FindCertByIssuerAndSN(
     CERTCertDBHandle *handle, CERTIssuerAndSN *issuerAndSN);
+extern CERTCertificate *CERT_FindCertByIssuerAndSNCX(
+    CERTCertDBHandle *handle, CERTIssuerAndSN *issuerAndSN, void *wincx);
 
 /*
 ** Find a certificate in the database by a subject key ID
@@ -547,6 +555,9 @@ CERTCertificate *CERT_FindCertByEmailAddr(CERTCertDBHandle *handle,
 */
 CERTCertificate *CERT_FindCertByNicknameOrEmailAddr(CERTCertDBHandle *handle,
                                                     const char *name);
+CERTCertificate *CERT_FindCertByNicknameOrEmailAddrCX(CERTCertDBHandle *handle,
+                                                      const char *name,
+                                                      void *wincx);
 
 /*
 ** Find a certificate in the database by a email address or nickname
@@ -555,6 +566,9 @@ CERTCertificate *CERT_FindCertByNicknameOrEmailAddr(CERTCertDBHandle *handle,
 */
 CERTCertificate *CERT_FindCertByNicknameOrEmailAddrForUsage(
     CERTCertDBHandle *handle, const char *name, SECCertUsage lookingForUsage);
+CERTCertificate *CERT_FindCertByNicknameOrEmailAddrForUsageCX(
+    CERTCertDBHandle *handle, const char *name, SECCertUsage lookingForUsage,
+    void *wincx);
 
 /*
 ** Find a certificate in the database by a digest of a subject public key
@@ -1405,22 +1419,9 @@ void CERT_SetStatusConfig(CERTCertDBHandle *handle, CERTStatusConfig *config);
 void CERT_LockCertRefCount(CERTCertificate *cert);
 
 /*
- * Free the cert reference count lock
+ * Release the cert reference count lock
  */
 void CERT_UnlockCertRefCount(CERTCertificate *cert);
-
-/*
- * Acquire the cert trust lock
- * There is currently one global lock for all certs, but I'm putting a cert
- * arg here so that it will be easy to make it per-cert in the future if
- * that turns out to be necessary.
- */
-void CERT_LockCertTrust(const CERTCertificate *cert);
-
-/*
- * Free the cert trust lock
- */
-void CERT_UnlockCertTrust(const CERTCertificate *cert);
 
 /*
  * Digest the cert's subject public key using the specified algorithm.
@@ -1578,6 +1579,12 @@ extern CERTRevocationFlags *CERT_AllocCERTRevocationFlags(
  * and destroy the object pointed to by flags, too.
  */
 extern void CERT_DestroyCERTRevocationFlags(CERTRevocationFlags *flags);
+
+/*
+ * Get istemp and isperm fields from a cert in a thread safe way.
+ */
+extern SECStatus CERT_GetCertIsTemp(const CERTCertificate *cert, PRBool *istemp);
+extern SECStatus CERT_GetCertIsPerm(const CERTCertificate *cert, PRBool *isperm);
 
 SEC_END_PROTOS
 

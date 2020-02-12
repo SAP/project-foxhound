@@ -14,66 +14,70 @@ namespace mozilla {
 namespace dom {
 
 class AudioContext;
+struct DynamicsCompressorOptions;
 
-class DynamicsCompressorNode final : public AudioNode
-{
-public:
-  explicit DynamicsCompressorNode(AudioContext* aContext);
+class DynamicsCompressorNode final : public AudioNode {
+ public:
+  static already_AddRefed<DynamicsCompressorNode> Create(
+      AudioContext& aAudioContext, const DynamicsCompressorOptions& aOptions,
+      ErrorResult& aRv);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DynamicsCompressorNode, AudioNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  AudioParam* Threshold() const
-  {
-    return mThreshold;
+  static already_AddRefed<DynamicsCompressorNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const DynamicsCompressorOptions& aOptions, ErrorResult& aRv) {
+    return Create(aAudioContext, aOptions, aRv);
   }
 
-  AudioParam* Knee() const
-  {
-    return mKnee;
-  }
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  AudioParam* Ratio() const
-  {
-    return mRatio;
-  }
+  AudioParam* Threshold() const { return mThreshold; }
 
-  AudioParam* Attack() const
-  {
-    return mAttack;
-  }
+  AudioParam* Knee() const { return mKnee; }
+
+  AudioParam* Ratio() const { return mRatio; }
+
+  AudioParam* Attack() const { return mAttack; }
 
   // Called GetRelease to prevent clashing with the nsISupports::Release name
-  AudioParam* GetRelease() const
-  {
-    return mRelease;
-  }
+  AudioParam* GetRelease() const { return mRelease; }
 
-  float Reduction() const
-  {
-    return mReduction;
-  }
+  float Reduction() const { return mReduction; }
 
-  const char* NodeType() const override
-  {
-    return "DynamicsCompressorNode";
-  }
+  const char* NodeType() const override { return "DynamicsCompressorNode"; }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-  void SetReduction(float aReduction)
-  {
+  void SetReduction(float aReduction) {
     MOZ_ASSERT(NS_IsMainThread());
     mReduction = aReduction;
   }
 
-protected:
-  virtual ~DynamicsCompressorNode();
+  void SetChannelCountModeValue(ChannelCountMode aMode,
+                                ErrorResult& aRv) override {
+    if (aMode == ChannelCountMode::Max) {
+      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      return;
+    }
+    AudioNode::SetChannelCountModeValue(aMode, aRv);
+  }
 
-private:
+  void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
+    if (aChannelCount > 2) {
+      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      return;
+    }
+    AudioNode::SetChannelCount(aChannelCount, aRv);
+  }
+
+ private:
+  explicit DynamicsCompressorNode(AudioContext* aContext);
+  ~DynamicsCompressorNode() = default;
+
   RefPtr<AudioParam> mThreshold;
   RefPtr<AudioParam> mKnee;
   RefPtr<AudioParam> mRatio;
@@ -82,8 +86,7 @@ private:
   RefPtr<AudioParam> mRelease;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

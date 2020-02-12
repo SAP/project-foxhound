@@ -6,17 +6,16 @@
         onload="runTest()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <script>
     SimpleTest.waitForExplicitFinish();
     function runTest() {
-      window.openDialog("window_persistence.xul", "_blank", "chrome", true);
+      window.openDialog("window_persistence.xul", "_blank", "chrome,noopener", true, window);
     }
 
     function windowOpened() {
-      window.openDialog("window_persistence.xul", "_blank", "chrome", false);
+      window.openDialog("window_persistence.xul", "_blank", "chrome,noopener", false, window);
     }
 
     function testDone() {

@@ -4,21 +4,21 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Screenshot"];
+var EXPORTED_SYMBOLS = ["Screenshot"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL = "extensions.mozscreenshots@mozilla.org.loglevel";
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = Cu.import("resource://gre/modules/Console.jsm", {}).ConsoleAPI;
+  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {})
+    .ConsoleAPI;
   let consoleOptions = {
     maxLogLevel: "info",
     maxLogLevelPref: PREF_LOG_LEVEL,
@@ -27,7 +27,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   return new ConsoleAPI(consoleOptions);
 });
 
-let Screenshot = {
+var Screenshot = {
   _extensionPath: null,
   _path: null,
   _imagePrefix: "",
@@ -57,23 +57,25 @@ let Screenshot = {
         break;
       default:
         throw new Error("Unsupported operating system");
-        break;
     }
   },
 
   _buildImagePath(baseName) {
-    return OS.Path.join(this._path, this._imagePrefix + baseName + this._imageExtension);
+    return OS.Path.join(
+      this._path,
+      this._imagePrefix + baseName + this._imageExtension
+    );
   },
 
   // Capture the whole screen using an external application.
-  captureExternal(filename) {
+  async captureExternal(filename) {
     let imagePath = this._buildImagePath(filename);
-    return this._screenshotFunction(imagePath).then(() => {
-      log.debug("saved screenshot: " + filename);
-    });
+    await this._screenshotFunction(imagePath);
+    log.debug("saved screenshot: " + filename);
+    return imagePath;
   },
 
-  ///// helpers /////
+  // helpers
 
   _screenshotWindows(filename) {
     return new Promise((resolve, reject) => {
@@ -84,34 +86,40 @@ let Screenshot = {
         exe.append("bin");
         exe.append("screenshot.exe");
       }
-      let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+      let process = Cc["@mozilla.org/process/util;1"].createInstance(
+        Ci.nsIProcess
+      );
       process.init(exe);
 
       let args = [filename];
-      process.runAsync(args, args.length, this._processObserver(resolve, reject));
+      process.runAsync(
+        args,
+        args.length,
+        this._processObserver(resolve, reject)
+      );
     });
   },
 
-  _screenshotOSX: Task.async(function*(filename) {
+  async _screenshotOSX(filename) {
     let screencapture = (windowID = null) => {
       return new Promise((resolve, reject) => {
         // Get the screencapture executable
         let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
         file.initWithPath("/usr/sbin/screencapture");
 
-        let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+        let process = Cc["@mozilla.org/process/util;1"].createInstance(
+          Ci.nsIProcess
+        );
         process.init(file);
 
         // Run the process.
         let args = ["-x", "-t", "png"];
-        // Darwin version number for OS X 10.6 is 10.x
-        if (windowID && Services.sysinfo.getProperty("version").indexOf("10.") !== 0) {
-          // Capture only that window on 10.7+
-          args.push("-l");
-          args.push(windowID);
-        }
         args.push(filename);
-        process.runAsync(args, args.length, this._processObserver(resolve, reject));
+        process.runAsync(
+          args,
+          args.length,
+          this._processObserver(resolve, reject)
+        );
       });
     };
 
@@ -119,27 +127,38 @@ let Screenshot = {
       let decoder = new TextDecoder();
       let promise = OS.File.read("/tmp/mozscreenshots-windowid");
       return promise.then(function onSuccess(array) {
-          return decoder.decode(array);
+        return decoder.decode(array);
       });
     }
 
     let promiseWindowID = () => {
       return new Promise((resolve, reject) => {
         // Get the window ID of the application (assuming its front-most)
-        let osascript = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+        let osascript = Cc["@mozilla.org/file/local;1"].createInstance(
+          Ci.nsIFile
+        );
         osascript.initWithPath("/bin/bash");
 
-        let osascriptP = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+        let osascriptP = Cc["@mozilla.org/process/util;1"].createInstance(
+          Ci.nsIProcess
+        );
         osascriptP.init(osascript);
-        let osaArgs = ["-c", "/usr/bin/osascript -e 'tell application (path to frontmost application as text) to set winID to id of window 1' > /tmp/mozscreenshots-windowid"];
-        osascriptP.runAsync(osaArgs, osaArgs.length, this._processObserver(resolve, reject));
+        let osaArgs = [
+          "-c",
+          "/usr/bin/osascript -e 'tell application (path to frontmost application as text) to set winID to id of window 1' > /tmp/mozscreenshots-windowid",
+        ];
+        osascriptP.runAsync(
+          osaArgs,
+          osaArgs.length,
+          this._processObserver(resolve, reject)
+        );
       });
     };
 
-    yield promiseWindowID();
-    let windowID = yield readWindowID();
-    yield screencapture(windowID);
-  }),
+    await promiseWindowID();
+    let windowID = await readWindowID();
+    await screencapture(windowID);
+  },
 
   _screenshotLinux(filename) {
     return new Promise((resolve, reject) => {
@@ -150,11 +169,17 @@ let Screenshot = {
         exe.append("bin");
         exe.append("screentopng");
       }
-      let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+      let process = Cc["@mozilla.org/process/util;1"].createInstance(
+        Ci.nsIProcess
+      );
       process.init(exe);
 
       let args = [filename];
-      process.runAsync(args, args.length, this._processObserver(resolve, reject));
+      process.runAsync(
+        args,
+        args.length,
+        this._processObserver(resolve, reject)
+      );
     });
   },
 

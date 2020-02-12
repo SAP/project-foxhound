@@ -10,35 +10,76 @@ include PBackgroundSharedTypes;
 
 include "mozilla/dom/quota/SerializationHelpers.h";
 
+using mozilla::OriginAttributesPattern
+  from "mozilla/OriginAttributes.h";
+
 using mozilla::dom::quota::PersistenceType
   from "mozilla/dom/quota/PersistenceType.h";
+
+using mozilla::dom::quota::Client::Type
+  from "mozilla/dom/quota/Client.h";
+
+using mozilla::dom::ContentParentId
+  from "mozilla/dom/ipc/IdType.h";
 
 namespace mozilla {
 namespace dom {
 namespace quota {
 
-struct UsageParams
+struct InitParams
+{
+};
+
+struct InitTemporaryStorageParams
+{
+};
+
+struct InitOriginParams
 {
   PrincipalInfo principalInfo;
-  bool getGroupUsage;
+  PersistenceType persistenceType;
+};
+
+struct AllUsageParams
+{
+  bool getAll;
+};
+
+struct OriginUsageParams
+{
+  PrincipalInfo principalInfo;
+  bool fromMemory;
 };
 
 union UsageRequestParams
 {
-  UsageParams;
+  AllUsageParams;
+  OriginUsageParams;
 };
 
-struct ClearOriginParams
+struct ClearResetOriginParams
 {
   PrincipalInfo principalInfo;
   PersistenceType persistenceType;
   bool persistenceTypeIsExplicit;
-  bool clearAll;
+  Type clientType;
+  bool clientTypeIsExplicit;
+  bool matchAll;
 };
 
-struct ClearOriginsParams
+struct ClearOriginParams
 {
-  nsString pattern;
+  ClearResetOriginParams commonParams;
+};
+
+struct ResetOriginParams
+{
+  ClearResetOriginParams commonParams;
+};
+
+struct ClearDataParams
+{
+  OriginAttributesPattern pattern;
 };
 
 struct ClearAllParams
@@ -49,12 +90,39 @@ struct ResetAllParams
 {
 };
 
+struct PersistedParams
+{
+  PrincipalInfo principalInfo;
+};
+
+struct PersistParams
+{
+  PrincipalInfo principalInfo;
+};
+
+struct EstimateParams
+{
+  PrincipalInfo principalInfo;
+};
+
+struct ListOriginsParams
+{
+};
+
 union RequestParams
 {
+  InitParams;
+  InitTemporaryStorageParams;
+  InitOriginParams;
   ClearOriginParams;
-  ClearOriginsParams;
+  ResetOriginParams;
+  ClearDataParams;
   ClearAllParams;
   ResetAllParams;
+  PersistedParams;
+  PersistParams;
+  EstimateParams;
+  ListOriginsParams;
 };
 
 protocol PQuota
@@ -74,6 +142,8 @@ parent:
   async StartIdleMaintenance();
 
   async StopIdleMaintenance();
+
+  async AbortOperationsForProcess(ContentParentId contentParentId);
 };
 
 } // namespace quota

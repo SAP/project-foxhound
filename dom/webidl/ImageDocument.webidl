@@ -9,11 +9,9 @@
 
 interface imgIRequest;
 
-[ChromeOnly, OverrideBuiltins]
+[ChromeOnly, OverrideBuiltins,
+ Exposed=Window]
 interface ImageDocument : HTMLDocument {
-  /* Whether the pref for image resizing has been set. */
-  readonly attribute boolean imageResizingEnabled;
-
   /* Whether the image is overflowing visible area. */
   readonly attribute boolean imageIsOverflowing;
 

@@ -8,9 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/common_audio/include/audio_util.h"
+#include "common_audio/include/audio_util.h"
 
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -37,6 +37,15 @@ void FloatToFloatS16(const float* src, size_t size, float* dest) {
 void FloatS16ToFloat(const float* src, size_t size, float* dest) {
   for (size_t i = 0; i < size; ++i)
     dest[i] = FloatS16ToFloat(src[i]);
+}
+
+template <>
+void DownmixInterleavedToMono<int16_t>(const int16_t* interleaved,
+                                       size_t num_frames,
+                                       int num_channels,
+                                       int16_t* deinterleaved) {
+  DownmixInterleavedToMonoImpl<int16_t, int32_t>(interleaved, num_frames,
+                                                 num_channels, deinterleaved);
 }
 
 }  // namespace webrtc

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for HTMLInputElement attributes reflection</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="../reflect.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -33,6 +33,7 @@ function testWidthHeight(attr) {
 
   element = document.createElement('input');
   element.type = 'image';
+  element.style.display = "inline";
   document.getElementById('content').appendChild(element);
   isnot(element[attr], 0, attr + ' represents the dimension of the element if type=image');
 
@@ -97,8 +98,12 @@ reflectBoolean({
 
 // TODO: form (HTMLFormElement)
 // TODO: files (FileList)
-// TODO: formAction (URL).  But note that we currently reflect it weirdly; see
-// dom/html/test/test_bug607145.html
+
+// .formAction
+reflectURL({
+  element: document.createElement("button"),
+  attribute: "formAction",
+});
 
 // .formEnctype
 reflectLimitedEnumerated({
@@ -235,10 +240,9 @@ reflectLimitedEnumerated({
   validValues: [ "hidden", "text", "search", "tel", "url", "email", "password",
                  "checkbox", "radio", "file", "submit", "image", "reset",
                  "button", "date", "time", "number", "range", "color", "month",
-                 "week" ],
+                 "week", "datetime-local" ],
   invalidValues: [ "this-is-probably-a-wrong-type", "", "tulip" ],
-  defaultValue: "text",
-  unsupportedValues: [ "datetime", "datetime-local" ]
+  defaultValue: "text"
 });
 
 // .defaultValue

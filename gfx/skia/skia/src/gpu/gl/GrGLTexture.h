@@ -16,71 +16,115 @@
 class GrGLGpu;
 
 class GrGLTexture : public GrTexture {
-
 public:
-    struct TexParams {
-        GrGLenum fMinFilter;
-        GrGLenum fMagFilter;
-        GrGLenum fWrapS;
-        GrGLenum fWrapT;
-        GrGLenum fMaxMipMapLevel;
-        GrGLenum fSwizzleRGBA[4];
-        GrGLenum fSRGBDecode;
-        void invalidate() { memset(this, 0xff, sizeof(TexParams)); }
+    // Texture state that overlaps with sampler object state. We don't need to track this if we
+    // are using sampler objects.
+    struct SamplerParams {
+        // These are the OpenGL defaults.
+        GrGLenum fMinFilter = GR_GL_NEAREST_MIPMAP_LINEAR;
+        GrGLenum fMagFilter = GR_GL_LINEAR;
+        GrGLenum fWrapS = GR_GL_REPEAT;
+        GrGLenum fWrapT = GR_GL_REPEAT;
+        GrGLfloat fMinLOD = -1000.f;
+        GrGLfloat fMaxLOD = 1000.f;
+        // We always want the border color to be transparent black, so no need to store 4 floats.
+        // Just track if it's been invalidated and no longer the default
+        bool fBorderColorInvalid = false;
+
+        void invalidate() {
+            fMinFilter = ~0U;
+            fMagFilter = ~0U;
+            fWrapS = ~0U;
+            fWrapT = ~0U;
+            fMinLOD = SK_ScalarNaN;
+            fMaxLOD = SK_ScalarNaN;
+            fBorderColorInvalid = true;
+        }
+    };
+
+    // Texture state that does not overlap with sampler object state.
+    struct NonSamplerParams {
+        // These are the OpenGL defaults.
+        uint32_t fSwizzleKey = GrSwizzle::RGBA().asKey();
+        GrGLint fBaseMipMapLevel = 0;
+        GrGLint fMaxMipMapLevel = 1000;
+        void invalidate() {
+            fSwizzleKey = ~0U;
+            fBaseMipMapLevel = ~0;
+            fMaxMipMapLevel = ~0;
+        }
     };
 
     struct IDDesc {
         GrGLTextureInfo             fInfo;
-        GrGpuResource::LifeCycle    fLifeCycle;
+        GrBackendObjectOwnership    fOwnership;
     };
 
-    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&);
-    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, bool wasMipMapDataProvided);
+    static GrTextureType TextureTypeFromTarget(GrGLenum textureTarget);
 
-    GrBackendObject getTextureHandle() const override;
+    GrGLTexture(GrGLGpu*, SkBudgeted, const GrSurfaceDesc&, const IDDesc&, GrMipMapsStatus);
 
-    void textureParamsModified() override { fTexParams.invalidate(); }
+    ~GrGLTexture() override {}
+
+    GrBackendTexture getBackendTexture() const override;
+
+    GrBackendFormat backendFormat() const override;
+
+    void textureParamsModified() override {
+        fSamplerParams.invalidate();
+        fNonSamplerParams.invalidate();
+    }
 
     // These functions are used to track the texture parameters associated with the texture.
-    const TexParams& getCachedTexParams(GrGpu::ResetTimestamp* timestamp) const {
-        *timestamp = fTexParamsTimestamp;
-        return fTexParams;
+    GrGpu::ResetTimestamp getCachedParamsTimestamp() const { return fParamsTimestamp; }
+    const SamplerParams& getCachedSamplerParams() const { return fSamplerParams; }
+    const NonSamplerParams& getCachedNonSamplerParams() const { return fNonSamplerParams; }
+
+    void setCachedParams(const SamplerParams* samplerParams,
+                         const NonSamplerParams& nonSamplerParams,
+                         GrGpu::ResetTimestamp currTimestamp) {
+        if (samplerParams) {
+            fSamplerParams = *samplerParams;
+        }
+        fNonSamplerParams = nonSamplerParams;
+        fParamsTimestamp = currTimestamp;
     }
 
-    void setCachedTexParams(const TexParams& texParams,
-                            GrGpu::ResetTimestamp timestamp) {
-        fTexParams = texParams;
-        fTexParamsTimestamp = timestamp;
-    }
+    GrGLuint textureID() const { return fID; }
 
-    GrGLuint textureID() const { return fInfo.fID; }
+    GrGLenum target() const;
 
-    GrGLenum target() const { return fInfo.fTarget; }
+    bool hasBaseLevelBeenBoundToFBO() const { return fBaseLevelHasBeenBoundToFBO; }
+    void baseLevelWasBoundToFBO() { fBaseLevelHasBeenBoundToFBO = true; }
+
+    static sk_sp<GrGLTexture> MakeWrapped(GrGLGpu*, const GrSurfaceDesc&, GrMipMapsStatus,
+                                          const IDDesc&, GrWrapCacheable, GrIOType);
+
+    void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
 protected:
-    // The public constructor registers this object with the cache. However, only the most derived
-    // class should register with the cache. This constructor does not do the registration and
-    // rather moves that burden onto the derived class.
-    enum Derived { kDerived };
-    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, Derived);
+    // Constructor for subclasses.
+    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, GrMipMapsStatus);
+
+    // Constructor for instances wrapping backend objects.
+    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, GrMipMapsStatus, const IDDesc&, GrWrapCacheable,
+                GrIOType);
 
     void init(const GrSurfaceDesc&, const IDDesc&);
 
     void onAbandon() override;
     void onRelease() override;
-    void setMemoryBacking(SkTraceMemoryDump* traceMemoryDump,
-                          const SkString& dumpName) const override;
+
+    bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override;
 
 private:
-    TexParams                       fTexParams;
-    GrGpu::ResetTimestamp           fTexParamsTimestamp;
-    // Holds the texture target and ID. A pointer to this may be shared to external clients for
-    // direct interaction with the GL object.
-    GrGLTextureInfo                 fInfo;
-
-    // We track this separately from GrGpuResource because this may be both a texture and a render
-    // target, and the texture may be wrapped while the render target is not.
-    LifeCycle                       fTextureIDLifecycle;
+    SamplerParams fSamplerParams;
+    NonSamplerParams fNonSamplerParams;
+    GrGpu::ResetTimestamp fParamsTimestamp;
+    GrGLuint fID;
+    GrGLenum fFormat;
+    GrBackendObjectOwnership fTextureIDOwnership;
+    bool fBaseLevelHasBeenBoundToFBO = false;
 
     typedef GrTexture INHERITED;
 };

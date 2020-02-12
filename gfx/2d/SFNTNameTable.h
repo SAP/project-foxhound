@@ -7,10 +7,11 @@
 #ifndef mozilla_gfx_SFNTNameTable_h
 #define mozilla_gfx_SFNTNameTable_h
 
-#include "mozilla/Function.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "u16string.h"
+
+#include <functional>
 
 namespace mozilla {
 namespace gfx {
@@ -19,12 +20,11 @@ struct NameHeader;
 struct NameRecord;
 enum ENameDecoder : int;
 
-typedef Vector<function<ENameDecoder(const NameRecord*)>> NameRecordMatchers;
+typedef Vector<std::function<ENameDecoder(const NameRecord*)>>
+    NameRecordMatchers;
 
-class SFNTNameTable final
-{
-public:
-
+class SFNTNameTable final {
+ public:
   /**
    * Creates a SFNTNameTable if the header data is valid. Note that the data is
    * NOT copied, so must exist for the lifetime of the table.
@@ -33,7 +33,7 @@ public:
    * @param aDataLength length
    * @return UniquePtr to a SFNTNameTable or nullptr if the header is invalid.
    */
-  static UniquePtr<SFNTNameTable> Create(const uint8_t *aNameData,
+  static UniquePtr<SFNTNameTable> Create(const uint8_t* aNameData,
                                          uint32_t aDataLength);
 
   /**
@@ -46,28 +46,28 @@ public:
    */
   bool GetU16FullName(mozilla::u16string& aU16FullName);
 
-private:
-
-  SFNTNameTable(const NameHeader *aNameHeader, const uint8_t *aNameData,
+ private:
+  SFNTNameTable(const NameHeader* aNameHeader, const uint8_t* aNameData,
                 uint32_t aDataLength);
 
-  bool ReadU16Name(const NameRecordMatchers& aMatchers, mozilla::u16string& aU16Name);
+  bool ReadU16Name(const NameRecordMatchers& aMatchers,
+                   mozilla::u16string& aU16Name);
 
-  bool ReadU16NameFromU16Record(const NameRecord *aNameRecord,
+  bool ReadU16NameFromU16Record(const NameRecord* aNameRecord,
                                 mozilla::u16string& aU16Name);
 
 #if defined(XP_MACOSX)
-  bool ReadU16NameFromMacRomanRecord(const NameRecord *aNameRecord,
+  bool ReadU16NameFromMacRomanRecord(const NameRecord* aNameRecord,
                                      mozilla::u16string& aU16Name);
 #endif
 
-  const NameRecord *mFirstRecord;
-  const NameRecord *mEndOfRecords;
-  const uint8_t *mStringData;
+  const NameRecord* mFirstRecord;
+  const NameRecord* mEndOfRecords;
+  const uint8_t* mStringData;
   const uint32_t mStringDataLength;
 };
 
-} // gfx
-} // mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // mozilla_gfx_SFNTNameTable_h
+#endif  // mozilla_gfx_SFNTNameTable_h

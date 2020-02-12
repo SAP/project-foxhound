@@ -11,22 +11,11093 @@
  * to generate these files can be found at devtools/shared/css/generate-properties-db.js.
  */
 
-/* eslint-disable max-len */
-
 /**
  * A list of CSS Properties and their various characteristics.
  */
-exports.CSS_PROPERTIES = {"all": {"values": ["COLOR", "-moz-all", "-moz-available", "-moz-block-height", "-moz-box", "-moz-calc", "-moz-center", "-moz-crisp-edges", "-moz-deck", "-moz-element", "-moz-fit-content", "-moz-grid", "-moz-grid-group", "-moz-grid-line", "-moz-groupbox", "-moz-gtk-info-bar", "-moz-hidden-unscrollable", "-moz-image-rect", "-moz-inline-box", "-moz-inline-grid", "-moz-inline-stack", "-moz-left", "-moz-linear-gradient", "-moz-mac-disclosure-button-closed", "-moz-mac-disclosure-button-open", "-moz-mac-fullscreen-button", "-moz-mac-help-button", "-moz-mac-source-list", "-moz-mac-vibrancy-dark", "-moz-mac-vibrancy-light", "-moz-max-content", "-moz-middle-with-baseline", "-moz-min-content", "-moz-none", "-moz-popup", "-moz-pre-space", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "-moz-right", "-moz-stack", "-moz-text", "-moz-use-text-color", "-moz-win-borderless-glass", "-moz-win-browsertabbar-toolbox", "-moz-win-communications-toolbox", "-moz-win-exclude-glass", "-moz-win-glass", "-moz-win-media-toolbox", "-moz-window-button-box", "-moz-window-button-box-maximized", "-moz-window-button-close", "-moz-window-button-maximize", "-moz-window-button-minimize", "-moz-window-button-restore", "-moz-window-frame-bottom", "-moz-window-frame-left", "-moz-window-frame-right", "-moz-window-titlebar", "-moz-window-titlebar-maximized", "-webkit-box", "-webkit-flex", "-webkit-inline-box", "-webkit-inline-flex", "absolute", "active", "add", "all", "all-petite-caps", "all-small-caps", "alpha", "alphabetic", "alternate", "alternate-reverse", "always", "auto", "avoid", "backwards", "balance", "baseline", "bevel", "block", "block-axis", "border-box", "both", "bottom", "bottom-outside", "break-all", "break-word", "butt", "button", "button-arrow-down", "button-arrow-next", "button-arrow-previous", "button-arrow-up", "button-bevel", "button-focus", "calc", "capitalize", "caret", "center", "central", "checkbox", "checkbox-container", "checkbox-label", "checkmenuitem", "clone", "collapse", "color", "color-burn", "color-dodge", "column", "column-reverse", "condensed", "contain", "content-box", "contents", "cover", "crispedges", "cubic-bezier", "currentColor", "darken", "dashed", "default", "dialog", "difference", "disabled", "dotted", "double", "drag", "dualbutton", "ease", "ease-in", "ease-in-out", "ease-out", "economy", "element", "elements", "enabled", "end", "evenodd", "exact", "exclude", "exclusion", "expanded", "extra-condensed", "extra-expanded", "fill", "fill-box", "fixed", "flat", "flex", "flex-end", "flex-start", "forwards", "full-width", "geometricprecision", "grayscale", "grid", "groove", "groupbox", "hanging", "hard-light", "hidden", "hide", "horizontal", "horizontal-tb", "hsl", "hsla", "hue", "ideographic", "ignore", "inactive", "infinite", "inherit", "initial", "inline", "inline-axis", "inline-block", "inline-end", "inline-flex", "inline-grid", "inline-start", "inline-table", "inset", "inside", "intersect", "isolate", "italic", "justify", "keep-all", "large", "larger", "last-baseline", "left", "lighten", "linear", "linear-gradient", "linearrgb", "list-item", "listbox", "listitem", "local", "lowercase", "lr", "lr-tb", "luminance", "luminosity", "mandatory", "manipulation", "manual", "margin-box", "match-source", "mathematical", "medium", "menuarrow", "menubar", "menucheckbox", "menuimage", "menuitem", "menuitemtext", "menulist", "menulist-button", "menulist-text", "menulist-textfield", "menupopup", "menuradio", "menuseparator", "meterbar", "meterchunk", "middle", "miter", "mixed", "multiply", "no-change", "no-drag", "no-repeat", "non-scaling-stroke", "none", "nonzero", "normal", "nowrap", "number-input", "oblique", "optimizelegibility", "optimizequality", "optimizespeed", "outset", "outside", "over", "overlay", "padding-box", "painted", "pan-x", "pan-y", "paused", "petite-caps", "pre", "pre-line", "pre-wrap", "preserve-3d", "progressbar", "progressbar-vertical", "progresschunk", "progresschunk-vertical", "proximity", "radial-gradient", "radio", "radio-container", "radio-label", "radiomenuitem", "range", "range-thumb", "read-only", "read-write", "relative", "repeat", "repeat-x", "repeat-y", "repeating-linear-gradient", "repeating-radial-gradient", "reset-size", "resizer", "resizerpanel", "reverse", "rgb", "rgba", "ridge", "right", "rl", "rl-tb", "round", "row", "row-reverse", "ruby", "ruby-base", "ruby-base-container", "ruby-text", "ruby-text-container", "running", "saturation", "scale-down", "scale-horizontal", "scale-vertical", "scalethumb-horizontal", "scalethumb-vertical", "scalethumbend", "scalethumbstart", "scalethumbtick", "screen", "scroll", "scrollbar", "scrollbar-horizontal", "scrollbar-small", "scrollbar-vertical", "scrollbarbutton-down", "scrollbarbutton-left", "scrollbarbutton-right", "scrollbarbutton-up", "scrollbarthumb-horizontal", "scrollbarthumb-vertical", "scrollbartrack-horizontal", "scrollbartrack-vertical", "searchfield", "select-after", "select-all", "select-before", "select-menu", "select-same", "self-end", "self-start", "semi-condensed", "semi-expanded", "separate", "separator", "show", "sideways", "sideways-lr", "sideways-right", "sideways-rl", "slice", "small", "small-caps", "smaller", "smooth", "soft-light", "solid", "space", "space-around", "space-between", "space-evenly", "spinner", "spinner-downbutton", "spinner-textfield", "spinner-upbutton", "splitter", "square", "srgb", "start", "static", "statusbar", "statusbarpanel", "step-end", "step-start", "steps", "sticky", "stretch", "stretch-to-fit", "stroke", "sub", "subtract", "super", "tab", "tab-scroll-arrow-back", "tab-scroll-arrow-forward", "table", "table-caption", "table-cell", "table-column", "table-column-group", "table-footer-group", "table-header-group", "table-row", "table-row-group", "tabpanel", "tabpanels", "tb", "tb-rl", "text", "text-after-edge", "text-before-edge", "text-bottom", "text-top", "textfield", "textfield-multiline", "thick", "thin", "titling-caps", "toggle", "toolbar", "toolbarbutton", "toolbarbutton-dropdown", "toolbargripper", "toolbox", "tooltip", "top", "top-outside", "transparent", "treeheader", "treeheadercell", "treeheadersortarrow", "treeitem", "treeline", "treetwisty", "treetwistyopen", "treeview", "tri-state", "ultra-condensed", "ultra-expanded", "under", "unicase", "unset", "uppercase", "upright", "url", "use-script", "vertical", "vertical-lr", "vertical-rl", "view-box", "visible", "visiblefill", "visiblepainted", "visiblestroke", "wavy", "window", "wrap", "wrap-reverse", "write-only", "x-large", "x-small", "xx-large", "xx-small"], "supports": [1, 2, 4, 5, 6, 7, 8, 9, 10, 11], "isInherited": false}, "mask-image": {"supports": [4, 5, 11], "values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "isInherited": false}, "-webkit-animation-iteration-count": {"values": ["infinite", "inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "font-feature-settings": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "border-block-start-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "-webkit-flex-grow": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "scroll-snap-destination": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-font-language-override": {"values": ["inherit", "initial", "normal", "unset"], "supports": [], "isInherited": true}, "text-emphasis": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": true}, "grid-row-gap": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "font-variant-east-asian": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "outline-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-webkit-flex-flow": {"values": ["column", "column-reverse", "inherit", "initial", "nowrap", "row", "row-reverse", "unset", "wrap", "wrap-reverse"], "supports": [], "isInherited": false}, "grid-column-gap": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-inline-start-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "scroll-snap-points-x": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "list-style-type": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "padding-inline-end": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-animation": {"values": ["alternate", "alternate-reverse", "backwards", "both", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "forwards", "infinite", "inherit", "initial", "linear", "none", "normal", "paused", "reverse", "running", "step-end", "step-start", "steps", "unset"], "supports": [7, 9, 10], "isInherited": false}, "-moz-border-start-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "page-break-before": {"values": ["always", "auto", "avoid", "inherit", "initial", "left", "right", "unset"], "supports": [], "isInherited": false}, "flood-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "text-anchor": {"values": ["end", "inherit", "initial", "middle", "start", "unset"], "supports": [], "isInherited": true}, "-moz-box-pack": {"values": ["center", "end", "inherit", "initial", "justify", "start", "unset"], "supports": [], "isInherited": false}, "-webkit-user-select": {"values": ["-moz-all", "-moz-none", "-moz-text", "all", "auto", "element", "elements", "inherit", "initial", "none", "text", "toggle", "tri-state", "unset"], "supports": [], "isInherited": false}, "-moz-border-end-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "padding-left": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-tab-size": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": true}, "perspective": {"values": ["inherit", "initial", "none", "unset"], "supports": [6], "isInherited": false}, "max-block-size": {"values": ["-moz-calc", "calc", "inherit", "initial", "none", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-animation-play-state": {"values": ["inherit", "initial", "paused", "running", "unset"], "supports": [], "isInherited": false}, "-moz-column-fill": {"values": ["auto", "balance", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-moz-stack-sizing": {"values": ["ignore", "inherit", "initial", "stretch-to-fit", "unset"], "supports": [], "isInherited": false}, "border-image-repeat": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "font-variant-position": {"values": ["inherit", "initial", "normal", "sub", "super", "unset"], "supports": [], "isInherited": true}, "border-right-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "-moz-box-align": {"values": ["baseline", "center", "end", "inherit", "initial", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "border-left-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "flex-flow": {"values": ["column", "column-reverse", "inherit", "initial", "nowrap", "row", "row-reverse", "unset", "wrap", "wrap-reverse"], "supports": [], "isInherited": false}, "outline-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "font-variant-alternates": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "mask-mode": {"supports": [], "values": ["alpha", "inherit", "initial", "luminance", "match-source", "unset"], "isInherited": false}, "flex-grow": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-moz-font-feature-settings": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "-webkit-box-shadow": {"values": ["inherit", "initial", "unset"], "supports": [2, 6], "isInherited": false}, "max-width": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "calc", "inherit", "initial", "none", "unset"], "supports": [6, 8], "isInherited": false}, "border-inline-end-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "grid-column": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "image-orientation": {"values": ["inherit", "initial", "unset"], "supports": [1], "isInherited": true}, "animation-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "-moz-animation-fill-mode": {"values": ["backwards", "both", "forwards", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "-moz-user-input": {"values": ["auto", "disabled", "enabled", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": true}, "-webkit-animation-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "shape-rendering": {"values": ["auto", "crispedges", "geometricprecision", "inherit", "initial", "optimizespeed", "unset"], "supports": [], "isInherited": true}, "flex-shrink": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "text-rendering": {"values": ["auto", "geometricprecision", "inherit", "initial", "optimizelegibility", "optimizespeed", "unset"], "supports": [], "isInherited": true}, "align-items": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "border-collapse": {"values": ["collapse", "inherit", "initial", "separate", "unset"], "supports": [], "isInherited": true}, "text-combine-upright": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "offset-block-end": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-border-start-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "marker": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": true}, "-webkit-mask-position-y": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "outline-style": {"values": ["auto", "dashed", "dotted", "double", "groove", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "color-interpolation-filters": {"values": ["auto", "inherit", "initial", "linearrgb", "srgb", "unset"], "supports": [], "isInherited": true}, "-moz-padding-end": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "font-stretch": {"values": ["condensed", "expanded", "extra-condensed", "extra-expanded", "inherit", "initial", "normal", "semi-condensed", "semi-expanded", "ultra-condensed", "ultra-expanded", "unset"], "supports": [], "isInherited": true}, "-moz-orient": {"values": ["block", "horizontal", "inherit", "initial", "inline", "unset", "vertical"], "supports": [], "isInherited": false}, "font-variant": {"values": ["all-petite-caps", "all-small-caps", "inherit", "initial", "normal", "petite-caps", "small-caps", "sub", "super", "titling-caps", "unicase", "unset"], "supports": [], "isInherited": true}, "-webkit-animation-fill-mode": {"values": ["backwards", "both", "forwards", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "-moz-animation-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "border-left": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "visibility": {"values": ["collapse", "hidden", "inherit", "initial", "unset", "visible"], "supports": [], "isInherited": true}, "-moz-user-focus": {"values": ["ignore", "inherit", "initial", "none", "normal", "select-after", "select-all", "select-before", "select-menu", "select-same", "unset"], "supports": [], "isInherited": true}, "transform-box": {"values": ["border-box", "fill-box", "inherit", "initial", "unset", "view-box"], "supports": [], "isInherited": false}, "font-variant-caps": {"values": ["all-petite-caps", "all-small-caps", "inherit", "initial", "normal", "petite-caps", "small-caps", "titling-caps", "unicase", "unset"], "supports": [], "isInherited": true}, "resize": {"values": ["both", "horizontal", "inherit", "initial", "none", "unset", "vertical"], "supports": [], "isInherited": false}, "offset-inline-end": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "paint-order": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "stroke-linecap": {"values": ["butt", "inherit", "initial", "round", "square", "unset"], "supports": [], "isInherited": true}, "animation-direction": {"values": ["alternate", "alternate-reverse", "inherit", "initial", "normal", "reverse", "unset"], "supports": [], "isInherited": false}, "border-top-left-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-box-align": {"values": ["baseline", "center", "end", "inherit", "initial", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "-moz-text-size-adjust": {"values": ["auto", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": true}, "list-style": {"values": ["inherit", "initial", "inside", "none", "outside", "unset", "url"], "supports": [11], "isInherited": true}, "stroke": {"values": ["inherit", "initial", "unset"], "supports": [2, 11], "isInherited": true}, "text-decoration-line": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-webkit-background-size": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "padding-bottom": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-image-slice": {"values": ["inherit", "initial", "unset"], "supports": [7, 8], "isInherited": false}, "-webkit-transition-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "background-repeat": {"values": ["inherit", "initial", "no-repeat", "repeat", "repeat-x", "repeat-y", "round", "space", "unset"], "supports": [], "isInherited": false}, "flex-basis": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-border-right-colors": {"values": ["inherit", "initial", "unset"], "supports": [2], "isInherited": false}, "-moz-image-region": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "-webkit-transform-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "vector-effect": {"values": ["inherit", "initial", "non-scaling-stroke", "none", "unset"], "supports": [], "isInherited": false}, "-moz-margin-end": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-border-image": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "supports": [4, 5, 6, 7, 8, 11], "isInherited": false}, "-moz-border-end-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "ruby-position": {"values": ["inherit", "initial", "over", "under", "unset"], "supports": [], "isInherited": true}, "inline-size": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "outline": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "auto", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "text-decoration": {"values": ["COLOR", "-moz-none", "-moz-use-text-color", "currentColor", "dashed", "dotted", "double", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "solid", "transparent", "unset", "wavy"], "supports": [2], "isInherited": false}, "transition-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "order": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "ime-mode": {"values": ["active", "auto", "disabled", "inactive", "inherit", "initial", "normal", "unset"], "supports": [], "isInherited": false}, "counter-reset": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "flood-opacity": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "flex-direction": {"values": ["column", "column-reverse", "inherit", "initial", "row", "row-reverse", "unset"], "supports": [], "isInherited": false}, "-webkit-text-stroke-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": true}, "font-variant-numeric": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "-webkit-flex-wrap": {"values": ["inherit", "initial", "nowrap", "unset", "wrap", "wrap-reverse"], "supports": [], "isInherited": false}, "min-height": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "left": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-mask": {"supports": [4, 5, 6, 8, 11], "values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "add", "alpha", "border-box", "content-box", "exclude", "inherit", "initial", "intersect", "linear-gradient", "luminance", "match-source", "no-repeat", "none", "padding-box", "radial-gradient", "repeat", "repeat-x", "repeat-y", "repeating-linear-gradient", "repeating-radial-gradient", "round", "space", "subtract", "unset", "url"], "isInherited": false}, "stroke-width": {"values": ["inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": true}, "-moz-hyphens": {"values": ["auto", "inherit", "initial", "manual", "none", "unset"], "supports": [], "isInherited": true}, "background-origin": {"values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "supports": [], "isInherited": false}, "-moz-box-direction": {"values": ["inherit", "initial", "normal", "reverse", "unset"], "supports": [], "isInherited": false}, "border-inline-end-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "marker-offset": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6], "isInherited": false}, "-webkit-background-clip": {"values": ["border-box", "content-box", "inherit", "initial", "padding-box", "text", "unset"], "supports": [], "isInherited": false}, "border-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "flex": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": false}, "margin-inline-end": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-appearance": {"values": ["-moz-gtk-info-bar", "-moz-mac-disclosure-button-closed", "-moz-mac-disclosure-button-open", "-moz-mac-fullscreen-button", "-moz-mac-help-button", "-moz-mac-source-list", "-moz-mac-vibrancy-dark", "-moz-mac-vibrancy-light", "-moz-win-borderless-glass", "-moz-win-browsertabbar-toolbox", "-moz-win-communications-toolbox", "-moz-win-exclude-glass", "-moz-win-glass", "-moz-win-media-toolbox", "-moz-window-button-box", "-moz-window-button-box-maximized", "-moz-window-button-close", "-moz-window-button-maximize", "-moz-window-button-minimize", "-moz-window-button-restore", "-moz-window-frame-bottom", "-moz-window-frame-left", "-moz-window-frame-right", "-moz-window-titlebar", "-moz-window-titlebar-maximized", "button", "button-arrow-down", "button-arrow-next", "button-arrow-previous", "button-arrow-up", "button-bevel", "button-focus", "caret", "checkbox", "checkbox-container", "checkbox-label", "checkmenuitem", "dialog", "dualbutton", "groupbox", "inherit", "initial", "listbox", "listitem", "menuarrow", "menubar", "menucheckbox", "menuimage", "menuitem", "menuitemtext", "menulist", "menulist-button", "menulist-text", "menulist-textfield", "menupopup", "menuradio", "menuseparator", "meterbar", "meterchunk", "none", "number-input", "progressbar", "progressbar-vertical", "progresschunk", "progresschunk-vertical", "radio", "radio-container", "radio-label", "radiomenuitem", "range", "range-thumb", "resizer", "resizerpanel", "scale-horizontal", "scale-vertical", "scalethumb-horizontal", "scalethumb-vertical", "scalethumbend", "scalethumbstart", "scalethumbtick", "scrollbar", "scrollbar-horizontal", "scrollbar-small", "scrollbar-vertical", "scrollbarbutton-down", "scrollbarbutton-left", "scrollbarbutton-right", "scrollbarbutton-up", "scrollbarthumb-horizontal", "scrollbarthumb-vertical", "scrollbartrack-horizontal", "scrollbartrack-vertical", "searchfield", "separator", "spinner", "spinner-downbutton", "spinner-textfield", "spinner-upbutton", "splitter", "statusbar", "statusbarpanel", "tab", "tab-scroll-arrow-back", "tab-scroll-arrow-forward", "tabpanel", "tabpanels", "textfield", "textfield-multiline", "toolbar", "toolbarbutton", "toolbarbutton-dropdown", "toolbargripper", "toolbox", "tooltip", "treeheader", "treeheadercell", "treeheadersortarrow", "treeitem", "treeline", "treetwisty", "treetwistyopen", "treeview", "unset", "window"], "supports": [], "isInherited": false}, "box-decoration-break": {"values": ["clone", "inherit", "initial", "slice", "unset"], "supports": [], "isInherited": false}, "text-indent": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": true}, "hyphens": {"values": ["auto", "inherit", "initial", "manual", "none", "unset"], "supports": [], "isInherited": true}, "-moz-perspective": {"values": ["inherit", "initial", "none", "unset"], "supports": [6], "isInherited": false}, "-webkit-animation-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "text-transform": {"values": ["capitalize", "full-width", "inherit", "initial", "lowercase", "none", "unset", "uppercase"], "supports": [], "isInherited": true}, "font-size": {"values": ["-moz-calc", "calc", "inherit", "initial", "large", "larger", "medium", "small", "smaller", "unset", "x-large", "x-small", "xx-large", "xx-small"], "supports": [6, 8], "isInherited": true}, "-webkit-animation-name": {"values": ["inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "-moz-border-start": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "mask-composite": {"supports": [], "values": ["add", "exclude", "inherit", "initial", "intersect", "subtract", "unset"], "isInherited": false}, "-webkit-text-stroke": {"values": ["COLOR", "-moz-calc", "calc", "currentColor", "hsl", "hsla", "inherit", "initial", "medium", "rgb", "rgba", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": true}, "padding-top": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-flex-shrink": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "color-adjust": {"values": ["economy", "exact", "inherit", "initial", "unset"], "supports": [], "isInherited": true}, "grid-template-rows": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "content": {"values": ["inherit", "initial", "unset"], "supports": [11], "isInherited": false}, "padding-right": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-transform": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "marker-mid": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": true}, "-moz-column-gap": {"values": ["-moz-calc", "calc", "inherit", "initial", "normal", "unset"], "supports": [6], "isInherited": false}, "-moz-border-start-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "clip-rule": {"values": ["evenodd", "inherit", "initial", "nonzero", "unset"], "supports": [], "isInherited": true}, "font-family": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "block-size": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "offset-inline-start": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "padding-block-end": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "transition": {"values": ["all", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "none", "step-end", "step-start", "steps", "unset"], "supports": [9, 10], "isInherited": false}, "filter": {"values": ["inherit", "initial", "unset"], "supports": [11], "isInherited": false}, "border-right-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-webkit-flex-direction": {"values": ["column", "column-reverse", "inherit", "initial", "row", "row-reverse", "unset"], "supports": [], "isInherited": false}, "-webkit-mask-composite": {"supports": [], "values": ["add", "exclude", "inherit", "initial", "intersect", "subtract", "unset"], "isInherited": false}, "mix-blend-mode": {"values": ["color", "color-burn", "color-dodge", "darken", "difference", "exclusion", "hard-light", "hue", "inherit", "initial", "lighten", "luminosity", "multiply", "normal", "overlay", "saturation", "screen", "soft-light", "unset"], "supports": [], "isInherited": false}, "color-interpolation": {"values": ["auto", "inherit", "initial", "linearrgb", "srgb", "unset"], "supports": [], "isInherited": true}, "border-top-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "fill-opacity": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": true}, "marker-start": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": true}, "border-bottom-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-moz-column-rule-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "clear": {"values": ["both", "inherit", "initial", "inline-end", "inline-start", "left", "none", "right", "unset"], "supports": [], "isInherited": false}, "grid-area": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "padding-inline-start": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-border-end": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "background-clip": {"values": ["border-box", "content-box", "inherit", "initial", "padding-box", "text", "unset"], "supports": [], "isInherited": false}, "-webkit-text-fill-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": true}, "border-block-start-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "top": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "max-inline-size": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "calc", "inherit", "initial", "none", "unset"], "supports": [6, 8], "isInherited": false}, "border-inline-start-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-moz-box-flex": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "animation-play-state": {"values": ["inherit", "initial", "paused", "running", "unset"], "supports": [], "isInherited": false}, "padding": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "dominant-baseline": {"values": ["alphabetic", "auto", "central", "hanging", "ideographic", "inherit", "initial", "mathematical", "middle", "no-change", "reset-size", "text-after-edge", "text-before-edge", "unset", "use-script"], "supports": [], "isInherited": false}, "background-attachment": {"values": ["fixed", "inherit", "initial", "local", "scroll", "unset"], "supports": [], "isInherited": false}, "-webkit-box-sizing": {"values": ["border-box", "content-box", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-webkit-box-flex": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "text-orientation": {"values": ["inherit", "initial", "mixed", "sideways", "sideways-right", "unset", "upright"], "supports": [], "isInherited": true}, "-moz-margin-start": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "isolation": {"values": ["auto", "inherit", "initial", "isolate", "unset"], "supports": [], "isInherited": false}, "-moz-border-bottom-colors": {"values": ["inherit", "initial", "unset"], "supports": [2], "isInherited": false}, "-moz-column-rule-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "scroll-snap-type-y": {"values": ["inherit", "initial", "mandatory", "none", "proximity", "unset"], "supports": [], "isInherited": false}, "-webkit-border-bottom-right-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-column-count": {"values": ["auto", "inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "border-left-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "grid-column-end": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "background-blend-mode": {"values": ["color", "color-burn", "color-dodge", "darken", "difference", "exclusion", "hard-light", "hue", "inherit", "initial", "lighten", "luminosity", "multiply", "normal", "overlay", "saturation", "screen", "soft-light", "unset"], "supports": [], "isInherited": false}, "vertical-align": {"values": ["-moz-calc", "-moz-middle-with-baseline", "baseline", "bottom", "calc", "inherit", "initial", "middle", "sub", "super", "text-bottom", "text-top", "top", "unset"], "supports": [6, 8], "isInherited": false}, "clip": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "grid-auto-rows": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "margin-left": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "animation-name": {"values": ["inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "border-image-source": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "supports": [4, 5, 11], "isInherited": false}, "border": {"values": ["COLOR", "-moz-calc", "-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "linear-gradient", "medium", "none", "outset", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset", "url"], "supports": [2, 6], "isInherited": false}, "-webkit-transition-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "margin-bottom": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "animation": {"values": ["alternate", "alternate-reverse", "backwards", "both", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "forwards", "infinite", "inherit", "initial", "linear", "none", "normal", "paused", "reverse", "running", "step-end", "step-start", "steps", "unset"], "supports": [7, 9, 10], "isInherited": false}, "font-weight": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": true}, "border-block-start-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "mask-type": {"values": ["alpha", "inherit", "initial", "luminance", "unset"], "supports": [], "isInherited": false}, "margin-block-end": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "min-inline-size": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "object-position": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "page-break-after": {"values": ["always", "auto", "avoid", "inherit", "initial", "left", "right", "unset"], "supports": [], "isInherited": false}, "transition-property": {"values": ["all", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "-moz-float-edge": {"values": ["content-box", "inherit", "initial", "margin-box", "unset"], "supports": [], "isInherited": false}, "white-space": {"values": ["-moz-pre-space", "inherit", "initial", "normal", "nowrap", "pre", "pre-line", "pre-wrap", "unset"], "supports": [], "isInherited": true}, "-moz-binding": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": false}, "ruby-align": {"values": ["center", "inherit", "initial", "space-around", "space-between", "start", "unset"], "supports": [], "isInherited": true}, "font-kerning": {"values": ["auto", "inherit", "initial", "none", "normal", "unset"], "supports": [], "isInherited": true}, "border-block-end": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "animation-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "-webkit-border-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "animation-iteration-count": {"values": ["infinite", "inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-webkit-animation-direction": {"values": ["alternate", "alternate-reverse", "inherit", "initial", "normal", "reverse", "unset"], "supports": [], "isInherited": false}, "justify-self": {"values": ["auto", "baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "-moz-border-top-colors": {"values": ["inherit", "initial", "unset"], "supports": [2], "isInherited": false}, "transition-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "-moz-transition-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "scroll-snap-coordinate": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-box-orient": {"values": ["block-axis", "horizontal", "inherit", "initial", "inline-axis", "unset", "vertical"], "supports": [], "isInherited": false}, "counter-increment": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-webkit-transform-style": {"values": ["flat", "inherit", "initial", "preserve-3d", "unset"], "supports": [], "isInherited": false}, "-moz-transition-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "grid-auto-columns": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-align-content": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "space-around", "space-between", "space-evenly", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "font": {"values": ["-moz-block-height", "-moz-calc", "all-petite-caps", "all-small-caps", "auto", "calc", "condensed", "expanded", "extra-condensed", "extra-expanded", "inherit", "initial", "italic", "large", "larger", "medium", "none", "normal", "oblique", "petite-caps", "semi-condensed", "semi-expanded", "small", "small-caps", "smaller", "sub", "super", "titling-caps", "ultra-condensed", "ultra-expanded", "unicase", "unset", "x-large", "x-small", "xx-large", "xx-small"], "supports": [6, 7, 8], "isInherited": true}, "flex-wrap": {"values": ["inherit", "initial", "nowrap", "unset", "wrap", "wrap-reverse"], "supports": [], "isInherited": false}, "grid-row-start": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "list-style-image": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": true}, "text-emphasis-position": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "border-right": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "font-style": {"values": ["inherit", "initial", "italic", "normal", "oblique", "unset"], "supports": [], "isInherited": true}, "box-shadow": {"values": ["inherit", "initial", "unset"], "supports": [2, 6], "isInherited": false}, "align-self": {"values": ["auto", "baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "text-emphasis-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": true}, "border-bottom": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "border-spacing": {"values": ["inherit", "initial", "unset"], "supports": [6], "isInherited": true}, "-webkit-border-top-right-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "margin-inline-start": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "grid-row-end": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "perspective-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "page-break-inside": {"values": ["auto", "avoid", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "scroll-behavior": {"values": ["auto", "inherit", "initial", "smooth", "unset"], "supports": [], "isInherited": false}, "-moz-backface-visibility": {"values": ["hidden", "inherit", "initial", "unset", "visible"], "supports": [], "isInherited": false}, "-moz-outline-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "mask-clip": {"supports": [], "values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "isInherited": false}, "grid-row": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "border-bottom-right-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "line-height": {"values": ["-moz-block-height", "-moz-calc", "calc", "inherit", "initial", "normal", "unset"], "supports": [6, 7, 8], "isInherited": true}, "stroke-linejoin": {"values": ["bevel", "inherit", "initial", "miter", "round", "unset"], "supports": [], "isInherited": true}, "text-align-last": {"values": ["auto", "center", "end", "inherit", "initial", "justify", "left", "right", "start", "unset"], "supports": [], "isInherited": true}, "word-spacing": {"values": ["-moz-calc", "calc", "inherit", "initial", "normal", "unset"], "supports": [6, 8], "isInherited": true}, "transform-style": {"values": ["flat", "inherit", "initial", "preserve-3d", "unset"], "supports": [], "isInherited": false}, "border-bottom-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "font-language-override": {"values": ["inherit", "initial", "normal", "unset"], "supports": [], "isInherited": true}, "-moz-outline-radius-topleft": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-image": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "supports": [4, 5, 6, 7, 8, 11], "isInherited": false}, "caption-side": {"values": ["bottom", "bottom-outside", "inherit", "initial", "left", "right", "top", "top-outside", "unset"], "supports": [], "isInherited": true}, "-webkit-mask-position": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "border-inline-end-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-webkit-border-image": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "supports": [4, 5, 6, 7, 8, 11], "isInherited": false}, "font-synthesis": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "grid-template": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-mask-repeat": {"supports": [], "values": ["inherit", "initial", "no-repeat", "repeat", "repeat-x", "repeat-y", "round", "space", "unset"], "isInherited": false}, "-webkit-justify-content": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "space-around", "space-between", "space-evenly", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "text-decoration-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": true}, "-moz-border-end-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "height": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "margin-right": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-border-bottom-left-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-transform": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "border-bottom-left-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "fill-rule": {"values": ["evenodd", "inherit", "initial", "nonzero", "unset"], "supports": [], "isInherited": true}, "min-width": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "empty-cells": {"values": ["hide", "inherit", "initial", "show", "unset"], "supports": [], "isInherited": true}, "direction": {"values": ["inherit", "initial", "ltr", "rtl", "unset"], "supports": [], "isInherited": true}, "clip-path": {"values": ["inherit", "initial", "unset"], "supports": [11], "isInherited": false}, "-webkit-mask-size": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "-moz-box-orient": {"values": ["block-axis", "horizontal", "inherit", "initial", "inline-axis", "unset", "vertical"], "supports": [], "isInherited": false}, "z-index": {"values": ["auto", "inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "background-position-y": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "text-decoration-style": {"values": ["-moz-none", "dashed", "dotted", "double", "inherit", "initial", "solid", "unset", "wavy"], "supports": [], "isInherited": false}, "grid-template-areas": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-moz-perspective-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-animation-direction": {"values": ["alternate", "alternate-reverse", "inherit", "initial", "normal", "reverse", "unset"], "supports": [], "isInherited": false}, "font-size-adjust": {"values": ["inherit", "initial", "none", "unset"], "supports": [7], "isInherited": true}, "cursor": {"values": ["inherit", "initial", "unset"], "supports": [11], "isInherited": true}, "margin": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-animation": {"values": ["alternate", "alternate-reverse", "backwards", "both", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "forwards", "infinite", "inherit", "initial", "linear", "none", "normal", "paused", "reverse", "running", "step-end", "step-start", "steps", "unset"], "supports": [7, 9, 10], "isInherited": false}, "-moz-control-character-visibility": {"values": ["hidden", "inherit", "initial", "unset", "visible"], "supports": [], "isInherited": true}, "letter-spacing": {"values": ["-moz-calc", "calc", "inherit", "initial", "normal", "unset"], "supports": [6], "isInherited": true}, "-moz-transition-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "will-change": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "transform-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "font-variant-ligatures": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "padding-block-start": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-animation-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "border-block-end-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "-webkit-mask-origin": {"supports": [], "values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "isInherited": false}, "word-break": {"values": ["break-all", "inherit", "initial", "keep-all", "normal", "unset"], "supports": [], "isInherited": true}, "table-layout": {"values": ["auto", "fixed", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "text-overflow": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-webkit-flex": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": false}, "grid-auto-flow": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "border-top-right-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-image-outset": {"values": ["inherit", "initial", "unset"], "supports": [6, 7], "isInherited": false}, "mask-size": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "touch-action": {"values": ["auto", "inherit", "initial", "manipulation", "none", "pan-x", "pan-y", "unset"], "supports": [], "isInherited": false}, "border-right-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "backface-visibility": {"values": ["hidden", "inherit", "initial", "unset", "visible"], "supports": [], "isInherited": false}, "background-image": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "supports": [4, 5, 11], "isInherited": false}, "-moz-box-ordinal-group": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-webkit-transition-property": {"values": ["all", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "writing-mode": {"values": ["horizontal-tb", "inherit", "initial", "lr", "lr-tb", "rl", "rl-tb", "sideways-lr", "sideways-rl", "tb", "tb-rl", "unset", "vertical-lr", "vertical-rl"], "supports": [], "isInherited": true}, "stroke-opacity": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": true}, "box-sizing": {"values": ["border-box", "content-box", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "margin-top": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "position": {"values": ["absolute", "fixed", "inherit", "initial", "relative", "static", "sticky", "unset"], "supports": [], "isInherited": false}, "list-style-position": {"values": ["inherit", "initial", "inside", "outside", "unset"], "supports": [], "isInherited": true}, "-webkit-box-pack": {"values": ["center", "end", "inherit", "initial", "justify", "start", "unset"], "supports": [], "isInherited": false}, "quotes": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "border-top": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "-moz-animation-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "-webkit-transition": {"values": ["all", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "none", "step-end", "step-start", "steps", "unset"], "supports": [9, 10], "isInherited": false}, "-moz-window-dragging": {"values": ["default", "drag", "inherit", "initial", "no-drag", "unset"], "supports": [], "isInherited": false}, "lighting-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "background-size": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-border-top-left-radius": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-outline-radius-bottomleft": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "mask-position-x": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "mask-position-y": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "justify-content": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "space-around", "space-between", "space-evenly", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "animation-fill-mode": {"values": ["backwards", "both", "forwards", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "-webkit-filter": {"values": ["inherit", "initial", "unset"], "supports": [11], "isInherited": false}, "word-wrap": {"values": ["break-word", "inherit", "initial", "normal", "unset"], "supports": [], "isInherited": true}, "grid": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "background": {"values": ["COLOR", "-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "border-box", "content-box", "currentColor", "fixed", "hsl", "hsla", "inherit", "initial", "linear-gradient", "local", "no-repeat", "none", "padding-box", "radial-gradient", "repeat", "repeat-x", "repeat-y", "repeating-linear-gradient", "repeating-radial-gradient", "rgb", "rgba", "round", "scroll", "space", "text", "transparent", "unset", "url"], "supports": [2, 4, 5, 6, 8, 11], "isInherited": false}, "margin-block-start": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "grid-column-start": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "text-align": {"values": ["-moz-center", "-moz-left", "-moz-right", "center", "end", "inherit", "initial", "justify", "left", "right", "start", "unset"], "supports": [], "isInherited": true}, "marker-end": {"values": ["inherit", "initial", "none", "unset", "url"], "supports": [11], "isInherited": true}, "justify-items": {"values": ["auto", "baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "mask-position": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "-moz-columns": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 7], "isInherited": false}, "-moz-outline-radius-topright": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "right": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-border-left-colors": {"values": ["inherit", "initial", "unset"], "supports": [2], "isInherited": false}, "-webkit-mask-position-x": {"supports": [6, 8], "values": ["inherit", "initial", "unset"], "isInherited": false}, "-webkit-transition-duration": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "border-top-width": {"values": ["-moz-calc", "calc", "inherit", "initial", "medium", "thick", "thin", "unset"], "supports": [6], "isInherited": false}, "bottom": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-block-end-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "-webkit-order": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-moz-animation-iteration-count": {"values": ["infinite", "inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-moz-animation-timing-function": {"values": ["cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "step-end", "step-start", "steps", "unset"], "supports": [10], "isInherited": false}, "background-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "-webkit-backface-visibility": {"values": ["hidden", "inherit", "initial", "unset", "visible"], "supports": [], "isInherited": false}, "animation-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "unicode-bidi": {"values": ["-moz-isolate", "-moz-isolate-override", "-moz-plaintext", "bidi-override", "embed", "inherit", "initial", "isolate", "isolate-override", "normal", "plaintext", "unset"], "supports": [], "isInherited": false}, "text-shadow": {"values": ["inherit", "initial", "unset"], "supports": [2, 6], "isInherited": true}, "-moz-user-modify": {"values": ["inherit", "initial", "read-only", "read-write", "unset", "write-only"], "supports": [], "isInherited": true}, "-webkit-box-direction": {"values": ["inherit", "initial", "normal", "reverse", "unset"], "supports": [], "isInherited": false}, "image-rendering": {"values": ["-moz-crisp-edges", "auto", "inherit", "initial", "optimizequality", "optimizespeed", "unset"], "supports": [], "isInherited": true}, "border-inline-end": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "grid-gap": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-animation-name": {"values": ["inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "pointer-events": {"values": ["all", "auto", "fill", "inherit", "initial", "none", "painted", "stroke", "unset", "visible", "visiblefill", "visiblepainted", "visiblestroke"], "supports": [], "isInherited": true}, "border-image-width": {"values": ["inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": false}, "border-inline-start": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "min-block-size": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-mask-clip": {"supports": [], "values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "isInherited": false}, "-webkit-mask-image": {"supports": [4, 5, 11], "values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "inherit", "initial", "linear-gradient", "none", "radial-gradient", "repeating-linear-gradient", "repeating-radial-gradient", "unset", "url"], "isInherited": false}, "float": {"values": ["inherit", "initial", "inline-end", "inline-start", "left", "none", "right", "unset"], "supports": [], "isInherited": false}, "max-height": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "calc", "inherit", "initial", "none", "unset"], "supports": [6, 8], "isInherited": false}, "outline-offset": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6], "isInherited": false}, "-moz-transform-style": {"values": ["flat", "inherit", "initial", "preserve-3d", "unset"], "supports": [], "isInherited": false}, "overflow-wrap": {"values": ["break-word", "inherit", "initial", "normal", "unset"], "supports": [], "isInherited": true}, "fill": {"values": ["inherit", "initial", "unset"], "supports": [2, 11], "isInherited": true}, "scroll-snap-type": {"values": ["inherit", "initial", "mandatory", "none", "proximity", "unset"], "supports": [], "isInherited": false}, "text-emphasis-style": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": true}, "transform": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-moz-text-align-last": {"values": ["auto", "center", "end", "inherit", "initial", "justify", "left", "right", "start", "unset"], "supports": [], "isInherited": true}, "width": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "stroke-miterlimit": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": true}, "stop-opacity": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "border-top-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "background-position": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "scroll-snap-type-x": {"values": ["inherit", "initial", "mandatory", "none", "proximity", "unset"], "supports": [], "isInherited": false}, "object-fit": {"values": ["contain", "cover", "fill", "inherit", "initial", "none", "scale-down", "unset"], "supports": [], "isInherited": false}, "-moz-box-sizing": {"values": ["border-box", "content-box", "inherit", "initial", "unset"], "supports": [], "isInherited": false}, "offset-block-start": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-background-origin": {"values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "supports": [], "isInherited": false}, "-webkit-align-items": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "-moz-padding-start": {"values": ["-moz-calc", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "transition-delay": {"values": ["inherit", "initial", "unset"], "supports": [9], "isInherited": false}, "border-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "mask-repeat": {"supports": [], "values": ["inherit", "initial", "no-repeat", "repeat", "repeat-x", "repeat-y", "round", "space", "unset"], "isInherited": false}, "overflow": {"values": ["-moz-hidden-unscrollable", "auto", "hidden", "inherit", "initial", "scroll", "unset", "visible"], "supports": [], "isInherited": false}, "mask-origin": {"supports": [], "values": ["border-box", "content-box", "inherit", "initial", "padding-box", "unset"], "isInherited": false}, "-moz-force-broken-image-icon": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "grid-template-columns": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-align-self": {"values": ["auto", "baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "self-end", "self-start", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "-webkit-perspective-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "border-block-start": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "display": {"values": ["-moz-box", "-moz-deck", "-moz-grid", "-moz-grid-group", "-moz-grid-line", "-moz-groupbox", "-moz-inline-box", "-moz-inline-grid", "-moz-inline-stack", "-moz-popup", "-moz-stack", "-webkit-box", "-webkit-flex", "-webkit-inline-box", "-webkit-inline-flex", "block", "contents", "flex", "grid", "inherit", "initial", "inline", "inline-block", "inline-flex", "inline-grid", "inline-table", "list-item", "none", "ruby", "ruby-base", "ruby-base-container", "ruby-text", "ruby-text-container", "table", "table-caption", "table-cell", "table-column", "table-column-group", "table-footer-group", "table-header-group", "table-row", "table-row-group", "unset"], "supports": [], "isInherited": false}, "-webkit-box-ordinal-group": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-moz-column-width": {"values": ["-moz-calc", "auto", "calc", "inherit", "initial", "unset"], "supports": [6], "isInherited": false}, "border-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "-webkit-flex-basis": {"values": ["-moz-available", "-moz-calc", "-moz-fit-content", "-moz-max-content", "-moz-min-content", "auto", "calc", "inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "stroke-dashoffset": {"values": ["inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": true}, "-moz-transform-origin": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-webkit-text-size-adjust": {"values": ["auto", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": true}, "border-left-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "overflow-y": {"values": ["-moz-hidden-unscrollable", "auto", "hidden", "inherit", "initial", "scroll", "unset", "visible"], "supports": [], "isInherited": false}, "overflow-x": {"values": ["-moz-hidden-unscrollable", "auto", "hidden", "inherit", "initial", "scroll", "unset", "visible"], "supports": [], "isInherited": false}, "-moz-user-select": {"values": ["-moz-all", "-moz-none", "-moz-text", "all", "auto", "element", "elements", "inherit", "initial", "none", "text", "toggle", "tri-state", "unset"], "supports": [], "isInherited": false}, "-moz-column-rule": {"values": ["COLOR", "-moz-calc", "-moz-use-text-color", "calc", "currentColor", "dashed", "dotted", "double", "groove", "hidden", "hsl", "hsla", "inherit", "initial", "inset", "medium", "none", "outset", "rgb", "rgba", "ridge", "solid", "thick", "thin", "transparent", "unset"], "supports": [2, 6], "isInherited": false}, "-moz-outline-radius-bottomright": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "-moz-column-rule-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "-moz-transition": {"values": ["all", "cubic-bezier", "ease", "ease-in", "ease-in-out", "ease-out", "inherit", "initial", "linear", "none", "step-end", "step-start", "steps", "unset"], "supports": [9, 10], "isInherited": false}, "opacity": {"values": ["inherit", "initial", "unset"], "supports": [7], "isInherited": false}, "-webkit-perspective": {"values": ["inherit", "initial", "none", "unset"], "supports": [6], "isInherited": false}, "-webkit-text-stroke-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": true}, "align-content": {"values": ["baseline", "center", "end", "flex-end", "flex-start", "inherit", "initial", "last-baseline", "left", "normal", "right", "space-around", "space-between", "space-evenly", "start", "stretch", "unset"], "supports": [], "isInherited": false}, "scroll-snap-points-y": {"values": ["inherit", "initial", "unset"], "supports": [], "isInherited": false}, "-moz-transition-property": {"values": ["all", "inherit", "initial", "none", "unset"], "supports": [], "isInherited": false}, "border-bottom-style": {"values": ["dashed", "dotted", "double", "groove", "hidden", "inherit", "initial", "inset", "none", "outset", "ridge", "solid", "unset"], "supports": [], "isInherited": false}, "-moz-animation-play-state": {"values": ["inherit", "initial", "paused", "running", "unset"], "supports": [], "isInherited": false}, "mask": {"values": ["-moz-element", "-moz-image-rect", "-moz-linear-gradient", "-moz-radial-gradient", "-moz-repeating-linear-gradient", "-moz-repeating-radial-gradient", "add", "alpha", "border-box", "content-box", "exclude", "inherit", "initial", "intersect", "linear-gradient", "luminance", "match-source", "no-repeat", "none", "padding-box", "radial-gradient", "repeat", "repeat-x", "repeat-y", "repeating-linear-gradient", "repeating-radial-gradient", "round", "space", "subtract", "unset", "url"], "supports": [4, 5, 6, 8, 11], "isInherited": false}, "background-position-x": {"values": ["inherit", "initial", "unset"], "supports": [6, 8], "isInherited": false}, "stop-color": {"values": ["COLOR", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "border-block-end-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}, "stroke-dasharray": {"values": ["inherit", "initial", "unset"], "supports": [6, 7, 8], "isInherited": true}, "border-inline-start-color": {"values": ["COLOR", "-moz-use-text-color", "currentColor", "hsl", "hsla", "inherit", "initial", "rgb", "rgba", "transparent", "unset"], "supports": [2], "isInherited": false}};
+exports.CSS_PROPERTIES = {
+  "-moz-animation": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name",
+      "animation-duration",
+      "animation-timing-function",
+      "animation-delay",
+      "animation-iteration-count",
+      "animation-direction",
+      "animation-fill-mode",
+      "animation-play-state"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "backwards",
+      "both",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "forwards",
+      "infinite",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "normal",
+      "paused",
+      "reverse",
+      "revert",
+      "running",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-moz-animation-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-direction"
+    ],
+    "supports": [],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "inherit",
+      "initial",
+      "normal",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-fill-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-fill-mode"
+    ],
+    "supports": [],
+    "values": [
+      "backwards",
+      "both",
+      "forwards",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-iteration-count": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-iteration-count"
+    ],
+    "supports": [],
+    "values": [
+      "infinite",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-name": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-animation-play-state": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-play-state"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "paused",
+      "revert",
+      "running",
+      "unset"
+    ]
+  },
+  "-moz-animation-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-moz-appearance": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-appearance"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-gtk-info-bar",
+      "-moz-mac-active-source-list-selection",
+      "-moz-mac-disclosure-button-closed",
+      "-moz-mac-disclosure-button-open",
+      "-moz-mac-fullscreen-button",
+      "-moz-mac-help-button",
+      "-moz-mac-source-list",
+      "-moz-mac-source-list-selection",
+      "-moz-mac-vibrancy-dark",
+      "-moz-mac-vibrancy-light",
+      "-moz-mac-vibrant-titlebar-dark",
+      "-moz-mac-vibrant-titlebar-light",
+      "-moz-menulist-button",
+      "-moz-win-borderless-glass",
+      "-moz-win-browsertabbar-toolbox",
+      "-moz-win-communications-toolbox",
+      "-moz-win-exclude-glass",
+      "-moz-win-glass",
+      "-moz-win-media-toolbox",
+      "-moz-window-button-box",
+      "-moz-window-button-box-maximized",
+      "-moz-window-button-close",
+      "-moz-window-button-maximize",
+      "-moz-window-button-minimize",
+      "-moz-window-button-restore",
+      "-moz-window-frame-bottom",
+      "-moz-window-frame-left",
+      "-moz-window-frame-right",
+      "-moz-window-titlebar",
+      "-moz-window-titlebar-maximized",
+      "button",
+      "button-arrow-down",
+      "button-arrow-next",
+      "button-arrow-previous",
+      "button-arrow-up",
+      "button-focus",
+      "checkbox",
+      "checkbox-container",
+      "checkbox-label",
+      "checkmenuitem",
+      "dialog",
+      "dualbutton",
+      "groupbox",
+      "inherit",
+      "initial",
+      "inner-spin-button",
+      "listbox",
+      "menuarrow",
+      "menubar",
+      "menucheckbox",
+      "menuimage",
+      "menuitem",
+      "menuitemtext",
+      "menulist",
+      "menulist-button",
+      "menulist-text",
+      "menupopup",
+      "menuradio",
+      "menuseparator",
+      "meter",
+      "meterbar",
+      "meterchunk",
+      "none",
+      "number-input",
+      "progress-bar",
+      "progressbar",
+      "progressbar-vertical",
+      "progresschunk",
+      "radio",
+      "radio-container",
+      "radio-label",
+      "radiomenuitem",
+      "range",
+      "range-thumb",
+      "resizer",
+      "resizerpanel",
+      "revert",
+      "scale-horizontal",
+      "scale-vertical",
+      "scalethumb-horizontal",
+      "scalethumb-vertical",
+      "scalethumbend",
+      "scalethumbstart",
+      "scalethumbtick",
+      "scrollbar",
+      "scrollbar-horizontal",
+      "scrollbar-small",
+      "scrollbar-vertical",
+      "scrollbarbutton-down",
+      "scrollbarbutton-left",
+      "scrollbarbutton-right",
+      "scrollbarbutton-up",
+      "scrollbarthumb-horizontal",
+      "scrollbarthumb-vertical",
+      "scrollbartrack-horizontal",
+      "scrollbartrack-vertical",
+      "scrollcorner",
+      "searchfield",
+      "separator",
+      "spinner",
+      "spinner-downbutton",
+      "spinner-textfield",
+      "spinner-upbutton",
+      "splitter",
+      "statusbar",
+      "statusbarpanel",
+      "tab",
+      "tab-scroll-arrow-back",
+      "tab-scroll-arrow-forward",
+      "tabpanel",
+      "tabpanels",
+      "textarea",
+      "textfield",
+      "textfield-multiline",
+      "toolbar",
+      "toolbarbutton",
+      "toolbarbutton-dropdown",
+      "toolbargripper",
+      "toolbox",
+      "tooltip",
+      "treeheader",
+      "treeheadercell",
+      "treeheadersortarrow",
+      "treeitem",
+      "treeline",
+      "treetwisty",
+      "treetwistyopen",
+      "treeview",
+      "unset",
+      "window"
+    ]
+  },
+  "-moz-backface-visibility": {
+    "isInherited": false,
+    "subproperties": [
+      "backface-visibility"
+    ],
+    "supports": [],
+    "values": [
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "visible"
+    ]
+  },
+  "-moz-border-end": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-color",
+      "border-inline-end-style",
+      "border-inline-end-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-border-end-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-border-end-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "-moz-border-end-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "-moz-border-image": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-outset",
+      "border-image-repeat",
+      "border-image-slice",
+      "border-image-source",
+      "border-image-width"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeat",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "round",
+      "space",
+      "stretch",
+      "unset",
+      "url"
+    ]
+  },
+  "-moz-border-start": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color",
+      "border-inline-start-style",
+      "border-inline-start-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-border-start-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-border-start-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "-moz-border-start-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "-moz-box-align": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-align"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "revert",
+      "start",
+      "stretch",
+      "unset"
+    ]
+  },
+  "-moz-box-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-direction"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-box-flex": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-flex"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-box-ordinal-group": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-ordinal-group"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-box-orient": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-orient"
+    ],
+    "supports": [],
+    "values": [
+      "block-axis",
+      "horizontal",
+      "inherit",
+      "initial",
+      "inline-axis",
+      "revert",
+      "unset",
+      "vertical"
+    ]
+  },
+  "-moz-box-pack": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-pack"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "revert",
+      "start",
+      "unset"
+    ]
+  },
+  "-moz-box-sizing": {
+    "isInherited": false,
+    "subproperties": [
+      "box-sizing"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-column-count": {
+    "isInherited": false,
+    "subproperties": [
+      "column-count"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-column-fill": {
+    "isInherited": false,
+    "subproperties": [
+      "column-fill"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "balance",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-column-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "column-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-column-rule": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-width",
+      "column-rule-style",
+      "column-rule-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-column-rule-color": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-moz-column-rule-style": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "-moz-column-rule-width": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "-moz-column-span": {
+    "isInherited": false,
+    "subproperties": [
+      "column-span"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-column-width": {
+    "isInherited": false,
+    "subproperties": [
+      "column-width"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-columns": {
+    "isInherited": false,
+    "subproperties": [
+      "column-width",
+      "column-count"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-context-properties": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-context-properties"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-control-character-visibility": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-control-character-visibility"
+    ],
+    "supports": [],
+    "values": [
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "visible"
+    ]
+  },
+  "-moz-float-edge": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-float-edge"
+    ],
+    "supports": [],
+    "values": [
+      "content-box",
+      "inherit",
+      "initial",
+      "margin-box",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-font-feature-settings": {
+    "isInherited": true,
+    "subproperties": [
+      "font-feature-settings"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-font-language-override": {
+    "isInherited": true,
+    "subproperties": [
+      "font-language-override"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-force-broken-image-icon": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-force-broken-image-icon"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-hyphens": {
+    "isInherited": true,
+    "subproperties": [
+      "hyphens"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "manual",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-image-region": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-image-region"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "rect",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-margin-end": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-margin-start": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-orient": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-orient"
+    ],
+    "supports": [],
+    "values": [
+      "block",
+      "horizontal",
+      "inherit",
+      "initial",
+      "inline",
+      "revert",
+      "unset",
+      "vertical"
+    ]
+  },
+  "-moz-outline-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-outline-radius-topleft",
+      "-moz-outline-radius-topright",
+      "-moz-outline-radius-bottomright",
+      "-moz-outline-radius-bottomleft"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-outline-radius-bottomleft": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-outline-radius-bottomleft"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-outline-radius-bottomright": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-outline-radius-bottomright"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-outline-radius-topleft": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-outline-radius-topleft"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-outline-radius-topright": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-outline-radius-topright"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-padding-end": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-padding-start": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-perspective": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-perspective-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "-moz-stack-sizing": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-stack-sizing"
+    ],
+    "supports": [],
+    "values": [
+      "ignore",
+      "ignore-horizontal",
+      "ignore-vertical",
+      "inherit",
+      "initial",
+      "revert",
+      "stretch-to-fit",
+      "unset"
+    ]
+  },
+  "-moz-tab-size": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-tab-size"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-text-size-adjust": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-text-size-adjust"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-transform": {
+    "isInherited": false,
+    "subproperties": [
+      "transform"
+    ],
+    "supports": [],
+    "values": [
+      "accumulatematrix",
+      "inherit",
+      "initial",
+      "interpolatematrix",
+      "matrix",
+      "matrix3d",
+      "none",
+      "perspective",
+      "revert",
+      "rotate",
+      "rotate3d",
+      "rotateX",
+      "rotateY",
+      "rotateZ",
+      "scale",
+      "scale3d",
+      "scaleX",
+      "scaleY",
+      "scaleZ",
+      "skew",
+      "skewX",
+      "skewY",
+      "translate",
+      "translate3d",
+      "translateX",
+      "translateY",
+      "translateZ",
+      "unset"
+    ]
+  },
+  "-moz-transform-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "-moz-transform-style": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-style"
+    ],
+    "supports": [],
+    "values": [
+      "flat",
+      "inherit",
+      "initial",
+      "preserve-3d",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-transition": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property",
+      "transition-duration",
+      "transition-timing-function",
+      "transition-delay"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "all",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-moz-transition-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-transition-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-transition-property": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-transition-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-moz-user-focus": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-user-focus"
+    ],
+    "supports": [],
+    "values": [
+      "ignore",
+      "inherit",
+      "initial",
+      "none",
+      "normal",
+      "revert",
+      "select-after",
+      "select-all",
+      "select-before",
+      "select-menu",
+      "select-same",
+      "unset"
+    ]
+  },
+  "-moz-user-input": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-user-input"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-moz-user-modify": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-user-modify"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "read-only",
+      "read-write",
+      "revert",
+      "unset",
+      "write-only"
+    ]
+  },
+  "-moz-user-select": {
+    "isInherited": false,
+    "subproperties": [
+      "user-select"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-none",
+      "all",
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "text",
+      "unset"
+    ]
+  },
+  "-moz-window-dragging": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-window-dragging"
+    ],
+    "supports": [],
+    "values": [
+      "default",
+      "drag",
+      "inherit",
+      "initial",
+      "no-drag",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-align-content": {
+    "isInherited": false,
+    "subproperties": [
+      "align-content"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "-webkit-align-items": {
+    "isInherited": false,
+    "subproperties": [
+      "align-items"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "-webkit-align-self": {
+    "isInherited": false,
+    "subproperties": [
+      "align-self"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "-webkit-animation": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name",
+      "animation-duration",
+      "animation-timing-function",
+      "animation-delay",
+      "animation-iteration-count",
+      "animation-direction",
+      "animation-fill-mode",
+      "animation-play-state"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "backwards",
+      "both",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "forwards",
+      "infinite",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "normal",
+      "paused",
+      "reverse",
+      "revert",
+      "running",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-webkit-animation-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-direction"
+    ],
+    "supports": [],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "inherit",
+      "initial",
+      "normal",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-fill-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-fill-mode"
+    ],
+    "supports": [],
+    "values": [
+      "backwards",
+      "both",
+      "forwards",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-iteration-count": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-iteration-count"
+    ],
+    "supports": [],
+    "values": [
+      "infinite",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-name": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-animation-play-state": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-play-state"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "paused",
+      "revert",
+      "running",
+      "unset"
+    ]
+  },
+  "-webkit-animation-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-webkit-appearance": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-appearance"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-gtk-info-bar",
+      "-moz-mac-active-source-list-selection",
+      "-moz-mac-disclosure-button-closed",
+      "-moz-mac-disclosure-button-open",
+      "-moz-mac-fullscreen-button",
+      "-moz-mac-help-button",
+      "-moz-mac-source-list",
+      "-moz-mac-source-list-selection",
+      "-moz-mac-vibrancy-dark",
+      "-moz-mac-vibrancy-light",
+      "-moz-mac-vibrant-titlebar-dark",
+      "-moz-mac-vibrant-titlebar-light",
+      "-moz-menulist-button",
+      "-moz-win-borderless-glass",
+      "-moz-win-browsertabbar-toolbox",
+      "-moz-win-communications-toolbox",
+      "-moz-win-exclude-glass",
+      "-moz-win-glass",
+      "-moz-win-media-toolbox",
+      "-moz-window-button-box",
+      "-moz-window-button-box-maximized",
+      "-moz-window-button-close",
+      "-moz-window-button-maximize",
+      "-moz-window-button-minimize",
+      "-moz-window-button-restore",
+      "-moz-window-frame-bottom",
+      "-moz-window-frame-left",
+      "-moz-window-frame-right",
+      "-moz-window-titlebar",
+      "-moz-window-titlebar-maximized",
+      "button",
+      "button-arrow-down",
+      "button-arrow-next",
+      "button-arrow-previous",
+      "button-arrow-up",
+      "button-focus",
+      "checkbox",
+      "checkbox-container",
+      "checkbox-label",
+      "checkmenuitem",
+      "dialog",
+      "dualbutton",
+      "groupbox",
+      "inherit",
+      "initial",
+      "inner-spin-button",
+      "listbox",
+      "menuarrow",
+      "menubar",
+      "menucheckbox",
+      "menuimage",
+      "menuitem",
+      "menuitemtext",
+      "menulist",
+      "menulist-button",
+      "menulist-text",
+      "menupopup",
+      "menuradio",
+      "menuseparator",
+      "meter",
+      "meterbar",
+      "meterchunk",
+      "none",
+      "number-input",
+      "progress-bar",
+      "progressbar",
+      "progressbar-vertical",
+      "progresschunk",
+      "radio",
+      "radio-container",
+      "radio-label",
+      "radiomenuitem",
+      "range",
+      "range-thumb",
+      "resizer",
+      "resizerpanel",
+      "revert",
+      "scale-horizontal",
+      "scale-vertical",
+      "scalethumb-horizontal",
+      "scalethumb-vertical",
+      "scalethumbend",
+      "scalethumbstart",
+      "scalethumbtick",
+      "scrollbar",
+      "scrollbar-horizontal",
+      "scrollbar-small",
+      "scrollbar-vertical",
+      "scrollbarbutton-down",
+      "scrollbarbutton-left",
+      "scrollbarbutton-right",
+      "scrollbarbutton-up",
+      "scrollbarthumb-horizontal",
+      "scrollbarthumb-vertical",
+      "scrollbartrack-horizontal",
+      "scrollbartrack-vertical",
+      "scrollcorner",
+      "searchfield",
+      "separator",
+      "spinner",
+      "spinner-downbutton",
+      "spinner-textfield",
+      "spinner-upbutton",
+      "splitter",
+      "statusbar",
+      "statusbarpanel",
+      "tab",
+      "tab-scroll-arrow-back",
+      "tab-scroll-arrow-forward",
+      "tabpanel",
+      "tabpanels",
+      "textarea",
+      "textfield",
+      "textfield-multiline",
+      "toolbar",
+      "toolbarbutton",
+      "toolbarbutton-dropdown",
+      "toolbargripper",
+      "toolbox",
+      "tooltip",
+      "treeheader",
+      "treeheadercell",
+      "treeheadersortarrow",
+      "treeitem",
+      "treeline",
+      "treetwisty",
+      "treetwistyopen",
+      "treeview",
+      "unset",
+      "window"
+    ]
+  },
+  "-webkit-backface-visibility": {
+    "isInherited": false,
+    "subproperties": [
+      "backface-visibility"
+    ],
+    "supports": [],
+    "values": [
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "visible"
+    ]
+  },
+  "-webkit-background-clip": {
+    "isInherited": false,
+    "subproperties": [
+      "background-clip"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "text",
+      "unset"
+    ]
+  },
+  "-webkit-background-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "background-origin"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-background-size": {
+    "isInherited": false,
+    "subproperties": [
+      "background-size"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "cover",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-border-bottom-left-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-border-bottom-right-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-right-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-border-image": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-outset",
+      "border-image-repeat",
+      "border-image-slice",
+      "border-image-source",
+      "border-image-width"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeat",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "round",
+      "space",
+      "stretch",
+      "unset",
+      "url"
+    ]
+  },
+  "-webkit-border-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-left-radius",
+      "border-top-right-radius",
+      "border-bottom-right-radius",
+      "border-bottom-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-border-top-left-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-border-top-right-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-right-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-box-align": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-align"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "revert",
+      "start",
+      "stretch",
+      "unset"
+    ]
+  },
+  "-webkit-box-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-direction"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-box-flex": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-flex"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-box-ordinal-group": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-ordinal-group"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-box-orient": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-orient"
+    ],
+    "supports": [],
+    "values": [
+      "block-axis",
+      "horizontal",
+      "inherit",
+      "initial",
+      "inline-axis",
+      "revert",
+      "unset",
+      "vertical"
+    ]
+  },
+  "-webkit-box-pack": {
+    "isInherited": false,
+    "subproperties": [
+      "-moz-box-pack"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "revert",
+      "start",
+      "unset"
+    ]
+  },
+  "-webkit-box-shadow": {
+    "isInherited": false,
+    "subproperties": [
+      "box-shadow"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-webkit-box-sizing": {
+    "isInherited": false,
+    "subproperties": [
+      "box-sizing"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-filter": {
+    "isInherited": false,
+    "subproperties": [
+      "filter"
+    ],
+    "supports": [],
+    "values": [
+      "blur",
+      "brightness",
+      "contrast",
+      "drop-shadow",
+      "grayscale",
+      "hue-rotate",
+      "inherit",
+      "initial",
+      "invert",
+      "none",
+      "opacity",
+      "revert",
+      "saturate",
+      "sepia",
+      "unset",
+      "url"
+    ]
+  },
+  "-webkit-flex": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-grow",
+      "flex-shrink",
+      "flex-basis"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-flex-basis": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-basis"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-flex-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-direction"
+    ],
+    "supports": [],
+    "values": [
+      "column",
+      "column-reverse",
+      "inherit",
+      "initial",
+      "revert",
+      "row",
+      "row-reverse",
+      "unset"
+    ]
+  },
+  "-webkit-flex-flow": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-direction",
+      "flex-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "column",
+      "column-reverse",
+      "inherit",
+      "initial",
+      "nowrap",
+      "revert",
+      "row",
+      "row-reverse",
+      "unset",
+      "wrap",
+      "wrap-reverse"
+    ]
+  },
+  "-webkit-flex-grow": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-grow"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-flex-shrink": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-shrink"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-flex-wrap": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "nowrap",
+      "revert",
+      "unset",
+      "wrap",
+      "wrap-reverse"
+    ]
+  },
+  "-webkit-justify-content": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-content"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "-webkit-line-clamp": {
+    "isInherited": false,
+    "subproperties": [
+      "-webkit-line-clamp"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-mask": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-mode",
+      "mask-repeat",
+      "mask-clip",
+      "mask-origin",
+      "mask-composite",
+      "mask-position-x",
+      "mask-position-y",
+      "mask-size",
+      "mask-image"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "add",
+      "alpha",
+      "auto",
+      "border-box",
+      "bottom",
+      "center",
+      "contain",
+      "content-box",
+      "cover",
+      "exclude",
+      "fill-box",
+      "inherit",
+      "initial",
+      "intersect",
+      "left",
+      "linear-gradient",
+      "luminance",
+      "match-source",
+      "no-clip",
+      "no-repeat",
+      "none",
+      "padding-box",
+      "radial-gradient",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "right",
+      "round",
+      "space",
+      "stroke-box",
+      "subtract",
+      "top",
+      "unset",
+      "url",
+      "view-box"
+    ]
+  },
+  "-webkit-mask-clip": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-clip"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "fill-box",
+      "inherit",
+      "initial",
+      "no-clip",
+      "padding-box",
+      "revert",
+      "stroke-box",
+      "unset",
+      "view-box"
+    ]
+  },
+  "-webkit-mask-composite": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-composite"
+    ],
+    "supports": [],
+    "values": [
+      "add",
+      "exclude",
+      "inherit",
+      "initial",
+      "intersect",
+      "revert",
+      "subtract",
+      "unset"
+    ]
+  },
+  "-webkit-mask-image": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-image"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "-webkit-mask-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-origin"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "fill-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "stroke-box",
+      "unset",
+      "view-box"
+    ]
+  },
+  "-webkit-mask-position": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-x",
+      "mask-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "-webkit-mask-position-x": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-x"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "-webkit-mask-position-y": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "revert",
+      "top",
+      "unset"
+    ]
+  },
+  "-webkit-mask-repeat": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-repeat"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "round",
+      "space",
+      "unset"
+    ]
+  },
+  "-webkit-mask-size": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-size"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "cover",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-order": {
+    "isInherited": false,
+    "subproperties": [
+      "order"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-perspective": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-perspective-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "-webkit-text-fill-color": {
+    "isInherited": true,
+    "subproperties": [
+      "-webkit-text-fill-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-webkit-text-size-adjust": {
+    "isInherited": true,
+    "subproperties": [
+      "-moz-text-size-adjust"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-text-stroke": {
+    "isInherited": true,
+    "subproperties": [
+      "-webkit-text-stroke-width",
+      "-webkit-text-stroke-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "rgb",
+      "rgba",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-webkit-text-stroke-color": {
+    "isInherited": true,
+    "subproperties": [
+      "-webkit-text-stroke-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "-webkit-text-stroke-width": {
+    "isInherited": true,
+    "subproperties": [
+      "-webkit-text-stroke-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "-webkit-transform": {
+    "isInherited": false,
+    "subproperties": [
+      "transform"
+    ],
+    "supports": [],
+    "values": [
+      "accumulatematrix",
+      "inherit",
+      "initial",
+      "interpolatematrix",
+      "matrix",
+      "matrix3d",
+      "none",
+      "perspective",
+      "revert",
+      "rotate",
+      "rotate3d",
+      "rotateX",
+      "rotateY",
+      "rotateZ",
+      "scale",
+      "scale3d",
+      "scaleX",
+      "scaleY",
+      "scaleZ",
+      "skew",
+      "skewX",
+      "skewY",
+      "translate",
+      "translate3d",
+      "translateX",
+      "translateY",
+      "translateZ",
+      "unset"
+    ]
+  },
+  "-webkit-transform-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "-webkit-transform-style": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-style"
+    ],
+    "supports": [],
+    "values": [
+      "flat",
+      "inherit",
+      "initial",
+      "preserve-3d",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-transition": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property",
+      "transition-duration",
+      "transition-timing-function",
+      "transition-delay"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "all",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-webkit-transition-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-transition-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-transition-property": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "-webkit-transition-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "-webkit-user-select": {
+    "isInherited": false,
+    "subproperties": [
+      "user-select"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-none",
+      "all",
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "text",
+      "unset"
+    ]
+  },
+  "align-content": {
+    "isInherited": false,
+    "subproperties": [
+      "align-content"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "align-items": {
+    "isInherited": false,
+    "subproperties": [
+      "align-items"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "align-self": {
+    "isInherited": false,
+    "subproperties": [
+      "align-self"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "all": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-color",
+      "border-block-start-style",
+      "border-block-start-width",
+      "border-block-end-color",
+      "border-block-end-style",
+      "border-block-end-width",
+      "border-inline-start-color",
+      "border-inline-start-style",
+      "border-inline-start-width",
+      "border-inline-end-color",
+      "border-inline-end-style",
+      "border-inline-end-width",
+      "border-start-start-radius",
+      "border-start-end-radius",
+      "border-end-start-radius",
+      "border-end-end-radius",
+      "overflow-inline",
+      "overflow-block",
+      "margin-block-start",
+      "margin-block-end",
+      "margin-inline-start",
+      "margin-inline-end",
+      "scroll-margin-block-start",
+      "scroll-margin-block-end",
+      "scroll-margin-inline-start",
+      "scroll-margin-inline-end",
+      "padding-block-start",
+      "padding-block-end",
+      "padding-inline-start",
+      "padding-inline-end",
+      "scroll-padding-block-start",
+      "scroll-padding-block-end",
+      "scroll-padding-inline-start",
+      "scroll-padding-inline-end",
+      "inset-block-start",
+      "inset-block-end",
+      "inset-inline-start",
+      "inset-inline-end",
+      "block-size",
+      "min-block-size",
+      "max-block-size",
+      "inline-size",
+      "min-inline-size",
+      "max-inline-size",
+      "background-color",
+      "background-image",
+      "background-position-x",
+      "background-position-y",
+      "background-repeat",
+      "background-attachment",
+      "background-clip",
+      "background-origin",
+      "background-size",
+      "background-blend-mode",
+      "border-top-color",
+      "border-top-style",
+      "border-top-width",
+      "border-right-color",
+      "border-right-style",
+      "border-right-width",
+      "border-bottom-color",
+      "border-bottom-style",
+      "border-bottom-width",
+      "border-left-color",
+      "border-left-style",
+      "border-left-width",
+      "border-top-left-radius",
+      "border-top-right-radius",
+      "border-bottom-right-radius",
+      "border-bottom-left-radius",
+      "box-decoration-break",
+      "-moz-float-edge",
+      "border-image-source",
+      "border-image-outset",
+      "border-image-repeat",
+      "border-image-width",
+      "border-image-slice",
+      "display",
+      "position",
+      "float",
+      "clear",
+      "vertical-align",
+      "overflow-clip-box-inline",
+      "overflow-clip-box-block",
+      "overflow-x",
+      "overflow-y",
+      "overflow-anchor",
+      "transition-duration",
+      "transition-timing-function",
+      "transition-property",
+      "transition-delay",
+      "animation-name",
+      "animation-duration",
+      "animation-timing-function",
+      "animation-iteration-count",
+      "animation-direction",
+      "animation-play-state",
+      "animation-fill-mode",
+      "animation-delay",
+      "transform",
+      "rotate",
+      "scale",
+      "translate",
+      "offset-path",
+      "offset-distance",
+      "offset-rotate",
+      "offset-anchor",
+      "scroll-behavior",
+      "scroll-snap-align",
+      "scroll-snap-type",
+      "overscroll-behavior-x",
+      "overscroll-behavior-y",
+      "isolation",
+      "break-after",
+      "break-before",
+      "break-inside",
+      "resize",
+      "perspective",
+      "perspective-origin",
+      "backface-visibility",
+      "transform-box",
+      "transform-style",
+      "transform-origin",
+      "contain",
+      "-moz-appearance",
+      "-moz-binding",
+      "-moz-orient",
+      "will-change",
+      "shape-image-threshold",
+      "shape-margin",
+      "shape-outside",
+      "touch-action",
+      "-webkit-line-clamp",
+      "column-width",
+      "column-count",
+      "column-fill",
+      "column-rule-width",
+      "column-rule-color",
+      "column-span",
+      "column-rule-style",
+      "content",
+      "counter-increment",
+      "counter-reset",
+      "counter-set",
+      "opacity",
+      "box-shadow",
+      "clip",
+      "filter",
+      "backdrop-filter",
+      "mix-blend-mode",
+      "font-family",
+      "font-style",
+      "font-variant-caps",
+      "font-weight",
+      "font-size",
+      "font-size-adjust",
+      "font-synthesis",
+      "font-stretch",
+      "font-kerning",
+      "font-variant-alternates",
+      "font-variant-east-asian",
+      "font-variant-ligatures",
+      "font-variant-numeric",
+      "font-variant-position",
+      "font-feature-settings",
+      "font-variation-settings",
+      "font-language-override",
+      "font-optical-sizing",
+      "-moz-osx-font-smoothing",
+      "visibility",
+      "writing-mode",
+      "text-orientation",
+      "color-adjust",
+      "image-rendering",
+      "image-orientation",
+      "dominant-baseline",
+      "text-anchor",
+      "color-interpolation",
+      "color-interpolation-filters",
+      "fill",
+      "fill-opacity",
+      "fill-rule",
+      "shape-rendering",
+      "stroke",
+      "stroke-width",
+      "stroke-linecap",
+      "stroke-linejoin",
+      "stroke-miterlimit",
+      "stroke-opacity",
+      "stroke-dasharray",
+      "stroke-dashoffset",
+      "clip-rule",
+      "marker-start",
+      "marker-mid",
+      "marker-end",
+      "paint-order",
+      "-moz-context-properties",
+      "border-collapse",
+      "empty-cells",
+      "caption-side",
+      "border-spacing",
+      "color",
+      "line-height",
+      "text-transform",
+      "hyphens",
+      "-moz-text-size-adjust",
+      "text-indent",
+      "overflow-wrap",
+      "word-break",
+      "text-justify",
+      "text-align-last",
+      "text-align",
+      "letter-spacing",
+      "word-spacing",
+      "white-space",
+      "text-shadow",
+      "text-emphasis-style",
+      "text-emphasis-position",
+      "text-emphasis-color",
+      "-moz-tab-size",
+      "line-break",
+      "-webkit-text-fill-color",
+      "-webkit-text-stroke-color",
+      "-webkit-text-stroke-width",
+      "ruby-align",
+      "ruby-position",
+      "text-combine-upright",
+      "text-rendering",
+      "-moz-control-character-visibility",
+      "text-underline-offset",
+      "text-decoration-skip-ink",
+      "cursor",
+      "pointer-events",
+      "-moz-user-input",
+      "-moz-user-modify",
+      "-moz-user-focus",
+      "caret-color",
+      "scrollbar-color",
+      "list-style-position",
+      "list-style-type",
+      "list-style-image",
+      "quotes",
+      "-moz-image-region",
+      "margin-top",
+      "margin-right",
+      "margin-bottom",
+      "margin-left",
+      "scroll-margin-top",
+      "scroll-margin-right",
+      "scroll-margin-bottom",
+      "scroll-margin-left",
+      "outline-color",
+      "outline-style",
+      "outline-width",
+      "-moz-outline-radius-topleft",
+      "-moz-outline-radius-topright",
+      "-moz-outline-radius-bottomright",
+      "-moz-outline-radius-bottomleft",
+      "outline-offset",
+      "padding-top",
+      "padding-right",
+      "padding-bottom",
+      "padding-left",
+      "scroll-padding-top",
+      "scroll-padding-right",
+      "scroll-padding-bottom",
+      "scroll-padding-left",
+      "top",
+      "right",
+      "bottom",
+      "left",
+      "z-index",
+      "flex-direction",
+      "flex-wrap",
+      "justify-content",
+      "align-content",
+      "align-items",
+      "justify-items",
+      "flex-grow",
+      "flex-shrink",
+      "align-self",
+      "justify-self",
+      "order",
+      "flex-basis",
+      "width",
+      "min-width",
+      "max-width",
+      "height",
+      "min-height",
+      "max-height",
+      "box-sizing",
+      "object-fit",
+      "object-position",
+      "grid-row-start",
+      "grid-row-end",
+      "grid-auto-rows",
+      "grid-template-rows",
+      "grid-column-start",
+      "grid-column-end",
+      "grid-auto-columns",
+      "grid-template-columns",
+      "grid-auto-flow",
+      "grid-template-areas",
+      "column-gap",
+      "row-gap",
+      "vector-effect",
+      "stop-color",
+      "stop-opacity",
+      "flood-color",
+      "flood-opacity",
+      "lighting-color",
+      "mask-type",
+      "clip-path",
+      "mask-mode",
+      "mask-repeat",
+      "mask-position-x",
+      "mask-position-y",
+      "mask-clip",
+      "mask-origin",
+      "mask-size",
+      "mask-composite",
+      "mask-image",
+      "x",
+      "y",
+      "cx",
+      "cy",
+      "rx",
+      "ry",
+      "r",
+      "table-layout",
+      "text-overflow",
+      "text-decoration-line",
+      "text-decoration-style",
+      "text-decoration-color",
+      "initial-letter",
+      "text-decoration-thickness",
+      "ime-mode",
+      "scrollbar-width",
+      "user-select",
+      "-moz-window-dragging",
+      "-moz-force-broken-image-icon",
+      "-moz-box-align",
+      "-moz-box-direction",
+      "-moz-box-flex",
+      "-moz-box-orient",
+      "-moz-box-pack",
+      "-moz-stack-sizing",
+      "-moz-box-ordinal-group"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name",
+      "animation-duration",
+      "animation-timing-function",
+      "animation-delay",
+      "animation-iteration-count",
+      "animation-direction",
+      "animation-fill-mode",
+      "animation-play-state"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "backwards",
+      "both",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "forwards",
+      "infinite",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "normal",
+      "paused",
+      "reverse",
+      "revert",
+      "running",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "animation-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-direction"
+    ],
+    "supports": [],
+    "values": [
+      "alternate",
+      "alternate-reverse",
+      "inherit",
+      "initial",
+      "normal",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-fill-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-fill-mode"
+    ],
+    "supports": [],
+    "values": [
+      "backwards",
+      "both",
+      "forwards",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-iteration-count": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-iteration-count"
+    ],
+    "supports": [],
+    "values": [
+      "infinite",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-name": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-name"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "animation-play-state": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-play-state"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "paused",
+      "revert",
+      "running",
+      "unset"
+    ]
+  },
+  "animation-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "backface-visibility": {
+    "isInherited": false,
+    "subproperties": [
+      "backface-visibility"
+    ],
+    "supports": [],
+    "values": [
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "visible"
+    ]
+  },
+  "background": {
+    "isInherited": false,
+    "subproperties": [
+      "background-color",
+      "background-position-x",
+      "background-position-y",
+      "background-repeat",
+      "background-attachment",
+      "background-image",
+      "background-size",
+      "background-origin",
+      "background-clip"
+    ],
+    "supports": [
+      "color",
+      "gradient"
+    ],
+    "values": [
+      "COLOR",
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "auto",
+      "border-box",
+      "bottom",
+      "center",
+      "contain",
+      "content-box",
+      "cover",
+      "currentColor",
+      "fixed",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "left",
+      "linear-gradient",
+      "local",
+      "no-repeat",
+      "none",
+      "padding-box",
+      "radial-gradient",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "rgb",
+      "rgba",
+      "right",
+      "round",
+      "scroll",
+      "space",
+      "text",
+      "top",
+      "transparent",
+      "unset",
+      "url"
+    ]
+  },
+  "background-attachment": {
+    "isInherited": false,
+    "subproperties": [
+      "background-attachment"
+    ],
+    "supports": [],
+    "values": [
+      "fixed",
+      "inherit",
+      "initial",
+      "local",
+      "revert",
+      "scroll",
+      "unset"
+    ]
+  },
+  "background-blend-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "background-blend-mode"
+    ],
+    "supports": [],
+    "values": [
+      "color",
+      "color-burn",
+      "color-dodge",
+      "darken",
+      "difference",
+      "exclusion",
+      "hard-light",
+      "hue",
+      "inherit",
+      "initial",
+      "lighten",
+      "luminosity",
+      "multiply",
+      "normal",
+      "overlay",
+      "revert",
+      "saturation",
+      "screen",
+      "soft-light",
+      "unset"
+    ]
+  },
+  "background-clip": {
+    "isInherited": false,
+    "subproperties": [
+      "background-clip"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "text",
+      "unset"
+    ]
+  },
+  "background-color": {
+    "isInherited": false,
+    "subproperties": [
+      "background-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "background-image": {
+    "isInherited": false,
+    "subproperties": [
+      "background-image"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "background-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "background-origin"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "unset"
+    ]
+  },
+  "background-position": {
+    "isInherited": false,
+    "subproperties": [
+      "background-position-x",
+      "background-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "background-position-x": {
+    "isInherited": false,
+    "subproperties": [
+      "background-position-x"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "background-position-y": {
+    "isInherited": false,
+    "subproperties": [
+      "background-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "revert",
+      "top",
+      "unset"
+    ]
+  },
+  "background-repeat": {
+    "isInherited": false,
+    "subproperties": [
+      "background-repeat"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "round",
+      "space",
+      "unset"
+    ]
+  },
+  "background-size": {
+    "isInherited": false,
+    "subproperties": [
+      "background-size"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "cover",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "block-size": {
+    "isInherited": false,
+    "subproperties": [
+      "block-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "border": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-color",
+      "border-top-style",
+      "border-top-width",
+      "border-right-color",
+      "border-right-style",
+      "border-right-width",
+      "border-bottom-color",
+      "border-bottom-style",
+      "border-bottom-width",
+      "border-left-color",
+      "border-left-style",
+      "border-left-width",
+      "border-image-outset",
+      "border-image-repeat",
+      "border-image-slice",
+      "border-image-source",
+      "border-image-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-width",
+      "border-block-end-width",
+      "border-block-start-style",
+      "border-block-end-style",
+      "border-block-start-color",
+      "border-block-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-color",
+      "border-block-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-end-color",
+      "border-block-end-style",
+      "border-block-end-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-end-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-end-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-block-end-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-color",
+      "border-block-start-style",
+      "border-block-start-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-start-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-block-start-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-block-start-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-block-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-style",
+      "border-block-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-block-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-block-start-width",
+      "border-block-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-color",
+      "border-bottom-style",
+      "border-bottom-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-bottom-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-bottom-left-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-bottom-right-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-right-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-bottom-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-bottom-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-bottom-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-collapse": {
+    "isInherited": true,
+    "subproperties": [
+      "border-collapse"
+    ],
+    "supports": [],
+    "values": [
+      "collapse",
+      "inherit",
+      "initial",
+      "revert",
+      "separate",
+      "unset"
+    ]
+  },
+  "border-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-color",
+      "border-right-color",
+      "border-bottom-color",
+      "border-left-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-end-end-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-end-end-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-end-start-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-end-start-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-image": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-outset",
+      "border-image-repeat",
+      "border-image-slice",
+      "border-image-source",
+      "border-image-width"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeat",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "round",
+      "space",
+      "stretch",
+      "unset",
+      "url"
+    ]
+  },
+  "border-image-outset": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-outset"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-image-repeat": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-repeat"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "repeat",
+      "revert",
+      "round",
+      "space",
+      "stretch",
+      "unset"
+    ]
+  },
+  "border-image-slice": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-slice"
+    ],
+    "supports": [],
+    "values": [
+      "fill",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-image-source": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-source"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "border-image-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-image-width"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width",
+      "border-inline-end-width",
+      "border-inline-start-style",
+      "border-inline-end-style",
+      "border-inline-start-color",
+      "border-inline-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color",
+      "border-inline-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-color",
+      "border-inline-end-style",
+      "border-inline-end-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-end-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-end-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-inline-end-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color",
+      "border-inline-start-style",
+      "border-inline-start-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-start-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-inline-start-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-inline-start-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-inline-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-style",
+      "border-inline-end-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-inline-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-inline-start-width",
+      "border-inline-end-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-left": {
+    "isInherited": false,
+    "subproperties": [
+      "border-left-color",
+      "border-left-style",
+      "border-left-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-left-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-left-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-left-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-left-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-left-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-left-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-left-radius",
+      "border-top-right-radius",
+      "border-bottom-right-radius",
+      "border-bottom-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-right": {
+    "isInherited": false,
+    "subproperties": [
+      "border-right-color",
+      "border-right-style",
+      "border-right-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-right-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-right-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-right-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-right-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-right-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-right-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-spacing": {
+    "isInherited": true,
+    "subproperties": [
+      "border-spacing"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-start-end-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-start-end-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-start-start-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-start-start-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-style",
+      "border-right-style",
+      "border-bottom-style",
+      "border-left-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-top": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-color",
+      "border-top-style",
+      "border-top-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-top-color": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "border-top-left-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-left-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-top-right-radius": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-right-radius"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "border-top-style": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "border-top-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "border-width": {
+    "isInherited": false,
+    "subproperties": [
+      "border-top-width",
+      "border-right-width",
+      "border-bottom-width",
+      "border-left-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "bottom"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "box-decoration-break": {
+    "isInherited": false,
+    "subproperties": [
+      "box-decoration-break"
+    ],
+    "supports": [],
+    "values": [
+      "clone",
+      "inherit",
+      "initial",
+      "revert",
+      "slice",
+      "unset"
+    ]
+  },
+  "box-shadow": {
+    "isInherited": false,
+    "subproperties": [
+      "box-shadow"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "box-sizing": {
+    "isInherited": false,
+    "subproperties": [
+      "box-sizing"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "break-after": {
+    "isInherited": false,
+    "subproperties": [
+      "break-after"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "break-before": {
+    "isInherited": false,
+    "subproperties": [
+      "break-before"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "break-inside": {
+    "isInherited": false,
+    "subproperties": [
+      "break-inside"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "caption-side": {
+    "isInherited": true,
+    "subproperties": [
+      "caption-side"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "bottom-outside",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "top-outside",
+      "unset"
+    ]
+  },
+  "caret-color": {
+    "isInherited": true,
+    "subproperties": [
+      "caret-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "auto",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "clear": {
+    "isInherited": false,
+    "subproperties": [
+      "clear"
+    ],
+    "supports": [],
+    "values": [
+      "both",
+      "inherit",
+      "initial",
+      "inline-end",
+      "inline-start",
+      "left",
+      "none",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "clip": {
+    "isInherited": false,
+    "subproperties": [
+      "clip"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "rect",
+      "revert",
+      "unset"
+    ]
+  },
+  "clip-path": {
+    "isInherited": false,
+    "subproperties": [
+      "clip-path"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "circle",
+      "content-box",
+      "ellipse",
+      "fill-box",
+      "inherit",
+      "initial",
+      "inset",
+      "margin-box",
+      "none",
+      "padding-box",
+      "path",
+      "polygon",
+      "revert",
+      "stroke-box",
+      "unset",
+      "url",
+      "view-box"
+    ]
+  },
+  "clip-rule": {
+    "isInherited": true,
+    "subproperties": [
+      "clip-rule"
+    ],
+    "supports": [],
+    "values": [
+      "evenodd",
+      "inherit",
+      "initial",
+      "nonzero",
+      "revert",
+      "unset"
+    ]
+  },
+  "color": {
+    "isInherited": true,
+    "subproperties": [
+      "color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "color-adjust": {
+    "isInherited": true,
+    "subproperties": [
+      "color-adjust"
+    ],
+    "supports": [],
+    "values": [
+      "economy",
+      "exact",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "color-interpolation": {
+    "isInherited": true,
+    "subproperties": [
+      "color-interpolation"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "linearrgb",
+      "revert",
+      "srgb",
+      "unset"
+    ]
+  },
+  "color-interpolation-filters": {
+    "isInherited": true,
+    "subproperties": [
+      "color-interpolation-filters"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "linearrgb",
+      "revert",
+      "srgb",
+      "unset"
+    ]
+  },
+  "column-count": {
+    "isInherited": false,
+    "subproperties": [
+      "column-count"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "column-fill": {
+    "isInherited": false,
+    "subproperties": [
+      "column-fill"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "balance",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "column-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "column-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "column-rule": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-width",
+      "column-rule-style",
+      "column-rule-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "column-rule-color": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "column-rule-style": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-style"
+    ],
+    "supports": [],
+    "values": [
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "column-rule-width": {
+    "isInherited": false,
+    "subproperties": [
+      "column-rule-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "column-span": {
+    "isInherited": false,
+    "subproperties": [
+      "column-span"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "column-width": {
+    "isInherited": false,
+    "subproperties": [
+      "column-width"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "columns": {
+    "isInherited": false,
+    "subproperties": [
+      "column-width",
+      "column-count"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "contain": {
+    "isInherited": false,
+    "subproperties": [
+      "contain"
+    ],
+    "supports": [],
+    "values": [
+      "content",
+      "inherit",
+      "initial",
+      "layout",
+      "none",
+      "paint",
+      "revert",
+      "size",
+      "strict",
+      "unset"
+    ]
+  },
+  "content": {
+    "isInherited": false,
+    "subproperties": [
+      "content"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-alt-content",
+      "attr",
+      "close-quote",
+      "counter",
+      "counters",
+      "inherit",
+      "initial",
+      "no-close-quote",
+      "no-open-quote",
+      "none",
+      "normal",
+      "open-quote",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "counter-increment": {
+    "isInherited": false,
+    "subproperties": [
+      "counter-increment"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "counter-reset": {
+    "isInherited": false,
+    "subproperties": [
+      "counter-reset"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "counter-set": {
+    "isInherited": false,
+    "subproperties": [
+      "counter-set"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "cursor": {
+    "isInherited": true,
+    "subproperties": [
+      "cursor"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-grab",
+      "-moz-grabbing",
+      "-moz-zoom-in",
+      "-moz-zoom-out",
+      "alias",
+      "all-scroll",
+      "auto",
+      "cell",
+      "col-resize",
+      "context-menu",
+      "copy",
+      "crosshair",
+      "default",
+      "e-resize",
+      "ew-resize",
+      "grab",
+      "grabbing",
+      "help",
+      "inherit",
+      "initial",
+      "move",
+      "n-resize",
+      "ne-resize",
+      "nesw-resize",
+      "no-drop",
+      "none",
+      "not-allowed",
+      "ns-resize",
+      "nw-resize",
+      "nwse-resize",
+      "pointer",
+      "progress",
+      "revert",
+      "row-resize",
+      "s-resize",
+      "se-resize",
+      "sw-resize",
+      "text",
+      "unset",
+      "url",
+      "vertical-text",
+      "w-resize",
+      "wait",
+      "zoom-in",
+      "zoom-out"
+    ]
+  },
+  "cx": {
+    "isInherited": false,
+    "subproperties": [
+      "cx"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "cy": {
+    "isInherited": false,
+    "subproperties": [
+      "cy"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "direction": {
+    "isInherited": true,
+    "subproperties": [
+      "direction"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "ltr",
+      "revert",
+      "rtl",
+      "unset"
+    ]
+  },
+  "display": {
+    "isInherited": false,
+    "subproperties": [
+      "display"
+    ],
+    "supports": [],
+    "values": [
+      "-webkit-box",
+      "-webkit-inline-box",
+      "block",
+      "block ruby",
+      "contents",
+      "flex",
+      "flow-root",
+      "flow-root list-item",
+      "grid",
+      "inherit",
+      "initial",
+      "inline",
+      "inline flow-root list-item",
+      "inline list-item",
+      "inline-block",
+      "inline-flex",
+      "inline-grid",
+      "inline-table",
+      "list-item",
+      "none",
+      "revert",
+      "ruby",
+      "ruby-base",
+      "ruby-base-container",
+      "ruby-text",
+      "ruby-text-container",
+      "table",
+      "table-caption",
+      "table-cell",
+      "table-column",
+      "table-column-group",
+      "table-footer-group",
+      "table-header-group",
+      "table-row",
+      "table-row-group",
+      "unset"
+    ]
+  },
+  "dominant-baseline": {
+    "isInherited": true,
+    "subproperties": [
+      "dominant-baseline"
+    ],
+    "supports": [],
+    "values": [
+      "alphabetic",
+      "auto",
+      "central",
+      "hanging",
+      "ideographic",
+      "inherit",
+      "initial",
+      "mathematical",
+      "middle",
+      "revert",
+      "text-after-edge",
+      "text-before-edge",
+      "unset"
+    ]
+  },
+  "empty-cells": {
+    "isInherited": true,
+    "subproperties": [
+      "empty-cells"
+    ],
+    "supports": [],
+    "values": [
+      "hide",
+      "inherit",
+      "initial",
+      "revert",
+      "show",
+      "unset"
+    ]
+  },
+  "fill": {
+    "isInherited": true,
+    "subproperties": [
+      "fill"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "context-fill",
+      "context-stroke",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset",
+      "url"
+    ]
+  },
+  "fill-opacity": {
+    "isInherited": true,
+    "subproperties": [
+      "fill-opacity"
+    ],
+    "supports": [],
+    "values": [
+      "context-fill-opacity",
+      "context-stroke-opacity",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "fill-rule": {
+    "isInherited": true,
+    "subproperties": [
+      "fill-rule"
+    ],
+    "supports": [],
+    "values": [
+      "evenodd",
+      "inherit",
+      "initial",
+      "nonzero",
+      "revert",
+      "unset"
+    ]
+  },
+  "filter": {
+    "isInherited": false,
+    "subproperties": [
+      "filter"
+    ],
+    "supports": [],
+    "values": [
+      "blur",
+      "brightness",
+      "contrast",
+      "drop-shadow",
+      "grayscale",
+      "hue-rotate",
+      "inherit",
+      "initial",
+      "invert",
+      "none",
+      "opacity",
+      "revert",
+      "saturate",
+      "sepia",
+      "unset",
+      "url"
+    ]
+  },
+  "flex": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-grow",
+      "flex-shrink",
+      "flex-basis"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "flex-basis": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-basis"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "flex-direction": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-direction"
+    ],
+    "supports": [],
+    "values": [
+      "column",
+      "column-reverse",
+      "inherit",
+      "initial",
+      "revert",
+      "row",
+      "row-reverse",
+      "unset"
+    ]
+  },
+  "flex-flow": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-direction",
+      "flex-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "column",
+      "column-reverse",
+      "inherit",
+      "initial",
+      "nowrap",
+      "revert",
+      "row",
+      "row-reverse",
+      "unset",
+      "wrap",
+      "wrap-reverse"
+    ]
+  },
+  "flex-grow": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-grow"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "flex-shrink": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-shrink"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "flex-wrap": {
+    "isInherited": false,
+    "subproperties": [
+      "flex-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "nowrap",
+      "revert",
+      "unset",
+      "wrap",
+      "wrap-reverse"
+    ]
+  },
+  "float": {
+    "isInherited": false,
+    "subproperties": [
+      "float"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "inline-end",
+      "inline-start",
+      "left",
+      "none",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "flood-color": {
+    "isInherited": false,
+    "subproperties": [
+      "flood-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "flood-opacity": {
+    "isInherited": false,
+    "subproperties": [
+      "flood-opacity"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "font": {
+    "isInherited": true,
+    "subproperties": [
+      "font-style",
+      "font-variant-caps",
+      "font-weight",
+      "font-stretch",
+      "font-size",
+      "line-height",
+      "font-family",
+      "font-size-adjust",
+      "font-kerning",
+      "font-optical-sizing",
+      "font-variant-alternates",
+      "font-variant-east-asian",
+      "font-variant-ligatures",
+      "font-variant-numeric",
+      "font-variant-position",
+      "font-language-override",
+      "font-feature-settings",
+      "font-variation-settings"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-button",
+      "-moz-desktop",
+      "-moz-dialog",
+      "-moz-document",
+      "-moz-field",
+      "-moz-info",
+      "-moz-list",
+      "-moz-pull-down-menu",
+      "-moz-window",
+      "-moz-workspace",
+      "all-petite-caps",
+      "all-small-caps",
+      "bold",
+      "bolder",
+      "caption",
+      "condensed",
+      "expanded",
+      "extra-condensed",
+      "extra-expanded",
+      "icon",
+      "inherit",
+      "initial",
+      "italic",
+      "large",
+      "larger",
+      "lighter",
+      "medium",
+      "menu",
+      "message-box",
+      "normal",
+      "oblique",
+      "petite-caps",
+      "revert",
+      "semi-condensed",
+      "semi-expanded",
+      "small",
+      "small-caps",
+      "small-caption",
+      "smaller",
+      "status-bar",
+      "titling-caps",
+      "ultra-condensed",
+      "ultra-expanded",
+      "unicase",
+      "unset",
+      "x-large",
+      "x-small",
+      "xx-large",
+      "xx-small",
+      "xxx-large"
+    ]
+  },
+  "font-family": {
+    "isInherited": true,
+    "subproperties": [
+      "font-family"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-feature-settings": {
+    "isInherited": true,
+    "subproperties": [
+      "font-feature-settings"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-kerning": {
+    "isInherited": true,
+    "subproperties": [
+      "font-kerning"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-language-override": {
+    "isInherited": true,
+    "subproperties": [
+      "font-language-override"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-optical-sizing": {
+    "isInherited": true,
+    "subproperties": [
+      "font-optical-sizing"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-size": {
+    "isInherited": true,
+    "subproperties": [
+      "font-size"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "large",
+      "larger",
+      "medium",
+      "revert",
+      "small",
+      "smaller",
+      "unset",
+      "x-large",
+      "x-small",
+      "xx-large",
+      "xx-small",
+      "xxx-large"
+    ]
+  },
+  "font-size-adjust": {
+    "isInherited": true,
+    "subproperties": [
+      "font-size-adjust"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-stretch": {
+    "isInherited": true,
+    "subproperties": [
+      "font-stretch"
+    ],
+    "supports": [],
+    "values": [
+      "condensed",
+      "expanded",
+      "extra-condensed",
+      "extra-expanded",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "semi-condensed",
+      "semi-expanded",
+      "ultra-condensed",
+      "ultra-expanded",
+      "unset"
+    ]
+  },
+  "font-style": {
+    "isInherited": true,
+    "subproperties": [
+      "font-style"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "italic",
+      "normal",
+      "oblique",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-synthesis": {
+    "isInherited": true,
+    "subproperties": [
+      "font-synthesis"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "style",
+      "unset",
+      "weight"
+    ]
+  },
+  "font-variant": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-caps",
+      "font-variant-alternates",
+      "font-variant-east-asian",
+      "font-variant-ligatures",
+      "font-variant-numeric",
+      "font-variant-position"
+    ],
+    "supports": [],
+    "values": [
+      "all-petite-caps",
+      "all-small-caps",
+      "annotation",
+      "character-variant",
+      "common-ligatures",
+      "contextual",
+      "diagonal-fractions",
+      "discretionary-ligatures",
+      "full-width",
+      "historical-forms",
+      "historical-ligatures",
+      "inherit",
+      "initial",
+      "jis04",
+      "jis78",
+      "jis83",
+      "jis90",
+      "lining-nums",
+      "no-common-ligatures",
+      "no-contextual",
+      "no-discretionary-ligatures",
+      "no-historical-ligatures",
+      "none",
+      "normal",
+      "oldstyle-nums",
+      "ordinal",
+      "ornaments",
+      "petite-caps",
+      "proportional-nums",
+      "proportional-width",
+      "revert",
+      "ruby",
+      "simplified",
+      "slashed-zero",
+      "small-caps",
+      "stacked-fractions",
+      "styleset",
+      "stylistic",
+      "sub",
+      "super",
+      "swash",
+      "tabular-nums",
+      "titling-caps",
+      "traditional",
+      "unicase",
+      "unset"
+    ]
+  },
+  "font-variant-alternates": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-alternates"
+    ],
+    "supports": [],
+    "values": [
+      "annotation",
+      "character-variant",
+      "historical-forms",
+      "inherit",
+      "initial",
+      "normal",
+      "ornaments",
+      "revert",
+      "styleset",
+      "stylistic",
+      "swash",
+      "unset"
+    ]
+  },
+  "font-variant-caps": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-caps"
+    ],
+    "supports": [],
+    "values": [
+      "all-petite-caps",
+      "all-small-caps",
+      "inherit",
+      "initial",
+      "normal",
+      "petite-caps",
+      "revert",
+      "small-caps",
+      "titling-caps",
+      "unicase",
+      "unset"
+    ]
+  },
+  "font-variant-east-asian": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-east-asian"
+    ],
+    "supports": [],
+    "values": [
+      "full-width",
+      "inherit",
+      "initial",
+      "jis04",
+      "jis78",
+      "jis83",
+      "jis90",
+      "normal",
+      "proportional-width",
+      "revert",
+      "ruby",
+      "simplified",
+      "traditional",
+      "unset"
+    ]
+  },
+  "font-variant-ligatures": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-ligatures"
+    ],
+    "supports": [],
+    "values": [
+      "common-ligatures",
+      "contextual",
+      "discretionary-ligatures",
+      "historical-ligatures",
+      "inherit",
+      "initial",
+      "no-common-ligatures",
+      "no-contextual",
+      "no-discretionary-ligatures",
+      "no-historical-ligatures",
+      "none",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-variant-numeric": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-numeric"
+    ],
+    "supports": [],
+    "values": [
+      "diagonal-fractions",
+      "inherit",
+      "initial",
+      "lining-nums",
+      "normal",
+      "oldstyle-nums",
+      "ordinal",
+      "proportional-nums",
+      "revert",
+      "slashed-zero",
+      "stacked-fractions",
+      "tabular-nums",
+      "unset"
+    ]
+  },
+  "font-variant-position": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variant-position"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "sub",
+      "super",
+      "unset"
+    ]
+  },
+  "font-variation-settings": {
+    "isInherited": true,
+    "subproperties": [
+      "font-variation-settings"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "font-weight": {
+    "isInherited": true,
+    "subproperties": [
+      "font-weight"
+    ],
+    "supports": [],
+    "values": [
+      "bold",
+      "bolder",
+      "inherit",
+      "initial",
+      "lighter",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "gap": {
+    "isInherited": false,
+    "subproperties": [
+      "row-gap",
+      "column-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-template-rows",
+      "grid-template-columns",
+      "grid-template-areas",
+      "grid-auto-rows",
+      "grid-auto-columns",
+      "grid-auto-flow"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "column",
+      "dense",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "none",
+      "repeat",
+      "revert",
+      "row",
+      "unset"
+    ]
+  },
+  "grid-area": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-row-start",
+      "grid-row-end",
+      "grid-column-start",
+      "grid-column-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-auto-columns": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-auto-columns"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-auto-flow": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-auto-flow"
+    ],
+    "supports": [],
+    "values": [
+      "column",
+      "dense",
+      "inherit",
+      "initial",
+      "revert",
+      "row",
+      "unset"
+    ]
+  },
+  "grid-auto-rows": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-auto-rows"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-column": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-column-start",
+      "grid-column-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-column-end": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-column-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-column-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "column-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-column-start": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-column-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "row-gap",
+      "column-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-row": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-row-start",
+      "grid-row-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-row-end": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-row-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-row-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "row-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-row-start": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-row-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-template": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-template-rows",
+      "grid-template-columns",
+      "grid-template-areas"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "none",
+      "repeat",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-template-areas": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-template-areas"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-template-columns": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-template-columns"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "none",
+      "repeat",
+      "revert",
+      "unset"
+    ]
+  },
+  "grid-template-rows": {
+    "isInherited": false,
+    "subproperties": [
+      "grid-template-rows"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fit-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "minmax",
+      "none",
+      "repeat",
+      "revert",
+      "unset"
+    ]
+  },
+  "height": {
+    "isInherited": false,
+    "subproperties": [
+      "height"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "hyphens": {
+    "isInherited": true,
+    "subproperties": [
+      "hyphens"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "manual",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "image-orientation": {
+    "isInherited": true,
+    "subproperties": [
+      "image-orientation"
+    ],
+    "supports": [],
+    "values": [
+      "from-image",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "image-rendering": {
+    "isInherited": true,
+    "subproperties": [
+      "image-rendering"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-crisp-edges",
+      "auto",
+      "crisp-edges",
+      "inherit",
+      "initial",
+      "optimizequality",
+      "optimizespeed",
+      "revert",
+      "unset"
+    ]
+  },
+  "ime-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "ime-mode"
+    ],
+    "supports": [],
+    "values": [
+      "active",
+      "auto",
+      "disabled",
+      "inactive",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "inline-size": {
+    "isInherited": false,
+    "subproperties": [
+      "inline-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset": {
+    "isInherited": false,
+    "subproperties": [
+      "top",
+      "right",
+      "bottom",
+      "left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-block": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-block-start",
+      "inset-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-inline-start",
+      "inset-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "inset-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "inset-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "isolation": {
+    "isInherited": false,
+    "subproperties": [
+      "isolation"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "isolate",
+      "revert",
+      "unset"
+    ]
+  },
+  "justify-content": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-content"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "justify-items": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-items"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "left",
+      "legacy",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "justify-self": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-self"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "left": {
+    "isInherited": false,
+    "subproperties": [
+      "left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "letter-spacing": {
+    "isInherited": true,
+    "subproperties": [
+      "letter-spacing"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "lighting-color": {
+    "isInherited": false,
+    "subproperties": [
+      "lighting-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "line-break": {
+    "isInherited": true,
+    "subproperties": [
+      "line-break"
+    ],
+    "supports": [],
+    "values": [
+      "anywhere",
+      "auto",
+      "inherit",
+      "initial",
+      "loose",
+      "normal",
+      "revert",
+      "strict",
+      "unset"
+    ]
+  },
+  "line-height": {
+    "isInherited": true,
+    "subproperties": [
+      "line-height"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-block-height",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "list-style": {
+    "isInherited": true,
+    "subproperties": [
+      "list-style-position",
+      "list-style-image",
+      "list-style-type"
+    ],
+    "supports": [],
+    "values": [
+      "arabic-indic",
+      "armenian",
+      "bengali",
+      "cambodian",
+      "circle",
+      "cjk-decimal",
+      "cjk-earthly-branch",
+      "cjk-heavenly-stem",
+      "cjk-ideographic",
+      "decimal",
+      "decimal-leading-zero",
+      "devanagari",
+      "disc",
+      "disclosure-closed",
+      "disclosure-open",
+      "ethiopic-numeric",
+      "georgian",
+      "gujarati",
+      "gurmukhi",
+      "hebrew",
+      "hiragana",
+      "hiragana-iroha",
+      "inherit",
+      "initial",
+      "inside",
+      "japanese-formal",
+      "japanese-informal",
+      "kannada",
+      "katakana",
+      "katakana-iroha",
+      "khmer",
+      "korean-hangul-formal",
+      "korean-hanja-formal",
+      "korean-hanja-informal",
+      "lao",
+      "lower-alpha",
+      "lower-armenian",
+      "lower-greek",
+      "lower-latin",
+      "lower-roman",
+      "malayalam",
+      "mongolian",
+      "myanmar",
+      "none",
+      "oriya",
+      "outside",
+      "persian",
+      "revert",
+      "simp-chinese-formal",
+      "simp-chinese-informal",
+      "square",
+      "symbols",
+      "tamil",
+      "telugu",
+      "thai",
+      "tibetan",
+      "trad-chinese-formal",
+      "trad-chinese-informal",
+      "unset",
+      "upper-alpha",
+      "upper-armenian",
+      "upper-latin",
+      "upper-roman",
+      "url"
+    ]
+  },
+  "list-style-image": {
+    "isInherited": true,
+    "subproperties": [
+      "list-style-image"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "list-style-position": {
+    "isInherited": true,
+    "subproperties": [
+      "list-style-position"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "inside",
+      "outside",
+      "revert",
+      "unset"
+    ]
+  },
+  "list-style-type": {
+    "isInherited": true,
+    "subproperties": [
+      "list-style-type"
+    ],
+    "supports": [],
+    "values": [
+      "arabic-indic",
+      "armenian",
+      "bengali",
+      "cambodian",
+      "circle",
+      "cjk-decimal",
+      "cjk-earthly-branch",
+      "cjk-heavenly-stem",
+      "cjk-ideographic",
+      "decimal",
+      "decimal-leading-zero",
+      "devanagari",
+      "disc",
+      "disclosure-closed",
+      "disclosure-open",
+      "ethiopic-numeric",
+      "georgian",
+      "gujarati",
+      "gurmukhi",
+      "hebrew",
+      "hiragana",
+      "hiragana-iroha",
+      "inherit",
+      "initial",
+      "japanese-formal",
+      "japanese-informal",
+      "kannada",
+      "katakana",
+      "katakana-iroha",
+      "khmer",
+      "korean-hangul-formal",
+      "korean-hanja-formal",
+      "korean-hanja-informal",
+      "lao",
+      "lower-alpha",
+      "lower-armenian",
+      "lower-greek",
+      "lower-latin",
+      "lower-roman",
+      "malayalam",
+      "mongolian",
+      "myanmar",
+      "none",
+      "oriya",
+      "persian",
+      "revert",
+      "simp-chinese-formal",
+      "simp-chinese-informal",
+      "square",
+      "symbols",
+      "tamil",
+      "telugu",
+      "thai",
+      "tibetan",
+      "trad-chinese-formal",
+      "trad-chinese-informal",
+      "unset",
+      "upper-alpha",
+      "upper-armenian",
+      "upper-latin",
+      "upper-roman"
+    ]
+  },
+  "margin": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-top",
+      "margin-right",
+      "margin-bottom",
+      "margin-left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-block": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-block-start",
+      "margin-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-start",
+      "margin-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-left": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-right": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-right"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "margin-top": {
+    "isInherited": false,
+    "subproperties": [
+      "margin-top"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "marker": {
+    "isInherited": true,
+    "subproperties": [
+      "marker-start",
+      "marker-end",
+      "marker-mid"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "marker-end": {
+    "isInherited": true,
+    "subproperties": [
+      "marker-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "marker-mid": {
+    "isInherited": true,
+    "subproperties": [
+      "marker-mid"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "marker-start": {
+    "isInherited": true,
+    "subproperties": [
+      "marker-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "mask": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-mode",
+      "mask-repeat",
+      "mask-clip",
+      "mask-origin",
+      "mask-composite",
+      "mask-position-x",
+      "mask-position-y",
+      "mask-size",
+      "mask-image"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "add",
+      "alpha",
+      "auto",
+      "border-box",
+      "bottom",
+      "center",
+      "contain",
+      "content-box",
+      "cover",
+      "exclude",
+      "fill-box",
+      "inherit",
+      "initial",
+      "intersect",
+      "left",
+      "linear-gradient",
+      "luminance",
+      "match-source",
+      "no-clip",
+      "no-repeat",
+      "none",
+      "padding-box",
+      "radial-gradient",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "right",
+      "round",
+      "space",
+      "stroke-box",
+      "subtract",
+      "top",
+      "unset",
+      "url",
+      "view-box"
+    ]
+  },
+  "mask-clip": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-clip"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "fill-box",
+      "inherit",
+      "initial",
+      "no-clip",
+      "padding-box",
+      "revert",
+      "stroke-box",
+      "unset",
+      "view-box"
+    ]
+  },
+  "mask-composite": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-composite"
+    ],
+    "supports": [],
+    "values": [
+      "add",
+      "exclude",
+      "inherit",
+      "initial",
+      "intersect",
+      "revert",
+      "subtract",
+      "unset"
+    ]
+  },
+  "mask-image": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-image"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "inherit",
+      "initial",
+      "linear-gradient",
+      "none",
+      "radial-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "mask-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-mode"
+    ],
+    "supports": [],
+    "values": [
+      "alpha",
+      "inherit",
+      "initial",
+      "luminance",
+      "match-source",
+      "revert",
+      "unset"
+    ]
+  },
+  "mask-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-origin"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "content-box",
+      "fill-box",
+      "inherit",
+      "initial",
+      "padding-box",
+      "revert",
+      "stroke-box",
+      "unset",
+      "view-box"
+    ]
+  },
+  "mask-position": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-x",
+      "mask-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "mask-position-x": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-x"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "mask-position-y": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-position-y"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "revert",
+      "top",
+      "unset"
+    ]
+  },
+  "mask-repeat": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-repeat"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "no-repeat",
+      "repeat",
+      "repeat-x",
+      "repeat-y",
+      "revert",
+      "round",
+      "space",
+      "unset"
+    ]
+  },
+  "mask-size": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-size"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "cover",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "mask-type": {
+    "isInherited": false,
+    "subproperties": [
+      "mask-type"
+    ],
+    "supports": [],
+    "values": [
+      "alpha",
+      "inherit",
+      "initial",
+      "luminance",
+      "revert",
+      "unset"
+    ]
+  },
+  "max-block-size": {
+    "isInherited": false,
+    "subproperties": [
+      "max-block-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "max-height": {
+    "isInherited": false,
+    "subproperties": [
+      "max-height"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "max-inline-size": {
+    "isInherited": false,
+    "subproperties": [
+      "max-inline-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "max-width": {
+    "isInherited": false,
+    "subproperties": [
+      "max-width"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "min-block-size": {
+    "isInherited": false,
+    "subproperties": [
+      "min-block-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "min-height": {
+    "isInherited": false,
+    "subproperties": [
+      "min-height"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "min-inline-size": {
+    "isInherited": false,
+    "subproperties": [
+      "min-inline-size"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "min-width": {
+    "isInherited": false,
+    "subproperties": [
+      "min-width"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "mix-blend-mode": {
+    "isInherited": false,
+    "subproperties": [
+      "mix-blend-mode"
+    ],
+    "supports": [],
+    "values": [
+      "color",
+      "color-burn",
+      "color-dodge",
+      "darken",
+      "difference",
+      "exclusion",
+      "hard-light",
+      "hue",
+      "inherit",
+      "initial",
+      "lighten",
+      "luminosity",
+      "multiply",
+      "normal",
+      "overlay",
+      "revert",
+      "saturation",
+      "screen",
+      "soft-light",
+      "unset"
+    ]
+  },
+  "object-fit": {
+    "isInherited": false,
+    "subproperties": [
+      "object-fit"
+    ],
+    "supports": [],
+    "values": [
+      "contain",
+      "cover",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "scale-down",
+      "unset"
+    ]
+  },
+  "object-position": {
+    "isInherited": false,
+    "subproperties": [
+      "object-position"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "offset": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-path",
+      "offset-distance",
+      "offset-rotate",
+      "offset-anchor"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "none",
+      "path",
+      "ray",
+      "reverse",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "offset-anchor": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-anchor"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "offset-distance": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-distance"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "offset-path": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-path"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "path",
+      "ray",
+      "revert",
+      "unset"
+    ]
+  },
+  "offset-rotate": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-rotate"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "reverse",
+      "revert",
+      "unset"
+    ]
+  },
+  "opacity": {
+    "isInherited": false,
+    "subproperties": [
+      "opacity"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "order": {
+    "isInherited": false,
+    "subproperties": [
+      "order"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "outline": {
+    "isInherited": false,
+    "subproperties": [
+      "outline-color",
+      "outline-style",
+      "outline-width"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "auto",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "inset",
+      "medium",
+      "none",
+      "outset",
+      "revert",
+      "rgb",
+      "rgba",
+      "ridge",
+      "solid",
+      "thick",
+      "thin",
+      "transparent",
+      "unset"
+    ]
+  },
+  "outline-color": {
+    "isInherited": false,
+    "subproperties": [
+      "outline-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "outline-offset": {
+    "isInherited": false,
+    "subproperties": [
+      "outline-offset"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "outline-style": {
+    "isInherited": false,
+    "subproperties": [
+      "outline-style"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "dashed",
+      "dotted",
+      "double",
+      "groove",
+      "hidden",
+      "inherit",
+      "initial",
+      "inset",
+      "none",
+      "outset",
+      "revert",
+      "ridge",
+      "solid",
+      "unset"
+    ]
+  },
+  "outline-width": {
+    "isInherited": false,
+    "subproperties": [
+      "outline-width"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "medium",
+      "revert",
+      "thick",
+      "thin",
+      "unset"
+    ]
+  },
+  "overflow": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-x",
+      "overflow-y"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-hidden-unscrollable",
+      "auto",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "scroll",
+      "unset",
+      "visible"
+    ]
+  },
+  "overflow-anchor": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-anchor"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "overflow-block": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-block"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-hidden-unscrollable",
+      "auto",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "scroll",
+      "unset",
+      "visible"
+    ]
+  },
+  "overflow-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-inline"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-hidden-unscrollable",
+      "auto",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "scroll",
+      "unset",
+      "visible"
+    ]
+  },
+  "overflow-wrap": {
+    "isInherited": true,
+    "subproperties": [
+      "overflow-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "anywhere",
+      "break-word",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "overflow-x": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-x"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-hidden-unscrollable",
+      "auto",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "scroll",
+      "unset",
+      "visible"
+    ]
+  },
+  "overflow-y": {
+    "isInherited": false,
+    "subproperties": [
+      "overflow-y"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-hidden-unscrollable",
+      "auto",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "scroll",
+      "unset",
+      "visible"
+    ]
+  },
+  "overscroll-behavior": {
+    "isInherited": false,
+    "subproperties": [
+      "overscroll-behavior-x",
+      "overscroll-behavior-y"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "overscroll-behavior-x": {
+    "isInherited": false,
+    "subproperties": [
+      "overscroll-behavior-x"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "overscroll-behavior-y": {
+    "isInherited": false,
+    "subproperties": [
+      "overscroll-behavior-y"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "contain",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-top",
+      "padding-right",
+      "padding-bottom",
+      "padding-left"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-block": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-block-start",
+      "padding-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-start",
+      "padding-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-left": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-left"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-right": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-right"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "padding-top": {
+    "isInherited": false,
+    "subproperties": [
+      "padding-top"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "page-break-after": {
+    "isInherited": false,
+    "subproperties": [
+      "break-after"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "page-break-before": {
+    "isInherited": false,
+    "subproperties": [
+      "break-before"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "left",
+      "page",
+      "revert",
+      "right",
+      "unset"
+    ]
+  },
+  "page-break-inside": {
+    "isInherited": false,
+    "subproperties": [
+      "break-inside"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "avoid",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "paint-order": {
+    "isInherited": true,
+    "subproperties": [
+      "paint-order"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "perspective": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "perspective-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "perspective-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "place-content": {
+    "isInherited": false,
+    "subproperties": [
+      "align-content",
+      "justify-content"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "place-items": {
+    "isInherited": false,
+    "subproperties": [
+      "align-items",
+      "justify-items"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "left",
+      "legacy",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "place-self": {
+    "isInherited": false,
+    "subproperties": [
+      "align-self",
+      "justify-self"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "self-end",
+      "self-start",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
+  "pointer-events": {
+    "isInherited": true,
+    "subproperties": [
+      "pointer-events"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "auto",
+      "fill",
+      "inherit",
+      "initial",
+      "none",
+      "painted",
+      "revert",
+      "stroke",
+      "unset",
+      "visible",
+      "visiblefill",
+      "visiblepainted",
+      "visiblestroke"
+    ]
+  },
+  "position": {
+    "isInherited": false,
+    "subproperties": [
+      "position"
+    ],
+    "supports": [],
+    "values": [
+      "absolute",
+      "fixed",
+      "inherit",
+      "initial",
+      "relative",
+      "revert",
+      "static",
+      "sticky",
+      "unset"
+    ]
+  },
+  "quotes": {
+    "isInherited": true,
+    "subproperties": [
+      "quotes"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "r": {
+    "isInherited": false,
+    "subproperties": [
+      "r"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "resize": {
+    "isInherited": false,
+    "subproperties": [
+      "resize"
+    ],
+    "supports": [],
+    "values": [
+      "block",
+      "both",
+      "horizontal",
+      "inherit",
+      "initial",
+      "inline",
+      "none",
+      "revert",
+      "unset",
+      "vertical"
+    ]
+  },
+  "right": {
+    "isInherited": false,
+    "subproperties": [
+      "right"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "rotate": {
+    "isInherited": false,
+    "subproperties": [
+      "rotate"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "row-gap": {
+    "isInherited": false,
+    "subproperties": [
+      "row-gap"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "ruby-align": {
+    "isInherited": true,
+    "subproperties": [
+      "ruby-align"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "inherit",
+      "initial",
+      "revert",
+      "space-around",
+      "space-between",
+      "start",
+      "unset"
+    ]
+  },
+  "ruby-position": {
+    "isInherited": true,
+    "subproperties": [
+      "ruby-position"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "over",
+      "revert",
+      "under",
+      "unset"
+    ]
+  },
+  "rx": {
+    "isInherited": false,
+    "subproperties": [
+      "rx"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "ry": {
+    "isInherited": false,
+    "subproperties": [
+      "ry"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scale": {
+    "isInherited": false,
+    "subproperties": [
+      "scale"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-behavior": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-behavior"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "smooth",
+      "unset"
+    ]
+  },
+  "scroll-margin": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-top",
+      "scroll-margin-right",
+      "scroll-margin-bottom",
+      "scroll-margin-left"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-block": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-block-start",
+      "scroll-margin-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-inline-start",
+      "scroll-margin-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-left": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-left"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-right": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-right"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-margin-top": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-margin-top"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-top",
+      "scroll-padding-right",
+      "scroll-padding-bottom",
+      "scroll-padding-left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-block": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-block-start",
+      "scroll-padding-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-block-end": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-block-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-block-start": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-block-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-bottom": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-bottom"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-inline": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-inline-start",
+      "scroll-padding-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-inline-end": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-inline-end"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-inline-start": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-inline-start"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-left": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-left"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-right": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-right"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-padding-top": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-padding-top"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "scroll-snap-align": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-snap-align"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "start",
+      "unset"
+    ]
+  },
+  "scroll-snap-type": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-snap-type"
+    ],
+    "supports": [],
+    "values": [
+      "block",
+      "both",
+      "inherit",
+      "initial",
+      "inline",
+      "mandatory",
+      "proximity",
+      "revert",
+      "unset",
+      "x",
+      "y"
+    ]
+  },
+  "scrollbar-color": {
+    "isInherited": true,
+    "subproperties": [
+      "scrollbar-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "auto",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "scrollbar-width": {
+    "isInherited": false,
+    "subproperties": [
+      "scrollbar-width"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "thin",
+      "unset"
+    ]
+  },
+  "shape-image-threshold": {
+    "isInherited": false,
+    "subproperties": [
+      "shape-image-threshold"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "shape-margin": {
+    "isInherited": false,
+    "subproperties": [
+      "shape-margin"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "shape-outside": {
+    "isInherited": false,
+    "subproperties": [
+      "shape-outside"
+    ],
+    "supports": [
+      "gradient"
+    ],
+    "values": [
+      "-moz-element",
+      "-moz-image-rect",
+      "-moz-linear-gradient",
+      "-moz-radial-gradient",
+      "-moz-repeating-linear-gradient",
+      "-moz-repeating-radial-gradient",
+      "-webkit-gradient",
+      "-webkit-linear-gradient",
+      "-webkit-radial-gradient",
+      "-webkit-repeating-linear-gradient",
+      "-webkit-repeating-radial-gradient",
+      "border-box",
+      "circle",
+      "content-box",
+      "ellipse",
+      "inherit",
+      "initial",
+      "inset",
+      "linear-gradient",
+      "margin-box",
+      "none",
+      "padding-box",
+      "path",
+      "polygon",
+      "radial-gradient",
+      "repeating-linear-gradient",
+      "repeating-radial-gradient",
+      "revert",
+      "unset",
+      "url"
+    ]
+  },
+  "shape-rendering": {
+    "isInherited": true,
+    "subproperties": [
+      "shape-rendering"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "crispedges",
+      "geometricprecision",
+      "inherit",
+      "initial",
+      "optimizespeed",
+      "revert",
+      "unset"
+    ]
+  },
+  "stop-color": {
+    "isInherited": false,
+    "subproperties": [
+      "stop-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "stop-opacity": {
+    "isInherited": false,
+    "subproperties": [
+      "stop-opacity"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "stroke": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "context-fill",
+      "context-stroke",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset",
+      "url"
+    ]
+  },
+  "stroke-dasharray": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-dasharray"
+    ],
+    "supports": [],
+    "values": [
+      "context-value",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "stroke-dashoffset": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-dashoffset"
+    ],
+    "supports": [],
+    "values": [
+      "context-value",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "stroke-linecap": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-linecap"
+    ],
+    "supports": [],
+    "values": [
+      "butt",
+      "inherit",
+      "initial",
+      "revert",
+      "round",
+      "square",
+      "unset"
+    ]
+  },
+  "stroke-linejoin": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-linejoin"
+    ],
+    "supports": [],
+    "values": [
+      "bevel",
+      "inherit",
+      "initial",
+      "miter",
+      "revert",
+      "round",
+      "unset"
+    ]
+  },
+  "stroke-miterlimit": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-miterlimit"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "stroke-opacity": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-opacity"
+    ],
+    "supports": [],
+    "values": [
+      "context-fill-opacity",
+      "context-stroke-opacity",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "stroke-width": {
+    "isInherited": true,
+    "subproperties": [
+      "stroke-width"
+    ],
+    "supports": [],
+    "values": [
+      "context-value",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "table-layout": {
+    "isInherited": false,
+    "subproperties": [
+      "table-layout"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "fixed",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-align": {
+    "isInherited": true,
+    "subproperties": [
+      "text-align"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-center",
+      "-moz-left",
+      "-moz-right",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "match-parent",
+      "revert",
+      "right",
+      "start",
+      "unset"
+    ]
+  },
+  "text-align-last": {
+    "isInherited": true,
+    "subproperties": [
+      "text-align-last"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "center",
+      "end",
+      "inherit",
+      "initial",
+      "justify",
+      "left",
+      "revert",
+      "right",
+      "start",
+      "unset"
+    ]
+  },
+  "text-anchor": {
+    "isInherited": true,
+    "subproperties": [
+      "text-anchor"
+    ],
+    "supports": [],
+    "values": [
+      "end",
+      "inherit",
+      "initial",
+      "middle",
+      "revert",
+      "start",
+      "unset"
+    ]
+  },
+  "text-combine-upright": {
+    "isInherited": true,
+    "subproperties": [
+      "text-combine-upright"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-decoration": {
+    "isInherited": false,
+    "subproperties": [
+      "text-decoration-line",
+      "text-decoration-style",
+      "text-decoration-color",
+      "text-decoration-thickness"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "-moz-none",
+      "auto",
+      "blink",
+      "currentColor",
+      "dashed",
+      "dotted",
+      "double",
+      "from-font",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "line-through",
+      "none",
+      "overline",
+      "revert",
+      "rgb",
+      "rgba",
+      "solid",
+      "transparent",
+      "underline",
+      "unset",
+      "wavy"
+    ]
+  },
+  "text-decoration-color": {
+    "isInherited": false,
+    "subproperties": [
+      "text-decoration-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "text-decoration-line": {
+    "isInherited": false,
+    "subproperties": [
+      "text-decoration-line"
+    ],
+    "supports": [],
+    "values": [
+      "blink",
+      "inherit",
+      "initial",
+      "line-through",
+      "none",
+      "overline",
+      "revert",
+      "underline",
+      "unset"
+    ]
+  },
+  "text-decoration-skip-ink": {
+    "isInherited": true,
+    "subproperties": [
+      "text-decoration-skip-ink"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-decoration-style": {
+    "isInherited": false,
+    "subproperties": [
+      "text-decoration-style"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-none",
+      "dashed",
+      "dotted",
+      "double",
+      "inherit",
+      "initial",
+      "revert",
+      "solid",
+      "unset",
+      "wavy"
+    ]
+  },
+  "text-decoration-thickness": {
+    "isInherited": false,
+    "subproperties": [
+      "text-decoration-thickness"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "from-font",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-emphasis": {
+    "isInherited": true,
+    "subproperties": [
+      "text-emphasis-style",
+      "text-emphasis-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "circle",
+      "currentColor",
+      "dot",
+      "double-circle",
+      "filled",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "none",
+      "open",
+      "revert",
+      "rgb",
+      "rgba",
+      "sesame",
+      "transparent",
+      "triangle",
+      "unset"
+    ]
+  },
+  "text-emphasis-color": {
+    "isInherited": true,
+    "subproperties": [
+      "text-emphasis-color"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "text-emphasis-position": {
+    "isInherited": true,
+    "subproperties": [
+      "text-emphasis-position"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "left",
+      "over",
+      "revert",
+      "right",
+      "under",
+      "unset"
+    ]
+  },
+  "text-emphasis-style": {
+    "isInherited": true,
+    "subproperties": [
+      "text-emphasis-style"
+    ],
+    "supports": [],
+    "values": [
+      "circle",
+      "dot",
+      "double-circle",
+      "filled",
+      "inherit",
+      "initial",
+      "none",
+      "open",
+      "revert",
+      "sesame",
+      "triangle",
+      "unset"
+    ]
+  },
+  "text-indent": {
+    "isInherited": true,
+    "subproperties": [
+      "text-indent"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-justify": {
+    "isInherited": true,
+    "subproperties": [
+      "text-justify"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "distribute",
+      "inherit",
+      "initial",
+      "inter-character",
+      "inter-word",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-orientation": {
+    "isInherited": true,
+    "subproperties": [
+      "text-orientation"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "mixed",
+      "revert",
+      "sideways",
+      "sideways-right",
+      "unset",
+      "upright"
+    ]
+  },
+  "text-overflow": {
+    "isInherited": false,
+    "subproperties": [
+      "text-overflow"
+    ],
+    "supports": [],
+    "values": [
+      "clip",
+      "ellipsis",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-rendering": {
+    "isInherited": true,
+    "subproperties": [
+      "text-rendering"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "geometricprecision",
+      "inherit",
+      "initial",
+      "optimizelegibility",
+      "optimizespeed",
+      "revert",
+      "unset"
+    ]
+  },
+  "text-shadow": {
+    "isInherited": true,
+    "subproperties": [
+      "text-shadow"
+    ],
+    "supports": [
+      "color"
+    ],
+    "values": [
+      "COLOR",
+      "currentColor",
+      "hsl",
+      "hsla",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "rgb",
+      "rgba",
+      "transparent",
+      "unset"
+    ]
+  },
+  "text-transform": {
+    "isInherited": true,
+    "subproperties": [
+      "text-transform"
+    ],
+    "supports": [],
+    "values": [
+      "capitalize",
+      "full-size-kana",
+      "full-width",
+      "inherit",
+      "initial",
+      "lowercase",
+      "none",
+      "revert",
+      "unset",
+      "uppercase"
+    ]
+  },
+  "text-underline-offset": {
+    "isInherited": true,
+    "subproperties": [
+      "text-underline-offset"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "from-font",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "top": {
+    "isInherited": false,
+    "subproperties": [
+      "top"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "touch-action": {
+    "isInherited": false,
+    "subproperties": [
+      "touch-action"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "manipulation",
+      "none",
+      "pan-x",
+      "pan-y",
+      "revert",
+      "unset"
+    ]
+  },
+  "transform": {
+    "isInherited": false,
+    "subproperties": [
+      "transform"
+    ],
+    "supports": [],
+    "values": [
+      "accumulatematrix",
+      "inherit",
+      "initial",
+      "interpolatematrix",
+      "matrix",
+      "matrix3d",
+      "none",
+      "perspective",
+      "revert",
+      "rotate",
+      "rotate3d",
+      "rotateX",
+      "rotateY",
+      "rotateZ",
+      "scale",
+      "scale3d",
+      "scaleX",
+      "scaleY",
+      "scaleZ",
+      "skew",
+      "skewX",
+      "skewY",
+      "translate",
+      "translate3d",
+      "translateX",
+      "translateY",
+      "translateZ",
+      "unset"
+    ]
+  },
+  "transform-box": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-box"
+    ],
+    "supports": [],
+    "values": [
+      "border-box",
+      "fill-box",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "view-box"
+    ]
+  },
+  "transform-origin": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-origin"
+    ],
+    "supports": [],
+    "values": [
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "right",
+      "top",
+      "unset"
+    ]
+  },
+  "transform-style": {
+    "isInherited": false,
+    "subproperties": [
+      "transform-style"
+    ],
+    "supports": [],
+    "values": [
+      "flat",
+      "inherit",
+      "initial",
+      "preserve-3d",
+      "revert",
+      "unset"
+    ]
+  },
+  "transition": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property",
+      "transition-duration",
+      "transition-timing-function",
+      "transition-delay"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "all",
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "none",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "transition-delay": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-delay"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "transition-duration": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-duration"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "transition-property": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-property"
+    ],
+    "supports": [],
+    "values": [
+      "all",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "transition-timing-function": {
+    "isInherited": false,
+    "subproperties": [
+      "transition-timing-function"
+    ],
+    "supports": [
+      "timing-function"
+    ],
+    "values": [
+      "cubic-bezier",
+      "ease",
+      "ease-in",
+      "ease-in-out",
+      "ease-out",
+      "inherit",
+      "initial",
+      "linear",
+      "revert",
+      "step-end",
+      "step-start",
+      "steps",
+      "unset"
+    ]
+  },
+  "translate": {
+    "isInherited": false,
+    "subproperties": [
+      "translate"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "unicode-bidi": {
+    "isInherited": false,
+    "subproperties": [
+      "unicode-bidi"
+    ],
+    "supports": [],
+    "values": [
+      "bidi-override",
+      "embed",
+      "inherit",
+      "initial",
+      "isolate",
+      "isolate-override",
+      "normal",
+      "plaintext",
+      "revert",
+      "unset"
+    ]
+  },
+  "user-select": {
+    "isInherited": false,
+    "subproperties": [
+      "user-select"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-none",
+      "all",
+      "auto",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "text",
+      "unset"
+    ]
+  },
+  "vector-effect": {
+    "isInherited": false,
+    "subproperties": [
+      "vector-effect"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "non-scaling-stroke",
+      "none",
+      "revert",
+      "unset"
+    ]
+  },
+  "vertical-align": {
+    "isInherited": false,
+    "subproperties": [
+      "vertical-align"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-middle-with-baseline",
+      "baseline",
+      "bottom",
+      "inherit",
+      "initial",
+      "middle",
+      "revert",
+      "sub",
+      "super",
+      "text-bottom",
+      "text-top",
+      "top",
+      "unset"
+    ]
+  },
+  "visibility": {
+    "isInherited": true,
+    "subproperties": [
+      "visibility"
+    ],
+    "supports": [],
+    "values": [
+      "collapse",
+      "hidden",
+      "inherit",
+      "initial",
+      "revert",
+      "unset",
+      "visible"
+    ]
+  },
+  "white-space": {
+    "isInherited": true,
+    "subproperties": [
+      "white-space"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-pre-space",
+      "break-spaces",
+      "inherit",
+      "initial",
+      "normal",
+      "nowrap",
+      "pre",
+      "pre-line",
+      "pre-wrap",
+      "revert",
+      "unset"
+    ]
+  },
+  "width": {
+    "isInherited": false,
+    "subproperties": [
+      "width"
+    ],
+    "supports": [],
+    "values": [
+      "-moz-available",
+      "-moz-fit-content",
+      "-moz-max-content",
+      "-moz-min-content",
+      "auto",
+      "inherit",
+      "initial",
+      "max-content",
+      "min-content",
+      "revert",
+      "unset"
+    ]
+  },
+  "will-change": {
+    "isInherited": false,
+    "subproperties": [
+      "will-change"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "word-break": {
+    "isInherited": true,
+    "subproperties": [
+      "word-break"
+    ],
+    "supports": [],
+    "values": [
+      "break-all",
+      "break-word",
+      "inherit",
+      "initial",
+      "keep-all",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "word-spacing": {
+    "isInherited": true,
+    "subproperties": [
+      "word-spacing"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "word-wrap": {
+    "isInherited": true,
+    "subproperties": [
+      "overflow-wrap"
+    ],
+    "supports": [],
+    "values": [
+      "anywhere",
+      "break-word",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "unset"
+    ]
+  },
+  "writing-mode": {
+    "isInherited": true,
+    "subproperties": [
+      "writing-mode"
+    ],
+    "supports": [],
+    "values": [
+      "horizontal-tb",
+      "inherit",
+      "initial",
+      "lr",
+      "lr-tb",
+      "revert",
+      "rl",
+      "rl-tb",
+      "sideways-lr",
+      "sideways-rl",
+      "tb",
+      "tb-rl",
+      "unset",
+      "vertical-lr",
+      "vertical-rl"
+    ]
+  },
+  "x": {
+    "isInherited": false,
+    "subproperties": [
+      "x"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "y": {
+    "isInherited": false,
+    "subproperties": [
+      "y"
+    ],
+    "supports": [],
+    "values": [
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  },
+  "z-index": {
+    "isInherited": false,
+    "subproperties": [
+      "z-index"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
+    ]
+  }
+};
 
 /**
  * A list of the pseudo elements.
  */
-exports.PSEUDO_ELEMENTS = [":after", ":before", ":backdrop", ":first-letter", ":first-line", ":-moz-selection", ":-moz-focus-inner", ":-moz-focus-outer", ":-moz-list-bullet", ":-moz-list-number", ":-moz-math-anonymous", ":-moz-progress-bar", ":-moz-range-track", ":-moz-range-progress", ":-moz-range-thumb", ":-moz-meter-bar", ":-moz-placeholder", ":placeholder", ":-moz-color-swatch"];
+exports.PSEUDO_ELEMENTS = [
+  ":after",
+  ":before",
+  ":marker",
+  ":backdrop",
+  ":cue",
+  ":first-letter",
+  ":first-line",
+  ":selection",
+  ":-moz-focus-inner",
+  ":-moz-focus-outer",
+  ":-moz-progress-bar",
+  ":-moz-range-track",
+  ":-moz-range-progress",
+  ":-moz-range-thumb",
+  ":-moz-meter-bar",
+  ":placeholder",
+  ":-moz-color-swatch"
+];
 
 /**
  * A list of the preferences keys for whether a CSS property is enabled or not. This is
  * exposed for testing purposes.
  */
-exports.PREFERENCES = [["align-content", ""], ["align-items", ""], ["align-self", ""], ["all", "layout.css.all-shorthand.enabled"], ["animation", ""], ["animation-delay", ""], ["animation-direction", ""], ["animation-duration", ""], ["animation-fill-mode", ""], ["animation-iteration-count", ""], ["animation-name", ""], ["animation-play-state", ""], ["animation-timing-function", ""], ["-moz-appearance", ""], ["backface-visibility", ""], ["background", ""], ["background-attachment", ""], ["background-blend-mode", "layout.css.background-blend-mode.enabled"], ["background-clip", ""], ["background-color", ""], ["background-image", ""], ["background-origin", ""], ["background-position", ""], ["background-position-x", ""], ["background-position-y", ""], ["background-repeat", ""], ["background-size", ""], ["-moz-binding", ""], ["block-size", "layout.css.vertical-text.enabled"], ["border", ""], ["border-block-end", "layout.css.vertical-text.enabled"], ["border-block-end-color", "layout.css.vertical-text.enabled"], ["border-block-end-style", "layout.css.vertical-text.enabled"], ["border-block-end-width", "layout.css.vertical-text.enabled"], ["border-block-start", "layout.css.vertical-text.enabled"], ["border-block-start-color", "layout.css.vertical-text.enabled"], ["border-block-start-style", "layout.css.vertical-text.enabled"], ["border-block-start-width", "layout.css.vertical-text.enabled"], ["border-bottom", ""], ["border-bottom-color", ""], ["-moz-border-bottom-colors", ""], ["border-bottom-left-radius", ""], ["border-bottom-right-radius", ""], ["border-bottom-style", ""], ["border-bottom-width", ""], ["border-collapse", ""], ["border-color", ""], ["border-image", ""], ["border-image-outset", ""], ["border-image-repeat", ""], ["border-image-slice", ""], ["border-image-source", ""], ["border-image-width", ""], ["border-inline-end", ""], ["border-inline-end-color", ""], ["border-inline-end-style", ""], ["border-inline-end-width", ""], ["border-inline-start", ""], ["border-inline-start-color", ""], ["border-inline-start-style", ""], ["border-inline-start-width", ""], ["border-left", ""], ["border-left-color", ""], ["-moz-border-left-colors", ""], ["border-left-style", ""], ["border-left-width", ""], ["border-radius", ""], ["border-right", ""], ["border-right-color", ""], ["-moz-border-right-colors", ""], ["border-right-style", ""], ["border-right-width", ""], ["border-spacing", ""], ["border-style", ""], ["border-top", ""], ["border-top-color", ""], ["-moz-border-top-colors", ""], ["border-top-left-radius", ""], ["border-top-right-radius", ""], ["border-top-style", ""], ["border-top-width", ""], ["border-width", ""], ["bottom", ""], ["-moz-box-align", ""], ["box-decoration-break", "layout.css.box-decoration-break.enabled"], ["-moz-box-direction", ""], ["-moz-box-flex", ""], ["-moz-box-ordinal-group", ""], ["-moz-box-orient", ""], ["-moz-box-pack", ""], ["box-shadow", ""], ["box-sizing", ""], ["caption-side", ""], ["clear", ""], ["clip", ""], ["clip-path", ""], ["clip-rule", ""], ["color", ""], ["color-adjust", "layout.css.color-adjust.enabled"], ["color-interpolation", ""], ["color-interpolation-filters", ""], ["-moz-column-count", ""], ["-moz-column-fill", ""], ["-moz-column-gap", ""], ["-moz-column-rule", ""], ["-moz-column-rule-color", ""], ["-moz-column-rule-style", ""], ["-moz-column-rule-width", ""], ["-moz-column-width", ""], ["-moz-columns", ""], ["contain", "layout.css.contain.enabled"], ["content", ""], ["counter-increment", ""], ["counter-reset", ""], ["cursor", ""], ["direction", ""], ["display", ""], ["dominant-baseline", ""], ["empty-cells", ""], ["fill", ""], ["fill-opacity", ""], ["fill-rule", ""], ["filter", ""], ["flex", ""], ["flex-basis", ""], ["flex-direction", ""], ["flex-flow", ""], ["flex-grow", ""], ["flex-shrink", ""], ["flex-wrap", ""], ["float", ""], ["-moz-float-edge", ""], ["flood-color", ""], ["flood-opacity", ""], ["font", ""], ["font-family", ""], ["font-feature-settings", ""], ["font-kerning", ""], ["font-language-override", ""], ["font-size", ""], ["font-size-adjust", ""], ["font-stretch", ""], ["font-style", ""], ["font-synthesis", ""], ["font-variant", ""], ["font-variant-alternates", ""], ["font-variant-caps", ""], ["font-variant-east-asian", ""], ["font-variant-ligatures", ""], ["font-variant-numeric", ""], ["font-variant-position", ""], ["font-weight", ""], ["-moz-force-broken-image-icon", ""], ["grid", "layout.css.grid.enabled"], ["grid-area", "layout.css.grid.enabled"], ["grid-auto-columns", "layout.css.grid.enabled"], ["grid-auto-flow", "layout.css.grid.enabled"], ["grid-auto-rows", "layout.css.grid.enabled"], ["grid-column", "layout.css.grid.enabled"], ["grid-column-end", "layout.css.grid.enabled"], ["grid-column-gap", "layout.css.grid.enabled"], ["grid-column-start", "layout.css.grid.enabled"], ["grid-gap", "layout.css.grid.enabled"], ["grid-row", "layout.css.grid.enabled"], ["grid-row-end", "layout.css.grid.enabled"], ["grid-row-gap", "layout.css.grid.enabled"], ["grid-row-start", "layout.css.grid.enabled"], ["grid-template", "layout.css.grid.enabled"], ["grid-template-areas", "layout.css.grid.enabled"], ["grid-template-columns", "layout.css.grid.enabled"], ["grid-template-rows", "layout.css.grid.enabled"], ["height", ""], ["hyphens", ""], ["initial-letter", "layout.css.initial-letter.enabled"], ["image-orientation", "layout.css.image-orientation.enabled"], ["-moz-image-region", ""], ["image-rendering", ""], ["ime-mode", ""], ["inline-size", "layout.css.vertical-text.enabled"], ["isolation", "layout.css.isolation.enabled"], ["justify-content", ""], ["justify-items", ""], ["justify-self", ""], ["left", ""], ["letter-spacing", ""], ["lighting-color", ""], ["line-height", ""], ["list-style", ""], ["list-style-image", ""], ["list-style-position", ""], ["list-style-type", ""], ["margin", ""], ["margin-block-end", "layout.css.vertical-text.enabled"], ["margin-block-start", "layout.css.vertical-text.enabled"], ["margin-bottom", ""], ["margin-inline-end", ""], ["margin-inline-start", ""], ["margin-left", ""], ["margin-right", ""], ["margin-top", ""], ["marker", ""], ["marker-end", ""], ["marker-mid", ""], ["marker-offset", ""], ["marker-start", ""], ["mask", ""], ["mask-clip", ""], ["mask-composite", ""], ["mask-image", ""], ["mask-mode", ""], ["mask-origin", ""], ["mask-position", ""], ["mask-position-x", ""], ["mask-position-y", ""], ["mask-repeat", ""], ["mask-size", ""], ["mask-type", "layout.css.masking.enabled"], ["max-block-size", "layout.css.vertical-text.enabled"], ["max-height", ""], ["max-inline-size", "layout.css.vertical-text.enabled"], ["max-width", ""], ["min-block-size", "layout.css.vertical-text.enabled"], ["min-height", ""], ["min-inline-size", "layout.css.vertical-text.enabled"], ["min-width", ""], ["mix-blend-mode", "layout.css.mix-blend-mode.enabled"], ["object-fit", "layout.css.object-fit-and-position.enabled"], ["object-position", "layout.css.object-fit-and-position.enabled"], ["offset-block-end", "layout.css.vertical-text.enabled"], ["offset-block-start", "layout.css.vertical-text.enabled"], ["offset-inline-end", "layout.css.vertical-text.enabled"], ["offset-inline-start", "layout.css.vertical-text.enabled"], ["opacity", ""], ["order", ""], ["-moz-orient", ""], ["-moz-osx-font-smoothing", "layout.css.osx-font-smoothing.enabled"], ["outline", ""], ["outline-color", ""], ["outline-offset", ""], ["-moz-outline-radius", ""], ["-moz-outline-radius-bottomleft", ""], ["-moz-outline-radius-bottomright", ""], ["-moz-outline-radius-topleft", ""], ["-moz-outline-radius-topright", ""], ["outline-style", ""], ["outline-width", ""], ["overflow", ""], ["overflow-clip-box", "layout.css.overflow-clip-box.enabled"], ["overflow-x", ""], ["overflow-y", ""], ["padding", ""], ["padding-block-end", "layout.css.vertical-text.enabled"], ["padding-block-start", "layout.css.vertical-text.enabled"], ["padding-bottom", ""], ["padding-inline-end", ""], ["padding-inline-start", ""], ["padding-left", ""], ["padding-right", ""], ["padding-top", ""], ["page-break-after", ""], ["page-break-before", ""], ["page-break-inside", ""], ["paint-order", "svg.paint-order.enabled"], ["perspective", ""], ["perspective-origin", ""], ["pointer-events", ""], ["position", ""], ["quotes", ""], ["resize", ""], ["right", ""], ["ruby-align", ""], ["ruby-position", ""], ["scroll-behavior", "layout.css.scroll-behavior.property-enabled"], ["scroll-snap-coordinate", "layout.css.scroll-snap.enabled"], ["scroll-snap-destination", "layout.css.scroll-snap.enabled"], ["scroll-snap-points-x", "layout.css.scroll-snap.enabled"], ["scroll-snap-points-y", "layout.css.scroll-snap.enabled"], ["scroll-snap-type", "layout.css.scroll-snap.enabled"], ["scroll-snap-type-x", "layout.css.scroll-snap.enabled"], ["scroll-snap-type-y", "layout.css.scroll-snap.enabled"], ["shape-outside", "layout.css.shape-outside.enabled"], ["shape-rendering", ""], ["-moz-stack-sizing", ""], ["stop-color", ""], ["stop-opacity", ""], ["stroke", ""], ["stroke-dasharray", ""], ["stroke-dashoffset", ""], ["stroke-linecap", ""], ["stroke-linejoin", ""], ["stroke-miterlimit", ""], ["stroke-opacity", ""], ["stroke-width", ""], ["-moz-tab-size", ""], ["table-layout", ""], ["text-align", ""], ["text-align-last", ""], ["text-anchor", ""], ["text-combine-upright", "layout.css.text-combine-upright.enabled"], ["text-decoration", ""], ["text-decoration-color", ""], ["text-decoration-line", ""], ["text-decoration-style", ""], ["text-emphasis", ""], ["text-emphasis-color", ""], ["text-emphasis-position", ""], ["text-emphasis-style", ""], ["-webkit-text-fill-color", "layout.css.prefixes.webkit"], ["text-indent", ""], ["text-orientation", "layout.css.vertical-text.enabled"], ["text-overflow", ""], ["text-rendering", ""], ["text-shadow", ""], ["-moz-text-size-adjust", ""], ["-webkit-text-stroke", "layout.css.prefixes.webkit"], ["-webkit-text-stroke-color", "layout.css.prefixes.webkit"], ["-webkit-text-stroke-width", "layout.css.prefixes.webkit"], ["text-transform", ""], ["top", ""], ["touch-action", "layout.css.touch_action.enabled"], ["transform", ""], ["-moz-transform", "layout.css.prefixes.transforms"], ["transform-box", "svg.transform-box.enabled"], ["transform-origin", ""], ["transform-style", ""], ["transition", ""], ["transition-delay", ""], ["transition-duration", ""], ["transition-property", ""], ["transition-timing-function", ""], ["unicode-bidi", ""], ["-moz-user-focus", ""], ["-moz-user-input", ""], ["-moz-user-modify", ""], ["-moz-user-select", ""], ["vector-effect", ""], ["vertical-align", ""], ["visibility", ""], ["white-space", ""], ["width", ""], ["will-change", ""], ["-moz-window-dragging", ""], ["word-break", ""], ["word-spacing", ""], ["overflow-wrap", ""], ["writing-mode", "layout.css.vertical-text.enabled"], ["z-index", ""], ["word-wrap", ""], ["-moz-transform-origin", "layout.css.prefixes.transforms"], ["-moz-perspective-origin", "layout.css.prefixes.transforms"], ["-moz-perspective", "layout.css.prefixes.transforms"], ["-moz-transform-style", "layout.css.prefixes.transforms"], ["-moz-backface-visibility", "layout.css.prefixes.transforms"], ["-moz-border-image", "layout.css.prefixes.border-image"], ["-moz-transition", "layout.css.prefixes.transitions"], ["-moz-transition-delay", "layout.css.prefixes.transitions"], ["-moz-transition-duration", "layout.css.prefixes.transitions"], ["-moz-transition-property", "layout.css.prefixes.transitions"], ["-moz-transition-timing-function", "layout.css.prefixes.transitions"], ["-moz-animation", "layout.css.prefixes.animations"], ["-moz-animation-delay", "layout.css.prefixes.animations"], ["-moz-animation-direction", "layout.css.prefixes.animations"], ["-moz-animation-duration", "layout.css.prefixes.animations"], ["-moz-animation-fill-mode", "layout.css.prefixes.animations"], ["-moz-animation-iteration-count", "layout.css.prefixes.animations"], ["-moz-animation-name", "layout.css.prefixes.animations"], ["-moz-animation-play-state", "layout.css.prefixes.animations"], ["-moz-animation-timing-function", "layout.css.prefixes.animations"], ["-moz-box-sizing", "layout.css.prefixes.box-sizing"], ["-moz-font-feature-settings", "layout.css.prefixes.font-features"], ["-moz-font-language-override", "layout.css.prefixes.font-features"], ["-moz-padding-end", ""], ["-moz-padding-start", ""], ["-moz-margin-end", ""], ["-moz-margin-start", ""], ["-moz-border-end", ""], ["-moz-border-end-color", ""], ["-moz-border-end-style", ""], ["-moz-border-end-width", ""], ["-moz-border-start", ""], ["-moz-border-start-color", ""], ["-moz-border-start-style", ""], ["-moz-border-start-width", ""], ["-moz-hyphens", ""], ["-moz-text-align-last", ""], ["-webkit-animation", "layout.css.prefixes.webkit"], ["-webkit-animation-delay", "layout.css.prefixes.webkit"], ["-webkit-animation-direction", "layout.css.prefixes.webkit"], ["-webkit-animation-duration", "layout.css.prefixes.webkit"], ["-webkit-animation-fill-mode", "layout.css.prefixes.webkit"], ["-webkit-animation-iteration-count", "layout.css.prefixes.webkit"], ["-webkit-animation-name", "layout.css.prefixes.webkit"], ["-webkit-animation-play-state", "layout.css.prefixes.webkit"], ["-webkit-animation-timing-function", "layout.css.prefixes.webkit"], ["-webkit-filter", "layout.css.prefixes.webkit"], ["-webkit-text-size-adjust", "layout.css.prefixes.webkit"], ["-webkit-transform", "layout.css.prefixes.webkit"], ["-webkit-transform-origin", "layout.css.prefixes.webkit"], ["-webkit-transform-style", "layout.css.prefixes.webkit"], ["-webkit-backface-visibility", "layout.css.prefixes.webkit"], ["-webkit-perspective", "layout.css.prefixes.webkit"], ["-webkit-perspective-origin", "layout.css.prefixes.webkit"], ["-webkit-transition", "layout.css.prefixes.webkit"], ["-webkit-transition-delay", "layout.css.prefixes.webkit"], ["-webkit-transition-duration", "layout.css.prefixes.webkit"], ["-webkit-transition-property", "layout.css.prefixes.webkit"], ["-webkit-transition-timing-function", "layout.css.prefixes.webkit"], ["-webkit-border-radius", "layout.css.prefixes.webkit"], ["-webkit-border-top-left-radius", "layout.css.prefixes.webkit"], ["-webkit-border-top-right-radius", "layout.css.prefixes.webkit"], ["-webkit-border-bottom-left-radius", "layout.css.prefixes.webkit"], ["-webkit-border-bottom-right-radius", "layout.css.prefixes.webkit"], ["-webkit-background-clip", "layout.css.prefixes.webkit"], ["-webkit-background-origin", "layout.css.prefixes.webkit"], ["-webkit-background-size", "layout.css.prefixes.webkit"], ["-webkit-border-image", "layout.css.prefixes.webkit"], ["-webkit-box-shadow", "layout.css.prefixes.webkit"], ["-webkit-box-sizing", "layout.css.prefixes.webkit"], ["-webkit-box-flex", "layout.css.prefixes.webkit"], ["-webkit-box-ordinal-group", "layout.css.prefixes.webkit"], ["-webkit-box-orient", "layout.css.prefixes.webkit"], ["-webkit-box-direction", "layout.css.prefixes.webkit"], ["-webkit-box-align", "layout.css.prefixes.webkit"], ["-webkit-box-pack", "layout.css.prefixes.webkit"], ["-webkit-flex-direction", "layout.css.prefixes.webkit"], ["-webkit-flex-wrap", "layout.css.prefixes.webkit"], ["-webkit-flex-flow", "layout.css.prefixes.webkit"], ["-webkit-order", "layout.css.prefixes.webkit"], ["-webkit-flex", "layout.css.prefixes.webkit"], ["-webkit-flex-grow", "layout.css.prefixes.webkit"], ["-webkit-flex-shrink", "layout.css.prefixes.webkit"], ["-webkit-flex-basis", "layout.css.prefixes.webkit"], ["-webkit-justify-content", "layout.css.prefixes.webkit"], ["-webkit-align-items", "layout.css.prefixes.webkit"], ["-webkit-align-self", "layout.css.prefixes.webkit"], ["-webkit-align-content", "layout.css.prefixes.webkit"], ["-webkit-user-select", "layout.css.prefixes.webkit"], ["-webkit-mask", "layout.css.prefixes.webkit"], ["-webkit-mask-clip", "layout.css.prefixes.webkit"], ["-webkit-mask-composite", "layout.css.prefixes.webkit"], ["-webkit-mask-image", "layout.css.prefixes.webkit"], ["-webkit-mask-origin", "layout.css.prefixes.webkit"], ["-webkit-mask-position", "layout.css.prefixes.webkit"], ["-webkit-mask-position-x", "layout.css.prefixes.webkit"], ["-webkit-mask-position-y", "layout.css.prefixes.webkit"], ["-webkit-mask-repeat", "layout.css.prefixes.webkit"], ["-webkit-mask-size", "layout.css.prefixes.webkit"]];
-
-/* eslint-enable max-len */
+exports.PREFERENCES = [
+  [
+    "column-span",
+    "layout.css.column-span.enabled"
+  ],
+  [
+    "contain",
+    "layout.css.contain.enabled"
+  ],
+  [
+    "font-optical-sizing",
+    "layout.css.font-variations.enabled"
+  ],
+  [
+    "initial-letter",
+    "layout.css.initial-letter.enabled"
+  ],
+  [
+    "-moz-osx-font-smoothing",
+    "layout.css.osx-font-smoothing.enabled"
+  ],
+  [
+    "offset-rotate",
+    "layout.css.motion-path.enabled"
+  ],
+  [
+    "overflow-anchor",
+    "layout.css.scroll-anchoring.enabled"
+  ],
+  [
+    "scrollbar-width",
+    "layout.css.scrollbar-width.enabled"
+  ],
+  [
+    "text-decoration-skip-ink",
+    "layout.css.text-decoration-skip-ink.enabled"
+  ],
+  [
+    "text-justify",
+    "layout.css.text-justify.enabled"
+  ],
+  [
+    "touch-action",
+    "layout.css.touch_action.enabled"
+  ],
+  [
+    "transform-box",
+    "svg.transform-box.enabled"
+  ],
+  [
+    "-webkit-line-clamp",
+    "layout.css.webkit-line-clamp.enabled"
+  ],
+  [
+    "overflow-clip-box-block",
+    "layout.css.overflow-clip-box.enabled"
+  ],
+  [
+    "overflow-clip-box-inline",
+    "layout.css.overflow-clip-box.enabled"
+  ],
+  [
+    "overscroll-behavior-x",
+    "layout.css.overscroll-behavior.enabled"
+  ],
+  [
+    "overscroll-behavior-y",
+    "layout.css.overscroll-behavior.enabled"
+  ],
+  [
+    "overflow-block",
+    "layout.css.overflow-logical.enabled"
+  ],
+  [
+    "overflow-inline",
+    "layout.css.overflow-logical.enabled"
+  ],
+  [
+    "backdrop-filter",
+    "layout.css.backdrop-filter.enabled"
+  ],
+  [
+    "font-variation-settings",
+    "layout.css.font-variations.enabled"
+  ],
+  [
+    "offset-anchor",
+    "layout.css.motion-path.enabled"
+  ],
+  [
+    "offset-path",
+    "layout.css.motion-path.enabled"
+  ],
+  [
+    "rotate",
+    "layout.css.individual-transform.enabled"
+  ],
+  [
+    "scale",
+    "layout.css.individual-transform.enabled"
+  ],
+  [
+    "scrollbar-color",
+    "layout.css.scrollbar-color.enabled"
+  ],
+  [
+    "translate",
+    "layout.css.individual-transform.enabled"
+  ],
+  [
+    "text-decoration-thickness",
+    "layout.css.text-decoration-thickness.enabled"
+  ],
+  [
+    "text-underline-offset",
+    "layout.css.text-underline-offset.enabled"
+  ],
+  [
+    "-moz-binding",
+    "layout.css.moz-binding.content.enabled"
+  ],
+  [
+    "offset-distance",
+    "layout.css.motion-path.enabled"
+  ],
+  [
+    "overflow-clip-box",
+    "layout.css.overflow-clip-box.enabled"
+  ],
+  [
+    "overscroll-behavior",
+    "layout.css.overscroll-behavior.enabled"
+  ],
+  [
+    "offset",
+    "layout.css.motion-path.enabled"
+  ],
+  [
+    "-moz-transition-duration",
+    "layout.css.prefixes.transitions"
+  ],
+  [
+    "-moz-transition-timing-function",
+    "layout.css.prefixes.transitions"
+  ],
+  [
+    "-moz-transition-property",
+    "layout.css.prefixes.transitions"
+  ],
+  [
+    "-moz-transition-delay",
+    "layout.css.prefixes.transitions"
+  ],
+  [
+    "-moz-animation-name",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-duration",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-timing-function",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-iteration-count",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-direction",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-play-state",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-fill-mode",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-animation-delay",
+    "layout.css.prefixes.animations"
+  ],
+  [
+    "-moz-transform",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-moz-perspective",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-moz-perspective-origin",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-moz-backface-visibility",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-moz-transform-style",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-moz-transform-origin",
+    "layout.css.prefixes.transforms"
+  ],
+  [
+    "-webkit-appearance",
+    "layout.css.webkit-appearance.enabled"
+  ],
+  [
+    "-moz-column-span",
+    "layout.css.column-span.enabled"
+  ],
+  [
+    "-moz-font-feature-settings",
+    "layout.css.prefixes.font-features"
+  ],
+  [
+    "-moz-font-language-override",
+    "layout.css.prefixes.font-features"
+  ],
+  [
+    "offset-block-start",
+    "layout.css.offset-logical-properties.enabled"
+  ],
+  [
+    "offset-block-end",
+    "layout.css.offset-logical-properties.enabled"
+  ],
+  [
+    "offset-inline-start",
+    "layout.css.offset-logical-properties.enabled"
+  ],
+  [
+    "offset-inline-end",
+    "layout.css.offset-logical-properties.enabled"
+  ],
+  [
+    "-moz-box-sizing",
+    "layout.css.prefixes.box-sizing"
+  ],
+  [
+    "-moz-border-image",
+    "layout.css.prefixes.border-image"
+  ],
+  [
+    "-moz-transition",
+    "layout.css.prefixes.transitions"
+  ],
+  [
+    "-moz-animation",
+    "layout.css.prefixes.animations"
+  ]
+];

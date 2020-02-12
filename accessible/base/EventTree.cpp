@@ -6,10 +6,12 @@
 #include "EventTree.h"
 
 #include "Accessible-inl.h"
+#include "EmbeddedObjCollector.h"
+#include "NotificationController.h"
 #include "nsEventShell.h"
 #include "DocAccessible.h"
 #ifdef A11Y_LOG
-#include "Logging.h"
+#  include "Logging.h"
 #endif
 
 #include "mozilla/UniquePtr.h"
@@ -22,17 +24,17 @@ using namespace mozilla::a11y;
 
 EventTree* const TreeMutation::kNoEventTree = reinterpret_cast<EventTree*>(-1);
 
-TreeMutation::TreeMutation(Accessible* aParent, bool aNoEvents) :
-  mParent(aParent), mStartIdx(UINT32_MAX),
-  mStateFlagsCopy(mParent->mStateFlags),
-  mEventTree(aNoEvents ? kNoEventTree : nullptr)
-{
+TreeMutation::TreeMutation(Accessible* aParent, bool aNoEvents)
+    : mParent(aParent),
+      mStartIdx(UINT32_MAX),
+      mStateFlagsCopy(mParent->mStateFlags),
+      mQueueEvents(!aNoEvents) {
 #ifdef DEBUG
   mIsDone = false;
 #endif
 
 #ifdef A11Y_LOG
-  if (mEventTree != kNoEventTree && logging::IsEnabled(logging::eEventTree)) {
+  if (mQueueEvents && logging::IsEnabled(logging::eEventTree)) {
     logging::MsgBegin("EVENTS_TREE", "reordering tree before");
     logging::AccessibleInfo("reordering for", mParent);
     Controller()->RootEventTree().Log();
@@ -48,71 +50,62 @@ TreeMutation::TreeMutation(Accessible* aParent, bool aNoEvents) :
   mParent->mStateFlags |= Accessible::eKidsMutating;
 }
 
-TreeMutation::~TreeMutation()
-{
+TreeMutation::~TreeMutation() {
   MOZ_ASSERT(mIsDone, "Done() must be called explicitly");
 }
 
-void
-TreeMutation::AfterInsertion(Accessible* aChild)
-{
+void TreeMutation::AfterInsertion(Accessible* aChild) {
   MOZ_ASSERT(aChild->Parent() == mParent);
 
   if (static_cast<uint32_t>(aChild->mIndexInParent) < mStartIdx) {
     mStartIdx = aChild->mIndexInParent + 1;
   }
 
-  if (!mEventTree) {
-    mEventTree = Controller()->QueueMutation(mParent);
-    if (!mEventTree) {
-      mEventTree = kNoEventTree;
-    }
+  if (!mQueueEvents) {
+    return;
   }
 
-  if (mEventTree != kNoEventTree) {
-    mEventTree->Shown(aChild);
-    Controller()->QueueNameChange(aChild);
-  }
+  RefPtr<AccShowEvent> ev = new AccShowEvent(aChild);
+  DebugOnly<bool> added = Controller()->QueueMutationEvent(ev);
+  MOZ_ASSERT(added);
+  aChild->SetShowEventTarget(true);
 }
 
-void
-TreeMutation::BeforeRemoval(Accessible* aChild, bool aNoShutdown)
-{
+void TreeMutation::BeforeRemoval(Accessible* aChild, bool aNoShutdown) {
   MOZ_ASSERT(aChild->Parent() == mParent);
 
   if (static_cast<uint32_t>(aChild->mIndexInParent) < mStartIdx) {
     mStartIdx = aChild->mIndexInParent;
   }
 
-  if (!mEventTree) {
-    mEventTree = Controller()->QueueMutation(mParent);
-    if (!mEventTree) {
-      mEventTree = kNoEventTree;
-    }
+  if (!mQueueEvents) {
+    return;
   }
 
-  if (mEventTree != kNoEventTree) {
-    mEventTree->Hidden(aChild, !aNoShutdown);
-    Controller()->QueueNameChange(aChild);
+  RefPtr<AccHideEvent> ev = new AccHideEvent(aChild, !aNoShutdown);
+  if (Controller()->QueueMutationEvent(ev)) {
+    aChild->SetHideEventTarget(true);
   }
 }
 
-void
-TreeMutation::Done()
-{
+void TreeMutation::Done() {
   MOZ_ASSERT(mParent->mStateFlags & Accessible::eKidsMutating);
   mParent->mStateFlags &= ~Accessible::eKidsMutating;
 
   uint32_t length = mParent->mChildren.Length();
 #ifdef DEBUG
   for (uint32_t idx = 0; idx < mStartIdx && idx < length; idx++) {
-    MOZ_ASSERT(mParent->mChildren[idx]->mIndexInParent == static_cast<int32_t>(idx),
-               "Wrong index detected");
+    MOZ_ASSERT(
+        mParent->mChildren[idx]->mIndexInParent == static_cast<int32_t>(idx),
+        "Wrong index detected");
   }
 #endif
 
   for (uint32_t idx = mStartIdx; idx < length; idx++) {
     mParent->mChildren[idx]->mInt.mIndexOfEmbeddedChild = -1;
+  }
+
+  for (uint32_t idx = 0; idx < length; idx++) {
     mParent->mChildren[idx]->mStateFlags |= Accessible::eGroupInfoDirty;
   }
 
@@ -124,7 +117,7 @@ TreeMutation::Done()
 #endif
 
 #ifdef A11Y_LOG
-  if (mEventTree != kNoEventTree && logging::IsEnabled(logging::eEventTree)) {
+  if (mQueueEvents && logging::IsEnabled(logging::eEventTree)) {
     logging::MsgBegin("EVENTS_TREE", "reordering tree after");
     logging::AccessibleInfo("reordering for", mParent);
     Controller()->RootEventTree().Log();
@@ -134,9 +127,7 @@ TreeMutation::Done()
 }
 
 #ifdef A11Y_LOG
-const char*
-TreeMutation::PrefixLog(void* aData, Accessible* aAcc)
-{
+const char* TreeMutation::PrefixLog(void* aData, Accessible* aAcc) {
   TreeMutation* thisObj = reinterpret_cast<TreeMutation*>(aData);
   if (thisObj->mParent == aAcc) {
     return "_X_";
@@ -149,13 +140,24 @@ TreeMutation::PrefixLog(void* aData, Accessible* aAcc)
 }
 #endif
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // EventTree
 
-void
-EventTree::Process(const RefPtr<DocAccessible>& aDeathGrip)
-{
+void EventTree::Shown(Accessible* aChild) {
+  RefPtr<AccShowEvent> ev = new AccShowEvent(aChild);
+  Controller(aChild)->WithdrawPrecedingEvents(&ev->mPrecedingEvents);
+  Mutated(ev);
+}
+
+void EventTree::Hidden(Accessible* aChild, bool aNeedsShutdown) {
+  RefPtr<AccHideEvent> ev = new AccHideEvent(aChild, aNeedsShutdown);
+  if (!aNeedsShutdown) {
+    Controller(aChild)->StorePrecedingEvent(ev);
+  }
+  Mutated(ev);
+}
+
+void EventTree::Process(const RefPtr<DocAccessible>& aDeathGrip) {
   while (mFirst) {
     // Skip a node and its subtree if its container is not in the document.
     if (mFirst->mContainer->IsInDocument()) {
@@ -164,7 +166,7 @@ EventTree::Process(const RefPtr<DocAccessible>& aDeathGrip)
         return;
       }
     }
-    mFirst = Move(mFirst->mNext);
+    mFirst = std::move(mFirst->mNext);
   }
 
   MOZ_ASSERT(mContainer || mDependentEvents.IsEmpty(),
@@ -177,9 +179,18 @@ EventTree::Process(const RefPtr<DocAccessible>& aDeathGrip)
   uint32_t eventsCount = mDependentEvents.Length();
   for (uint32_t jdx = 0; jdx < eventsCount; jdx++) {
     AccMutationEvent* mtEvent = mDependentEvents[jdx];
-    MOZ_ASSERT(mtEvent->mEventRule != AccEvent::eDoNotEmit,
-               "The event shouldn't be presented in the tree");
     MOZ_ASSERT(mtEvent->Document(), "No document for event target");
+
+    // Fire all hide events that has to be fired before this show event.
+    if (mtEvent->IsShow()) {
+      AccShowEvent* showEv = downcast_accEvent(mtEvent);
+      for (uint32_t i = 0; i < showEv->mPrecedingEvents.Length(); i++) {
+        nsEventShell::FireEvent(showEv->mPrecedingEvents[i]);
+        if (aDeathGrip->IsDefunct()) {
+          return;
+        }
+      }
+    }
 
     nsEventShell::FireEvent(mtEvent);
     if (aDeathGrip->IsDefunct()) {
@@ -227,11 +238,9 @@ EventTree::Process(const RefPtr<DocAccessible>& aDeathGrip)
   mDependentEvents.Clear();
 }
 
-EventTree*
-EventTree::FindOrInsert(Accessible* aContainer)
-{
+EventTree* EventTree::FindOrInsert(Accessible* aContainer) {
   if (!mFirst) {
-    mFirst.reset(new EventTree(aContainer, true));
+    mFirst.reset(new EventTree(aContainer, mDependentEvents.IsEmpty()));
     return mFirst.get();
   }
 
@@ -240,7 +249,8 @@ EventTree::FindOrInsert(Accessible* aContainer)
   do {
     MOZ_ASSERT(!node->mContainer->IsApplication(),
                "No event for application accessible is expected here");
-    MOZ_ASSERT(!node->mContainer->IsDefunct(), "An event target has to be alive");
+    MOZ_ASSERT(!node->mContainer->IsDefunct(),
+               "An event target has to be alive");
 
     // Case of same target.
     if (node->mContainer == aContainer) {
@@ -264,14 +274,20 @@ EventTree::FindOrInsert(Accessible* aContainer)
           AccMutationEvent* ev = node->mDependentEvents[idx];
           if (ev->GetAccessible() == parent) {
 #ifdef A11Y_LOG
-            if (logging::IsEnabledAll(logging::eEventTree |
-                                      logging::eVerbose)) {
+            if (logging::IsEnabled(logging::eEventTree)) {
               logging::MsgBegin("EVENTS_TREE",
-                "Rejecting node since contained by show/hide target");
-              logging::AccessibleInfo("Container", aContainer);
+                                "Rejecting node contained by show/hide");
+              logging::AccessibleInfo("Node", aContainer);
               logging::MsgEnd();
             }
 #endif
+            // If the node is rejected, then check if it has related hide event
+            // on stack, and if so, then connect it to the parent show event.
+            if (ev->IsShow()) {
+              AccShowEvent* showEv = downcast_accEvent(ev);
+              Controller(aContainer)
+                  ->WithdrawPrecedingEvents(&showEv->mPrecedingEvents);
+            }
             return nullptr;
           }
         }
@@ -285,8 +301,8 @@ EventTree::FindOrInsert(Accessible* aContainer)
 
     // If the given container contains a current node
     // then
-    //   if show or hide of the given node contains a grand parent of the current node
-    //   then ignore the current node and its show and hide events
+    //   if show or hide of the given node contains a grand parent of the
+    //   current node then ignore the current node and its show and hide events
     //   otherwise ignore the current node, but not its show and hide events
     Accessible* curParent = node->mContainer;
     while (curParent && !curParent->IsDoc()) {
@@ -299,10 +315,11 @@ EventTree::FindOrInsert(Accessible* aContainer)
       // its parent.
       node->mFireReorder = false;
       UniquePtr<EventTree>& nodeOwnerRef = prevNode ? prevNode->mNext : mFirst;
-      UniquePtr<EventTree> newNode(new EventTree(aContainer, mDependentEvents.IsEmpty()));
-      newNode->mFirst = Move(nodeOwnerRef);
-      nodeOwnerRef = Move(newNode);
-      nodeOwnerRef->mNext = Move(node->mNext);
+      UniquePtr<EventTree> newNode(
+          new EventTree(aContainer, mDependentEvents.IsEmpty()));
+      newNode->mFirst = std::move(nodeOwnerRef);
+      nodeOwnerRef = std::move(newNode);
+      nodeOwnerRef->mNext = std::move(node->mNext);
 
       // Check if a next node is contained by the given node too, and move them
       // under the given node if so.
@@ -321,10 +338,10 @@ EventTree::FindOrInsert(Accessible* aContainer)
           MOZ_ASSERT(!insNode->mNext);
 
           node->mFireReorder = false;
-          insNode->mNext = Move(*nodeRef);
+          insNode->mNext = std::move(*nodeRef);
           insNode = insNode->mNext.get();
 
-          prevNode->mNext = Move(node->mNext);
+          prevNode->mNext = std::move(node->mNext);
           node = prevNode;
           break;
         }
@@ -352,15 +369,14 @@ EventTree::FindOrInsert(Accessible* aContainer)
   return prevNode->mNext.get();
 }
 
-void
-EventTree::Clear()
-{
+void EventTree::Clear() {
   mFirst = nullptr;
   mNext = nullptr;
   mContainer = nullptr;
 
   uint32_t eventsCount = mDependentEvents.Length();
   for (uint32_t jdx = 0; jdx < eventsCount; jdx++) {
+    mDependentEvents[jdx]->mEventType = AccEvent::eDoNotEmit;
     AccHideEvent* ev = downcast_accEvent(mDependentEvents[jdx]);
     if (ev && ev->NeedsShutdown()) {
       ev->Document()->ShutdownChildrenInSubtree(ev->mAccessible);
@@ -369,9 +385,7 @@ EventTree::Clear()
   mDependentEvents.Clear();
 }
 
-const EventTree*
-EventTree::Find(const Accessible* aContainer) const
-{
+const EventTree* EventTree::Find(const Accessible* aContainer) const {
   const EventTree* et = this;
   while (et) {
     if (et->mContainer == aContainer) {
@@ -397,9 +411,7 @@ EventTree::Find(const Accessible* aContainer) const
 }
 
 #ifdef A11Y_LOG
-void
-EventTree::Log(uint32_t aLevel) const
-{
+void EventTree::Log(uint32_t aLevel) const {
   if (aLevel == UINT32_MAX) {
     if (mFirst) {
       mFirst->Log(0);
@@ -415,13 +427,21 @@ EventTree::Log(uint32_t aLevel) const
   for (uint32_t i = 0; i < mDependentEvents.Length(); i++) {
     AccMutationEvent* ev = mDependentEvents[i];
     if (ev->IsShow()) {
-      for (uint32_t i = 0; i < aLevel; i++) {
+      for (uint32_t i = 0; i < aLevel + 1; i++) {
         printf("  ");
       }
       logging::AccessibleInfo("shown", ev->mAccessible);
-    }
-    else {
-      for (uint32_t i = 0; i < aLevel; i++) {
+
+      AccShowEvent* showEv = downcast_accEvent(ev);
+      for (uint32_t i = 0; i < showEv->mPrecedingEvents.Length(); i++) {
+        for (uint32_t j = 0; j < aLevel + 1; j++) {
+          printf("  ");
+        }
+        logging::AccessibleInfo("preceding",
+                                showEv->mPrecedingEvents[i]->mAccessible);
+      }
+    } else {
+      for (uint32_t i = 0; i < aLevel + 1; i++) {
         printf("  ");
       }
       logging::AccessibleInfo("hidden", ev->mAccessible);
@@ -438,9 +458,7 @@ EventTree::Log(uint32_t aLevel) const
 }
 #endif
 
-void
-EventTree::Mutated(AccMutationEvent* aEv)
-{
+void EventTree::Mutated(AccMutationEvent* aEv) {
   // If shown or hidden node is a root of previously mutated subtree, then
   // discard those subtree mutations as we are no longer interested in them.
   UniquePtr<EventTree>* node = &mFirst;
@@ -448,7 +466,64 @@ EventTree::Mutated(AccMutationEvent* aEv)
     Accessible* cntr = (*node)->mContainer;
     while (cntr != mContainer) {
       if (cntr == aEv->mAccessible) {
-        *node = Move((*node)->mNext);
+#ifdef A11Y_LOG
+        if (logging::IsEnabled(logging::eEventTree)) {
+          logging::MsgBegin("EVENTS_TREE", "Trim subtree");
+          logging::AccessibleInfo("Show/hide container", aEv->mAccessible);
+          logging::AccessibleInfo("Trimmed subtree root", (*node)->mContainer);
+          logging::MsgEnd();
+        }
+#endif
+
+        // If the new hide is part of a move and it contains existing child
+        // shows, then move preceding events from the child shows to the buffer,
+        // so the ongoing show event will pick them up.
+        if (aEv->IsHide()) {
+          AccHideEvent* hideEv = downcast_accEvent(aEv);
+          if (!hideEv->mNeedsShutdown) {
+            for (uint32_t i = 0; i < (*node)->mDependentEvents.Length(); i++) {
+              AccMutationEvent* childEv = (*node)->mDependentEvents[i];
+              if (childEv->IsShow()) {
+                AccShowEvent* childShowEv = downcast_accEvent(childEv);
+                if (childShowEv->mPrecedingEvents.Length() > 0) {
+                  Controller(mContainer)
+                      ->StorePrecedingEvents(
+                          std::move(childShowEv->mPrecedingEvents));
+                }
+              }
+            }
+          }
+        }
+        // If the new show contains existing child shows, then move preceding
+        // events from the child shows to the new show.
+        else if (aEv->IsShow()) {
+          AccShowEvent* showEv = downcast_accEvent(aEv);
+          for (uint32_t i = 0; (*node)->mDependentEvents.Length(); i++) {
+            AccMutationEvent* childEv = (*node)->mDependentEvents[i];
+            if (childEv->IsShow()) {
+              AccShowEvent* showChildEv = downcast_accEvent(childEv);
+              if (showChildEv->mPrecedingEvents.Length() > 0) {
+#ifdef A11Y_LOG
+                if (logging::IsEnabled(logging::eEventTree)) {
+                  logging::MsgBegin("EVENTS_TREE", "Adopt preceding events");
+                  logging::AccessibleInfo("Parent", aEv->mAccessible);
+                  for (uint32_t j = 0;
+                       j < showChildEv->mPrecedingEvents.Length(); j++) {
+                    logging::AccessibleInfo(
+                        "Adoptee",
+                        showChildEv->mPrecedingEvents[i]->mAccessible);
+                  }
+                  logging::MsgEnd();
+                }
+#endif
+                showEv->mPrecedingEvents.AppendElements(
+                    showChildEv->mPrecedingEvents);
+              }
+            }
+          }
+        }
+
+        *node = std::move((*node)->mNext);
         break;
       }
       cntr = cntr->Parent();
@@ -474,8 +549,7 @@ EventTree::Mutated(AccMutationEvent* aEv)
 
         if (prevHideEvent->mNextSibling == hideEvent->mAccessible) {
           hideEvent->mAccessible->AppendTextTo(prevTextEvent->mModifiedText);
-        }
-        else if (prevHideEvent->mPrevSibling == hideEvent->mAccessible) {
+        } else if (prevHideEvent->mPrevSibling == hideEvent->mAccessible) {
           uint32_t oldLen = prevTextEvent->GetLength();
           hideEvent->mAccessible->AppendTextTo(prevTextEvent->mModifiedText);
           prevTextEvent->mStart -= prevTextEvent->GetLength() - oldLen;
@@ -483,23 +557,22 @@ EventTree::Mutated(AccMutationEvent* aEv)
 
         hideEvent->mTextChangeEvent.swap(prevEvent->mTextChangeEvent);
       }
-    }
-    else {
+    } else {
       AccTextChangeEvent* prevTextEvent = prevEvent->mTextChangeEvent;
       if (prevTextEvent) {
         if (aEv->mAccessible->IndexInParent() ==
             prevEvent->mAccessible->IndexInParent() + 1) {
-          // If tail target was inserted after this target, i.e. tail target is next
-          // sibling of this target.
+          // If tail target was inserted after this target, i.e. tail target is
+          // next sibling of this target.
           aEv->mAccessible->AppendTextTo(prevTextEvent->mModifiedText);
-        }
-        else if (aEv->mAccessible->IndexInParent() ==
-                 prevEvent->mAccessible->IndexInParent() - 1) {
+        } else if (aEv->mAccessible->IndexInParent() ==
+                   prevEvent->mAccessible->IndexInParent() - 1) {
           // If tail target was inserted before this target, i.e. tail target is
           // previous sibling of this target.
           nsAutoString startText;
           aEv->mAccessible->AppendTextTo(startText);
-          prevTextEvent->mModifiedText = startText + prevTextEvent->mModifiedText;
+          prevTextEvent->mModifiedText =
+              startText + prevTextEvent->mModifiedText;
           prevTextEvent->mStart -= startText.Length();
         }
 
@@ -522,7 +595,7 @@ EventTree::Mutated(AccMutationEvent* aEv)
   }
 
   int32_t offset = mContainer->AsHyperText()->GetChildOffset(aEv->mAccessible);
-  aEv->mTextChangeEvent =
-    new AccTextChangeEvent(mContainer, offset, text, aEv->IsShow(),
-                           aEv->mIsFromUserInput ? eFromUserInput : eNoUserInput);
+  aEv->mTextChangeEvent = new AccTextChangeEvent(
+      mContainer, offset, text, aEv->IsShow(),
+      aEv->mIsFromUserInput ? eFromUserInput : eNoUserInput);
 }

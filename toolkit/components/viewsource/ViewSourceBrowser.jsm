@@ -4,20 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { utils: Cu, interfaces: Ci, classes: Cc } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Deprecated",
-  "resource://gre/modules/Deprecated.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
 
 const BUNDLE_URL = "chrome://global/locale/viewSource.properties";
 
 const FRAME_SCRIPT = "chrome://global/content/viewSource-content.js";
 
-this.EXPORTED_SYMBOLS = ["ViewSourceBrowser"];
+var EXPORTED_SYMBOLS = ["ViewSourceBrowser"];
 
 // Keep a set of browsers we've seen before, so we can load our frame script as
 // needed into any new ones.
@@ -28,15 +25,11 @@ var gKnownBrowsers = new WeakSet();
  * It's companion frame script, viewSource-content.js, needs to be loaded as a
  * frame script into the browser being managed.
  *
- * For a view source window using viewSource.xul, the script viewSource.js in
- * the window extends an instance of this with more window specific functions.
- * The page script takes care of loading the companion frame script.
- *
  * For a view source tab (or some other non-window case), an instance of this is
  * created by viewSourceUtils.js to wrap the <browser>.  The frame script will
  * be loaded by this module at construction time.
  */
-this.ViewSourceBrowser = function ViewSourceBrowser(aBrowser) {
+function ViewSourceBrowser(aBrowser) {
   this._browser = aBrowser;
   this.init();
 }
@@ -75,17 +68,11 @@ ViewSourceBrowser.prototype = {
    * executes, we can assume the DOM content has not yet loaded.
    */
   init() {
-    this.messages.forEach((msgName) => {
+    this.messages.forEach(msgName => {
       this.mm.addMessageListener(msgName, this);
     });
 
-    // If we have a known <browser> already, load the frame script here.  This
-    // is not true for the window case, as the element does not exist until the
-    // XUL document loads.  For that case, the frame script is loaded by
-    // viewSource.js.
-    if (this._browser) {
-      this.loadFrameScript();
-    }
+    this.loadFrameScript();
   },
 
   /**
@@ -93,7 +80,7 @@ ViewSourceBrowser.prototype = {
    * clean up event and message listeners.
    */
   uninit() {
-    this.messages.forEach((msgName) => {
+    this.messages.forEach(msgName => {
       this.mm.removeMessageListener(msgName, this);
     });
   },
@@ -102,6 +89,12 @@ ViewSourceBrowser.prototype = {
    * For a new browser we've not seen before, load the frame script.
    */
   loadFrameScript() {
+    // Check for a browser first. There won't be one for the window case
+    // (still used by other applications like Thunderbird), as the element
+    // does not exist until the XUL document loads.
+    if (!this.browser) {
+      return;
+    }
     if (!gKnownBrowsers.has(this.browser)) {
       gKnownBrowsers.add(this.browser);
       this.mm.loadFrameScript(FRAME_SCRIPT, false);
@@ -155,14 +148,13 @@ ViewSourceBrowser.prototype = {
     if (this._bundle) {
       return this._bundle;
     }
-    return this._bundle = Services.strings.createBundle(BUNDLE_URL);
+    return (this._bundle = Services.strings.createBundle(BUNDLE_URL));
   },
 
   /**
    * Loads the source for a URL while applying some optional features if
    * enabled.
    *
-   * For the viewSource.xul window, this is called by onXULLoaded above.
    * For view source in a specific browser, this is manually called after
    * this object is constructed.
    *
@@ -186,17 +178,20 @@ ViewSourceBrowser.prototype = {
     }
 
     if (browser) {
-      this.browser.relatedBrowser = browser;
+      this.browser.sameProcessAsFrameLoader = browser.frameLoader;
 
       // If we're dealing with a remote browser, then the browser
       // for view source needs to be remote as well.
-      this.updateBrowserRemoteness(browser.isRemoteBrowser);
+      this.updateBrowserRemoteness(browser.remoteType);
     } else if (outerWindowID) {
       throw new Error("Must supply the browser if passing the outerWindowID");
     }
 
-    this.sendAsyncMessage("ViewSource:LoadSource",
-                          { URL, outerWindowID, lineNumber });
+    this.sendAsyncMessage("ViewSource:LoadSource", {
+      URL,
+      outerWindowID,
+      lineNumber,
+    });
   },
 
   /**
@@ -208,8 +203,11 @@ ViewSourceBrowser.prototype = {
    * @param baseURI base URI of the original document
    */
   loadViewSourceFromSelection(URL, drawSelection, baseURI) {
-    this.sendAsyncMessage("ViewSource:LoadSourceWithSelection",
-                          { URL, drawSelection, baseURI });
+    this.sendAsyncMessage("ViewSource:LoadSourceWithSelection", {
+      URL,
+      drawSelection,
+      baseURI,
+    });
   },
 
   /**
@@ -221,9 +219,11 @@ ViewSourceBrowser.prototype = {
    *        True if the browser should be made remote. If the browsers
    *        remoteness already matches this value, this function does
    *        nothing.
+   * @param remoteType
+   *        The type of remote browser process.
    */
-  updateBrowserRemoteness(shouldBeRemote) {
-    if (this.browser.isRemoteBrowser != shouldBeRemote) {
+  updateBrowserRemoteness(remoteType) {
+    if (this.browser.remoteType != remoteType) {
       // In this base case, where we are handed a <browser> someone else is
       // managing, we don't know for sure that it's safe to toggle remoteness.
       // For view source in a window, this is overridden to actually do the
@@ -242,22 +242,26 @@ ViewSourceBrowser.prototype = {
     let window = Services.wm.getMostRecentWindow(null);
 
     let ok = Services.prompt.prompt(
-        window,
-        this.bundle.GetStringFromName("goToLineTitle"),
-        this.bundle.GetStringFromName("goToLineText"),
-        input,
-        null,
-        {value:0});
+      window,
+      this.bundle.GetStringFromName("goToLineTitle"),
+      this.bundle.GetStringFromName("goToLineText"),
+      input,
+      null,
+      { value: 0 }
+    );
 
-    if (!ok)
+    if (!ok) {
       return;
+    }
 
     let line = parseInt(input.value, 10);
 
     if (!(line > 0)) {
-      Services.prompt.alert(window,
-                            this.bundle.GetStringFromName("invalidInputTitle"),
-                            this.bundle.GetStringFromName("invalidInputText"));
+      Services.prompt.alert(
+        window,
+        this.bundle.GetStringFromName("invalidInputTitle"),
+        this.bundle.GetStringFromName("invalidInputText")
+      );
       this.promptAndGoToLine();
     } else {
       this.goToLine(line);
@@ -294,9 +298,11 @@ ViewSourceBrowser.prototype = {
    */
   onGoToLineFailed() {
     let window = Services.wm.getMostRecentWindow(null);
-    Services.prompt.alert(window,
-                          this.bundle.GetStringFromName("outOfRangeTitle"),
-                          this.bundle.GetStringFromName("outOfRangeText"));
+    Services.prompt.alert(
+      window,
+      this.bundle.GetStringFromName("outOfRangeTitle"),
+      this.bundle.GetStringFromName("outOfRangeText")
+    );
     this.promptAndGoToLine();
   },
 
@@ -317,7 +323,6 @@ ViewSourceBrowser.prototype = {
   storeSyntaxHighlighting(state) {
     Services.prefs.setBoolPref("view_source.syntax_highlight", state);
   },
-
 };
 
 /**
@@ -326,6 +331,5 @@ ViewSourceBrowser.prototype = {
  *        String containing the URI
  */
 ViewSourceBrowser.isViewSource = function(uri) {
-  return uri.startsWith("view-source:") ||
-         (uri.startsWith("data:") && uri.includes("MathML"));
+  return uri.startsWith("view-source:");
 };

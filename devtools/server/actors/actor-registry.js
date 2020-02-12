@@ -5,28 +5,30 @@
 "use strict";
 
 const protocol = require("devtools/shared/protocol");
-const { method, custom, Arg, Option, RetVal } = protocol;
 
-const { Cu, CC, components } = require("chrome");
-const Services = require("Services");
-const { DebuggerServer } = require("devtools/server/main");
-const { registerActor, unregisterActor } = require("devtools/server/actors/utils/actor-registry-utils");
-const { actorActorSpec, actorRegistrySpec } = require("devtools/shared/specs/actor-registry");
+const {
+  registerActor,
+  unregisterActor,
+} = require("devtools/server/actors/utils/actor-registry-utils");
+const {
+  actorActorSpec,
+  actorRegistrySpec,
+} = require("devtools/shared/specs/actor-registry");
 
 /**
  * The ActorActor gives you a handle to an actor you've dynamically
  * registered and allows you to unregister it.
  */
 const ActorActor = protocol.ActorClassWithSpec(actorActorSpec, {
-  initialize: function (conn, options) {
+  initialize: function(conn, options) {
     protocol.Actor.prototype.initialize.call(this, conn);
 
     this.options = options;
   },
 
-  unregister: function () {
+  unregister: function() {
     unregisterActor(this.options);
-  }
+  },
 });
 
 /*
@@ -34,21 +36,21 @@ const ActorActor = protocol.ActorClassWithSpec(actorActorSpec, {
  * server. This is particularly useful for addons.
  */
 const ActorRegistryActor = protocol.ActorClassWithSpec(actorRegistrySpec, {
-  initialize: function (conn) {
+  initialize: function(conn) {
     protocol.Actor.prototype.initialize.call(this, conn);
   },
 
-  registerActor: function (sourceText, fileName, options) {
+  registerActor: function(sourceText, fileName, options) {
     return registerActor(sourceText, fileName, options).then(() => {
-      let { constructor, type } = options;
+      const { constructor, type } = options;
 
       return ActorActor(this.conn, {
         name: constructor,
         tab: type.tab,
-        global: type.global
+        global: type.global,
       });
     });
-  }
+  },
 });
 
 exports.ActorRegistryActor = ActorRegistryActor;

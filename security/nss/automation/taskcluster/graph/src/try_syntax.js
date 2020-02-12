@@ -3,8 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import * as queue from "./queue";
+import path from 'path'
+import fs from 'fs'
 import intersect from "intersect";
 import parse_args from "minimist";
+import util from "util";
+import child_process from 'child_process';
+
+let execFile = util.promisify(child_process.execFile);
 
 function parseOptions(opts) {
   opts = parse_args(opts.split(/\s+/), {
@@ -22,8 +28,10 @@ function parseOptions(opts) {
   }
 
   // Parse platforms.
-  let allPlatforms = ["linux", "linux64", "linux64-asan", "win64", "arm",
-                      "linux64-gyp", "linux64-gyp-asan", "linux64-fuzz"];
+  let allPlatforms = ["linux", "linux64", "linux64-asan", "linux64-fips",
+                      "win", "win64", "win-make", "win64-make",
+                      "linux64-make", "linux-make", "linux-fuzz",
+                      "linux64-fuzz", "aarch64", "mac"];
   let platforms = intersect(opts.platform.split(/\s*,\s*/), allPlatforms);
 
   // If the given value is nonsense or "none" default to all platforms.
@@ -34,8 +42,8 @@ function parseOptions(opts) {
   // Parse unit tests.
   let aliases = {"gtests": "gtest"};
   let allUnitTests = ["bogo", "crmf", "chains", "cipher", "db", "ec", "fips",
-                      "gtest", "lowhash", "merge", "sdr", "smime", "tools",
-                      "ssl", "mpi", "scert", "spki"];
+                      "gtest", "interop", "lowhash", "merge", "sdr", "smime", "tools",
+                      "ssl", "mpi", "scert", "spki", "policy", "tlsfuzzer"];
   let unittests = intersect(opts.unittests.split(/\s*,\s*/).map(t => {
     return aliases[t] || t;
   }), allUnitTests);
@@ -49,7 +57,7 @@ function parseOptions(opts) {
   }
 
   // Parse tools.
-  let allTools = ["clang-format", "scan-build"];
+  let allTools = ["clang-format", "scan-build", "coverity", "hacl", "saw", "abi", "coverage"];
   let tools = intersect(opts.tools.split(/\s*,\s*/), allTools);
 
   // If the given value is "all" run all tools.
@@ -75,18 +83,21 @@ function filter(opts) {
     // are not affected by platform or build type selectors.
     if (task.platform == "nss-tools") {
       return opts.tools.some(tool => {
-        return task.symbol.toLowerCase().startsWith(tool);
+        return task.symbol.toLowerCase().startsWith(tool) ||
+               (task.group && task.group.toLowerCase().startsWith(tool));
       });
     }
 
     // Filter unit tests.
     if (task.tests) {
       let found = opts.unittests.some(test => {
-        // TODO: think of something more intelligent here.
-        if (task.symbol.toLowerCase().startsWith("mpi") && test == "mpi") {
+        if (task.group && task.group.toLowerCase() == "ssl" && test == "ssl") {
           return true;
         }
-        return (task.group || task.symbol).toLowerCase().startsWith(test);
+        if (task.group && task.group.toLowerCase() == "cipher" && test == "cipher") {
+          return true;
+        }
+        return task.symbol.toLowerCase().startsWith(test);
       });
 
       if (!found) {
@@ -105,12 +116,16 @@ function filter(opts) {
     let found = opts.platforms.some(platform => {
       let aliases = {
         "linux": "linux32",
+        "linux-fuzz": "linux32",
         "linux64-asan": "linux64",
+        "linux64-fips": "linux64",
         "linux64-fuzz": "linux64",
-        "linux64-gyp": "linux64",
-        "linux64-gyp-asan": "linux64",
+        "linux64-make": "linux64",
+        "linux-make": "linux32",
+        "win64-make": "windows2012-64",
+        "win-make": "windows2012-32",
         "win64": "windows2012-64",
-        "arm": "linux32"
+        "win": "windows2012-32"
       };
 
       // Check the platform name.
@@ -119,13 +134,12 @@ function filter(opts) {
       // Additional checks.
       if (platform == "linux64-asan") {
         keep &= coll("asan");
-      } else if (platform == "arm") {
-        keep &= coll("arm-opt") || coll("arm-debug");
-      } else if (platform == "linux64-gyp") {
-        keep &= coll("gyp");
-      } else if (platform == "linux64-gyp-asan") {
-        keep &= coll("gyp-asan");
-      } else if (platform == "linux64-fuzz") {
+      } else if (platform == "linux64-fips") {
+        keep &= coll("fips");
+      } else if (platform == "linux64-make" || platform == "linux-make" ||
+                 platform == "win64-make" || platform == "win-make") {
+        keep &= coll("make");
+      } else if (platform == "linux64-fuzz" || platform == "linux-fuzz") {
         keep &= coll("fuzz");
       } else {
         keep &= coll("opt") || coll("debug");
@@ -139,21 +153,47 @@ function filter(opts) {
     }
 
     // Finally, filter by build type.
-    let isDebug = coll("debug") || coll("asan") || coll("arm-debug") ||
-                  coll("gyp") || coll("fuzz");
+    let isDebug = coll("debug") || coll("asan") || coll("make") ||
+                  coll("fuzz");
     return (isDebug && opts.builds.includes("d")) ||
            (!isDebug && opts.builds.includes("o"));
   }
 }
 
-export function initFilter() {
-  let comment = process.env.TC_COMMENT || "";
+async function getCommitComment() {
+  const res = await execFile('hg', ['log', '-r', '.', '-T', '{desc}']);
+  return res.stdout;
+};
+
+export async function initFilter() {
+  let comment = await getCommitComment();
+
+  // Load try_task_config.json
+  // Add parameters to queue for created tasks
+  let config_path = path.normalize(path.join(__dirname, '../../../../try_task_config.json'))
+  if (fs.existsSync(config_path)) {
+    var payload = JSON.parse(fs.readFileSync(config_path));
+    if (payload['version'] == 2) {
+      queue.addParameters(payload['parameters']);
+    }
+  }
 
   // Check for try syntax in changeset comment.
-  let match = comment.match(/^\s*try:\s*(.*)\s*$/);
+  let match = comment.match(/\btry:\s*(.*)\s*$/m);
 
   // Add try syntax filter.
   if (match) {
-    queue.filter(filter(parseOptions(match[1])));
+    let match1 = match[1];
+    queue.filter(filter(parseOptions(match1)));
+
+    if (match1.includes("--nspr-patch")) {
+      queue.map(task => {
+        if (!task.env) {
+          task.env = {};
+        }
+        task.env.ALLOW_NSPR_PATCH = "1";
+        return task;
+      });
+    }
   }
 }

@@ -2,38 +2,35 @@
  * Test for Bidi restrictions on IDNs from RFC 3454
  */
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
 var idnService;
 
-function expected_pass(inputIDN)
-{
+function expected_pass(inputIDN) {
   var isASCII = {};
   var displayIDN = idnService.convertToDisplayIDN(inputIDN, isASCII);
-  do_check_eq(displayIDN, inputIDN);
+  Assert.equal(displayIDN, inputIDN);
 }
 
-function expected_fail(inputIDN)
-{
+function expected_fail(inputIDN) {
   var isASCII = {};
   var displayIDN = "";
 
   try {
     displayIDN = idnService.convertToDisplayIDN(inputIDN, isASCII);
-  }
-  catch(e) {}
+  } catch (e) {}
 
-  do_check_neq(displayIDN, inputIDN);
+  Assert.notEqual(displayIDN, inputIDN);
 }
 
 function run_test() {
-   // add an IDN whitelist pref
-  var pbi = Cc["@mozilla.org/preferences-service;1"]
-    .getService(Ci.nsIPrefBranch);
+  // add an IDN whitelist pref
+  var pbi = Cc["@mozilla.org/preferences-service;1"].getService(
+    Ci.nsIPrefBranch
+  );
   pbi.setBoolPref("network.IDN.whitelist.com", true);
- 
-  idnService = Cc["@mozilla.org/network/idn-service;1"]
-    .getService(Ci.nsIIDNService);
+
+  idnService = Cc["@mozilla.org/network/idn-service;1"].getService(
+    Ci.nsIIDNService
+  );
   /*
    * In any profile that specifies bidirectional character handling, all
    * three of the following requirements MUST be met:
@@ -49,7 +46,9 @@ function run_test() {
   expected_fail("foo\200ebar.com");
   // 200F; RIGHT-TO-LEFT MARK
   //  Note: this is an RTL IDN so that it doesn't fail test 2) below
-  expected_fail("\u200f\u0645\u062B\u0627\u0644.\u0622\u0632\u0645\u0627\u06CC\u0634\u06CC");
+  expected_fail(
+    "\u200f\u0645\u062B\u0627\u0644.\u0622\u0632\u0645\u0627\u06CC\u0634\u06CC"
+  );
   // 202A; LEFT-TO-RIGHT EMBEDDING
   expected_fail("foo\u202abar.com");
   // 202B; RIGHT-TO-LEFT EMBEDDING
@@ -76,7 +75,7 @@ function run_test() {
   /*
    * 2) If a string contains any RandALCat character, the string MUST NOT
    *    contain any LCat character.
-   */   
+   */
 
   // www.מיץpetel.com is invalid
   expected_fail("www.\u05DE\u05D9\u05E5petel.com");
@@ -103,4 +102,3 @@ function run_test() {
   // But www.מיץ1פטל.com is fine
   expected_pass("www.\u05DE\u05D9\u05E51\u05E4\u05D8\u05DC.com");
 }
-  

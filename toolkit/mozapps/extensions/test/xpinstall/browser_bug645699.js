@@ -8,27 +8,38 @@ function test() {
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
 
-  var pm = Services.perms;
-  pm.add(makeURI("http://example.org/"), "install", pm.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    "http://example.org/",
+    "install",
+    Services.perms.ALLOW_ACTION
+  );
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "bug645699.html");
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(gBrowser, TESTROOT + "bug645699.html");
 }
 
 function allow_blocked(installInfo) {
-  is(installInfo.browser, gBrowser.selectedBrowser, "Install should have been triggered by the right browser");
-  is(installInfo.originatingURI.spec, gBrowser.currentURI.spec, "Install should have been triggered by the right uri");
+  is(
+    installInfo.browser,
+    gBrowser.selectedBrowser,
+    "Install should have been triggered by the right browser"
+  );
+  is(
+    installInfo.originatingURI.spec,
+    gBrowser.currentURI.spec,
+    "Install should have been triggered by the right uri"
+  );
   return false;
 }
 
-function confirm_install(window) {
+function confirm_install(panel) {
   ok(false, "Should not see the install dialog");
   return false;
 }
 
 function finish_test(count) {
   is(count, 0, "0 Add-ons should have been successfully installed");
-  Services.perms.remove(makeURI("http://addons.mozilla.org"), "install");
+  PermissionTestUtils.remove("http://addons.mozilla.org", "install");
 
   gBrowser.removeCurrentTab();
   Harness.finish();

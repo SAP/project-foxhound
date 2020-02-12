@@ -5,13 +5,17 @@
 var util = {
   // Compare the contents of two ArrayBuffer(View)s
   memcmp: function util_memcmp(x, y) {
-    if (!x || !y) { return false; }
+    if (!x || !y) {
+      return false;
+    }
 
     var xb = new Uint8Array(x);
     var yb = new Uint8Array(y);
-    if (x.byteLength !== y.byteLength) { return false; }
+    if (x.byteLength !== y.byteLength) {
+      return false;
+    }
 
-    for (var i=0; i<xb.byteLength; ++i) {
+    for (var i = 0; i < xb.byteLength; ++i) {
       if (xb[i] !== yb[i]) {
         return false;
       }
@@ -23,8 +27,8 @@ var util = {
   abv2hex: function util_abv2hex(abv) {
     var b = new Uint8Array(abv);
     var hex = "";
-    for (var i=0; i <b.length; ++i) {
-      var zeropad = (b[i] < 0x10) ? "0" : "";
+    for (var i = 0; i < b.length; ++i) {
+      var zeropad = b[i] < 0x10 ? "0" : "";
       hex += zeropad + b[i].toString(16);
     }
     return hex;
@@ -37,15 +41,15 @@ var util = {
     }
 
     var abv = new Uint8Array(hex.length / 2);
-    for (var i=0; i<abv.length; ++i) {
-      abv[i] = parseInt(hex.substr(2*i, 2), 16);
+    for (var i = 0; i < abv.length; ++i) {
+      abv[i] = parseInt(hex.substr(2 * i, 2), 16);
     }
     return abv;
   },
 
-  clone: function (obj) {
+  clone(obj) {
     return new Promise(resolve => {
-      let {port1, port2} = new MessageChannel();
+      let { port1, port2 } = new MessageChannel();
 
       // Wait for the cloned object to arrive.
       port1.onmessage = msg => resolve(msg.data);
@@ -55,7 +59,7 @@ var util = {
     });
   },
 
-  cloneExportCompareKeys: function (key) {
+  cloneExportCompareKeys(key) {
     return util.clone(key).then(clone => {
       var exports = [];
 
@@ -79,17 +83,15 @@ var util = {
         return clone;
       });
     });
-  }
+  },
 };
 
 function exists(x) {
-  return (x !== undefined);
+  return x !== undefined;
 }
 
 function hasFields(object, fields) {
-  return fields
-          .map(x => exists(object[x]))
-          .reduce((x,y) => (x && y));
+  return fields.map(x => exists(object[x])).reduce((x, y) => x && y);
 }
 
 function hasKeyFields(x) {
@@ -105,7 +107,7 @@ function shallowArrayEquals(x, y) {
     return false;
   }
 
-  for (i in x) {
+  for (let i in x) {
     if (x[i] != y[i]) {
       return false;
     }

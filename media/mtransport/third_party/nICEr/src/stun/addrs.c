@@ -30,9 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-static char *RCSSTRING __UNUSED__="$Id: addrs.c,v 1.2 2008/04/28 18:21:30 ekr Exp $";
-
 #include <csi_platform.h>
 #include <assert.h>
 #include <string.h>
@@ -149,9 +146,11 @@ abort:
 static int
 stun_get_win32_addrs(nr_local_addr addrs[], int maxaddrs, int *count)
 {
-    int r,_status;
+    int r, _status;
     PIP_ADAPTER_ADDRESSES AdapterAddresses = NULL, tmpAddress = NULL;
-    ULONG buflen;
+    // recomended per https://msdn.microsoft.com/en-us/library/windows/desktop/aa365915(v=vs.85).aspx
+    static const ULONG initialBufLen = 15000;
+    ULONG buflen = initialBufLen;
     char bin_hashed_ifname[NR_MD5_HASH_LENGTH];
     char hex_hashed_ifname[MAXIFNAME];
     int n = 0;
@@ -159,31 +158,31 @@ stun_get_win32_addrs(nr_local_addr addrs[], int maxaddrs, int *count)
     *count = 0;
 
     if (maxaddrs <= 0)
-      ABORT(R_INTERNAL);
+      ABORT(R_BAD_ARGS);
 
-    /* Call GetAdaptersAddresses() twice.  First, just to get the buf length */
+    /* According to MSDN (see above) we have try GetAdapterAddresses() multiple times */
+    for (n = 0; n < 5; n++) {
+      AdapterAddresses = (PIP_ADAPTER_ADDRESSES) RMALLOC(buflen);
+      if (AdapterAddresses == NULL) {
+        r_log(NR_LOG_STUN, LOG_ERR, "Error allocating buf for GetAdaptersAddresses()");
+        ABORT(R_NO_MEMORY);
+      }
 
-    buflen = 0;
-
-    r = GetAdaptersAddresses(AF_UNSPEC, 0, NULL, AdapterAddresses, &buflen);
-    if (r != ERROR_BUFFER_OVERFLOW) {
-      r_log(NR_LOG_STUN, LOG_ERR, "Error getting buf len from GetAdaptersAddresses()");
-      ABORT(R_INTERNAL);
+      r = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL, AdapterAddresses, &buflen);
+      if (r == NO_ERROR) {
+        break;
+      }
+      r_log(NR_LOG_STUN, LOG_ERR, "GetAdaptersAddresses() returned error (%d)", r);
+      RFREE(AdapterAddresses);
+      AdapterAddresses = NULL;
     }
 
-    AdapterAddresses = (PIP_ADAPTER_ADDRESSES) RMALLOC(buflen);
-    if (AdapterAddresses == NULL) {
-      r_log(NR_LOG_STUN, LOG_ERR, "Error allocating buf for GetAdaptersAddresses()");
-      ABORT(R_NO_MEMORY);
-    }
-
-    /* for real, this time */
-
-    r = GetAdaptersAddresses(AF_UNSPEC, 0, NULL, AdapterAddresses, &buflen);
-    if (r != NO_ERROR) {
-      r_log(NR_LOG_STUN, LOG_ERR, "Error getting addresses from GetAdaptersAddresses()");
+    if (n >= 5) {
+      r_log(NR_LOG_STUN, LOG_ERR, "5 failures calling GetAdaptersAddresses()");
       ABORT(R_INTERNAL);
     }
+
+    n = 0;
 
     /* Loop through the adapters */
 
@@ -258,7 +257,10 @@ stun_getifaddrs(nr_local_addr addrs[], int maxaddrs, int *count)
   struct ifaddrs* if_addrs_head=NULL;
   struct ifaddrs* if_addr;
 
-  *count=0;
+  *count = 0;
+
+  if (maxaddrs <= 0)
+    ABORT(R_BAD_ARGS);
 
   if (getifaddrs(&if_addrs_head) == -1) {
     r_log(NR_LOG_STUN, LOG_ERR, "getifaddrs error e = %d", errno);
@@ -322,7 +324,7 @@ stun_getifaddrs(nr_local_addr addrs[], int maxaddrs, int *count)
             addrs[*count].interface.type = NR_INTERFACE_TYPE_UNKNOWN;
             addrs[*count].interface.estimated_speed = 0;
 #endif
-            strlcpy(addrs[*count].addr.ifname, if_addr->ifa_name, sizeof(addrs[*count].addr.ifname));
+            (void)strlcpy(addrs[*count].addr.ifname, if_addr->ifa_name, sizeof(addrs[*count].addr.ifname));
             ++(*count);
           }
           break;
@@ -367,10 +369,21 @@ nr_stun_remove_duplicate_addrs(nr_local_addr addrs[], int remove_loopback, int r
     nr_local_addr *tmp = 0;
     int i;
     int n;
+    int contains_regular_ipv6 = 0;
 
     tmp = RMALLOC(*count * sizeof(*tmp));
     if (!tmp)
         ABORT(R_NO_MEMORY);
+
+    for (i = 0; i < *count; ++i) {
+        if (nr_transport_addr_is_teredo(&addrs[i].addr)) {
+            addrs[i].interface.type |= NR_INTERFACE_TYPE_TEREDO;
+        }
+        else if (addrs[i].addr.ip_version == NR_IPV6 &&
+                 !nr_transport_addr_is_mac_based(&addrs[i].addr)) {
+            contains_regular_ipv6 = 1;
+        }
+    }
 
     n = 0;
     for (i = 0; i < *count; ++i) {
@@ -381,9 +394,16 @@ nr_stun_remove_duplicate_addrs(nr_local_addr addrs[], int remove_loopback, int r
             /* skip addrs[i], it's a loopback */
         }
         else if (remove_link_local &&
-                 addrs[i].addr.ip_version == NR_IPV6 &&
                  nr_transport_addr_is_link_local(&addrs[i].addr)) {
             /* skip addrs[i], it's a link-local address */
+        }
+        else if (contains_regular_ipv6 &&
+                 nr_transport_addr_is_mac_based(&addrs[i].addr)) {
+            /* skip addrs[i], it's MAC based */
+        }
+        else if (contains_regular_ipv6 &&
+                 nr_transport_addr_is_teredo(&addrs[i].addr)) {
+            /* skip addrs[i], it's a Teredo address */
         }
         else {
             /* otherwise, copy it to the temporary array */
@@ -395,6 +415,7 @@ nr_stun_remove_duplicate_addrs(nr_local_addr addrs[], int remove_loopback, int r
 
     *count = n;
 
+    memset(addrs, 0, *count * sizeof(*addrs));
     /* copy temporary array into passed in/out array */
     for (i = 0; i < *count; ++i) {
         if ((r=nr_local_addr_copy(&addrs[i], &tmp[i])))
@@ -410,7 +431,7 @@ nr_stun_remove_duplicate_addrs(nr_local_addr addrs[], int remove_loopback, int r
 #ifndef USE_PLATFORM_NR_STUN_GET_ADDRS
 
 int
-nr_stun_get_addrs(nr_local_addr addrs[], int maxaddrs, int drop_loopback, int drop_link_local, int *count)
+nr_stun_get_addrs(nr_local_addr addrs[], int maxaddrs, int *count)
 {
     int _status=0;
     int i;
@@ -422,11 +443,9 @@ nr_stun_get_addrs(nr_local_addr addrs[], int maxaddrs, int drop_loopback, int dr
     _status = stun_getifaddrs(addrs, maxaddrs, count);
 #endif
 
-    nr_stun_remove_duplicate_addrs(addrs, drop_loopback, drop_link_local, count);
-
     for (i = 0; i < *count; ++i) {
-    nr_local_addr_fmt_info_string(addrs+i,typestr,sizeof(typestr));
-        r_log(NR_LOG_STUN, LOG_DEBUG, "Address %d: %s on %s, type: %s\n",
+      nr_local_addr_fmt_info_string(addrs+i,typestr,sizeof(typestr));
+      r_log(NR_LOG_STUN, LOG_DEBUG, "Address %d: %s on %s, type: %s\n",
             i,addrs[i].addr.as_string,addrs[i].addr.ifname,typestr);
     }
 

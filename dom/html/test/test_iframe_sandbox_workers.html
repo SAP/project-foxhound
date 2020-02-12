@@ -7,8 +7,8 @@ Implement HTML5 sandbox attribute for IFRAMEs - tests for workers
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 341604</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <script type="application/javascript">
@@ -20,7 +20,7 @@ SimpleTest.waitForExplicitFinish();
 // 'allow-same-origin' to communicate pass/fail back to this main page.
 // it expects to be called with an object like {ok: true/false, desc:
 // <description of the test> which it then forwards to ok()
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 
 function receiveMessage(event)
 {

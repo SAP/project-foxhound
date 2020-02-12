@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check that requesting a thread-lifetime actor twice for the same
@@ -8,46 +11,60 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
-function run_test()
-{
+function run_test() {
+  Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+  });
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-grips");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-grips", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-grips", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront = threadFront;
       test_thread_lifetime();
     });
   });
   do_test_pending();
 }
 
-function test_thread_lifetime()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let pauseGrip = aPacket.frame.arguments[0];
+function test_thread_lifetime() {
+  gThreadFront.once("paused", function(packet) {
+    const pauseGrip = packet.frame.arguments[0];
 
-    gClient.request({ to: pauseGrip.actor, type: "threadGrip" }, function (aResponse) {
+    gClient.request({ to: pauseGrip.actor, type: "threadGrip" }, function(
+      response
+    ) {
       // Successful promotion won't return an error.
-      do_check_eq(aResponse.error, undefined);
+      Assert.equal(response.error, undefined);
 
-      let threadGrip1 = aResponse.from;
+      const threadGrip1 = response.from;
 
-      gClient.request({ to: pauseGrip.actor, type: "threadGrip" }, function (aResponse) {
-        do_check_eq(threadGrip1, aResponse.from);
-        gThreadClient.resume(function () {
+      gClient.request({ to: pauseGrip.actor, type: "threadGrip" }, function(
+        response
+      ) {
+        Assert.equal(threadGrip1, response.from);
+        gThreadFront.resume().then(function() {
           finishClient(gClient);
         });
       });
     });
   });
 
-  gDebuggee.eval("(" + function () {
-    function stopMe(arg1) {
-      debugger;
-    }
-    stopMe({obj: true});
-  } + ")()");
+  gDebuggee.eval(
+    "(" +
+      function() {
+        function stopMe(arg1) {
+          debugger;
+        }
+        stopMe({ obj: true });
+      } +
+      ")()"
+  );
 }

@@ -7,50 +7,19 @@
 #ifndef mozilla_dom_TypedArray_h
 #define mozilla_dom_TypedArray_h
 
-#include "jsapi.h"
-#include "jsfriendapi.h"
-#include "js/RootingAPI.h"
-#include "js/TracingAPI.h"
+#include "jsfriendapi.h"  // js::Scalar
+#include "js/ArrayBuffer.h"
+#include "js/SharedArrayBuffer.h"
+#include "js/GCAPI.h"       // JS::AutoCheckCannotGC
+#include "js/RootingAPI.h"  // JS::Rooted
 #include "mozilla/Attributes.h"
 #include "mozilla/Move.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/SpiderMonkeyInterface.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace dom {
-
-/*
- * Class that just handles the JSObject storage and tracing for typed arrays
- */
-struct TypedArrayObjectStorage : AllTypedArraysBase {
-protected:
-  JSObject* mTypedObj;
-  JSObject* mWrappedObj;
-
-  TypedArrayObjectStorage()
-    : mTypedObj(nullptr),
-      mWrappedObj(nullptr)
-  {
-  }
-
-  TypedArrayObjectStorage(TypedArrayObjectStorage&& aOther)
-    : mTypedObj(aOther.mTypedObj),
-      mWrappedObj(aOther.mWrappedObj)
-  {
-    aOther.mTypedObj = nullptr;
-    aOther.mWrappedObj = nullptr;
-  }
-
-public:
-  inline void TraceSelf(JSTracer* trc)
-  {
-    JS::UnsafeTraceRoot(trc, &mTypedObj, "TypedArray.mTypedObj");
-    JS::UnsafeTraceRoot(trc, &mTypedObj, "TypedArray.mWrappedObj");
-  }
-
-private:
-  TypedArrayObjectStorage(const TypedArrayObjectStorage&) = delete;
-};
 
 /*
  * Various typed array classes for argument conversion.  We have a base class
@@ -58,60 +27,48 @@ private:
  * a subclass of the base class that supports creation of a relevant typed array
  * or array buffer object.
  */
-template<typename T,
-         JSObject* UnwrapArray(JSObject*),
-         void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**)>
-struct TypedArray_base : public TypedArrayObjectStorage {
+template <typename T, JSObject* UnwrapArray(JSObject*),
+          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**)>
+struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
+                         AllTypedArraysBase {
   typedef T element_type;
 
   TypedArray_base()
-    : mData(nullptr),
-      mLength(0),
-      mShared(false),
-      mComputed(false)
-  {
-  }
+      : mData(nullptr), mLength(0), mShared(false), mComputed(false) {}
 
   TypedArray_base(TypedArray_base&& aOther)
-    : TypedArrayObjectStorage(Move(aOther)),
-      mData(aOther.mData),
-      mLength(aOther.mLength),
-      mShared(aOther.mShared),
-      mComputed(aOther.mComputed)
-  {
+      : SpiderMonkeyInterfaceObjectStorage(std::move(aOther)),
+        mData(aOther.mData),
+        mLength(aOther.mLength),
+        mShared(aOther.mShared),
+        mComputed(aOther.mComputed) {
     aOther.mData = nullptr;
     aOther.mLength = 0;
     aOther.mShared = false;
     aOther.mComputed = false;
   }
 
-private:
+ private:
   mutable T* mData;
   mutable uint32_t mLength;
   mutable bool mShared;
   mutable bool mComputed;
 
-public:
-  inline bool Init(JSObject* obj)
-  {
+ public:
+  inline bool Init(JSObject* obj) {
     MOZ_ASSERT(!inited());
-    mTypedObj = mWrappedObj = UnwrapArray(obj);
+    mImplObj = mWrappedObj = UnwrapArray(obj);
     return inited();
-  }
-
-  inline bool inited() const {
-    return !!mTypedObj;
   }
 
   // About shared memory:
   //
-  // Any DOM TypedArray as well as any DOM ArrayBufferView that does
-  // not represent a JS DataView can map the memory of either a JS
-  // ArrayBuffer or a JS SharedArrayBuffer.  (DataView cannot view
-  // shared memory.)  If the TypedArray maps a SharedArrayBuffer the
-  // Length() and Data() accessors on the DOM view will return zero
-  // and nullptr; to get the actual length and data, call the
-  // LengthAllowShared() and DataAllowShared() accessors instead.
+  // Any DOM TypedArray as well as any DOM ArrayBufferView can map the
+  // memory of either a JS ArrayBuffer or a JS SharedArrayBuffer.  If
+  // the TypedArray maps a SharedArrayBuffer the Length() and Data()
+  // accessors on the DOM view will return zero and nullptr; to get
+  // the actual length and data, call the LengthAllowShared() and
+  // DataAllowShared() accessors instead.
   //
   // Two methods are available for determining if a DOM view maps
   // shared memory.  The IsShared() method is cheap and can be called
@@ -120,7 +77,7 @@ public:
   // value if the view may not have been computed and if the value is
   // known to represent a JS TypedArray.
   //
-  // (Just use JS_IsSharedArrayBuffer() to test if any object is of
+  // (Just use JS::IsSharedArrayBuffer() to test if any object is of
   // that type.)
   //
   // Code that elects to allow views that map shared memory to be used
@@ -150,22 +107,20 @@ public:
     return mShared;
   }
 
-  inline T *Data() const {
+  inline T* Data() const {
     MOZ_ASSERT(mComputed);
-    if (mShared)
-      return nullptr;
+    if (mShared) return nullptr;
     return mData;
   }
 
-  inline T *DataAllowShared() const {
+  inline T* DataAllowShared() const {
     MOZ_ASSERT(mComputed);
     return mData;
   }
 
   inline uint32_t Length() const {
     MOZ_ASSERT(mComputed);
-    if (mShared)
-      return 0;
+    if (mShared) return 0;
     return mLength;
   }
 
@@ -174,70 +129,50 @@ public:
     return mLength;
   }
 
-  inline JSObject *Obj() const {
-    MOZ_ASSERT(inited());
-    return mWrappedObj;
-  }
-
-  inline bool WrapIntoNewCompartment(JSContext* cx)
-  {
-    return JS_WrapObject(cx,
-      JS::MutableHandle<JSObject*>::fromMarkedLocation(&mWrappedObj));
-  }
-
-  inline void ComputeLengthAndData() const
-  {
+  inline void ComputeLengthAndData() const {
     MOZ_ASSERT(inited());
     MOZ_ASSERT(!mComputed);
-    GetLengthAndDataAndSharedness(mTypedObj, &mLength, &mShared, &mData);
+    GetLengthAndDataAndSharedness(mImplObj, &mLength, &mShared, &mData);
     mComputed = true;
   }
 
-private:
+ private:
   TypedArray_base(const TypedArray_base&) = delete;
 };
 
-template<typename T,
-         JSObject* UnwrapArray(JSObject*),
-         T* GetData(JSObject*, bool* isShared, const JS::AutoCheckCannotGC&),
-         void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**),
-         JSObject* CreateNew(JSContext*, uint32_t)>
+template <typename T, JSObject* UnwrapArray(JSObject*),
+          T* GetData(JSObject*, bool* isShared, const JS::AutoRequireNoGC&),
+          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*, T**),
+          JSObject* CreateNew(JSContext*, uint32_t)>
 struct TypedArray
-  : public TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness>
-{
-private:
+    : public TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness> {
+ private:
   typedef TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness> Base;
 
-public:
-  TypedArray()
-    : Base()
-  {}
+ public:
+  TypedArray() : Base() {}
 
-  TypedArray(TypedArray&& aOther)
-    : Base(Move(aOther))
-  {
-  }
+  TypedArray(TypedArray&& aOther) : Base(std::move(aOther)) {}
 
-  static inline JSObject*
-  Create(JSContext* cx, nsWrapperCache* creator, uint32_t length,
-         const T* data = nullptr) {
+  static inline JSObject* Create(JSContext* cx, nsWrapperCache* creator,
+                                 uint32_t length, const T* data = nullptr) {
     JS::Rooted<JSObject*> creatorWrapper(cx);
-    Maybe<JSAutoCompartment> ac;
+    Maybe<JSAutoRealm> ar;
     if (creator && (creatorWrapper = creator->GetWrapperPreserveColor())) {
-      ac.emplace(cx, creatorWrapper);
+      ar.emplace(cx, creatorWrapper);
     }
 
     return CreateCommon(cx, length, data);
   }
 
-  static inline JSObject*
-  Create(JSContext* cx, uint32_t length, const T* data = nullptr) {
+  static inline JSObject* Create(JSContext* cx, uint32_t length,
+                                 const T* data = nullptr) {
     return CreateCommon(cx, length, data);
   }
 
-private:
-  static inline JSObject*
-  CreateCommon(JSContext* cx, uint32_t length, const T* data) {
+ private:
+  static inline JSObject* CreateCommon(JSContext* cx, uint32_t length,
+                                       const T* data) {
     JSObject* obj = CreateNew(cx, length);
     if (!obj) {
       return nullptr;
@@ -249,7 +184,7 @@ private:
       // Data will not be shared, until a construction protocol exists
       // for constructing shared data.
       MOZ_ASSERT(!isShared);
-      memcpy(buf, data, length*sizeof(T));
+      memcpy(buf, data, length * sizeof(T));
     }
     return obj;
   }
@@ -257,36 +192,30 @@ private:
   TypedArray(const TypedArray&) = delete;
 };
 
-template<JSObject* UnwrapArray(JSObject*),
-         void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*,
-                                            uint8_t**),
-         js::Scalar::Type GetViewType(JSObject*)>
+template <JSObject* UnwrapArray(JSObject*),
+          void GetLengthAndDataAndSharedness(JSObject*, uint32_t*, bool*,
+                                             uint8_t**),
+          js::Scalar::Type GetViewType(JSObject*)>
 struct ArrayBufferView_base
-  : public TypedArray_base<uint8_t, UnwrapArray, GetLengthAndDataAndSharedness>
-{
-private:
+    : public TypedArray_base<uint8_t, UnwrapArray,
+                             GetLengthAndDataAndSharedness> {
+ private:
   typedef TypedArray_base<uint8_t, UnwrapArray, GetLengthAndDataAndSharedness>
-          Base;
+      Base;
 
-public:
-  ArrayBufferView_base()
-    : Base()
-  {
-  }
+ public:
+  ArrayBufferView_base() : Base(), mType(js::Scalar::MaxTypedArrayViewType) {}
 
   ArrayBufferView_base(ArrayBufferView_base&& aOther)
-    : Base(Move(aOther)),
-      mType(aOther.mType)
-  {
+      : Base(std::move(aOther)), mType(aOther.mType) {
     aOther.mType = js::Scalar::MaxTypedArrayViewType;
   }
 
-private:
+ private:
   js::Scalar::Type mType;
 
-public:
-  inline bool Init(JSObject* obj)
-  {
+ public:
+  inline bool Init(JSObject* obj) {
     if (!Base::Init(obj)) {
       return false;
     }
@@ -295,8 +224,7 @@ public:
     return true;
   }
 
-  inline js::Scalar::Type Type() const
-  {
+  inline js::Scalar::Type Type() const {
     MOZ_ASSERT(this->inited());
     return mType;
   }
@@ -304,138 +232,65 @@ public:
 
 typedef TypedArray<int8_t, js::UnwrapInt8Array, JS_GetInt8ArrayData,
                    js::GetInt8ArrayLengthAndData, JS_NewInt8Array>
-        Int8Array;
+    Int8Array;
 typedef TypedArray<uint8_t, js::UnwrapUint8Array, JS_GetUint8ArrayData,
                    js::GetUint8ArrayLengthAndData, JS_NewUint8Array>
-        Uint8Array;
-typedef TypedArray<uint8_t, js::UnwrapUint8ClampedArray, JS_GetUint8ClampedArrayData,
-                   js::GetUint8ClampedArrayLengthAndData, JS_NewUint8ClampedArray>
-        Uint8ClampedArray;
+    Uint8Array;
+typedef TypedArray<
+    uint8_t, js::UnwrapUint8ClampedArray, JS_GetUint8ClampedArrayData,
+    js::GetUint8ClampedArrayLengthAndData, JS_NewUint8ClampedArray>
+    Uint8ClampedArray;
 typedef TypedArray<int16_t, js::UnwrapInt16Array, JS_GetInt16ArrayData,
                    js::GetInt16ArrayLengthAndData, JS_NewInt16Array>
-        Int16Array;
+    Int16Array;
 typedef TypedArray<uint16_t, js::UnwrapUint16Array, JS_GetUint16ArrayData,
                    js::GetUint16ArrayLengthAndData, JS_NewUint16Array>
-        Uint16Array;
+    Uint16Array;
 typedef TypedArray<int32_t, js::UnwrapInt32Array, JS_GetInt32ArrayData,
                    js::GetInt32ArrayLengthAndData, JS_NewInt32Array>
-        Int32Array;
+    Int32Array;
 typedef TypedArray<uint32_t, js::UnwrapUint32Array, JS_GetUint32ArrayData,
                    js::GetUint32ArrayLengthAndData, JS_NewUint32Array>
-        Uint32Array;
+    Uint32Array;
 typedef TypedArray<float, js::UnwrapFloat32Array, JS_GetFloat32ArrayData,
                    js::GetFloat32ArrayLengthAndData, JS_NewFloat32Array>
-        Float32Array;
+    Float32Array;
 typedef TypedArray<double, js::UnwrapFloat64Array, JS_GetFloat64ArrayData,
                    js::GetFloat64ArrayLengthAndData, JS_NewFloat64Array>
-        Float64Array;
+    Float64Array;
 typedef ArrayBufferView_base<js::UnwrapArrayBufferView,
                              js::GetArrayBufferViewLengthAndData,
                              JS_GetArrayBufferViewType>
-        ArrayBufferView;
-typedef TypedArray<uint8_t, js::UnwrapArrayBuffer, JS_GetArrayBufferData,
-                   js::GetArrayBufferLengthAndData, JS_NewArrayBuffer>
-        ArrayBuffer;
+    ArrayBufferView;
+typedef TypedArray<uint8_t, JS::UnwrapArrayBuffer, JS::GetArrayBufferData,
+                   JS::GetArrayBufferLengthAndData, JS::NewArrayBuffer>
+    ArrayBuffer;
 
-typedef TypedArray<uint8_t, js::UnwrapSharedArrayBuffer, JS_GetSharedArrayBufferData,
-                   js::GetSharedArrayBufferLengthAndData, JS_NewSharedArrayBuffer>
-        SharedArrayBuffer;
+typedef TypedArray<
+    uint8_t, JS::UnwrapSharedArrayBuffer, JS::GetSharedArrayBufferData,
+    JS::GetSharedArrayBufferLengthAndData, JS::NewSharedArrayBuffer>
+    SharedArrayBuffer;
 
 // A class for converting an nsTArray to a TypedArray
 // Note: A TypedArrayCreator must not outlive the nsTArray it was created from.
 //       So this is best used to pass from things that understand nsTArray to
-//       things that understand TypedArray, as with Promise::ArgumentToJSValue.
-template<typename TypedArrayType>
-class TypedArrayCreator
-{
+//       things that understand TypedArray, as with ToJSValue.
+template <typename TypedArrayType>
+class TypedArrayCreator {
   typedef nsTArray<typename TypedArrayType::element_type> ArrayType;
 
-  public:
-    explicit TypedArrayCreator(const ArrayType& aArray)
-      : mArray(aArray)
-    {}
+ public:
+  explicit TypedArrayCreator(const ArrayType& aArray) : mArray(aArray) {}
 
-    JSObject* Create(JSContext* aCx) const
-    {
-      return TypedArrayType::Create(aCx, mArray.Length(), mArray.Elements());
-    }
+  JSObject* Create(JSContext* aCx) const {
+    return TypedArrayType::Create(aCx, mArray.Length(), mArray.Elements());
+  }
 
-  private:
-    const ArrayType& mArray;
+ private:
+  const ArrayType& mArray;
 };
 
-// A class for rooting an existing TypedArray struct
-template<typename ArrayType>
-class MOZ_RAII TypedArrayRooter : private JS::CustomAutoRooter
-{
-public:
-  template <typename CX>
-  TypedArrayRooter(const CX& cx,
-                   ArrayType* aArray MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
-    JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
-    mArray(aArray)
-  {
-  }
-
-  virtual void trace(JSTracer* trc) override
-  {
-    mArray->TraceSelf(trc);
-  }
-
-private:
-  TypedArrayObjectStorage* const mArray;
-};
-
-// And a specialization for dealing with nullable typed arrays
-template<typename Inner> struct Nullable;
-template<typename ArrayType>
-class MOZ_RAII TypedArrayRooter<Nullable<ArrayType> > :
-    private JS::CustomAutoRooter
-{
-public:
-  template <typename CX>
-  TypedArrayRooter(const CX& cx,
-                   Nullable<ArrayType>* aArray MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
-    JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
-    mArray(aArray)
-  {
-  }
-
-  virtual void trace(JSTracer* trc) override
-  {
-    if (!mArray->IsNull()) {
-      mArray->Value().TraceSelf(trc);
-    }
-  }
-
-private:
-  Nullable<ArrayType>* const mArray;
-};
-
-// Class for easily setting up a rooted typed array object on the stack
-template<typename ArrayType>
-class MOZ_RAII RootedTypedArray final : public ArrayType,
-                                        private TypedArrayRooter<ArrayType>
-{
-public:
-  template <typename CX>
-  explicit RootedTypedArray(const CX& cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
-    ArrayType(),
-    TypedArrayRooter<ArrayType>(cx, this
-                                MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT)
-  {
-  }
-
-  template <typename CX>
-  RootedTypedArray(const CX& cx, JSObject* obj MOZ_GUARD_OBJECT_NOTIFIER_PARAM) :
-    ArrayType(obj),
-    TypedArrayRooter<ArrayType>(cx, this
-                                MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT)
-  {
-  }
-};
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_TypedArray_h */

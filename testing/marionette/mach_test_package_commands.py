@@ -2,9 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import argparse
 import os
 import sys
+
 from functools import partial
 
 from mach.decorators import (
@@ -22,7 +25,6 @@ def run_marionette(context, **kwargs):
     )
     from mozlog.structured import commandline
 
-
     args = argparse.Namespace(**kwargs)
     args.binary = args.binary or context.firefox_bin
     args.e10s = context.mozharness_config.get('e10s', args.e10s)
@@ -30,7 +32,7 @@ def run_marionette(context, **kwargs):
     test_root = os.path.join(context.package_root, 'marionette', 'tests')
     if not args.tests:
         args.tests = [os.path.join(test_root, 'testing', 'marionette', 'harness',
-                                   'marionette', 'tests', 'unit-tests.ini')]
+                                   'marionette_harness', 'tests', 'unit-tests.ini')]
 
     normalize = partial(context.normalize_test_path, test_root)
     args.tests = map(normalize, args.tests)
@@ -64,4 +66,5 @@ class MachCommands(object):
                     'using marionette).',
         parser=setup_marionette_argument_parser)
     def run_marionette_test(self, **kwargs):
+        self.context.activate_mozharness_venv()
         return run_marionette(self.context, **kwargs)

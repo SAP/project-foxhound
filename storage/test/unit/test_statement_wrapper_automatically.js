@@ -6,10 +6,11 @@
 
 // This file tests the functions of mozIStorageStatementWrapper
 
-function setup()
-{
-  getOpenedDatabase().createTable("test", "id INTEGER PRIMARY KEY, val NONE," +
-                                          "alt_val NONE");
+function setup() {
+  getOpenedDatabase().createTable(
+    "test",
+    "id INTEGER PRIMARY KEY, val NONE,alt_val NONE"
+  );
 }
 
 /**
@@ -32,17 +33,17 @@ function setup()
  * @param aReturnedVal
  *        the value retrieved from the database
  */
-function checkVal(aActualVal, aReturnedVal)
-{
-  if (aActualVal instanceof Date) aActualVal = aActualVal.valueOf() * 1000.0;
-  do_check_eq(aActualVal, aReturnedVal);
+function checkVal(aActualVal, aReturnedVal) {
+  if (aActualVal instanceof Date) {
+    aActualVal = aActualVal.valueOf() * 1000.0;
+  }
+  Assert.equal(aActualVal, aReturnedVal);
 }
 
 /**
  * Removes all rows from our test table.
  */
-function clearTable()
-{
+function clearTable() {
   var stmt = createStatement("DELETE FROM test");
   stmt.execute();
   stmt.finalize();
@@ -56,11 +57,10 @@ function clearTable()
  * @param aNumRows
  *        the number of rows our test table should contain
  */
-function ensureNumRows(aNumRows)
-{
+function ensureNumRows(aNumRows) {
   var stmt = createStatement("SELECT COUNT(*) AS number FROM test");
-  do_check_true(stmt.step());
-  do_check_eq(aNumRows, stmt.row.number);
+  Assert.ok(stmt.step());
+  Assert.equal(aNumRows, stmt.row.number);
   stmt.reset();
   stmt.finalize();
 }
@@ -73,8 +73,7 @@ function ensureNumRows(aNumRows)
  * @param aVal
  *        value to insert into our test table and check
  */
-function insertAndCheckSingleParam(aVal)
-{
+function insertAndCheckSingleParam(aVal) {
   clearTable();
 
   var stmt = createStatement("INSERT INTO test (val) VALUES (:val)");
@@ -85,7 +84,7 @@ function insertAndCheckSingleParam(aVal)
   ensureNumRows(1);
 
   stmt = createStatement("SELECT val FROM test WHERE id = 1");
-  do_check_true(stmt.step());
+  Assert.ok(stmt.step());
   checkVal(aVal, stmt.row.val);
   stmt.reset();
   stmt.finalize();
@@ -100,12 +99,12 @@ function insertAndCheckSingleParam(aVal)
  * @param aVal
  *        value to insert into our test table and check
  */
-function insertAndCheckMultipleParams(aVal)
-{
+function insertAndCheckMultipleParams(aVal) {
   clearTable();
 
-  var stmt = createStatement("INSERT INTO test (val, alt_val) " +
-                             "VALUES (:val, :val)");
+  var stmt = createStatement(
+    "INSERT INTO test (val, alt_val) VALUES (:val, :val)"
+  );
   stmt.params.val = aVal;
   stmt.execute();
   stmt.finalize();
@@ -113,7 +112,7 @@ function insertAndCheckMultipleParams(aVal)
   ensureNumRows(1);
 
   stmt = createStatement("SELECT val, alt_val FROM test WHERE id = 1");
-  do_check_true(stmt.step());
+  Assert.ok(stmt.step());
   checkVal(aVal, stmt.row.val);
   checkVal(aVal, stmt.row.alt_val);
   stmt.reset();
@@ -127,35 +126,35 @@ function insertAndCheckMultipleParams(aVal)
  * @param aVal
  *        a value inserted or to be inserted into our test table
  */
-function printValDesc(aVal)
-{
+function printValDesc(aVal) {
   try {
     var toSource = aVal.toSource();
   } catch (ex) {
     toSource = "";
   }
-  print("Testing value: toString=" + aVal +
-        (toSource ? " toSource=" + toSource : ""));
+  print(
+    "Testing value: toString=" +
+      aVal +
+      (toSource ? " toSource=" + toSource : "")
+  );
 }
 
-function run_test()
-{
+function run_test() {
   setup();
 
   // function JSValStorageStatementBinder in
   // storage/mozStorageStatementParams.cpp tells us that the following types
   // and only the following types are valid as statement parameters:
   var vals = [
-    1337,       // int
-    3.1337,     // double
-    "foo",      // string
-    true,       // boolean
-    null,       // null
+    1337, // int
+    3.1337, // double
+    "foo", // string
+    true, // boolean
+    null, // null
     new Date(), // Date object
   ];
 
-  vals.forEach(function (val)
-  {
+  vals.forEach(function(val) {
     printValDesc(val);
     print("Single parameter");
     insertAndCheckSingleParam(val);

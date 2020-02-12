@@ -19,55 +19,88 @@ namespace dom {
  * Extend Promise to add custom DOMException messages on rejection.
  * Get rid of this once we've ironed out EME errors in the wild.
  */
-class DetailedPromise : public Promise
-{
-public:
-  static already_AddRefed<DetailedPromise>
-  Create(nsIGlobalObject* aGlobal,
-         ErrorResult& aRv,
-         const nsACString& aName);
+class DetailedPromise : public Promise {
+ public:
+  static already_AddRefed<DetailedPromise> Create(nsIGlobalObject* aGlobal,
+                                                  ErrorResult& aRv,
+                                                  const nsACString& aName);
 
-  static already_AddRefed<DetailedPromise>
-  Create(nsIGlobalObject* aGlobal, ErrorResult& aRv,
-         const nsACString& aName,
-         Telemetry::ID aSuccessLatencyProbe,
-         Telemetry::ID aFailureLatencyProbe);
+  static already_AddRefed<DetailedPromise> Create(
+      nsIGlobalObject* aGlobal, ErrorResult& aRv, const nsACString& aName,
+      Telemetry::HistogramID aSuccessLatencyProbe,
+      Telemetry::HistogramID aFailureLatencyProbe);
 
   template <typename T>
-  void MaybeResolve(const T& aArg)
-  {
+  void MaybeResolve(T&& aArg) {
     EME_LOG("%s promise resolved", mName.get());
-    MaybeReportTelemetry(Succeeded);
-    Promise::MaybeResolve<T>(aArg);
+    MaybeReportTelemetry(eStatus::kSucceeded);
+    Promise::MaybeResolve(std::forward<T>(aArg));
   }
 
   void MaybeReject(nsresult aArg) = delete;
   void MaybeReject(nsresult aArg, const nsACString& aReason);
 
   void MaybeReject(ErrorResult& aArg) = delete;
-  void MaybeReject(ErrorResult&, const nsACString& aReason);
+  void MaybeReject(ErrorResult& aArg, const nsACString& aReason);
 
-private:
-  explicit DetailedPromise(nsIGlobalObject* aGlobal,
-                           const nsACString& aName);
+  // Facilities for rejecting with various spec-defined exception values.
+  inline void MaybeRejectWithDOMException(nsresult rv,
+                                          const nsACString& aMessage) {
+    MaybeReject(rv, aMessage);
+  }
+  template <int N>
+  void MaybeRejectWithDOMException(nsresult rv, const char (&aMessage)[N]) {
+    MaybeRejectWithDOMException(rv, nsLiteralCString(aMessage));
+  }
 
-  explicit DetailedPromise(nsIGlobalObject* aGlobal,
-                           const nsACString& aName,
-                           Telemetry::ID aSuccessLatencyProbe,
-                           Telemetry::ID aFailureLatencyProbe);
+  template <ErrNum errorNumber, typename... Ts>
+  void MaybeRejectWithTypeError(Ts&&... aMessageArgs) = delete;
+
+  inline void MaybeRejectWithTypeError(const nsAString& aMessage) {
+    ErrorResult res;
+    res.ThrowTypeError(aMessage);
+    MaybeReject(res, NS_ConvertUTF16toUTF8(aMessage));
+  }
+
+  template <int N>
+  void MaybeRejectWithTypeError(const char16_t (&aMessage)[N]) {
+    MaybeRejectWithTypeError(nsLiteralString(aMessage));
+  }
+
+  template <ErrNum errorNumber, typename... Ts>
+  void MaybeRejectWithRangeError(Ts&&... aMessageArgs) = delete;
+
+  inline void MaybeRejectWithRangeError(const nsAString& aMessage) {
+    ErrorResult res;
+    res.ThrowRangeError(aMessage);
+    MaybeReject(res, NS_ConvertUTF16toUTF8(aMessage));
+  }
+
+  template <int N>
+  void MaybeRejectWithRangeError(const char16_t (&aMessage)[N]) {
+    MaybeRejectWithRangeError(nsLiteralString(aMessage));
+  }
+
+ private:
+  explicit DetailedPromise(nsIGlobalObject* aGlobal, const nsACString& aName);
+
+  explicit DetailedPromise(nsIGlobalObject* aGlobal, const nsACString& aName,
+                           Telemetry::HistogramID aSuccessLatencyProbe,
+                           Telemetry::HistogramID aFailureLatencyProbe);
   virtual ~DetailedPromise();
 
-  enum Status { Succeeded, Failed };
-  void MaybeReportTelemetry(Status aStatus);
+  enum eStatus { kSucceeded, kFailed };
+  void MaybeReportTelemetry(eStatus aStatus);
+  void LogRejectionReason(uint32_t aErrorCode, const nsACString& aReason);
 
   nsCString mName;
   bool mResponded;
   TimeStamp mStartTime;
-  Optional<Telemetry::ID> mSuccessLatencyProbe;
-  Optional<Telemetry::ID> mFailureLatencyProbe;
+  Optional<Telemetry::HistogramID> mSuccessLatencyProbe;
+  Optional<Telemetry::HistogramID> mFailureLatencyProbe;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // __DetailedPromise_h__
+#endif  // __DetailedPromise_h__

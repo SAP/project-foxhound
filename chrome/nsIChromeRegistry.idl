@@ -38,26 +38,21 @@ interface nsIChromeRegistry : nsISupports
    * refresh the chrome list at runtime, looking for new packages/etc
    */
   void checkForNewChrome();
-
-  /**
-   * returns whether XPCNativeWrappers are enabled for aURI.
-   */
-  [notxpcom] boolean wrappersEnabled(in nsIURI aURI);
 };
 
 [scriptable, uuid(93251ddf-5e85-4172-ac2a-31780562974f)]
 interface nsIXULChromeRegistry : nsIChromeRegistry
 {
-  /* Should be called when locales change to reload all chrome (including XUL). */
-  void reloadChrome();
-  
-  ACString getSelectedLocale(in ACString packageName);
-  
-  // Get the direction of the locale via the intl.uidirection.<locale> pref
-  boolean isLocaleRTL(in ACString package);
+  // If the optional asBCP47 parameter is true, the locale code will be
+  // converted to a BCP47 language tag; in particular, this means that
+  // "ja-JP-mac" will be returned as "ja-JP-x-lvariant-mac", which can be
+  // passed to ECMA402 Intl API methods without throwing a RangeError.
+  ACString getSelectedLocale(in ACString packageName,
+                             [optional] in boolean asBCP47);
 
-  /* Should be called when skins change. Reloads only stylesheets. */
-  void refreshSkins();
+  // Get whether the default writing direction of the locale is RTL
+  // (or may be overridden by intl.uidirection pref)
+  boolean isLocaleRTL(in ACString package);
 
   /**
    * Installable skin XBL is not always granted the same privileges as other
@@ -100,12 +95,5 @@ interface nsIXULChromeRegistry : nsIChromeRegistry
  */
 #define NS_CHROME_FLUSH_TOPIC \
   "chrome-flush-caches"
-
-/**
- * Chrome registry will notify various caches that skin files need flushing.
- * If "chrome-flush-caches" is notified, this topic will *not* be notified.
- */
-#define NS_CHROME_FLUSH_SKINS_TOPIC \
-  "chrome-flush-skin-caches"
 
 %}

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_SandboxBrokerTypes_h
-#define mozilla_SandboxBrokerTypes_h
+#ifndef mozilla_SandboxBrokerCommon_h
+#define mozilla_SandboxBrokerCommon_h
 
 #include <sys/types.h>
 
@@ -24,23 +24,38 @@ struct iovec;
 namespace mozilla {
 
 class SandboxBrokerCommon {
-public:
+ public:
   enum Operation {
     SANDBOX_FILE_OPEN,
     SANDBOX_FILE_ACCESS,
     SANDBOX_FILE_STAT,
+    SANDBOX_FILE_CHMOD,
+    SANDBOX_FILE_LINK,
+    SANDBOX_FILE_SYMLINK,
+    SANDBOX_FILE_MKDIR,
+    SANDBOX_FILE_RENAME,
+    SANDBOX_FILE_RMDIR,
+    SANDBOX_FILE_UNLINK,
+    SANDBOX_FILE_READLINK,
+    SANDBOX_SOCKET_CONNECT,
   };
+  // String versions of the above
+  static const char* OperationDescription[];
 
   struct Request {
     Operation mOp;
     // For open, flags; for access, "mode"; for stat, O_NOFOLLOW for lstat.
+    // For connect, the socket type.
     int mFlags;
+    // Size of return value buffer, if any
+    size_t mBufSize;
     // The rest of the packet is the pathname.
     // SCM_RIGHTS for response socket attached.
   };
 
   struct Response {
-    int mError; // errno, or 0 for no error
+    // Syscall result, -errno if failure, or 0 for no error
+    int mError;
     // Followed by struct stat for stat/lstat.
     // SCM_RIGHTS attached for successful open.
   };
@@ -56,6 +71,6 @@ public:
                             int aPassedFd);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_SandboxBrokerTypes_h
+#endif  // mozilla_SandboxBrokerCommon_h

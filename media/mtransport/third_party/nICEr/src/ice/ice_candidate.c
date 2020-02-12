@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_candidate.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <csi_platform.h>
 #include <assert.h>
 #include <stdio.h>
@@ -310,17 +306,27 @@ int nr_ice_candidate_destroy(nr_ice_candidate **candp)
 
     cand=*candp;
 
-    if (cand->state == NR_ICE_CAND_STATE_INITIALIZING) {
-      /* Make sure the ICE ctx isn't still waiting around for this candidate
-       * to init. */
-      nr_ice_candidate_mark_done(cand, NR_ICE_CAND_STATE_FAILED);
-    }
+    nr_ice_candidate_stop_gathering(cand);
 
     switch(cand->type){
       case HOST:
         break;
 #ifdef USE_TURN
       case RELAYED:
+        // record stats back to the ice ctx on destruction
+        if (cand->u.relayed.turn) {
+          nr_accumulate_count(&(cand->ctx->stats.turn_401s), cand->u.relayed.turn->cnt_401s);
+          nr_accumulate_count(&(cand->ctx->stats.turn_403s), cand->u.relayed.turn->cnt_403s);
+          nr_accumulate_count(&(cand->ctx->stats.turn_438s), cand->u.relayed.turn->cnt_438s);
+
+          nr_turn_stun_ctx* stun_ctx;
+          stun_ctx = STAILQ_FIRST(&cand->u.relayed.turn->stun_ctxs);
+          while (stun_ctx) {
+            nr_accumulate_count(&(cand->ctx->stats.stun_retransmits), stun_ctx->stun->retransmit_ct);
+
+            stun_ctx = STAILQ_NEXT(stun_ctx, entry);
+          }
+        }
         if (cand->u.relayed.turn_handle)
           nr_ice_socket_deregister(cand->isock, cand->u.relayed.turn_handle);
         if (cand->u.relayed.srvflx_candidate)
@@ -340,17 +346,31 @@ int nr_ice_candidate_destroy(nr_ice_candidate **candp)
         break;
     }
 
-    NR_async_timer_cancel(cand->delay_timer);
-    NR_async_timer_cancel(cand->ready_cb_timer);
-    if(cand->resolver_handle){
-      nr_resolver_cancel(cand->ctx->resolver,cand->resolver_handle);
-    }
-
+    RFREE(cand->mdns_addr);
     RFREE(cand->foundation);
     RFREE(cand->label);
     RFREE(cand);
 
     return(0);
+  }
+
+void nr_ice_candidate_stop_gathering(nr_ice_candidate *cand)
+  {
+    if (cand->state == NR_ICE_CAND_STATE_INITIALIZING) {
+      /* Make sure the ICE ctx isn't still waiting around for this candidate
+       * to init. */
+      nr_ice_candidate_mark_done(cand, NR_ICE_CAND_STATE_FAILED);
+    }
+
+    NR_async_timer_cancel(cand->delay_timer);
+    cand->delay_timer=0;
+    NR_async_timer_cancel(cand->ready_cb_timer);
+    cand->ready_cb_timer=0;
+
+    if(cand->resolver_handle){
+      nr_resolver_cancel(cand->ctx->resolver,cand->resolver_handle);
+      cand->resolver_handle=0;
+    }
   }
 
 /* This algorithm is not super-fast, but I don't think we need a hash
@@ -366,7 +386,9 @@ static int nr_ice_get_foundation(nr_ice_ctx *ctx,nr_ice_candidate *cand)
     while(foundation){
       if(nr_transport_addr_cmp(&cand->base,&foundation->addr,NR_TRANSPORT_ADDR_CMP_MODE_ADDR))
         goto next;
-      if(cand->type != foundation->type)
+      // cast necessary because there is no guarantee that enum is signed.
+      // foundation->type should probably match nr_ice_candidate_type
+      if((int)cand->type != foundation->type)
         goto next;
       if(cand->stun_server != foundation->stun_server)
         goto next;
@@ -662,6 +684,11 @@ static int nr_ice_candidate_resolved_cb(void *cb_arg, nr_transport_addr *addr)
       ABORT(R_NOT_FOUND);
     }
 
+    if (nr_transport_addr_check_compatibility(addr, &cand->base)) {
+      r_log(LOG_ICE,LOG_WARNING,"ICE(%s): Skipping STUN server because of link local mis-match for candidate %s",cand->ctx->label,cand->label);
+      ABORT(R_NOT_FOUND);
+    }
+
     /* Copy the address */
     if(r=nr_transport_addr_copy(&cand->stun_server_addr,addr))
       ABORT(r);
@@ -909,7 +936,7 @@ static void nr_ice_turn_allocated_cb(NR_SOCKET s, int how, void *cb_arg)
 #endif /* USE_TURN */
 
 /* Format the candidate attribute as per ICE S 15.1 */
-int nr_ice_format_candidate_attribute(nr_ice_candidate *cand, char *attr, int maxlen)
+int nr_ice_format_candidate_attribute(nr_ice_candidate *cand, char *attr, int maxlen, int obfuscate_srflx_addr)
   {
     int r,_status;
     char addr[64];
@@ -920,8 +947,14 @@ int nr_ice_format_candidate_attribute(nr_ice_candidate *cand, char *attr, int ma
     assert(!strcmp(nr_ice_candidate_type_names[HOST], "host"));
     assert(!strcmp(nr_ice_candidate_type_names[RELAYED], "relay"));
 
-    if(r=nr_transport_addr_get_addrstring(&cand->addr,addr,sizeof(addr)))
-      ABORT(r);
+    if (cand->mdns_addr) {
+      /* mdns_addr is NSID_LENGTH which is 39, - 2 for removing the "{" and "}"
+         + 6 for ".local" for a total of 43. */
+      strncpy(addr, cand->mdns_addr, sizeof(addr) - 1);
+    } else {
+      if(r=nr_transport_addr_get_addrstring(&cand->addr,addr,sizeof(addr)))
+        ABORT(r);
+    }
     if(r=nr_transport_addr_get_port(&cand->addr,&port))
       ABORT(r);
     /* https://tools.ietf.org/html/rfc6544#section-4.5 */
@@ -943,6 +976,16 @@ int nr_ice_format_candidate_attribute(nr_ice_candidate *cand, char *attr, int ma
       case HOST:
         break;
       case SERVER_REFLEXIVE:
+        if (obfuscate_srflx_addr) {
+          snprintf(attr,maxlen," raddr 0.0.0.0 rport 0");
+        } else {
+          if(r=nr_transport_addr_get_addrstring(raddr,addr,sizeof(addr)))
+            ABORT(r);
+          if(r=nr_transport_addr_get_port(raddr,&port))
+            ABORT(r);
+          snprintf(attr,maxlen," raddr %s rport %d",addr,port);
+        }
+        break;
       case PEER_REFLEXIVE:
         if(r=nr_transport_addr_get_addrstring(raddr,addr,sizeof(addr)))
           ABORT(r);

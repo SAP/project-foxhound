@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html class="reftest-wait">
   <head>
-    <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+    <script src="/tests/SimpleTest/EventUtils.js"></script>
   </head>
   <body onload="doTest()">
     <input type=text style="-moz-appearance: none">
@@ -15,7 +15,7 @@
         var d = document.querySelector("input");
         d.value = "a";
         d.focus();
-        var editor = SpecialPowers.wrap(d).QueryInterface(SpecialPowers.Ci.nsIDOMNSEditableElement).editor;
+        var editor = SpecialPowers.wrap(d).editor;
         var sel = editor.selection;
         var t = editor.rootElement.firstChild;
         sel.collapse(t, 1); // put the caret at the end of the div

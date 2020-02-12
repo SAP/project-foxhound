@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/mua.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 mua{
     Currencies{
         AED{
@@ -130,6 +124,10 @@ mua{
         }
         MRO{
             "MRO",
+            "Solai Mauritaniya (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "Solai Mauritaniya",
         }
         MUR{
@@ -186,6 +184,10 @@ mua{
         }
         STD{
             "STD",
+            "Solai Sao Tome (1977–2017)",
+        }
+        STN{
+            "STN",
             "Solai Sao Tome",
         }
         SZL{
@@ -233,5 +235,5 @@ mua{
             "Solai Zimbabwe",
         }
     }
-    Version{"2.1.19.14"}
+    Version{"2.1.47.82"}
 }

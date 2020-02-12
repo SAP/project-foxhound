@@ -403,7 +403,7 @@ var tcuImageCompare = framework.common.tcuImageCompare;
         gl.bufferData(gl.PIXEL_PACK_BUFFER, readReference.getLevel(0).getDataSize(), gl.STREAM_READ);
         gl.readPixels(0, 0, width, height, readPixelsFormat, readPixelsType, 0);
 
-        var bufferData = new ArrayBuffer(readReference.getLevel(0).getDataSize());
+        var bufferData = new Uint8Array(readReference.getLevel(0).getDataSize());
 
         gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, bufferData);
 
@@ -411,7 +411,7 @@ var tcuImageCompare = framework.common.tcuImageCompare;
             width: width,
             height: height,
             format: readFormat,
-            data: bufferData});
+            data: bufferData.buffer});
 
         gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
 
@@ -425,8 +425,24 @@ var tcuImageCompare = framework.common.tcuImageCompare;
 
         var isOk = false;
 
-        if (floatCompare)
-            isOk = tcuImageCompare.floatThresholdCompare('Result comparison', 'Result of read pixels to memory compared with result of read pixels to buffer', readReference.getLevel(0), readResult, [0.0, 0.0, 0.0, 0.0]);
+        if (floatCompare) {
+            // When converting between integers and floats, certain GPUs might have different behaviors
+            // from javascript in rounding (up vs down). Increase tolerance to allow both behaviors.
+            // Detailed discussion in Mesa upstream can be found at:
+            //   https://bugs.freedesktop.org/show_bug.cgi?id=89314.
+            var threshold;
+            switch (this.m_renderbufferFormat) {
+              case gl.RGB10_A2:
+              case gl.RGB5_A1:
+              case gl.RGB565:
+                threshold = [0.004, 0.004, 0.004, 0.0];
+                break;
+              default:
+                threshold = [0.0, 0.0, 0.0, 0.0];
+                break;
+            }
+            isOk = tcuImageCompare.floatThresholdCompare('Result comparison', 'Result of read pixels to memory compared with result of read pixels to buffer', readReference.getLevel(0), readResult, threshold);
+        }
         else
             isOk = tcuImageCompare.intThresholdCompare('Result comparison', 'Result of read pixels to memory compared with result of read pixels to buffer', readReference.getLevel(0), readResult, [0, 0, 0, 0]);
 

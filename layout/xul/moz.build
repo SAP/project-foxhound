@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('**'):
-    BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: XUL')
+    BUG_COMPONENT = ('Core', 'XUL')
 
 with Files('*Menu*'):
     BUG_COMPONENT = ('Core', 'XP Toolkit/Widgets: Menus')
@@ -15,37 +15,14 @@ if CONFIG['ENABLE_TESTS']:
     MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
     BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
-XPIDL_SOURCES += [
-    'nsIBoxObject.idl',
-    'nsIBrowserBoxObject.idl',
-    'nsIContainerBoxObject.idl',
-    'nsIListBoxObject.idl',
-    'nsIMenuBoxObject.idl',
-    'nsIScrollBoxObject.idl',
-    'nsISliderListener.idl',
-]
-
-XPIDL_MODULE = 'layout_xul'
-
 EXPORTS += [
     'nsBox.h',
     'nsIScrollbarMediator.h',
-    'nsPIBoxObject.h',
-    'nsPIListBoxObject.h',
     'nsXULPopupManager.h',
-]
-
-EXPORTS.mozilla.dom += [
-    'BoxObject.h',
-    'ContainerBoxObject.h',
-    'ListBoxObject.h',
-    'MenuBoxObject.h',
-    'PopupBoxObject.h',
-    'ScrollBoxObject.h',
+    'nsXULTooltipListener.h',
 ]
 
 UNIFIED_SOURCES += [
-    'BoxObject.cpp',
     'nsBox.cpp',
     'nsBoxFrame.cpp',
     'nsBoxLayout.cpp',
@@ -55,7 +32,6 @@ UNIFIED_SOURCES += [
     'nsRootBoxFrame.cpp',
     'nsScrollbarButtonFrame.cpp',
     'nsScrollbarFrame.cpp',
-    'nsScrollBoxFrame.cpp',
     'nsSliderFrame.cpp',
     'nsSprocketLayout.cpp',
     'nsStackFrame.cpp',
@@ -65,43 +41,41 @@ UNIFIED_SOURCES += [
 
 if CONFIG['MOZ_XUL']:
     UNIFIED_SOURCES += [
-        'ContainerBoxObject.cpp',
-        'ListBoxObject.cpp',
-        'MenuBoxObject.cpp',
         'nsDeckFrame.cpp',
         'nsDocElementBoxFrame.cpp',
         'nsGroupBoxFrame.cpp',
         'nsImageBoxFrame.cpp',
         'nsLeafBoxFrame.cpp',
-        'nsListBoxBodyFrame.cpp',
-        'nsListBoxLayout.cpp',
-        'nsListItemFrame.cpp',
         'nsMenuBarFrame.cpp',
         'nsMenuBarListener.cpp',
         'nsMenuFrame.cpp',
         'nsMenuPopupFrame.cpp',
         'nsPopupSetFrame.cpp',
-        'nsProgressMeterFrame.cpp',
         'nsResizerFrame.cpp',
         'nsSplitterFrame.cpp',
         'nsTextBoxFrame.cpp',
         'nsTitleBarFrame.cpp',
         'nsXULLabelFrame.cpp',
         'nsXULPopupManager.cpp',
-        'PopupBoxObject.cpp',
-        'ScrollBoxObject.cpp',
     ]
 
 if CONFIG['MOZ_XUL']:
     DIRS += ['tree', 'grid']
 
+CFLAGS += CONFIG['TK_CFLAGS']
+CXXFLAGS += CONFIG['TK_CFLAGS']
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '../base',
     '../generic',
+    '../painting',
     '../style',
     '/dom/base',
+    '/dom/xul',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

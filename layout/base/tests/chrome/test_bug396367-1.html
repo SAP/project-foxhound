@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=396367
 -->
 <head>
   <title>Test for Bug 396367</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script>
     SimpleTest.waitForExplicitFinish();
@@ -18,8 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=396367
     }
 
     function getdocviewer() {
-      var navigator1 = top.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIWebNavigation);
-      var docShell = navigator1.QueryInterface(Components.interfaces.nsIDocShell);
+      var docShell = top.docShell;
       var docviewer = docShell.contentViewer;
       return docviewer;
     }

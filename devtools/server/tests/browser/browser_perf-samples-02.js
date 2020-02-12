@@ -7,45 +7,46 @@
  * devtools/client/performance/modules/logic/tree-model.js will have to be changed.
  */
 
-const WAIT_TIME = 1000; // ms
+"use strict";
 
-const { PerformanceFront } = require("devtools/shared/fronts/performance");
+// Time in ms
+const WAIT_TIME = 1000;
 
-add_task(function* () {
-  let browser = yield addTab(MAIN_DOMAIN + "doc_perf.html");
-  let doc = browser.contentDocument;
+add_task(async function() {
+  const target = await addTabTarget(MAIN_DOMAIN + "doc_perf.html");
 
-  initDebuggerServer();
-  let client = new DebuggerClient(DebuggerServer.connectPipe());
-  let form = yield connectDebuggerClient(client);
-  let front = PerformanceFront(client, form);
-  yield front.connect();
+  const front = await target.getFront("performance");
 
-  let rec = yield front.startRecording();
-  busyWait(WAIT_TIME); // allow the profiler module to sample some cpu activity
+  const rec = await front.startRecording();
+  // allow the profiler module to sample some cpu activity
+  busyWait(WAIT_TIME);
 
-  yield front.stopRecording(rec);
-  let profile = rec.getProfile();
+  await front.stopRecording(rec);
+  const profile = rec.getProfile();
   let sampleCount = 0;
 
-  for (let thread of profile.threads) {
+  for (const thread of profile.threads) {
     info("Checking thread: " + thread.name);
 
-    for (let sample of thread.samples.data) {
+    for (const sample of thread.samples.data) {
       sampleCount++;
 
-      let stack = getInflatedStackLocations(thread, sample);
+      const stack = getInflatedStackLocations(thread, sample);
       if (stack[0] != "(root)") {
-        ok(false, "The sample " + stack.toSource() + " doesn't have a root node.");
+        ok(
+          false,
+          "The sample " + stack.toSource() + " doesn't have a root node."
+        );
       }
     }
   }
 
-  ok(sampleCount > 0,
-    "At least some samples have been iterated over, checking for root nodes.");
+  ok(
+    sampleCount > 0,
+    "At least some samples have been iterated over, checking for root nodes."
+  );
 
-  yield front.destroy();
-  yield client.close();
+  await target.getFront("performance");
   gBrowser.removeCurrentTab();
 });
 
@@ -53,21 +54,21 @@ add_task(function* () {
  * Inflate a particular sample's stack and return an array of strings.
  */
 function getInflatedStackLocations(thread, sample) {
-  let stackTable = thread.stackTable;
-  let frameTable = thread.frameTable;
-  let stringTable = thread.stringTable;
-  let SAMPLE_STACK_SLOT = thread.samples.schema.stack;
-  let STACK_PREFIX_SLOT = stackTable.schema.prefix;
-  let STACK_FRAME_SLOT = stackTable.schema.frame;
-  let FRAME_LOCATION_SLOT = frameTable.schema.location;
+  const stackTable = thread.stackTable;
+  const frameTable = thread.frameTable;
+  const stringTable = thread.stringTable;
+  const SAMPLE_STACK_SLOT = thread.samples.schema.stack;
+  const STACK_PREFIX_SLOT = stackTable.schema.prefix;
+  const STACK_FRAME_SLOT = stackTable.schema.frame;
+  const FRAME_LOCATION_SLOT = frameTable.schema.location;
 
   // Build the stack from the raw data and accumulate the locations in
   // an array.
   let stackIndex = sample[SAMPLE_STACK_SLOT];
-  let locations = [];
+  const locations = [];
   while (stackIndex !== null) {
-    let stackEntry = stackTable.data[stackIndex];
-    let frame = frameTable.data[stackEntry[STACK_FRAME_SLOT]];
+    const stackEntry = stackTable.data[stackIndex];
+    const frame = frameTable.data[stackEntry[STACK_FRAME_SLOT]];
     locations.push(stringTable[frame[FRAME_LOCATION_SLOT]]);
     stackIndex = stackEntry[STACK_PREFIX_SLOT];
   }

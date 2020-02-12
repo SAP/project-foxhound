@@ -5,43 +5,28 @@
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-<script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
 <body xmlns="http://www.w3.org/1999/xhtml">
   <div id="content" style="display: none"/>
 </body>
 
 <script>
-var Ci = Components.interfaces;
-var chromeWindowInterface = Ci.nsIDOMChromeWindow;
-
 SimpleTest.waitForExplicitFinish();
 
 // Force off out-of-process mozbrowser because we need to grab its
 // |window| synchronously from here.  Out-of-process docshell creation
 // for mozbrowser haves entirely differently.
-// XXX why doesn't pushPrefEnv() work here?
-var otherWindow = window.open("window_bug757137.xul", "", "chrome");
-ok(chromeWindowInterface !== null, 'nsIDOMChromeWindow interface is defined');
-var otherChromeWindow = null;
-try {
-  otherChromeWindow = otherWindow.QueryInterface(chromeWindowInterface);
-} catch(e) {
-  ok(false, 'exception when QI to ChromeWindow');
-}
-ok(otherChromeWindow !== null, 'XUL window should QI to ChromeWindow');
-
 SpecialPowers.pushPrefEnv({"set":[["dom.ipc.tabs.disabled", true]]}, startTest);
 
 function startTest() {
+  var otherWindow = docShell.rootTreeItem.domWindow.open("window_bug757137.xul", "", "chrome");
+  ok(otherWindow.isChromeWindow, 'XUL window should be a ChromeWindow');
+
   otherWindow.onload = function () {
     var w = otherWindow.document.getElementById('f').contentWindow;
     ok(w !== null, 'got the |window| for a mozbrowser iframe');
-    var chromeWindow = null;
-    try {
-      var chromeWindow = w.QueryInterface(chromeWindowInterface);
-    } catch(e) { }
-      ok(chromeWindow === null, 'mozbrowser iframe should not get ChromeWindow');
+    ok(!w.isChromeWindow, 'mozbrowser iframe should not be a ChromeWindow');
 
     otherWindow.close();
     SimpleTest.waitForFocus(SimpleTest.finish);

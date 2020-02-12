@@ -3,23 +3,23 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var gJar = "jar:http://example.org/tests/dom/base/test/file_bug945152.jar!/data_big.txt";
-var xhr = new XMLHttpRequest({mozAnon: true, mozSystem: true});
+var gURL = "http://example.org/tests/dom/workers/test/bug1063538.sjs";
+var xhr = new XMLHttpRequest({ mozAnon: true, mozSystem: true });
 var progressFired = false;
 
 xhr.onloadend = function(e) {
-  postMessage({type: 'finish', progressFired: progressFired });
+  postMessage({ type: "finish", progressFired });
   self.close();
 };
 
 xhr.onprogress = function(e) {
   if (e.loaded > 0) {
     progressFired = true;
+    xhr.abort();
   }
-  xhr.abort();
 };
 
 onmessage = function(e) {
-  xhr.open("GET", gJar, true);
+  xhr.open("GET", gURL, true);
   xhr.send();
-}
+};

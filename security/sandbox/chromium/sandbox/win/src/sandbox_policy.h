@@ -8,13 +8,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <string>
-
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/string16.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "sandbox/win/src/security_level.h"
 
 namespace sandbox {
+
+class AppContainerProfile;
 
 class TargetPolicy {
  public:
@@ -23,13 +24,13 @@ class TargetPolicy {
   // exactly like the CreateProcess API does. See the comment at the top of
   // process_thread_dispatcher.cc for more details.
   enum SubSystem {
-    SUBSYS_FILES,             // Creation and opening of files and pipes.
-    SUBSYS_NAMED_PIPES,       // Creation of named pipes.
-    SUBSYS_PROCESS,           // Creation of child processes.
-    SUBSYS_REGISTRY,          // Creation and opening of registry keys.
-    SUBSYS_SYNC,              // Creation of named sync objects.
-    SUBSYS_HANDLES,           // Duplication of handles to other processes.
-    SUBSYS_WIN32K_LOCKDOWN    // Win32K Lockdown related policy.
+    SUBSYS_FILES,           // Creation and opening of files and pipes.
+    SUBSYS_NAMED_PIPES,     // Creation of named pipes.
+    SUBSYS_PROCESS,         // Creation of child processes.
+    SUBSYS_REGISTRY,        // Creation and opening of registry keys.
+    SUBSYS_SYNC,            // Creation of named sync objects.
+    SUBSYS_HANDLES,         // Duplication of handles to other processes.
+    SUBSYS_WIN32K_LOCKDOWN  // Win32K Lockdown related policy.
   };
 
   // Allowable semantics when a rule is matched.
@@ -48,17 +49,20 @@ class TargetPolicy {
                            // over the resulting process and thread handles.
                            // No other parameters besides the command line are
                            // passed to the child process.
-    PROCESS_ALL_EXEC,      // Allows the creation of a process and return fill
+    PROCESS_ALL_EXEC,      // Allows the creation of a process and return full
                            // access on the returned handles.
                            // This flag can be used only when the main token of
                            // the sandboxed application is at least INTERACTIVE.
     EVENTS_ALLOW_ANY,      // Allows the creation of an event with full access.
-    EVENTS_ALLOW_READONLY, // Allows opening an even with synchronize access.
-    REG_ALLOW_READONLY,    // Allows readonly access to a registry key.
-    REG_ALLOW_ANY,         // Allows read and write access to a registry key.
-    FAKE_USER_GDI_INIT     // Fakes user32 and gdi32 initialization. This can
-                           // be used to allow the DLLs to load and initialize
-                           // even if the process cannot access that subsystem.
+    EVENTS_ALLOW_READONLY,  // Allows opening an even with synchronize access.
+    REG_ALLOW_READONLY,     // Allows readonly access to a registry key.
+    REG_ALLOW_ANY,          // Allows read and write access to a registry key.
+    FAKE_USER_GDI_INIT,     // Fakes user32 and gdi32 initialization. This can
+                            // be used to allow the DLLs to load and initialize
+                            // even if the process cannot access that subsystem.
+    IMPLEMENT_OPM_APIS      // Implements FAKE_USER_GDI_INIT and also exposes
+                            // IPC calls to handle Output Protection Manager
+                            // APIs.
   };
 
   // Increments the reference count of this object. The reference count must
@@ -99,6 +103,11 @@ class TargetPolicy {
   // Returns the lockdown token level.
   virtual TokenLevel GetLockdownTokenLevel() const = 0;
 
+  // Sets that we should not use restricting SIDs in the access tokens. We need
+  // to do this in some circumstances even though it weakens the sandbox.
+  // The default is to use them.
+  virtual void SetDoNotUseRestrictingSIDs() = 0;
+
   // Sets the security level of the Job Object to which the target process will
   // belong. This setting is permanent and cannot be changed once the target
   // process is spawned. The job controls the global security settings which
@@ -134,6 +143,9 @@ class TargetPolicy {
   // Note: the recommended level is JOB_RESTRICTED or JOB_LOCKDOWN.
   virtual ResultCode SetJobLevel(JobLevel job_level,
                                  uint32_t ui_exceptions) = 0;
+
+  // Returns the job level.
+  virtual JobLevel GetJobLevel() const = 0;
 
   // Sets a hard limit on the size of the commit set for the sandboxed process.
   // If the limit is reached, the process will be terminated with
@@ -172,20 +184,6 @@ class TargetPolicy {
   // than the current level, the sandbox will fail to start.
   virtual ResultCode SetDelayedIntegrityLevel(IntegrityLevel level) = 0;
 
-  // Sets the AppContainer to be used for the sandboxed process. Any capability
-  // to be enabled for the process should be added before this method is invoked
-  // (by calling SetCapability() as many times as needed).
-  // The desired AppContainer must be already installed on the system, otherwise
-  // launching the sandboxed process will fail. See BrokerServices for details
-  // about installing an AppContainer.
-  // Note that currently Windows restricts the use of impersonation within
-  // AppContainers, so this function is incompatible with the use of an initial
-  // token.
-  virtual ResultCode SetAppContainer(const wchar_t* sid) = 0;
-
-  // Sets a capability to be enabled for the sandboxed process' AppContainer.
-  virtual ResultCode SetCapability(const wchar_t* sid) = 0;
-
   // Sets the LowBox token for sandboxed process. This is mutually exclusive
   // with SetAppContainer method.
   virtual ResultCode SetLowBox(const wchar_t* sid) = 0;
@@ -205,6 +203,10 @@ class TargetPolicy {
 
   // Returns the currently set delayed mitigation flags.
   virtual MitigationFlags GetDelayedProcessMitigations() const = 0;
+
+  // Disconnect the target from CSRSS when TargetServices::LowerToken() is
+  // called inside the target.
+  virtual ResultCode SetDisconnectCsrss() = 0;
 
   // Sets the interceptions to operate in strict mode. By default, interceptions
   // are performed in "relaxed" mode, where if something inside NTDLL.DLL is
@@ -232,7 +234,8 @@ class TargetPolicy {
   //   "c:\\documents and settings\\vince\\*.dmp"
   //   "c:\\documents and settings\\*\\crashdumps\\*.dmp"
   //   "c:\\temp\\app_log_?????_chrome.txt"
-  virtual ResultCode AddRule(SubSystem subsystem, Semantics semantics,
+  virtual ResultCode AddRule(SubSystem subsystem,
+                             Semantics semantics,
                              const wchar_t* pattern) = 0;
 
   // Adds a dll that will be unloaded in the target process before it gets
@@ -241,19 +244,44 @@ class TargetPolicy {
   virtual ResultCode AddDllToUnload(const wchar_t* dll_name) = 0;
 
   // Adds a handle that will be closed in the target process after lockdown.
-  // A NULL value for handle_name indicates all handles of the specified type.
-  // An empty string for handle_name indicates the handle is unnamed.
+  // A nullptr value for handle_name indicates all handles of the specified
+  // type. An empty string for handle_name indicates the handle is unnamed.
   virtual ResultCode AddKernelObjectToClose(const wchar_t* handle_type,
                                             const wchar_t* handle_name) = 0;
 
-  // Adds a handle that will be shared with the target process.
-  // Returns the handle which was actually shared with the target. This is
-  // achieved by duplicating the handle to ensure that it is inheritable by
-  // the target. The caller should treat this as an opaque value.
-  virtual void* AddHandleToShare(HANDLE handle) = 0;
+  // Adds a handle that will be shared with the target process. Does not take
+  // ownership of the handle.
+  virtual void AddHandleToShare(HANDLE handle) = 0;
+
+  // Locks down the default DACL of the created lockdown and initial tokens
+  // to restrict what other processes are allowed to access a process' kernel
+  // resources.
+  virtual void SetLockdownDefaultDacl() = 0;
+
+  // Enable OPM API redirection when in Win32k lockdown.
+  virtual void SetEnableOPMRedirection() = 0;
+  // Enable OPM API emulation when in Win32k lockdown.
+  virtual bool GetEnableOPMRedirection() = 0;
+
+  // Configure policy to use an AppContainer profile. |package_name| is the
+  // name of the profile to use. Specifying True for |create_profile| ensures
+  // the profile exists, if set to False process creation will fail if the
+  // profile has not already been created.
+  virtual ResultCode AddAppContainerProfile(const wchar_t* package_name,
+                                            bool create_profile) = 0;
+
+  // Get the configured AppContainerProfile.
+  virtual scoped_refptr<AppContainerProfile> GetAppContainerProfile() = 0;
+
+  // Set effective token that will be used for creating the initial and
+  // lockdown tokens. The token the caller passes must remain valid for the
+  // lifetime of the policy object.
+  virtual void SetEffectiveToken(HANDLE token) = 0;
+
+ protected:
+  ~TargetPolicy() {}
 };
 
 }  // namespace sandbox
-
 
 #endif  // SANDBOX_WIN_SRC_SANDBOX_POLICY_H_

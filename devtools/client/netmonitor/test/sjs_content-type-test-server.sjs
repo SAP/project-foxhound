@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { classes: Cc, interfaces: Ci } = Components;
+Cu.importGlobalProperties(["TextEncoder"]);
 
 function gzipCompressString(string, obs) {
 
@@ -15,9 +15,9 @@ function gzipCompressString(string, obs) {
   let stringStream = Cc["@mozilla.org/io/string-input-stream;1"]
                     .createInstance(Ci.nsIStringInputStream);
   stringStream.data = string;
-  converter.onStartRequest(null, null);
-  converter.onDataAvailable(null, null, stringStream, 0, string.length);
-  converter.onStopRequest(null, null, null);
+  converter.onStartRequest(null);
+  converter.onDataAvailable(null, stringStream, 0, string.length);
+  converter.onStopRequest(null, null);
 }
 
 function doubleGzipCompressString(string, observer) {
@@ -36,6 +36,7 @@ function handleRequest(request, response) {
   let params = request.queryString.split("&");
   let format = (params.filter((s) => s.includes("fmt="))[0] || "").split("=")[1];
   let status = (params.filter((s) => s.includes("sts="))[0] || "").split("=")[1] || 200;
+  let cookies = (params.filter((s) => s.includes("cookies="))[0] || "").split("=")[1] || 0;
 
   let cachedCount = 0;
   let cacheExpire = 60; // seconds
@@ -56,6 +57,13 @@ function handleRequest(request, response) {
     cachedCount++;
   }
 
+  function setCookieHeaders() {
+    if (cookies) {
+      response.setHeader("Set-Cookie", "name1=value1; Domain=.foo.example.com", true);
+      response.setHeader("Set-Cookie", "name2=value2; Domain=.example.com", true);
+    }
+  }
+
   let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.initWithCallback(() => {
     // to avoid garbage collection
@@ -65,7 +73,19 @@ function handleRequest(request, response) {
         response.setStatusLine(request.httpVersion, status, "DA DA DA");
         response.setHeader("Content-Type", "text/plain", false);
         setCacheHeaders();
-        response.write("Братан, ты вообще качаешься?");
+
+        function convertToUtf8(str) {
+          return String.fromCharCode(...new TextEncoder().encode(str));
+        }
+
+        // This script must be evaluated as UTF-8 for this to write out the
+        // bytes of the string in UTF-8.  If it's evaluated as Latin-1, the
+        // written bytes will be the result of UTF-8-encoding this string
+        // *twice*.
+        let data = "Братан, ты вообще качаешься?";
+        let stringOfUtf8Bytes = convertToUtf8(data);
+        response.write(stringOfUtf8Bytes);
+
         response.finish();
         break;
       }
@@ -82,6 +102,7 @@ function handleRequest(request, response) {
         response.setStatusLine(request.httpVersion, status, "OK");
         response.setHeader("Content-Type", "text/html; charset=utf-8", false);
         setCacheHeaders();
+        setCookieHeaders();
         response.write(content || "<p>Hello HTML!</p>");
         response.finish();
         break;
@@ -134,6 +155,14 @@ function handleRequest(request, response) {
         response.setHeader("Content-Type", "text/json; charset=utf-8", false);
         setCacheHeaders();
         response.write(" " + fun + " ( { \"greeting\": \"Hello weird JSONP!\" } ) ; ");
+        response.finish();
+        break;
+      }
+      case "json-b64": {
+        response.setStatusLine(request.httpVersion, status, "OK");
+        response.setHeader("Content-Type", "text/json; charset=utf-8", false);
+        setCacheHeaders();
+        response.write(btoa("{ \"greeting\": \"This is a base 64 string.\" }"));
         response.finish();
         break;
       }
@@ -232,9 +261,28 @@ function handleRequest(request, response) {
         doubleGzipCompressString(data, observer);
         break;
       }
+      case "br": {
+        response.setStatusLine(request.httpVersion, status, "Connected");
+        response.setHeader("Content-Type", "text/plain", false);
+        response.setHeader("Content-Encoding", "br", false);
+        setCacheHeaders();
+        response.setHeader("Content-Length", "10", false);
+        // Use static data since we cannot encode brotli.
+        response.write("\x1b\x3f\x00\x00\x24\xb0\xe2\x99\x80\x12");
+        response.finish();
+        break;
+      }
       case "hls-m3u8": {
         response.setStatusLine(request.httpVersion, status, "OK");
         response.setHeader("Content-Type", "application/x-mpegurl", false);
+        setCacheHeaders();
+        response.write("#EXTM3U\n");
+        response.finish();
+        break;
+      }
+      case "hls-m3u8-alt-mime-type": {
+        response.setStatusLine(request.httpVersion, status, "OK");
+        response.setHeader("Content-Type", "application/vnd.apple.mpegurl", false);
         setCacheHeaders();
         response.write("#EXTM3U\n");
         response.finish();

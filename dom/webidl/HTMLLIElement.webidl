@@ -13,13 +13,16 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-li-element
+[Exposed=Window]
 interface HTMLLIElement : HTMLElement {
-           [SetterThrows, Pure]
+  [HTMLConstructor] constructor();
+
+           [CEReactions, SetterThrows, Pure]
            attribute long value;
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLLIElement {
-           [SetterThrows, Pure]
+           [CEReactions, SetterThrows, Pure]
            attribute DOMString type;
 };

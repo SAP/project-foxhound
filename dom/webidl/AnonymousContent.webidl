@@ -16,7 +16,7 @@
  * the inserted content.
  */
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface AnonymousContent {
   /**
    * Get the text content of an element inside this custom anonymous content.
@@ -42,7 +42,7 @@ interface AnonymousContent {
    * Set the value of an attribute of an element inside this custom anonymous
    * content.
    */
-  [Throws]
+  [NeedsSubjectPrincipal=NonSystem, Throws]
   void setAttributeForElement(DOMString elementId,
                               DOMString attributeName,
                               DOMString value);
@@ -62,11 +62,11 @@ interface AnonymousContent {
   nsISupports? getCanvasContext(DOMString elementId,
                                 DOMString contextId);
 
-  [Func="nsDocument::IsElementAnimateEnabled", Throws]
+  [Throws]
   Animation setAnimationForElement(DOMString elementId,
                                    object? keyframes,
                                    optional UnrestrictedDoubleOrKeyframeAnimationOptions
-                                     options);
+                                     options = {});
 
   /**
    * Accepts a list of (possibly overlapping) DOMRects which describe a shape
@@ -77,4 +77,24 @@ interface AnonymousContent {
   [Throws]
   void setCutoutRectsForElement(DOMString elementId,
                                 sequence<DOMRect> rects);
+
+  /**
+   * Get the computed value of a property on an element inside this custom
+   * anonymous content.
+   */
+  [Throws]
+  DOMString? getComputedStylePropertyValue(DOMString elementId,
+                                           DOMString propertyName);
+
+  /**
+   * If event's original target is in the anonymous content, this returns the id
+   * attribute value of the target.
+   */
+  DOMString? getTargetIdForEvent(Event event);
+
+  /**
+   * Set given style to this AnonymousContent.
+   */
+  [Throws]
+  void setStyle(DOMString property, DOMString value);
 };

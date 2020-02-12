@@ -1,3 +1,5 @@
+../tools/mozterm
+
 ../mozbase/manifestparser
 ../mozbase/mozcrash
 ../mozbase/mozdebug
@@ -9,8 +11,10 @@
 ../mozbase/mozleak
 ../mozbase/mozlog
 ../mozbase/moznetwork
+../mozbase/mozpower
 ../mozbase/mozprocess
 ../mozbase/mozprofile
+../mozbase/mozproxy
 ../mozbase/mozrunner
 ../mozbase/mozscreenshot
 ../mozbase/moztest

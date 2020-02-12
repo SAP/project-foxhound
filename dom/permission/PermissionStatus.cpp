@@ -11,15 +11,15 @@
 #include "nsIPermissionManager.h"
 #include "PermissionObserver.h"
 #include "PermissionUtils.h"
+#include "nsPermission.h"
+#include "PermissionDelegateHandler.h"
 
 namespace mozilla {
 namespace dom {
 
-/* static */ already_AddRefed<PermissionStatus>
-PermissionStatus::Create(nsPIDOMWindowInner* aWindow,
-                         PermissionName aName,
-                         ErrorResult& aRv)
-{
+/* static */
+already_AddRefed<PermissionStatus> PermissionStatus::Create(
+    nsPIDOMWindowInner* aWindow, PermissionName aName, ErrorResult& aRv) {
   RefPtr<PermissionStatus> status = new PermissionStatus(aWindow, aName);
   aRv = status->Init();
   if (NS_WARN_IF(aRv.Failed())) {
@@ -31,15 +31,13 @@ PermissionStatus::Create(nsPIDOMWindowInner* aWindow,
 
 PermissionStatus::PermissionStatus(nsPIDOMWindowInner* aWindow,
                                    PermissionName aName)
-  : DOMEventTargetHelper(aWindow)
-  , mName(aName)
-  , mState(PermissionState::Denied)
-{
+    : DOMEventTargetHelper(aWindow),
+      mName(aName),
+      mState(PermissionState::Denied) {
+  KeepAliveIfHasListenersFor(NS_LITERAL_STRING("change"));
 }
 
-nsresult
-PermissionStatus::Init()
-{
+nsresult PermissionStatus::Init() {
   mObserver = PermissionObserver::GetInstance();
   if (NS_WARN_IF(!mObserver)) {
     return NS_ERROR_FAILURE;
@@ -55,36 +53,34 @@ PermissionStatus::Init()
   return NS_OK;
 }
 
-PermissionStatus::~PermissionStatus()
-{
+PermissionStatus::~PermissionStatus() {
   if (mObserver) {
     mObserver->RemoveSink(this);
   }
 }
 
-JSObject*
-PermissionStatus::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PermissionStatusBinding::Wrap(aCx, this, aGivenProto);
+JSObject* PermissionStatus::WrapObject(JSContext* aCx,
+                                       JS::Handle<JSObject*> aGivenProto) {
+  return PermissionStatus_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsresult
-PermissionStatus::UpdateState()
-{
-  nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
-  if (NS_WARN_IF(!permMgr)) {
-    return NS_ERROR_FAILURE;
-  }
-
+nsresult PermissionStatus::UpdateState() {
   nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
   if (NS_WARN_IF(!window)) {
     return NS_ERROR_FAILURE;
   }
 
+  RefPtr<Document> document = window->GetExtantDoc();
+  if (NS_WARN_IF(!document)) {
+    return NS_ERROR_FAILURE;
+  }
+
   uint32_t action = nsIPermissionManager::DENY_ACTION;
-  nsresult rv = permMgr->TestPermissionFromWindow(window,
-                                                  PermissionNameToType(mName),
-                                                  &action);
+
+  PermissionDelegateHandler* permissionHandler =
+      document->GetPermissionDelegateHandler();
+  nsresult rv = permissionHandler->GetPermissionForPermissionsAPI(
+      PermissionNameToType(mName), &action);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -93,33 +89,44 @@ PermissionStatus::UpdateState()
   return NS_OK;
 }
 
-nsIPrincipal*
-PermissionStatus::GetPrincipal() const
-{
+already_AddRefed<nsIPrincipal> PermissionStatus::GetPrincipal() const {
   nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
   if (NS_WARN_IF(!window)) {
     return nullptr;
   }
 
-  nsIDocument* doc = window->GetExtantDoc();
+  Document* doc = window->GetExtantDoc();
   if (NS_WARN_IF(!doc)) {
     return nullptr;
   }
 
-  return doc->NodePrincipal();
+  nsCOMPtr<nsIPrincipal> principal =
+      nsPermission::ClonePrincipalForPermission(doc->NodePrincipal());
+  NS_ENSURE_TRUE(principal, nullptr);
+
+  return principal.forget();
 }
 
-void
-PermissionStatus::PermissionChanged()
-{
+void PermissionStatus::PermissionChanged() {
   auto oldState = mState;
   UpdateState();
   if (mState != oldState) {
-    RefPtr<AsyncEventDispatcher> eventDispatcher =
-      new AsyncEventDispatcher(this, NS_LITERAL_STRING("change"), false);
+    RefPtr<AsyncEventDispatcher> eventDispatcher = new AsyncEventDispatcher(
+        this, NS_LITERAL_STRING("change"), CanBubble::eNo);
     eventDispatcher->PostDOMEvent();
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+void PermissionStatus::DisconnectFromOwner() {
+  IgnoreKeepAliveIfHasListenersFor(NS_LITERAL_STRING("change"));
+
+  if (mObserver) {
+    mObserver->RemoveSink(this);
+    mObserver = nullptr;
+  }
+
+  DOMEventTargetHelper::DisconnectFromOwner();
+}
+
+}  // namespace dom
+}  // namespace mozilla

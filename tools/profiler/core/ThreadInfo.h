@@ -4,59 +4,45 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZ_THREAD_INFO_H
-#define MOZ_THREAD_INFO_H
+#ifndef ThreadInfo_h
+#define ThreadInfo_h
 
-#include "platform.h"
+#include "mozilla/TimeStamp.h"
+#include "nsISupportsImpl.h"
+#include "nsString.h"
 
-class ThreadInfo {
+// This class contains information about a thread which needs to be stored
+// across restarts of the profiler and which can be useful even after the
+// thread has stopped running.
+// It uses threadsafe refcounting and only contains immutable data.
+class ThreadInfo final {
  public:
-  ThreadInfo(const char* aName, int aThreadId, bool aIsMainThread, PseudoStack* aPseudoStack, void* aStackTop);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadInfo)
 
-  virtual ~ThreadInfo();
+  ThreadInfo(const char* aName, int aThreadId, bool aIsMainThread,
+             const mozilla::TimeStamp& aRegisterTime =
+                 mozilla::TimeStamp::NowUnfuzzed())
+      : mName(aName),
+        mRegisterTime(aRegisterTime),
+        mThreadId(aThreadId),
+        mIsMainThread(aIsMainThread) {
+    // I don't know if we can assert this. But we should warn.
+    MOZ_ASSERT(aThreadId >= 0, "native thread ID is < 0");
+    MOZ_ASSERT(aThreadId <= INT32_MAX, "native thread ID is > INT32_MAX");
+  }
 
-  const char* Name() const { return mName; }
+  const char* Name() const { return mName.get(); }
+  mozilla::TimeStamp RegisterTime() const { return mRegisterTime; }
   int ThreadId() const { return mThreadId; }
-
   bool IsMainThread() const { return mIsMainThread; }
-  PseudoStack* Stack() const { return mPseudoStack; }
 
-  void SetProfile(ThreadProfile* aProfile) { mProfile = aProfile; }
-  ThreadProfile* Profile() const { return mProfile; }
-
-  PlatformData* GetPlatformData() const { return mPlatformData; }
-  void* StackTop() const { return mStackTop; }
-
-  virtual void SetPendingDelete();
-  bool IsPendingDelete() const { return mPendingDelete; }
-
-#ifndef SPS_STANDALONE
-  /**
-   * May be null for the main thread if the profiler was started during startup
-   */
-  nsIThread* GetThread() const { return mThread.get(); }
-#endif
  private:
-  char* mName;
-  int mThreadId;
+  ~ThreadInfo() {}
+
+  const nsCString mName;
+  const mozilla::TimeStamp mRegisterTime;
+  const int mThreadId;
   const bool mIsMainThread;
-  PseudoStack* mPseudoStack;
-  PlatformData* mPlatformData;
-  ThreadProfile* mProfile;
-  void* mStackTop;
-#ifndef SPS_STANDALONE
-  nsCOMPtr<nsIThread> mThread;
-#endif
-  bool mPendingDelete;
 };
 
-// Just like ThreadInfo, but owns a reference to the PseudoStack.
-class StackOwningThreadInfo : public ThreadInfo {
- public:
-  StackOwningThreadInfo(const char* aName, int aThreadId, bool aIsMainThread, PseudoStack* aPseudoStack, void* aStackTop);
-  virtual ~StackOwningThreadInfo();
-
-  virtual void SetPendingDelete();
-};
-
-#endif
+#endif  // ThreadInfo_h

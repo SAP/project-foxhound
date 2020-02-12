@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 :root{
-  -moz-user-select: none;
+  user-select: none;
 }
 
 #options-panel-container {
@@ -16,6 +16,10 @@
 .options-vertical-pane {
   display: inline;
   float: left;
+}
+
+.options-vertical-pane:dir(rtl) {
+  float: right;
 }
 
 .options-vertical-pane {
@@ -80,13 +84,8 @@
   margin-inline-start: 4px;
 }
 
-.options-groupbox > *,
-.options-groupbox > .hidden-labels-box > checkbox {
+.options-groupbox > * {
   padding: 2px;
-}
-
-.options-groupbox > .hidden-labels-box {
-  padding: 0;
 }
 
 .options-citation-label {
@@ -104,4 +103,43 @@
 
 #devtools-sourceeditor-tabsize-select {
   min-width: 80px;
+}
+
+#screenshot-options legend::after {
+  content: "";
+  display: inline-block;
+  background-image: url("chrome://devtools/skin/images/command-screenshot.svg");
+  width: 16px;
+  height: 16px;
+  vertical-align: sub;
+  margin-inline-start: 5px;
+  -moz-context-properties: fill;
+  fill: var(--theme-toolbar-color);
+  opacity: 0.6;
+}
+
+.deprecation-notice::before {
+  background-image: url("chrome://global/skin/icons/warning.svg");
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  height: 15px;
+  margin-inline-end: 5px;
+  width: 15px;
+}
+
+.deprecation-notice {
+  align-items: center;
+  background-color: var(--theme-warning-background);
+  color: var(--theme-warning-color);
+  display: flex;
+  margin-inline-start: 8px;
+  outline: var(--theme-warning-background) solid 4px;
+}
+
+.deprecation-notice a {
+  color: currentColor;
+}
+.deprecation-notice a:hover{
+  text-decoration: underline;
 }

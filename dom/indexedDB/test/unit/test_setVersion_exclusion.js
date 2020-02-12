@@ -5,8 +5,7 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
 
   let request = indexedDB.open(name, 1);
@@ -28,8 +27,11 @@ function testSteps()
   is(db.version, 1, "Database has correct version");
 
   db.onupgradeneeded = function() {
-    ok(false, "our ongoing VERSION_CHANGE transaction should exclude any others!");
-  }
+    ok(
+      false,
+      "our ongoing VERSION_CHANGE transaction should exclude any others!"
+    );
+  };
 
   db.createObjectStore("foo");
 
@@ -64,7 +66,7 @@ function testSteps()
   db.onversionchange = function() {
     ok(true, "next setVersion was unblocked appropriately");
     db.close();
-  }
+  };
 
   try {
     db.transaction("foo");
@@ -91,5 +93,4 @@ function testSteps()
   is(db.version, 2, "Database has correct version");
 
   finishTest();
-  yield undefined;
 }

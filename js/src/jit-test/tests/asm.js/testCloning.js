@@ -1,7 +1,4 @@
-// |jit-test| test-also-noasmjs
 load(libdir + "asm.js");
-
-setCachingEnabled(true);
 
 var code = asmCompile(USE_ASM + "function g() { return 42 } return g");
 assertEq(asmLink(code)(), 42);

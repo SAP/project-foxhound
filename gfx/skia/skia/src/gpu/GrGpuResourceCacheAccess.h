@@ -26,27 +26,15 @@ private:
      */
     bool isScratch() const {
         return !fResource->getUniqueKey().isValid() && fResource->fScratchKey.isValid() &&
-                SkBudgeted::kYes == fResource->resourcePriv().isBudgeted();
+               GrBudgetedType::kBudgeted == fResource->resourcePriv().budgetedType();
     }
-
-    /**
-     * Is the resource object wrapping an externally allocated GPU resource that Skia has not taken
-     * ownership of.
-     */
-    bool isBorrowed() const { return GrGpuResource::kBorrowed_LifeCycle == fResource->fLifeCycle; }
-
-    /**
-     * Is the resource object wrapping an externally allocated GPU resource that Skia has taken
-     * ownership of.
-     */
-    bool isAdopted() const { return GrGpuResource::kAdopted_LifeCycle == fResource->fLifeCycle; }
 
     /**
      * Called by the cache to delete the resource under normal circumstances.
      */
     void release() {
         fResource->release();
-        if (fResource->isPurgeable()) {
+        if (!fResource->hasRefOrPendingIO()) {
             delete fResource;
         }
     }
@@ -56,7 +44,7 @@ private:
      */
     void abandon() {
         fResource->abandon();
-        if (fResource->isPurgeable()) {
+        if (!fResource->hasRefOrPendingIO()) {
             delete fResource;
         }
     }
@@ -69,6 +57,19 @@ private:
 
     uint32_t timestamp() const { return fResource->fTimestamp; }
     void setTimestamp(uint32_t ts) { fResource->fTimestamp = ts; }
+
+    void setTimeWhenResourceBecomePurgeable() {
+        SkASSERT(fResource->isPurgeable());
+        fResource->fTimeWhenBecamePurgeable = GrStdSteadyClock::now();
+    }
+    /**
+     * Called by the cache to determine whether this resource should be purged based on the length
+     * of time it has been available for purging.
+     */
+    GrStdSteadyClock::time_point timeWhenResourceBecamePurgeable() {
+        SkASSERT(fResource->isPurgeable());
+        return fResource->fTimeWhenBecamePurgeable;
+    }
 
     int* accessCacheIndex() const { return &fResource->fCacheArrayIndex; }
 

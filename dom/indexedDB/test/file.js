@@ -3,50 +3,47 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* import-globals-from helpers.js */
+
 var bufferCache = [];
 var utils = SpecialPowers.getDOMWindowUtils(window);
 
-function getBuffer(size)
-{
+function getBuffer(size) {
   let buffer = new ArrayBuffer(size);
   is(buffer.byteLength, size, "Correct byte length");
   return buffer;
 }
 
-function getRandomBuffer(size)
-{
+function getRandomBuffer(size) {
   let buffer = getBuffer(size);
   let view = new Uint8Array(buffer);
   for (let i = 0; i < size; i++) {
-    view[i] = parseInt(Math.random() * 255)
+    view[i] = parseInt(Math.random() * 255);
   }
   return buffer;
 }
 
-function getView(size)
-{
+function getView(size) {
   let buffer = new ArrayBuffer(size);
   let view = new Uint8Array(buffer);
   is(buffer.byteLength, size, "Correct byte length");
   return view;
 }
 
-function getRandomView(size)
-{
+function getRandomView(size) {
   let view = getView(size);
   for (let i = 0; i < size; i++) {
-    view[i] = parseInt(Math.random() * 255)
+    view[i] = parseInt(Math.random() * 255);
   }
   return view;
 }
 
-function compareBuffers(buffer1, buffer2)
-{
+function compareBuffers(buffer1, buffer2) {
   if (buffer1.byteLength != buffer2.byteLength) {
     return false;
   }
-  let view1 = new Uint8Array(buffer1);
-  let view2 = new Uint8Array(buffer2);
+  let view1 = buffer1 instanceof Uint8Array ? buffer1 : new Uint8Array(buffer1);
+  let view2 = buffer2 instanceof Uint8Array ? buffer2 : new Uint8Array(buffer2);
   for (let i = 0; i < buffer1.byteLength; i++) {
     if (view1[i] != view2[i]) {
       return false;
@@ -55,47 +52,51 @@ function compareBuffers(buffer1, buffer2)
   return true;
 }
 
-function getBlob(type, view)
-{
-  return new Blob([view], {type: type});
+function getBlob(type, view) {
+  return new Blob([view], { type });
 }
 
-function getFile(name, type, view)
-{
-  return new File([view], name, {type: type});
+function getFile(name, type, view) {
+  return new File([view], name, { type });
 }
 
-function getRandomBlob(size)
-{
+function getRandomBlob(size) {
   return getBlob("binary/random", getRandomView(size));
 }
 
-function getRandomFile(name, size)
-{
+function getRandomFile(name, size) {
   return getFile(name, "binary/random", getRandomView(size));
 }
 
-function getNullBlob(size)
-{
+function getNullBlob(size) {
   return getBlob("binary/null", getView(size));
 }
 
-function getNullFile(name, size)
-{
+function getNullFile(name, size) {
   return getFile(name, "binary/null", getView(size));
 }
 
-function verifyBuffers(buffer1, buffer2)
-{
-  ok(compareBuffers(buffer1, buffer2), "Correct blob data");
+// This needs to be async to make it available on workers too.
+function getWasmBinary(text) {
+  let binary = getWasmBinarySync(text);
+  SimpleTest.executeSoon(function() {
+    testGenerator.next(binary);
+  });
 }
 
-function verifyBlob(blob1, blob2, fileId, blobReadHandler)
-{
-  is(blob1 instanceof Components.interfaces.nsIDOMBlob, true,
-     "Instance of nsIDOMBlob");
-  is(blob1 instanceof File, blob2 instanceof File,
-     "Instance of DOM File");
+function getWasmModule(binary) {
+  let module = new WebAssembly.Module(binary);
+  return module;
+}
+
+function verifyBuffers(buffer1, buffer2) {
+  ok(compareBuffers(buffer1, buffer2), "Correct buffer data");
+}
+
+function verifyBlob(blob1, blob2, fileId, blobReadHandler) {
+  // eslint-disable-next-line mozilla/use-cc-etc
+  is(SpecialPowers.wrap(Blob).isInstance(blob1), true, "Instance of Blob");
+  is(blob1 instanceof File, blob2 instanceof File, "Instance of DOM File");
   is(blob1.size, blob2.size, "Correct size");
   is(blob1.type, blob2.type, "Correct type");
   if (blob2 instanceof File) {
@@ -123,12 +124,11 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler)
         verifyBuffers(buffer1, buffer2);
         if (blobReadHandler) {
           blobReadHandler();
-        }
-        else {
+        } else {
           testGenerator.next();
         }
       }
-    }
+    };
   }
 
   let reader = new FileReader();
@@ -139,16 +139,14 @@ function verifyBlob(blob1, blob2, fileId, blobReadHandler)
       verifyBuffers(buffer1, buffer2);
       if (blobReadHandler) {
         blobReadHandler();
-      }
-      else {
+      } else {
         testGenerator.next();
       }
     }
-  }
+  };
 }
 
-function verifyBlobArray(blobs1, blobs2, expectedFileIds)
-{
+function verifyBlobArray(blobs1, blobs2, expectedFileIds) {
   is(blobs1 instanceof Array, true, "Got an array object");
   is(blobs1.length, blobs2.length, "Correct length");
 
@@ -161,70 +159,94 @@ function verifyBlobArray(blobs1, blobs2, expectedFileIds)
   function blobReadHandler() {
     if (++verifiedCount == blobs1.length) {
       testGenerator.next();
-    }
-    else {
-      verifyBlob(blobs1[verifiedCount], blobs2[verifiedCount],
-                 expectedFileIds[verifiedCount], blobReadHandler);
+    } else {
+      verifyBlob(
+        blobs1[verifiedCount],
+        blobs2[verifiedCount],
+        expectedFileIds[verifiedCount],
+        blobReadHandler
+      );
     }
   }
 
-  verifyBlob(blobs1[verifiedCount], blobs2[verifiedCount],
-             expectedFileIds[verifiedCount], blobReadHandler);
+  verifyBlob(
+    blobs1[verifiedCount],
+    blobs2[verifiedCount],
+    expectedFileIds[verifiedCount],
+    blobReadHandler
+  );
 }
 
-function verifyMutableFile(mutableFile1, file2)
-{
+function verifyMutableFile(mutableFile1, file2) {
   ok(mutableFile1 instanceof IDBMutableFile, "Instance of IDBMutableFile");
   is(mutableFile1.name, file2.name, "Correct name");
   is(mutableFile1.type, file2.type, "Correct type");
-  executeSoon(function() {
-    testGenerator.next();
-  });
+  continueToNextStep();
 }
 
-function grabFileUsageAndContinueHandler(request)
-{
-  testGenerator.send(request.fileUsage);
+function verifyView(view1, view2) {
+  is(view1.byteLength, view2.byteLength, "Correct byteLength");
+  verifyBuffers(view1, view2);
+  continueToNextStep();
 }
 
-function getUsage(usageHandler)
-{
+function verifyWasmModule(module1, module2) {
+  // We assume the given modules have no imports and export a single function
+  // named 'run'.
+  var instance1 = new WebAssembly.Instance(module1);
+  var instance2 = new WebAssembly.Instance(module2);
+  is(instance1.exports.run(), instance2.exports.run(), "same run() result");
+
+  continueToNextStep();
+}
+
+function grabFileUsageAndContinueHandler(request) {
+  testGenerator.next(request.result.fileUsage);
+}
+
+function getCurrentUsage(usageHandler) {
   let qms = SpecialPowers.Services.qms;
   let principal = SpecialPowers.wrap(document).nodePrincipal;
   let cb = SpecialPowers.wrapCallback(usageHandler);
   qms.getUsageForPrincipal(principal, cb);
 }
 
-function getFileId(file)
-{
+function getFileId(file) {
   return utils.getFileId(file);
 }
 
-function getFilePath(file)
-{
+function getFilePath(file) {
   return utils.getFilePath(file);
 }
 
-function hasFileInfo(name, id)
-{
-  return utils.getFileReferences(name, id);
+function* assertEventuallyHasFileInfo(name, id) {
+  yield* assertEventuallyWithGC(
+    () => utils.getFileReferences(name, id),
+    `Expect existing FileInfo for ${name}/${id}`
+  );
 }
 
-function getFileRefCount(name, id)
-{
-  let count = {};
-  utils.getFileReferences(name, id, null, count);
-  return count.value;
+function* assertEventuallyHasNoFileInfo(name, id) {
+  yield* assertEventuallyWithGC(
+    () => !utils.getFileReferences(name, id),
+    `Expect no existing FileInfo for ${name}/${id}`
+  );
 }
 
-function getFileDBRefCount(name, id)
-{
+function* assertEventuallyFileRefCount(name, id, expectedCount) {
+  yield* assertEventuallyWithGC(() => {
+    let count = {};
+    utils.getFileReferences(name, id, null, count);
+    return count.value == expectedCount;
+  }, `Expect ${expectedCount} existing references for ${name}/${id}`);
+}
+
+function getFileDBRefCount(name, id) {
   let count = {};
   utils.getFileReferences(name, id, null, {}, count);
   return count.value;
 }
 
-function flushPendingFileDeletions()
-{
+function flushPendingFileDeletions() {
   utils.flushPendingFileDeletions();
 }

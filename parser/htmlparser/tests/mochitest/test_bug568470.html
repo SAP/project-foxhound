@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=568470
 <head>
   <title>Test for Bug 568470</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=568470
 SimpleTest.waitForExplicitFinish();
 
 // assuming the test runs in less than a year...
-var time = new Date().getTime() + 1000*60*60*24*365;
+var time = new Date().getTime() + 1000 * 60 * 60 * 24 * 365;
 
 var interval = setInterval(function() {
   var iframe = document.getElementsByTagName("iframe")[0];
@@ -27,7 +27,7 @@ var interval = setInterval(function() {
     if (doc) {
       if (doc.getElementById("flushable")) {
         time = new Date();
-        clearInterval(interval);        
+        clearInterval(interval);
       }
     }
   }

@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf8">
   <title>Test for console.log styling with %c</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript;version=1.8" src="common.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
 </head>
 <body>
 <p>Test for console.log styling with %c</p>
 
-<script class="testbody" type="text/javascript;version=1.8">
+<script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
 let expectedConsoleCalls = [];
@@ -89,23 +89,22 @@ function startTest()
 function onAttach(aState, aResponse)
 {
   onConsoleAPICall = onConsoleAPICall.bind(null, aState);
-  aState.dbgClient.addListener("consoleAPICall", onConsoleAPICall);
+  aState.webConsoleFront.on("consoleAPICall", onConsoleAPICall);
   doConsoleCalls(aState.actor);
 }
 
 let consoleCalls = [];
 
-function onConsoleAPICall(aState, aType, aPacket)
+function onConsoleAPICall(aState, aPacket)
 {
   info("received message level: " + aPacket.message.level);
-  is(aPacket.from, aState.actor, "console API call actor");
 
   consoleCalls.push(aPacket.message);
   if (consoleCalls.length != expectedConsoleCalls.length) {
     return;
   }
 
-  aState.dbgClient.removeListener("consoleAPICall", onConsoleAPICall);
+  aState.webConsoleFront.off("consoleAPICall", onConsoleAPICall);
 
   expectedConsoleCalls.forEach(function(aMessage, aIndex) {
     info("checking received console call #" + aIndex);

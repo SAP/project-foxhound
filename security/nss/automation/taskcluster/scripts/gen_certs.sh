@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 
-set -v -e -x
-
-source $(dirname $0)/tools.sh
-
-if [ $(id -u) = 0 ]; then
-    # Stupid Docker.
-    echo "127.0.0.1 localhost.localdomain" >> /etc/hosts
-
-    # Drop privileges by re-running this script.
-    exec su worker $0
-fi
+source $(dirname "$0")/tools.sh
 
 # Fetch artifact if needed.
 fetch_dist
@@ -22,5 +12,10 @@ NSS_TESTS=cert NSS_CYCLES="standard pkix sharedb" $(dirname $0)/run_tests.sh
 echo 1 > tests_results/security/localhost
 
 # Package.
-mkdir artifacts
-tar cvfjh artifacts/dist.tar.bz2 dist tests_results
+if [[ $(uname) = "Darwin" ]]; then
+  mkdir -p public
+  tar cvfjh public/dist.tar.bz2 dist tests_results
+else
+  mkdir artifacts
+  tar cvfjh artifacts/dist.tar.bz2 dist tests_results
+fi

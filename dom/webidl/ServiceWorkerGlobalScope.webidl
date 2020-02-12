@@ -5,6 +5,8 @@
  *
  * The origin of this IDL file is
  * http://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html
+ * http://w3c.github.io/push-api/
+ * https://notifications.spec.whatwg.org/
  *
  * You are granted a license to use, reproduce and create derivative works of
  * this document.
@@ -13,7 +15,8 @@
 [Global=(Worker,ServiceWorker),
  Exposed=ServiceWorker]
 interface ServiceWorkerGlobalScope : WorkerGlobalScope {
-  [SameObject] readonly attribute Clients clients;
+  [SameObject, BinaryName="GetClients"]
+  readonly attribute Clients clients;
   [SameObject] readonly attribute ServiceWorkerRegistration registration;
 
   [Throws, NewObject]
@@ -26,6 +29,7 @@ interface ServiceWorkerGlobalScope : WorkerGlobalScope {
 
   // The event.source of these MessageEvents are instances of Client
   attribute EventHandler onmessage;
+  attribute EventHandler onmessageerror;
 };
 
 // These are from w3c.github.io/push-api/
@@ -34,3 +38,8 @@ partial interface ServiceWorkerGlobalScope {
   attribute EventHandler onpushsubscriptionchange;
 };
 
+// https://notifications.spec.whatwg.org/
+partial interface ServiceWorkerGlobalScope {
+  attribute EventHandler onnotificationclick;
+  attribute EventHandler onnotificationclose;
+};

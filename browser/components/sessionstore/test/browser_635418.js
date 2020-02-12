@@ -16,7 +16,7 @@ function test() {
   waitForSaveState(testBug635418_1);
 
   // Assumption: Only one window is open and it has one tab open.
-  gBrowser.addTab("about:mozilla");
+  BrowserTestUtils.addTab(gBrowser, "about:mozilla");
 }
 
 function testBug635418_1() {
@@ -40,7 +40,10 @@ function testBug635418_2() {
 
 function testBug635418_3() {
   let state = JSON.parse(ss.getBrowserState());
-  ok(!state.windows[0].tabs[0].hidden, "first tab should still still not be hidden");
+  ok(
+    !state.windows[0].tabs[0].hidden,
+    "first tab should still still not be hidden"
+  );
   ok(!state.windows[0].tabs[1].hidden, "second tab should not be hidden again");
 
   done();

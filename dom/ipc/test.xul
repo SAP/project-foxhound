@@ -5,6 +5,7 @@
 
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         width="800" height="800" orient="vertical" onload="initRemoteFrameScript();">
   <script>
 
@@ -51,7 +52,7 @@
       p.removeChild(y);
       p.appendChild(y);
 
-      var fl = y.QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader;
+      var fl = y.frameLoader;
       fl.activateFrameEvent("MozAfterPaint", true);
       fl.activateFrameEvent("MozScrolledAreaChanged", true);
       y.addEventListener("MozAfterPaint", handleMozAfterPaint, true);
@@ -66,23 +67,11 @@
        // First focus the remote frame, then dispatch click. This way remote frame gets focus before
        // mouse event.
        document.getElementById('page').focus();
-       var frameLoader = document.getElementById('page').QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader;
+       var frameLoader = document.getElementById('page').frameLoader;
        var x = parseInt(Math.random() * 100);
        var y = parseInt(Math.random() * 100);
        frameLoader.sendCrossProcessMouseEvent("mousedown", x, y, 0, 1, 0, false);
        frameLoader.sendCrossProcessMouseEvent("mouseup", x, y, 0, 1, 0, false);
-     }
-
-    function keyPress() {
-       // First focus the remote frame, then dispatch click. This way remote frame gets focus before
-       // mouse event.
-       document.getElementById('page').focus();
-       var frameLoader = document.getElementById('page').QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader;
-
-       var keyCode = Components.interfaces.nsIDOMKeyEvent.DOM_VK_A;
-       frameLoader.sendCrossProcessKeyEvent("keydown", keyCode, 0, 0);
-       frameLoader.sendCrossProcessKeyEvent("keypress", keyCode, 0, 0);
-       frameLoader.sendCrossProcessKeyEvent("keyup", keyCode, 0, 0);
      }
 
     function openWindow() {
@@ -97,11 +86,11 @@
       // 1. Test that loading a script works, and that accessing process level mm and
       //     global mm works.
       var ppm = Components.classes["@mozilla.org/parentprocessmessagemanager;1"]
-                          .getService(Components.interfaces.nsIMessageBroadcaster);
+                          .getService();
       var gm = Components.classes["@mozilla.org/globalmessagemanager;1"]
-                         .getService(Components.interfaces.nsIMessageBroadcaster);
+                         .getService();
       var cpm = Components.classes["@mozilla.org/childprocessmessagemanager;1"]
-                            .getService(Components.interfaces.nsISyncMessageSender);
+                          .getService();
 
       if (ppm.childCount != 2) {
         alert("Should have two child processes!");
@@ -237,20 +226,17 @@
       messageManager.loadFrameScript("data:,addEventListener('MozAfterPaint', function(e) { sendAsyncMessage('MozAfterPaint'); },true);", false);
     }
 
-   var Ci = Components.interfaces;
-   var Cu = Components.utils;
    Cu.import("resource://gre/modules/XPCOMUtils.jsm");
   </script>
 
   <toolbar id="controls">
     <toolbarbutton label="Back"/>
     <toolbarbutton label="Forward"/>
-    <textbox onchange="loadURL(this.value)" flex="1" id="URL"/>
+    <html:input onchange="loadURL(this.value)" style="-moz-box-flex: 1" id="URL"/>
   </toolbar>
   <toolbar>
     <toolbarbutton onclick="restart()" label="Recover"/>
     <toolbarbutton onclick="randomClick()" label="random click"/>
-    <toolbarbutton onclick="keyPress()" label="key press"/>
     <toolbarbutton onclick="messageSpeed()" label="test message handling speed"/>
     <toolbarbutton onclick="listenerAddRemove()" label="test listener add/remove"/>
     <toolbarbutton onclick="enableMozAfterPaint()" label="MozAfterPaint"/>
@@ -258,15 +244,14 @@
     <toolbarbutton onclick="closeWindow()" label="close this window"/>
   </toolbar>
   <toolbar><label value="Load a script (URL) to content process:"/>
-    <textbox flex="1" id="script"/><button
+    <html:input style="-moz-box-flex: 1" id="script"/><button
       label="send" oncommand="document.getElementById('page')
-                                      .QueryInterface(Components.interfaces.nsIFrameLoaderOwner)
                                       .frameLoader.messageManager
                                       .loadFrameScript(this.previousSibling.value, false);"/>
   </toolbar>
   <toolbar>
     <label value="Eval script in chrome context"/>
-    <textbox flex="1"/><button label="run" oncommand="eval(this.previousSibling.value);"/>
+    <html:input style="-moz-box-flex: 1"/><button label="run" oncommand="eval(this.previousSibling.value); // eslint-disable-line no-eval"/>
   </toolbar>
 
   <browser type="content" src="http://www.google.com/" flex="1" id="page" remote="true"/>

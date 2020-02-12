@@ -2,13 +2,14 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* () {
+add_task(async function() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "unrecognized_property": "with-a-random-value",
+      browser_action: {
+        default_popup: "popup.html",
+        unrecognized_property: "with-a-random-value",
       },
+      icons: { 32: "icon.png" },
     },
 
     files: {
@@ -24,6 +25,7 @@ add_task(function* () {
           browser.runtime.sendMessage("from-popup");
         };
       },
+      "icon.png": imageBuffer,
     },
 
     background: function() {
@@ -36,24 +38,32 @@ add_task(function* () {
 
   SimpleTest.waitForExplicitFinish();
   let waitForConsole = new Promise(resolve => {
-    SimpleTest.monitorConsole(resolve, [{
-      message: /Reading manifest: Error processing browser_action.unrecognized_property: An unexpected property was found/,
-    }]);
+    SimpleTest.monitorConsole(resolve, [
+      {
+        message: /Reading manifest: Warning processing browser_action.unrecognized_property: An unexpected property was found/,
+      },
+    ]);
   });
 
-  yield extension.startup();
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  await extension.startup();
+  ExtensionTestUtils.failOnSchemaWarnings(true);
 
   // Do this a few times to make sure the pop-up is reloaded each time.
   for (let i = 0; i < 3; i++) {
     clickBrowserAction(extension);
 
-    yield extension.awaitMessage("popup");
+    let widget = getBrowserActionWidget(extension).forWindow(window);
+    let image = getComputedStyle(widget.node).listStyleImage;
+
+    ok(image.includes("/icon.png"), "The extension's icon is used");
+    await extension.awaitMessage("popup");
 
     closeBrowserAction(extension);
   }
 
-  yield extension.unload();
+  await extension.unload();
 
   SimpleTest.endMonitorConsole();
-  yield waitForConsole;
+  await waitForConsole;
 });

@@ -4,43 +4,45 @@
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
-const { getCurrentZoom,
-  getRootBindingParent } = require("devtools/shared/layout/utils");
-const { on, emit } = require("sdk/event/core");
+const { Cu, Cr } = require("chrome");
+const {
+  getCurrentZoom,
+  getWindowDimensions,
+  getViewportDimensions,
+  getRootBindingParent,
+  loadSheet,
+} = require("devtools/shared/layout/utils");
+const EventEmitter = require("devtools/shared/event-emitter");
+const InspectorUtils = require("InspectorUtils");
 
 const lazyContainer = {};
 
-loader.lazyRequireGetter(lazyContainer, "CssLogic",
-  "devtools/server/css-logic", true);
-exports.getComputedStyle = (node) =>
+loader.lazyRequireGetter(
+  lazyContainer,
+  "CssLogic",
+  "devtools/server/actors/inspector/css-logic",
+  true
+);
+exports.getComputedStyle = node =>
   lazyContainer.CssLogic.getComputedStyle(node);
 
-exports.getBindingElementAndPseudo = (node) =>
+exports.getBindingElementAndPseudo = node =>
   lazyContainer.CssLogic.getBindingElementAndPseudo(node);
 
-loader.lazyGetter(lazyContainer, "DOMUtils", () =>
-  Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils));
 exports.hasPseudoClassLock = (...args) =>
-  lazyContainer.DOMUtils.hasPseudoClassLock(...args);
+  InspectorUtils.hasPseudoClassLock(...args);
 
 exports.addPseudoClassLock = (...args) =>
-  lazyContainer.DOMUtils.addPseudoClassLock(...args);
+  InspectorUtils.addPseudoClassLock(...args);
 
 exports.removePseudoClassLock = (...args) =>
-  lazyContainer.DOMUtils.removePseudoClassLock(...args);
-
-exports.getCSSStyleRules = (...args) =>
-  lazyContainer.DOMUtils.getCSSStyleRules(...args);
+  InspectorUtils.removePseudoClassLock(...args);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const XHTML_NS = "http://www.w3.org/1999/xhtml";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-const STYLESHEET_URI = "resource://devtools/server/actors/" +
-                       "highlighters.css";
-// How high is the infobar (px).
-const INFOBAR_HEIGHT = 34;
-// What's the size of the infobar arrow (px).
-const INFOBAR_ARROW_SIZE = 9;
+const STYLESHEET_URI =
+  "resource://devtools/server/actors/" + "highlighters.css";
 
 const _tokens = Symbol("classList/tokens");
 
@@ -49,7 +51,7 @@ const _tokens = Symbol("classList/tokens");
  * internally by `CanvasFrameAnonymousContentHelper.getElement()` method.
  */
 function ClassList(className) {
-  let trimmed = (className || "").trim();
+  const trimmed = (className || "").trim();
   this[_tokens] = trimmed ? trimmed.split(/\s+/) : [];
 }
 
@@ -64,15 +66,15 @@ ClassList.prototype = {
     if (!this.contains(token)) {
       this[_tokens].push(token);
     }
-    emit(this, "update");
+    EventEmitter.emit(this, "update");
   },
   remove(token) {
-    let index = this[_tokens].indexOf(token);
+    const index = this[_tokens].indexOf(token);
 
     if (index > -1) {
       this[_tokens].splice(index, 1);
     }
-    emit(this, "update");
+    EventEmitter.emit(this, "update");
   },
   toggle(token) {
     if (this.contains(token)) {
@@ -84,14 +86,14 @@ ClassList.prototype = {
   get length() {
     return this[_tokens].length;
   },
-  [Symbol.iterator]: function* () {
+  [Symbol.iterator]: function*() {
     for (let i = 0; i < this.tokens.length; i++) {
       yield this[_tokens][i];
     }
   },
   toString() {
     return this[_tokens].join(" ");
-  }
+  },
 };
 
 /**
@@ -105,42 +107,32 @@ function isXUL(window) {
 exports.isXUL = isXUL;
 
 /**
- * Inject a helper stylesheet in the window.
+ * Returns true if a DOM node is "valid", where "valid" means that the node isn't a dead
+ * object wrapper, is still attached to a document, and is of a given type.
+ * @param {DOMNode} node
+ * @param {Number} nodeType Optional, defaults to ELEMENT_NODE
+ * @return {Boolean}
  */
-var installedHelperSheets = new WeakMap();
-
-function installHelperSheet(win, source, type = "agent") {
-  if (installedHelperSheets.has(win.document)) {
-    return;
-  }
-  let {Style} = require("sdk/stylesheet/style");
-  let {attach} = require("sdk/content/mod");
-  let style = Style({source, type});
-  attach(style, win);
-  installedHelperSheets.set(win.document, style);
-}
-exports.installHelperSheet = installHelperSheet;
-
-function isNodeValid(node) {
-  // Is it null or dead?
+function isNodeValid(node, nodeType = Node.ELEMENT_NODE) {
+  // Is it still alive?
   if (!node || Cu.isDeadWrapper(node)) {
     return false;
   }
 
-  // Is it an element node
-  if (node.nodeType !== node.ELEMENT_NODE) {
+  // Is it of the right type?
+  if (node.nodeType !== nodeType) {
     return false;
   }
 
-  // Is the document inaccessible?
-  let doc = node.ownerDocument;
+  // Is its document accessible?
+  const doc = node.ownerDocument;
   if (!doc || !doc.defaultView) {
     return false;
   }
 
   // Is the node connected to the document? Using getBindingParent adds
   // support for anonymous elements generated by a node in the document.
-  let bindingParent = getRootBindingParent(node);
+  const bindingParent = getRootBindingParent(node);
   if (!doc.documentElement.contains(bindingParent)) {
     return false;
   }
@@ -174,25 +166,22 @@ exports.createSVGNode = createSVGNode;
  * @param {Window} This window's document will be used to create the element
  * @param {Object} Options for the node include:
  * - nodeType: the type of node, defaults to "div".
- * - namespace: if passed, doc.createElementNS will be used instead of
- *   doc.creatElement.
+ * - namespace: the namespace to use to create the node, defaults to XHTML namespace.
  * - attributes: a {name:value} object to be used as attributes for the node.
  * - prefix: a string that will be used to prefix the values of the id and class
  *   attributes.
  * - parent: if provided, the newly created element will be appended to this
  *   node.
+ * - text: if provided, set the text content of the element.
  */
 function createNode(win, options) {
-  let type = options.nodeType || "div";
+  const type = options.nodeType || "div";
+  const namespace = options.namespace || XHTML_NS;
+  const doc = win.document;
 
-  let node;
-  if (options.namespace) {
-    node = win.document.createElementNS(options.namespace, type);
-  } else {
-    node = win.document.createElement(type);
-  }
+  const node = doc.createElementNS(namespace, type);
 
-  for (let name in options.attributes || {}) {
+  for (const name in options.attributes || {}) {
     let value = options.attributes[name];
     if (options.prefix && (name === "class" || name === "id")) {
       value = options.prefix + value;
@@ -202,6 +191,10 @@ function createNode(win, options) {
 
   if (options.parent) {
     options.parent.appendChild(node);
+  }
+
+  if (options.text) {
+    node.appendChild(doc.createTextNode(options.text));
   }
 
   return node;
@@ -233,104 +226,153 @@ function CanvasFrameAnonymousContentHelper(highlighterEnv, nodeBuilder) {
   this.anonymousContentDocument = this.highlighterEnv.document;
   // XXX the next line is a wallpaper for bug 1123362.
   this.anonymousContentGlobal = Cu.getGlobalForObject(
-                                this.anonymousContentDocument);
+    this.anonymousContentDocument
+  );
 
-  this._insert();
+  // Only try to create the highlighter when the document is loaded,
+  // otherwise, wait for the window-ready event to fire.
+  const doc = this.highlighterEnv.document;
+  if (doc.documentElement && doc.readyState != "uninitialized") {
+    this._insert();
+  }
 
-  this._onNavigate = this._onNavigate.bind(this);
-  this.highlighterEnv.on("navigate", this._onNavigate);
+  this._onWindowReady = this._onWindowReady.bind(this);
+  this.highlighterEnv.on("window-ready", this._onWindowReady);
 
   this.listeners = new Map();
+  this.elements = new Map();
 }
 
 CanvasFrameAnonymousContentHelper.prototype = {
-  destroy: function () {
-    try {
-      let doc = this.anonymousContentDocument;
-      doc.removeAnonymousContent(this._content);
-    } catch (e) {
-      // If the current window isn't the one the content was inserted into, this
-      // will fail, but that's fine.
-    }
-    this.highlighterEnv.off("navigate", this._onNavigate);
+  destroy() {
+    this._remove();
+    this.highlighterEnv.off("window-ready", this._onWindowReady);
     this.highlighterEnv = this.nodeBuilder = this._content = null;
     this.anonymousContentDocument = null;
     this.anonymousContentGlobal = null;
 
     this._removeAllListeners();
+    this.elements.clear();
   },
 
-  _insert: function () {
-    // Insert the content node only if the page isn't in a XUL window, and if
-    // the document still exists.
-    if (!this.highlighterEnv.document.documentElement ||
-        isXUL(this.highlighterEnv.window)) {
+  _insert() {
+    const doc = this.highlighterEnv.document;
+    // Wait for DOMContentLoaded before injecting the anonymous content.
+    if (doc.readyState != "interactive" && doc.readyState != "complete") {
+      doc.addEventListener("DOMContentLoaded", this._insert.bind(this), {
+        once: true,
+      });
       return;
     }
-    let doc = this.highlighterEnv.document;
+    // Reject XUL documents. Check that after DOMContentLoaded as we query
+    // documentElement which is only available after this event.
+    if (isXUL(this.highlighterEnv.window)) {
+      return;
+    }
 
     // For now highlighters.css is injected in content as a ua sheet because
-    // <style scoped> doesn't work inside anonymous content (see bug 1086532).
+    // we no longer support scoped style sheets (see bug 1345702).
     // If it did, highlighters.css would be injected as an anonymous content
     // node using CanvasFrameAnonymousContentHelper instead.
-    installHelperSheet(this.highlighterEnv.window,
-      "@import url('" + STYLESHEET_URI + "');");
-    let node = this.nodeBuilder();
+    loadSheet(this.highlighterEnv.window, STYLESHEET_URI);
+
+    const node = this.nodeBuilder();
 
     // It was stated that hidden documents don't accept
     // `insertAnonymousContent` calls yet. That doesn't seems the case anymore,
     // at least on desktop. Therefore, removing the code that was dealing with
     // that scenario, fixes when we're adding anonymous content in a tab that
     // is not the active one (see bug 1260043 and bug 1260044)
-    this._content = doc.insertAnonymousContent(node);
+    try {
+      this._content = doc.insertAnonymousContent(node);
+    } catch (e) {
+      // If the `insertAnonymousContent` fails throwing a `NS_ERROR_UNEXPECTED`, it means
+      // we don't have access to a `CustomContentContainer` yet (see bug 1365075).
+      // At this point, it could only happen on document's interactive state, and we
+      // need to wait until the `complete` state before inserting the anonymous content
+      // again.
+      if (
+        e.result === Cr.NS_ERROR_UNEXPECTED &&
+        doc.readyState === "interactive"
+      ) {
+        // The next state change will be "complete" since the current is "interactive"
+        doc.addEventListener(
+          "readystatechange",
+          () => {
+            this._content = doc.insertAnonymousContent(node);
+          },
+          { once: true }
+        );
+      } else {
+        throw e;
+      }
+    }
   },
 
-  _onNavigate: function (e, {isTopLevel}) {
+  _remove() {
+    try {
+      const doc = this.anonymousContentDocument;
+      doc.removeAnonymousContent(this._content);
+    } catch (e) {
+      // If the current window isn't the one the content was inserted into, this
+      // will fail, but that's fine.
+    }
+  },
+
+  /**
+   * The "window-ready" event can be triggered when:
+   *   - a new window is created
+   *   - a window is unfrozen from bfcache
+   *   - when first attaching to a page
+   *   - when swapping frame loaders (moving tabs, toggling RDM)
+   */
+  _onWindowReady({ isTopLevel }) {
     if (isTopLevel) {
       this._removeAllListeners();
+      this.elements.clear();
       this._insert();
       this.anonymousContentDocument = this.highlighterEnv.document;
     }
   },
 
-  getTextContentForElement: function (id) {
-    if (!this.content) {
-      return null;
-    }
-    return this.content.getTextContentForElement(id);
+  getComputedStylePropertyValue(id, property) {
+    return (
+      this.content && this.content.getComputedStylePropertyValue(id, property)
+    );
   },
 
-  setTextContentForElement: function (id, text) {
+  getTextContentForElement(id) {
+    return this.content && this.content.getTextContentForElement(id);
+  },
+
+  setTextContentForElement(id, text) {
     if (this.content) {
       this.content.setTextContentForElement(id, text);
     }
   },
 
-  setAttributeForElement: function (id, name, value) {
+  setAttributeForElement(id, name, value) {
     if (this.content) {
       this.content.setAttributeForElement(id, name, value);
     }
   },
 
-  getAttributeForElement: function (id, name) {
-    if (!this.content) {
-      return null;
-    }
-    return this.content.getAttributeForElement(id, name);
+  getAttributeForElement(id, name) {
+    return this.content && this.content.getAttributeForElement(id, name);
   },
 
-  removeAttributeForElement: function (id, name) {
+  removeAttributeForElement(id, name) {
     if (this.content) {
       this.content.removeAttributeForElement(id, name);
     }
   },
 
-  hasAttributeForElement: function (id, name) {
+  hasAttributeForElement(id, name) {
     return typeof this.getAttributeForElement(id, name) === "string";
   },
 
-  getCanvasContext: function (id, type = "2d") {
-    return this.content ? this.content.getCanvasContext(id, type) : null;
+  getCanvasContext(id, type = "2d") {
+    return this.content && this.content.getCanvasContext(id, type);
   },
 
   /**
@@ -369,21 +411,22 @@ CanvasFrameAnonymousContentHelper.prototype = {
    * @param {String} type
    * @param {Function} handler
    */
-  addEventListenerForElement: function (id, type, handler) {
+  addEventListenerForElement(id, type, handler) {
     if (typeof id !== "string") {
-      throw new Error("Expected a string ID in addEventListenerForElement but" +
-        " got: " + id);
+      throw new Error(
+        "Expected a string ID in addEventListenerForElement but" + " got: " + id
+      );
     }
 
     // If no one is listening for this type of event yet, add one listener.
     if (!this.listeners.has(type)) {
-      let target = this.highlighterEnv.pageListenerTarget;
+      const target = this.highlighterEnv.pageListenerTarget;
       target.addEventListener(type, this, true);
       // Each type entry in the map is a map of ids:handlers.
       this.listeners.set(type, new Map());
     }
 
-    let listeners = this.listeners.get(type);
+    const listeners = this.listeners.get(type);
     listeners.set(id, handler);
   },
 
@@ -393,8 +436,8 @@ CanvasFrameAnonymousContentHelper.prototype = {
    * @param {String} id
    * @param {String} type
    */
-  removeEventListenerForElement: function (id, type) {
-    let listeners = this.listeners.get(type);
+  removeEventListenerForElement(id, type) {
+    const listeners = this.listeners.get(type);
     if (!listeners) {
       return;
     }
@@ -402,13 +445,13 @@ CanvasFrameAnonymousContentHelper.prototype = {
 
     // If no one is listening for event type anymore, remove the listener.
     if (!this.listeners.has(type)) {
-      let target = this.highlighterEnv.pageListenerTarget;
+      const target = this.highlighterEnv.pageListenerTarget;
       target.removeEventListener(type, this, true);
     }
   },
 
-  handleEvent: function (event) {
-    let listeners = this.listeners.get(event.type);
+  handleEvent(event) {
+    const listeners = this.listeners.get(event.type);
     if (!listeners) {
       return;
     }
@@ -416,7 +459,7 @@ CanvasFrameAnonymousContentHelper.prototype = {
     // Hide the originalTarget property to avoid exposing references to native
     // anonymous elements. See addEventListenerForElement's comment.
     let isPropagationStopped = false;
-    let eventProxy = new Proxy(event, {
+    const eventProxy = new Proxy(event, {
       get: (obj, name) => {
         if (name === "originalTarget") {
           return null;
@@ -426,14 +469,14 @@ CanvasFrameAnonymousContentHelper.prototype = {
           };
         }
         return obj[name];
-      }
+      },
     });
 
     // Start at originalTarget, bubble through ancestors and call handlers when
     // needed.
     let node = event.originalTarget;
     while (node) {
-      let handler = listeners.get(node.id);
+      const handler = listeners.get(node.id);
       if (handler) {
         handler(eventProxy, node.id);
         if (isPropagationStopped) {
@@ -444,24 +487,28 @@ CanvasFrameAnonymousContentHelper.prototype = {
     }
   },
 
-  _removeAllListeners: function () {
-    if (this.highlighterEnv) {
-      let target = this.highlighterEnv.pageListenerTarget;
-      for (let [type] of this.listeners) {
+  _removeAllListeners() {
+    if (this.highlighterEnv && this.highlighterEnv.pageListenerTarget) {
+      const target = this.highlighterEnv.pageListenerTarget;
+      for (const [type] of this.listeners) {
         target.removeEventListener(type, this, true);
       }
     }
     this.listeners.clear();
   },
 
-  getElement: function (id) {
-    let classList = new ClassList(this.getAttributeForElement(id, "class"));
+  getElement(id) {
+    if (this.elements.has(id)) {
+      return this.elements.get(id);
+    }
 
-    on(classList, "update", () => {
+    const classList = new ClassList(this.getAttributeForElement(id, "class"));
+
+    EventEmitter.on(classList, "update", () => {
       this.setAttributeForElement(id, "class", classList.toString());
     });
 
-    return {
+    const element = {
       getTextContent: () => this.getTextContentForElement(id),
       setTextContent: text => this.setTextContentForElement(id, text),
       setAttribute: (name, val) => this.setAttributeForElement(id, name, val),
@@ -475,8 +522,16 @@ CanvasFrameAnonymousContentHelper.prototype = {
       removeEventListener: (type, handler) => {
         return this.removeEventListenerForElement(id, type, handler);
       },
-      classList
+      computedStyle: {
+        getPropertyValue: property =>
+          this.getComputedStylePropertyValue(id, property),
+      },
+      classList,
     };
+
+    this.elements.set(id, element);
+
+    return element;
   },
 
   get content() {
@@ -507,18 +562,27 @@ CanvasFrameAnonymousContentHelper.prototype = {
    * should be used to read the current zoom value.
    * @param {String} id The ID of the root element inserted with this API.
    */
-  scaleRootElement: function (node, id) {
-    let zoom = getCurrentZoom(node);
-    let value = "position:absolute;width:100%;height:100%;";
+  scaleRootElement(node, id) {
+    const boundaryWindow = this.highlighterEnv.window;
+    const zoom = getCurrentZoom(node);
+    // Hide the root element and force the reflow in order to get the proper window's
+    // dimensions without increasing them.
+    this.setAttributeForElement(id, "style", "display: none");
+    node.offsetWidth;
+
+    let { width, height } = getWindowDimensions(boundaryWindow);
+    let value = "";
 
     if (zoom !== 1) {
-      value = "position:absolute;";
-      value += "transform-origin:top left;transform:scale(" + (1 / zoom) + ");";
-      value += "width:" + (100 * zoom) + "%;height:" + (100 * zoom) + "%;";
+      value = `transform-origin:top left; transform:scale(${1 / zoom}); `;
+      width *= zoom;
+      height *= zoom;
     }
 
+    value += `position:absolute; width:${width}px;height:${height}px; overflow:hidden`;
+
     this.setAttributeForElement(id, "style", value);
-  }
+  },
 };
 exports.CanvasFrameAnonymousContentHelper = CanvasFrameAnonymousContentHelper;
 
@@ -538,57 +602,114 @@ exports.CanvasFrameAnonymousContentHelper = CanvasFrameAnonymousContentHelper;
  *         The content bounds of the container element.
  * @param  {Window} win
  *         The window object.
+ * @param  {Object} [options={}]
+ *         Advanced options for the infobar.
+ * @param  {String} options.position
+ *         Force the infobar to be displayed either on "top" or "bottom". Any other value
+ *         will be ingnored.
+ * @param  {Boolean} options.hideIfOffscreen
+ *         If set to `true`, hides the infobar if it's offscreen, instead of automatically
+ *         reposition it.
  */
-function moveInfobar(container, bounds, win) {
-  let winHeight = win.innerHeight * getCurrentZoom(win);
-  let winWidth = win.innerWidth * getCurrentZoom(win);
-  let winScrollY = win.scrollY;
+function moveInfobar(container, bounds, win, options = {}) {
+  const zoom = getCurrentZoom(win);
+  const viewport = getViewportDimensions(win);
 
-  // Ensure that containerBottom and containerTop are at least zero to avoid
-  // showing tooltips outside the viewport.
-  let containerBottom = Math.max(0, bounds.bottom) + INFOBAR_ARROW_SIZE;
-  let containerTop = Math.min(winHeight, bounds.top);
+  const { computedStyle } = container;
 
-  // Can the bar be above the node?
-  let top;
-  if (containerTop < INFOBAR_HEIGHT) {
-    // No. Can we move the bar under the node?
-    if (containerBottom + INFOBAR_HEIGHT > winHeight) {
-      // No. Let's move it inside. Can we show it at the top of the element?
-      if (containerTop < winScrollY) {
-        // No. Window is scrolled past the top of the element.
-        top = 0;
-      } else {
-        // Yes. Show it at the top of the element
-        top = containerTop;
-      }
-      container.setAttribute("position", "overlap");
-    } else {
-      // Yes. Let's move it under the node.
-      top = containerBottom;
-      container.setAttribute("position", "bottom");
-    }
-  } else {
-    // Yes. Let's move it on top of the node.
-    top = containerTop - INFOBAR_HEIGHT;
-    container.setAttribute("position", "top");
+  const margin = 2;
+  const arrowSize = parseFloat(
+    computedStyle.getPropertyValue("--highlighter-bubble-arrow-size")
+  );
+  const containerHeight = parseFloat(computedStyle.getPropertyValue("height"));
+  const containerWidth = parseFloat(computedStyle.getPropertyValue("width"));
+  const containerHalfWidth = containerWidth / 2;
+
+  const viewportWidth = viewport.width * zoom;
+  const viewportHeight = viewport.height * zoom;
+  let { pageXOffset, pageYOffset } = win;
+
+  pageYOffset *= zoom;
+  pageXOffset *= zoom;
+
+  // Defines the boundaries for the infobar.
+  const topBoundary = margin;
+  const bottomBoundary = viewportHeight - containerHeight - margin - 1;
+  const leftBoundary = containerHalfWidth + margin;
+  const rightBoundary = viewportWidth - containerHalfWidth - margin;
+
+  // Set the default values.
+  let top = bounds.y - containerHeight - arrowSize;
+  const bottom = bounds.bottom + margin + arrowSize;
+  let left = bounds.x + bounds.width / 2;
+  let isOverlapTheNode = false;
+  let positionAttribute = "top";
+  let position = "absolute";
+
+  // Here we start the math.
+  // We basically want to position absolutely the infobar, except when is pointing to a
+  // node that is offscreen or partially offscreen, in a way that the infobar can't
+  // be placed neither on top nor on bottom.
+  // In such cases, the infobar will overlap the node, and to limit the latency given
+  // by APZ (See Bug 1312103) it will be positioned as "fixed".
+  // It's a sort of "position: sticky" (but positioned as absolute instead of relative).
+  const canBePlacedOnTop = top >= pageYOffset;
+  const canBePlacedOnBottom = bottomBoundary + pageYOffset - bottom > 0;
+  const forcedOnTop = options.position === "top";
+  const forcedOnBottom = options.position === "bottom";
+
+  if (
+    (!canBePlacedOnTop && canBePlacedOnBottom && !forcedOnTop) ||
+    forcedOnBottom
+  ) {
+    top = bottom;
+    positionAttribute = "bottom";
   }
 
-  // Align the bar with the box's center if possible.
-  let left = bounds.right - bounds.width / 2;
-  // Make sure the while infobar is visible.
-  let buffer = 100;
-  if (left < buffer) {
-    left = buffer;
-    container.setAttribute("hide-arrow", "true");
-  } else if (left > winWidth - buffer) {
-    left = winWidth - buffer;
+  const isOffscreenOnTop = top < topBoundary + pageYOffset;
+  const isOffscreenOnBottom = top > bottomBoundary + pageYOffset;
+  const isOffscreenOnLeft = left < leftBoundary + pageXOffset;
+  const isOffscreenOnRight = left > rightBoundary + pageXOffset;
+
+  if (isOffscreenOnTop) {
+    top = topBoundary;
+    isOverlapTheNode = true;
+  } else if (isOffscreenOnBottom) {
+    top = bottomBoundary;
+    isOverlapTheNode = true;
+  } else if (isOffscreenOnLeft || isOffscreenOnRight) {
+    isOverlapTheNode = true;
+    top -= pageYOffset;
+  }
+
+  if (isOverlapTheNode && options.hideIfOffscreen) {
+    container.setAttribute("hidden", "true");
+    return;
+  } else if (isOverlapTheNode) {
+    left = Math.min(Math.max(leftBoundary, left - pageXOffset), rightBoundary);
+
+    position = "fixed";
     container.setAttribute("hide-arrow", "true");
   } else {
+    position = "absolute";
     container.removeAttribute("hide-arrow");
   }
 
-  let style = "top:" + top + "px;left:" + left + "px;";
-  container.setAttribute("style", style);
+  // We need to scale the infobar Independently from the highlighter's container;
+  // otherwise the `position: fixed` won't work, since "any value other than `none` for
+  // the transform, results in the creation of both a stacking context and a containing
+  // block. The object acts as a containing block for fixed positioned descendants."
+  // (See https://www.w3.org/TR/css-transforms-1/#transform-rendering)
+  // We also need to shift the infobar 50% to the left in order for it to appear centered
+  // on the element it points to.
+  container.setAttribute(
+    "style",
+    `
+    position:${position};
+    transform-origin: 0 0;
+    transform: scale(${1 / zoom}) translate(calc(${left}px - 50%), ${top}px)`
+  );
+
+  container.setAttribute("position", positionAttribute);
 }
 exports.moveInfobar = moveInfobar;

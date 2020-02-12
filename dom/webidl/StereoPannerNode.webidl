@@ -10,11 +10,20 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
+dictionary StereoPannerOptions : AudioNodeOptions {
+             float pan = 0;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface StereoPannerNode : AudioNode {
+  [Throws]
+  constructor(BaseAudioContext context,
+              optional StereoPannerOptions options = {});
+
   readonly attribute AudioParam pan;
 };
 
 // Mozilla extension
-StereoPannerNode implements AudioNodePassThrough;
+StereoPannerNode includes AudioNodePassThrough;
 

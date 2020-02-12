@@ -1,39 +1,34 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const BUTTON_POSITION_CANCEL = 1;
 const BUTTON_POSITION_DONT_SAVE = 2;
 
-
-function test()
-{
+function test() {
   waitForExplicitFinish();
 
   // Observer must be attached *before* Scratchpad is opened.
   CloseObserver.init();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onTabLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onTabLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function() {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html;charset=utf8,<p>test browser last window closing</p>";
+  BrowserTestUtils.loadURI(
+    gBrowser,
+    "data:text/html;charset=utf8,<p>test browser last window closing</p>"
+  );
 }
 
-
-
-function runTests({ Scratchpad })
-{
-  let browser = Services.wm.getEnumerator("navigator:browser").getNext();
-  let oldPrompt = Services.prompt;
+function runTests({ Scratchpad }) {
+  const browser = Services.wm.getEnumerator("navigator:browser").getNext();
+  const oldPrompt = Services.prompt;
   let button;
 
   Services.prompt = {
-    confirmEx: () => button
+    confirmEx: () => button,
   };
-
 
   Scratchpad.dirty = true;
 
@@ -56,24 +51,20 @@ function runTests({ Scratchpad })
   finish();
 }
 
-
 var CloseObserver = {
   expectedValue: null,
-  init: function ()
-  {
-    Services.obs.addObserver(this, "browser-lastwindow-close-requested", false);
+  init: function() {
+    Services.obs.addObserver(this, "browser-lastwindow-close-requested");
   },
 
-  observe: function (aSubject)
-  {
+  observe: function(aSubject) {
     aSubject.QueryInterface(Ci.nsISupportsPRBool);
-    let message = this.expectedValue ? "close" : "stay open";
+    const message = this.expectedValue ? "close" : "stay open";
     ok(this.expectedValue === aSubject.data, "Expected browser to " + message);
     aSubject.data = true;
   },
 
-  uninit: function ()
-  {
-    Services.obs.removeObserver(this, "browser-lastwindow-close-requested", false);
+  uninit: function() {
+    Services.obs.removeObserver(this, "browser-lastwindow-close-requested");
   },
 };

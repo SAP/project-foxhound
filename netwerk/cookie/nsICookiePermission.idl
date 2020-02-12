@@ -4,9 +4,10 @@
 
 #include "nsISupports.idl"
 
-interface nsICookie2;
+interface nsICookie;
 interface nsIURI;
 interface nsIChannel;
+interface nsIPrincipal;
 
 typedef long nsCookieAccess;
 
@@ -30,41 +31,12 @@ interface nsICookiePermission : nsISupports
    * any methods on this interface.
    */
   const nsCookieAccess ACCESS_SESSION = 8;
-  const nsCookieAccess ACCESS_ALLOW_FIRST_PARTY_ONLY = 9;
-  const nsCookieAccess ACCESS_LIMIT_THIRD_PARTY = 10;
 
   /**
-   * setAccess
-   *
-   * this method is called to block cookie access for the given URI.  this
-   * may result in other URIs being blocked as well (e.g., URIs which share
-   * the same host name).
-   *
-   * @param aURI
-   *        the URI to block
-   * @param aAccess
-   *        the new cookie access for the URI.
+   * Don't use values 9 and 10! They used to be ACCESS_ALLOW_FIRST_PARTY_ONLY
+   * and ACCESS_LIMIT_THIRD_PARTY, now removed, but maybe still stored in some
+   * ancient user profiles.
    */
-  void setAccess(in nsIURI         aURI,
-                 in nsCookieAccess aAccess);
-
-  /**
-   * canAccess
-   *
-   * this method is called to test whether or not the given URI/channel may
-   * access the cookie database, either to set or get cookies.
-   *
-   * @param aURI
-   *        the URI trying to access cookies
-   * @param aChannel
-   *        the channel corresponding to aURI
-   *
-   * @return one of the following nsCookieAccess values:
-   *         ACCESS_DEFAULT, ACCESS_ALLOW, ACCESS_DENY, or
-   *         ACCESS_ALLOW_FIRST_PARTY_ONLY
-   */
-  nsCookieAccess canAccess(in nsIURI     aURI,
-                           in nsIChannel aChannel);
 
   /**
    * canSetCookie
@@ -95,15 +67,8 @@ interface nsICookiePermission : nsISupports
    */
   boolean canSetCookie(in nsIURI     aURI,
                        in nsIChannel aChannel,
-                       in nsICookie2 aCookie,
+                       in nsICookie aCookie,
                        inout boolean aIsSession,
                        inout int64_t aExpiry);
 };
 
-%{ C++
-/**
- * The nsICookiePermission implementation is an XPCOM service registered
- * under the ContractID:
- */
-#define NS_COOKIEPERMISSION_CONTRACTID "@mozilla.org/cookie/permission;1"
-%}

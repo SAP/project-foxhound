@@ -8,160 +8,247 @@
 // certificates are valid for or what errors prevented the certificates from
 // being verified.
 
-var { OS } = Cu.import("resource://gre/modules/osfile.jsm", {});
-
-var certificates = [];
+var { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+var { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const PREF_ABOUT_CERTIFICATE = "security.aboutcertificate.enabled";
 
 registerCleanupFunction(function() {
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"]
-                 .getService(Ci.nsIX509CertDB);
-  certificates.forEach(cert => {
-    certdb.deleteCertificate(cert);
-  });
+  Services.prefs.clearUserPref(PREF_ABOUT_CERTIFICATE);
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("ca.pem", "CTu,CTu,CTu");
-  let win = yield displayCertificate(cert);
-  checkUsages(win, ["SSL Certificate Authority"]);
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testCAandTitle() {
+  let cert = await readCertificate("ca.pem", "CTu,CTu,CTu");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "ca");
+    } else {
+      let win = await displayCertificate(cert);
+      checkUsages(win, [{ id: "verify-ssl-ca", args: null }]);
+      checkDetailsPane(win, ["ca"]);
+
+      // There's no real need to test the title for every cert, so we just test it
+      // once here.
+      Assert.deepEqual(
+        win.document.l10n.getAttributes(win.document.documentElement),
+        { args: { certName: "ca" }, id: "cert-viewer-title" },
+        "Actual and expected title should match"
+      );
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("ssl-ee.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkUsages(win, ["SSL Server Certificate", "SSL Client Certificate"]);
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testSSLEndEntity() {
+  let cert = await readCertificate("ssl-ee.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "ssl-ee");
+    } else {
+      let win = await displayCertificate(cert);
+      checkUsages(win, [
+        { id: "verify-ssl-server", args: null },
+        { id: "verify-ssl-client", args: null },
+      ]);
+      checkDetailsPane(win, ["ca", "ssl-ee"]);
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("email-ee.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkUsages(win, ["Email Recipient Certificate", "Email Signer Certificate"]);
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testEmailEndEntity() {
+  let cert = await readCertificate("email-ee.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "email-ee");
+    } else {
+      let win = await displayCertificate(cert);
+      checkUsages(win, [
+        { id: "verify-email-recip", args: null },
+        { id: "verify-email-signer", args: null },
+      ]);
+      checkDetailsPane(win, ["ca", "email-ee"]);
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("code-ee.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkUsages(win, ["Object Signer"]);
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testCodeSignEndEntity() {
+  let cert = await readCertificate("code-ee.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "code-ee");
+    } else {
+      let win = await displayCertificate(cert);
+      checkError(win, { id: "cert-not-verified-unknown", args: null });
+      checkDetailsPane(win, ["code-ee"]);
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("expired-ca.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win, "Could not verify this certificate because it has expired.");
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testExpired() {
+  let cert = await readCertificate("expired-ca.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "expired-ca");
+    } else {
+      let win = await displayCertificate(cert);
+      checkError(win, { id: "cert-not-verified-cert-expired", args: null });
+      checkDetailsPane(win, ["expired-ca"]);
+      await BrowserTestUtils.closeWindow(win);
+
+      // These tasks may run in any order, so we run this additional testcase in the
+      // same task.
+      let eeCert = await readCertificate("ee-from-expired-ca.pem", ",,");
+      let eeWin = await displayCertificate(eeCert);
+      checkError(eeWin, { id: "cert-not-verified-ca-invalid", args: null });
+      checkDetailsPane(eeWin, ["ee-from-expired-ca"]);
+      await BrowserTestUtils.closeWindow(eeWin);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("ee-from-expired-ca.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because the CA certificate " +
-             "is invalid.");
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testUnknownIssuer() {
+  Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, false);
+  let cert = await readCertificate("unknown-issuer.pem", ",,");
+  let win = await displayCertificate(cert);
+  checkError(win, { id: "cert-not-verified-issuer-unknown", args: null });
+  checkDetailsPane(win, ["unknown-issuer"]);
+  await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("unknown-issuer.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because the issuer is " +
-             "unknown.");
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testInsecureAlgo() {
+  Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, false);
+  let cert = await readCertificate("md5-ee.pem", ",,");
+  let win = await displayCertificate(cert);
+  checkError(win, { id: "cert-not-verified_algorithm-disabled", args: null });
+  checkDetailsPane(win, ["md5-ee"]);
+  await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("md5-ee.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because it was signed using " +
-             "a signature algorithm that was disabled because that algorithm " +
-             "is not secure.");
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testUntrusted() {
+  let cert = await readCertificate("untrusted-ca.pem", "p,p,p");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "untrusted-ca");
+    } else {
+      let win = await displayCertificate(cert);
+      checkError(win, { id: "cert-not-verified-cert-not-trusted", args: null });
+      checkDetailsPane(win, ["untrusted-ca"]);
+      await BrowserTestUtils.closeWindow(win);
+
+      // These tasks may run in any order, so we run this additional testcase in the
+      // same task.
+      let eeCert = await readCertificate("ee-from-untrusted-ca.pem", ",,");
+      let eeWin = await displayCertificate(eeCert);
+      checkError(eeWin, {
+        id: "cert-not-verified-issuer-not-trusted",
+        args: null,
+      });
+      checkDetailsPane(eeWin, ["ee-from-untrusted-ca"]);
+      await BrowserTestUtils.closeWindow(eeWin);
+    }
+  }
 });
 
-add_task(function* () {
-  let cert = yield readCertificate("untrusted-ca.pem", "p,p,p");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because it is not trusted.");
-  yield BrowserTestUtils.closeWindow(win);
-});
-
-add_task(function* () {
-  let cert = yield readCertificate("ee-from-untrusted-ca.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because the issuer is not " +
-             "trusted.");
-  yield BrowserTestUtils.closeWindow(win);
-});
-
-add_task(function* () {
+add_task(async function testRevoked() {
   // Note that there's currently no way to un-do this. This should only be a
   // problem if another test re-uses a certificate with this same key (perhaps
   // likely) and subject (less likely).
-  let certBlocklist = Cc["@mozilla.org/security/certblocklist;1"]
-                        .getService(Ci.nsICertBlocklist);
-  certBlocklist.revokeCertBySubjectAndPubKey(
-    "MBIxEDAOBgNVBAMMB3Jldm9rZWQ=", // CN=revoked
-    "VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8="); // hash of the shared key
-  let cert = yield readCertificate("revoked.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win,
-             "Could not verify this certificate because it has been revoked.");
-  yield BrowserTestUtils.closeWindow(win);
+  if (AppConstants.MOZ_NEW_CERT_STORAGE) {
+    let certBlocklist = Cc["@mozilla.org/security/certstorage;1"].getService(
+      Ci.nsICertStorage
+    );
+    let result = await new Promise(resolve =>
+      certBlocklist.setRevocations(
+        [
+          {
+            QueryInterface: ChromeUtils.generateQI([
+              Ci.nsISubjectAndPubKeyRevocationState,
+            ]),
+            subject: "MBIxEDAOBgNVBAMMB3Jldm9rZWQ=", // CN=revoked
+            pubKey: "VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8=", // hash of the shared key
+            state: Ci.nsICertStorage.STATE_ENFORCE, // yes, we want this to be revoked
+          },
+        ],
+        resolve
+      )
+    );
+    Assert.equal(result, Cr.NS_OK, "setting revocation state should succeed");
+  } else {
+    let certBlocklist = Cc["@mozilla.org/security/certblocklist;1"].getService(
+      Ci.nsICertBlocklist
+    );
+    certBlocklist.revokeCertBySubjectAndPubKey(
+      "MBIxEDAOBgNVBAMMB3Jldm9rZWQ=", // CN=revoked
+      "VCIlmPM9NkgFQtrs4Oa5TeFcDu6MWRTKSNdePEhOgD8="
+    ); // hash of the shared key
+  }
+  Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, false);
+  let cert = await readCertificate("revoked.pem", ",,");
+  let win = await displayCertificate(cert);
+  // As of bug 1312827, OneCRL only applies to TLS web server certificates, so
+  // this certificate will actually verify successfully for every end-entity
+  // usage except TLS web server.
+  checkUsages(win, [
+    { id: "verify-email-recip", args: null },
+    { id: "verify-email-signer", args: null },
+    { id: "verify-ssl-client", args: null },
+  ]);
+  checkDetailsPane(win, ["ca", "revoked"]);
+  await BrowserTestUtils.closeWindow(win);
 });
 
-add_task(function* () {
+add_task(async function testInvalid() {
   // This certificate has a keyUsage extension asserting cRLSign and
   // keyCertSign, but it doesn't have a basicConstraints extension. This
-  // shouldn't be valid for any usage. Sadly, we give a pretty lame error
+  // shouldn't be valid for any usage. Sadly, we give a pretty bad error
   // message in this case.
-  let cert = yield readCertificate("invalid.pem", ",,");
-  let win = yield displayCertificate(cert);
-  checkError(win, "Could not verify this certificate for unknown reasons.");
-  yield BrowserTestUtils.closeWindow(win);
+  let cert = await readCertificate("invalid.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "invalid");
+    } else {
+      let win = await displayCertificate(cert);
+      checkError(win, { id: "cert-not-verified-unknown", args: null });
+      checkDetailsPane(win, ["invalid"]);
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
 });
 
-/**
- * Helper for readCertificate.
- */
-function pemToBase64(pem) {
-  return pem.replace(/-----BEGIN CERTIFICATE-----/, "")
-            .replace(/-----END CERTIFICATE-----/, "")
-            .replace(/[\r\n]/g, "");
-}
-
-/**
- * Given the filename of a certificate, returns a promise that will resolve with
- * a handle to the certificate when that certificate has been read and imported
- * with the given trust settings.
- *
- * @param {String} filename
- *        The filename of the certificate (assumed to be in the same directory).
- * @param {String} trustString
- *        A string describing how the certificate should be trusted (see
- *        `certutil -A --help`).
- * @return {Promise}
- *         A promise that will resolve with a handle to the certificate.
- */
-function readCertificate(filename, trustString) {
-  return OS.File.read(getTestFilePath(filename)).then(data => {
-    let decoder = new TextDecoder();
-    let pem = decoder.decode(data);
-    let certdb = Cc["@mozilla.org/security/x509certdb;1"]
-                   .getService(Ci.nsIX509CertDB);
-    let base64 = pemToBase64(pem);
-    certdb.addCertFromBase64(base64, trustString, "unused");
-    let cert = certdb.constructX509FromBase64(base64);
-    certificates.push(cert); // so we remember to delete this at the end
-    return cert;
-  }, error => { throw error; });
-}
+add_task(async function testLongOID() {
+  // This certificate has a certificatePolicies extension with a policy with a
+  // very long OID. This tests that we don't crash when looking at it.
+  let cert = await readCertificate("longOID.pem", ",,");
+  for (let isNewCertViewer of [true, false]) {
+    Services.prefs.setBoolPref(PREF_ABOUT_CERTIFICATE, isNewCertViewer);
+    if (isNewCertViewer) {
+      let url = getURL(cert);
+      await openCertViewerAndCheckTabName(url, "Long OID");
+    } else {
+      let win = await displayCertificate(cert);
+      checkDetailsPane(win, ["Long OID"]);
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
+});
 
 /**
  * Given a certificate, returns a promise that will resolve when the certificate
@@ -175,16 +262,21 @@ function readCertificate(filename, trustString) {
  *         viewer window when the usages have been determined.
  */
 function displayCertificate(certificate) {
-  let array = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-  array.appendElement(certificate, false);
-  let params = Cc["@mozilla.org/embedcomp/dialogparam;1"]
-                 .createInstance(Ci.nsIDialogParamBlock);
-  params.objects = array;
-  let win = window.openDialog("chrome://pippki/content/certViewer.xul", "",
-                              "", params);
-  return TestUtils.topicObserved("ViewCertDetails:CertUsagesDone",
-                                 (subject, data) => subject == win)
-  .then(([subject, data]) => subject, error => { throw error; });
+  let win = window.openDialog(
+    "chrome://pippki/content/certViewer.xul",
+    "",
+    "",
+    certificate
+  );
+  return TestUtils.topicObserved(
+    "ViewCertDetails:CertUsagesDone",
+    (subject, data) => subject == win
+  ).then(
+    ([subject, data]) => subject,
+    error => {
+      throw error;
+    }
+  );
 }
 
 /**
@@ -193,20 +285,22 @@ function displayCertificate(certificate) {
  *
  * @param {window} win
  *        The certificate viewer window.
- * @return {String[]}
- *         An array of strings describing the usages the certificate is valid
- *         for.
+ * @return {Object[]}
+ *         An array of objects including the L10n Ids of strings describing
+ *         the usages the certificate is valid for.
  */
 function getUsages(win) {
   let determinedUsages = [];
   let verifyInfoBox = win.document.getElementById("verify_info_box");
   Array.from(verifyInfoBox.children).forEach(child => {
-    if (child.getAttribute("hidden") != "true" &&
-        child.getAttribute("id") != "verified") {
-      determinedUsages.push(child.getAttribute("value"));
+    if (
+      child.getAttribute("hidden") != "true" &&
+      child.getAttribute("id") != "verified"
+    ) {
+      determinedUsages.push(win.document.l10n.getAttributes(child));
     }
   });
-  return determinedUsages.sort();
+  return determinedUsages.sort(compareL10Ids);
 }
 
 /**
@@ -217,51 +311,150 @@ function getUsages(win) {
  *
  * @param {window} win
  *        The certificate viewer window.
- * @return {String}
- *         A string describing the error encountered, or the success message if
- *         the certificate is valid for at least one usage.
+ * @return {Object}
+ *         A object with L10n id of the string describing the error encountered,
+ *        or the success message if the certificate is valid for at least one usage.
  */
 function getError(win) {
-  return win.document.getElementById("verified").textContent;
+  let verified = win.document.getElementById("verified");
+  return win.document.l10n.getAttributes(verified);
 }
 
 /**
- * Given a certificate viewer window and an array of expected usage
+ * Given a certificate viewer window and an array of l10n ids of expected usage
  * descriptions, verifies that the window is actually showing that the
  * certificate has validated for those usages.
  *
  * @param {window} win
  *        The certificate viewer window.
- * @param {String[]} usages
- *        An array of expected usage descriptions.
+ * @param {Object[]} usagesL10nIds
+ *        An array of object with l10n ids of expected usage descriptions.
  */
-function checkUsages(win, usages) {
-  Assert.equal(getError(win),
-               "This certificate has been verified for the following uses:",
-               "should have successful verification message");
+function checkUsages(win, usagesL10nIds) {
+  Assert.deepEqual(
+    getError(win),
+    { id: "cert-verified", args: null },
+    "should have successful verification message"
+  );
   let determinedUsages = getUsages(win);
-  usages.sort();
-  Assert.equal(determinedUsages.length, usages.length,
-               "number of usages as determined by cert viewer should be equal");
-  while (usages.length > 0) {
-    Assert.equal(determinedUsages.pop(), usages.pop(),
-                 "usages as determined by cert viewer should be equal");
+  usagesL10nIds.sort(compareL10Ids);
+  Assert.deepEqual(
+    determinedUsages.length,
+    usagesL10nIds.length,
+    "number of usages as determined by cert viewer should be equal"
+  );
+  while (usagesL10nIds.length > 0) {
+    Assert.deepEqual(
+      determinedUsages.pop(),
+      usagesL10nIds.pop(),
+      "usages as determined by cert viewer should be equal"
+    );
   }
 }
 
 /**
- * Given a certificate viewer window and an expected error, verifies that the
+ * Given a certificate viewer window and l10n id of an expected error, verifies that the
  * window is actually showing that error.
  *
  * @param {window} win
  *        The certificate viewer window.
- * @param {String} error
- *        The expected error message.
+ * @param {Object} errorL10nId
+ *        The object with l10n id of expected error message.
  */
-function checkError(win, error) {
+function checkError(win, errorL10nId) {
   let determinedUsages = getUsages(win);
-  Assert.equal(determinedUsages.length, 0,
-               "should not have any successful usages in error case");
-  Assert.equal(getError(win), error,
-               "determined error should be the same as expected error");
+  Assert.equal(
+    determinedUsages.length,
+    0,
+    "should not have any successful usages in error case"
+  );
+  Assert.deepEqual(
+    getError(win),
+    errorL10nId,
+    "determined error should be the same as expected error"
+  );
+}
+
+/**
+ * Given a certificate viewer window and an expected list of certificate names,
+ * verifies that the certificate details pane of the viewer shows the expected
+ * certificates in the expected order.
+ *
+ * @param {window} win
+ *        The certificate viewer window.
+ * @param {String[]} names
+ *        An array of expected certificate names.
+ */
+function checkDetailsPane(win, names) {
+  let tree = win.document.getElementById("treesetDump");
+  let nodes = tree.querySelectorAll("treecell");
+  Assert.equal(
+    nodes.length,
+    names.length,
+    "details pane: should have the expected number of cert names"
+  );
+  for (let i = 0; i < names.length; i++) {
+    Assert.equal(
+      nodes[i].getAttribute("label"),
+      names[i],
+      "details pain: should have expected cert name"
+    );
+  }
+}
+
+/**
+ * Given two objects with l10n id, compare them by l10n id for sorting.
+ *
+ * @param {Objects} ida,idb
+ *        The objects with l10n id.
+ * @param {integer}
+ *        An integer representing true of false.
+ */
+
+function compareL10Ids(ida, idb) {
+  if (ida.id < idb.id) {
+    return -1;
+  } else if (ida.id > idb.id) {
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Given a certificate, returns its PEMs (each one of the certificate chain) string in a url.
+ * @param {Object} cert
+ *      A certificate object
+ * @returns {String} an URL for opening the certificate viewer
+ */
+function getURL(cert) {
+  // Note that we don't get the certificate chain as in e.g browser/base/content/browser.js,
+  // because all the .pem files when opened with CS (https://github.com/april/certainly-something)
+  // shows only one certificate
+  let derb64 = encodeURIComponent(cert.getBase64DERString());
+  return `about:certificate?cert=${derb64}`;
+}
+
+/**
+ * Given an certificate URL, opens the new certificate viewer and check
+ * if a certain element exists, with its expected result.
+ *
+ * @param {String} url
+ *        The URL with the certificate info
+ * @param {String} expectedTabName
+ *        The expected name of the tab in the certificate viewer
+ */
+async function openCertViewerAndCheckTabName(url, expectedTabName) {
+  await BrowserTestUtils.withNewTab({ gBrowser, url }, async function(browser) {
+    await ContentTask.spawn(browser, expectedTabName, async function(
+      expectedTabName
+    ) {
+      let certificateSection = await ContentTaskUtils.waitForCondition(() => {
+        return content.document.querySelector("certificate-section");
+      }, "Certificate section found");
+      let tabName = certificateSection.shadowRoot.querySelector(
+        ".tab[idnumber='0']"
+      ).textContent;
+      Assert.equal(tabName, expectedTabName);
+    });
+  });
 }

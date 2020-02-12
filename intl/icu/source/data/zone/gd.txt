@@ -1,13 +1,7 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/gd.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 gd{
-    Version{"2.1.20.4"}
+    Version{"2.1.49.82"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -309,6 +303,9 @@ gd{
         "America:El_Salvador"{
             ec{"An Salbhador"}
         }
+        "America:Fort_Nelson"{
+            ec{"Fort Nelson"}
+        }
         "America:Fortaleza"{
             ec{"Fortaleza"}
         }
@@ -510,6 +507,9 @@ gd{
         "America:Puerto_Rico"{
             ec{"Porto Rìceo"}
         }
+        "America:Punta_Arenas"{
+            ec{"Punta Arenas"}
+        }
         "America:Rainy_River"{
             ec{"Rainy River"}
         }
@@ -660,6 +660,9 @@ gd{
         "Asia:Ashgabat"{
             ec{"Aşgabat"}
         }
+        "Asia:Atyrau"{
+            ec{"Atyrau"}
+        }
         "Asia:Baghdad"{
             ec{"Baghdād"}
         }
@@ -671,6 +674,9 @@ gd{
         }
         "Asia:Bangkok"{
             ec{"Bangkok"}
+        }
+        "Asia:Barnaul"{
+            ec{"Barnaul"}
         }
         "Asia:Beirut"{
             ec{"Beirut"}
@@ -707,6 +713,9 @@ gd{
         }
         "Asia:Dushanbe"{
             ec{"Dushanbe"}
+        }
+        "Asia:Famagusta"{
+            ec{"Famagusta"}
         }
         "Asia:Gaza"{
             ec{"Gàsa"}
@@ -849,6 +858,9 @@ gd{
         "Asia:Tokyo"{
             ec{"Tōkyō"}
         }
+        "Asia:Tomsk"{
+            ec{"Tomsk"}
+        }
         "Asia:Ulaanbaatar"{
             ec{"Ulaanbaatar"}
         }
@@ -939,6 +951,10 @@ gd{
         "Australia:Sydney"{
             ec{"Sidni"}
         }
+        "Etc:UTC"{
+            ls{"Àm Uile-choitcheann Co-òrdanaichte"}
+            ss{"UTC"}
+        }
         "Etc:Unknown"{
             ec{"Baile neo-aithnichte"}
         }
@@ -947,6 +963,9 @@ gd{
         }
         "Europe:Andorra"{
             ec{"Andorra"}
+        }
+        "Europe:Astrakhan"{
+            ec{"Astrakhan"}
         }
         "Europe:Athens"{
             ec{"An Àithne"}
@@ -1007,6 +1026,9 @@ gd{
         "Europe:Kiev"{
             ec{"Kiev"}
         }
+        "Europe:Kirov"{
+            ec{"Kirov"}
+        }
         "Europe:Lisbon"{
             ec{"Lisbon"}
         }
@@ -1066,6 +1088,9 @@ gd{
         "Europe:Sarajevo"{
             ec{"Sarajevo"}
         }
+        "Europe:Saratov"{
+            ec{"Saratov"}
+        }
         "Europe:Simferopol"{
             ec{"Simferopol"}
         }
@@ -1083,6 +1108,9 @@ gd{
         }
         "Europe:Tirane"{
             ec{"Tiranë"}
+        }
+        "Europe:Ulyanovsk"{
+            ec{"Ulyanovsk"}
         }
         "Europe:Uzhgorod"{
             ec{"Uzhgorod"}
@@ -1819,6 +1847,9 @@ gd{
         }
         "meta:Ponape"{
             ls{"Àm Pohnpei"}
+        }
+        "meta:Pyongyang"{
+            ls{"Àm Pyeongyang"}
         }
         "meta:Qyzylorda"{
             ld{"Tìde samhraidh Qızılorda"}

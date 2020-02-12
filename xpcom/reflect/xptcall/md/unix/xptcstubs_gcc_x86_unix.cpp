@@ -6,7 +6,6 @@
 /* Implement shared vtbl methods. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 #include "xptc_gcc_x86_unix.h"
 
 extern "C" {
@@ -21,7 +20,6 @@ PrepareAndDispatch(uint32_t methodIndex, nsXPTCStubBase* self, uint32_t* args)
     const nsXPTMethodInfo* info;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self,"no self");
 
@@ -35,12 +33,17 @@ PrepareAndDispatch(uint32_t methodIndex, nsXPTCStubBase* self, uint32_t* args)
         dispatchParams = paramBuffer;
     NS_ASSERTION(dispatchParams,"no place for params");
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint32_t* ap = args;
     for(i = 0; i < paramCount; i++, ap++)
     {
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext)
+            ap++;
 
         if(param.IsOut() || !type.IsArithmetic())
         {
@@ -54,10 +57,12 @@ PrepareAndDispatch(uint32_t methodIndex, nsXPTCStubBase* self, uint32_t* args)
         case nsXPTType::T_I64    : dp->val.i64 = *((int64_t*) ap); ap++; break;
         case nsXPTType::T_U64    : dp->val.u64 = *((uint64_t*)ap); ap++; break;
         case nsXPTType::T_DOUBLE : dp->val.d   = *((double*)  ap); ap++; break;
+        default                  : break;
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t)methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t)methodIndex, info,
+                                               dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;

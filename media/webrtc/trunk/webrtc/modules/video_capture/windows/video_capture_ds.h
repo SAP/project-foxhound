@@ -8,76 +8,67 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_
-#define WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_
+#ifndef MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_
+#define MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_
 
-#include "webrtc/modules/video_capture/video_capture_impl.h"
-#include "webrtc/modules/video_capture/windows/device_info_ds.h"
+#include "rtc_base/scoped_ref_ptr.h"
+#include "modules/video_capture/video_capture_impl.h"
+#include "modules/video_capture/windows/device_info_ds.h"
 
 #define CAPTURE_FILTER_NAME L"VideoCaptureFilter"
 #define SINK_FILTER_NAME L"SinkFilter"
 
-namespace webrtc
-{
-namespace videocapturemodule
-{
+namespace webrtc {
+namespace videocapturemodule {
 // Forward declaraion
 class CaptureSinkFilter;
 
-class VideoCaptureDS: public VideoCaptureImpl
-{
-public:
-    VideoCaptureDS(const int32_t id);
+class VideoCaptureDS : public VideoCaptureImpl {
+ public:
+  VideoCaptureDS();
 
-    virtual int32_t Init(const int32_t id, const char* deviceUniqueIdUTF8);
+  virtual int32_t Init(const char* deviceUniqueIdUTF8);
 
-    /*************************************************************************
-     *
-     *   Start/Stop
-     *
-     *************************************************************************/
-    virtual int32_t
-        StartCapture(const VideoCaptureCapability& capability);
-    virtual int32_t StopCapture();
+  /*************************************************************************
+   *
+   *   Start/Stop
+   *
+   *************************************************************************/
+  int32_t StartCapture(const VideoCaptureCapability& capability) override;
+  int32_t StopCapture() override;
 
-    /**************************************************************************
-     *
-     *   Properties of the set device
-     *
-     **************************************************************************/
+  /**************************************************************************
+   *
+   *   Properties of the set device
+   *
+   **************************************************************************/
 
-    virtual bool CaptureStarted();
-    virtual int32_t CaptureSettings(VideoCaptureCapability& settings);
+  bool CaptureStarted() override;
+  int32_t CaptureSettings(VideoCaptureCapability& settings) override;
 
-protected:
-    virtual ~VideoCaptureDS();
+ protected:
+  ~VideoCaptureDS() override;
 
-    // Help functions
-    int32_t
-        SetCameraOutputIfNeeded(const VideoCaptureCapability& requestedCapability);
-    int32_t
-        SetCameraOutput(const VideoCaptureCapability& requestedCapability,
-                        int32_t capabilityIndex);
+  // Help functions
 
-    int32_t DisconnectGraph();
-    HRESULT VideoCaptureDS::ConnectDVCamera();
+  int32_t SetCameraOutput(const VideoCaptureCapability& requestedCapability);
+  int32_t DisconnectGraph();
+  HRESULT ConnectDVCamera();
 
-    DeviceInfoDS _dsInfo;
-    VideoCaptureCapability _activeCapability;
+  DeviceInfoDS _dsInfo;
 
-    IBaseFilter* _captureFilter;
-    IGraphBuilder* _graphBuilder;
-    IMediaControl* _mediaControl;
-    CaptureSinkFilter* _sinkFilter;
-    IPin* _inputSendPin;
-    IPin* _outputCapturePin;
+  IBaseFilter* _captureFilter;
+  IGraphBuilder* _graphBuilder;
+  IMediaControl* _mediaControl;
+  rtc::scoped_refptr<CaptureSinkFilter> sink_filter_;
+  IPin* _inputSendPin;
+  IPin* _outputCapturePin;
 
-    // Microsoft DV interface (external DV cameras)
-    IBaseFilter* _dvFilter;
-    IPin* _inputDvPin;
-    IPin* _outputDvPin;
-
+  // Microsoft DV interface (external DV cameras)
+  IBaseFilter* _dvFilter;
+  IPin* _inputDvPin;
+  IPin* _outputDvPin;
 };
 }  // namespace videocapturemodule
 }  // namespace webrtc
-#endif // WEBRTC_MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_
+#endif  // MODULES_VIDEO_CAPTURE_MAIN_SOURCE_WINDOWS_VIDEO_CAPTURE_DS_H_

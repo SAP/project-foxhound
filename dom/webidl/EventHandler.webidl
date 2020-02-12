@@ -15,17 +15,14 @@ callback EventHandlerNonNull = any (Event event);
 typedef EventHandlerNonNull? EventHandler;
 
 [TreatNonObjectAsNull]
-// https://www.w3.org/Bugs/Public/show_bug.cgi?id=23489
-//callback OnBeforeUnloadEventHandlerNonNull = DOMString (Event event);
 callback OnBeforeUnloadEventHandlerNonNull = DOMString? (Event event);
 typedef OnBeforeUnloadEventHandlerNonNull? OnBeforeUnloadEventHandler;
 
 [TreatNonObjectAsNull]
-callback OnErrorEventHandlerNonNull = boolean ((Event or DOMString) event, optional DOMString source, optional unsigned long lineno, optional unsigned long column, optional any error);
+callback OnErrorEventHandlerNonNull = any ((Event or DOMString) event, optional DOMString source, optional unsigned long lineno, optional unsigned long column, optional any error);
 typedef OnErrorEventHandlerNonNull? OnErrorEventHandler;
 
-[NoInterfaceObject]
-interface GlobalEventHandlers {
+interface mixin GlobalEventHandlers {
            attribute EventHandler onabort;
            attribute EventHandler onblur;
 // We think the spec is wrong here. See OnErrorEventHandlerForNodes/Window
@@ -33,13 +30,14 @@ interface GlobalEventHandlers {
 //         attribute OnErrorEventHandler onerror;
            attribute EventHandler onfocus;
            //(Not implemented)attribute EventHandler oncancel;
+           attribute EventHandler onauxclick;
            attribute EventHandler oncanplay;
            attribute EventHandler oncanplaythrough;
            attribute EventHandler onchange;
            attribute EventHandler onclick;
-           //(Not implemented)attribute EventHandler onclose;
+           attribute EventHandler onclose;
            attribute EventHandler oncontextmenu;
-           //(Not implemented)attribute EventHandler oncuechange;
+           attribute EventHandler oncuechange;
            attribute EventHandler ondblclick;
            attribute EventHandler ondrag;
            attribute EventHandler ondragend;
@@ -52,6 +50,8 @@ interface GlobalEventHandlers {
            attribute EventHandler ondurationchange;
            attribute EventHandler onemptied;
            attribute EventHandler onended;
+           [Pref="dom.formdata.event.enabled"]
+           attribute EventHandler onformdata;
            attribute EventHandler oninput;
            attribute EventHandler oninvalid;
            attribute EventHandler onkeydown;
@@ -69,7 +69,7 @@ interface GlobalEventHandlers {
            attribute EventHandler onmouseout;
            attribute EventHandler onmouseover;
            attribute EventHandler onmouseup;
-           //(Not implemented)attribute EventHandler onmousewheel;
+           attribute EventHandler onwheel;
            attribute EventHandler onpause;
            attribute EventHandler onplay;
            attribute EventHandler onplaying;
@@ -93,7 +93,6 @@ interface GlobalEventHandlers {
            [Pref="dom.select_events.enabled"]
            attribute EventHandler onselectstart;
 
-           [Pref="dom.details_element.enabled"]
            attribute EventHandler ontoggle;
 
            // Pointer events handlers
@@ -120,18 +119,20 @@ interface GlobalEventHandlers {
 
            // Mozilla-specific handlers. Unprefixed handlers live in
            // Document rather than here.
+           [Deprecated="MozfullscreenchangeDeprecatedPrefix"]
            attribute EventHandler onmozfullscreenchange;
+           [Deprecated="MozfullscreenerrorDeprecatedPrefix"]
            attribute EventHandler onmozfullscreenerror;
-           [Pref="pointer-lock-api.prefixed.enabled"]
-           attribute EventHandler onmozpointerlockchange;
-           [Pref="pointer-lock-api.prefixed.enabled"]
-           attribute EventHandler onmozpointerlockerror;
 
            // CSS-Animation and CSS-Transition handlers.
+           attribute EventHandler onanimationcancel;
            attribute EventHandler onanimationend;
            attribute EventHandler onanimationiteration;
            attribute EventHandler onanimationstart;
+           attribute EventHandler ontransitioncancel;
            attribute EventHandler ontransitionend;
+           attribute EventHandler ontransitionrun;
+           attribute EventHandler ontransitionstart;
 
            // CSS-Animation and CSS-Transition legacy handlers.
            // This handler isn't standard.
@@ -141,21 +142,31 @@ interface GlobalEventHandlers {
            attribute EventHandler onwebkittransitionend;
 };
 
-[NoInterfaceObject]
-interface WindowEventHandlers {
+interface mixin WindowEventHandlers {
            attribute EventHandler onafterprint;
            attribute EventHandler onbeforeprint;
            attribute OnBeforeUnloadEventHandler onbeforeunload;
            attribute EventHandler onhashchange;
            attribute EventHandler onlanguagechange;
            attribute EventHandler onmessage;
+           attribute EventHandler onmessageerror;
            attribute EventHandler onoffline;
            attribute EventHandler ononline;
            attribute EventHandler onpagehide;
            attribute EventHandler onpageshow;
            attribute EventHandler onpopstate;
+           [Pref="dom.promise_rejection_events.enabled"]
+           attribute EventHandler onrejectionhandled;
            attribute EventHandler onstorage;
+           [Pref="dom.promise_rejection_events.enabled"]
+           attribute EventHandler onunhandledrejection;
            attribute EventHandler onunload;
+};
+
+interface mixin DocumentAndElementEventHandlers {
+  attribute EventHandler oncopy;
+  attribute EventHandler oncut;
+  attribute EventHandler onpaste;
 };
 
 // The spec has |attribute OnErrorEventHandler onerror;| on
@@ -163,12 +174,10 @@ interface WindowEventHandlers {
 // whether an ErrorEvent was fired. We don't do that, and until we do we'll
 // need to distinguish between onerror on Window or on nodes.
 
-[NoInterfaceObject]
-interface OnErrorEventHandlerForNodes {
+interface mixin OnErrorEventHandlerForNodes {
            attribute EventHandler onerror;
 };
 
-[NoInterfaceObject]
-interface OnErrorEventHandlerForWindow {
+interface mixin OnErrorEventHandlerForWindow {
            attribute OnErrorEventHandler onerror;
 };

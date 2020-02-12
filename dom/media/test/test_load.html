@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=479859
 -->
 <head>
   <title>Test for Bug 479859</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="manifest.js"></script>
 </head>
@@ -64,13 +64,13 @@ function createMedia(tag) {
   gMedia = document.createElement(tag);
   gMedia.preload = "metadata";
   for (var i=0; i<gEventTypes.length; i++) {
-    gMedia.addEventListener(gEventTypes[i], listener, false);
+    gMedia.addEventListener(gEventTypes[i], listener);
   }
 }
 
 function addSource(src, type) {
   var s = document.createElement("source");
-  s.addEventListener("error", source_error, false);
+  s.addEventListener("error", source_error);
   s.src = src;
   s.type = type;
   gMedia.appendChild(s);
@@ -79,7 +79,7 @@ function addSource(src, type) {
 
 function prependSource(src, type) {
   var s = document.createElement("source");
-  s.addEventListener("error", source_error, false);
+  s.addEventListener("error", source_error);
   s.src = src;
   s.type = type;
   gMedia.insertBefore(s, gMedia.firstChild);
@@ -94,7 +94,7 @@ var gTests = [
         document.body.appendChild(gMedia);
         gMedia.src = src;
       },
-    expectedEvents: ['ratechange',  'loadstart', 'durationchange', 'loadedmetadata', 'loadeddata']
+    expectedEvents: ['loadstart', 'durationchange', 'loadedmetadata', 'loadeddata']
   }, {
     // Test 1: adding video to doc, then adding source.
     create:
@@ -122,7 +122,7 @@ var gTests = [
         addSource(src, type);
         document.body.appendChild(gMedia);
       },
-    expectedEvents: ['ratechange', 'loadstart', 'error']
+    expectedEvents: ['loadstart', 'error']
   }, {
     // Test 4:  video with only bad source, loading, then adding a good source
     // -  should resume load.
@@ -134,8 +134,7 @@ var gTests = [
           function(e) {
             // Should awaken waiting load, causing successful load.
             addSource(src, type);
-          },
-          false);
+          });
         document.body.appendChild(gMedia);
       },
     expectedEvents: ['loadstart', 'source_error', 'source_error', 'durationchange', 'loadedmetadata', 'loadeddata']
@@ -156,8 +155,7 @@ var gTests = [
               prependSource(src, type);
               prepended = true;
             }
-          },
-          false);
+          });
         document.body.appendChild(gMedia);
       },
     expectedEvents: ['loadstart', 'source_error', 'source_error']
@@ -172,14 +170,14 @@ var gTests = [
         addSource(src, type);
         gMedia.load();
       },
-    expectedEvents: ['emptied', 'ratechange',  'loadstart', 'durationchange', 'loadedmetadata', 'loadeddata']
+    expectedEvents: ['emptied',  'loadstart', 'durationchange', 'loadedmetadata', 'loadeddata']
   }
 ];
 
 function nextTest() {
   if (gMedia) {
     for (var i=0; i<gEventTypes.length; i++) {
-      gMedia.removeEventListener(gEventTypes[i], listener, false);
+      gMedia.removeEventListener(gEventTypes[i], listener);
     }
     removeNodeAndSource(gMedia);
     gMedia = null;

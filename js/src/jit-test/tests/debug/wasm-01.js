@@ -1,10 +1,9 @@
+// |jit-test| skip-if: !wasmDebuggingIsSupported()
+
 // Tests that wasm module scripts are available via findScripts.
 
-if (!wasmIsSupported())
-  quit();
-
-var g = newGlobal();
-g.eval(`o = Wasm.instantiateModule(wasmTextToBinary('(module (func) (export "" 0))'));`);
+var g = newGlobal({newCompartment: true});
+g.eval(`o = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary('(module (func) (export "" 0))')));`);
 
 function isWasm(script) { return script.format === "wasm"; }
 
@@ -14,7 +13,7 @@ assertEq(foundScripts1.length, 1);
 var found = foundScripts1[0];
 
 // Add another module, we should be able to find it via findScripts.
-g.eval(`o2 = Wasm.instantiateModule(wasmTextToBinary('(module (func) (export "a" 0))'));`);
+g.eval(`o2 = new WebAssembly.Instance(new WebAssembly.Module(wasmTextToBinary('(module (func) (export "a" 0))')));`);
 var foundScripts2 = dbg.findScripts().filter(isWasm);
 assertEq(foundScripts2.length, 2);
 

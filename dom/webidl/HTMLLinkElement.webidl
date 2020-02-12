@@ -12,47 +12,50 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-link-element
+[Exposed=Window]
 interface HTMLLinkElement : HTMLElement {
-  [Pure]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
-  [SetterThrows, Pure]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows, Pure]
            attribute DOMString href;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString? crossOrigin;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString rel;
   [PutForwards=value]
   readonly attribute DOMTokenList relList;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString media;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString hreflang;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString type;
-  [SetterThrows, Pure, Pref="network.http.enablePerElementReferrer"]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString referrerPolicy;
   [PutForwards=value] readonly attribute DOMTokenList sizes;
 };
-HTMLLinkElement implements LinkStyle;
+HTMLLinkElement includes LinkStyle;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLLinkElement {
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString charset;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString rev;
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString target;
-};
-
-// http://w3c.github.io/webcomponents/spec/imports/#interface-import
-partial interface HTMLLinkElement {
-    [Func="nsDocument::IsWebComponentsEnabled"]
-    readonly attribute Document? import;
 };
 
 // https://w3c.github.io/webappsec/specs/subresourceintegrity/#htmllinkelement-1
 partial interface HTMLLinkElement {
-  [SetterThrows]
+  [CEReactions, SetterThrows]
   attribute DOMString integrity;
+};
+
+//https://w3c.github.io/preload/
+partial interface HTMLLinkElement {
+  [SetterThrows, Pure]
+           attribute DOMString as;
 };

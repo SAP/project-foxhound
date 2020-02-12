@@ -1,37 +1,31 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var gClient;
-var gDebuggee;
+"use strict";
 
-function run_test()
-{
-  initTestDebuggerServer();
-  gDebuggee = testGlobal("test-1");
-  DebuggerServer.addTestGlobal(gDebuggee);
+const { ThreadFront } = require("devtools/shared/fronts/thread");
+const {
+  BrowsingContextTargetFront,
+} = require("devtools/shared/fronts/targets/browsing-context");
 
-  let transport = DebuggerServer.connectPipe();
-  gClient = new DebuggerClient(transport);
-  gClient.connect().then(function ([aType, aTraits]) {
-    attachTestTab(gClient, "test-1", function (aReply, aTabClient) {
-      test_attach(aTabClient);
-    });
-  });
-  do_test_pending();
-}
-
-function test_attach(aTabClient)
-{
-  aTabClient.attachThread({}, function (aResponse, aThreadClient) {
-    do_check_eq(aThreadClient.state, "paused");
-    aThreadClient.resume(cleanup);
-  });
-}
-
-function cleanup()
-{
-  gClient.addListener("closed", function (aEvent) {
-    do_test_finished();
-  });
-  gClient.close();
-}
+/**
+ * Very naive test that checks threadClearTest helper.
+ * It ensures that the thread front is correctly attached.
+ */
+add_task(
+  threadFrontTest(({ threadFront, debuggee, client, targetFront }) => {
+    ok(true, "Thread actor was able to attach");
+    ok(threadFront instanceof ThreadFront, "Thread Front is valid");
+    Assert.equal(threadFront.state, "attached", "Thread Front is resumed");
+    Assert.equal(
+      String(debuggee),
+      "[object Sandbox]",
+      "Debuggee client is valid"
+    );
+    ok(client instanceof DebuggerClient, "Client is valid");
+    ok(
+      targetFront instanceof BrowsingContextTargetFront,
+      "TargetFront is valid"
+    );
+  })
+);

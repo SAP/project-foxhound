@@ -4,58 +4,27 @@
 
 /* Patch app binary partial MAR file staged patch apply success test */
 
-const STATE_AFTER_STAGE = IS_SERVICE_TEST ? STATE_APPLIED_SVC : STATE_APPLIED;
-
-function run_test() {
+async function run_test() {
   if (!setupTestCommon()) {
     return;
   }
+  const STATE_AFTER_STAGE = gIsServiceTest ? STATE_APPLIED_SVC : STATE_APPLIED;
   gTestFiles = gTestFilesPartialSuccess;
   gTestDirs = gTestDirsPartialSuccess;
   gCallbackBinFile = "exe0.exe";
-  setupUpdaterTest(FILE_PARTIAL_MAR, false);
-}
-
-/**
- * Called after the call to setupUpdaterTest finishes.
- */
-function setupUpdaterTestFinished() {
-  stageUpdate();
-}
-
-/**
- * Called after the call to stageUpdate finishes.
- */
-function stageUpdateFinished() {
+  await setupUpdaterTest(FILE_PARTIAL_MAR, false);
+  await stageUpdate(STATE_AFTER_STAGE, true);
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateSuccess(getStageDirFile, true);
-  checkUpdateLogContents(LOG_PARTIAL_SUCCESS_STAGE, true);
+  checkUpdateLogContents(LOG_PARTIAL_SUCCESS, true);
   // Switch the application to the staged application that was updated.
-  runUpdate(STATE_SUCCEEDED, true, 0, false);
-}
-
-/**
- * Called after the call to runUpdate finishes.
- */
-function runUpdateFinished() {
-  checkPostUpdateAppLog();
-}
-
-/**
- * Called after the call to checkPostUpdateAppLog finishes.
- */
-function checkPostUpdateAppLogFinished() {
+  runUpdate(STATE_SUCCEEDED, true, 0, true);
+  await checkPostUpdateAppLog();
   standardInit();
-  Assert.equal(readStatusState(), STATE_NONE,
-               "the status file state" + MSG_SHOULD_EQUAL);
-  Assert.ok(!gUpdateManager.activeUpdate,
-            "the active update should not be defined");
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_SUCCEEDED,
-               "the update state" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(true);
   checkFilesAfterUpdateSuccess(getApplyDirFile, false, true);
   checkUpdateLogContents(LOG_REPLACE_SUCCESS, false, true);
+  await waitForUpdateXMLFiles();
+  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
   checkCallbackLog();
 }

@@ -7,23 +7,14 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#profiles > listitem {
-  list-style-image: url("chrome://mozapps/skin/profile/profileicon.png");
-}
-
-#profiles:focus > listitem[selected="true"] {
-  list-style-image: url("chrome://mozapps/skin/profile/profileicon-selected.png");
-}
-
-#profiles > listitem > listcell > image {
-  width: 16px;
-  height: 16px;
-}
-
 box#managebuttons > button {
   min-width: 8em;
 }
 
 #managebuttons {
   padding-top: 1em;
+}
+
+#profiles {
+  height: 12em;
 }

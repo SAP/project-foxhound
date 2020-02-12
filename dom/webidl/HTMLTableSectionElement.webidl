@@ -11,21 +11,24 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLTableSectionElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   readonly attribute HTMLCollection rows;
   [Throws]
   HTMLElement insertRow(optional long index = -1);
-  [Throws]
+  [CEReactions, Throws]
   void deleteRow(long index);
 };
 
 partial interface HTMLTableSectionElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString align;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString ch;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString chOff;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString vAlign;
 };

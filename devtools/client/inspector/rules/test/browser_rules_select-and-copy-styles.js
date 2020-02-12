@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -36,123 +35,143 @@ const TEST_URI = `
   </div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
-  yield checkCopySelection(view);
-  yield checkSelectAll(view);
-  yield checkCopyEditorValue(view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("div", inspector);
+  await checkCopySelection(view);
+  await checkSelectAll(view);
+  await checkCopyEditorValue(view);
 });
 
-function* checkCopySelection(view) {
+async function checkCopySelection(view) {
   info("Testing selection copy");
 
-  let contentDoc = view.styleDocument;
-  let win = view.styleWindow;
-  let prop = contentDoc.querySelector(".ruleview-property");
-  let values = contentDoc.querySelectorAll(".ruleview-propertyvaluecontainer");
+  const contentDoc = view.styleDocument;
+  const win = view.styleWindow;
+  const prop = contentDoc.querySelector(".ruleview-property");
+  const values = contentDoc.querySelectorAll(
+    ".ruleview-propertyvaluecontainer"
+  );
 
-  let range = contentDoc.createRange();
+  const range = contentDoc.createRange();
   range.setStart(prop, 0);
   range.setEnd(values[4], 2);
   win.getSelection().addRange(range);
   info("Checking that _Copy() returns the correct clipboard value");
 
-  let expectedPattern = "    margin: 10em;[\\r\\n]+" +
-                        "    font-size: 14pt;[\\r\\n]+" +
-                        "    font-family: helvetica, sans-serif;[\\r\\n]+" +
-                        "    color: #AAA;[\\r\\n]+" +
-                        "}[\\r\\n]+" +
-                        "html {[\\r\\n]+" +
-                        "    color: #000000;[\\r\\n]*";
+  const expectedPattern =
+    "    margin: 10em;[\\r\\n]+" +
+    "    font-size: 14pt;[\\r\\n]+" +
+    "    font-family: helvetica, sans-serif;[\\r\\n]+" +
+    "    color: #AAA;[\\r\\n]+" +
+    "}[\\r\\n]+" +
+    "html {[\\r\\n]+" +
+    "    color: #000000;[\\r\\n]*";
 
-  let allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);
-  let menuitemCopy = allMenuItems.find(item => item.label ===
-    STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy"));
+  const allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);
+  const menuitemCopy = allMenuItems.find(
+    item =>
+      item.label ===
+      STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy")
+  );
 
-  ok(menuitemCopy.visible,
-    "Copy menu item is displayed as expected");
+  ok(menuitemCopy.visible, "Copy menu item is displayed as expected");
 
   try {
-    yield waitForClipboardPromise(() => menuitemCopy.click(),
-      () => checkClipboardData(expectedPattern));
+    await waitForClipboardPromise(
+      () => menuitemCopy.click(),
+      () => checkClipboardData(expectedPattern)
+    );
   } catch (e) {
     failedClipboard(expectedPattern);
   }
 }
 
-function* checkSelectAll(view) {
+async function checkSelectAll(view) {
   info("Testing select-all copy");
 
-  let contentDoc = view.styleDocument;
-  let prop = contentDoc.querySelector(".ruleview-property");
+  const contentDoc = view.styleDocument;
+  const prop = contentDoc.querySelector(".ruleview-property");
 
-  info("Checking that _SelectAll() then copy returns the correct " +
-    "clipboard value");
-  view._contextmenu._onSelectAll();
-  let expectedPattern = "element {[\\r\\n]+" +
-                        "    margin: 10em;[\\r\\n]+" +
-                        "    font-size: 14pt;[\\r\\n]+" +
-                        "    font-family: helvetica, sans-serif;[\\r\\n]+" +
-                        "    color: #AAA;[\\r\\n]+" +
-                        "}[\\r\\n]+" +
-                        "html {[\\r\\n]+" +
-                        "    color: #000000;[\\r\\n]+" +
-                        "}[\\r\\n]*";
+  info(
+    "Checking that _SelectAll() then copy returns the correct " +
+      "clipboard value"
+  );
+  view.contextMenu._onSelectAll();
+  const expectedPattern =
+    "element {[\\r\\n]+" +
+    "    margin: 10em;[\\r\\n]+" +
+    "    font-size: 14pt;[\\r\\n]+" +
+    "    font-family: helvetica, sans-serif;[\\r\\n]+" +
+    "    color: #AAA;[\\r\\n]+" +
+    "}[\\r\\n]+" +
+    "html {[\\r\\n]+" +
+    "    color: #000000;[\\r\\n]+" +
+    "}[\\r\\n]*";
 
-  let allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);
-  let menuitemCopy = allMenuItems.find(item => item.label ===
-    STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy"));
+  const allMenuItems = openStyleContextMenuAndGetAllItems(view, prop);
+  const menuitemCopy = allMenuItems.find(
+    item =>
+      item.label ===
+      STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy")
+  );
 
-  ok(menuitemCopy.visible,
-    "Copy menu item is displayed as expected");
+  ok(menuitemCopy.visible, "Copy menu item is displayed as expected");
 
   try {
-    yield waitForClipboardPromise(() => menuitemCopy.click(),
-      () => checkClipboardData(expectedPattern));
+    await waitForClipboardPromise(
+      () => menuitemCopy.click(),
+      () => checkClipboardData(expectedPattern)
+    );
   } catch (e) {
     failedClipboard(expectedPattern);
   }
 }
 
-function* checkCopyEditorValue(view) {
+async function checkCopyEditorValue(view) {
   info("Testing CSS property editor value copy");
 
-  let ruleEditor = getRuleViewRuleEditor(view, 0);
-  let propEditor = ruleEditor.rule.textProps[0].editor;
+  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const propEditor = ruleEditor.rule.textProps[0].editor;
 
-  let editor = yield focusEditableField(view, propEditor.valueSpan);
+  const editor = await focusEditableField(view, propEditor.valueSpan);
 
-  info("Checking that copying a css property value editor returns the correct" +
-    " clipboard value");
+  info(
+    "Checking that copying a css property value editor returns the correct" +
+      " clipboard value"
+  );
 
-  let expectedPattern = "10em";
+  const expectedPattern = "10em";
 
-  let allMenuItems = openStyleContextMenuAndGetAllItems(view, editor.input);
-  let menuitemCopy = allMenuItems.find(item => item.label ===
-    STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy"));
+  const allMenuItems = openStyleContextMenuAndGetAllItems(view, editor.input);
+  const menuitemCopy = allMenuItems.find(
+    item =>
+      item.label ===
+      STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.copy")
+  );
 
-  ok(menuitemCopy.visible,
-    "Copy menu item is displayed as expected");
+  ok(menuitemCopy.visible, "Copy menu item is displayed as expected");
 
   try {
-    yield waitForClipboardPromise(() => menuitemCopy.click(),
-      () => checkClipboardData(expectedPattern));
+    await waitForClipboardPromise(
+      () => menuitemCopy.click(),
+      () => checkClipboardData(expectedPattern)
+    );
   } catch (e) {
     failedClipboard(expectedPattern);
   }
 }
 
 function checkClipboardData(expectedPattern) {
-  let actual = SpecialPowers.getClipboardData("text/unicode");
-  let expectedRegExp = new RegExp(expectedPattern, "g");
+  const actual = SpecialPowers.getClipboardData("text/unicode");
+  const expectedRegExp = new RegExp(expectedPattern, "g");
   return expectedRegExp.test(actual);
 }
 
 function failedClipboard(expectedPattern) {
   // Format expected text for comparison
-  let terminator = osString == "WINNT" ? "\r\n" : "\n";
+  const terminator = osString == "WINNT" ? "\r\n" : "\n";
   expectedPattern = expectedPattern.replace(/\[\\r\\n\][+*]/g, terminator);
   expectedPattern = expectedPattern.replace(/\\\(/g, "(");
   expectedPattern = expectedPattern.replace(/\\\)/g, ")");
@@ -164,8 +183,10 @@ function failedClipboard(expectedPattern) {
   expectedPattern = expectedPattern.trimRight();
   actual = actual.trimRight();
 
-  dump("TEST-UNEXPECTED-FAIL | Clipboard text does not match expected ... " +
-    "results (escaped for accurate comparison):\n");
+  dump(
+    "TEST-UNEXPECTED-FAIL | Clipboard text does not match expected ... " +
+      "results (escaped for accurate comparison):\n"
+  );
   info("Actual: " + escape(actual));
   info("Expected: " + escape(expectedPattern));
 }

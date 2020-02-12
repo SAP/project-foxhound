@@ -4,32 +4,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'Performance Monitoring')
 
-XPIDL_MODULE = 'toolkit_perfmonitoring'
-
-EXTRA_JS_MODULES += [
-    'AddonWatcher.jsm',
-    'PerformanceStats-content.js',
-    'PerformanceStats.jsm',
-    'PerformanceWatcher-content.js',
-    'PerformanceWatcher.jsm',
-]
-
-XPIDL_SOURCES += [
-    'nsIPerformanceStats.idl',
-]
 
 UNIFIED_SOURCES += [
-    'nsPerformanceStats.cpp'
+    'PerformanceMetricsCollector.cpp',
+    'PerformanceUtils.cpp'
 ]
 
-EXPORTS += [
-    'nsPerformanceStats.h'
+EXPORTS.mozilla += [
+    'PerformanceMetricsCollector.h',
+    'PerformanceTypes.h',
+    'PerformanceUtils.h'
 ]
 
 LOCAL_INCLUDES += [
-    '/dom/base',
+    '/dom/base'
 ]
 
 FINAL_LIBRARY = 'xul'
+
+include('/ipc/chromium/chromium-config.mozbuild')

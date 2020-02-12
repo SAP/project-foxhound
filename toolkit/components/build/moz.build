@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
 EXPORTS += [
     'nsToolkitCompsCID.h',
 ]
@@ -12,24 +15,12 @@ SOURCES += [
     'nsToolkitCompsModule.cpp',
 ]
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
-    '../../xre',
-    '../alerts',
-    '../downloads',
-    '../feeds',
-    '../find',
-    '../jsdownloads/src',
-    '../perfmonitoring',
-    '../protobuf',
-    '../startup',
-    '../statusfilter',
-    '../typeaheadfind',
     '../url-classifier',
 ]
-
-if not CONFIG['MOZ_DISABLE_PARENTAL_CONTROLS']:
-    LOCAL_INCLUDES += [
-        '../parentalcontrols',
-    ]

@@ -7,29 +7,32 @@
  * Tests if copying an image as data uri works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
   info("Starting test... ");
 
-  let { NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document } = monitor.panelWin;
 
-  RequestsMenu.lazyUpdate = false;
+  // Execute requests.
+  await performRequests(monitor, tab, CONTENT_TYPE_WITHOUT_CACHE_REQUESTS);
 
-  let wait = waitForNetworkEvents(monitor, 7);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[5]
+  );
+  EventUtils.sendMouseEvent(
+    { type: "contextmenu" },
+    document.querySelectorAll(".request-list-item")[5]
+  );
 
-  let requestItem = RequestsMenu.getItemAtIndex(5);
-  RequestsMenu.selectedItem = requestItem;
-
-  yield waitForClipboardPromise(function setup() {
-    RequestsMenu.copyImageAsDataUri();
+  await waitForClipboardPromise(function setup() {
+    getContextMenuItem(
+      monitor,
+      "request-list-context-copy-image-as-data-uri"
+    ).click();
   }, TEST_IMAGE_DATA_URI);
 
   ok(true, "Clipboard contains the currently selected image as data uri.");
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_parser.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <csi_platform.h>
 #include <sys/types.h>
 #ifdef WIN32
@@ -384,6 +380,7 @@ nr_ice_peer_ctx_parse_media_stream_attribute(nr_ice_peer_ctx *pctx, nr_ice_media
       if (*str == '\0')
         ABORT(R_BAD_DATA);
 
+      RFREE(stream->ufrag);
       if ((r=grab_token(&str, &stream->ufrag)))
         ABORT(r);
     }
@@ -396,6 +393,7 @@ nr_ice_peer_ctx_parse_media_stream_attribute(nr_ice_peer_ctx *pctx, nr_ice_media
       if (*str == '\0')
         ABORT(R_BAD_DATA);
 
+      RFREE(stream->pwd);
       if ((r=grab_token(&str, &stream->pwd)))
         ABORT(r);
     }
@@ -494,6 +492,7 @@ nr_ice_peer_ctx_parse_global_attributes(nr_ice_peer_ctx *pctx, char **attrs, int
         }
         else if (!strncasecmp(str, "ice-lite", 8)) {
             pctx->peer_lite = 1;
+            pctx->controlling = 1;
 
             fast_forward(&str, 8);
         }
@@ -510,11 +509,6 @@ nr_ice_peer_ctx_parse_global_attributes(nr_ice_peer_ctx *pctx, char **attrs, int
             skip_whitespace(&str);
             if (*str == '\0')
                 ABORT(R_BAD_DATA);
-
-            RFREE(pctx->peer_ufrag);
-            pctx->peer_ufrag = 0;
-            if ((r=grab_token(&str, &pctx->peer_ufrag)))
-                ABORT(r);
         }
         else if (!strncasecmp(str, "ice-pwd:", 8)) {
             fast_forward(&str, 8);
@@ -524,11 +518,6 @@ nr_ice_peer_ctx_parse_global_attributes(nr_ice_peer_ctx *pctx, char **attrs, int
             skip_whitespace(&str);
             if (*str == '\0')
                 ABORT(R_BAD_DATA);
-
-            RFREE(pctx->peer_pwd);
-            pctx->peer_pwd = 0;
-            if ((r=grab_token(&str, &pctx->peer_pwd)))
-                ABORT(r);
         }
         else if (!strncasecmp(str, "ice-options:", 12)) {
             fast_forward(&str, 12);

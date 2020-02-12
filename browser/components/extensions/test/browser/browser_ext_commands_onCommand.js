@@ -2,9 +2,11 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
+add_task(async function test_user_defined_commands() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.allowPrivateBrowsingByDefault", false]],
+  });
 
-add_task(function* test_user_defined_commands() {
   const testCommands = [
     // Ctrl Shortcuts
     {
@@ -70,6 +72,15 @@ add_task(function* test_user_defined_commands() {
         shiftKey: true,
       },
     },
+    {
+      name: "toggle-ctrl-shift-1",
+      shortcut: "Ctrl+Shift+1",
+      key: "1",
+      modifiers: {
+        accelKey: true,
+        shiftKey: true,
+      },
+    },
     // Alt+Shift Shortcuts
     {
       name: "toggle-alt-shift-1",
@@ -98,6 +109,25 @@ add_task(function* test_user_defined_commands() {
         shiftKey: true,
       },
     },
+    // Function keys
+    {
+      name: "function-keys-Alt+Shift+F3",
+      shortcut: "Alt+Shift+F3",
+      key: "VK_F3",
+      modifiers: {
+        altKey: true,
+        shiftKey: true,
+      },
+    },
+    {
+      name: "function-keys-F2",
+      shortcut: "F2",
+      key: "VK_F2",
+      modifiers: {
+        altKey: false,
+        shiftKey: false,
+      },
+    },
     // Misc Shortcuts
     {
       name: "valid-command-with-unrecognized-property-name",
@@ -118,16 +148,50 @@ add_task(function* test_user_defined_commands() {
         shiftKey: true,
       },
     },
+    {
+      name: "toggle-ctrl-space",
+      shortcut: "Ctrl+Space",
+      key: "VK_SPACE",
+      modifiers: {
+        accelKey: true,
+      },
+    },
+    {
+      name: "toggle-ctrl-comma",
+      shortcut: "Ctrl+Comma",
+      key: "VK_COMMA",
+      modifiers: {
+        accelKey: true,
+      },
+    },
+    {
+      name: "toggle-ctrl-period",
+      shortcut: "Ctrl+Period",
+      key: "VK_PERIOD",
+      modifiers: {
+        accelKey: true,
+      },
+    },
+    {
+      name: "toggle-ctrl-alt-v",
+      shortcut: "Ctrl+Alt+V",
+      key: "V",
+      modifiers: {
+        accelKey: true,
+        altKey: true,
+      },
+    },
   ];
 
   // Create a window before the extension is loaded.
-  let win1 = yield BrowserTestUtils.openNewBrowserWindow();
-  yield BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
-  yield BrowserTestUtils.browserLoaded(win1.gBrowser.selectedBrowser);
+  let win1 = await BrowserTestUtils.openNewBrowserWindow();
+  await BrowserTestUtils.loadURI(win1.gBrowser.selectedBrowser, "about:robots");
+  await BrowserTestUtils.browserLoaded(win1.gBrowser.selectedBrowser);
 
   let commands = {};
   let isMac = AppConstants.platform == "macosx";
   let totalMacOnlyCommands = 0;
+  let numberNumericCommands = 4;
 
   for (let testCommand of testCommands) {
     let command = {
@@ -153,66 +217,97 @@ add_task(function* test_user_defined_commands() {
     commands[testCommand.name] = command;
   }
 
+  function background() {
+    browser.commands.onCommand.addListener(commandName => {
+      browser.test.sendMessage("oncommand", commandName);
+    });
+    browser.test.sendMessage("ready");
+  }
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "commands": commands,
+      commands: commands,
     },
-
-    background: function() {
-      browser.commands.onCommand.addListener(commandName => {
-        browser.test.sendMessage("oncommand", commandName);
-      });
-      browser.test.sendMessage("ready");
-    },
+    background,
   });
 
   SimpleTest.waitForExplicitFinish();
   let waitForConsole = new Promise(resolve => {
-    SimpleTest.monitorConsole(resolve, [{
-      message: /Reading manifest: Error processing commands.*.unrecognized_property: An unexpected property was found/,
-    }]);
+    SimpleTest.monitorConsole(resolve, [
+      {
+        message: /Reading manifest: Warning processing commands.*.unrecognized_property: An unexpected property was found/,
+      },
+    ]);
   });
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  await extension.startup();
+  ExtensionTestUtils.failOnSchemaWarnings(true);
+  await extension.awaitMessage("ready");
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
-
-  function* runTest(window) {
+  async function runTest(window) {
     for (let testCommand of testCommands) {
       if (testCommand.shortcutMac && !testCommand.shortcut && !isMac) {
         continue;
       }
       EventUtils.synthesizeKey(testCommand.key, testCommand.modifiers, window);
-      let message = yield extension.awaitMessage("oncommand");
-      is(message, testCommand.name, `Expected onCommand listener to fire with the correct name: ${testCommand.name}`);
+      let message = await extension.awaitMessage("oncommand");
+      is(
+        message,
+        testCommand.name,
+        `Expected onCommand listener to fire with the correct name: ${
+          testCommand.name
+        }`
+      );
     }
   }
 
   // Create another window after the extension is loaded.
-  let win2 = yield BrowserTestUtils.openNewBrowserWindow();
-  yield BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:robots");
-  yield BrowserTestUtils.browserLoaded(win2.gBrowser.selectedBrowser);
+  let win2 = await BrowserTestUtils.openNewBrowserWindow();
+  await BrowserTestUtils.loadURI(win2.gBrowser.selectedBrowser, "about:robots");
+  await BrowserTestUtils.browserLoaded(win2.gBrowser.selectedBrowser);
 
-  let totalTestCommands = Object.keys(testCommands).length;
-  let expectedCommandsRegistered = isMac ? totalTestCommands : totalTestCommands - totalMacOnlyCommands;
+  let totalTestCommands =
+    Object.keys(testCommands).length + numberNumericCommands;
+  let expectedCommandsRegistered = isMac
+    ? totalTestCommands
+    : totalTestCommands - totalMacOnlyCommands;
 
   // Confirm the keysets have been added to both windows.
   let keysetID = `ext-keyset-id-${makeWidgetId(extension.id)}`;
   let keyset = win1.document.getElementById(keysetID);
   ok(keyset != null, "Expected keyset to exist");
-  is(keyset.childNodes.length, expectedCommandsRegistered, "Expected keyset to have the correct number of children");
+  is(
+    keyset.children.length,
+    expectedCommandsRegistered,
+    "Expected keyset to have the correct number of children"
+  );
 
   keyset = win2.document.getElementById(keysetID);
   ok(keyset != null, "Expected keyset to exist");
-  is(keyset.childNodes.length, expectedCommandsRegistered, "Expected keyset to have the correct number of children");
+  is(
+    keyset.children.length,
+    expectedCommandsRegistered,
+    "Expected keyset to have the correct number of children"
+  );
 
   // Confirm that the commands are registered to both windows.
-  yield focusWindow(win1);
-  yield runTest(win1);
+  await focusWindow(win1);
+  await runTest(win1);
 
-  yield focusWindow(win2);
-  yield runTest(win2);
+  await focusWindow(win2);
+  await runTest(win2);
 
-  yield extension.unload();
+  let privateWin = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+  await BrowserTestUtils.loadURI(
+    privateWin.gBrowser.selectedBrowser,
+    "about:robots"
+  );
+  await BrowserTestUtils.browserLoaded(privateWin.gBrowser.selectedBrowser);
+  keyset = privateWin.document.getElementById(keysetID);
+  is(keyset, null, "Expected keyset is not added to private windows");
+
+  await extension.unload();
 
   // Confirm that the keysets have been removed from both windows after the extension is unloaded.
   keyset = win1.document.getElementById(keysetID);
@@ -221,9 +316,58 @@ add_task(function* test_user_defined_commands() {
   keyset = win2.document.getElementById(keysetID);
   is(keyset, null, "Expected keyset to be removed from the window");
 
-  yield BrowserTestUtils.closeWindow(win1);
-  yield BrowserTestUtils.closeWindow(win2);
+  // Test that given permission the keyset is added to the private window.
+  extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      commands: commands,
+    },
+    incognitoOverride: "spanning",
+    background,
+  });
+
+  // unrecognized_property in manifest triggers warning.
+  ExtensionTestUtils.failOnSchemaWarnings(false);
+  await extension.startup();
+  ExtensionTestUtils.failOnSchemaWarnings(true);
+  await extension.awaitMessage("ready");
+  keysetID = `ext-keyset-id-${makeWidgetId(extension.id)}`;
+
+  keyset = win1.document.getElementById(keysetID);
+  ok(keyset != null, "Expected keyset to exist on win1");
+  is(
+    keyset.children.length,
+    expectedCommandsRegistered,
+    "Expected keyset to have the correct number of children"
+  );
+
+  keyset = win2.document.getElementById(keysetID);
+  ok(keyset != null, "Expected keyset to exist on win2");
+  is(
+    keyset.children.length,
+    expectedCommandsRegistered,
+    "Expected keyset to have the correct number of children"
+  );
+
+  keyset = privateWin.document.getElementById(keysetID);
+  ok(keyset != null, "Expected keyset was added to private windows");
+  is(
+    keyset.children.length,
+    expectedCommandsRegistered,
+    "Expected keyset to have the correct number of children"
+  );
+
+  await focusWindow(privateWin);
+  await runTest(privateWin);
+
+  await extension.unload();
+
+  keyset = privateWin.document.getElementById(keysetID);
+  is(keyset, null, "Expected keyset to be removed from the private window");
+
+  await BrowserTestUtils.closeWindow(win1);
+  await BrowserTestUtils.closeWindow(win2);
+  await BrowserTestUtils.closeWindow(privateWin);
 
   SimpleTest.endMonitorConsole();
-  yield waitForConsole;
+  await waitForConsole;
 });

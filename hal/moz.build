@@ -3,21 +3,25 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-XPIDL_SOURCES += [
-    'gonk/nsIRecoveryService.idl',
-]
-
-XPIDL_MODULE = 'hal'
+ 
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Hardware Abstraction Layer (HAL)')
 
 EXPORTS.mozilla += [
     'Hal.h',
+    'HalBatteryInformation.h',
     'HalImpl.h',
+    'HalNetworkInformation.h',
     'HalSandbox.h',
     'HalScreenConfiguration.h',
     'HalSensor.h',
     'HalTypes.h',
     'HalWakeLock.h',
+    'HalWakeLockInformation.h',
+]
+
+EXPORTS.mozilla.fallback += [
+    'fallback/FallbackScreenConfiguration.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -36,42 +40,19 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
         '/widget/android',
     ]
     UNIFIED_SOURCES += [
-        'android/AndroidAlarm.cpp',
         'android/AndroidSensor.cpp',
-        'fallback/FallbackPower.cpp',
-        'linux/LinuxMemory.cpp',
+        'fallback/FallbackProcessPriority.cpp',
     ]
     # AndroidHal.cpp cannot be built in unified mode because it relies on HalImpl.h.
     SOURCES += [
         'android/AndroidHal.cpp',
     ]
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    UNIFIED_SOURCES += [
-        'gonk/GonkDiskSpaceWatcher.cpp',
-        'gonk/GonkFMRadio.cpp',
-        'gonk/GonkSensor.cpp',
-        'gonk/GonkSensorsHelpers.cpp',
-        'gonk/GonkSensorsInterface.cpp',
-        'gonk/GonkSensorsPollInterface.cpp',
-        'gonk/GonkSensorsRegistryInterface.cpp',
-        'gonk/GonkSwitch.cpp',
-        'gonk/SystemService.cpp',
-        'gonk/UeventPoller.cpp',
-        'linux/LinuxMemory.cpp',
-        'linux/LinuxPower.cpp',
-    ]
-    # GonkHal.cpp cannot be built in unified mode because it relies on HalImpl.h.
-    SOURCES += [
-        'gonk/GonkHal.cpp',
-    ]
 elif CONFIG['OS_TARGET'] == 'Linux':
     UNIFIED_SOURCES += [
-        'fallback/FallbackAlarm.cpp',
+        'fallback/FallbackProcessPriority.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackSensor.cpp',
         'fallback/FallbackVibration.cpp',
-        'linux/LinuxMemory.cpp',
-        'linux/LinuxPower.cpp',
     ]
     if CONFIG['MOZ_ENABLE_DBUS']:
         UNIFIED_SOURCES += [
@@ -83,11 +64,9 @@ elif CONFIG['OS_TARGET'] == 'Linux':
         ]
 elif CONFIG['OS_TARGET'] == 'WINNT':
     UNIFIED_SOURCES += [
-        'fallback/FallbackAlarm.cpp',
-        'fallback/FallbackMemory.cpp',
-        'fallback/FallbackPower.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackVibration.cpp',
+        'windows/WindowsProcessPriority.cpp',
         'windows/WindowsSensor.cpp',
     ]
     # WindowsBattery.cpp cannot be built in unified mode because it relies on HalImpl.h.
@@ -97,17 +76,13 @@ elif CONFIG['OS_TARGET'] == 'WINNT':
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     UNIFIED_SOURCES += [
         'cocoa/CocoaBattery.cpp',
-        'fallback/FallbackAlarm.cpp',
-        'fallback/FallbackMemory.cpp',
-        'fallback/FallbackPower.cpp',
+        'fallback/FallbackProcessPriority.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackVibration.cpp',
     ]
 elif CONFIG['OS_TARGET'] in ('OpenBSD', 'NetBSD', 'FreeBSD', 'DragonFly'):
     UNIFIED_SOURCES += [
-        'fallback/FallbackAlarm.cpp',
-        'fallback/FallbackMemory.cpp',
-        'fallback/FallbackPower.cpp',
+        'fallback/FallbackProcessPriority.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackSensor.cpp',
         'fallback/FallbackVibration.cpp',
@@ -122,28 +97,11 @@ elif CONFIG['OS_TARGET'] in ('OpenBSD', 'NetBSD', 'FreeBSD', 'DragonFly'):
         ]
 else:
     UNIFIED_SOURCES += [
-        'fallback/FallbackAlarm.cpp',
         'fallback/FallbackBattery.cpp',
-        'fallback/FallbackMemory.cpp',
-        'fallback/FallbackPower.cpp',
+        'fallback/FallbackProcessPriority.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackSensor.cpp',
         'fallback/FallbackVibration.cpp',
-    ]
-
-# Fallbacks for backends implemented on Gonk only.
-if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'gonk':
-    UNIFIED_SOURCES += [
-        'fallback/FallbackDiskSpaceWatcher.cpp',
-        'fallback/FallbackFactoryReset.cpp',
-        'fallback/FallbackFMRadio.cpp',
-        'fallback/FallbackProcessPriority.cpp',
-        'fallback/FallbackScreenPower.cpp',
-        'fallback/FallbackSwitch.cpp',
-        'fallback/FallbackSystemService.cpp',
-        'fallback/FallbackThreadPriority.cpp',
-        'fallback/FallbackTime.cpp',
-        'fallback/FallbackWakeLocks.cpp',
     ]
 
 # Fallbacks for backends implemented on Android only.
@@ -166,20 +124,9 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['MOZ_GAMEPAD']:
-    LOCAL_INCLUDES += [
-        '/dom/base',
-    ]
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    # So that we can call nsScreenManagerGonk::GetConfiguration().
-    LOCAL_INCLUDES += [
-        '/widget',
-        '/widget/gonk',
-    ]
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    LOCAL_INCLUDES += ['%' + '%s/hardware/libhardware_legacy/include' % CONFIG['ANDROID_SOURCE']]
+LOCAL_INCLUDES += [
+    '/dom/base',
+]
 
 CFLAGS += CONFIG['GLIB_CFLAGS']
 CFLAGS += CONFIG['MOZ_DBUS_GLIB_CFLAGS']

@@ -1,14 +1,13 @@
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/css" href="chrome://global/skin"?>
-<?xml-stylesheet type="text/css" href="/tests/SimpleTest/test.css"?>
+<?xml-stylesheet type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=846906
 -->
 <window title="Mozilla Bug 846906"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <!-- test code goes here -->
   <script type="application/javascript">
@@ -17,29 +16,29 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=846906
   /** Test for Bug 846906 **/
   SimpleTest.waitForExplicitFinish();
 
-  var appShellService = Components.classes["@mozilla.org/appshell/appShellService;1"]
-                                  .getService(Components.interfaces.nsIAppShellService);
+  var appShellService = Cc["@mozilla.org/appshell/appShellService;1"]
+                          .getService(Ci.nsIAppShellService);
   ok(appShellService, "Should be able to get app shell service");
 
   var windowlessBrowser = appShellService.createWindowlessBrowser();
   ok(windowlessBrowser, "Should be able to create windowless browser");
 
-  ok(windowlessBrowser instanceof Components.interfaces.nsIWindowlessBrowser,
+  ok(windowlessBrowser instanceof Ci.nsIWindowlessBrowser,
      "Windowless browser should implement nsIWindowlessBrowser");
 
-  var webNavigation = windowlessBrowser.QueryInterface(Components.interfaces.nsIWebNavigation);
+  var webNavigation = windowlessBrowser.QueryInterface(Ci.nsIWebNavigation);
   ok(webNavigation, "Windowless browser should implement nsIWebNavigation");
 
-  var interfaceRequestor = windowlessBrowser.QueryInterface(Components.interfaces.nsIInterfaceRequestor);
+  var interfaceRequestor = windowlessBrowser.QueryInterface(Ci.nsIInterfaceRequestor);
   ok(interfaceRequestor, "Should be able to query interface requestor interface");
 
-  var docShell = interfaceRequestor.getInterface(Components.interfaces.nsIDocShell);
+  var docShell = windowlessBrowser.docShell;
   ok(docShell, "Should be able to get doc shell interface");
 
   var document = webNavigation.document;
   ok(document, "Should be able to get document");
 
-  var iframe = document.createElement("iframe");
+  var iframe = document.createXULElement("iframe");
   ok(iframe, "Should be able to create iframe");
 
   iframe.onload = function () {
@@ -66,17 +65,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=846906
         // Once the browser is closed, nsIWebNavigation and
         // nsIInterfaceRequestor methods should no longer be accessible.
         try {
-          windowlessBrowser.getInterface(Components.interfaces.nsIDocShell);
+          windowlessBrowser.getInterface(Ci.nsIDocShell);
           ok(false);
         } catch (e) {
-          is(e.result, Components.results.NS_ERROR_NULL_POINTER);
+          is(e.result, Cr.NS_ERROR_NULL_POINTER);
         }
 
         try {
           windowlessBrowser.document;
           ok(false);
         } catch (e) {
-          is(e.result, Components.results.NS_ERROR_NULL_POINTER);
+          is(e.result, Cr.NS_ERROR_NULL_POINTER);
         }
 
         SimpleTest.finish();

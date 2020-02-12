@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf8">
   <title>Test for the cd() function</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript;version=1.8" src="common.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
 </head>
@@ -13,7 +13,7 @@
 
 <iframe id="content-iframe" src="http://example.com/chrome/devtools/shared/webconsole/test/sandboxed_iframe.html"></iframe>
 
-<script class="testbody" type="text/javascript;version=1.8">
+<script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
 let gState;
@@ -47,8 +47,8 @@ function onAttach(aState, aResponse)
 function doCheckParent()
 {
   info("check parent window");
-  gState.client.evaluateJS("window.foobarObject.bug609872",
-      onFooObjectFromParent);
+  gState.webConsoleFront.evaluateJS("window.foobarObject.bug609872")
+    .then(onFooObjectFromParent);
 }
 
 function onFooObjectFromParent(aResponse)
@@ -68,7 +68,7 @@ function onFooObjectFromParent(aResponse)
 function doCdIframe()
 {
   info("test cd('iframe')");
-  gState.client.evaluateJS("cd('iframe')", onCdIframe);
+  gState.webConsoleFront.evaluateJS("cd('iframe')").then(onCdIframe);
 }
 
 function onCdIframe(aResponse)
@@ -88,8 +88,8 @@ function onCdIframe(aResponse)
 function doCheckIframe()
 {
   info("check foobarObject from the iframe");
-  gState.client.evaluateJS("window.foobarObject.bug609872",
-                           onFooObjectFromIframe);
+  gState.webConsoleFront.evaluateJS("window.foobarObject.bug609872")
+    .then(onFooObjectFromIframe);
 }
 
 function onFooObjectFromIframe(aResponse)
@@ -109,7 +109,7 @@ function onFooObjectFromIframe(aResponse)
 function doCdContentIframe()
 {
   info("test cd('#content-iframe')");
-  gState.client.evaluateJS("cd('#content-iframe')", onCdContentIframe);
+  gState.webConsoleFront.evaluateJS("cd('#content-iframe')").then(onCdContentIframe);
 }
 
 function onCdContentIframe(aResponse)
@@ -131,7 +131,7 @@ function doCdSandboxedIframe()
   // when passing a content window reference.
   let cmd = "cd(document.getElementById('sandboxed-iframe').contentWindow)";
   info("test " + cmd);
-  gState.client.evaluateJS(cmd, onCdSandboxedIframe.bind(null, cmd));
+  gState.webConsoleFront.evaluateJS(cmd).then(onCdSandboxedIframe.bind(null, cmd));
 }
 
 function onCdSandboxedIframe(cmd, aResponse)
@@ -151,8 +151,8 @@ function onCdSandboxedIframe(cmd, aResponse)
 function doCheckSandboxedIframe()
 {
   info("check foobarObject from the sandboxed iframe");
-  gState.client.evaluateJS("window.foobarObject.bug1051224",
-                           onFooObjectFromSandboxedIframe);
+  gState.webConsoleFront.evaluateJS("window.foobarObject.bug1051224")
+    .then(onFooObjectFromSandboxedIframe);
 }
 
 function onFooObjectFromSandboxedIframe(aResponse)
@@ -172,7 +172,7 @@ function onFooObjectFromSandboxedIframe(aResponse)
 function doCdParent()
 {
   info("test cd() back to parent");
-  gState.client.evaluateJS("cd()", onCdParent);
+  gState.webConsoleFront.evaluateJS("cd()").then(onCdParent);
 }
 
 function onCdParent(aResponse)
@@ -191,8 +191,8 @@ function onCdParent(aResponse)
 
 function doCheckParent2()
 {
-  gState.client.evaluateJS("window.foobarObject.bug609872",
-                           onFooObjectFromParent2);
+  gState.webConsoleFront.evaluateJS("window.foobarObject.bug609872")
+    .then(onFooObjectFromParent2);
 }
 
 function onFooObjectFromParent2(aResponse)

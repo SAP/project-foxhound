@@ -10,8 +10,7 @@
     .gencontent:after  { content: "*"; }
   </style>
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -23,9 +22,8 @@
   <script type="application/javascript">
     var gComputedStyle = null;
 
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // area1
       var ID = "area1";
       var defAttrs = buildDefaultTextAttrs(ID, "10pt");
@@ -40,7 +38,7 @@
       attrs = {};
       testTextAttrs(ID, 12, attrs, defAttrs, 11, 18);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area2
       ID = "area2";
       defAttrs = buildDefaultTextAttrs(ID, "14pt");
@@ -53,7 +51,7 @@
       testTextAttrs(ID, 7, attrs, defAttrs, 7, 12);
 
       var tempElem = getNode(ID).firstChild.nextSibling.firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"font-style": gComputedStyle.fontStyle,
                "font-weight": kBoldFontWeight };
       testTextAttrs(ID, 13, attrs, defAttrs, 12, 19);
@@ -64,55 +62,55 @@
       attrs = {};
       testTextAttrs(ID, 24, attrs, defAttrs, 23, 30);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area3
       ID = "area3";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
       testDefaultTextAttrs(ID, defAttrs);
 
       tempElem = getNode(ID).firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 6);
 
       tempElem = tempElem.firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 6, attrs, defAttrs, 6, 26);
 
       tempElem = tempElem.parentNode;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 26, attrs, defAttrs, 26, 27);
 
       tempElem = tempElem.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color,
                "background-color": gComputedStyle.backgroundColor};
       testTextAttrs(ID, 27, attrs, defAttrs, 27, 50);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area4
       ID = "area4";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
       testDefaultTextAttrs(ID, defAttrs);
 
       tempElem = getNode(ID).firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 16);
 
       tempElem = tempElem.nextSibling.firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 16, attrs, defAttrs, 16, 33);
 
       tempElem = tempElem.parentNode;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 34, attrs, defAttrs, 33, 46);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area5: "Green!*!RedNormal"
       ID = "area5";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -120,7 +118,7 @@
 
       // Green
       tempElem = getNode(ID).firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 5);
 
@@ -138,7 +136,7 @@
 
       // Red
       tempElem = tempElem.nextSibling.nextSibling.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 9, attrs, defAttrs, 8, 11);
 
@@ -146,9 +144,9 @@
       attrs = {};
       testTextAttrs(ID, 11, attrs, defAttrs, 11, 18);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area6 (CSS vertical-align property, refer to bug 445938 for details
-      // 	and sup and sub elements, refer to bug 735645 for details)
+      // and sup and sub elements, refer to bug 735645 for details)
       ID = "area6";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
       testDefaultTextAttrs(ID, defAttrs);
@@ -201,11 +199,11 @@
       attrs = { "text-position": "sub" };
       testTextAttrs(ID, 128, attrs, defAttrs, 128, 142);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area7
       ID = "area7";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
-      defAttrs["language"] = "en";
+      defAttrs.language = "en";
       testDefaultTextAttrs(ID, defAttrs);
 
       attrs = {"language": "ru"};
@@ -215,7 +213,7 @@
       testTextAttrs(ID, 6, attrs, defAttrs, 6, 7);
 
       tempElem = getNode(ID).firstChild.nextSibling.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "background-color": gComputedStyle.backgroundColor};
       testTextAttrs(ID, 13, attrs, defAttrs, 7, 20);
 
@@ -232,22 +230,22 @@
       testTextAttrs(ID, 37, attrs, defAttrs, 36, 44);
 
       tempElem = tempElem.nextSibling.nextSibling.nextSibling.nextSibling.firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 44, attrs, defAttrs, 44, 51);
 
       tempElem = tempElem.firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"font-weight": kBoldFontWeight,
                "color": gComputedStyle.color};
       testTextAttrs(ID, 51, attrs, defAttrs, 51, 55);
 
       tempElem = tempElem.parentNode;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"color": gComputedStyle.color};
       testTextAttrs(ID, 55, attrs, defAttrs, 55, 62);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area9, different single style spans in styled paragraph
       ID = "area9";
       defAttrs = buildDefaultTextAttrs(ID, "10pt");
@@ -264,7 +262,7 @@
 
       // Walk to the span with the different background color
       tempElem = getNode(ID).firstChild.nextSibling.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "background-color": gComputedStyle.backgroundColor };
       testTextAttrs(ID, 22, attrs, defAttrs, 21, 36);
 
@@ -273,7 +271,7 @@
 
       // Walk from the background color span to the one with font-style
       tempElem = tempElem.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "font-style": gComputedStyle.fontStyle };
       testTextAttrs(ID, 45, attrs, defAttrs, 44, 61);
 
@@ -282,7 +280,7 @@
 
       // Walk from span with font-style to the one with font-family.
       tempElem = tempElem.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "font-family": kMonospaceFontFamily };
       testTextAttrs(ID, 70, attrs, defAttrs, 69, 83);
 
@@ -291,7 +289,7 @@
 
       attrs = {
         "text-underline-style": "solid",
-        "text-underline-color": gComputedStyle.color
+        "text-underline-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 92, attrs, defAttrs, 91, 101);
 
@@ -300,7 +298,7 @@
 
       attrs = {
         "text-line-through-style": "solid",
-        "text-line-through-color": gComputedStyle.color
+        "text-line-through-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 110, attrs, defAttrs, 109, 122);
 
@@ -309,7 +307,7 @@
 
       attrs = {
         "text-line-through-style": "solid",
-        "text-line-through-color": gComputedStyle.color
+        "text-line-through-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 131, attrs, defAttrs, 130, 143);
 
@@ -318,14 +316,14 @@
 
       attrs = {
         "text-line-through-style": "solid",
-        "text-line-through-color": gComputedStyle.color
+        "text-line-through-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 152, attrs, defAttrs, 151, 164);
 
       attrs = {};
       testTextAttrs(ID, 165, attrs, defAttrs, 164, 172);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area10, different single style spans in non-styled paragraph
       ID = "area10";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -342,7 +340,7 @@
 
       // Walk to the span with the different background color
       tempElem = getNode(ID).firstChild.nextSibling.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "background-color": gComputedStyle.backgroundColor };
       testTextAttrs(ID, 23, attrs, defAttrs, 22, 37);
 
@@ -351,7 +349,7 @@
 
       // Walk from the background color span to the one with font-style
       tempElem = tempElem.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = {"font-style": gComputedStyle.fontStyle};
       testTextAttrs(ID, 46, attrs, defAttrs, 45, 62);
 
@@ -360,7 +358,7 @@
 
       // Walk from span with font-style to the one with font-family.
       tempElem = tempElem.nextSibling.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "font-family": kMonospaceFontFamily };
       testTextAttrs(ID, 71, attrs, defAttrs, 70, 84);
 
@@ -369,7 +367,7 @@
 
       attrs = {
         "text-underline-style": "solid",
-        "text-underline-color": gComputedStyle.color
+        "text-underline-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 93, attrs, defAttrs, 92, 102);
 
@@ -378,14 +376,14 @@
 
       attrs = {
         "text-line-through-style": "solid",
-        "text-line-through-color": gComputedStyle.color
+        "text-line-through-color": gComputedStyle.color,
       };
       testTextAttrs(ID, 111, attrs, defAttrs, 110, 123);
 
       attrs = {};
       testTextAttrs(ID, 124, attrs, defAttrs, 123, 131);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area11, "font-weight" tests
       ID = "area11";
       defAttrs = buildDefaultTextAttrs(ID, "12pt", kBoldFontWeight);
@@ -412,12 +410,12 @@
       attrs = { };
       testTextAttrs(ID, 57, attrs, defAttrs, 57, 97);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // test out of range offset
       testTextAttrsWrongOffset("area12", -1);
       testTextAttrsWrongOffset("area12", 500);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // test zero offset on empty hypertext accessibles
       ID = "area13";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -431,7 +429,7 @@
       attrs = { };
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 0);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area15, embed char tests, "*plain*plain**bold*bold*"
       ID = "area15";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -457,7 +455,7 @@
       // p
       testTextAttrs(ID, 23, { }, { }, 23, 24);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area16, "font-family" tests
       ID = "area16";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -490,7 +488,7 @@
         testTextAttrs(ID, 31, attrs, defAttrs, 31, 45);
       }
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area17, "text-decoration" tests
       ID = "area17";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
@@ -532,20 +530,20 @@
       };
       testTextAttrs(ID, 39, attrs, defAttrs, 39, 44);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // area18, "auto-generation text" tests
       ID = "area18";
       defAttrs = buildDefaultTextAttrs(ID, "12pt");
       testDefaultTextAttrs(ID, defAttrs);
 
-      var attrs = {
-        "auto-generated": "true"
+      attrs = {
+        "auto-generated": "true",
       };
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 3);
       testTextAttrs(ID, 3, { }, defAttrs, 3, 7);
       testTextAttrs(ID, 7, attrs, defAttrs, 7, 8);
 
-       //////////////////////////////////////////////////////////////////////////
+       // ////////////////////////////////////////////////////////////////////////
       // area19, "HTML5 mark tag" test
       // text enclosed in mark tag will have a different background color
       ID = "area19";
@@ -553,16 +551,16 @@
 
       attrs = {};
       testTextAttrs(ID, 0, attrs, defAttrs, 0, 10);
-      
+
       tempElem = getNode(ID).firstChild.nextSibling;
-      gComputedStyle = document.defaultView.getComputedStyle(tempElem, "");
+      gComputedStyle = document.defaultView.getComputedStyle(tempElem);
       attrs = { "background-color": gComputedStyle.backgroundColor };
       testTextAttrs(ID, 11, attrs, defAttrs, 10, 17);
 
       attrs = {};
       testTextAttrs(ID, 18, attrs, defAttrs, 17, 28);
 
-       //////////////////////////////////////////////////////////////////////////
+       // ////////////////////////////////////////////////////////////////////////
       // area20, "aOffset as -1 (Mozilla Bug 789621)" test
 
       ID = "area20";
@@ -645,9 +643,9 @@
     <span style="color: red">Red</span>Normal
   </p>
   <p id="area6">
-    This <sup>sentence</sup> has the word 
-    <span style="vertical-align:super;">sentence</span> in 
-    <sub>superscript</sub> and 
+    This <sup>sentence</sup> has the word
+    <span style="vertical-align:super;">sentence</span> in
+    <sub>superscript</sub> and
     <span style="vertical-align:sub;">subscript</span> and
     <span style="vertical-align:20%;">superscript 20%</span> and
     <span style="vertical-align:-20%;">subscript 20%</span> and

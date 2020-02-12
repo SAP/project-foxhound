@@ -9,7 +9,7 @@ Tests of DOM Worker terminate feature
 -->
 <head>
   <title>Test for DOM Worker Navigator</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -38,7 +38,7 @@ Tests of DOM Worker terminate feature
 
       var exception = false;
       try {
-        worker.addEventListener("message", messageListener, false);
+        worker.addEventListener("message", messageListener);
       }
       catch (e) {
         exception = true;
@@ -47,7 +47,7 @@ Tests of DOM Worker terminate feature
 
       exception = false;
       try {
-        worker.removeEventListener("message", messageListener, false);
+        worker.removeEventListener("message", messageListener);
       }
       catch (e) {
         exception = true;
@@ -75,7 +75,7 @@ Tests of DOM Worker terminate feature
       ok(worker.onmessage === messageListener,
          "Correct listener after terminate");
 
-      worker.onmessage = function(event) { }
+      worker.onmessage = function(msg) { }
 
       interval = setInterval(testCount, 1000);
     }

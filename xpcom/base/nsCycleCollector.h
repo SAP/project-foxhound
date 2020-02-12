@@ -10,16 +10,18 @@
 class nsICycleCollectorListener;
 class nsICycleCollectorLogSink;
 class nsISupports;
-template<class T> struct already_AddRefed;
+template <class T>
+struct already_AddRefed;
 
 #include "nsError.h"
 #include "nsID.h"
 
+#include "mozilla/Attributes.h"
 #include "js/SliceBudget.h"
 
 namespace mozilla {
 class CycleCollectedJSContext;
-} // namespace mozilla
+}  // namespace mozilla
 
 bool nsCycleCollector_init();
 
@@ -29,9 +31,11 @@ typedef void (*CC_BeforeUnlinkCallback)(void);
 void nsCycleCollector_setBeforeUnlinkCallback(CC_BeforeUnlinkCallback aCB);
 
 typedef void (*CC_ForgetSkippableCallback)(void);
-void nsCycleCollector_setForgetSkippableCallback(CC_ForgetSkippableCallback aCB);
+void nsCycleCollector_setForgetSkippableCallback(
+    CC_ForgetSkippableCallback aCB);
 
-void nsCycleCollector_forgetSkippable(bool aRemoveChildlessNodes = false,
+void nsCycleCollector_forgetSkippable(js::SliceBudget& aBudget,
+                                      bool aRemoveChildlessNodes = false,
                                       bool aAsyncSnowWhiteFreeing = false);
 
 void nsCycleCollector_prepareForGarbageCollection();
@@ -42,8 +46,10 @@ void nsCycleCollector_finishAnyCurrentCollection();
 void nsCycleCollector_dispatchDeferredDeletion(bool aContinuation = false,
                                                bool aPurge = false);
 bool nsCycleCollector_doDeferredDeletion();
+bool nsCycleCollector_doDeferredDeletionWithBudget(js::SliceBudget& aBudget);
 
 already_AddRefed<nsICycleCollectorLogSink> nsCycleCollector_createLogSink();
+already_AddRefed<nsICycleCollectorListener> nsCycleCollector_createLogger();
 
 void nsCycleCollector_collect(nsICycleCollectorListener* aManualListener);
 
@@ -54,19 +60,16 @@ uint32_t nsCycleCollector_suspectedCount();
 
 // If aDoCollect is true, then run the GC and CC a few times before
 // shutting down the CC completely.
+MOZ_CAN_RUN_SCRIPT
 void nsCycleCollector_shutdown(bool aDoCollect = true);
 
 // Helpers for interacting with JS
 void nsCycleCollector_registerJSContext(mozilla::CycleCollectedJSContext* aCx);
 void nsCycleCollector_forgetJSContext();
 
-#define NS_CYCLE_COLLECTOR_LOGGER_CID \
-{ 0x58be81b4, 0x39d2, 0x437c, \
-{ 0x94, 0xea, 0xae, 0xde, 0x2c, 0x62, 0x08, 0xd3 } }
+// Helpers for cooperative threads.
+void nsCycleCollector_registerNonPrimaryContext(
+    mozilla::CycleCollectedJSContext* aCx);
+void nsCycleCollector_forgetNonPrimaryContext();
 
-extern nsresult
-nsCycleCollectorLoggerConstructor(nsISupports* aOuter,
-                                  const nsIID& aIID,
-                                  void** aInstancePtr);
-
-#endif // nsCycleCollector_h__
+#endif  // nsCycleCollector_h__

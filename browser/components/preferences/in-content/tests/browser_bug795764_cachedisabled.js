@@ -1,48 +1,48 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Components.utils.import("resource://gre/modules/PlacesUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
-
 function test() {
   waitForExplicitFinish();
 
-  let prefs = [
-    "browser.cache.offline.enable",
-    "browser.cache.disk.enable",
-    "browser.cache.memory.enable",
-  ];
-
+  // Adding one fake site so that the SiteDataManager would run.
+  // Otherwise, without any site then it would just return so we would end up in not testing SiteDataManager.
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+    "https://www.foo.com"
+  );
+  Services.perms.addFromPrincipal(
+    principal,
+    "persistent-storage",
+    Ci.nsIPermissionManager.ALLOW_ACTION
+  );
   registerCleanupFunction(function() {
-    for (let pref of prefs) {
-      Services.prefs.clearUserPref(pref);
-    }
+    Services.perms.removeFromPrincipal(principal, "persistent-storage");
   });
 
-  for (let pref of prefs) {
-    Services.prefs.setBoolPref(pref, false);
-  }
-
-  open_preferences(runTest);
+  SpecialPowers.pushPrefEnv({
+    set: [["privacy.userContext.ui.enabled", true]],
+  }).then(() => open_preferences(runTest));
 }
 
-function runTest(win) {
+async function runTest(win) {
   is(gBrowser.currentURI.spec, "about:preferences", "about:preferences loaded");
 
   let tab = win.document;
   let elements = tab.getElementById("mainPrefPane").children;
 
-  // Test if advanced pane is opened correctly
-  win.gotoPref("paneAdvanced");
+  // Test if privacy pane is opened correctly
+  await win.gotoPref("panePrivacy");
   for (let element of elements) {
-    if (element.nodeName == "preferences") {
-      continue;
-    }
     let attributeValue = element.getAttribute("data-category");
-    if (attributeValue == "paneAdvanced") {
-      is_element_visible(element, "Advanced elements should be visible");
+    if (attributeValue == "panePrivacy") {
+      is_element_visible(
+        element,
+        `Privacy element of id=${element.id} should be visible`
+      );
     } else {
-      is_element_hidden(element, "Non-Advanced elements should be hidden");
+      is_element_hidden(
+        element,
+        `Non-Privacy element of id=${element.id} should be hidden`
+      );
     }
   }
 

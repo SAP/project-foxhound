@@ -4,9 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
+DIRS += ['input']
+
 MOCHITEST_MANIFESTS += [
     'test/forms/mochitest.ini',
-    'test/imports/mochitest.ini',
     'test/mochitest.ini',
 ]
 
@@ -19,27 +23,29 @@ BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
 XPIDL_SOURCES += [
     'nsIFormSubmitObserver.idl',
-    'nsIHTMLMenu.idl',
     'nsIImageDocument.idl',
     'nsIMenuBuilder.idl',
-    'nsIPhonetic.idl',
 ]
 
 XPIDL_MODULE = 'content_html'
 
 EXPORTS += [
     'nsGenericHTMLElement.h',
+    'nsGenericHTMLFrameElement.h',
     'nsHTMLDNSPrefetch.h',
+    'nsHTMLDocument.h',
     'nsIConstraintValidation.h',
     'nsIForm.h',
     'nsIFormControl.h',
-    'nsIFormProcessor.h',
     'nsIHTMLCollection.h',
-    'nsIHTMLDocument.h',
     'nsIRadioGroupContainer.h',
     'nsIRadioVisitor.h',
     'nsITextControlElement.h',
     'nsTextEditorState.h',
+]
+
+EXPORTS.mozilla += [
+    'TextInputListener.h',
 ]
 
 EXPORTS.mozilla.dom += [
@@ -51,11 +57,12 @@ EXPORTS.mozilla.dom += [
     'HTMLBRElement.h',
     'HTMLButtonElement.h',
     'HTMLCanvasElement.h',
-    'HTMLContentElement.h',
     'HTMLDataElement.h',
     'HTMLDataListElement.h',
     'HTMLDetailsElement.h',
+    'HTMLDialogElement.h',
     'HTMLDivElement.h',
+    'HTMLEmbedElement.h',
     'HTMLFieldSetElement.h',
     'HTMLFontElement.h',
     'HTMLFormControlsCollection.h',
@@ -73,6 +80,7 @@ EXPORTS.mozilla.dom += [
     'HTMLLIElement.h',
     'HTMLLinkElement.h',
     'HTMLMapElement.h',
+    'HTMLMarqueeElement.h',
     'HTMLMediaElement.h',
     'HTMLMenuElement.h',
     'HTMLMenuItemElement.h',
@@ -90,10 +98,9 @@ EXPORTS.mozilla.dom += [
     'HTMLProgressElement.h',
     'HTMLScriptElement.h',
     'HTMLSelectElement.h',
-    'HTMLShadowElement.h',
     'HTMLSharedElement.h',
     'HTMLSharedListElement.h',
-    'HTMLSharedObjectElement.h',
+    'HTMLSlotElement.h',
     'HTMLSourceElement.h',
     'HTMLSpanElement.h',
     'HTMLStyleElement.h',
@@ -114,10 +121,10 @@ EXPORTS.mozilla.dom += [
     'ImageDocument.h',
     'MediaError.h',
     'nsBrowserElement.h',
+    'PlayPromise.h',
     'RadioNodeList.h',
     'TextTrackManager.h',
     'TimeRanges.h',
-    'UndoManager.h',
     'ValidityState.h',
 ]
 
@@ -130,12 +137,13 @@ UNIFIED_SOURCES += [
     'HTMLBRElement.cpp',
     'HTMLButtonElement.cpp',
     'HTMLCanvasElement.cpp',
-    'HTMLContentElement.cpp',
     'HTMLDataElement.cpp',
     'HTMLDataListElement.cpp',
     'HTMLDetailsElement.cpp',
+    'HTMLDialogElement.cpp',
     'HTMLDivElement.cpp',
     'HTMLElement.cpp',
+    'HTMLEmbedElement.cpp',
     'HTMLFieldSetElement.cpp',
     'HTMLFontElement.cpp',
     'HTMLFormControlsCollection.cpp',
@@ -153,6 +161,7 @@ UNIFIED_SOURCES += [
     'HTMLLIElement.cpp',
     'HTMLLinkElement.cpp',
     'HTMLMapElement.cpp',
+    'HTMLMarqueeElement.cpp',
     'HTMLMediaElement.cpp',
     'HTMLMenuElement.cpp',
     'HTMLMenuItemElement.cpp',
@@ -170,10 +179,9 @@ UNIFIED_SOURCES += [
     'HTMLProgressElement.cpp',
     'HTMLScriptElement.cpp',
     'HTMLSelectElement.cpp',
-    'HTMLShadowElement.cpp',
     'HTMLSharedElement.cpp',
     'HTMLSharedListElement.cpp',
-    'HTMLSharedObjectElement.cpp',
+    'HTMLSlotElement.cpp',
     'HTMLSourceElement.cpp',
     'HTMLSpanElement.cpp',
     'HTMLStyleElement.cpp',
@@ -204,10 +212,10 @@ UNIFIED_SOURCES += [
     'nsIConstraintValidation.cpp',
     'nsRadioVisitor.cpp',
     'nsTextEditorState.cpp',
+    'PlayPromise.cpp',
     'RadioNodeList.cpp',
     'TextTrackManager.cpp',
     'TimeRanges.cpp',
-    'UndoManager.cpp',
     'ValidityState.cpp',
     'VideoDocument.cpp',
 ]
@@ -217,9 +225,12 @@ SOURCES += [
     'PluginDocument.cpp',
 ]
 
-EXTRA_COMPONENTS += [
-    'htmlMenuBuilder.js',
-    'htmlMenuBuilder.manifest'
+EXTRA_JS_MODULES += [
+    'HTMLMenuBuilder.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -229,10 +240,10 @@ LOCAL_INCLUDES += [
     '/docshell/base',
     '/dom/base',
     '/dom/canvas',
-    '/dom/media/',
-    '/dom/xbl',
+    '/dom/html/input',
+    '/dom/media',
+    '/dom/security',
     '/dom/xul',
-    '/editor/txmgr',
     '/image',
     '/layout/forms',
     '/layout/generic',
@@ -242,7 +253,13 @@ LOCAL_INCLUDES += [
     '/netwerk/base',
 ]
 
+if CONFIG['MOZ_XBL']:
+    LOCAL_INCLUDES += ['/dom/xbl']
+
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['MOZ_ANDROID_HLS_SUPPORT']:
+    DEFINES['MOZ_ANDROID_HLS_SUPPORT'] = True
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

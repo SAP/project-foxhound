@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_COVARIANCE_MATRIX_GENERATOR_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_COVARIANCE_MATRIX_GENERATOR_H_
+#ifndef MODULES_AUDIO_PROCESSING_BEAMFORMER_COVARIANCE_MATRIX_GENERATOR_H_
+#define MODULES_AUDIO_PROCESSING_BEAMFORMER_COVARIANCE_MATRIX_GENERATOR_H_
 
-#include "webrtc/modules/audio_processing/beamformer/complex_matrix.h"
-#include "webrtc/modules/audio_processing/beamformer/array_util.h"
+#include "modules/audio_processing/beamformer/complex_matrix.h"
+#include "modules/audio_processing/beamformer/array_util.h"
 
 namespace webrtc {
 
@@ -30,9 +30,9 @@ class CovarianceMatrixGenerator {
   // The covariance matrix of a source at the given angle.
   static void AngledCovarianceMatrix(float sound_speed,
                                      float angle,
-                                     int frequency_bin,
-                                     int fft_size,
-                                     int num_freq_bins,
+                                     size_t frequency_bin,
+                                     size_t fft_size,
+                                     size_t num_freq_bins,
                                      int sample_rate,
                                      const std::vector<Point>& geometry,
                                      ComplexMatrix<float>* mat);
@@ -40,8 +40,8 @@ class CovarianceMatrixGenerator {
   // Calculates phase shifts that, when applied to a multichannel signal and
   // added together, cause constructive interferernce for sources located at
   // the given angle.
-  static void PhaseAlignmentMasks(int frequency_bin,
-                                  int fft_size,
+  static void PhaseAlignmentMasks(size_t frequency_bin,
+                                  size_t fft_size,
                                   int sample_rate,
                                   float sound_speed,
                                   const std::vector<Point>& geometry,
@@ -51,4 +51,4 @@ class CovarianceMatrixGenerator {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_BF_HELPERS_H_
+#endif  // MODULES_AUDIO_PROCESSING_BEAMFORMER_BF_HELPERS_H_

@@ -1,7 +1,9 @@
- /* Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-common/utils.js");
+/* import-globals-from head_global.js */
+
+var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
 
 function basic_auth_header(user, password) {
   return "Basic " + btoa(user + ":" + CommonUtils.encodeUTF8(password));

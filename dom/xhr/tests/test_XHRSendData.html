@@ -5,10 +5,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=464848
 -->
 <head>
   <title>XMLHttpRequest send data and headers</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
-<body onload="createFiles();">
+<body onload="setupAndRunTests();">
 <a target="_blank"
    href="https://bugzilla.mozilla.org/show_bug.cgi?id=464848">Mozilla Bug 464848</a>
 <p id="display">
@@ -17,17 +17,25 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=464848
 
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.8">
+<script class="testbody" type="application/javascript">
 SimpleTest.waitForExplicitFinish();
 
 var testData = "blahblahblahblahblahblahblaaaaaaaah. blah.";
 var extensions = [".txt",".png",".jpg",".gif",".xml", "noext"];
 var fileTypes = ["text/plain", "image/png", "image/jpeg", "image/gif", "text/xml", null];
-var gen = runTests();
+var gen;
 var testDOMFiles;
 
+function setupAndRunTests() {
+  SpecialPowers.pushPrefEnv({set: [["dom.xhr.standard_content_type_normalization", true]]},
+  function() {
+    gen = runTests();
+    createFiles();
+  });
+}
+
 function createFiles() {
-  var filesToCreate = new Array();
+  var filesToCreate = [];
   extensions.forEach(function (extension) {
     filesToCreate.push({name: "testfile" + extension, data: testData});
   });
@@ -37,7 +45,7 @@ function createFiles() {
                               gen.next();
                             },
                             function (msg) {
-                              testDOMFiles = new Array;
+                              testDOMFiles = [];
                               ok(false, "File creation error: " + msg);
                               gen.next();
                             });
@@ -46,14 +54,14 @@ function createFiles() {
 
 function continueTest() { gen.next(); }
 
-function runTests() {
-xhr = new XMLHttpRequest();
+function* runTests() {
+var xhr = new XMLHttpRequest();
 xhr.open("GET", "file_XHRSendData_doc.xml", false);
 xhr.send();
-testDoc1 = xhr.responseXML;
+var testDoc1 = xhr.responseXML;
 is(testDoc1.inputEncoding, "windows-1252", "wrong encoding");
 
-testDoc2 = document.implementation.createDocument("", "", null);
+var testDoc2 = document.implementation.createDocument("", "", null);
 testDoc2.appendChild(testDoc2.createComment(" doc 2 "));
 testDoc2.appendChild(testDoc2.createElement("res"));
 testDoc2.documentElement.appendChild(testDoc2.createTextNode("text"));
@@ -66,7 +74,7 @@ shortInt8View[0] = 3;
 
 var longArray = new ArrayBuffer(512);
 var longInt8View = new Uint8Array(longArray);
-for (var i = 0; i < longInt8View.length; i++) {
+for (let i = 0; i < longInt8View.length; i++) {
   longInt8View[i] = i % 255;
 }
 
@@ -79,7 +87,7 @@ var longInt16View2 = new Uint16Array(longArray, 256, 64)
 var longInt8View1 = new Int8Array(longArraySlice)
 var longInt8View2 = new Int8Array(longArray, 256, 128)
 
-tests = [{ body: null,
+var tests = [{ body: null,
            resBody: "",
          },
          { body: undefined,
@@ -111,7 +119,7 @@ tests = [{ body: null,
          { body: "hi",
            contentType: "foo/bar; charset=ascii; baz=bin",
            resBody: "hi",
-           resContentType: "foo/bar; charset=UTF-8; baz=bin",
+           resContentType: "foo/bar;charset=UTF-8;baz=bin",
          },
          { body: "hi",
            contentType: "foo/bar; charset=uTf-8",
@@ -130,12 +138,12 @@ tests = [{ body: null,
          { body: testDoc1,
            contentType: "foo/bar; charset=ascii; baz=bin",
            resBody: "<!-- comment -->\n<out>hi</out>",
-           resContentType: "foo/bar; charset=UTF-8; baz=bin",
+           resContentType: "foo/bar;charset=UTF-8;baz=bin",
          },
          { body: testDoc1,
            contentType: "foo/bar; charset=wIndows-1252",
            resBody: "<!-- comment -->\n<out>hi</out>",
-           resContentType: "foo/bar; charset=UTF-8",
+           resContentType: "foo/bar;charset=UTF-8",
          },
          { body: testDoc2,
            resBody: "<!-- doc 2 -->\n<res>text</res>",
@@ -149,7 +157,7 @@ tests = [{ body: null,
          { body: testDoc2,
            contentType: "foo/bar; charset=ascii; baz=bin",
            resBody: "<!-- doc 2 -->\n<res>text</res>",
-           resContentType: "foo/bar; charset=UTF-8; baz=bin",
+           resContentType: "foo/bar;charset=UTF-8;baz=bin",
          },
          { body: testDoc2,
            contentType: "foo/bar; charset=uTf-8",
@@ -194,7 +202,7 @@ tests = [{ body: null,
          },
          ];
 
-for (var i = 0; i < testDOMFiles.length; i++) {
+for (let i = 0; i < testDOMFiles.length; i++) {
   tests.push({ body: testDOMFiles[i],
                resBody: testData,
                resContentType: fileTypes[i],
@@ -203,7 +211,7 @@ for (var i = 0; i < testDOMFiles.length; i++) {
 }
 
 try {
-  for (test of tests) {
+  for (var test of tests) {
     xhr = new XMLHttpRequest;
     xhr.open("POST", "file_XHRSendData.sjs", !!test.resType);
     if (test.contentType)
@@ -242,7 +250,7 @@ try {
     else {
       // If we're testing redirect, determine whether the body is
       // this document by looking for the relevant bug url
-      is(xhr.responseText.indexOf("https://bugzilla.mozilla.org/show_bug.cgi?id=464848") >= 0, true,
+      is(xhr.responseText.includes("https://bugzilla.mozilla.org/show_bug.cgi?id=464848"), true,
                                   "Wrong page for redirect");
     }
   }
@@ -251,16 +259,14 @@ try {
 
 function is_identical_arraybuffer(ab1, ab2) {
   is(ab1.byteLength, ab2.byteLength, "arraybuffer byteLengths not equal");
-  u8v1 = new Uint8Array(ab1);
-  u8v2 = new Uint8Array(ab2);
+  var u8v1 = new Uint8Array(ab1);
+  var u8v2 = new Uint8Array(ab2);
   is(String.fromCharCode.apply(String, u8v1),
      String.fromCharCode.apply(String, u8v2), "arraybuffer values not equal");
 }
 
 SimpleTest.finish();
-yield undefined;
 } /* runTests */
-
 </script>
 </pre>
 </body>

@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow */
+
+"use strict";
 
 /**
  * Test behavior of blackboxing sources we are currently paused in.
@@ -7,16 +10,19 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-black-box");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-black-box", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-black-box", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront = threadFront;
       test_black_box();
     });
   });
@@ -26,63 +32,60 @@ function run_test()
 const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
-function test_black_box()
-{
-  gClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.eval(aPacket.frame.actor, "doStuff", function (aResponse) {
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        let obj = gThreadClient.pauseGrip(aPacket.why.frameFinished.return);
-        obj.getDefinitionSite(runWithSource);
-      });
-    });
-
-    function runWithSource(aPacket) {
-      let source = gThreadClient.source(aPacket.source);
-      source.setBreakpoint({
-        line: 2
-      }, function (aResponse) {
-        do_check_true(!aResponse.error, "Should be able to set breakpoint.");
-        test_black_box_paused();
-      });
-    }
+function test_black_box() {
+  gThreadFront.once("paused", function(packet) {
+    gThreadFront.setBreakpoint({ sourceUrl: BLACK_BOXED_URL, line: 2 }, {});
+    test_black_box_paused();
   });
 
-  Components.utils.evalInSandbox(
-    "" + function doStuff(k) { // line 1
-      debugger;                // line 2
-      k(100);                  // line 3
-    },                         // line 4
+  /* eslint-disable no-multi-spaces, no-undef */
+  Cu.evalInSandbox(
+    "" +
+      function doStuff(k) {
+        // line 1
+        debugger; // line 2
+        k(100); // line 3
+      }, // line 4
     gDebuggee,
     "1.8",
     BLACK_BOXED_URL,
     1
   );
 
-  Components.utils.evalInSandbox(
-    "" + function runTest() { // line 1
-      doStuff(                // line 2
-        function (n) {        // line 3
-          return n;           // line 4
-        }                     // line 5
-      );                      // line 6
-    }                         // line 7
-    + "\n runTest();",        // line 8
+  Cu.evalInSandbox(
+    "" +
+    function runTest() {
+      // line 1
+      doStuff(
+        // line 2
+        function(n) {
+          // line 3
+          return n; // line 4
+        } // line 5
+      ); // line 6
+    } + // line 7
+      "\n runTest();", // line 8
     gDebuggee,
     "1.8",
     SOURCE_URL,
     1
   );
+  /* eslint-enable no-multi-spaces, no-undef */
 }
 
 function test_black_box_paused() {
-  gThreadClient.getSources(function ({error, sources}) {
-    do_check_true(!error, "Should not get an error: " + error);
-    let sourceClient = gThreadClient.source(sources.filter(s => s.url == BLACK_BOXED_URL)[0]);
+  gThreadFront.getSources().then(async function({ error, sources }) {
+    Assert.ok(!error, "Should not get an error: " + error);
+    const sourceFront = gThreadFront.source(
+      sources.filter(s => s.url == BLACK_BOXED_URL)[0]
+    );
 
-    sourceClient.blackBox(function ({error, pausedInSource}) {
-      do_check_true(!error, "Should not get an error: " + error);
-      do_check_true(pausedInSource, "We should be notified that we are currently paused in this source");
-      finishClient(gClient);
-    });
+    const pausedInSource = await blackBox(sourceFront);
+    Assert.ok(
+      pausedInSource,
+      "We should be notified that we are currently paused in this source"
+    );
+    await gThreadFront.resume();
+    finishClient(gClient);
   });
 }

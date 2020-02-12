@@ -7,14 +7,20 @@
 // with createObjectURL(cssBlob)
 const TEST_URL = URL_ROOT + "doc_blob_stylesheet.html";
 
-add_task(function* () {
-  yield addTab(TEST_URL);
-  let {inspector, view} = yield openRuleView();
+add_task(async function() {
+  await addTab(TEST_URL);
+  const { inspector, view } = await openRuleView();
 
-  yield selectNode("h1", inspector);
-  is(view.element.querySelectorAll("#noResults").length, 0,
-    "The no-results element is not displayed");
+  await selectNode("h1", inspector);
+  is(
+    view.element.querySelectorAll("#noResults").length,
+    0,
+    "The no-results element is not displayed"
+  );
 
-  is(view.element.querySelectorAll(".ruleview-rule").length, 2,
-    "There are 2 displayed rules");
+  is(
+    view.element.querySelectorAll(".ruleview-rule").length,
+    2,
+    "There are 2 displayed rules"
+  );
 });

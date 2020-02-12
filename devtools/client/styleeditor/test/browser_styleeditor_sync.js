@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -19,24 +18,24 @@ const expectedText = `
   }
   `;
 
-function* closeAndReopenToolbox() {
-  let target = TargetFactory.forTab(gBrowser.selectedTab);
-  yield gDevTools.closeToolbox(target);
-  let { ui: newui } = yield openStyleEditor();
+async function closeAndReopenToolbox() {
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  await gDevTools.closeToolbox(target);
+  const { ui: newui } = await openStyleEditor();
   return newui;
 }
 
-add_task(function* () {
-  yield addTab(TESTCASE_URI);
-  let { inspector, view } = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab(TESTCASE_URI);
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
   let ruleEditor = getRuleViewRuleEditor(view, 1);
 
   // Disable the "font-size" property.
   let propEditor = ruleEditor.rule.textProps[0].editor;
   let onModification = view.once("ruleview-changed");
   propEditor.enable.click();
-  yield onModification;
+  await onModification;
 
   // Disable the "color" property.  Note that this property is in a
   // rule that also contains a non-inherited property -- so this test
@@ -46,27 +45,30 @@ add_task(function* () {
   propEditor = ruleEditor.rule.textProps[1].editor;
   onModification = view.once("ruleview-changed");
   propEditor.enable.click();
-  yield onModification;
+  await onModification;
 
-  let { ui } = yield openStyleEditor();
+  let { ui } = await openStyleEditor();
 
-  let editor = yield ui.editors[0].getSourceEditor();
+  let editor = await ui.editors[0].getSourceEditor();
   let text = editor.sourceEditor.getText();
   is(text, expectedText, "style inspector changes are synced");
 
   // Close and reopen the toolbox, to see that the edited text remains
   // available.
-  ui = yield closeAndReopenToolbox();
-  editor = yield ui.editors[0].getSourceEditor();
+  ui = await closeAndReopenToolbox();
+  editor = await ui.editors[0].getSourceEditor();
   text = editor.sourceEditor.getText();
   is(text, expectedText, "changes remain after close and reopen");
 
   // For the time being, the actor does not update the style's owning
   // node's textContent.  See bug 1205380.
-  let textContent = yield ContentTask.spawn(gBrowser.selectedBrowser, null,
-    function* () {
+  const textContent = await ContentTask.spawn(
+    gBrowser.selectedBrowser,
+    null,
+    async function() {
       return content.document.querySelector("style").textContent;
-    });
+    }
+  );
 
   isnot(textContent, expectedText, "changes not written back to style node");
 });

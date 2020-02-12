@@ -2,41 +2,45 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-Cu.import("resource://gre/modules/Preferences.jsm");
+add_task(async function test_background_incognito() {
+  info(
+    "Test background page incognito value with permanent private browsing enabled"
+  );
 
-function* testBackgroundPage(expected) {
+  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
+  Services.prefs.setBoolPref("browser.privatebrowsing.autostart", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("browser.privatebrowsing.autostart");
+    Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
+  });
+
   let extension = ExtensionTestUtils.loadExtension({
-    background() {
-      browser.runtime.getBackgroundPage().then(bgPage => {
-        browser.test.assertEq(window, browser.extension.getBackgroundPage(),
-                              "Caller should be able to access itself as a background page");
-        browser.test.assertEq(window, bgPage,
-                              "Caller should be able to access itself as a background page");
+    incognitoOverride: "spanning",
+    async background() {
+      browser.test.assertEq(
+        window,
+        browser.extension.getBackgroundPage(),
+        "Caller should be able to access itself as a background page"
+      );
+      browser.test.assertEq(
+        window,
+        await browser.runtime.getBackgroundPage(),
+        "Caller should be able to access itself as a background page"
+      );
 
-        browser.test.sendMessage("incognito", browser.extension.inIncognitoContext);
-      });
+      browser.test.assertEq(
+        browser.extension.inIncognitoContext,
+        true,
+        "inIncognitoContext is true for permanent private browsing"
+      );
+
+      browser.test.notifyPass("incognito");
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  let incognito = yield extension.awaitMessage("incognito");
-  equal(incognito, expected.incognito, "Expected incognito value");
+  await extension.awaitFinish("incognito");
 
-  yield extension.unload();
-}
-
-add_task(function* test_background_incognito() {
-  do_print("Test background page incognito value with permanent private browsing disabled");
-
-  yield testBackgroundPage({incognito: false});
-
-  do_print("Test background page incognito value with permanent private browsing enabled");
-
-  Preferences.set("browser.privatebrowsing.autostart", true);
-  do_register_cleanup(() => {
-    Preferences.reset("browser.privatebrowsing.autostart");
-  });
-
-  yield testBackgroundPage({incognito: true});
+  await extension.unload();
 });

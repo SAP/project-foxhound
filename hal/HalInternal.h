@@ -18,7 +18,7 @@
  */
 
 #ifndef MOZ_HAL_NAMESPACE
-# error "You shouldn't directly include HalInternal.h!"
+#  error "You shouldn't directly include HalInternal.h!"
 #endif
 
 namespace mozilla {
@@ -55,51 +55,11 @@ void EnableScreenConfigurationNotifications();
 void DisableScreenConfigurationNotifications();
 
 /**
- * Enable switch notifications from the backend
- */
-void EnableSwitchNotifications(hal::SwitchDevice aDevice);
-
-/**
- * Disable switch notifications from the backend
- */
-void DisableSwitchNotifications(hal::SwitchDevice aDevice);
-
-/**
- * Enable alarm notifications from the backend.
- */
-MOZ_MUST_USE bool EnableAlarm();
-
-/**
- * Disable alarm notifications from the backend.
- */
-void DisableAlarm();
-
-/**
- * Enable system clock change notifications from the backend.
- */
-void EnableSystemClockChangeNotifications();
-
-/**
- * Disable system clock change notifications from the backend.
- */
-void DisableSystemClockChangeNotifications();
-
-/**
- * Enable system timezone change notifications from the backend.
- */
-void EnableSystemTimezoneChangeNotifications();
-
-/**
- * Disable system timezone change notifications from the backend.
- */
-void DisableSystemTimezoneChangeNotifications();
-
-/**
  * Has the child-side HAL IPC object been destroyed?  If so, you shouldn't send
  * messages to hal_sandbox.
  */
 bool HalChildDestroyed();
-} // namespace MOZ_HAL_NAMESPACE
-} // namespace mozilla
+}  // namespace MOZ_HAL_NAMESPACE
+}  // namespace mozilla
 
 #endif  // mozilla_HalInternal_h

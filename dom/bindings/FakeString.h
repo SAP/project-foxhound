@@ -10,6 +10,7 @@
 #include "nsString.h"
 #include "nsStringBuffer.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
 
 namespace mozilla {
 namespace dom {
@@ -17,25 +18,25 @@ namespace binding_detail {
 // A struct that has the same layout as an nsString but much faster
 // constructor and destructor behavior. FakeString uses inline storage
 // for small strings and a nsStringBuffer for longer strings.
-struct FakeString : public TaintableString {
-  FakeString() :
-    mFlags(nsString::F_TERMINATED)
-  {
-  }
+struct FakeString {
+  FakeString()
+      : mDataFlags(nsString::DataFlags::TERMINATED),
+        mClassFlags(nsString::ClassFlags(0)),
+        mTaint() {}
 
   ~FakeString() {
-    if (mFlags & nsString::F_SHARED) {
+    if (mDataFlags & nsString::DataFlags::REFCOUNTED) {
       nsStringBuffer::FromData(mData)->Release();
     }
   }
 
   void Rebind(const nsString::char_type* aData, nsString::size_type aLength) {
-    MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
+    MOZ_ASSERT(mDataFlags == nsString::DataFlags::TERMINATED);
     mData = const_cast<nsString::char_type*>(aData);
     mLength = aLength;
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
 
   // Share aString's string buffer, if it has one; otherwise, make this string
@@ -52,34 +53,42 @@ struct FakeString : public TaintableString {
   }
 
   void Truncate() {
-    MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
+    MOZ_ASSERT(mDataFlags == nsString::DataFlags::TERMINATED);
     mData = nsString::char_traits::sEmptyBuffer;
     mLength = 0;
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
 
   void SetIsVoid(bool aValue) {
-    MOZ_ASSERT(aValue,
-               "We don't support SetIsVoid(false) on FakeString!");
+    MOZ_ASSERT(aValue, "We don't support SetIsVoid(false) on FakeString!");
     Truncate();
-    mFlags |= nsString::F_VOIDED;
+    mDataFlags |= nsString::DataFlags::VOIDED;
   }
 
-  const nsString::char_type* Data() const
+  const nsString::char_type* Data() const { return mData; }
+
+  // TaintFox: Helper function for Setting the Taint information
+  void AssignTaint(const StringTaint& aTaint)
   {
+    mTaint = aTaint;
+  }
+
+  nsString::char_type* BeginWriting() {
+    MOZ_ASSERT(!(mDataFlags & nsString::DataFlags::REFCOUNTED) ||
+               !nsStringBuffer::FromData(mData)->IsReadonly());
     return mData;
   }
 
-  nsString::char_type* BeginWriting()
-  {
-    return mData;
+  nsString::size_type Length() const { return mLength; }
+
+  operator mozilla::Span<const nsString::char_type>() const {
+    return mozilla::MakeSpan(Data(), Length());
   }
 
-  nsString::size_type Length() const
-  {
-    return mLength;
+  operator mozilla::Span<nsString::char_type>() {
+    return mozilla::MakeSpan(BeginWriting(), Length());
   }
 
   // Reserve space to write aLength chars, not including null-terminator.
@@ -88,7 +97,8 @@ struct FakeString : public TaintableString {
     if (aLength < sInlineCapacity) {
       SetData(mInlineStorage);
     } else {
-      RefPtr<nsStringBuffer> buf = nsStringBuffer::Alloc((aLength + 1) * sizeof(nsString::char_type));
+      RefPtr<nsStringBuffer> buf =
+          nsStringBuffer::Alloc((aLength + 1) * sizeof(nsString::char_type));
       if (MOZ_UNLIKELY(!buf)) {
         return false;
       }
@@ -97,7 +107,7 @@ struct FakeString : public TaintableString {
     }
 
     // TaintFox: this method should only be called on empty strings it seems.
-    MOZ_ASSERT(!isTainted());
+    MOZ_ASSERT(!mTaint.hasTaint());
 
     mLength = aLength;
     mData[mLength] = char16_t(0);
@@ -110,18 +120,20 @@ struct FakeString : public TaintableString {
     return reinterpret_cast<const nsString*>(this);
   }
 
-  operator const nsAString& () const {
+operator const nsAString& () const {
     return *reinterpret_cast<const nsString*>(this);
   }
 
-private:
-  nsAString* ToAStringPtr() {
-    return reinterpret_cast<nsString*>(this);
-  }
+ private:
+  nsAString* ToAStringPtr() { return reinterpret_cast<nsString*>(this); }
 
-  nsString::char_type* mData;
-  nsString::size_type mLength;
-  uint32_t mFlags;
+  // mData is left uninitialized for optimization purposes.
+  MOZ_INIT_OUTSIDE_CTOR nsString::char_type* mData;
+  // mLength is left uninitialized for optimization purposes.
+  MOZ_INIT_OUTSIDE_CTOR nsString::size_type mLength;
+  nsString::DataFlags mDataFlags;
+  nsString::ClassFlags mClassFlags;
+  StringTaint mTaint;
 
   static const size_t sInlineCapacity = 64;
   nsString::char_type mInlineStorage[sInlineCapacity];
@@ -130,15 +142,16 @@ private:
   void operator=(const FakeString& other) = delete;
 
   void SetData(nsString::char_type* aData) {
-    MOZ_ASSERT(mFlags == nsString::F_TERMINATED);
+    MOZ_ASSERT(mDataFlags == nsString::DataFlags::TERMINATED);
     mData = const_cast<nsString::char_type*>(aData);
 
     // TaintFox: clear previous taint information.
-    clearTaint();
+    mTaint.clear();
   }
   void AssignFromStringBuffer(already_AddRefed<nsStringBuffer> aBuffer) {
     SetData(static_cast<nsString::char_type*>(aBuffer.take()->Data()));
-    mFlags = nsString::F_SHARED | nsString::F_TERMINATED;
+    mDataFlags =
+        nsString::DataFlags::REFCOUNTED | nsString::DataFlags::TERMINATED;
   }
 
   friend class NonNull<nsAString>;
@@ -149,28 +162,30 @@ private:
   friend class StringAsserter;
 
   class StringAsserter : public nsString {
-  public:
+   public:
     static void StaticAsserts() {
-      static_assert(offsetof(FakeString, mInlineStorage) ==
-                      sizeof(nsString),
+      static_assert(offsetof(FakeString, mInlineStorage) == sizeof(nsString),
                     "FakeString should include all nsString members");
-      static_assert(offsetof(FakeString, mData) ==
-                      offsetof(StringAsserter, mData),
-                    "Offset of mData should match");
-      static_assert(offsetof(FakeString, mLength) ==
-                      offsetof(StringAsserter, mLength),
-                    "Offset of mLength should match");
-      static_assert(offsetof(FakeString, mFlags) ==
-                      offsetof(StringAsserter, mFlags),
-                    "Offset of mFlags should match");
-      static_assert(offsetof(FakeString, taint_) ==
-                      offsetof(StringAsserter, taint_),
+      static_assert(
+          offsetof(FakeString, mData) == offsetof(StringAsserter, mData),
+          "Offset of mData should match");
+      static_assert(
+          offsetof(FakeString, mLength) == offsetof(StringAsserter, mLength),
+          "Offset of mLength should match");
+      static_assert(offsetof(FakeString, mDataFlags) ==
+                        offsetof(StringAsserter, mDataFlags),
+                    "Offset of mDataFlags should match");
+      static_assert(offsetof(FakeString, mClassFlags) ==
+                        offsetof(StringAsserter, mClassFlags),
+                    "Offset of mClassFlags should match");
+      static_assert(offsetof(FakeString, mTaint) ==
+                      offsetof(StringAsserter, mTaint),
                     "Offset of taint_ should match");
     }
   };
 };
-} // namespace binding_detail
-} // namespace dom
-} // namespace mozilla
+}  // namespace binding_detail
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_FakeString_h__ */

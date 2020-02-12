@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf8">
   <title>Test for the network actor (HSTS detection)</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript;version=1.8" src="common.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
 </head>
@@ -13,7 +13,7 @@
 
 <iframe src="https://example.com/chrome/devtools/shared/webconsole/test/network_requests_iframe.html"></iframe>
 
-<script class="testbody" type="text/javascript;version=1.8">
+<script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
 let gCurrentTestCase = -1;
@@ -47,8 +47,8 @@ function startTest()
     let gIOService = Cc["@mozilla.org/network/io-service;1"]
                        .getService(Ci.nsIIOService);
 
-    let uri = gIOService.newURI(TEST_CASES[0].url, null, null);
-    gSSService.removeState(Ci.nsISiteSecurityService.HEADER_HSTS, uri, 0);
+    let uri = gIOService.newURI(TEST_CASES[0].url);
+    gSSService.resetState(Ci.nsISiteSecurityService.HEADER_HSTS, uri, 0);
   });
 
   info("Test detection of HTTP Strict Transport Security.");
@@ -59,7 +59,7 @@ function startTest()
 function onAttach(aState, aResponse)
 {
   onNetworkEventUpdate = onNetworkEventUpdate.bind(null, aState);
-  aState.dbgClient.addListener("networkEventUpdate", onNetworkEventUpdate);
+  aState.dbgClient.on("networkEventUpdate", onNetworkEventUpdate);
 
   runNextCase(aState);
 }
@@ -79,7 +79,7 @@ function runNextCase(aState) {
   iframe.wrappedJSObject.makeXhrCallback("GET", url);
 }
 
-function onNetworkEventUpdate(aState, aType, aPacket)
+function onNetworkEventUpdate(aState, aPacket)
 {
   function onSecurityInfo(packet) {
     let data = TEST_CASES[gCurrentTestCase];
@@ -90,7 +90,7 @@ function onNetworkEventUpdate(aState, aType, aPacket)
   }
 
   if (aPacket.updateType === "securityInfo") {
-    aState.client.getSecurityInfo(aPacket.from, onSecurityInfo);
+    aState.webConsoleFront.getSecurityInfo(aPacket.from, onSecurityInfo);
   }
 }
 

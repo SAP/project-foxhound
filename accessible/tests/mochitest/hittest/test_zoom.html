@@ -5,8 +5,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -18,8 +17,7 @@
           src="../browser.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
 if (!MAC) {
       var tabDocument = currentTabDocument();
       var p1 = tabDocument.body.firstElementChild;

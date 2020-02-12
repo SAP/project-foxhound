@@ -5,13 +5,14 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMDocument;
-interface nsIDOMElement;
 interface nsIDOMWindow;
 interface nsIRequest;
 interface nsIRequestObserver;
 interface nsISimpleEnumerator;
 interface nsIFile;
+
+webidl Element;
+webidl Document;
 
 /**
  * An interface that describes an object representing a patch file that can
@@ -27,12 +28,12 @@ interface nsIUpdatePatch : nsISupports
    * "complete"     A complete patch containing all of the replacement files
    *                to update to the new version
    */
-  attribute AString type;
+  readonly attribute AString type;
 
   /**
    * The URL this patch was being downloaded from
    */
-  attribute AString URL;
+  readonly attribute AString URL;
 
   /**
    * The final URL this patch was being downloaded from
@@ -40,25 +41,22 @@ interface nsIUpdatePatch : nsISupports
   attribute AString finalURL;
 
   /**
-   * The hash function to use when determining this file's integrity
-   */
-  attribute AString hashFunction;
-
-  /**
-   * The value of the hash function named above that should be computed if
-   * this file is not corrupt.
-   */
-  attribute AString hashValue;
-
-  /**
    * The size of this file, in bytes.
    */
-  attribute unsigned long size;
+  readonly attribute unsigned long size;
 
   /**
    * The state of this patch
    */
   attribute AString state;
+
+  /**
+   * A numeric error code that conveys additional information about the state of
+   * a failed update. If the update is not in the "failed" state the value is
+   * zero. The possible values are located in common/updatererrors.h and values between
+   * 80 and 99 are in nsUpdateService.js.
+   */
+  attribute long errorCode;
 
   /**
    * true if this patch is currently selected as the patch to be downloaded and
@@ -73,7 +71,7 @@ interface nsIUpdatePatch : nsISupports
    *          The document to serialize into
    * @returns The DOM Element created by the serialization process
    */
-  nsIDOMElement serialize(in nsIDOMDocument updates);
+  Element serialize(in Document updates);
 };
 
 /**
@@ -94,28 +92,28 @@ interface nsIUpdate : nsISupports
    *   "major"  A major new version of the Application
    *   "minor"  A minor update to the Application (e.g. security update)
    */
-  attribute AString type;
+  readonly attribute AString type;
 
   /**
    * The name of the update, or "<Application Name> <Update Version>"
    */
-  attribute AString name;
+  readonly attribute AString name;
 
   /**
    * The string to display in the user interface for the version. If you want
    * a real version number use appVersion.
    */
-  attribute AString displayVersion;
+  readonly attribute AString displayVersion;
 
   /**
    * The Application version of this update.
    */
-  attribute AString appVersion;
+  readonly attribute AString appVersion;
 
   /**
    * The Application version prior to the application being updated.
    */
-  attribute AString previousAppVersion;
+  readonly attribute AString previousAppVersion;
 
   /**
    * The Build ID of this update. Used to determine a particular build, down
@@ -123,7 +121,7 @@ interface nsIUpdate : nsISupports
    * to differentiate between several nightly builds with the same |version|
    * for example.
    */
-  attribute AString buildID;
+  readonly attribute AString buildID;
 
   /**
    * The URL to a page which offers details about the content of this
@@ -131,37 +129,23 @@ interface nsIUpdate : nsISupports
    * that summarizes the differences between this update and the previous,
    * which also links to the release notes.
    */
-  attribute AString detailsURL;
+  readonly attribute AString detailsURL;
 
   /**
    * The URL to the Update Service that supplied this update.
    */
-  attribute AString serviceURL;
+  readonly attribute AString serviceURL;
 
   /**
    * The channel used to retrieve this update from the Update Service.
    */
-  attribute AString channel;
-
-  /**
-   * Whether to show the update prompt which requires user confirmation when an
-   * update is found during a background update check. This overrides the
-   * default setting to download the update in the background.
-   */
-  attribute boolean showPrompt;
-
-  /**
-   * Whether to show the "No Thanks" button in the update prompt. This allows
-   * the user to never receive a notification for that specific update version
-   * again.
-   */
-  attribute boolean showNeverForVersion;
+  readonly attribute AString channel;
 
   /**
    * Whether the update is no longer supported on this system.
    */
-  attribute boolean unsupported;
-  
+  readonly attribute boolean unsupported;
+
   /**
    * Allows overriding the default amount of time in seconds before prompting the
    * user to apply an update. If not specified, the value of
@@ -175,19 +159,6 @@ interface nsIUpdate : nsISupports
    * between the new version and the previous version.
    */
   attribute boolean isCompleteUpdate;
-
-  /**
-   * Whether or not the update is a security update or not. If this is true,
-   * then we present more serious sounding user interface messages to the
-   * user.
-   */
-  attribute boolean isSecurityUpdate;
-
-  /**
-   * Whether or not the update being downloaded is an OS update. This is
-   * generally only possible in Gonk right now.
-   */
-  attribute boolean isOSUpdate;
 
   /**
    * When the update was installed.
@@ -221,13 +192,10 @@ interface nsIUpdate : nsISupports
   attribute AString state;
 
   /**
-   * A numeric error code that conveys additional information about the state
-   * of a failed update or failed certificate attribute check during an update
-   * check. If the update is not in the "failed" state or the certificate
-   * attribute check has not failed the value is zero.
-   *
-   * TODO: Define typical error codes (for now, see updater/errors.h and the
-   *       CERT_ATTR_CHECK_FAILED_* values in nsUpdateService.js)
+   * A numeric error code that conveys additional information about the state of
+   * a failed update. If the update is not in the "failed" state the value is
+   * zero. The possible values are located in common/updatererrors.h and values between
+   * 80 and 99 are in nsUpdateService.js.
    */
   attribute long errorCode;
 
@@ -255,7 +223,7 @@ interface nsIUpdate : nsISupports
    *          The document to serialize into
    * @returns The DOM Element created by the serialization process
    */
-  nsIDOMElement serialize(in nsIDOMDocument updates);
+  Element serialize(in Document updates);
 };
 
 /**
@@ -272,12 +240,8 @@ interface nsIUpdateCheckListener : nsISupports
    *          The XMLHttpRequest handling the update check.
    * @param   updates
    *          An array of nsIUpdate objects listing available updates.
-   * @param   updateCount
-   *          The size of the |updates| array.
    */
-  void onCheckComplete(in jsval request,
-                       [array, size_is(updateCount)] in nsIUpdate updates,
-                       in unsigned long updateCount);
+  void onCheckComplete(in jsval request, in Array<nsIUpdate> updates);
 
   /**
    * An error occurred while loading the remote update service file.
@@ -307,30 +271,15 @@ interface nsIUpdateChecker : nsISupports
    *          current value of the user's update settings. This is used by
    *          any piece of UI that offers the user the imperative option to
    *          check for updates now, regardless of their update settings.
-   *          force will not work if the system administrator has locked
-   *          the app.update.enabled preference.
+   *          However, if updates are disabled by policy, setting force to true
+   *          will not override the the policy.
    */
   void checkForUpdates(in nsIUpdateCheckListener listener, in boolean force);
 
   /**
-   * Constants for the |stopChecking| function that tell the Checker how long
-   * to stop checking:
-   *
-   * CURRENT_CHECK:     Stops the current (active) check only
-   * CURRENT_SESSION:   Stops all checking for the current session
-   * ANY_CHECKS:        Stops all checking, any session from now on
-   *                    (disables update checking preferences)
-   */
-  const unsigned short CURRENT_CHECK    = 1;
-  const unsigned short CURRENT_SESSION  = 2;
-  const unsigned short ANY_CHECKS       = 3;
-
-  /**
    * Ends any pending update check.
-   * @param   duration
-   *          A value representing the set of checks to stop doing.
    */
-  void stopChecking(in unsigned short duration);
+  void stopCurrentCheck();
 };
 
 /**
@@ -356,11 +305,8 @@ interface nsIApplicationUpdateService : nsISupports
    * Selects the best update to install from a list of available updates.
    * @param   updates
    *          An array of updates that are available
-   * @param   updateCount
-   *          The length of the |updates| array
    */
-  nsIUpdate selectUpdate([array, size_is(updateCount)] in nsIUpdate updates,
-                         in unsigned long updateCount);
+  nsIUpdate selectUpdate(in Array<nsIUpdate> updates);
 
   /**
    * Adds a listener that receives progress and state information about the
@@ -387,23 +333,18 @@ interface nsIApplicationUpdateService : nsISupports
   AString downloadUpdate(in nsIUpdate update, in boolean background);
 
   /**
-   * Apply the OS update which has been downloaded and staged as applied.
-   * @param   update 
-   *          The update has been downloaded and staged as applied.
-   * @throws  if the update object is not an OS update.
-   */
-  void applyOsUpdate(in nsIUpdate update);
-
-  /**
    * Get the Active Updates directory
    * @returns An nsIFile for the active updates directory.
    */
   nsIFile getUpdatesDirectory();
 
   /**
-   * Pauses the active update download process
+   * Stop the active update download process. This is the equivalent of
+   * calling nsIRequest::Cancel on the download's nsIRequest. When downloading
+   * with nsIIncrementalDownload, this will leave the partial download in place.
+   * When downloading with BITS, any partial download progress will be removed.
    */
-  void pauseDownload();
+  void stopDownload();
 
   /**
    * Whether or not there is an download happening at the moment.
@@ -454,14 +395,33 @@ interface nsIApplicationUpdateService : nsISupports
 interface nsIUpdateProcessor : nsISupports
 {
   /**
-   * Processes the update which has been downloaded.
-   * This happens without restarting the application.
-   * On Windows, this can also be used for switching to an applied
-   * update request.
-   * @param update The update being applied, or null if this is a switch
-   *               to updated application request.  Must be non-null on GONK.
+   * Stages an update while the application is running.
    */
-  void processUpdate(in nsIUpdate update);
+  void processUpdate();
+
+  /**
+   * Attempts to fix the permissions of the update directory. This can be done
+   * in two ways. Firefox can attempt to fix the permissions itself, or it can
+   * call into the maintenance service to request that it attempt to fix the
+   * permissions.
+   *
+   * Fixing the permissions can take some time, so this work is all done off of
+   * the main thread.
+   *
+   * Currently, this function only has a Windows implementation. On other
+   * operating systems, it will throw NS_ERROR_NOT_IMPLEMENTED.
+   *
+   * Since this function does its work off of the main thread and does not
+   * block, it will only throw if it was unable to dispatch to another thread.
+   *
+   * @param useServiceOnFailure
+   *        If set to false, Firefox will attempt to fix the permissions itself,
+   *        but the maintenance service will not be used. If set to true and
+   *        Firefox is unable to fix the permissions itself, it will attempt to
+   *        call into the maintenance service to request that it attempt to fix
+   *        the permissions.
+   */
+  void fixUpdateDirectoryPerms(in boolean useServiceOnFailure);
 };
 
 /**
@@ -509,67 +469,4 @@ interface nsIUpdateManager : nsISupports
    * Clean up and remove the active update without applying it.
    */
   void cleanupActiveUpdate();
-};
-
-/**
- * An interface describing an object that can show various kinds of Update
- * notification UI to the user.
- */
-[scriptable, uuid(cee3bd60-c564-42ff-a2bf-d442cb15f75c)]
-interface nsIUpdatePrompt : nsISupports
-{
-  /**
-   * Shows the application update checking user interface and checks if there
-   * is an update available.
-   */
-  void checkForUpdates();
-
-  /**
-   * Shows the application update available user interface advising that an
-   * update is available for download and install. If the app.update.silent
-   * preference is true or the user interface is already displayed the call will
-   * be a no-op.
-   * @param   update
-   *          The nsIUpdate object to be downloaded and installed
-   */
-  void showUpdateAvailable(in nsIUpdate update);
-
-  /**
-   * Shows the application update downloaded user interface advising that an
-   * update has now been downloaded and a restart is necessary to complete the
-   * update. If background is true (e.g. the download was not user initiated)
-   * and the app.update.silent preference is true the call will be a no-op.
-   * @param   update
-   *          The nsIUpdate object that was downloaded
-   * @param   background
-   *          Less obtrusive UI, starting with a non-modal notification alert
-   */
-  void showUpdateDownloaded(in nsIUpdate update,
-                            [optional] in boolean background);
-
-  /**
-   * Shows the application update error user interface advising that an error
-   * occurred while checking for or applying an update. If the app.update.silent
-   * preference is true the call will be a no-op.
-   * @param   update
-   *          An nsIUpdate object representing the update that could not be
-   *          installed. The nsIUpdate object will not be the actual update when
-   *          the error occurred during an update check and will instead be an
-   *          nsIUpdate object with the error information for the update check.
-   */
-  void showUpdateError(in nsIUpdate update);
-
-  /**
-   * Shows a list of all updates installed to date.
-   * @param   parent
-   *          An nsIDOMWindow to set as the parent for this window. Can be null.
-   */
-  void showUpdateHistory(in nsIDOMWindow parent);
-
-  /**
-   * Shows the application update downloaded user interface advising that an
-   * update, which requires elevation, has now been downloaded and a restart is
-   * necessary to complete the update.
-   */
-  void showUpdateElevationRequired();
 };

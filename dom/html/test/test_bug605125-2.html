@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=605125
 -->
 <head>
   <title>Test for Bug 605125</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -44,9 +44,9 @@ function checkElement(aElement)
   aElement.focus();
   checkPseudoClass(aElement, false);
   // with keys
-  synthesizeKey('f', {});
+  sendString("f");
   checkPseudoClass(aElement, false);
-  synthesizeKey('VK_BACK_SPACE', {});
+  synthesizeKey("KEY_Backspace");
   checkPseudoClass(aElement, false);
   // with .value
   aElement.value = 'f';
@@ -62,9 +62,9 @@ function checkElement(aElement)
   aElement.focus();
   checkPseudoClass(aElement, true);
   // with keys
-  synthesizeKey('f', {});
+  sendString("f");
   checkPseudoClass(aElement, true);
-  synthesizeKey('VK_BACK_SPACE', {});
+  synthesizeKey("KEY_Backspace");
   checkPseudoClass(aElement, true);
   // with .value
   aElement.value = 'f';
@@ -81,9 +81,9 @@ function checkElement(aElement)
   aElement.focus();
   checkPseudoClass(aElement, false);
   // with keys
-  synthesizeKey('f', {});
+  sendString("f");
   checkPseudoClass(aElement, true);
-  synthesizeKey('VK_BACK_SPACE', {});
+  synthesizeKey("KEY_Backspace");
   checkPseudoClass(aElement, false);
   // with .value
   aElement.value = 'f';
@@ -121,6 +121,10 @@ function checkSelectElement(aElement)
 
   aElement.blur();
   aElement.required = true;
+  // select set with multiple is only invalid if no option is selected
+  if (aElement.multiple) {
+    aElement.selectedIndex = -1;
+  }
   checkPseudoClass(aElement, false);
 
   // Focusing while :-moz-ui-invalid applies,
@@ -131,7 +135,7 @@ function checkSelectElement(aElement)
   aElement.selectedIndex = 1;
   checkPseudoClass(aElement, true);
   aElement.selectedIndex = 0;
-  checkPseudoClass(aElement, false);
+  checkPseudoClass(aElement, aElement.multiple);
 }
 
 checkElement(document.getElementsByTagName('input')[0]);

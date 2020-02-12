@@ -1,7 +1,6 @@
 /* Tests various aspects of nsIResumableChannel in combination with HTTP */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
@@ -15,26 +14,18 @@ const NS_ERROR_NOT_RESUMABLE = 0x804b0019;
 const rangeBody = "Body of the range request handler.\r\n";
 
 function make_channel(url, callback, ctx) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
-function AuthPrompt2() {
-}
+function AuthPrompt2() {}
 
 AuthPrompt2.prototype = {
   user: "guest",
   pass: "guest",
 
-  QueryInterface: function authprompt2_qi(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIAuthPrompt2))
-      return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIAuthPrompt2"]),
 
-  promptAuth:
-    function ap2_promptAuth(channel, level, authInfo)
-  {
+  promptAuth: function ap2_promptAuth(channel, level, authInfo) {
     authInfo.username = this.user;
     authInfo.password = this.pass;
     return true;
@@ -42,32 +33,27 @@ AuthPrompt2.prototype = {
 
   asyncPromptAuth: function ap2_async(chan, cb, ctx, lvl, info) {
     throw 0x80004001;
-  }
+  },
 };
 
-function Requestor() {
-}
+function Requestor() {}
 
 Requestor.prototype = {
-  QueryInterface: function requestor_qi(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIInterfaceRequestor))
-      return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI(["nsIInterfaceRequestor"]),
 
   getInterface: function requestor_gi(iid) {
-    if (iid.equals(Components.interfaces.nsIAuthPrompt2)) {
+    if (iid.equals(Ci.nsIAuthPrompt2)) {
       // Allow the prompt to store state by caching it here
-      if (!this.prompt2)
+      if (!this.prompt2) {
         this.prompt2 = new AuthPrompt2();
+      }
       return this.prompt2;
     }
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
-  prompt2: null
+  prompt2: null,
 };
 
 function run_test() {
@@ -82,231 +68,261 @@ function run_test() {
 
   function get_entity_id(request, data, ctx) {
     dump("*** get_entity_id()\n");
-    do_check_true(request instanceof Ci.nsIResumableChannel,
-                  "must be a resumable channel");
+    Assert.ok(
+      request instanceof Ci.nsIResumableChannel,
+      "must be a resumable channel"
+    );
     entityID = request.entityID;
     dump("*** entity id = " + entityID + "\n");
 
     // Try a non-resumable URL (responds with 200)
     var chan = make_channel(URL);
     chan.nsIResumableChannel.resumeAt(1, entityID);
-    chan.asyncOpen2(new ChannelListener(try_resume, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(try_resume, null, CL_EXPECT_FAILURE));
   }
 
   function try_resume(request, data, ctx) {
     dump("*** try_resume()\n");
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     // Try a successful resume
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(1, entityID);
-    chan.asyncOpen2(new ChannelListener(try_resume_zero, null));
+    chan.asyncOpen(new ChannelListener(try_resume_zero, null));
   }
 
   function try_resume_zero(request, data, ctx) {
     dump("*** try_resume_zero()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody.substring(1));
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody.substring(1));
 
     // Try a server which doesn't support range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "none", false);
-    chan.asyncOpen2(new ChannelListener(try_no_range, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(try_no_range, null, CL_EXPECT_FAILURE));
   }
 
   function try_no_range(request, data, ctx) {
     dump("*** try_no_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     // Try a server which supports "bytes" range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "bytes", false);
-    chan.asyncOpen2(new ChannelListener(try_bytes_range, null));
+    chan.asyncOpen(new ChannelListener(try_bytes_range, null));
   }
 
   function try_bytes_range(request, data, ctx) {
     dump("*** try_bytes_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody);
 
     // Try a server which supports "foo" and "bar" range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "foo, bar", false);
-    chan.asyncOpen2(new ChannelListener(try_foo_bar_range, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(
+      new ChannelListener(try_foo_bar_range, null, CL_EXPECT_FAILURE)
+    );
   }
 
   function try_foo_bar_range(request, data, ctx) {
     dump("*** try_foo_bar_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     // Try a server which supports "foobar" range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "foobar", false);
-    chan.asyncOpen2(new ChannelListener(try_foobar_range, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(
+      new ChannelListener(try_foobar_range, null, CL_EXPECT_FAILURE)
+    );
   }
 
   function try_foobar_range(request, data, ctx) {
     dump("*** try_foobar_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     // Try a server which supports "bytes" and "foobar" range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
-    chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "bytes, foobar", false);
-    chan.asyncOpen2(new ChannelListener(try_bytes_foobar_range, null));
+    chan.nsIHttpChannel.setRequestHeader(
+      "X-Range-Type",
+      "bytes, foobar",
+      false
+    );
+    chan.asyncOpen(new ChannelListener(try_bytes_foobar_range, null));
   }
 
   function try_bytes_foobar_range(request, data, ctx) {
     dump("*** try_bytes_foobar_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody);
 
     // Try a server which supports "bytesfoo" and "bar" range requests
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
-    chan.nsIHttpChannel.setRequestHeader("X-Range-Type", "bytesfoo, bar", false);
-    chan.asyncOpen2(new ChannelListener(try_bytesfoo_bar_range, null, CL_EXPECT_FAILURE));
+    chan.nsIHttpChannel.setRequestHeader(
+      "X-Range-Type",
+      "bytesfoo, bar",
+      false
+    );
+    chan.asyncOpen(
+      new ChannelListener(try_bytesfoo_bar_range, null, CL_EXPECT_FAILURE)
+    );
   }
 
   function try_bytesfoo_bar_range(request, data, ctx) {
     dump("*** try_bytesfoo_bar_range()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     // Try a server which doesn't send Accept-Ranges header at all
     var chan = make_channel(URL + "/acceptranges");
     chan.nsIResumableChannel.resumeAt(0, entityID);
-    chan.asyncOpen2(new ChannelListener(try_no_accept_ranges, null));
+    chan.asyncOpen(new ChannelListener(try_no_accept_ranges, null));
   }
 
   function try_no_accept_ranges(request, data, ctx) {
     dump("*** try_no_accept_ranges()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody);
 
     // Try a successful suspend/resume from 0
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(0, entityID);
-    chan.asyncOpen2(new ChannelListener(try_suspend_resume, null,
-                                       CL_SUSPEND | CL_EXPECT_3S_DELAY));
+    chan.asyncOpen(
+      new ChannelListener(
+        try_suspend_resume,
+        null,
+        CL_SUSPEND | CL_EXPECT_3S_DELAY
+      )
+    );
   }
 
   function try_suspend_resume(request, data, ctx) {
     dump("*** try_suspend_resume()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody);
 
     // Try a successful resume from 0
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(0, entityID);
-    chan.asyncOpen2(new ChannelListener(success, null));
+    chan.asyncOpen(new ChannelListener(success, null));
   }
 
   function success(request, data, ctx) {
     dump("*** success()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody);
-
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody);
 
     // Authentication (no password; working resume)
     // (should not give us any data)
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(1, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Need-Auth", "true", false);
-    chan.asyncOpen2(new ChannelListener(test_auth_nopw, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(
+      new ChannelListener(test_auth_nopw, null, CL_EXPECT_FAILURE)
+    );
   }
 
   function test_auth_nopw(request, data, ctx) {
     dump("*** test_auth_nopw()\n");
-    do_check_false(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(request.status, NS_ERROR_ENTITY_CHANGED);
+    Assert.ok(!request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(request.status, NS_ERROR_ENTITY_CHANGED);
 
     // Authentication + not working resume
-    var chan = make_channel("http://guest:guest@localhost:" +
-                            httpserver.identity.primaryPort + "/auth");
+    var chan = make_channel(
+      "http://guest:guest@localhost:" +
+        httpserver.identity.primaryPort +
+        "/auth"
+    );
     chan.nsIResumableChannel.resumeAt(1, entityID);
     chan.notificationCallbacks = new Requestor();
-    chan.asyncOpen2(new ChannelListener(test_auth, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(test_auth, null, CL_EXPECT_FAILURE));
   }
   function test_auth(request, data, ctx) {
     dump("*** test_auth()\n");
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
-    do_check_true(request.nsIHttpChannel.responseStatus < 300);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.ok(request.nsIHttpChannel.responseStatus < 300);
 
     // Authentication + working resume
-    var chan = make_channel("http://guest:guest@localhost:" +
-                            httpserver.identity.primaryPort + "/range");
+    var chan = make_channel(
+      "http://guest:guest@localhost:" +
+        httpserver.identity.primaryPort +
+        "/range"
+    );
     chan.nsIResumableChannel.resumeAt(1, entityID);
     chan.notificationCallbacks = new Requestor();
     chan.nsIHttpChannel.setRequestHeader("X-Need-Auth", "true", false);
-    chan.asyncOpen2(new ChannelListener(test_auth_resume, null));
+    chan.asyncOpen(new ChannelListener(test_auth_resume, null));
   }
 
   function test_auth_resume(request, data, ctx) {
     dump("*** test_auth_resume()\n");
-    do_check_eq(data, rangeBody.substring(1));
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody.substring(1));
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
 
     // 404 page (same content length as real content)
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(1, entityID);
     chan.nsIHttpChannel.setRequestHeader("X-Want-404", "true", false);
-    chan.asyncOpen2(new ChannelListener(test_404, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(test_404, null, CL_EXPECT_FAILURE));
   }
 
   function test_404(request, data, ctx) {
     dump("*** test_404()\n");
-    do_check_eq(request.status, NS_ERROR_ENTITY_CHANGED);
-    do_check_eq(request.nsIHttpChannel.responseStatus, 404);
+    Assert.equal(request.status, NS_ERROR_ENTITY_CHANGED);
+    Assert.equal(request.nsIHttpChannel.responseStatus, 404);
 
     // 416 Requested Range Not Satisfiable
     var chan = make_channel(URL + "/range");
     chan.nsIResumableChannel.resumeAt(1000, entityID);
-    chan.asyncOpen2(new ChannelListener(test_416, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(new ChannelListener(test_416, null, CL_EXPECT_FAILURE));
   }
 
   function test_416(request, data, ctx) {
     dump("*** test_416()\n");
-    do_check_eq(request.status, NS_ERROR_ENTITY_CHANGED);
-    do_check_eq(request.nsIHttpChannel.responseStatus, 416);
+    Assert.equal(request.status, NS_ERROR_ENTITY_CHANGED);
+    Assert.equal(request.nsIHttpChannel.responseStatus, 416);
 
     // Redirect + successful resume
     var chan = make_channel(URL + "/redir");
     chan.nsIHttpChannel.setRequestHeader("X-Redir-To", URL + "/range", false);
     chan.nsIResumableChannel.resumeAt(1, entityID);
-    chan.asyncOpen2(new ChannelListener(test_redir_resume, null));
+    chan.asyncOpen(new ChannelListener(test_redir_resume, null));
   }
 
   function test_redir_resume(request, data, ctx) {
     dump("*** test_redir_resume()\n");
-    do_check_true(request.nsIHttpChannel.requestSucceeded);
-    do_check_eq(data, rangeBody.substring(1));
-    do_check_eq(request.nsIHttpChannel.responseStatus, 206);
+    Assert.ok(request.nsIHttpChannel.requestSucceeded);
+    Assert.equal(data, rangeBody.substring(1));
+    Assert.equal(request.nsIHttpChannel.responseStatus, 206);
 
     // Redirect + failed resume
     var chan = make_channel(URL + "/redir");
     chan.nsIHttpChannel.setRequestHeader("X-Redir-To", URL + "/", false);
     chan.nsIResumableChannel.resumeAt(1, entityID);
-    chan.asyncOpen2(new ChannelListener(test_redir_noresume, null, CL_EXPECT_FAILURE));
+    chan.asyncOpen(
+      new ChannelListener(test_redir_noresume, null, CL_EXPECT_FAILURE)
+    );
   }
 
   function test_redir_noresume(request, data, ctx) {
     dump("*** test_redir_noresume()\n");
-    do_check_eq(request.status, NS_ERROR_NOT_RESUMABLE);
+    Assert.equal(request.status, NS_ERROR_NOT_RESUMABLE);
 
     httpserver.stop(do_test_finished);
   }
 
   httpserver.start(-1);
   var chan = make_channel(URL + "/range");
-  chan.asyncOpen2(new ChannelListener(get_entity_id, null));
+  chan.asyncOpen(new ChannelListener(get_entity_id, null));
   do_test_pending();
 }
 
@@ -317,22 +333,19 @@ function handleAuth(metadata, response) {
   var expectedHeader = "Basic Z3Vlc3Q6Z3Vlc3Q=";
 
   var body;
-  if (metadata.hasHeader("Authorization") &&
-      metadata.getHeader("Authorization") == expectedHeader)
-  {
+  if (
+    metadata.hasHeader("Authorization") &&
+    metadata.getHeader("Authorization") == expectedHeader
+  ) {
     response.setStatusLine(metadata.httpVersion, 200, "OK, authorized");
     response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
 
     return true;
   }
-  else
-  {
-    // didn't know guest:guest, failure
-    response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
-    response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
-
-    return false;
-  }
+  // didn't know guest:guest, failure
+  response.setStatusLine(metadata.httpVersion, 401, "Unauthorized");
+  response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
+  return false;
 }
 
 // /auth
@@ -365,9 +378,11 @@ function rangeHandler(metadata, response) {
 
   if (metadata.hasHeader("Range")) {
     // Syntax: bytes=[from]-[to] (we don't support multiple ranges)
-    var matches = metadata.getHeader("Range").match(/^\s*bytes=(\d+)?-(\d+)?\s*$/);
-    var from = (matches[1] === undefined) ? 0 : matches[1];
-    var to = (matches[2] === undefined) ? rangeBody.length - 1 : matches[2];
+    var matches = metadata
+      .getHeader("Range")
+      .match(/^\s*bytes=(\d+)?-(\d+)?\s*$/);
+    var from = matches[1] === undefined ? 0 : matches[1];
+    var to = matches[2] === undefined ? rangeBody.length - 1 : matches[2];
     if (from >= rangeBody.length) {
       response.setStatusLine(metadata.httpVersion, 416, "Start pos too high");
       response.setHeader("Content-Range", "*/" + rangeBody.length, false);
@@ -376,7 +391,11 @@ function rangeHandler(metadata, response) {
     body = body.substring(from, to + 1);
     // always respond to successful range requests with 206
     response.setStatusLine(metadata.httpVersion, 206, "Partial Content");
-    response.setHeader("Content-Range", from + "-" + to + "/" + rangeBody.length, false);
+    response.setHeader(
+      "Content-Range",
+      from + "-" + to + "/" + rangeBody.length,
+      false
+    );
   }
 
   response.bodyOutputStream.write(body, body.length);
@@ -385,8 +404,13 @@ function rangeHandler(metadata, response) {
 // /acceptranges
 function acceptRangesHandler(metadata, response) {
   response.setHeader("Content-Type", "text/html", false);
-  if (metadata.hasHeader("X-Range-Type"))
-    response.setHeader("Accept-Ranges", metadata.getHeader("X-Range-Type"), false);
+  if (metadata.hasHeader("X-Range-Type")) {
+    response.setHeader(
+      "Accept-Ranges",
+      metadata.getHeader("X-Range-Type"),
+      false
+    );
+  }
   response.bodyOutputStream.write(rangeBody, rangeBody.length);
 }
 
@@ -398,5 +422,3 @@ function redirHandler(metadata, response) {
   var body = "redirect\r\n";
   response.bodyOutputStream.write(body, body.length);
 }
-
-

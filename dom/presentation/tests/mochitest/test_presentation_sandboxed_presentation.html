@@ -6,12 +6,12 @@
   <meta charset="utf-8">
   <title>Test default request for B2G Presentation API at sender side</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1268758">Test allow-presentation sandboxing flag</a>
 <iframe sandbox="allow-popups allow-scripts allow-same-origin" id="iframe" src="file_presentation_sandboxed_presentation.html"></iframe>
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 
 "use strict";
 
@@ -35,7 +35,7 @@ function setup() {
           startTest();
         }
       } else if (/^DONE$/.exec(message)) {
-        window.removeEventListener('message', listener);
+        window.removeEventListener("message", listener);
         SimpleTest.finish();
       }
     }, false);

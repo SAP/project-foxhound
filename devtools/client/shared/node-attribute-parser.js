@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,139 +35,235 @@ const TYPE_CSS_RESOURCE_URI = "cssresource";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
-/* eslint-disable max-len */
-const ATTRIBUTE_TYPES = [
-  {namespaceURI: HTML_NS, attributeName: "action", tagName: "form", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "background", tagName: "body", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "cite", tagName: "blockquote", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "cite", tagName: "q", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "cite", tagName: "del", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "cite", tagName: "ins", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "classid", tagName: "object", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "codebase", tagName: "object", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "codebase", tagName: "applet", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "command", tagName: "menuitem", type: TYPE_IDREF},
-  {namespaceURI: "*", attributeName: "contextmenu", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "data", tagName: "object", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "for", tagName: "label", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "for", tagName: "output", type: TYPE_IDREF_LIST},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "button", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "fieldset", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "input", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "keygen", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "label", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "object", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "output", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "select", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "form", tagName: "textarea", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "formaction", tagName: "button", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "formaction", tagName: "input", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "headers", tagName: "td", type: TYPE_IDREF_LIST},
-  {namespaceURI: HTML_NS, attributeName: "headers", tagName: "th", type: TYPE_IDREF_LIST},
-  {namespaceURI: HTML_NS, attributeName: "href", tagName: "a", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "href", tagName: "area", type: TYPE_URI},
-  {namespaceURI: "*", attributeName: "href", tagName: "link", type: TYPE_CSS_RESOURCE_URI,
-  /* eslint-enable */
-    isValid: (namespaceURI, tagName, attributes) => {
-      return getAttribute(attributes, "rel") === "stylesheet";
-    }},
-  /* eslint-disable max-len */
-  {namespaceURI: "*", attributeName: "href", tagName: "link", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "href", tagName: "base", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "icon", tagName: "menuitem", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "list", tagName: "input", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "longdesc", tagName: "img", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "longdesc", tagName: "frame", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "longdesc", tagName: "iframe", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "manifest", tagName: "html", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "menu", tagName: "button", type: TYPE_IDREF},
-  {namespaceURI: HTML_NS, attributeName: "ping", tagName: "a", type: TYPE_URI_LIST},
-  {namespaceURI: HTML_NS, attributeName: "ping", tagName: "area", type: TYPE_URI_LIST},
-  {namespaceURI: HTML_NS, attributeName: "poster", tagName: "video", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "profile", tagName: "head", type: TYPE_URI},
-  {namespaceURI: "*", attributeName: "src", tagName: "script", type: TYPE_JS_RESOURCE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "input", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "frame", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "iframe", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "img", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "audio", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "embed", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "source", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "track", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "src", tagName: "video", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "usemap", tagName: "img", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "usemap", tagName: "input", type: TYPE_URI},
-  {namespaceURI: HTML_NS, attributeName: "usemap", tagName: "object", type: TYPE_URI},
-  {namespaceURI: "*", attributeName: "xmlns", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "command", tagName: "key", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "containment", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "context", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "datasources", tagName: "*", type: TYPE_URI_LIST},
-  {namespaceURI: XUL_NS, attributeName: "insertafter", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "insertbefore", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "menu", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "observes", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "popup", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "ref", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "removeelement", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "sortResource", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "sortResource2", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "src", tagName: "stringbundle", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "template", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "tooltip", tagName: "*", type: TYPE_IDREF},
-  /* eslint-enable */
+const WILDCARD = Symbol();
+
+const ATTRIBUTE_TYPES = new Map([
+  ["action", { form: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  ["background", { body: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  [
+    "cite",
+    {
+      blockquote: { namespaceURI: HTML_NS, type: TYPE_URI },
+      q: { namespaceURI: HTML_NS, type: TYPE_URI },
+      del: { namespaceURI: HTML_NS, type: TYPE_URI },
+      ins: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  ["classid", { object: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  [
+    "codebase",
+    {
+      object: { namespaceURI: HTML_NS, type: TYPE_URI },
+      applet: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  [
+    "command",
+    {
+      menuitem: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      key: { namespaceURI: XUL_NS, type: TYPE_IDREF },
+    },
+  ],
+  [
+    "contextmenu",
+    {
+      WILDCARD: { namespaceURI: WILDCARD, type: TYPE_IDREF },
+    },
+  ],
+  ["data", { object: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  [
+    "for",
+    {
+      label: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      output: { namespaceURI: HTML_NS, type: TYPE_IDREF_LIST },
+    },
+  ],
+  [
+    "form",
+    {
+      button: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      fieldset: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      input: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      keygen: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      label: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      object: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      output: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      select: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      textarea: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+    },
+  ],
+  [
+    "formaction",
+    {
+      button: { namespaceURI: HTML_NS, type: TYPE_URI },
+      input: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  [
+    "headers",
+    {
+      td: { namespaceURI: HTML_NS, type: TYPE_IDREF_LIST },
+      th: { namespaceURI: HTML_NS, type: TYPE_IDREF_LIST },
+    },
+  ],
+  [
+    "href",
+    {
+      a: { namespaceURI: HTML_NS, type: TYPE_URI },
+      area: { namespaceURI: HTML_NS, type: TYPE_URI },
+      link: [
+        {
+          namespaceURI: WILDCARD,
+          type: TYPE_CSS_RESOURCE_URI,
+          isValid: attributes => {
+            return getAttribute(attributes, "rel") === "stylesheet";
+          },
+        },
+        { namespaceURI: WILDCARD, type: TYPE_URI },
+      ],
+      base: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  [
+    "icon",
+    {
+      menuitem: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  ["list", { input: { namespaceURI: HTML_NS, type: TYPE_IDREF } }],
+  [
+    "longdesc",
+    {
+      img: { namespaceURI: HTML_NS, type: TYPE_URI },
+      frame: { namespaceURI: HTML_NS, type: TYPE_URI },
+      iframe: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  ["manifest", { html: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  [
+    "menu",
+    {
+      button: { namespaceURI: HTML_NS, type: TYPE_IDREF },
+      WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF },
+    },
+  ],
+  [
+    "ping",
+    {
+      a: { namespaceURI: HTML_NS, type: TYPE_URI_LIST },
+      area: { namespaceURI: HTML_NS, type: TYPE_URI_LIST },
+    },
+  ],
+  ["poster", { video: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  ["profile", { head: { namespaceURI: HTML_NS, type: TYPE_URI } }],
+  [
+    "src",
+    {
+      script: { namespaceURI: WILDCARD, type: TYPE_JS_RESOURCE_URI },
+      input: { namespaceURI: HTML_NS, type: TYPE_URI },
+      frame: { namespaceURI: HTML_NS, type: TYPE_URI },
+      iframe: { namespaceURI: HTML_NS, type: TYPE_URI },
+      img: { namespaceURI: HTML_NS, type: TYPE_URI },
+      audio: { namespaceURI: HTML_NS, type: TYPE_URI },
+      embed: { namespaceURI: HTML_NS, type: TYPE_URI },
+      source: { namespaceURI: HTML_NS, type: TYPE_URI },
+      track: { namespaceURI: HTML_NS, type: TYPE_URI },
+      video: { namespaceURI: HTML_NS, type: TYPE_URI },
+      stringbundle: { namespaceURI: XUL_NS, type: TYPE_URI },
+    },
+  ],
+  [
+    "usemap",
+    {
+      img: { namespaceURI: HTML_NS, type: TYPE_URI },
+      input: { namespaceURI: HTML_NS, type: TYPE_URI },
+      object: { namespaceURI: HTML_NS, type: TYPE_URI },
+    },
+  ],
+  ["xmlns", { WILDCARD: { namespaceURI: WILDCARD, type: TYPE_URI } }],
+  ["containment", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_URI } }],
+  ["context", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["datasources", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_URI_LIST } }],
+  ["insertafter", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["insertbefore", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["observes", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["popup", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["ref", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_URI } }],
+  ["removeelement", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["template", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
+  ["tooltip", { WILDCARD: { namespaceURI: XUL_NS, type: TYPE_IDREF } }],
   // SVG links aren't handled yet, see bug 1158831.
-  // {namespaceURI: SVG_NS, attributeName: "fill", tagName: "*", type: },
-  // {namespaceURI: SVG_NS, attributeName: "stroke", tagName: "*", type: },
-  // {namespaceURI: SVG_NS, attributeName: "markerstart", tagName: "*", type: },
-  // {namespaceURI: SVG_NS, attributeName: "markermid", tagName: "*", type: },
-  // {namespaceURI: SVG_NS, attributeName: "markerend", tagName: "*", type: },
-  // {namespaceURI: SVG_NS, attributeName: "xlink:href", tagName: "*", type: }
-];
+  // ["fill", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+  // ["stroke", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+  // ["markerstart", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+  // ["markermid", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+  // ["markerend", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+  // ["xlink:href", {
+  //   WILDCARD: {namespaceURI: SVG_NS, type: },
+  // }],
+]);
 
 var parsers = {
-  [TYPE_URI]: function (attributeValue) {
-    return [{
-      type: TYPE_URI,
-      value: attributeValue
-    }];
+  [TYPE_URI]: function(attributeValue) {
+    return [
+      {
+        type: TYPE_URI,
+        value: attributeValue,
+      },
+    ];
   },
-  [TYPE_URI_LIST]: function (attributeValue) {
-    let data = splitBy(attributeValue, " ");
-    for (let token of data) {
+  [TYPE_URI_LIST]: function(attributeValue) {
+    const data = splitBy(attributeValue, " ");
+    for (const token of data) {
       if (!token.type) {
         token.type = TYPE_URI;
       }
     }
     return data;
   },
-  [TYPE_JS_RESOURCE_URI]: function (attributeValue) {
-    return [{
-      type: TYPE_JS_RESOURCE_URI,
-      value: attributeValue
-    }];
+  [TYPE_JS_RESOURCE_URI]: function(attributeValue) {
+    return [
+      {
+        type: TYPE_JS_RESOURCE_URI,
+        value: attributeValue,
+      },
+    ];
   },
-  [TYPE_CSS_RESOURCE_URI]: function (attributeValue) {
-    return [{
-      type: TYPE_CSS_RESOURCE_URI,
-      value: attributeValue
-    }];
+  [TYPE_CSS_RESOURCE_URI]: function(attributeValue) {
+    return [
+      {
+        type: TYPE_CSS_RESOURCE_URI,
+        value: attributeValue,
+      },
+    ];
   },
-  [TYPE_IDREF]: function (attributeValue) {
-    return [{
-      type: TYPE_IDREF,
-      value: attributeValue
-    }];
+  [TYPE_IDREF]: function(attributeValue) {
+    return [
+      {
+        type: TYPE_IDREF,
+        value: attributeValue,
+      },
+    ];
   },
-  [TYPE_IDREF_LIST]: function (attributeValue) {
-    let data = splitBy(attributeValue, " ");
-    for (let token of data) {
+  [TYPE_IDREF_LIST]: function(attributeValue) {
+    const data = splitBy(attributeValue, " ");
+    for (const token of data) {
       if (!token.type) {
         token.type = TYPE_IDREF;
       }
     }
     return data;
-  }
+  },
 };
 
 /**
@@ -180,6 +274,7 @@ var parsers = {
  * @param {Array} attributes The list of all attributes of the node. This should
  * be an array of {name, value} objects.
  * @param {String} attributeName The name of the attribute to parse.
+ * @param {String} attributeValue The value of the attribute to parse.
  * @return {Array} An array of tokens that represents the value. Each token is
  * an object {type: [string|uri|jsresource|cssresource|idref], value}.
  * For instance parsing the ping attribute in <a ping="uri1 uri2"> returns:
@@ -189,21 +284,24 @@ var parsers = {
  *   {type: "uri", value: "uri1"}
  * ]
  */
-function parseAttribute(namespaceURI, tagName, attributes, attributeName) {
-  if (!hasAttribute(attributes, attributeName)) {
-    throw new Error(`Attribute ${attributeName} isn't part of the ` +
-                    "provided attributes");
-  }
-
-  let type = getType(namespaceURI, tagName, attributes, attributeName);
+function parseAttribute(
+  namespaceURI,
+  tagName,
+  attributes,
+  attributeName,
+  attributeValue
+) {
+  const type = getType(namespaceURI, tagName, attributes, attributeName);
   if (!type) {
-    return [{
-      type: TYPE_STRING,
-      value: getAttribute(attributes, attributeName)
-    }];
+    return [
+      {
+        type: TYPE_STRING,
+        value: attributeValue,
+      },
+    ];
   }
 
-  return parsers[type](getAttribute(attributes, attributeName));
+  return parsers[type](attributeValue);
 }
 
 /**
@@ -217,44 +315,43 @@ function parseAttribute(namespaceURI, tagName, attributes, attributeName) {
  * type object otherwise.
  */
 function getType(namespaceURI, tagName, attributes, attributeName) {
-  for (let typeData of ATTRIBUTE_TYPES) {
-    let containsAttribute = attributeName === typeData.attributeName ||
-                            typeData.attributeName === "*";
-    let hasNamespace = namespaceURI === typeData.namespaceURI ||
-                       typeData.namespaceURI === "*";
-    let hasTagName = tagName.toLowerCase() === typeData.tagName ||
-                     typeData.tagName === "*";
-    let isValid = typeData.isValid
-                  ? typeData.isValid(namespaceURI,
-                                     tagName,
-                                     attributes,
-                                     attributeName)
-                  : true;
+  const attributeType = ATTRIBUTE_TYPES.get(attributeName);
+  if (!attributeType) {
+    return null;
+  }
 
-    if (containsAttribute && hasNamespace && hasTagName && isValid) {
-      return typeData.type;
+  const lcTagName = tagName.toLowerCase();
+  const typeData = attributeType[lcTagName] || attributeType.WILDCARD;
+
+  if (!typeData) {
+    return null;
+  }
+
+  if (Array.isArray(typeData)) {
+    for (const data of typeData) {
+      const hasNamespace =
+        data.namespaceURI === WILDCARD || data.namespaceURI === namespaceURI;
+      const isValid = data.isValid ? data.isValid(attributes) : true;
+
+      if (hasNamespace && isValid) {
+        return data.type;
+      }
     }
+
+    return null;
+  } else if (
+    typeData.namespaceURI === WILDCARD ||
+    typeData.namespaceURI === namespaceURI
+  ) {
+    return typeData.type;
   }
 
   return null;
 }
 
 function getAttribute(attributes, attributeName) {
-  for (let {name, value} of attributes) {
-    if (name === attributeName) {
-      return value;
-    }
-  }
-  return null;
-}
-
-function hasAttribute(attributes, attributeName) {
-  for (let {name} of attributes) {
-    if (name === attributeName) {
-      return true;
-    }
-  }
-  return false;
+  const attribute = attributes.find(x => x.name === attributeName);
+  return attribute ? attribute.value : null;
 }
 
 /**
@@ -266,18 +363,21 @@ function hasAttribute(attributes, attributeName) {
  * @return {Array}
  */
 function splitBy(value, splitChar) {
-  let data = [], i = 0, buffer = "";
+  const data = [];
+
+  let i = 0,
+    buffer = "";
   while (i <= value.length) {
     if (i === value.length && buffer) {
-      data.push({value: buffer});
+      data.push({ value: buffer });
     }
     if (value[i] === splitChar) {
       if (buffer) {
-        data.push({value: buffer});
+        data.push({ value: buffer });
       }
       data.push({
         type: TYPE_STRING,
-        value: splitChar
+        value: splitChar,
       });
       buffer = "";
     } else {

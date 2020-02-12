@@ -39,6 +39,8 @@
 #ifndef COMMON_LINUX_DWARF_CU_TO_MODULE_H__
 #define COMMON_LINUX_DWARF_CU_TO_MODULE_H__
 
+#include <stdint.h>
+
 #include <string>
 
 #include "common/language.h"
@@ -84,7 +86,7 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
 
     // Add CONTENTS of size LENGTH to the section map as NAME.
     void AddSectionToSectionMap(const string& name,
-                                const char* contents,
+                                const uint8_t *contents,
                                 uint64 length);
 
     // Clear the section map for testing.
@@ -121,12 +123,30 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
     scoped_ptr<FilePrivate> file_private_;
   };
 
+  // An abstract base class for handlers that handle DWARF range lists for
+  // DwarfCUToModule.
+  class RangesHandler {
+   public:
+    RangesHandler() { }
+    virtual ~RangesHandler() { }
+
+    // Called when finishing a function to populate the function's ranges.
+    // The ranges' entries are read starting from offset in the .debug_ranges
+    // section, base_address holds the base PC the range list values are
+    // offsets off. Return false if the rangelist falls out of the
+    // .debug_ranges section.
+    virtual bool ReadRanges(uint64 offset, Module::Address base_address,
+                            vector<Module::Range>* ranges) = 0;
+  };
+
   // An abstract base class for handlers that handle DWARF line data
   // for DwarfCUToModule. DwarfCUToModule could certainly just use
   // dwarf2reader::LineInfo itself directly, but decoupling things
   // this way makes unit testing a little easier.
   class LineToModuleHandler {
    public:
+    typedef std::map<uint32, Module::File*> FileMap;
+
     LineToModuleHandler() { }
     virtual ~LineToModuleHandler() { }
 
@@ -139,9 +159,11 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
     // Populate MODULE and LINES with source file names and code/line
     // mappings, given a pointer to some DWARF line number data
     // PROGRAM, and an overestimate of its size. Add no zero-length
-    // lines to LINES.
-    virtual void ReadProgram(const char *program, uint64 length,
-                             Module *module, vector<Module::Line> *lines) = 0;
+    // lines to LINES. If FILES is non-NULL, store the DWARF file name
+    // table into FILES.
+    virtual void ReadProgram(const uint8_t *program, uint64 length,
+                             Module *module, vector<Module::Line> *lines,
+                             FileMap *files) = 0;
   };
 
   // The interface DwarfCUToModule uses to report warnings. The member
@@ -200,11 +222,19 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
     virtual void UnnamedFunction(uint64 offset);
 
     // __cxa_demangle() failed to demangle INPUT.
-    virtual void DemangleError(const string &input, int error);
+    virtual void DemangleError(const string &input);
 
     // The DW_FORM_ref_addr at OFFSET to TARGET was not handled because
     // FilePrivate did not retain the inter-CU specification data.
     virtual void UnhandledInterCUReference(uint64 offset, uint64 target);
+
+    // The DW_AT_ranges at offset is malformed (truncated or outside of the
+    // .debug_ranges section's bound).
+    virtual void MalformedRangeList(uint64 offset);
+
+    // A DW_AT_ranges attribute was encountered but the no .debug_ranges
+    // section was found.
+    virtual void MissingRanges();
 
     uint64 cu_offset() const {
       return cu_offset_;
@@ -233,6 +263,7 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
   // data we find.
   DwarfCUToModule(FileContext *file_context,
                   LineToModuleHandler *line_reader,
+                  RangesHandler *ranges_handler,
                   WarningReporter *reporter);
   ~DwarfCUToModule();
 
@@ -265,7 +296,9 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
   struct Specification;
   class GenericDIEHandler;
   class FuncHandler;
+  class InlinedSubroutineHandler;
   class NamedScopeHandler;
+  class LexicalBlockHandler;
 
   // A map from section offsets to specifications.
   typedef map<uint64, Specification> SpecificationByOffset;
@@ -277,13 +310,13 @@ class DwarfCUToModule: public dwarf2reader::RootDIEHandler {
   // section.  Record source files in module_, but record source lines
   // in lines_; we apportion them to functions in
   // AssignLinesToFunctions.
-  void ReadSourceLines(uint64 offset);
+  void ReadSourceLines(uint64 offset, LineToModuleHandler::FileMap *files);
 
   // Assign the lines in lines_ to the individual line lists of the
   // functions in functions_.  (DWARF line information maps an entire
   // compilation unit at a time, and gives no indication of which
   // lines belong to which functions, beyond their addresses.)
-  void AssignLinesToFunctions();
+  void AssignLinesToFunctions(const LineToModuleHandler::FileMap &files);
 
   // The only reason cu_context_ and child_context_ are pointers is
   // that we want to keep their definitions private to

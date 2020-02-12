@@ -21,6 +21,7 @@ from test_toolchain_helpers import FakeCompiler
 class BaseCompileChecks(unittest.TestCase):
     def get_mock_compiler(self, expected_test_content=None, expected_flags=None):
         expected_flags = expected_flags or []
+
         def mock_compiler(stdin, args):
             args, test_file = args[:-1], args[-1]
             self.assertIn('-c', args)
@@ -47,15 +48,25 @@ class BaseCompileChecks(unittest.TestCase):
         base_dir = os.path.join(topsrcdir, 'build', 'moz.configure')
 
         mock_compiler_defs = textwrap.dedent('''\
-            @depends('--help')
-            def extra_toolchain_flags(_):
+            @depends(when=True)
+            def extra_toolchain_flags():
                 return []
+
+            @depends(when=True)
+            def stlport_cppflags():
+                return []
+
+            target = depends(when=True)(lambda: True)
 
             include('%s/compilers-util.configure')
 
-            @compiler_class
-            @depends('--help')
-            def c_compiler(_):
+            @template
+            def wrap_compiler(compiler):
+                return compiler_class(compiler, False)
+
+            @wrap_compiler
+            @depends(when=True)
+            def c_compiler():
                 return namespace(
                     flags=[],
                     type='gcc',
@@ -64,9 +75,31 @@ class BaseCompileChecks(unittest.TestCase):
                     language='C',
                 )
 
-            @compiler_class
-            @depends('--help')
-            def cxx_compiler(_):
+            @wrap_compiler
+            @depends(when=True)
+            def host_c_compiler():
+                return namespace(
+                    flags=[],
+                    type='gcc',
+                    compiler=os.path.abspath('/usr/bin/mockcc'),
+                    wrapper=[],
+                    language='C',
+                )
+
+            @wrap_compiler
+            @depends(when=True)
+            def cxx_compiler():
+                return namespace(
+                    flags=[],
+                    type='gcc',
+                    compiler=os.path.abspath('/usr/bin/mockcc'),
+                    wrapper=[],
+                    language='C++',
+                )
+
+            @wrap_compiler
+            @depends(when=True)
+            def host_cxx_compiler():
                 return namespace(
                     flags=[],
                     type='gcc',
@@ -180,6 +213,16 @@ class TestHeaderChecks(BaseCompileChecks):
             checking for foo.h... yes
         '''))
 
+    def test_check_header_conditional(self):
+        cmd = textwrap.dedent('''\
+            check_headers('foo.h', 'bar.h', when=never)
+        ''')
+
+        config, out, status = self.do_compile_test(cmd)
+        self.assertEqual(status, 0)
+        self.assertEqual(out, '')
+        self.assertEqual(config, {'DEFINES': {}})
+
     def test_check_header_include(self):
         expected_test_content = textwrap.dedent('''\
           #include <std.h>
@@ -256,8 +299,8 @@ class TestHeaderChecks(BaseCompileChecks):
 class TestWarningChecks(BaseCompileChecks):
     def get_warnings(self):
         return textwrap.dedent('''\
-            set_config('_WARNINGS_CFLAGS', warnings_cflags)
-            set_config('_WARNINGS_CXXFLAGS', warnings_cxxflags)
+            set_config('_WARNINGS_CFLAGS', warnings_flags.cflags)
+            set_config('_WARNINGS_CXXFLAGS', warnings_flags.cxxflags)
         ''')
 
     def test_check_and_add_gcc_warning(self):
@@ -300,8 +343,8 @@ class TestWarningChecks(BaseCompileChecks):
 
     def test_check_and_add_gcc_warning_when(self):
         cmd = textwrap.dedent('''\
-            @depends('--help')
-            def never(_):
+            @depends(when=True)
+            def never():
                 return False
             check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=never)
         ''') + self.get_warnings()
@@ -315,8 +358,8 @@ class TestWarningChecks(BaseCompileChecks):
         self.assertEqual(out, '')
 
         cmd = textwrap.dedent('''\
-            @depends('--help')
-            def always(_):
+            @depends(when=True)
+            def always():
                 return True
             check_and_add_gcc_warning('-Wfoo', cxx_compiler, when=always)
         ''') + self.get_warnings()
@@ -359,8 +402,8 @@ class TestWarningChecks(BaseCompileChecks):
 
     def test_add_gcc_warning_when(self):
         cmd = textwrap.dedent('''\
-            @depends('--help')
-            def never(_):
+            @depends(when=True)
+            def never():
                 return False
             add_gcc_warning('-Wfoo', c_compiler, when=never)
         ''') + self.get_warnings()
@@ -374,8 +417,8 @@ class TestWarningChecks(BaseCompileChecks):
         self.assertEqual(out, '')
 
         cmd = textwrap.dedent('''\
-            @depends('--help')
-            def always(_):
+            @depends(when=True)
+            def always():
                 return True
             add_gcc_warning('-Wfoo', c_compiler, when=always)
         ''') + self.get_warnings()

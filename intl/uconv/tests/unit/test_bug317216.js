@@ -9,10 +9,7 @@
  * UTF16 character and mid-surrogate pair
  */
 
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 const test = [
 // 0: Valid surrogate pair
@@ -76,7 +73,7 @@ function testCase(testText, expectedText, bufferLength, charset)
 {
   var dataURI = "data:text/plain;charset=" + charset + "," + testText;
   var channel = NetUtil.newChannel({uri: dataURI, loadUsingSystemPrincipal: true});
-  var testInputStream = channel.open2();
+  var testInputStream = channel.open();
   var testConverter = new ConverterInputStream(testInputStream,
                                                charset,
                                                bufferLength,
@@ -96,7 +93,7 @@ function testCase(testText, expectedText, bufferLength, charset)
   } while (more);
 
   // escape the strings before comparing for better readability
-  do_check_eq(escape(outStr), escape(expectedText));
+  Assert.equal(escape(outStr), escape(expectedText));
 }
 
 // Add 32 dummy characters to the test text to work around the minimum buffer

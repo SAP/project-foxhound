@@ -22,8 +22,8 @@ module.exports = function(context) {
   // ---------------------------------------------------------------------------
 
   var DICTIONARY = {
-    "addEventListener": "removeEventListener",
-    "on": "off"
+    addEventListener: "removeEventListener",
+    on: "off",
   };
   // Invert this dictionary to make it easy later.
   var INVERTED_DICTIONARY = {};
@@ -36,19 +36,49 @@ module.exports = function(context) {
   var removedListeners = [];
 
   function addAddedListener(node) {
+    var capture = false;
+    let options = node.arguments[2];
+    if (options) {
+      if (options.type == "ObjectExpression") {
+        if (
+          options.properties.some(
+            p => p.key.name == "once" && p.value.value === true
+          )
+        ) {
+          // No point in adding listeners using the 'once' option.
+          return;
+        }
+        capture = options.properties.some(
+          p => p.key.name == "capture" && p.value.value === true
+        );
+      } else {
+        capture = options.value;
+      }
+    }
     addedListeners.push({
       functionName: node.callee.property.name,
       type: node.arguments[0].value,
       node: node.callee.property,
-      useCapture: node.arguments[2] ? node.arguments[2].value : null
+      useCapture: capture,
     });
   }
 
   function addRemovedListener(node) {
+    var capture = false;
+    let options = node.arguments[2];
+    if (options) {
+      if (options.type == "ObjectExpression") {
+        capture = options.properties.some(
+          p => p.key.name == "capture" && p.value.value === true
+        );
+      } else {
+        capture = options.value;
+      }
+    }
     removedListeners.push({
       functionName: node.callee.property.name,
       type: node.arguments[0].value,
-      useCapture: node.arguments[2] ? node.arguments[2].value : null
+      useCapture: capture,
     });
   }
 
@@ -68,9 +98,11 @@ module.exports = function(context) {
   function hasRemovedListener(addedListener) {
     for (var k = 0; k < removedListeners.length; k++) {
       var listener = removedListeners[k];
-      if (DICTIONARY[addedListener.functionName] === listener.functionName &&
-          addedListener.type === listener.type &&
-          addedListener.useCapture === listener.useCapture) {
+      if (
+        DICTIONARY[addedListener.functionName] === listener.functionName &&
+        addedListener.type === listener.type &&
+        addedListener.useCapture === listener.useCapture
+      ) {
         return true;
       }
     }
@@ -83,7 +115,7 @@ module.exports = function(context) {
   // ---------------------------------------------------------------------------
 
   return {
-    CallExpression: function(node) {
+    CallExpression(node) {
       if (node.arguments.length === 0) {
         return;
       }
@@ -101,13 +133,15 @@ module.exports = function(context) {
 
     "Program:exit": function() {
       getUnbalancedListeners().forEach(function(listener) {
-        context.report(listener.node,
+        context.report(
+          listener.node,
           "No corresponding '{{functionName}}({{type}})' was found.",
           {
             functionName: DICTIONARY[listener.functionName],
-            type: listener.type
-          });
+            type: listener.type,
+          }
+        );
       });
-    }
+    },
   };
 };

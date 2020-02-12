@@ -6,18 +6,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=734861
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 734861</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
   /** Test for Bug 734861 **/
 
+  const InspectorUtils = SpecialPowers.InspectorUtils;
+
   SimpleTest.waitForExplicitFinish();
 
   function runTest() {
-    var utils = SpecialPowers.Cc["@mozilla.org/inspector/dom-utils;1"]
-                             .getService(SpecialPowers.Ci.inIDOMUtils);
-    var res = utils.getAllStyleSheets(document);
+    var res = InspectorUtils.getAllStyleSheets(document);
 
     var foundUA = false;
     for (var i = 0; i < res.length; i++) {

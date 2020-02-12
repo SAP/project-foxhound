@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011-2017 The OTS Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <limits>
 #include <vector>
 
+#include "fvar.h"
 #include "gdef.h"
 
 // OpenType Layout Common Table Formats
@@ -22,14 +23,11 @@ const uint32_t kScriptTableTagDflt = 0x44464c54;
 const uint16_t kNoRequiredFeatureIndexDefined = 0xFFFF;
 // The lookup flag bit which indicates existence of MarkFilteringSet.
 const uint16_t kUseMarkFilteringSetBit = 0x0010;
-// The lookup flags which require GDEF table.
-const uint16_t kGdefRequiredFlags = 0x0002 | 0x0004 | 0x0008;
-// The mask for MarkAttachmentType.
-const uint16_t kMarkAttachmentTypeMask = 0xFF00;
 // The maximum type number of format for device tables.
 const uint16_t kMaxDeltaFormatType = 3;
-// The maximum number of class value.
-const uint16_t kMaxClassDefValue = 0xFFFF;
+// In variation fonts, Device Tables are replaced by VariationIndex tables,
+// indicated by this flag in the deltaFormat field.
+const uint16_t kVariationIndex = 0x8000;
 
 struct ScriptRecord {
   uint32_t tag;
@@ -94,14 +92,11 @@ bool ParseScriptTable(const ots::Font *font,
   }
 
   // The spec requires a script table for 'DFLT' tag must contain non-NULL
-  // |offset_default_lang_sys| and |lang_sys_count| == 0
+  // |offset_default_lang_sys|.
   // https://www.microsoft.com/typography/otspec/chapter2.htm
   if (tag == kScriptTableTagDflt) {
     if (offset_default_lang_sys == 0) {
       return OTS_FAILURE_MSG("DFLT script doesn't satisfy the spec. DefaultLangSys is NULL");
-    }
-    if (lang_sys_count != 0) {
-      return OTS_FAILURE_MSG("DFLT script doesn't satisfy the spec. LangSysCount is not zero: %d", lang_sys_count);
     }
   }
 
@@ -197,27 +192,7 @@ bool ParseLookupTable(ots::Font *font, const uint8_t *data,
     return OTS_FAILURE_MSG("Bad lookup type %d", lookup_type);
   }
 
-  // Check lookup flags.
-  if ((lookup_flag & kGdefRequiredFlags) &&
-      (!font->gdef || !font->gdef->has_glyph_class_def)) {
-    return OTS_FAILURE_MSG("Lookup flags require GDEF table, "
-                           "but none was found: %d", lookup_flag);
-  }
-  if ((lookup_flag & kMarkAttachmentTypeMask) &&
-      (!font->gdef || !font->gdef->has_mark_attachment_class_def)) {
-    return OTS_FAILURE_MSG("Lookup flags ask for mark attachment, "
-                           "but there is no GDEF table or it has no "
-                           "mark attachment classes: %d", lookup_flag);
-  }
-  bool use_mark_filtering_set = false;
-  if (lookup_flag & kUseMarkFilteringSetBit) {
-    if (!font->gdef || !font->gdef->has_mark_glyph_sets_def) {
-      return OTS_FAILURE_MSG("Lookup flags ask for mark filtering, "
-                             "but there is no GDEF table or it has no "
-                             "mark filtering sets: %d", lookup_flag);
-    }
-    use_mark_filtering_set = true;
-  }
+  bool use_mark_filtering_set = lookup_flag & kUseMarkFilteringSetBit;
 
   std::vector<uint16_t> subtables;
   subtables.reserve(subtable_count);
@@ -248,8 +223,12 @@ bool ParseLookupTable(ots::Font *font, const uint8_t *data,
     if (!subtable.ReadU16(&mark_filtering_set)) {
       return OTS_FAILURE_MSG("Failed to read mark filtering set");
     }
-    if (font->gdef->num_mark_glyph_sets == 0 ||
-        mark_filtering_set >= font->gdef->num_mark_glyph_sets) {
+
+    ots::OpenTypeGDEF *gdef = static_cast<ots::OpenTypeGDEF*>(
+        font->GetTypedTable(OTS_TAG_GDEF));
+
+    if (gdef && (gdef->num_mark_glyph_sets == 0 ||
+        mark_filtering_set >= gdef->num_mark_glyph_sets)) {
       return OTS_FAILURE_MSG("Bad mark filtering set %d", mark_filtering_set);
     }
   }
@@ -311,15 +290,15 @@ bool ParseClassDefFormat2(const ots::Font *font,
 
   // Skip format field.
   if (!subtable.Skip(2)) {
-    return OTS_FAILURE_MSG("Failed to skip format of class defintion header");
+    return OTS_FAILURE_MSG("Failed to read class definition format");
   }
 
   uint16_t range_count = 0;
   if (!subtable.ReadU16(&range_count)) {
-    return OTS_FAILURE_MSG("Failed to read range count in class definition");
+    return OTS_FAILURE_MSG("Failed to read classRangeCount");
   }
   if (range_count > num_glyphs) {
-    return OTS_FAILURE_MSG("bad range count: %u", range_count);
+    return OTS_FAILURE_MSG("classRangeCount > glyph count: %u > %u", range_count, num_glyphs);
   }
 
   uint16_t last_end = 0;
@@ -330,13 +309,16 @@ bool ParseClassDefFormat2(const ots::Font *font,
     if (!subtable.ReadU16(&start) ||
         !subtable.ReadU16(&end) ||
         !subtable.ReadU16(&class_value)) {
-      return OTS_FAILURE_MSG("Failed to read class definition reange %d", i);
+      return OTS_FAILURE_MSG("Failed to read ClassRangeRecord %d", i);
     }
-    if (start > end || (last_end && start <= last_end)) {
-      return OTS_FAILURE_MSG("glyph range is overlapping.in range %d", i);
+    if (start > end) {
+      return OTS_FAILURE_MSG("ClassRangeRecord %d, start > end: %u > %u", i, start, end);
+    }
+    if (last_end && start <= last_end) {
+      return OTS_FAILURE_MSG("ClassRangeRecord %d start overlaps with end of the previous one: %u <= %u", i, start, last_end);
     }
     if (class_value > num_classes) {
-      return OTS_FAILURE_MSG("bad class value: %u", class_value);
+      return OTS_FAILURE_MSG("ClassRangeRecord %d class > number of classes: %u > %u", i, class_value, num_classes);
     }
     last_end = end;
   }
@@ -661,7 +643,7 @@ bool ParseContextFormat2(const ots::Font *font,
   }
   if (!ots::ParseClassDefTable(font, data + offset_class_def,
                                length - offset_class_def,
-                               num_glyphs, kMaxClassDefValue)) {
+                               num_glyphs, ots::kMaxClassDefValue)) {
     return OTS_FAILURE_MSG("Failed to parse class definition table in context format 2");
   }
 
@@ -1014,7 +996,7 @@ bool ParseChainContextFormat2(const ots::Font *font,
     }
     if (!ots::ParseClassDefTable(font, data + offset_backtrack_class_def,
                                  length - offset_backtrack_class_def,
-                                 num_glyphs, kMaxClassDefValue)) {
+                                 num_glyphs, ots::kMaxClassDefValue)) {
       return OTS_FAILURE_MSG("Failed to parse backtrack class defn table in chain context format 2");
     }
   }
@@ -1025,7 +1007,7 @@ bool ParseChainContextFormat2(const ots::Font *font,
   }
   if (!ots::ParseClassDefTable(font, data + offset_input_class_def,
                                length - offset_input_class_def,
-                               num_glyphs, kMaxClassDefValue)) {
+                               num_glyphs, ots::kMaxClassDefValue)) {
     return OTS_FAILURE_MSG("Failed to parse input class defn in chain context format 2");
   }
 
@@ -1036,7 +1018,7 @@ bool ParseChainContextFormat2(const ots::Font *font,
     }
     if (!ots::ParseClassDefTable(font, data + offset_lookahead_class_def,
                                  length - offset_lookahead_class_def,
-                                 num_glyphs, kMaxClassDefValue)) {
+                                 num_glyphs, ots::kMaxClassDefValue)) {
       return OTS_FAILURE_MSG("Failed to parse lookahead class defn in chain context format 2");
     }
   }
@@ -1400,11 +1382,17 @@ bool ParseDeviceTable(const ots::Font *font,
       !subtable.ReadU16(&delta_format)) {
     return OTS_FAILURE_MSG("Failed to read device table header");
   }
+  if (delta_format == kVariationIndex) {
+    // start_size and end_size are replaced by deltaSetOuterIndex
+    // and deltaSetInnerIndex respectively, but we don't attempt to
+    // check them here, so nothing more to do.
+    return true;
+  }
   if (start_size > end_size) {
-    return OTS_FAILURE_MSG("bad size range: %u > %u", start_size, end_size);
+    return OTS_FAILURE_MSG("Bad device table size range: %u > %u", start_size, end_size);
   }
   if (delta_format == 0 || delta_format > kMaxDeltaFormatType) {
-    return OTS_FAILURE_MSG("bad delta format: %u", delta_format);
+    return OTS_FAILURE_MSG("Bad device table delta format: 0x%x", delta_format);
   }
   // The number of delta values per uint16. The device table should contain
   // at least |num_units| * 2 bytes compressed data.
@@ -1511,6 +1499,173 @@ bool ParseExtensionSubtable(const Font *font,
   if (!parser->Parse(font, data + offset_extension, length - offset_extension,
                      lookup_type)) {
     return OTS_FAILURE_MSG("Failed to parse lookup from extension lookup");
+  }
+
+  return true;
+}
+
+bool ParseConditionTable(const Font *font,
+                         const uint8_t *data, const size_t length,
+                         const uint16_t axis_count) {
+  Buffer subtable(data, length);
+
+  uint16_t format = 0;
+  if (!subtable.ReadU16(&format)) {
+    return OTS_FAILURE_MSG("Failed to read condition table format");
+  }
+
+  if (format != 1) {
+    // An unknown format is not an error, but should be ignored per spec.
+    return true;
+  }
+
+  uint16_t axis_index = 0;
+  int16_t filter_range_min_value = 0;
+  int16_t filter_range_max_value = 0;
+  if (!subtable.ReadU16(&axis_index) ||
+      !subtable.ReadS16(&filter_range_min_value) ||
+      !subtable.ReadS16(&filter_range_max_value)) {
+    return OTS_FAILURE_MSG("Failed to read condition table (format 1)");
+  }
+
+  if (axis_index >= axis_count) {
+    return OTS_FAILURE_MSG("Axis index out of range in condition");
+  }
+
+  // Check min/max values are within range -1.0 .. 1.0 and properly ordered
+  if (filter_range_min_value < -0x4000 || // -1.0 in F2DOT14 format
+      filter_range_max_value > 0x4000 || // +1.0 in F2DOT14 format
+      filter_range_min_value > filter_range_max_value) {
+    return OTS_FAILURE_MSG("Invalid filter range in condition");
+  }
+
+  return true;
+}
+
+bool ParseConditionSetTable(const Font *font,
+                            const uint8_t *data, const size_t length,
+                            const uint16_t axis_count) {
+  Buffer subtable(data, length);
+
+  uint16_t condition_count = 0;
+  if (!subtable.ReadU16(&condition_count)) {
+    return OTS_FAILURE_MSG("Failed to read condition count");
+  }
+
+  for (uint16_t i = 0; i < condition_count; i++) {
+    uint32_t condition_offset = 0;
+    if (!subtable.ReadU32(&condition_offset)) {
+      return OTS_FAILURE_MSG("Failed to read condition offset");
+    }
+    if (condition_offset < subtable.offset() || condition_offset >= length) {
+      return OTS_FAILURE_MSG("Offset out of range");
+    }
+    if (!ParseConditionTable(font, data + condition_offset, length - condition_offset,
+                             axis_count)) {
+      return OTS_FAILURE_MSG("Failed to parse condition table");
+    }
+  }
+
+  return true;
+}
+
+bool ParseFeatureTableSubstitutionTable(const Font *font,
+                                        const uint8_t *data, const size_t length,
+                                        const uint16_t num_lookups) {
+  Buffer subtable(data, length);
+
+  uint16_t version_major = 0;
+  uint16_t version_minor = 0;
+  uint16_t substitution_count = 0;
+  const size_t kFeatureTableSubstitutionHeaderSize = 3 * sizeof(uint16_t);
+
+  if (!subtable.ReadU16(&version_major) ||
+      !subtable.ReadU16(&version_minor) ||
+      !subtable.ReadU16(&substitution_count)) {
+    return OTS_FAILURE_MSG("Failed to read feature table substitution table header");
+  }
+
+  for (uint16_t i = 0; i < substitution_count; i++) {
+    uint16_t feature_index = 0;
+    uint32_t alternate_feature_table_offset = 0;
+    const size_t kFeatureTableSubstitutionRecordSize = sizeof(uint16_t) + sizeof(uint32_t);
+
+    if (!subtable.ReadU16(&feature_index) ||
+        !subtable.ReadU32(&alternate_feature_table_offset)) {
+      return OTS_FAILURE_MSG("Failed to read feature table substitution record");
+    }
+
+    if (alternate_feature_table_offset < kFeatureTableSubstitutionHeaderSize +
+                                         kFeatureTableSubstitutionRecordSize * substitution_count ||
+        alternate_feature_table_offset >= length) {
+      return OTS_FAILURE_MSG("Invalid alternate feature table offset");
+    }
+
+    if (!ParseFeatureTable(font, data + alternate_feature_table_offset,
+                           length - alternate_feature_table_offset, num_lookups)) {
+      return OTS_FAILURE_MSG("Failed to parse alternate feature table");
+    }
+  }
+
+  return true;
+}
+
+bool ParseFeatureVariationsTable(const Font *font,
+                                 const uint8_t *data, const size_t length,
+                                 const uint16_t num_lookups) {
+  Buffer subtable(data, length);
+
+  uint16_t version_major = 0;
+  uint16_t version_minor = 0;
+  uint32_t feature_variation_record_count = 0;
+
+  if (!subtable.ReadU16(&version_major) ||
+      !subtable.ReadU16(&version_minor) ||
+      !subtable.ReadU32(&feature_variation_record_count)) {
+    return OTS_FAILURE_MSG("Failed to read feature variations table header");
+  }
+
+  OpenTypeFVAR* fvar = static_cast<OpenTypeFVAR*>(font->GetTypedTable(OTS_TAG_FVAR));
+  if (!fvar) {
+    return OTS_FAILURE_MSG("Not a variation font");
+  }
+  const uint16_t axis_count = fvar->AxisCount();
+
+  const size_t kEndOfFeatureVariationRecords =
+    2 * sizeof(uint16_t) + sizeof(uint32_t) +
+    feature_variation_record_count * 2 * sizeof(uint32_t);
+
+  for (uint32_t i = 0; i < feature_variation_record_count; i++) {
+    uint32_t condition_set_offset = 0;
+    uint32_t feature_table_substitution_offset = 0;
+    if (!subtable.ReadU32(&condition_set_offset) ||
+        !subtable.ReadU32(&feature_table_substitution_offset)) {
+      return OTS_FAILURE_MSG("Failed to read feature variation record");
+    }
+
+    if (condition_set_offset) {
+      if (condition_set_offset < kEndOfFeatureVariationRecords ||
+          condition_set_offset >= length) {
+        return OTS_FAILURE_MSG("Condition set offset out of range");
+      }
+      if (!ParseConditionSetTable(font, data + condition_set_offset,
+                                  length - condition_set_offset,
+                                  axis_count)) {
+        return OTS_FAILURE_MSG("Failed to parse condition set table");
+      }
+    }
+
+    if (feature_table_substitution_offset) {
+      if (feature_table_substitution_offset < kEndOfFeatureVariationRecords ||
+          feature_table_substitution_offset >= length) {
+        return OTS_FAILURE_MSG("Feature table substitution offset out of range");
+      }
+      if (!ParseFeatureTableSubstitutionTable(font, data + feature_table_substitution_offset,
+                                              length - feature_table_substitution_offset,
+                                              num_lookups)) {
+        return OTS_FAILURE_MSG("Failed to parse feature table substitution table");
+      }
+    }
   }
 
   return true;

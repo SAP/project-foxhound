@@ -63,6 +63,7 @@ typedef struct nr_ice_stun_server_ {
   } u;
   int id;
   int transport;
+  int tls; /* Whether to use TLS or not */
 } nr_ice_stun_server;
 
 typedef struct nr_ice_turn_server_ {
@@ -111,12 +112,16 @@ typedef struct nr_ice_stun_id_ {
 
 typedef STAILQ_HEAD(nr_ice_stun_id_head_,nr_ice_stun_id_) nr_ice_stun_id_head;
 
+typedef struct nr_ice_stats_ {
+  UINT2 stun_retransmits;
+  UINT2 turn_401s;
+  UINT2 turn_403s;
+  UINT2 turn_438s;
+} nr_ice_stats;
+
 struct nr_ice_ctx_ {
   UINT4 flags;
   char *label;
-
-  char *ufrag;
-  char *pwd;
 
   UINT4 Ta;
 
@@ -129,7 +134,6 @@ struct nr_ice_ctx_ {
 
   nr_resolver *resolver;                      /* The resolver to use */
   nr_interface_prioritizer *interface_prioritizer;  /* Priority decision logic */
-  nr_socket_wrapper_factory *turn_tcp_socket_wrapper; /* The TURN TCP socket wrapper to use */
   nr_socket_factory *socket_factory;
 
   nr_ice_foundation_head foundations;
@@ -154,26 +158,29 @@ struct nr_ice_ctx_ {
   void *trickle_cb_arg;
 
   char force_net_interface[MAXIFNAME];
+  nr_ice_stats stats;
+
+  nr_transport_addr *target_for_default_local_address_lookup;
 };
 
 int nr_ice_ctx_create(char *label, UINT4 flags, nr_ice_ctx **ctxp);
 int nr_ice_ctx_create_with_credentials(char *label, UINT4 flags, char* ufrag, char* pwd, nr_ice_ctx **ctxp);
-#define NR_ICE_CTX_FLAGS_OFFERER                           1
-#define NR_ICE_CTX_FLAGS_ANSWERER                          (1<<1)
-#define NR_ICE_CTX_FLAGS_AGGRESSIVE_NOMINATION             (1<<2)
-#define NR_ICE_CTX_FLAGS_LITE                              (1<<3)
-#define NR_ICE_CTX_FLAGS_RELAY_ONLY                        (1<<4)
-#define NR_ICE_CTX_FLAGS_HIDE_HOST_CANDIDATES              (1<<5)
-#define NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS                (1<<6)
-#define NR_ICE_CTX_FLAGS_ONLY_PROXY                        (1<<7)
+#define NR_ICE_CTX_FLAGS_AGGRESSIVE_NOMINATION             (1)
+#define NR_ICE_CTX_FLAGS_LITE                              (1<<1)
+#define NR_ICE_CTX_FLAGS_RELAY_ONLY                        (1<<2)
+#define NR_ICE_CTX_FLAGS_HIDE_HOST_CANDIDATES              (1<<3)
+#define NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS                (1<<4)
+#define NR_ICE_CTX_FLAGS_ONLY_PROXY                        (1<<5)
 
 void nr_ice_ctx_add_flags(nr_ice_ctx *ctx, UINT4 flags);
 void nr_ice_ctx_remove_flags(nr_ice_ctx *ctx, UINT4 flags);
 int nr_ice_ctx_destroy(nr_ice_ctx **ctxp);
+int nr_ice_set_local_addresses(nr_ice_ctx *ctx, nr_local_addr* stun_addrs, int stun_addr_ct);
+int nr_ice_set_target_for_default_local_address_lookup(nr_ice_ctx *ctx, const char *target_ip, UINT2 target_port);
 int nr_ice_gather(nr_ice_ctx *ctx, NR_async_cb done_cb, void *cb_arg);
 int nr_ice_add_candidate(nr_ice_ctx *ctx, nr_ice_candidate *cand);
 void nr_ice_gather_finished_cb(NR_SOCKET s, int h, void *cb_arg);
-int nr_ice_add_media_stream(nr_ice_ctx *ctx,char *label,int components, nr_ice_media_stream **streamp);
+int nr_ice_add_media_stream(nr_ice_ctx *ctx,const char *label,const char *ufrag,const char *pwd,int components, nr_ice_media_stream **streamp);
 int nr_ice_remove_media_stream(nr_ice_ctx *ctx,nr_ice_media_stream **streamp);
 int nr_ice_get_global_attributes(nr_ice_ctx *ctx,char ***attrsp, int *attrctp);
 int nr_ice_ctx_deliver_packet(nr_ice_ctx *ctx, nr_ice_component *comp, nr_transport_addr *source_addr, UCHAR *data, int len);
@@ -185,7 +192,6 @@ int nr_ice_ctx_set_turn_servers(nr_ice_ctx *ctx,nr_ice_turn_server *servers, int
 int nr_ice_ctx_copy_turn_servers(nr_ice_ctx *ctx, nr_ice_turn_server *servers, int ct);
 int nr_ice_ctx_set_resolver(nr_ice_ctx *ctx, nr_resolver *resolver);
 int nr_ice_ctx_set_interface_prioritizer(nr_ice_ctx *ctx, nr_interface_prioritizer *prioritizer);
-int nr_ice_ctx_set_turn_tcp_socket_wrapper(nr_ice_ctx *ctx, nr_socket_wrapper_factory *wrapper);
 void nr_ice_ctx_set_socket_factory(nr_ice_ctx *ctx, nr_socket_factory *factory);
 int nr_ice_ctx_set_trickle_cb(nr_ice_ctx *ctx, nr_ice_trickle_candidate_cb cb, void *cb_arg);
 int nr_ice_ctx_hide_candidate(nr_ice_ctx *ctx, nr_ice_candidate *cand);

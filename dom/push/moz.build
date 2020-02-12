@@ -3,13 +3,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Push Notifications")
+
 EXTRA_COMPONENTS += [
-    'Push.js',
     'Push.manifest',
-    'PushComponents.js',
 ]
 
 EXTRA_JS_MODULES += [
+    'Push.jsm',
+    'PushBroadcastService.jsm',
+    'PushComponents.jsm',
     'PushCrypto.jsm',
     'PushDB.jsm',
     'PushRecord.jsm',
@@ -27,6 +31,10 @@ else:
     EXTRA_JS_MODULES += [
         'PushServiceAndroidGCM.jsm',
     ]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
 
 MOCHITEST_MANIFESTS += [
     'test/mochitest.ini',
@@ -59,7 +67,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 LOCAL_INCLUDES += [
     '../base',
     '../ipc',
-    '../workers',
 ]
 
 FINAL_LIBRARY = 'xul'

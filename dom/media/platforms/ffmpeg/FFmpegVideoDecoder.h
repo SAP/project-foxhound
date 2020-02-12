@@ -9,49 +9,66 @@
 
 #include "FFmpegLibWrapper.h"
 #include "FFmpegDataDecoder.h"
-#include "mozilla/Pair.h"
-#include "nsTArray.h"
+#include "SimpleMap.h"
 
-namespace mozilla
-{
+namespace mozilla {
 
 template <int V>
-class FFmpegVideoDecoder : public FFmpegDataDecoder<V>
-{
-};
+class FFmpegVideoDecoder : public FFmpegDataDecoder<V> {};
 
 template <>
-class FFmpegVideoDecoder<LIBAV_VER> : public FFmpegDataDecoder<LIBAV_VER>
-{
+class FFmpegVideoDecoder<LIBAV_VER>;
+DDLoggedTypeNameAndBase(FFmpegVideoDecoder<LIBAV_VER>,
+                        FFmpegDataDecoder<LIBAV_VER>);
+
+template <>
+class FFmpegVideoDecoder<LIBAV_VER>
+    : public FFmpegDataDecoder<LIBAV_VER>,
+      public DecoderDoctorLifeLogger<FFmpegVideoDecoder<LIBAV_VER>> {
   typedef mozilla::layers::Image Image;
   typedef mozilla::layers::ImageContainer ImageContainer;
+  typedef mozilla::layers::KnowsCompositor KnowsCompositor;
+  typedef SimpleMap<int64_t> DurationMap;
 
-public:
+ public:
   FFmpegVideoDecoder(FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue,
-                     MediaDataDecoderCallback* aCallback,
-                     const VideoInfo& aConfig,
-                     ImageContainer* aImageContainer);
-  virtual ~FFmpegVideoDecoder();
+                     const VideoInfo& aConfig, KnowsCompositor* aAllocator,
+                     ImageContainer* aImageContainer, bool aLowLatency);
 
   RefPtr<InitPromise> Init() override;
   void InitCodecContext() override;
-  const char* GetDescriptionName() const override
-  {
+  nsCString GetDescriptionName() const override {
 #ifdef USING_MOZFFVPX
-    return "ffvpx video decoder";
+    return NS_LITERAL_CSTRING("ffvpx video decoder");
 #else
-    return "ffmpeg video decoder";
+    return NS_LITERAL_CSTRING("ffmpeg video decoder");
 #endif
   }
+  ConversionRequired NeedsConversion() const override {
+    return ConversionRequired::kNeedAVCC;
+  }
+
   static AVCodecID GetCodecId(const nsACString& aMimeType);
 
-private:
-  MediaResult DoDecode(MediaRawData* aSample) override;
-  MediaResult DoDecode(MediaRawData* aSample, bool* aGotFrame);
-  MediaResult DoDecode(MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame);
-  void ProcessDrain() override;
-  void ProcessFlush() override;
+ private:
+  RefPtr<FlushPromise> ProcessFlush() override;
+  MediaResult DoDecode(MediaRawData* aSample, uint8_t* aData, int aSize,
+                       bool* aGotFrame, DecodedData& aResults) override;
   void OutputDelayedFrames();
+  bool NeedParser() const override {
+    return
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+        false;
+#else
+#  if LIBAVCODEC_VERSION_MAJOR >= 55
+        mCodecID == AV_CODEC_ID_VP9 ||
+#  endif
+        mCodecID == AV_CODEC_ID_VP8;
+#endif
+  }
+
+  MediaResult CreateImage(int64_t aOffset, int64_t aPts, int64_t aDuration,
+                          MediaDataDecoder::DecodedData& aResults);
 
   /**
    * This method allocates a buffer for FFmpeg's decoder, wrapped in an Image.
@@ -62,66 +79,30 @@ private:
   int AllocateYUV420PVideoBuffer(AVCodecContext* aCodecContext,
                                  AVFrame* aFrame);
 
+  RefPtr<KnowsCompositor> mImageAllocator;
   RefPtr<ImageContainer> mImageContainer;
   VideoInfo mInfo;
 
-  // Parser used for VP8 and VP9 decoding.
-  AVCodecParserContext* mCodecParser;
-
   class PtsCorrectionContext {
-  public:
+   public:
     PtsCorrectionContext();
     int64_t GuessCorrectPts(int64_t aPts, int64_t aDts);
     void Reset();
     int64_t LastDts() const { return mLastDts; }
 
-  private:
-    int64_t mNumFaultyPts; /// Number of incorrect PTS values so far
-    int64_t mNumFaultyDts; /// Number of incorrect DTS values so far
+   private:
+    int64_t mNumFaultyPts;  /// Number of incorrect PTS values so far
+    int64_t mNumFaultyDts;  /// Number of incorrect DTS values so far
     int64_t mLastPts;       /// PTS of the last frame
     int64_t mLastDts;       /// DTS of the last frame
   };
 
   PtsCorrectionContext mPtsContext;
-  int64_t mLastInputDts;
-
-  class DurationMap {
-  public:
-    typedef Pair<int64_t, int64_t> DurationElement;
-
-    // Insert Key and Duration pair at the end of our map.
-    void Insert(int64_t aKey, int64_t aDuration)
-    {
-      mMap.AppendElement(MakePair(aKey, aDuration));
-    }
-    // Sets aDuration matching aKey and remove it from the map if found.
-    // The element returned is the first one found.
-    // Returns true if found, false otherwise.
-    bool Find(int64_t aKey, int64_t& aDuration)
-    {
-      for (uint32_t i = 0; i < mMap.Length(); i++) {
-        DurationElement& element = mMap[i];
-        if (element.first() == aKey) {
-          aDuration = element.second();
-          mMap.RemoveElementAt(i);
-          return true;
-        }
-      }
-      return false;
-    }
-    // Remove all elements of the map.
-    void Clear()
-    {
-      mMap.Clear();
-    }
-
-  private:
-    AutoTArray<DurationElement, 16> mMap;
-  };
 
   DurationMap mDurationMap;
+  const bool mLowLatency;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // __FFmpegVideoDecoder_h__
+#endif  // __FFmpegVideoDecoder_h__

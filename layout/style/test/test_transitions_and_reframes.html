@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=625289
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 625289</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
   :root,
@@ -187,7 +187,7 @@ var tests = [
     dynamic_change_transition:true, start_from_none:false },
   // Recheck starting from display:none.  Note that these tests all fail,
   // although we could get *some* of them to pass by calling
-  // RestyleManager::TryStartingTransition from
+  // RestyleManager::TryInitiatingTransition from
   // ElementRestyler::RestyleUndisplayedChildren.
   { element:"e1", test_child:false, pseudo:"", passes:false,
     dynamic_change_transition:false, start_from_none:true },

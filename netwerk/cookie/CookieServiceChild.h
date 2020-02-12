@@ -7,61 +7,105 @@
 #define mozilla_net_CookieServiceChild_h__
 
 #include "mozilla/net/PCookieServiceChild.h"
+#include "nsClassHashtable.h"
+#include "nsCookieKey.h"
 #include "nsICookieService.h"
 #include "nsIObserver.h"
 #include "nsIPrefBranch.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsWeakReference.h"
+#include "nsThreadUtils.h"
+
+class nsCookie;
+class nsICookiePermission;
+class nsIEffectiveTLDService;
+class nsILoadInfo;
 
 namespace mozilla {
 namespace net {
+class CookieStruct;
 
-class CookieServiceChild : public PCookieServiceChild
-                         , public nsICookieService
-                         , public nsIObserver
-                         , public nsSupportsWeakReference
-{
-public:
+class CookieServiceChild : public PCookieServiceChild,
+                           public nsICookieService,
+                           public nsIObserver,
+                           public nsITimerCallback,
+                           public nsSupportsWeakReference {
+  friend class PCookieServiceChild;
+
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSICOOKIESERVICE
   NS_DECL_NSIOBSERVER
+  NS_DECL_NSITIMERCALLBACK
+
+  typedef nsTArray<RefPtr<nsCookie>> CookiesList;
+  typedef nsClassHashtable<nsCookieKey, CookiesList> CookiesMap;
 
   CookieServiceChild();
 
-  static CookieServiceChild* GetSingleton();
+  static already_AddRefed<CookieServiceChild> GetSingleton();
 
-protected:
+  void TrackCookieLoad(nsIChannel* aChannel);
+
+ protected:
   virtual ~CookieServiceChild();
+  void MoveCookies();
 
-  void SerializeURIs(nsIURI *aHostURI,
-                     nsIChannel *aChannel,
-                     nsCString &aHostSpec,
-                     nsCString &aHostCharset,
-                     nsCString &aOriginatingSpec,
-                     nsCString &aOriginatingCharset);
+  void SerializeURIs(nsIURI* aHostURI, nsIChannel* aChannel,
+                     nsCString& aHostSpec, nsCString& aHostCharset,
+                     nsCString& aOriginatingSpec,
+                     nsCString& aOriginatingCharset);
 
-  nsresult GetCookieStringInternal(nsIURI *aHostURI,
-                                   nsIChannel *aChannel,
-                                   char **aCookieString,
+  nsresult GetCookieStringInternal(nsIURI* aHostURI, nsIChannel* aChannel,
+                                   nsACString& aCookieString);
+
+  void GetCookieStringFromCookieHashTable(
+      nsIURI* aHostURI, bool aIsForeign, bool aIsTrackingResource,
+      bool aFirstPartyStorageAccessGranted, uint32_t aRejectedReason,
+      bool aIsSafeTopLevelNav, bool aIsSameSiteForeign, nsIChannel* aChannel,
+      nsACString& aCookieString);
+
+  nsresult SetCookieStringInternal(nsIURI* aHostURI, nsIChannel* aChannel,
+                                   const nsACString& aCookieString,
+                                   const nsACString& aServerTime,
                                    bool aFromHttp);
 
-  nsresult SetCookieStringInternal(nsIURI *aHostURI,
-                                   nsIChannel *aChannel,
-                                   const char *aCookieString,
-                                   const char *aServerTime,
-                                   bool aFromHttp);
+  void RecordDocumentCookie(nsCookie* aCookie, const OriginAttributes& aAttrs);
 
-  void PrefChanged(nsIPrefBranch *aPrefBranch);
+  void SetCookieInternal(const CookieStruct& aCookieData,
+                         const mozilla::OriginAttributes& aAttrs,
+                         nsIChannel* aChannel, bool aFromHttp,
+                         nsICookiePermission* aPermissionService);
 
-  bool RequireThirdPartyCheck();
+  uint32_t CountCookiesFromHashTable(const nsCString& aBaseDomain,
+                                     const OriginAttributes& aOriginAttrs);
 
+  void PrefChanged(nsIPrefBranch* aPrefBranch);
+
+  bool RequireThirdPartyCheck(nsILoadInfo* aLoadInfo);
+
+  mozilla::ipc::IPCResult RecvTrackCookiesLoad(
+      nsTArray<CookieStruct>&& aCookiesList, const OriginAttributes& aAttrs);
+
+  mozilla::ipc::IPCResult RecvRemoveAll();
+
+  mozilla::ipc::IPCResult RecvRemoveBatchDeletedCookies(
+      nsTArray<CookieStruct>&& aCookiesList,
+      nsTArray<OriginAttributes>&& aAttrsList);
+
+  mozilla::ipc::IPCResult RecvRemoveCookie(const CookieStruct& aCookie,
+                                           const OriginAttributes& aAttrs);
+
+  mozilla::ipc::IPCResult RecvAddCookie(const CookieStruct& aCookie,
+                                        const OriginAttributes& aAttrs);
+
+  CookiesMap mCookiesMap;
+  nsCOMPtr<nsITimer> mCookieTimer;
   nsCOMPtr<mozIThirdPartyUtil> mThirdPartyUtil;
-  uint8_t mCookieBehavior;
-  bool mThirdPartySession;
+  nsCOMPtr<nsIEffectiveTLDService> mTLDService;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // mozilla_net_CookieServiceChild_h__
-
+#endif  // mozilla_net_CookieServiceChild_h__

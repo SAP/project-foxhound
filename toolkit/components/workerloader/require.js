@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 /**
  * Implementation of a CommonJS module loader for workers.
  *
@@ -39,7 +38,6 @@
  * modules in the same worker may be affected.
  */
 
-
 (function(exports) {
   "use strict";
 
@@ -50,7 +48,6 @@
 
   // Simple implementation of |require|
   let require = (function() {
-
     /**
      * Mapping from module paths to module exports.
      *
@@ -64,26 +61,24 @@
      *
      * @type {string}
      */
-    Object.defineProperty(Error.prototype, "moduleStack",
-    {
-      get: function() {
+    Object.defineProperty(Error.prototype, "moduleStack", {
+      get() {
         return this.stack;
-      }
+      },
     });
     /**
      * A human-readable version of |fileName|.
      *
      * @type {string}
      */
-    Object.defineProperty(Error.prototype, "moduleName",
-    {
-      get: function() {
+    Object.defineProperty(Error.prototype, "moduleName", {
+      get() {
         let match = this.stack.match(/\@(.*):.*:/);
         if (match) {
           return match[1];
         }
         return "(unknown module)";
-      }
+      },
     });
 
     /**
@@ -93,8 +88,10 @@
      * @return {*} An object containing the properties exported by the module.
      */
     return function require(path) {
-      if (typeof path != "string" || path.indexOf("://") == -1) {
-        throw new TypeError("The argument to require() must be a string uri, got " + path);
+      if (typeof path != "string" || !path.includes("://")) {
+        throw new TypeError(
+          "The argument to require() must be a string uri, got " + path
+        );
       }
       // Automatically add ".js" if there is no extension
       let uri;
@@ -110,8 +107,8 @@
       // Identification of the module
       let module = {
         id: path,
-        uri: uri,
-        exports: exports
+        uri,
+        exports,
       };
 
       // Make module available immediately
@@ -121,8 +118,6 @@
       }
       modules.set(path, module);
 
-      let name = ":" + path;
-      let objectURL;
       try {
         // Load source of module, synchronously
         let xhr = new XMLHttpRequest();
@@ -130,16 +125,22 @@
         xhr.responseType = "text";
         xhr.send();
 
-
         let source = xhr.responseText;
         if (source == "") {
           // There doesn't seem to be a better way to detect that the file couldn't be found
           throw new Error("Could not find module " + path);
         }
-        let code = new Function("exports", "require", "module",
-          source + "\n//# sourceURL=" + uri + "\n"
+        // Use `Function` to leave this scope, use `eval` to start the line
+        // number from 1 that is observed by `source` and the error message
+        // thrown from the module, and also use `arguments` for accessing
+        // `source` and `uri` to avoid polluting the module's environment.
+        let code = new Function(
+          "exports",
+          "require",
+          "module",
+          `eval(arguments[3] + "\\n//# sourceURL=" + arguments[4] + "\\n")`
         );
-        code(exports, require, module);
+        code(exports, require, module, source, uri);
       } catch (ex) {
         // Module loading has failed, exports should not be made available
         // after all.
@@ -158,6 +159,6 @@
   Object.defineProperty(exports, "require", {
     value: require,
     enumerable: true,
-    configurable: false
+    configurable: false,
   });
 })(this);

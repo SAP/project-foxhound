@@ -1,4 +1,6 @@
 ## Makefile.in for ICU tests
+## Copyright (C) 2016 and later: Unicode, Inc. and others.
+## License & terms of use: http://www.unicode.org/copyright.html
 ## Copyright (c) 1999-2014, International Business Machines Corporation and
 ## others. All Rights Reserved.
 
@@ -20,6 +22,9 @@ subdir = test
 # harfbuzz.
 @LAYOUTEX_TRUE@LETEST = letest
 
+# no testdata without tools..
+@TOOLS_TRUE@TESTDATA = testdata
+
 # status dir
 STATUS_TMP = tmp
 STATUS_FULL = $(shell pwd)/$(STATUS_TMP)
@@ -27,7 +32,7 @@ STATUS_FULL = $(shell pwd)/$(STATUS_TMP)
 ## Files to remove for 'make clean'
 CLEANFILES = *~ $(STATUS_TMP)
 
-SUBDIRS = testdata intltest $(IOTEST) cintltst $(LETEST)
+SUBDIRS = $(TESTDATA) intltest $(IOTEST) cintltst $(LETEST)
 
 ## List of phony targets
 .PHONY : everything all all-local all-recursive install install-local		\
@@ -83,7 +88,7 @@ xcheck-recursive check-recursive check-exhaustive-recursive:
 	@$(MKINSTALLDIRS) $(STATUS_TMP)
 	@mystatus=$(STATUS_FULL)/status.$$$$.deleteme ; \
 	$(RMV) "$$mystatus".* ; \
-	@goods=; \
+	goods=; \
 	bads=; \
 	target=`echo $@ | sed s/-recursive//`; \
 	list='$(SUBDIRS)'; for subdir in $$list; do \
@@ -132,8 +137,8 @@ $(STATUS_FULL)/status.$(STATUS_NUM).deleteme.%: pcheck_setup
 
 # print out status
 pcheck: $(STATUS_FILES)
-	@goods= ; \
-	bads= ; \
+	@goods=; \
+	bads=; \
 	echo "----------------------------------------"; \
 	for subdir in $(SUBDIRS); do \
 	  if [ -s "$(MYSTATUS_R).$$subdir" ]; then \

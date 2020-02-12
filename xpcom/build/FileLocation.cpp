@@ -10,31 +10,37 @@
 
 namespace mozilla {
 
-FileLocation::FileLocation()
-{
-}
+FileLocation::FileLocation() = default;
 
-FileLocation::~FileLocation()
-{
-}
+FileLocation::~FileLocation() = default;
 
-FileLocation::FileLocation(nsIFile* aFile)
-{
-  Init(aFile);
-}
+FileLocation::FileLocation(nsIFile* aFile) { Init(aFile); }
 
-FileLocation::FileLocation(nsIFile* aFile, const char* aPath)
-{
+FileLocation::FileLocation(nsIFile* aFile, const char* aPath) {
   Init(aFile, aPath);
 }
 
-FileLocation::FileLocation(const FileLocation& aFile, const char* aPath)
-{
+FileLocation::FileLocation(nsZipArchive* aZip, const char* aPath) {
+  Init(aZip, aPath);
+}
+
+FileLocation::FileLocation(const FileLocation& aOther)
+    : mBaseFile(aOther.mBaseFile),
+      mBaseZip(aOther.mBaseZip),
+      mPath(aOther.mPath) {}
+
+FileLocation::FileLocation(FileLocation&& aOther)
+    : mBaseFile(std::move(aOther.mBaseFile)),
+      mBaseZip(std::move(aOther.mBaseZip)),
+      mPath(std::move(aOther.mPath)) {
+  aOther.mPath.Truncate();
+}
+
+FileLocation::FileLocation(const FileLocation& aFile, const char* aPath) {
   if (aFile.IsZip()) {
     if (aFile.mBaseFile) {
       Init(aFile.mBaseFile, aFile.mPath.get());
-    }
-    else {
+    } else {
       Init(aFile.mBaseZip, aFile.mPath.get());
     }
     if (aPath) {
@@ -71,33 +77,25 @@ FileLocation::FileLocation(const FileLocation& aFile, const char* aPath)
   }
 }
 
-void
-FileLocation::Init(nsIFile* aFile)
-{
+void FileLocation::Init(nsIFile* aFile) {
   mBaseZip = nullptr;
   mBaseFile = aFile;
   mPath.Truncate();
 }
 
-void
-FileLocation::Init(nsIFile* aFile, const char* aPath)
-{
+void FileLocation::Init(nsIFile* aFile, const char* aPath) {
   mBaseZip = nullptr;
   mBaseFile = aFile;
   mPath = aPath;
 }
 
-void
-FileLocation::Init(nsZipArchive* aZip, const char* aPath)
-{
+void FileLocation::Init(nsZipArchive* aZip, const char* aPath) {
   mBaseZip = aZip;
   mBaseFile = nullptr;
   mPath = aPath;
 }
 
-void
-FileLocation::GetURIString(nsACString& aResult) const
-{
+void FileLocation::GetURIString(nsACString& aResult) const {
   if (mBaseFile) {
     net_GetURLSpecFromActualFile(mBaseFile, aResult);
   } else if (mBaseZip) {
@@ -105,15 +103,13 @@ FileLocation::GetURIString(nsACString& aResult) const
     handler->mFile.GetURIString(aResult);
   }
   if (IsZip()) {
-    aResult.Insert("jar:", 0);
+    aResult.InsertLiteral("jar:", 0);
     aResult += "!/";
     aResult += mPath;
   }
 }
 
-already_AddRefed<nsIFile>
-FileLocation::GetBaseFile()
-{
+already_AddRefed<nsIFile> FileLocation::GetBaseFile() {
   if (IsZip() && mBaseZip) {
     RefPtr<nsZipHandle> handler = mBaseZip->GetFD();
     if (handler) {
@@ -126,9 +122,7 @@ FileLocation::GetBaseFile()
   return file.forget();
 }
 
-bool
-FileLocation::Equals(const FileLocation& aFile) const
-{
+bool FileLocation::Equals(const FileLocation& aFile) const {
   if (mPath != aFile.mPath) {
     return false;
   }
@@ -152,9 +146,7 @@ FileLocation::Equals(const FileLocation& aFile) const
   return a->Equals(*b);
 }
 
-nsresult
-FileLocation::GetData(Data& aData)
-{
+nsresult FileLocation::GetData(Data& aData) {
   if (!IsZip()) {
     return mBaseFile->OpenNSPRFileDesc(PR_RDONLY, 0444, &aData.mFd.rwget());
   }
@@ -170,9 +162,7 @@ FileLocation::GetData(Data& aData)
   return NS_ERROR_FILE_UNRECOGNIZED_PATH;
 }
 
-nsresult
-FileLocation::Data::GetSize(uint32_t* aResult)
-{
+nsresult FileLocation::Data::GetSize(uint32_t* aResult) {
   if (mFd) {
     PRFileInfo64 fileInfo;
     if (PR_SUCCESS != PR_GetOpenFileInfo64(mFd, &fileInfo)) {
@@ -186,16 +176,14 @@ FileLocation::Data::GetSize(uint32_t* aResult)
     *aResult = fileInfo.size;
     return NS_OK;
   }
-  else if (mItem) {
+  if (mItem) {
     *aResult = mItem->RealSize();
     return NS_OK;
   }
   return NS_ERROR_NOT_INITIALIZED;
 }
 
-nsresult
-FileLocation::Data::Copy(char* aBuf, uint32_t aLen)
-{
+nsresult FileLocation::Data::Copy(char* aBuf, uint32_t aLen) {
   if (mFd) {
     for (uint32_t totalRead = 0; totalRead < aLen;) {
       int32_t read = PR_Read(mFd, aBuf + totalRead,
@@ -207,13 +195,12 @@ FileLocation::Data::Copy(char* aBuf, uint32_t aLen)
     }
     return NS_OK;
   }
-  else if (mItem) {
-    nsZipCursor cursor(mItem, mZip, reinterpret_cast<uint8_t*>(aBuf),
-                       aLen, true);
+  if (mItem) {
+    nsZipCursor cursor(mItem, mZip, reinterpret_cast<uint8_t*>(aBuf), aLen,
+                       true);
     uint32_t readLen;
     cursor.Copy(&readLen);
     if (readLen != aLen) {
-      nsZipArchive::sFileCorruptedReason = "FileLocation::Data: insufficient data";
       return NS_ERROR_FILE_CORRUPTED;
     }
     return NS_OK;

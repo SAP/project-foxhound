@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429785
 -->
 <window title="Mozilla Bug 429785"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -19,16 +19,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=429785
     /** Test for Bug 429785 **/
     SimpleTest.waitForExplicitFinish();
     var errorLogged = false;
-    const serv = Components.classes["@mozilla.org/consoleservice;1"]
-                           .getService(Components.interfaces.nsIConsoleService);
+    const serv = Cc["@mozilla.org/consoleservice;1"]
+                   .getService(Ci.nsIConsoleService);
     var listener = {
-      QueryInterface : function(iid) {
-        if (!iid.equals(Components.interfaces.nsISupports) &&
-            !iid.equals(Components.interfaces.nsIConsoleListener)) {
-	  throw Components.results.NS_NOINTERFACE;
-	}
-	return this;
-      },
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIConsoleListener]),
       observe : function (msg) { errorLogged = true; }
     };
 

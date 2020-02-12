@@ -7,8 +7,15 @@
 'use strict';
 setup({explicit_done: true});
 SpecialPowers.pushPrefEnv(
-  { "set": [["dom.animations-api.core.enabled", true]]},
+  {
+    set: [
+      ["dom.animations-api.core.enabled", true],
+      ["dom.animations-api.getAnimations.enabled", true],
+      ["dom.animations-api.timelines.enabled", true],
+    ],
+  },
   function() {
     window.open("file_deferred_start.html");
-  });
+  }
+);
 </script>

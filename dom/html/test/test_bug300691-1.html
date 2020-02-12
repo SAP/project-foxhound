@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=300691
 -->
 <head>
   <title>Test for Bug 300691</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/EventUtils.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -95,7 +95,7 @@ valueIs("abcdeTesth",
         "Modifying textnode text shouldn't affect value in edited textarea");
 defValueIs("abcdefghlmno", "Modified textnode text 3");
 
-t.removeChild(t.firstChild);
+t.firstChild.remove();
 valueIs("abcdeTesth",
         "Removing child textnode shouldn't affect value in edited textarea");
 defValueIs("defghlmno", "Removed textnode 3");

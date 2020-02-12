@@ -9,93 +9,61 @@
 #ifndef SkPDFShader_DEFINED
 #define SkPDFShader_DEFINED
 
-#include "SkPDFStream.h"
+#include "SkBitmapKey.h"
+#include "SkMacros.h"
 #include "SkPDFTypes.h"
+#include "SkShader.h"
 
-class SkPDFCanon;
+
 class SkPDFDocument;
 class SkMatrix;
-class SkShader;
 struct SkIRect;
 
-/** \class SkPDFShader
-
-    In PDF parlance, this is a pattern, used in place of a color when the
-    pattern color space is selected.
-*/
-
-class SkPDFShader {
-public:
-    class State;
-
-    /** Get the PDF shader for the passed SkShader. If the SkShader is
-     *  invalid in some way, returns nullptr. The reference count of
-     *  the object is incremented and it is the caller's responsibility to
-     *  unreference it when done.  This is needed to accommodate the weak
-     *  reference pattern used when the returned object is new and has no
-     *  other references.
-     *  @param shader      The SkShader to emulate.
-     *  @param matrix      The current transform. (PDF shaders are absolutely
-     *                     positioned, relative to where the page is drawn.)
-     *  @param surfceBBox  The bounding box of the drawing surface (with matrix
-     *                     already applied).
-     *  @param rasterScale Additional scale to be applied for early
-     *                     rasterization.
-     */
-    static SkPDFObject* GetPDFShader(SkPDFDocument* doc,
-                                     SkScalar dpi,
-                                     SkShader* shader,
-                                     const SkMatrix& matrix,
-                                     const SkIRect& surfaceBBox,
-                                     SkScalar rasterScale);
-
-    static sk_sp<SkPDFArray> MakeRangeObject();
-};
-
-class SkPDFFunctionShader final : public SkPDFDict {
-public:
-    static SkPDFFunctionShader* Create(SkPDFCanon*,
-                                       std::unique_ptr<SkPDFShader::State>*);
-    virtual ~SkPDFFunctionShader();
-    bool equals(const SkPDFShader::State&) const;
-
-private:
-    std::unique_ptr<const SkPDFShader::State> fShaderState;
-    SkPDFFunctionShader(SkPDFShader::State*);
-    typedef SkPDFDict INHERITED;
-};
-
-/**
- * A shader for PDF gradients. This encapsulates the function shader
- * inside a tiling pattern while providing a common pattern interface.
- * The encapsulation allows the use of a SMask for transparency gradients.
+/** Make a PDF shader for the passed SkShader. If the SkShader is invalid in
+ *  some way, returns nullptr.
+ *
+ *  In PDF parlance, this is a pattern, used in place of a color when the
+ *  pattern color space is selected.
+ *
+ *  May cache the shader in the document for later re-use.  If this function is
+ *  called again with an equivalent shader,  a new reference to the cached pdf
+ *  shader may be returned.
+ *
+ *  @param doc         The parent document, must be non-null.
+ *  @param shader      The SkShader to emulate.
+ *  @param ctm         The current transform matrix. (PDF shaders are absolutely
+ *                     positioned, relative to where the page is drawn.)
+ *  @param surfaceBBox The bounding box of the drawing surface (with matrix
+ *                     already applied).
+ *  @param paintColor  Color+Alpha of the paint.  Color is usually ignored,
+ *                     unless it is a alpha shader.
  */
-class SkPDFAlphaFunctionShader final : public SkPDFStream {
-public:
-    static SkPDFAlphaFunctionShader* Create(SkPDFDocument*,
-                                            SkScalar dpi,
-                                            std::unique_ptr<SkPDFShader::State>*);
-    virtual ~SkPDFAlphaFunctionShader();
-    bool equals(const SkPDFShader::State&) const;
+SkPDFIndirectReference SkPDFMakeShader(SkPDFDocument* doc,
+                                       SkShader* shader,
+                                       const SkMatrix& ctm,
+                                       const SkIRect& surfaceBBox,
+                                       SkColor paintColor);
 
-private:
-    std::unique_ptr<const SkPDFShader::State> fShaderState;
-    SkPDFAlphaFunctionShader(SkPDFShader::State*);
-    typedef SkPDFStream INHERITED;
+SK_BEGIN_REQUIRE_DENSE
+struct SkPDFImageShaderKey {
+    SkMatrix fCanvasTransform;
+    SkMatrix fShaderTransform;
+    SkIRect fBBox;
+    SkBitmapKey fBitmapKey;
+    SkShader::TileMode fImageTileModes[2];
+    SkColor fPaintColor;
 };
+SK_END_REQUIRE_DENSE
 
-class SkPDFImageShader final : public SkPDFStream {
-public:
-    static SkPDFImageShader* Create(SkPDFDocument*,
-                                    SkScalar dpi,
-                                    std::unique_ptr<SkPDFShader::State>*);
-    virtual ~SkPDFImageShader();
-    bool equals(const SkPDFShader::State&) const;
-
-private:
-    std::unique_ptr<const SkPDFShader::State> fShaderState;
-    SkPDFImageShader(SkPDFShader::State*);
-    typedef SkPDFStream INHERITED;
-};
-
+inline bool operator==(const SkPDFImageShaderKey& a, const SkPDFImageShaderKey& b) {
+    SkASSERT(a.fBitmapKey.fID != 0);
+    SkASSERT(b.fBitmapKey.fID != 0);
+    return a.fCanvasTransform   == b.fCanvasTransform
+        && a.fShaderTransform   == b.fShaderTransform
+        && a.fBBox              == b.fBBox
+        && a.fBitmapKey         == b.fBitmapKey
+        && a.fImageTileModes[0] == b.fImageTileModes[0]
+        && a.fImageTileModes[1] == b.fImageTileModes[1]
+        && a.fPaintColor        == b.fPaintColor;
+}
 #endif

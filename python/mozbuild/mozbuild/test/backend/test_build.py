@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals, print_function
+from __future__ import absolute_import, unicode_literals, print_function
 
 import buildconfig
 import os
@@ -26,6 +26,7 @@ from tempfile import mkdtemp
 
 BASE_SUBSTS = [
     ('PYTHON', mozpath.normsep(sys.executable)),
+    ('MOZ_UI_LOCALE', 'en-US'),
 ]
 
 
@@ -34,6 +35,7 @@ class TestBuild(unittest.TestCase):
         self._old_env = dict(os.environ)
         os.environ.pop('MOZCONFIG', None)
         os.environ.pop('MOZ_OBJDIR', None)
+        os.environ.pop('MOZ_PGO', None)
 
     def tearDown(self):
         os.environ.clear()
@@ -41,7 +43,9 @@ class TestBuild(unittest.TestCase):
 
     @contextmanager
     def do_test_backend(self, *backends, **kwargs):
-        topobjdir = mkdtemp()
+        # Create the objdir in the srcdir to ensure that they share
+        # the same drive on Windows.
+        topobjdir = mkdtemp(dir=buildconfig.topsrcdir)
         try:
             config = ConfigEnvironment(buildconfig.topsrcdir, topobjdir,
                                        **kwargs)
@@ -54,7 +58,7 @@ class TestBuild(unittest.TestCase):
                 backend(config).consume(definitions)
 
             yield config
-        except:
+        except Exception:
             raise
         finally:
             if not os.environ.get('MOZ_NO_CLEANUP'):
@@ -69,7 +73,7 @@ class TestBuild(unittest.TestCase):
 
         try:
             yield handle_make_line
-        except:
+        except Exception:
             print('\n'.join(lines))
             raise
 
@@ -144,8 +148,8 @@ class TestBuild(unittest.TestCase):
 
     def validate(self, config):
         self.maxDiff = None
-        test_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 'data', 'build') + os.sep
+        test_path = os.sep.join(('$SRCDIR', 'python', 'mozbuild', 'mozbuild',
+                                 'test', 'backend', 'data', 'build')) + os.sep
 
         # We want unicode instances out of the files, because having plain str
         # makes assertEqual diff output in case of error extra verbose because
@@ -228,6 +232,7 @@ class TestBuild(unittest.TestCase):
                 % (test_path),
             'bin/app/modules/foo.jsm': 'foo.jsm\n',
         })
+
 
 if __name__ == '__main__':
     main()

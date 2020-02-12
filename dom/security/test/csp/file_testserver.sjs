@@ -10,7 +10,7 @@ function loadHTMLFromFile(path) {
   const testHTMLFile =
     Components.classes["@mozilla.org/file/directory_service;1"].
     getService(Components.interfaces.nsIProperties).
-    get("CurWorkD", Components.interfaces.nsILocalFile);
+    get("CurWorkD", Components.interfaces.nsIFile);
 
   const testHTMLFileStream =
     Components.classes["@mozilla.org/network/file-input-stream;1"].
@@ -50,7 +50,12 @@ function handleRequest(request, response) {
   }
 
   // Send HTML to test allowed/blocked behaviors
-  response.setHeader("Content-Type", "text/html", false);
+  let type = "text/html";
+  if (query.has("type")) {
+    type = query.get("type");
+  }
+
+  response.setHeader("Content-Type", type, false);
   if(query.has("file")){
     response.write(loadHTMLFromFile(query.get("file")));
   }

@@ -8,20 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_
+#ifndef MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_
+#define MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_
 
-#include "webrtc/modules/audio_processing/agc/agc.h"
+#include "modules/audio_processing/agc/agc.h"
 
-#include "gmock/gmock.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "modules/include/module_common_types.h"
+#include "test/gmock.h"
 
 namespace webrtc {
 
 class MockAgc : public Agc {
  public:
-  MOCK_METHOD2(AnalyzePreproc, float(const int16_t* audio, int length));
-  MOCK_METHOD3(Process, int(const int16_t* audio, int length,
+  MOCK_METHOD2(AnalyzePreproc, float(const int16_t* audio, size_t length));
+  MOCK_METHOD3(Process, int(const int16_t* audio, size_t length,
                             int sample_rate_hz));
   MOCK_METHOD1(GetRmsErrorDb, bool(int* error));
   MOCK_METHOD0(Reset, void());
@@ -33,4 +33,4 @@ class MockAgc : public Agc {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_
+#endif  // MODULES_AUDIO_PROCESSING_AGC_MOCK_AGC_H_

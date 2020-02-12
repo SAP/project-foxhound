@@ -5,7 +5,6 @@
 
 	<script type="text/javascript" src="/resources/testharness.js"></script>
 	<script type="text/javascript" src="/resources/testharnessreport.js"></script>
-	<script type="text/javascript" src="../../js/vendor-prefixes.js"></script>
 </head>
 <body>
 	<div id="log">
@@ -111,16 +110,7 @@
 			Any sample value less than -1 will correspond to the first value in the curve array.
 			Any sample value greater than +1 will correspond to the last value in the curve array.
 			The implementation must perform linear interpolation between adjacent points in the curve.
-		Note:
-			I found a post on the W3C audio mailing list (from one of the Chris's) that suggested it would be feasible
-				to use the WaveShaperNode to create constant values.
 		*/
-		(function() {
-			var oneElementCurve=[1.0];
-			var inputData=[-1.0, 0, 1.0, -2.0, 2.0];
-			var expectedData=[1.0, 1.0, 1.0, 1.0, 1.0];
-			executeTest(oneElementCurve, inputData, expectedData, "Testing single-element curve (boundary condition)");
-		})();
 
 		/*
 		Testing null curve (should return input values)
@@ -135,22 +125,6 @@
 			executeTest(null, inputData, expectedData, "Testing null curve (should return input values)");
 		})();
 
-		/*
-		Testing zero-element curve (unspecified result)
-		===============================================
-		From the specification:
-			Unspecified result (I assume it will be treated in the same way as a null curve).
-		Note:
-			Mozilla test_waveShaperNoCurve.html indicates they expect same results as a null curve.
-		*/
-		(function() {
-			var zeroElementCurve=[];
-			var inputData=[-1.0, 0, 1.0, 2.0];
-			var expectedData=[-1.0, 0.0, 1.0, 2.0];
-			executeTest(zeroElementCurve, inputData, expectedData, "Testing zero-element curve (unspecified result)");
-		})();
-
-
 		/**
 		* Function that does the actual testing (using an asynchronous test).
 		* @param {?Array.<number>} curveData - Array containing values for the WaveShaper curve.
@@ -160,35 +134,35 @@
 		*/
 		function executeTest(curveData, inputData, expectedData, testName) {
 			var stTest=async_test("WaveShaperNode - "+testName);
+			stTest.step(function() {
 
-			// Create offline audio context.
-			var ac=new OfflineAudioContext(1, inputData.length, sampleRate);
+				// Create offline audio context.
+				var ac=new OfflineAudioContext(1, inputData.length, sampleRate);
 
-			// Create the WaveShaper and its curve.
-			var waveShaper=ac.createWaveShaper();
-			if(curveData!=null) {
-				var curve=new Float32Array(curveData.length);
-				for(var i=0;i<curveData.length;i++) { curve[i]=curveData[i]; }
-				waveShaper.curve=curve;
-			}
-			waveShaper.connect(ac.destination);
+				// Create the WaveShaper and its curve.
+				var waveShaper=ac.createWaveShaper();
+				if(curveData!=null) {
+					var curve=new Float32Array(curveData.length);
+					for(var i=0;i<curveData.length;i++) { curve[i]=curveData[i]; }
+					waveShaper.curve=curve;
+				}
+				waveShaper.connect(ac.destination);
 
-			// Create buffer containing the input values.
-			var inputBuffer=ac.createBuffer(1, Math.max(inputData.length, 2), sampleRate);
-			var d=inputBuffer.getChannelData(0);
-			for(var i=0;i<inputData.length;i++) { d[i]=inputData[i]; }
+				// Create buffer containing the input values.
+				var inputBuffer=ac.createBuffer(1, Math.max(inputData.length, 2), sampleRate);
+				var d=inputBuffer.getChannelData(0);
+				for(var i=0;i<inputData.length;i++) { d[i]=inputData[i]; }
 
-			// Play the input buffer through the WaveShaper.
-			var src=ac.createBufferSource();
-			src.buffer=inputBuffer;
-			src.connect(waveShaper);
-			src.start();
+				// Play the input buffer through the WaveShaper.
+				var src=ac.createBufferSource();
+				src.buffer=inputBuffer;
+				src.connect(waveShaper);
+				src.start();
 
-			// Test the outputs match the expected values.
-			ac.oncomplete=function(ev) {
-				var d=ev.renderedBuffer.getChannelData(0);
+				// Test the outputs match the expected values.
+				ac.oncomplete=stTest.step_func_done(function(ev) {
+					var d=ev.renderedBuffer.getChannelData(0);
 
-				stTest.step(function() {
 					for(var i=0;i<expectedData.length;i++) {
 						var curveText="null";
 						if(curve!=null) {
@@ -202,10 +176,8 @@
 						assert_approx_equals(d[i], expectedData[i], tolerance, comment);
 					}
 				});
-
-				stTest.done();
-			};
-			ac.startRendering();
+				ac.startRendering();
+			});
 		}
 	</script>
 </body>

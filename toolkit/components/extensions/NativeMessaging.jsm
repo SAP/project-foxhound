@@ -1,42 +1,31 @@
+/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["HostManifestManager", "NativeApp"];
+var EXPORTED_SYMBOLS = ["NativeApp"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { EventEmitter } = ChromeUtils.import(
+  "resource://gre/modules/EventEmitter.jsm"
+);
 
-const {EventEmitter} = Cu.import("resource://devtools/shared/event-emitter.js", {});
-
-XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
-                                  "resource://gre/modules/AppConstants.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "AsyncShutdown",
-                                  "resource://gre/modules/AsyncShutdown.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ExtensionUtils",
-                                  "resource://gre/modules/ExtensionUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Schemas",
-                                  "resource://gre/modules/Schemas.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Subprocess",
-                                  "resource://gre/modules/Subprocess.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "clearTimeout",
-                                  "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "setTimeout",
-                                  "resource://gre/modules/Timer.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "WindowsRegistry",
-                                  "resource://gre/modules/WindowsRegistry.jsm");
-
-const HOST_MANIFEST_SCHEMA = "chrome://extensions/content/schemas/native_host_manifest.json";
-const VALID_APPLICATION = /^\w+(\.\w+)*$/;
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+  ExtensionChild: "resource://gre/modules/ExtensionChild.jsm",
+  NativeManifests: "resource://gre/modules/NativeManifests.jsm",
+  OS: "resource://gre/modules/osfile.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  Subprocess: "resource://gre/modules/Subprocess.jsm",
+  clearTimeout: "resource://gre/modules/Timer.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+});
 
 // For a graceful shutdown (i.e., when the extension is unloaded or when it
 // explicitly calls disconnect() on a native port), how long we give the native
@@ -56,113 +45,17 @@ const MAX_WRITE = 0xffffffff;
 // Preferences that can lower the message size limits above,
 // used for testing the limits.
 const PREF_MAX_READ = "webextensions.native-messaging.max-input-message-bytes";
-const PREF_MAX_WRITE = "webextensions.native-messaging.max-output-message-bytes";
+const PREF_MAX_WRITE =
+  "webextensions.native-messaging.max-output-message-bytes";
 
-const REGPATH = "Software\\Mozilla\\NativeMessagingHosts";
+const global = this;
 
-this.HostManifestManager = {
-  _initializePromise: null,
-  _lookup: null,
-
-  init() {
-    if (!this._initializePromise) {
-      let platform = AppConstants.platform;
-      if (platform == "win") {
-        this._lookup = this._winLookup;
-      } else if (platform == "macosx" || platform == "linux") {
-        let dirs = [
-          Services.dirsvc.get("XREUserNativeMessaging", Ci.nsIFile).path,
-          Services.dirsvc.get("XRESysNativeMessaging", Ci.nsIFile).path,
-        ];
-        this._lookup = (application, context) => this._tryPaths(application, dirs, context);
-      } else {
-        throw new Error(`Native messaging is not supported on ${AppConstants.platform}`);
-      }
-      this._initializePromise = Schemas.load(HOST_MANIFEST_SCHEMA);
-    }
-    return this._initializePromise;
-  },
-
-  _winLookup(application, context) {
-    const REGISTRY = Ci.nsIWindowsRegKey;
-    let regPath = `${REGPATH}\\${application}`;
-    let path = WindowsRegistry.readRegKey(REGISTRY.ROOT_KEY_CURRENT_USER,
-                                          regPath, "", REGISTRY.WOW64_64);
-    if (!path) {
-      path = WindowsRegistry.readRegKey(Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
-                                        regPath, "", REGISTRY.WOW64_64);
-    }
-    if (!path) {
-      return null;
-    }
-    return this._tryPath(path, application, context)
-      .then(manifest => manifest ? {path, manifest} : null);
-  },
-
-  _tryPath(path, application, context) {
-    return Promise.resolve()
-      .then(() => OS.File.read(path, {encoding: "utf-8"}))
-      .then(data => {
-        let manifest;
-        try {
-          manifest = JSON.parse(data);
-        } catch (ex) {
-          let msg = `Error parsing native host manifest ${path}: ${ex.message}`;
-          Cu.reportError(msg);
-          return null;
-        }
-
-        let normalized = Schemas.normalize(manifest, "manifest.NativeHostManifest", context);
-        if (normalized.error) {
-          Cu.reportError(normalized.error);
-          return null;
-        }
-        manifest = normalized.value;
-        if (manifest.name != application) {
-          let msg = `Native host manifest ${path} has name property ${manifest.name} (expected ${application})`;
-          Cu.reportError(msg);
-          return null;
-        }
-        return normalized.value;
-      }).catch(ex => {
-        if (ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
-          return null;
-        }
-        throw ex;
-      });
-  },
-
-  _tryPaths: Task.async(function* (application, dirs, context) {
-    for (let dir of dirs) {
-      let path = OS.Path.join(dir, `${application}.json`);
-      let manifest = yield this._tryPath(path, application, context);
-      if (manifest) {
-        return {path, manifest};
-      }
-    }
-    return null;
-  }),
-
+var NativeApp = class extends EventEmitter {
   /**
-   * Search for a valid native host manifest for the given application name.
-   * The directories searched and rules for manifest validation are all
-   * detailed in the native messaging documentation.
-   *
-   * @param {string} application The name of the applciation to search for.
-   * @param {object} context A context object as expected by Schemas.normalize.
-   * @returns {object} The contents of the validated manifest, or null if
-   *                   no valid manifest can be found for this application.
+   * @param {BaseContext} context The context that initiated the native app.
+   * @param {string} application The identifier of the native app.
    */
-  lookupApplication(application, context) {
-    if (!VALID_APPLICATION.test(application)) {
-      throw new Error(`Invalid application "${application}"`);
-    }
-    return this.init().then(() => this._lookup(application, context));
-  },
-};
-
-this.NativeApp = class extends EventEmitter {
-  constructor(extension, context, application) {
+  constructor(context, application) {
     super();
 
     this.context = context;
@@ -171,25 +64,24 @@ this.NativeApp = class extends EventEmitter {
     // We want a close() notification when the window is destroyed.
     this.context.callOnClose(this);
 
-    this.encoder = new TextEncoder();
     this.proc = null;
     this.readPromise = null;
     this.sendQueue = [];
     this.writePromise = null;
     this.sentDisconnect = false;
 
-    // Grab these once at startup
-    XPCOMUtils.defineLazyPreferenceGetter(this, "maxRead", PREF_MAX_READ, MAX_READ);
-    XPCOMUtils.defineLazyPreferenceGetter(this, "maxWrite", PREF_MAX_WRITE, MAX_WRITE);
-
-    this.startupPromise = HostManifestManager.lookupApplication(application, context)
+    this.startupPromise = NativeManifests.lookupManifest(
+      "stdio",
+      application,
+      context
+    )
       .then(hostInfo => {
+        // Report a generic error to not leak information about whether a native
+        // application is installed to addons that do not have the right permission.
         if (!hostInfo) {
-          throw new Error(`No such native application ${application}`);
-        }
-
-        if (!hostInfo.manifest.allowed_extensions.includes(extension.id)) {
-          throw new Error(`This extension does not have permission to use native application ${application}`);
+          throw new context.cloneScope.Error(
+            `No such native application ${application}`
+          );
         }
 
         let command = hostInfo.manifest.path;
@@ -202,22 +94,70 @@ this.NativeApp = class extends EventEmitter {
 
         let subprocessOpts = {
           command: command,
-          arguments: [hostInfo.path],
+          arguments: [hostInfo.path, context.extension.id],
           workdir: OS.Path.dirname(command),
           stderr: "pipe",
         };
         return Subprocess.call(subprocessOpts);
-      }).then(proc => {
+      })
+      .then(proc => {
         this.startupPromise = null;
         this.proc = proc;
         this._startRead();
         this._startWrite();
         this._startStderrRead();
-      }).catch(err => {
+      })
+      .catch(err => {
         this.startupPromise = null;
         Cu.reportError(err instanceof Error ? err : err.message);
         this._cleanup(err);
       });
+  }
+
+  /**
+   * Open a connection to a native messaging host.
+   *
+   * @param {BaseContext} context The context associated with the port.
+   * @param {nsIMessageSender} messageManager The message manager used to send
+   *     and receive messages from the port's creator.
+   * @param {number} portId A unique internal ID that identifies the port.
+   * @param {object} sender The object describing the creator of the connection
+   *     request.
+   * @param {string} application The name of the native messaging host.
+   */
+  static onConnectNative(context, messageManager, portId, sender, application) {
+    let app = new NativeApp(context, application);
+    let port = new ExtensionChild.Port(
+      context,
+      messageManager,
+      [Services.mm],
+      "",
+      portId,
+      sender,
+      sender
+    );
+    app.once("disconnect", (what, err) => port.disconnect(err));
+
+    /* eslint-disable mozilla/balanced-listeners */
+    app.on("message", (what, msg) => port.postMessage(msg));
+    /* eslint-enable mozilla/balanced-listeners */
+
+    port.registerOnMessage(holder => app.send(holder));
+    port.registerOnDisconnect(msg => app.close());
+  }
+
+  /**
+   * @param {BaseContext} context The scope from where `message` originates.
+   * @param {*} message A message from the extension, meant for a native app.
+   * @returns {ArrayBuffer} An ArrayBuffer that can be sent to the native app.
+   */
+  static encodeMessage(context, message) {
+    message = context.jsonStringify(message);
+    let buffer = new TextEncoder().encode(message).buffer;
+    if (buffer.byteLength > NativeApp.maxWrite) {
+      throw new context.cloneScope.Error("Write too big");
+    }
+    return buffer;
   }
 
   // A port is definitely "alive" if this.proc is non-null.  But we have
@@ -225,24 +165,31 @@ this.NativeApp = class extends EventEmitter {
   // need to consider a port alive if proc is null but the startupPromise
   // is still pending.
   get _isDisconnected() {
-    return (!this.proc && !this.startupPromise);
+    return !this.proc && !this.startupPromise;
   }
 
   _startRead() {
     if (this.readPromise) {
       throw new Error("Entered _startRead() while readPromise is non-null");
     }
-    this.readPromise = this.proc.stdout.readUint32()
+    this.readPromise = this.proc.stdout
+      .readUint32()
       .then(len => {
-        if (len > this.maxRead) {
-          throw new Error(`Native application tried to send a message of ${len} bytes, which exceeds the limit of ${this.maxRead} bytes.`);
+        if (len > NativeApp.maxRead) {
+          throw new this.context.cloneScope.Error(
+            `Native application tried to send a message of ${len} bytes, which exceeds the limit of ${
+              NativeApp.maxRead
+            } bytes.`
+          );
         }
         return this.proc.stdout.readJSON(len);
-      }).then(msg => {
+      })
+      .then(msg => {
         this.emit("message", msg);
         this.readPromise = null;
         this._startRead();
-      }).catch(err => {
+      })
+      .catch(err => {
         if (err.errorCode != Subprocess.ERROR_END_OF_FILE) {
           Cu.reportError(err instanceof Error ? err : err.message);
         }
@@ -251,7 +198,7 @@ this.NativeApp = class extends EventEmitter {
   }
 
   _startWrite() {
-    if (this.sendQueue.length == 0) {
+    if (!this.sendQueue.length) {
       return;
     }
 
@@ -265,26 +212,30 @@ this.NativeApp = class extends EventEmitter {
     this.writePromise = Promise.all([
       this.proc.stdin.write(uintArray.buffer),
       this.proc.stdin.write(buffer),
-    ]).then(() => {
-      this.writePromise = null;
-      this._startWrite();
-    }).catch(err => {
-      Cu.reportError(err.message);
-      this._cleanup(err);
-    });
+    ])
+      .then(() => {
+        this.writePromise = null;
+        this._startWrite();
+      })
+      .catch(err => {
+        Cu.reportError(err.message);
+        this._cleanup(err);
+      });
   }
 
   _startStderrRead() {
     let proc = this.proc;
     let app = this.name;
-    Task.spawn(function* () {
+    (async function() {
       let partial = "";
       while (true) {
-        let data = yield proc.stderr.readString();
-        if (data.length == 0) {
+        let data = await proc.stderr.readString();
+        if (!data.length) {
           // We have hit EOF, just stop reading
           if (partial) {
-            Services.console.logStringMessage(`stderr output from native app ${app}: ${partial}`);
+            Services.console.logStringMessage(
+              `stderr output from native app ${app}: ${partial}`
+            );
           }
           break;
         }
@@ -294,26 +245,32 @@ this.NativeApp = class extends EventEmitter {
         partial = lines.pop();
 
         for (let line of lines) {
-          Services.console.logStringMessage(`stderr output from native app ${app}: ${line}`);
+          Services.console.logStringMessage(
+            `stderr output from native app ${app}: ${line}`
+          );
         }
       }
-    });
+    })();
   }
 
-  send(msg) {
+  send(holder) {
     if (this._isDisconnected) {
-      throw new this.context.cloneScope.Error("Attempt to postMessage on disconnected port");
+      throw new this.context.cloneScope.Error(
+        "Attempt to postMessage on disconnected port"
+      );
+    }
+    let msg = holder.deserialize(global);
+    if (Cu.getClassName(msg, true) != "ArrayBuffer") {
+      // This error cannot be triggered by extensions; it indicates an error in
+      // our implementation.
+      throw new Error(
+        "The message to the native messaging host is not an ArrayBuffer"
+      );
     }
 
-    let json;
-    try {
-      json = this.context.jsonStringify(msg);
-    } catch (err) {
-      throw new this.context.cloneScope.Error(err.message);
-    }
-    let buffer = this.encoder.encode(json).buffer;
+    let buffer = msg;
 
-    if (buffer.byteLength > this.maxWrite) {
+    if (buffer.byteLength > NativeApp.maxWrite) {
       throw new this.context.cloneScope.Error("Write too big");
     }
 
@@ -332,16 +289,17 @@ this.NativeApp = class extends EventEmitter {
       // Set a timer to kill the process gracefully after one timeout
       // interval and kill it forcefully after two intervals.
       let timer = setTimeout(() => {
-        this.proc.kill(GRACEFUL_SHUTDOWN_TIME);
+        if (this.proc) {
+          this.proc.kill(GRACEFUL_SHUTDOWN_TIME);
+        }
       }, GRACEFUL_SHUTDOWN_TIME);
 
       let promise = Promise.all([
-        this.proc.stdin.close()
-          .catch(err => {
-            if (err.errorCode != Subprocess.ERROR_END_OF_FILE) {
-              throw err;
-            }
-          }),
+        this.proc.stdin.close().catch(err => {
+          if (err.errorCode != Subprocess.ERROR_END_OF_FILE) {
+            throw err;
+          }
+        }),
         this.proc.wait(),
       ]).then(() => {
         this.proc = null;
@@ -350,7 +308,8 @@ this.NativeApp = class extends EventEmitter {
 
       AsyncShutdown.profileBeforeChange.addBlocker(
         `Native Messaging: Wait for application ${this.name} to exit`,
-        promise);
+        promise
+      );
 
       promise.then(() => {
         AsyncShutdown.profileBeforeChange.removeBlocker(promise);
@@ -367,6 +326,9 @@ this.NativeApp = class extends EventEmitter {
 
     if (!this.sentDisconnect) {
       this.sentDisconnect = true;
+      if (err && err.errorCode == Subprocess.ERROR_END_OF_FILE) {
+        err = null;
+      }
       this.emit("disconnect", err);
     }
   }
@@ -376,69 +338,47 @@ this.NativeApp = class extends EventEmitter {
     this._cleanup();
   }
 
-  portAPI() {
-    let port = {
-      name: this.name,
-
-      disconnect: () => {
-        if (this._isDisconnected) {
-          throw new this.context.cloneScope.Error("Attempt to disconnect an already disconnected port");
-        }
-        this._cleanup();
-      },
-
-      postMessage: msg => {
-        this.send(msg);
-      },
-
-      onDisconnect: new ExtensionUtils.SingletonEventManager(this.context, "native.onDisconnect", fire => {
-        let listener = what => {
-          this.context.runSafeWithoutClone(fire, port);
-        };
-        this.on("disconnect", listener);
-        return () => {
-          this.off("disconnect", listener);
-        };
-      }).api(),
-
-      onMessage: new ExtensionUtils.SingletonEventManager(this.context, "native.onMessage", fire => {
-        let listener = (what, msg) => {
-          msg = Cu.cloneInto(msg, this.context.cloneScope);
-          this.context.runSafeWithoutClone(fire, msg, port);
-        };
-        this.on("message", listener);
-        return () => {
-          this.off("message", listener);
-        };
-      }).api(),
-    };
-
-    port = Cu.cloneInto(port, this.context.cloneScope, {cloneFunctions: true});
-
-    return port;
-  }
-
-  sendMessage(msg) {
+  sendMessage(holder) {
     let responsePromise = new Promise((resolve, reject) => {
-      this.on("message", (what, msg) => { resolve(msg); });
-      this.on("disconnect", (what, err) => { reject(err); });
+      this.once("message", (what, msg) => {
+        resolve(msg);
+      });
+      this.once("disconnect", (what, err) => {
+        reject(err);
+      });
     });
 
     let result = this.startupPromise.then(() => {
-      this.send(msg);
+      this.send(holder);
       return responsePromise;
     });
 
-    result.then(() => {
-      this._cleanup();
-    }, () => {
-      // Prevent the response promise from being reported as an
-      // unchecked rejection if the startup promise fails.
-      responsePromise.catch(() => {});
+    result.then(
+      () => {
+        this._cleanup();
+      },
+      () => {
+        // Prevent the response promise from being reported as an
+        // unchecked rejection if the startup promise fails.
+        responsePromise.catch(() => {});
 
-      this._cleanup();
-    });
+        this._cleanup();
+      }
+    );
 
     return result;
   }
 };
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  NativeApp,
+  "maxRead",
+  PREF_MAX_READ,
+  MAX_READ
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  NativeApp,
+  "maxWrite",
+  PREF_MAX_WRITE,
+  MAX_WRITE
+);

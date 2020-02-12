@@ -6,12 +6,12 @@
   <meta charset="utf-8">
   <title>Test default request for B2G Presentation API at sender side</title>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1268758">Test allow-presentation sandboxing flag</a>
 <iframe id="iframe" src="https://example.com/tests/dom/presentation/tests/mochitest/file_presentation_mixed_security_contexts.html"></iframe>
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 
 "use strict";
 
@@ -23,7 +23,6 @@ function setup() {
   SpecialPowers.addPermission("presentation",
                               true, { url: "https://example.com/tests/dom/presentation/tests/mochitest/file_presentation_mixed_security_contexts.html",
                                       originAttributes: {
-                                        appId: SpecialPowers.Ci.nsIScriptSecurityManager.NO_APP_ID,
                                         inIsolatedMozBrowser: false }});
 
   return new Promise(function(aResolve, aReject) {
@@ -42,7 +41,7 @@ function setup() {
           startTest();
         }
       } else if (/^DONE$/.exec(message)) {
-        window.removeEventListener('message', listener);
+        window.removeEventListener("message", listener);
         SimpleTest.finish();
       }
     }, false);

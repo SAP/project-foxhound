@@ -5,14 +5,28 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS += [
+    'external_api/moz_external_vr.h',
+    'FxROutputHandler.h',
+    'FxRWindowManager.h',
     'gfxVR.h',
+    'ipc/VRChild.h',
+    'ipc/VRGPUChild.h',
+    'ipc/VRGPUParent.h',
     'ipc/VRLayerChild.h',
     'ipc/VRManagerChild.h',
     'ipc/VRManagerParent.h',
     'ipc/VRMessageUtils.h',
+    'ipc/VRParent.h',
+    'ipc/VRProcessChild.h',
+    'ipc/VRProcessManager.h',
+    'ipc/VRProcessParent.h',
+    'service/VRService.h',
     'VRDisplayClient.h',
     'VRDisplayPresentation.h',
     'VRManager.h',
+    'VRPuppetCommandBuffer.h',
+    'VRShMem.h',
+    'VRThread.h',
 ]
 
 LOCAL_INCLUDES += [
@@ -23,37 +37,71 @@ LOCAL_INCLUDES += [
 
 UNIFIED_SOURCES += [
     'gfxVR.cpp',
-    'gfxVROpenVR.cpp',
-    'gfxVROSVR.cpp',
+    'ipc/VRChild.cpp',
+    'ipc/VRGPUChild.cpp',
+    'ipc/VRGPUParent.cpp',
     'ipc/VRLayerChild.cpp',
     'ipc/VRLayerParent.cpp',
     'ipc/VRManagerChild.cpp',
     'ipc/VRManagerParent.cpp',
+    'ipc/VRParent.cpp',
+    'ipc/VRProcessChild.cpp',
+    'ipc/VRProcessManager.cpp',
+    'ipc/VRProcessParent.cpp',
     'VRDisplayClient.cpp',
-    'VRDisplayHost.cpp',
     'VRDisplayPresentation.cpp',
-    'VRManager.cpp',
+    'VRThread.cpp',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
-    SOURCES += [
-        'gfxVROculus.cpp',
+SOURCES += [
+    'VRManager.cpp',
+    'VRPuppetCommandBuffer.cpp',
+    'VRShMem.cpp'
+]
+
+if CONFIG['OS_TARGET'] == 'Android':
+    LOCAL_INCLUDES += ['/widget/android']
+else:
+    DIRS += [
+        'service',
+    ]
+    UNIFIED_SOURCES += [
+        'VRServiceHost.cpp',
+    ]
+
+# Only target x64 for vrhost since WebVR is only supported on 64bit.
+# Also, only use MSVC compiler for Windows-specific linking
+if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['HAVE_64BIT_BUILD'] and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
+    DIRS += [
+        'vrhost'
     ]
 
 IPDL_SOURCES = [
+    'ipc/PVR.ipdl',
+    'ipc/PVRGPU.ipdl',
     'ipc/PVRLayer.ipdl',
     'ipc/PVRManager.ipdl',
 ]
 
-# For building with the real SDK instead of our local hack
-#SOURCES += [
-#    'OVR_CAPI_Util.cpp',
-#    'OVR_CAPIShim.c',
-#    'OVR_StereoProjection.cpp',
-#]
-#
-#CXXFLAGS += ["-Ic:/proj/ovr/OculusSDK-0.6.0-beta/LibOVR/Include"]
-#CFLAGS += ["-Ic:/proj/ovr/OculusSDK-0.6.0-beta/LibOVR/Include"]
+# For now, only enable FxR CLH for Windows Nightly builds (BUG 1565349)
+if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['NIGHTLY_BUILD']:
+    XPCOM_MANIFESTS += [
+      'components.conf',
+    ]
+    SOURCES += [
+      'nsFxrCommandLineHandler.cpp',
+    ]
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    LOCAL_INCLUDES += [
+      '/layout/generic',
+      '/widget',
+      '/widget/windows'
+    ]
+    SOURCES += [
+      'FxROutputHandler.cpp',
+      'FxRWindowManager.cpp'
+    ]
 
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 CXXFLAGS += CONFIG['TK_CFLAGS']
@@ -64,8 +112,6 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-# This is intended as a temporary hack to enable VS2015 builds.
-if CONFIG['_MSC_VER']:
-    # ovr_capi_dynamic.h '<unnamed-tag>': Alignment specifier is less than
-    # actual alignment (8), and will be ignored
-    CXXFLAGS += ['-wd4359']
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'WebVR')
+

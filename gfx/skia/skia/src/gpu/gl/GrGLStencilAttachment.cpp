@@ -14,12 +14,12 @@ size_t GrGLStencilAttachment::onGpuMemorySize() const {
     uint64_t size = this->width();
     size *= this->height();
     size *= fFormat.fTotalBits;
-    size *= SkTMax(1,this->numSamples());
+    size *= this->numSamples();
     return static_cast<size_t>(size / 8);
 }
 
 void GrGLStencilAttachment::onRelease() {
-    if (0 != fRenderbufferID && this->shouldFreeResources()) {
+    if (0 != fRenderbufferID) {
         GrGLGpu* gpuGL = (GrGLGpu*) this->getGpu();
         const GrGLInterface* gl = gpuGL->glInterface();
         GR_GL_CALL(gl, DeleteRenderbuffers(1, &fRenderbufferID));

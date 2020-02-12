@@ -23,11 +23,11 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Headers)
 NS_INTERFACE_MAP_END
 
 // static
-already_AddRefed<Headers>
-Headers::Constructor(const GlobalObject& aGlobal,
-                     const Optional<HeadersOrByteStringSequenceSequenceOrByteStringMozMap>& aInit,
-                     ErrorResult& aRv)
-{
+already_AddRefed<Headers> Headers::Constructor(
+    const GlobalObject& aGlobal,
+    const Optional<
+        HeadersOrByteStringSequenceSequenceOrByteStringByteStringRecord>& aInit,
+    ErrorResult& aRv) {
   RefPtr<InternalHeaders> ih = new InternalHeaders();
   RefPtr<Headers> headers = new Headers(aGlobal.GetAsSupports(), ih);
 
@@ -39,8 +39,8 @@ Headers::Constructor(const GlobalObject& aGlobal,
     ih->Fill(*aInit.Value().GetAsHeaders().mInternalHeaders, aRv);
   } else if (aInit.Value().IsByteStringSequenceSequence()) {
     ih->Fill(aInit.Value().GetAsByteStringSequenceSequence(), aRv);
-  } else if (aInit.Value().IsByteStringMozMap()) {
-    ih->Fill(aInit.Value().GetAsByteStringMozMap(), aRv);
+  } else if (aInit.Value().IsByteStringByteStringRecord()) {
+    ih->Fill(aInit.Value().GetAsByteStringByteStringRecord(), aRv);
   }
 
   if (aRv.Failed()) {
@@ -51,20 +51,21 @@ Headers::Constructor(const GlobalObject& aGlobal,
 }
 
 // static
-already_AddRefed<Headers>
-Headers::Constructor(const GlobalObject& aGlobal,
-                     const OwningHeadersOrByteStringSequenceSequenceOrByteStringMozMap& aInit,
-                     ErrorResult& aRv)
-{
+already_AddRefed<Headers> Headers::Constructor(
+    const GlobalObject& aGlobal,
+    const OwningHeadersOrByteStringSequenceSequenceOrByteStringByteStringRecord&
+        aInit,
+    ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   return Create(global, aInit, aRv);
 }
 
-/* static */ already_AddRefed<Headers>
-Headers::Create(nsIGlobalObject* aGlobal,
-                const OwningHeadersOrByteStringSequenceSequenceOrByteStringMozMap& aInit,
-                ErrorResult& aRv)
-{
+/* static */
+already_AddRefed<Headers> Headers::Create(
+    nsIGlobalObject* aGlobal,
+    const OwningHeadersOrByteStringSequenceSequenceOrByteStringByteStringRecord&
+        aInit,
+    ErrorResult& aRv) {
   RefPtr<InternalHeaders> ih = new InternalHeaders();
   RefPtr<Headers> headers = new Headers(aGlobal, ih);
 
@@ -72,8 +73,8 @@ Headers::Create(nsIGlobalObject* aGlobal,
     ih->Fill(*(aInit.GetAsHeaders().get()->mInternalHeaders), aRv);
   } else if (aInit.IsByteStringSequenceSequence()) {
     ih->Fill(aInit.GetAsByteStringSequenceSequence(), aRv);
-  } else if (aInit.IsByteStringMozMap()) {
-    ih->Fill(aInit.GetAsByteStringMozMap(), aRv);
+  } else if (aInit.IsByteStringByteStringRecord()) {
+    ih->Fill(aInit.GetAsByteStringByteStringRecord(), aRv);
   }
 
   if (NS_WARN_IF(aRv.Failed())) {
@@ -83,15 +84,12 @@ Headers::Create(nsIGlobalObject* aGlobal,
   return headers.forget();
 }
 
-JSObject*
-Headers::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return mozilla::dom::HeadersBinding::Wrap(aCx, this, aGivenProto);
+JSObject* Headers::WrapObject(JSContext* aCx,
+                              JS::Handle<JSObject*> aGivenProto) {
+  return mozilla::dom::Headers_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-Headers::~Headers()
-{
-}
+Headers::~Headers() {}
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

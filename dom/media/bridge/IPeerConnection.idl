@@ -2,21 +2,6 @@
 #include "nsIDOMWindow.idl"
 #include "nsIPropertyBag2.idl"
 
-interface nsIDOMDataChannel;
-
-/*
- * Manager interface to PeerConnection.js so it is accessible from C++.
- */
-[scriptable, uuid(c2218bd2-2648-4701-8fa6-305d3379e9f8)]
-interface IPeerConnectionManager : nsISupports
-{
-  boolean hasActivePeerConnection(in unsigned long innerWindowID);
-};
-
-%{C++
-#define IPEERCONNECTION_MANAGER_CONTRACTID "@mozilla.org/dom/peerconnectionmanager;1"
-%}
-
 /* Do not confuse with nsIDOMRTCPeerConnection. This interface is purely for
  * communication between the PeerConnection JS DOM binding and the C++
  * implementation in SIPCC.
@@ -67,5 +52,7 @@ interface IPeerConnection : nsISupports
   const unsigned long kIncompatibleSessionDescription   = 6;
   const unsigned long kIncompatibleMediaStreamTrack     = 8;
   const unsigned long kInternalError                    = 9;
-  const unsigned long kMaxErrorType                     = 9; // Same as final error
+  const unsigned long kTypeError                        = 10;
+  const unsigned long kOperationError                   = 11;
+  const unsigned long kMaxErrorType                     = 11; // Same as final error
 };

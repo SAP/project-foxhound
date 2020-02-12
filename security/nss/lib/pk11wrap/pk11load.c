@@ -17,6 +17,10 @@
 #include "secerr.h"
 #include "prenv.h"
 #include "utilparst.h"
+#include "prio.h"
+#include "prprf.h"
+#include <stdio.h>
+#include "prsystem.h"
 
 #define DEBUG_MODULE 1
 
@@ -60,8 +64,7 @@ secmodUnlockMutext(CK_VOID_PTR mutext)
 static SECMODModuleID nextModuleID = 1;
 static const CK_C_INITIALIZE_ARGS secmodLockFunctions = {
     secmodCreateMutext, secmodDestroyMutext, secmodLockMutext,
-    secmodUnlockMutext, CKF_LIBRARY_CANT_CREATE_OS_THREADS |
-                            CKF_OS_LOCKING_OK,
+    secmodUnlockMutext, CKF_LIBRARY_CANT_CREATE_OS_THREADS | CKF_OS_LOCKING_OK,
     NULL
 };
 static const CK_C_INITIALIZE_ARGS secmodNoLockArgs = {
@@ -350,6 +353,7 @@ SECMOD_SetRootCerts(PK11SlotInfo *slot, SECMODModule *mod)
     }
 }
 
+#ifndef NSS_STATIC_SOFTOKEN
 static const char *my_shlib_name =
     SHLIB_PREFIX "nss" SHLIB_VERSION "." SHLIB_SUFFIX;
 static const char *softoken_shlib_name =
@@ -358,11 +362,6 @@ static const PRCallOnceType pristineCallOnce;
 static PRCallOnceType loadSoftokenOnce;
 static PRLibrary *softokenLib;
 static PRInt32 softokenLoadCount;
-
-#include "prio.h"
-#include "prprf.h"
-#include <stdio.h>
-#include "prsystem.h"
 
 /* This function must be run only once. */
 /*  determine if hybrid platform, then actually load the DSO. */
@@ -380,6 +379,10 @@ softoken_LoadDSO(void)
     }
     return PR_FAILURE;
 }
+#else
+CK_RV NSC_GetFunctionList(CK_FUNCTION_LIST_PTR *pFunctionList);
+char **NSC_ModuleDBFunc(unsigned long function, char *parameters, void *args);
+#endif
 
 /*
  * load a new module into our address space and initialize it.
@@ -398,8 +401,11 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule)
     if (mod->loaded)
         return SECSuccess;
 
-    /* intenal modules get loaded from their internal list */
+    /* internal modules get loaded from their internal list */
     if (mod->internal && (mod->dllName == NULL)) {
+#ifdef NSS_STATIC_SOFTOKEN
+        entry = (CK_C_GetFunctionList)NSC_GetFunctionList;
+#else
         /*
          * Loads softoken as a dynamic library,
          * even though the rest of NSS assumes this as the "internal" module.
@@ -420,10 +426,15 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule)
 
         if (!entry)
             return SECFailure;
+#endif
 
         if (mod->isModuleDB) {
             mod->moduleDBFunc = (CK_C_GetFunctionList)
+#ifdef NSS_STATIC_SOFTOKEN
+                NSC_ModuleDBFunc;
+#else
                 PR_FindSymbol(softokenLib, "NSC_ModuleDBFunc");
+#endif
         }
 
         if (mod->moduleDBOnly) {
@@ -477,12 +488,10 @@ secmod_LoadPKCS11Module(SECMODModule *mod, SECMODModule **oldModule)
         goto fail;
 
 #ifdef DEBUG_MODULE
-    if (PR_TRUE) {
-        modToDBG = PR_GetEnvSecure("NSS_DEBUG_PKCS11_MODULE");
-        if (modToDBG && strcmp(mod->commonName, modToDBG) == 0) {
-            mod->functionList = (void *)nss_InsertDeviceLog(
-                (CK_FUNCTION_LIST_PTR)mod->functionList);
-        }
+    modToDBG = PR_GetEnvSecure("NSS_DEBUG_PKCS11_MODULE");
+    if (modToDBG && strcmp(mod->commonName, modToDBG) == 0) {
+        mod->functionList = (void *)nss_InsertDeviceLog(
+            (CK_FUNCTION_LIST_PTR)mod->functionList);
     }
 #endif
 
@@ -601,6 +610,7 @@ SECMOD_UnloadModule(SECMODModule *mod)
      * if not, we should change this to SECFailure and move it above the
      * mod->loaded = PR_FALSE; */
     if (mod->internal && (mod->dllName == NULL)) {
+#ifndef NSS_STATIC_SOFTOKEN
         if (0 == PR_ATOMIC_DECREMENT(&softokenLoadCount)) {
             if (softokenLib) {
                 disableUnload = PR_GetEnvSecure("NSS_DISABLE_UNLOAD");
@@ -616,6 +626,7 @@ SECMOD_UnloadModule(SECMODModule *mod)
             }
             loadSoftokenOnce = pristineCallOnce;
         }
+#endif
         return SECSuccess;
     }
 

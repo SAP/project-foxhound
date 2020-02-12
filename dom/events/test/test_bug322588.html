@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=322588
 -->
 <head>
   <title>Test for Bug 322588 - onBlur window close no longer works</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -28,9 +28,9 @@ var result = "";
 var w;
 function pop350d(url) {
   w = window.open();
-  w.addEventListener("unload", function () { result += " unload";}, false);
-  w.addEventListener("load", function () { result += " load"; setTimeout(done, 1000);}, false);
-  w.addEventListener("blur", function () { result += " blur";}, false);
+  w.addEventListener("unload", function () { result += " unload";});
+  w.addEventListener("load", function () { result += " load"; setTimeout(done, 1000);});
+  w.addEventListener("blur", function () { result += " blur";});
   w.location = url;
 }
 
@@ -53,7 +53,11 @@ function done() {
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestFlakyTimeout("untriaged");
-addLoadEvent(doTest);
+addLoadEvent(function() {
+  SpecialPowers.pushPrefEnv({"set": [
+    ["browser.newtab.preload", false]
+  ]}, doTest);
+});
 
 
 </script>

@@ -18,7 +18,7 @@ dictionary IDBIndexParameters {
     DOMString? locale = null;
 };
 
-[Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface IDBIndex {
     [SetterThrows]
     attribute DOMString name;
@@ -57,15 +57,12 @@ interface IDBIndex {
 };
 
 partial interface IDBIndex {
-    [Throws]
-    IDBRequest mozGetAll (optional any key, [EnforceRange] optional unsigned long limit);
+    // If we decide to add use counters for the mozGetAll/mozGetAllKeys
+    // functions, we'll need to pull them out into sepatate operations
+    // with a BinaryName mapping to the same underlying implementation.
+    [Throws, Alias="mozGetAll"]
+    IDBRequest getAll (optional any key, optional [EnforceRange] unsigned long limit);
 
-    [Throws]
-    IDBRequest mozGetAllKeys (optional any key, [EnforceRange] optional unsigned long limit);
-
-    [Throws]
-    IDBRequest getAll (optional any key, [EnforceRange] optional unsigned long limit);
-
-    [Throws]
-    IDBRequest getAllKeys (optional any key, [EnforceRange] optional unsigned long limit);
+    [Throws, Alias="mozGetAllKeys"]
+    IDBRequest getAllKeys (optional any key, optional [EnforceRange] unsigned long limit);
 };

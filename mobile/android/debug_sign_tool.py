@@ -15,6 +15,8 @@ Exits with code 0 if creating the keystore and every signing succeeded,
 or with code 1 if any creation or signing failed.
 """
 
+from __future__ import absolute_import
+
 from argparse import ArgumentParser
 import errno
 import logging
@@ -34,6 +36,7 @@ class DebugKeystore:
     """
     A thin abstraction on top of an Android debug key store.
     """
+
     def __init__(self, keystore):
         self._keystore = os.path.abspath(os.path.expanduser(keystore))
         self._alias = 'androiddebugkey'
@@ -61,18 +64,18 @@ class DebugKeystore:
             raise Exception("Could not find executable '%s'" % args[0])
 
     def keystore_contains_alias(self):
-        args = [ self.keytool,
-                 '-list',
-                 '-keystore', self.keystore,
-                 '-storepass', 'android',
-                 '-alias', self.alias,
-               ]
+        args = [self.keytool,
+                '-list',
+                '-keystore', self.keystore,
+                '-storepass', 'android',
+                '-alias', self.alias,
+                ]
         if self.verbose:
             args.append('-v')
         contains = True
         try:
             self._check(args)
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             contains = False
         if self.verbose:
             log.info('Keystore %s %s alias %s' %
@@ -89,16 +92,16 @@ class DebugKeystore:
             if exception.errno != errno.EEXIST:
                 raise
 
-        args = [ self.keytool,
-                 '-genkeypair',
-                 '-keystore', self.keystore,
-                 '-storepass', 'android',
-                 '-alias', self.alias,
-                 '-keypass', 'android',
-                 '-dname', 'CN=Android Debug,O=Android,C=US',
-                 '-keyalg', 'RSA',
-                 '-validity', '365',
-               ]
+        args = [self.keytool,
+                '-genkeypair',
+                '-keystore', self.keystore,
+                '-storepass', 'android',
+                '-alias', self.alias,
+                '-keypass', 'android',
+                '-dname', 'CN=Android Debug,O=Android,C=US',
+                '-keyalg', 'RSA',
+                '-validity', '365',
+                ]
         if self.verbose:
             args.append('-v')
         self._check(args)
@@ -110,14 +113,14 @@ class DebugKeystore:
         if not self.keystore_contains_alias():
             self.create_alias_in_keystore()
 
-        args = [ self.jarsigner,
-                 '-digestalg', 'SHA1',
-                 '-sigalg', 'MD5withRSA',
-                 '-keystore', self.keystore,
-                 '-storepass', 'android',
-                 apk,
-                 self.alias,
-               ]
+        args = [self.jarsigner,
+                '-digestalg', 'SHA1',
+                '-sigalg', 'MD5withRSA',
+                '-keystore', self.keystore,
+                '-storepass', 'android',
+                apk,
+                self.alias,
+                ]
         if self.verbose:
             args.append('-verbose')
         self._check(args)
@@ -182,6 +185,7 @@ def main():
             return 1
 
     return 0
+
 
 if __name__ == '__main__':
     sys.exit(main())

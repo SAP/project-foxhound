@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1217571
 -->
 <head>
   <title>Test for Bug 1217571</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -27,8 +27,7 @@ window.onload = function() {
       return SpecialPowers.wrap(f.contentDocument.getElementsByTagName("img")[0]);
   });
   var containers = imgs.map(function (img) {
-      return img.QueryInterface(SpecialPowers.Ci.nsIImageLoadingContent)
-                .getRequest(SpecialPowers.Ci.nsIImageLoadingContent.CURRENT_REQUEST)
+      return img.getRequest(SpecialPowers.Ci.nsIImageLoadingContent.CURRENT_REQUEST)
                 .image;
   });
 

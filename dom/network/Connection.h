@@ -7,56 +7,68 @@
 #ifndef mozilla_dom_network_Connection_h
 #define mozilla_dom_network_Connection_h
 
-#include "Types.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/Observer.h"
 #include "mozilla/dom/NetworkInformationBinding.h"
+#include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsINetworkProperties.h"
 
 namespace mozilla {
 
 namespace hal {
 class NetworkInformation;
-} // namespace hal
+}  // namespace hal
 
 namespace dom {
+
+class WorkerPrivate;
+
 namespace network {
 
-class Connection final : public DOMEventTargetHelper
-                       , public NetworkObserver
-                       , public nsINetworkProperties
-{
-public:
+class Connection : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSINETWORKPROPERTIES
 
-  NS_REALLY_FORWARD_NSIDOMEVENTTARGET(DOMEventTargetHelper)
+  static Connection* CreateForWindow(nsPIDOMWindowInner* aWindow);
 
-  explicit Connection(nsPIDOMWindowInner* aWindow);
+  static already_AddRefed<Connection> CreateForWorker(
+      WorkerPrivate* aWorkerPrivate, ErrorResult& aRv);
 
   void Shutdown();
 
-  // For IObserver
-  void Notify(const hal::NetworkInformation& aNetworkInfo) override;
-
   // WebIDL
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  ConnectionType Type() const { return mType; }
+  ConnectionType Type() const {
+    return nsContentUtils::ShouldResistFingerprinting()
+               ? static_cast<ConnectionType>(ConnectionType::Unknown)
+               : mType;
+  }
+
+  bool GetIsWifi() {
+    NS_ASSERT_OWNINGTHREAD(Connection);
+
+    return mIsWifi;
+  }
+  uint32_t GetDhcpGateway() {
+    NS_ASSERT_OWNINGTHREAD(Connection);
+
+    return mDHCPGateway;
+  }
 
   IMPL_EVENT_HANDLER(typechange)
 
-private:
-  ~Connection() {}
+ protected:
+  Connection(nsPIDOMWindowInner* aWindow);
+  virtual ~Connection();
 
-  /**
-   * Update the connection information stored in the object using a
-   * NetworkInformation object.
-   */
-  void UpdateFromNetworkInfo(const hal::NetworkInformation& aNetworkInfo);
+  void Update(ConnectionType aType, bool aIsWifi, uint32_t aDHCPGateway,
+              bool aNotify);
 
+  virtual void ShutdownInternal() = 0;
+
+ private:
   /**
    * The type of current connection.
    */
@@ -71,10 +83,12 @@ private:
    * DHCP Gateway information for IPV4, in network byte order. 0 if unassigned.
    */
   uint32_t mDHCPGateway;
+
+  bool mBeenShutDown;
 };
 
-} // namespace network
-} // namespace dom
-} // namespace mozilla
+}  // namespace network
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_network_Connection_h
+#endif  // mozilla_dom_network_Connection_h

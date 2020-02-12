@@ -2,16 +2,17 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* testPageActionPopup() {
-  const BASE = "http://example.com/browser/browser/components/extensions/test/browser";
+add_task(async function testPageActionPopup() {
+  const BASE =
+    "http://example.com/browser/browser/components/extensions/test/browser";
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "browser_action": {
-        "default_popup": `${BASE}/file_popup_api_injection_a.html`,
+      browser_action: {
+        default_popup: `${BASE}/file_popup_api_injection_a.html`,
       },
-      "page_action": {
-        "default_popup": `${BASE}/file_popup_api_injection_b.html`,
+      page_action: {
+        default_popup: `${BASE}/file_popup_api_injection_b.html`,
       },
     },
 
@@ -27,7 +28,7 @@ add_task(function* testPageActionPopup() {
 
     background: function() {
       let tabId;
-      browser.tabs.query({active: true, currentWindow: true}, tabs => {
+      browser.tabs.query({ active: true, currentWindow: true }, tabs => {
         tabId = tabs[0].id;
         browser.pageAction.show(tabId).then(() => {
           browser.test.sendMessage("ready");
@@ -35,67 +36,77 @@ add_task(function* testPageActionPopup() {
       });
 
       browser.test.onMessage.addListener(() => {
-        browser.browserAction.setPopup({popup: "/popup-a.html"});
-        browser.pageAction.setPopup({tabId, popup: "popup-b.html"});
+        browser.browserAction.setPopup({ popup: "/popup-a.html" });
+        browser.pageAction.setPopup({ tabId, popup: "popup-b.html" });
 
         browser.test.sendMessage("ok");
       });
     },
   });
 
-  let promiseConsoleMessage = pattern => new Promise(resolve => {
-    Services.console.registerListener(function listener(msg) {
-      if (pattern.test(msg.message)) {
-        resolve(msg.message);
-        Services.console.unregisterListener(listener);
-      }
+  let promiseConsoleMessage = pattern =>
+    new Promise(resolve => {
+      Services.console.registerListener(function listener(msg) {
+        if (pattern.test(msg.message)) {
+          resolve(msg.message);
+          Services.console.unregisterListener(listener);
+        }
+      });
     });
-  });
 
-  yield extension.startup();
-  yield extension.awaitMessage("ready");
-
+  await extension.startup();
+  await extension.awaitMessage("ready");
 
   // Check that unprivileged documents don't get the API.
   // BrowserAction:
-  let awaitMessage = promiseConsoleMessage(/WebExt Privilege Escalation: BrowserAction/);
+  let awaitMessage = promiseConsoleMessage(
+    /WebExt Privilege Escalation: BrowserAction/
+  );
   SimpleTest.expectUncaughtException();
-  yield clickBrowserAction(extension);
-  yield promisePopupShown(getBrowserActionPopup(extension));
+  await clickBrowserAction(extension);
+  await awaitExtensionPanel(extension);
 
-  let message = yield awaitMessage;
-  ok(message.includes("WebExt Privilege Escalation: BrowserAction: typeof(browser) = undefined"),
-     `No BrowserAction API injection`);
+  let message = await awaitMessage;
+  ok(
+    message.includes(
+      "WebExt Privilege Escalation: BrowserAction: typeof(browser) = undefined"
+    ),
+    `No BrowserAction API injection`
+  );
 
-  yield closeBrowserAction(extension);
+  await closeBrowserAction(extension);
 
   // PageAction
-  awaitMessage = promiseConsoleMessage(/WebExt Privilege Escalation: PageAction/);
+  awaitMessage = promiseConsoleMessage(
+    /WebExt Privilege Escalation: PageAction/
+  );
   SimpleTest.expectUncaughtException();
-  yield clickPageAction(extension);
+  await clickPageAction(extension);
 
-  message = yield awaitMessage;
-  ok(message.includes("WebExt Privilege Escalation: PageAction: typeof(browser) = undefined"),
-     `No PageAction API injection: ${message}`);
+  message = await awaitMessage;
+  ok(
+    message.includes(
+      "WebExt Privilege Escalation: PageAction: typeof(browser) = undefined"
+    ),
+    `No PageAction API injection: ${message}`
+  );
 
-  yield closePageAction(extension);
+  await closePageAction(extension);
 
   SimpleTest.expectUncaughtException(false);
 
-
   // Check that privileged documents *do* get the API.
   extension.sendMessage("next");
-  yield extension.awaitMessage("ok");
+  await extension.awaitMessage("ok");
 
+  await clickBrowserAction(extension);
+  await awaitExtensionPanel(extension);
+  await extension.awaitMessage("from-popup-a");
+  await closeBrowserAction(extension);
 
-  yield clickBrowserAction(extension);
-  yield extension.awaitMessage("from-popup-a");
-  yield promisePopupShown(getBrowserActionPopup(extension));
-  yield closeBrowserAction(extension);
+  await clickPageAction(extension);
+  await extension.awaitMessage("from-popup-b");
+  await closePageAction(extension);
 
-  yield clickPageAction(extension);
-  yield extension.awaitMessage("from-popup-b");
-  yield closePageAction(extension);
-
-  yield extension.unload();
+  await extension.unload();
 });

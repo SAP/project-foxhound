@@ -5,15 +5,11 @@
 #ifndef WAV_DEMUXER_H_
 #define WAV_DEMUXER_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
-#include "mp4_demuxer/ByteReader.h"
-
-using mp4_demuxer::ByteReader;
 
 namespace mozilla {
+class BufferReader;
 
 static const uint32_t FRMT_CODE = 0x666d7420;
 static const uint32_t DATA_CODE = 0x64617461;
@@ -30,18 +26,21 @@ static const uint16_t DATA_CHUNK_SIZE = 768;
 
 class WAVTrackDemuxer;
 
-class WAVDemuxer : public MediaDataDemuxer {
-public:
+DDLoggedTypeDeclNameAndBase(WAVDemuxer, MediaDataDemuxer);
+DDLoggedTypeNameAndBase(WAVTrackDemuxer, MediaTrackDemuxer);
+
+class WAVDemuxer : public MediaDataDemuxer,
+                   public DecoderDoctorLifeLogger<WAVDemuxer> {
+ public:
   // MediaDataDemuxer interface.
   explicit WAVDemuxer(MediaResource* aSource);
   RefPtr<InitPromise> Init() override;
-  bool HasTrackType(TrackInfo::TrackType aType) const override;
   uint32_t GetNumberTracks(TrackInfo::TrackType aType) const override;
   already_AddRefed<MediaTrackDemuxer> GetTrackDemuxer(
       TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
   bool IsSeekable() const override;
 
-private:
+ private:
   // Synchronous Initialization.
   bool InitInternal();
 
@@ -50,18 +49,19 @@ private:
 };
 
 class RIFFParser {
-private:
+ private:
   class RIFFHeader;
-public:
+
+ public:
   const RIFFHeader& RiffHeader() const;
 
-  uint32_t Parse(ByteReader& aReader);
+  Result<uint32_t, nsresult> Parse(BufferReader& aReader);
 
   void Reset();
 
-private:
+ private:
   class RIFFHeader {
-  public:
+   public:
     RIFFHeader();
     void Reset();
 
@@ -70,7 +70,7 @@ private:
 
     bool ParseNext(uint8_t c);
 
-  private:
+   private:
     bool Update(uint8_t c);
 
     uint8_t mRaw[RIFF_CHUNK_SIZE];
@@ -82,18 +82,19 @@ private:
 };
 
 class HeaderParser {
-private:
+ private:
   class ChunkHeader;
-public:
+
+ public:
   const ChunkHeader& GiveHeader() const;
 
-  uint32_t Parse(ByteReader& aReader);
+  Result<uint32_t, nsresult> Parse(BufferReader& aReader);
 
   void Reset();
 
-private:
+ private:
   class ChunkHeader {
-  public:
+   public:
     ChunkHeader();
     void Reset();
 
@@ -104,7 +105,7 @@ private:
 
     bool ParseNext(uint8_t c);
 
-  private:
+   private:
     void Update(uint8_t c);
 
     uint8_t mRaw[CHUNK_HEAD_SIZE];
@@ -116,18 +117,19 @@ private:
 };
 
 class FormatParser {
-private:
+ private:
   class FormatChunk;
-public:
+
+ public:
   const FormatChunk& FmtChunk() const;
 
-  uint32_t Parse(ByteReader& aReader);
+  Result<uint32_t, nsresult> Parse(BufferReader& aReader);
 
   void Reset();
 
-private:
+ private:
   class FormatChunk {
-  public:
+   public:
     FormatChunk();
     void Reset();
 
@@ -140,7 +142,7 @@ private:
     bool IsValid() const;
     bool ParseNext(uint8_t c);
 
-  private:
+   private:
     void Update(uint8_t c);
 
     uint8_t mRaw[FMT_CHUNK_MIN_SIZE];
@@ -152,29 +154,32 @@ private:
 };
 
 class DataParser {
-private:
+ private:
   class DataChunk;
-public:
+
+ public:
   DataParser();
 
   const DataChunk& CurrentChunk() const;
 
   void Reset();
 
-private:
+ private:
   class DataChunk {
-  public:
+   public:
     void Reset();
-  private:
-    int mPos; // To Check Alignment
+
+   private:
+    int mPos;  // To Check Alignment
   };
 
   DataChunk mChunk;
 };
 
-class WAVTrackDemuxer : public MediaTrackDemuxer {
-public:
-  explicit WAVTrackDemuxer(MediaResourceIndex aSource);
+class WAVTrackDemuxer : public MediaTrackDemuxer,
+                        public DecoderDoctorLifeLogger<WAVTrackDemuxer> {
+ public:
+  explicit WAVTrackDemuxer(MediaResource* aSource);
 
   bool Init();
 
@@ -190,15 +195,15 @@ public:
 
   // MediaTrackDemuxer interface.
   UniquePtr<TrackInfo> GetInfo() const override;
-  RefPtr<SeekPromise> Seek(media::TimeUnit aTime) override;
+  RefPtr<SeekPromise> Seek(const media::TimeUnit& aTime) override;
   RefPtr<SamplesPromise> GetSamples(int32_t aNumSamples) override;
   void Reset() override;
   RefPtr<SkipAccessPointPromise> SkipToNextRandomAccessPoint(
-    media::TimeUnit aTimeThreshold) override;
+      const media::TimeUnit& aTimeThreshold) override;
   int64_t GetResourceOffset() const override;
   media::TimeIntervals GetBuffered() override;
 
-private:
+ private:
   ~WAVTrackDemuxer() {}
 
   media::TimeUnit FastSeek(const media::TimeUnit& aTime);
@@ -257,6 +262,6 @@ private:
   UniquePtr<AudioInfo> mInfo;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

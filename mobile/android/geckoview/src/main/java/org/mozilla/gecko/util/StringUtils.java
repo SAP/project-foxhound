@@ -5,14 +5,13 @@
 
 package org.mozilla.gecko.util;
 
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
 
-import org.mozilla.gecko.AppConstants.Versions;
-
-import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.nio.charset.Charset;
 import java.util.Set;
 
 public class StringUtils {
@@ -20,6 +19,12 @@ public class StringUtils {
 
     private static final String FILTER_URL_PREFIX = "filter://";
     private static final String USER_ENTERED_URL_PREFIX = "user-entered:";
+
+
+    /**
+     * The UTF-8 charset.
+     */
+    public static final Charset UTF_8 = Charset.forName("UTF-8");
 
     /*
      * This method tries to guess if the given string could be a search query or URL,
@@ -40,18 +45,18 @@ public class StringUtils {
      * in text. In ambiguous cases where the new text can be either a search or a URL,
      * wasSearchQuery is returned
     */
-    public static boolean isSearchQuery(String text, boolean wasSearchQuery) {
+    public static boolean isSearchQuery(final String text, final boolean wasSearchQuery) {
         // We remove leading and trailing white spaces when decoding URLs
-        text = text.trim();
-        if (text.length() == 0)
+        String trimmedText = text.trim();
+        if (trimmedText.length() == 0) {
             return wasSearchQuery;
+        }
+        int colon = trimmedText.indexOf(':');
+        int dot = trimmedText.indexOf('.');
+        int space = trimmedText.indexOf(' ');
 
-        int colon = text.indexOf(':');
-        int dot = text.indexOf('.');
-        int space = text.indexOf(' ');
-
-        // If a space is found before any dot and colon, we assume this is a search query
-        if (space > -1 && (colon == -1 || space < colon) && (dot == -1 || space < dot)) {
+        // If a space is found in a trimmed string, we assume this is a search query(Bug 1278245)
+        if (space > -1) {
             return true;
         }
         // Otherwise, if a dot or a colon is found, we assume this is a URL
@@ -60,6 +65,18 @@ public class StringUtils {
         }
         // Otherwise, text is ambiguous, and we keep its status unchanged
         return wasSearchQuery;
+    }
+
+    /**
+     * Check for the existence of %s and %S in a given URL
+     *
+     * @return True if  %s or %S exists, False otherwise.
+     */
+    public static boolean queryExists(final String inputURL) {
+        if (inputURL == null) {
+            return false;
+        }
+        return inputURL.contains("%s") || inputURL.contains("%S");
     }
 
     /**
@@ -87,32 +104,31 @@ public class StringUtils {
         public static final int STRIP_HTTPS = 1;
     }
 
-    public static String stripScheme(String url) {
+    public static String stripScheme(final String url) {
         return stripScheme(url, UrlFlags.NONE);
     }
 
-    public static String stripScheme(String url, int flags) {
+    public static String stripScheme(final String url, final int flags) {
         if (url == null) {
             return url;
         }
 
-        int start = 0;
-        int end = url.length();
+        String newURL = url;
 
-        if (url.startsWith("http://")) {
-            start = 7;
-        } else if (url.startsWith("https://") && flags == UrlFlags.STRIP_HTTPS) {
-            start = 8;
+        if (newURL.startsWith("http://")) {
+            newURL = newURL.replace("http://", "");
+        } else if (newURL.startsWith("https://") && flags == UrlFlags.STRIP_HTTPS) {
+            newURL = newURL.replace("https://", "");
         }
 
-        if (url.endsWith("/")) {
-            end--;
+        if (newURL.endsWith("/")) {
+            newURL = newURL.substring(0, newURL.length() - 1);
         }
 
-        return url.substring(start, end);
+        return newURL;
     }
 
-    public static boolean isHttpOrHttps(String url) {
+    public static boolean isHttpOrHttps(final String url) {
         if (TextUtils.isEmpty(url)) {
             return false;
         }
@@ -120,7 +136,7 @@ public class StringUtils {
         return url.startsWith("http://") || url.startsWith("https://");
     }
 
-    public static String stripCommonSubdomains(String host) {
+    public static String stripCommonSubdomains(final String host) {
         if (host == null) {
             return host;
         }
@@ -143,7 +159,7 @@ public class StringUtils {
     /**
      * Searches the url query string for the first value with the given key.
      */
-    public static String getQueryParameter(String url, String desiredKey) {
+    public static String getQueryParameter(final String url, final String desiredKey) {
         if (TextUtils.isEmpty(url) || TextUtils.isEmpty(desiredKey)) {
             return null;
         }
@@ -176,7 +192,7 @@ public class StringUtils {
         return null;
     }
 
-    public static boolean isFilterUrl(String url) {
+    public static boolean isFilterUrl(final String url) {
         if (TextUtils.isEmpty(url)) {
             return false;
         }
@@ -184,7 +200,7 @@ public class StringUtils {
         return url.startsWith(FILTER_URL_PREFIX);
     }
 
-    public static String getFilterFromUrl(String url) {
+    public static String getFilterFromUrl(final String url) {
         if (TextUtils.isEmpty(url)) {
             return null;
         }
@@ -198,7 +214,7 @@ public class StringUtils {
                 "file".equals(scheme) || "resource".equals(scheme));
     }
 
-    public static boolean isUserEnteredUrl(String url) {
+    public static boolean isUserEnteredUrl(final String url) {
         return (url != null && url.startsWith(USER_ENTERED_URL_PREFIX));
     }
 
@@ -211,7 +227,7 @@ public class StringUtils {
      * @param  url to be decoded
      * @return url component entered by user
      */
-    public static String decodeUserEnteredUrl(String url) {
+    public static String decodeUserEnteredUrl(final String url) {
         Uri uri = Uri.parse(url);
         if ("user-entered".equals(uri.getScheme())) {
             return uri.getSchemeSpecificPart();
@@ -219,12 +235,12 @@ public class StringUtils {
         return url;
     }
 
-    public static String encodeUserEnteredUrl(String url) {
+    public static String encodeUserEnteredUrl(final String url) {
         return Uri.fromParts("user-entered", url, null).toString();
     }
 
     /**
-     * Compatibility layer for API < 11.
+     * Compatibility layer for API &lt; 11.
      *
      * Returns a set of the unique names of all query parameters. Iterating
      * over the set will return the names in order of their first occurrence.
@@ -234,40 +250,19 @@ public class StringUtils {
      *
      * @return a set of decoded names
      */
-    public static Set<String> getQueryParameterNames(Uri uri) {
-        if (Versions.feature11Plus) {
-            return uri.getQueryParameterNames();
+    public static Set<String> getQueryParameterNames(final Uri uri) {
+        return uri.getQueryParameterNames();
+    }
+
+    /**
+     * @return  The index of the path segment of an URL, or -1 if no path segment was detected.
+     */
+    public static int pathStartIndex(final String text) {
+        if (text.contains("://")) {
+            return text.indexOf('/', text.indexOf("://") + 3);
+        } else {
+            return text.indexOf('/');
         }
-
-        // Logic below copied from Uri.java included with Android 5.0.0.
-        if (uri.isOpaque()) {
-            throw new UnsupportedOperationException("This isn't a hierarchical URI.");
-        }
-
-        String query = uri.getEncodedQuery();
-        if (query == null) {
-            return Collections.emptySet();
-        }
-
-        Set<String> names = new LinkedHashSet<String>();
-        int start = 0;
-        do {
-            int next = query.indexOf('&', start);
-            int end = (next == -1) ? query.length() : next;
-
-            int separator = query.indexOf('=', start);
-            if (separator > end || separator == -1) {
-                separator = end;
-            }
-
-            String name = query.substring(start, separator);
-            names.add(Uri.decode(name));
-
-            // Move start to end of name.
-            start = end + 1;
-        } while (start < query.length());
-
-        return Collections.unmodifiableSet(names);
     }
 
     public static String safeSubstring(@NonNull final String str, final int start, final int end) {
@@ -279,7 +274,7 @@ public class StringUtils {
     /**
      * Check if this might be a RTL (right-to-left) text by looking at the first character.
      */
-    public static boolean isRTL(String text) {
+    public static boolean isRTL(final String text) {
         if (TextUtils.isEmpty(text)) {
             return false;
         }
@@ -296,11 +291,41 @@ public class StringUtils {
     /**
      * Force LTR (left-to-right) by prepending the text with the "left-to-right mark" (U+200E) if needed.
      */
-    public static String forceLTR(String text) {
+    public static String forceLTR(final String text) {
         if (!isRTL(text)) {
             return text;
         }
 
         return "\u200E" + text;
+    }
+
+    /**
+     * Case-insensitive version of {@link String#startsWith(String)}.
+     */
+    public static boolean caseInsensitiveStartsWith(final String text, final String prefix) {
+        return caseInsensitiveStartsWith(text, prefix, 0);
+    }
+
+    /**
+     * Case-insensitive version of {@link String#startsWith(String, int)}.
+     */
+    public static boolean caseInsensitiveStartsWith(final String text, final String prefix,
+                                                    final int start) {
+        return text.regionMatches(true, start, prefix, 0, prefix.length());
+    }
+
+    /**
+     * Measures the width of the given substring when rendered using the specified Paint.
+     *
+     * @param text      String to measure and return its width
+     * @param start     Index of the first char in the string to measure
+     * @param end       1 past the last char in the string measure
+     * @param textPaint the paint used to render the text
+     * @return          the width of the specified substring in screen pixels
+     */
+    public static int getTextWidth(final String text, final int start, final int end, final Paint textPaint) {
+        final Rect bounds = new Rect();
+        textPaint.getTextBounds(text, start, end, bounds);
+        return bounds.width();
     }
 }

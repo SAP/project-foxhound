@@ -4,7 +4,7 @@
 <html>
 <head>
   <title>Test Fetch Headers - Basic</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -143,7 +143,6 @@ function TestImmutableHeaders() {
 
   checkHas(headers, "foo", "Should be able to check immutable headers");
   ok(headers.get("foo"), "Should be able to get immutable headers");
-  ok(headers.getAll("foo").length, "Should be able to get all immutable headers");
 }
 
 TestRequestHeaders();

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=399284
 -->
 <head>
   <title>Test for Bug 399284</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -102,10 +102,9 @@ function encodeUTF16LE(string)
 
 function testFontSize(frame)
 {
-    var iframeDoc = $(frame).contentDocument;
+    var iframeDoc = SpecialPowers.wrap($(frame)).contentDocument;
     var size = parseInt(iframeDoc.defaultView.
-                getComputedStyle(iframeDoc.getElementById("testPara"), 
-                                 null).
+                getComputedStyle(iframeDoc.getElementById("testPara")).
                 getPropertyValue("font-size"));
     ok(size > 0, "font size assigned for " + frame);
 }

@@ -15,19 +15,11 @@ toolbarbutton {
   -moz-box-align: center;
   -moz-box-pack: center;
   margin: 0;
-  border: 1px solid transparent;
   padding: 3px;
-  background-color: transparent;
-  color: -moz-DialogText;
-}
-
-.toolbarbutton-icon[label]:not([label=""]),
-.toolbarbutton-icon[type="menu"] {
-  margin-inline-end: 5px;
 }
 
 .toolbarbutton-text {
-  margin: 0 !important; /* !important for overriding global.css */
+  margin: 0;
   text-align: center;
 }
 
@@ -36,25 +28,8 @@ toolbarbutton.tabbable {
 }
 
 toolbarbutton:-moz-focusring {
-  /* -moz-appearance looks redundant here but is necessary.
-      Without it, the outline won't appear. */
-  -moz-appearance: toolbarbutton;
-  outline: 1px dotted -moz-DialogText;
+  outline: 1px dotted;
   outline-offset: -2px;
-}
-
-toolbarbutton:hover:not([disabled="true"]) {
-  border-color: ThreeDHighlight ThreeDShadow ThreeDShadow ThreeDHighlight;
-}
-
-toolbarbutton:hover:active:not([disabled="true"]),
-toolbarbutton[open="true"]:hover,
-toolbarbutton[open="true"] {
-  border-color: ThreeDShadow ThreeDHighlight ThreeDHighlight ThreeDShadow;
-  padding-top: 4px;
-  padding-bottom: 2px;
-  padding-inline-start: 4px;
-  padding-inline-end: 2px;
 }
 
 toolbarbutton[disabled="true"] {
@@ -69,41 +44,18 @@ toolbarbutton[disabled="true"] {
   }
 }
 
-toolbarbutton[checked="true"]:not([disabled="true"]) {
-  border-color: ThreeDShadow ThreeDHighlight ThreeDHighlight ThreeDShadow;
-  padding-top: 4px;
-  padding-bottom: 2px;
-  padding-inline-start: 4px;
-  padding-inline-end: 2px;
-  background-color: rgba(255,255,255,0.5);
-  color: ButtonText;
-}
-
 @media (-moz-windows-default-theme) {
-  toolbarbutton:-moz-lwtheme {
+  :root[lwtheme-image] toolbarbutton {
     text-shadow: none;
   }
 
-  toolbarbutton:-moz-lwtheme:not(:hover):not([checked="true"]):not([open="true"]):not([disabled="true"]) {
-    color: inherit;
+  :root[lwtheme-image] toolbarbutton:not([disabled="true"]) {
     text-shadow: inherit;
-  }
-
-  @media not all and (-moz-os-version: windows-xp) {
-    toolbarbutton:-moz-lwtheme:not([disabled="true"]) {
-      color: inherit;
-      text-shadow: inherit;
-    }
   }
 }
 
-@media not all and (-moz-windows-default-theme) {
-  toolbarbutton:-moz-lwtheme {
-    -moz-appearance: none;
-  }
-
-  toolbarbutton:-moz-lwtheme:not([disabled="true"]) {
-    color: inherit;
+@media (-moz-windows-default-theme: 0) {
+  :root[lwtheme-image] toolbarbutton:not([disabled="true"]) {
     text-shadow: inherit;
   }
 }
@@ -111,37 +63,12 @@ toolbarbutton[checked="true"]:not([disabled="true"]) {
 /* ::::: toolbarbutton menu ::::: */
 
 .toolbarbutton-menu-dropmarker {
-  -moz-appearance: none !important;
-  border: none !important;
-  background-color: transparent !important;
-  padding: 0;
-  width: auto;
-  height: auto;
-  margin-top: 1px;
-}
-
-/* ::::: toolbarbutton menu-button ::::: */
-
-toolbarbutton[type="menu-button"] {
-  -moz-box-align: stretch;
-  -moz-box-orient: horizontal !important;
-}
-
-toolbarbutton[type="menu-button"],
-toolbarbutton[type="menu-button"]:hover,
-toolbarbutton[type="menu-button"]:hover:active,
-toolbarbutton[type="menu-button"][open="true"],
-toolbarbutton[type="menu-button"][disabled="true"],
-toolbarbutton[type="menu-button"][disabled="true"]:hover,
-toolbarbutton[type="menu-button"][disabled="true"]:hover:active {
-  border-style: none;
-  padding: 0 !important;
-}
-
-.toolbarbutton-menubutton-button {
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  -moz-box-orient: vertical;
+  -moz-appearance: none;
+  list-style-image: url("chrome://global/skin/icons/arrow-dropdown-12.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 12px;
+  height: 12px;
 }
 
 /* ::::: toolbarbutton badged ::::: */
@@ -156,6 +83,7 @@ toolbarbutton[type="menu-button"][disabled="true"]:hover:active {
   font-weight: bold;
   padding: 0 2px 1px;
   color: #fff;
+  text-shadow: none;
   border-radius: 2px;
   box-shadow: 0 1px 0 hsla(0, 100%, 100%, .2) inset,
               0 -1px 0 hsla(0, 0%, 0%, .1) inset,
@@ -167,14 +95,4 @@ toolbarbutton[type="menu-button"][disabled="true"]:hover:active {
   line-height: 10px;
   text-align: center;
   -moz-stack-sizing: ignore;
-}
-
-/* .......... dropmarker .......... */
-
-.toolbarbutton-menubutton-dropmarker {
-  -moz-appearance: none;
-  padding: 3px 7px;
-  border: none;
-  background-color: transparent;
-  width: auto;
 }

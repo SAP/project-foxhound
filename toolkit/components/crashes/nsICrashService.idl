@@ -4,7 +4,7 @@
 
 #include "nsISupports.idl"
 
-[scriptable, uuid(f60d76e5-62c3-4f58-89f6-b726c2b7bc20)]
+[scriptable, uuid(70bd93ff-88fa-4600-8af8-57c8d002dbac)]
 interface nsICrashService : nsISupports
 {
   /**
@@ -16,13 +16,22 @@ interface nsICrashService : nsISupports
    *        One of the CRASH_TYPE constants defined below.
    * @param id
    *        Crash ID. Likely a UUID.
+   *
+   * @return A promise that resolves after the crash has been stored
    */
-  void addCrash(in long processType, in long crashType, in AString id);
+  Promise addCrash(in long processType, in long crashType, in AString id);
 
   const long PROCESS_TYPE_MAIN = 0;
-  const long PROCESS_TYPE_CONTENT = 1;
-  const long PROCESS_TYPE_PLUGIN = 2;
-  const long PROCESS_TYPE_GMPLUGIN = 3;
+  const long PROCESS_TYPE_PLUGIN = 1;
+  const long PROCESS_TYPE_CONTENT = 2;
+  const long PROCESS_TYPE_IPDLUNITTEST = 3;
+  const long PROCESS_TYPE_GMPLUGIN = 4;
+  const long PROCESS_TYPE_GPU = 5;
+  const long PROCESS_TYPE_VR = 6;
+  const long PROCESS_TYPE_RDD = 7;
+  const long PROCESS_TYPE_SOCKET = 8;
+  const long PROCESS_TYPE_SANDBOX_BROKER = 9;
+  // New process types should be added at the end of the above list.
 
   const long CRASH_TYPE_CRASH = 0;
   const long CRASH_TYPE_HANG = 1;

@@ -10,7 +10,7 @@
 
 #include "blapi.h"
 
-#define FREEBL_VERSION 0x0312
+#define FREEBL_VERSION 0x0316
 
 struct FREEBLVectorStr {
 
@@ -731,6 +731,53 @@ struct FREEBLVectorStr {
         const unsigned char *ad, unsigned int adLen);
 
     /* Version 3.018 came to here */
+
+    int (*p_EC_GetPointSize)(const ECParams *);
+
+    /* Version 3.019 came to here */
+
+    SECStatus (*p_BLAKE2B_Hash)(unsigned char *dest, const char *src);
+    SECStatus (*p_BLAKE2B_HashBuf)(unsigned char *output,
+                                   const unsigned char *input, PRUint32 inlen);
+    SECStatus (*p_BLAKE2B_MAC_HashBuf)(unsigned char *output,
+                                       const unsigned char *input,
+                                       unsigned int inlen,
+                                       const unsigned char *key,
+                                       unsigned int keylen);
+    BLAKE2BContext *(*p_BLAKE2B_NewContext)();
+    void (*p_BLAKE2B_DestroyContext)(BLAKE2BContext *ctx, PRBool freeit);
+    SECStatus (*p_BLAKE2B_Begin)(BLAKE2BContext *ctx);
+    SECStatus (*p_BLAKE2B_MAC_Begin)(BLAKE2BContext *ctx, const PRUint8 *key,
+                                     const size_t keylen);
+    SECStatus (*p_BLAKE2B_Update)(BLAKE2BContext *ctx, const unsigned char *in,
+                                  unsigned int inlen);
+    SECStatus (*p_BLAKE2B_End)(BLAKE2BContext *ctx, unsigned char *out,
+                               unsigned int *digestLen, size_t maxDigestLen);
+    unsigned int (*p_BLAKE2B_FlattenSize)(BLAKE2BContext *ctx);
+    SECStatus (*p_BLAKE2B_Flatten)(BLAKE2BContext *ctx, unsigned char *space);
+    BLAKE2BContext *(*p_BLAKE2B_Resurrect)(unsigned char *space, void *arg);
+
+    /* Version 3.020 came to here */
+
+    SECStatus (*p_ChaCha20_Xor)(unsigned char *output, const unsigned char *block,
+                                unsigned int len, const unsigned char *k,
+                                const unsigned char *nonce, PRUint32 ctr);
+
+    /* Version 3.021 came to here */
+
+    SECStatus (*p_CMAC_Init)(CMACContext *ctx, CMACCipher type,
+                             const unsigned char *key, unsigned int key_len);
+    CMACContext *(*p_CMAC_Create)(CMACCipher type, const unsigned char *key,
+                                  unsigned int key_len);
+    SECStatus (*p_CMAC_Begin)(CMACContext *ctx);
+    SECStatus (*p_CMAC_Update)(CMACContext *ctx, const unsigned char *data,
+                               unsigned int data_len);
+    SECStatus (*p_CMAC_Finish)(CMACContext *ctx, unsigned char *result,
+                               unsigned int *result_len,
+                               unsigned int max_result_len);
+    void (*p_CMAC_Destroy)(CMACContext *ctx, PRBool free_it);
+
+    /* Version 3.022 came to here */
 
     /* Add new function pointers at the end of this struct and bump
      * FREEBL_VERSION at the beginning of this file. */

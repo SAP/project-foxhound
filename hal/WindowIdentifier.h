@@ -36,9 +36,8 @@ namespace hal {
  *
  * You can access this list of IDs by calling AsArray().
  */
-class WindowIdentifier
-{
-public:
+class WindowIdentifier {
+ public:
   /**
    * Create an empty WindowIdentifier.  Calls to any of this object's
    * public methods will assert -- an empty WindowIdentifier may be
@@ -67,13 +66,12 @@ public:
    * This automatically grabs the window's ID and appends it to the
    * array.
    */
-  WindowIdentifier(const InfallibleTArray<uint64_t>& id,
-                   nsPIDOMWindowInner* window);
+  WindowIdentifier(const nsTArray<uint64_t>& id, nsPIDOMWindowInner* window);
 
   /**
    * Get the list of window and process IDs we contain.
    */
-  typedef InfallibleTArray<uint64_t> IDArrayType;
+  typedef nsTArray<uint64_t> IDArrayType;
   const IDArrayType& AsArray() const;
 
   /**
@@ -94,7 +92,7 @@ public:
    */
   nsPIDOMWindowInner* GetWindow() const;
 
-private:
+ private:
   /**
    * Get the ID of the window object we wrap.
    */
@@ -105,7 +103,7 @@ private:
   bool mIsEmpty;
 };
 
-} // namespace hal
-} // namespace mozilla
+}  // namespace hal
+}  // namespace mozilla
 
-#endif // mozilla_hal_WindowIdentifier_h
+#endif  // mozilla_hal_WindowIdentifier_h

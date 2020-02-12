@@ -16,27 +16,41 @@ namespace dom {
 namespace cache {
 
 StreamList::StreamList(Manager* aManager, Context* aContext)
-  : mManager(aManager)
-  , mContext(aContext)
-  , mCacheId(INVALID_CACHE_ID)
-  , mStreamControl(nullptr)
-  , mActivated(false)
-{
-  MOZ_ASSERT(mManager);
+    : mManager(aManager),
+      mContext(aContext),
+      mCacheId(INVALID_CACHE_ID),
+      mStreamControl(nullptr),
+      mActivated(false) {
+  MOZ_DIAGNOSTIC_ASSERT(mManager);
   mContext->AddActivity(this);
 }
 
-void
-StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl)
-{
+Manager* StreamList::GetManager() const {
+  MOZ_DIAGNOSTIC_ASSERT(mManager);
+  return mManager;
+}
+
+bool StreamList::ShouldOpenStreamFor(const nsID& aId) const {
   NS_ASSERT_OWNINGTHREAD(StreamList);
-  MOZ_ASSERT(aStreamControl);
+
+  for (auto entry : mList) {
+    if (entry.mId == aId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl) {
+  NS_ASSERT_OWNINGTHREAD(StreamList);
+  MOZ_DIAGNOSTIC_ASSERT(aStreamControl);
 
   // For cases where multiple streams are serialized for a single list
   // then the control will get passed multiple times.  This is ok, but
   // it should be the same control each time.
   if (mStreamControl) {
-    MOZ_ASSERT(aStreamControl == mStreamControl);
+    MOZ_DIAGNOSTIC_ASSERT(aStreamControl == mStreamControl);
     return;
   }
 
@@ -44,21 +58,17 @@ StreamList::SetStreamControl(CacheStreamControlParent* aStreamControl)
   mStreamControl->SetStreamList(this);
 }
 
-void
-StreamList::RemoveStreamControl(CacheStreamControlParent* aStreamControl)
-{
+void StreamList::RemoveStreamControl(CacheStreamControlParent* aStreamControl) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
-  MOZ_ASSERT(mStreamControl);
-  MOZ_ASSERT(mStreamControl == aStreamControl);
+  MOZ_DIAGNOSTIC_ASSERT(mStreamControl);
+  MOZ_DIAGNOSTIC_ASSERT(mStreamControl == aStreamControl);
   mStreamControl = nullptr;
 }
 
-void
-StreamList::Activate(CacheId aCacheId)
-{
+void StreamList::Activate(CacheId aCacheId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
-  MOZ_ASSERT(!mActivated);
-  MOZ_ASSERT(mCacheId == INVALID_CACHE_ID);
+  MOZ_DIAGNOSTIC_ASSERT(!mActivated);
+  MOZ_DIAGNOSTIC_ASSERT(mCacheId == INVALID_CACHE_ID);
   mActivated = true;
   mCacheId = aCacheId;
   mManager->AddRefCacheId(mCacheId);
@@ -69,21 +79,14 @@ StreamList::Activate(CacheId aCacheId)
   }
 }
 
-void
-StreamList::Add(const nsID& aId, nsIInputStream* aStream)
-{
+void StreamList::Add(const nsID& aId, nsCOMPtr<nsIInputStream>&& aStream) {
   // All streams should be added on IO thread before we set the stream
   // control on the owning IPC thread.
-  MOZ_ASSERT(!mStreamControl);
-  MOZ_ASSERT(aStream);
-  Entry* entry = mList.AppendElement();
-  entry->mId = aId;
-  entry->mStream = aStream;
+  MOZ_DIAGNOSTIC_ASSERT(!mStreamControl);
+  mList.AppendElement(Entry(aId, std::move(aStream)));
 }
 
-already_AddRefed<nsIInputStream>
-StreamList::Extract(const nsID& aId)
-{
+already_AddRefed<nsIInputStream> StreamList::Extract(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (mList[i].mId == aId) {
@@ -93,9 +96,7 @@ StreamList::Extract(const nsID& aId)
   return nullptr;
 }
 
-void
-StreamList::NoteClosed(const nsID& aId)
-{
+void StreamList::NoteClosed(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     if (mList[i].mId == aId) {
@@ -110,9 +111,7 @@ StreamList::NoteClosed(const nsID& aId)
   }
 }
 
-void
-StreamList::NoteClosedAll()
-{
+void StreamList::NoteClosedAll() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   for (uint32_t i = 0; i < mList.Length(); ++i) {
     mManager->ReleaseBodyId(mList[i].mId);
@@ -124,42 +123,33 @@ StreamList::NoteClosedAll()
   }
 }
 
-void
-StreamList::Close(const nsID& aId)
-{
+void StreamList::Close(const nsID& aId) {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   if (mStreamControl) {
     mStreamControl->Close(aId);
   }
 }
 
-void
-StreamList::CloseAll()
-{
+void StreamList::CloseAll() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   if (mStreamControl) {
     mStreamControl->CloseAll();
   }
 }
 
-void
-StreamList::Cancel()
-{
+void StreamList::Cancel() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   CloseAll();
 }
 
-bool
-StreamList::MatchesCacheId(CacheId aCacheId) const
-{
+bool StreamList::MatchesCacheId(CacheId aCacheId) const {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   return aCacheId == mCacheId;
 }
 
-StreamList::~StreamList()
-{
+StreamList::~StreamList() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
-  MOZ_ASSERT(!mStreamControl);
+  MOZ_DIAGNOSTIC_ASSERT(!mStreamControl);
   if (mActivated) {
     mManager->RemoveStreamList(this);
     for (uint32_t i = 0; i < mList.Length(); ++i) {
@@ -170,6 +160,6 @@ StreamList::~StreamList()
   mContext->RemoveActivity(this);
 }
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla

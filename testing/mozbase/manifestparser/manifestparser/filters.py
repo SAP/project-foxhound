@@ -8,9 +8,14 @@ dictionary of values, and returns a new iterable of test objects. It is
 possible to define custom filters if the built-in ones are not enough.
 """
 
-from collections import defaultdict, MutableSequence
+from __future__ import absolute_import
+
 import itertools
 import os
+from abc import ABCMeta, abstractmethod
+from collections import defaultdict, MutableSequence
+
+from six import string_types
 
 from .expression import (
     parse,
@@ -117,6 +122,7 @@ class subsuite(InstanceFilter):
 
     :param name: The name of the subsuite to run (default None)
     """
+
     def __init__(self, name=None):
         InstanceFilter.__init__(self, name=name)
         self.name = name
@@ -142,7 +148,7 @@ class subsuite(InstanceFilter):
                 if not test.get('subsuite'):
                     yield test
             else:
-                if test.get('subsuite') == self.name:
+                if test.get('subsuite', '') == self.name:
                     yield test
 
 
@@ -227,7 +233,7 @@ class chunk_by_dir(InstanceFilter):
                 path = path[1:]
 
             dirs = path.split(os.sep)
-            dirs = dirs[:min(self.depth, len(dirs)-1)]
+            dirs = dirs[:min(self.depth, len(dirs) - 1)]
             path = os.sep.join(dirs)
 
             # don't count directories that only have disabled tests in them,
@@ -254,7 +260,56 @@ class chunk_by_dir(InstanceFilter):
                 yield disabled_test
 
 
-class chunk_by_runtime(InstanceFilter):
+class ManifestChunk(InstanceFilter):
+    """
+    Base class for chunking tests by manifest using a numerical key.
+    """
+    __metaclass__ = ABCMeta
+
+    def __init__(self, this_chunk, total_chunks, *args, **kwargs):
+        InstanceFilter.__init__(self, this_chunk, total_chunks, *args, **kwargs)
+        self.this_chunk = this_chunk
+        self.total_chunks = total_chunks
+
+    @abstractmethod
+    def key(self, tests):
+        pass
+
+    def __call__(self, tests, values):
+        tests = list(tests)
+        manifests = set(t['manifest'] for t in tests)
+
+        tests_by_manifest = []
+        for manifest in manifests:
+            mtests = [t for t in tests if t['manifest'] == manifest]
+            tests_by_manifest.append((self.key(mtests), mtests))
+        tests_by_manifest.sort(reverse=True)
+
+        tests_by_chunk = [[0, []] for i in range(self.total_chunks)]
+        for key, batch in tests_by_manifest:
+            # sort first by key, then by number of tests in case of a tie.
+            # This guarantees the chunk with the lowest key will always
+            # get the next batch of tests.
+            tests_by_chunk.sort(key=lambda x: (x[0], len(x[1])))
+            tests_by_chunk[0][0] += key
+            tests_by_chunk[0][1].extend(batch)
+
+        return (t for t in tests_by_chunk[self.this_chunk - 1][1])
+
+
+class chunk_by_manifest(ManifestChunk):
+    """
+    Chunking algorithm that tries to evenly distribute tests while ensuring
+    tests in the same manifest stay together.
+
+    :param this_chunk: the current chunk, 1 <= this_chunk <= total_chunks
+    :param total_chunks: the total number of chunks
+    """
+    def key(self, tests):
+        return len(tests)
+
+
+class chunk_by_runtime(ManifestChunk):
     """
     Chunking algorithm that attempts to group tests into chunks based on their
     average runtimes. It keeps manifests of tests together and pairs slow
@@ -269,41 +324,17 @@ class chunk_by_runtime(InstanceFilter):
     """
 
     def __init__(self, this_chunk, total_chunks, runtimes, default_runtime=0):
-        InstanceFilter.__init__(self, this_chunk, total_chunks, runtimes,
-                                default_runtime=default_runtime)
-        self.this_chunk = this_chunk
-        self.total_chunks = total_chunks
-
+        ManifestChunk.__init__(self, this_chunk, total_chunks, runtimes,
+                               default_runtime=default_runtime)
         # defaultdict(lambda:<int>) assigns all non-existent keys the value of
         # <int>. This means all tests we encounter that don't exist in the
         # runtimes file will be assigned `default_runtime`.
         self.runtimes = defaultdict(lambda: default_runtime)
         self.runtimes.update(runtimes)
 
-    def __call__(self, tests, values):
-        tests = list(tests)
-        manifests = set(t['manifest'] for t in tests)
-
-        def total_runtime(tests):
-            return sum(self.runtimes[t['relpath']] for t in tests
-                       if 'disabled' not in t)
-
-        tests_by_manifest = []
-        for manifest in manifests:
-            mtests = [t for t in tests if t['manifest'] == manifest]
-            tests_by_manifest.append((total_runtime(mtests), mtests))
-        tests_by_manifest.sort(reverse=True)
-
-        tests_by_chunk = [[0, []] for i in range(self.total_chunks)]
-        for runtime, batch in tests_by_manifest:
-            # sort first by runtime, then by number of tests in case of a tie.
-            # This guarantees the chunk with the fastest runtime will always
-            # get the next batch of tests.
-            tests_by_chunk.sort(key=lambda x: (x[0], len(x[1])))
-            tests_by_chunk[0][0] += runtime
-            tests_by_chunk[0][1].extend(batch)
-
-        return (t for t in tests_by_chunk[self.this_chunk-1][1])
+    def key(self, tests):
+        return sum(self.runtimes[t['relpath']] for t in tests
+                   if 'disabled' not in t)
 
 
 class tags(InstanceFilter):
@@ -325,7 +356,7 @@ class tags(InstanceFilter):
 
     def __init__(self, tags):
         InstanceFilter.__init__(self, tags)
-        if isinstance(tags, basestring):
+        if isinstance(tags, string_types):
             tags = [tags]
         self.tags = tags
 
@@ -348,7 +379,7 @@ class pathprefix(InstanceFilter):
 
     def __init__(self, paths):
         InstanceFilter.__init__(self, paths)
-        if isinstance(paths, basestring):
+        if isinstance(paths, string_types):
             paths = [paths]
         self.paths = paths
 

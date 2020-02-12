@@ -16,42 +16,33 @@
  */
 class GrPathProcessor : public GrPrimitiveProcessor {
 public:
-    static GrPathProcessor* Create(GrColor color,
-                                   const GrXPOverridesForBatch& overrides,
+    static GrPathProcessor* Create(const SkPMColor4f& color,
                                    const SkMatrix& viewMatrix = SkMatrix::I(),
                                    const SkMatrix& localMatrix = SkMatrix::I()) {
-        return new GrPathProcessor(color, overrides, viewMatrix, localMatrix);
+        return new GrPathProcessor(color, viewMatrix, localMatrix);
     }
 
     const char* name() const override { return "PathProcessor"; }
 
-    GrColor color() const { return fColor; }
+    const SkPMColor4f& color() const { return fColor; }
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
     const SkMatrix& localMatrix() const { return fLocalMatrix; }
 
     bool willUseGeoShader() const override { return false; }
 
-    virtual void getGLSLProcessorKey(const GrGLSLCaps& caps,
+    virtual void getGLSLProcessorKey(const GrShaderCaps& caps,
                                      GrProcessorKeyBuilder* b) const override;
 
-    virtual GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps& caps) const override;
-
-    bool hasTransformedLocalCoords() const override { return false; }
-
-    const GrXPOverridesForBatch& overrides() const { return fOverrides; }
+    virtual GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps& caps) const override;
 
     virtual bool isPathRendering() const override { return true; }
 
 private:
-    GrPathProcessor(GrColor color, const GrXPOverridesForBatch& overrides,
-                    const SkMatrix& viewMatrix, const SkMatrix& localMatrix);
+    GrPathProcessor(const SkPMColor4f&, const SkMatrix& viewMatrix, const SkMatrix& localMatrix);
 
-    bool hasExplicitLocalCoords() const override { return false; }
-
-    GrColor fColor;
+    SkPMColor4f fColor;
     const SkMatrix fViewMatrix;
     const SkMatrix fLocalMatrix;
-    GrXPOverridesForBatch fOverrides;
 
     typedef GrPrimitiveProcessor INHERITED;
 };

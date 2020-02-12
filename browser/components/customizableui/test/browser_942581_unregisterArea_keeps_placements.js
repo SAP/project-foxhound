@@ -10,12 +10,18 @@ const kTestWidgetCount = 3;
 registerCleanupFunction(removeCustomToolbars);
 
 // unregisterArea should keep placements by default and restore them when re-adding the area
-add_task(function*() {
+add_task(async function() {
   let widgetIds = [];
   for (let i = 0; i < kTestWidgetCount; i++) {
     let id = kTestWidgetPfx + i;
     widgetIds.push(id);
-    let spec = {id: id, type: 'button', removable: true, label: "unregisterArea test", tooltiptext: "" + i};
+    let spec = {
+      id,
+      type: "button",
+      removable: true,
+      label: "unregisterArea test",
+      tooltiptext: "" + i,
+    };
     CustomizableUI.createWidget(spec);
   }
   for (let i = kTestWidgetCount; i < kTestWidgetCount * 2; i++) {
@@ -70,7 +76,7 @@ add_task(function*() {
   checkWidgetFates(widgetIds);
   toolbarNode.remove();
 
-  //XXXgijs: ensure cleanup function doesn't barf:
+  // XXXgijs: ensure cleanup function doesn't barf:
   gAddedToolbars.delete(kToolbarName);
 
   // Remove all the XUL widgets, destroy the others:
@@ -86,21 +92,28 @@ add_task(function*() {
 
 function checkAbstractAndRealPlacements(aNode, aExpectedPlacements) {
   assertAreaPlacements(kToolbarName, aExpectedPlacements);
-  let physicalWidgetIds = Array.from(aNode.childNodes, (node) => node.id);
+  let physicalWidgetIds = Array.from(aNode.children, node => node.id);
   placementArraysEqual(aNode.id, physicalWidgetIds, aExpectedPlacements);
 }
 
 function checkWidgetFates(aWidgetIds) {
   for (let widget of aWidgetIds) {
-    ok(!CustomizableUI.getPlacementOfWidget(widget), "Widget should be in palette");
+    ok(
+      !CustomizableUI.getPlacementOfWidget(widget),
+      "Widget should be in palette"
+    );
     ok(!document.getElementById(widget), "Widget should not be in the DOM");
     let widgetInPalette = !!gNavToolbox.palette.querySelector("#" + widget);
     let widgetProvider = CustomizableUI.getWidget(widget).provider;
     let widgetIsXULWidget = widgetProvider == CustomizableUI.PROVIDER_XUL;
-    is(widgetInPalette, widgetIsXULWidget, "Just XUL Widgets should be in the palette");
+    is(
+      widgetInPalette,
+      widgetIsXULWidget,
+      "Just XUL Widgets should be in the palette"
+    );
   }
 }
 
-add_task(function* asyncCleanup() {
-  yield resetCustomization();
+add_task(async function asyncCleanup() {
+  await resetCustomization();
 });

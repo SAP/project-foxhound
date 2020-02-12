@@ -12,100 +12,82 @@
 namespace mozilla {
 namespace _ipdltest {
 
-class TestHandleParent :
-    public PTestHandleParent
-{
-public:
-    TestHandleParent() { }
-    virtual ~TestHandleParent() { }
+class TestHandleParent : public PTestHandleParent {
+ public:
+  TestHandleParent() {}
+  virtual ~TestHandleParent() {}
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
-class TestJSONParent :
-    public PTestJSONParent
-{
-public:
-    TestJSONParent() { }
-    virtual ~TestJSONParent() { }
+class TestJSONParent : public PTestJSONParent {
+  friend class PTestJSONParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestJSONParent() {}
+  virtual ~TestJSONParent() {}
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:
-    virtual bool
-    RecvTest(const JSONVariant& i,
-             JSONVariant* o) override;
+  void Main();
 
-    virtual PTestHandleParent* AllocPTestHandleParent() override
-    {
-        return mKid = new TestHandleParent();
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvTest(const JSONVariant& i, JSONVariant* o);
 
-    virtual bool DeallocPTestHandleParent(PTestHandleParent* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestHandleParent* AllocPTestHandleParent() {
+    return mKid = new TestHandleParent();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  bool DeallocPTestHandleParent(PTestHandleParent* actor) {
+    delete actor;
+    return true;
+  }
 
-    PTestHandleParent* mKid;
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
+
+  PTestHandleParent* mKid;
 };
 
-
-class TestHandleChild :
-    public PTestHandleChild
-{
-public:
-    TestHandleChild() { }
-    virtual ~TestHandleChild() { }
+class TestHandleChild : public PTestHandleChild {
+ public:
+  TestHandleChild() {}
+  virtual ~TestHandleChild() {}
 };
 
-class TestJSONChild :
-    public PTestJSONChild
-{
-public:
-    TestJSONChild() { }
-    virtual ~TestJSONChild() { }
+class TestJSONChild : public PTestJSONChild {
+  friend class PTestJSONChild;
 
-protected:
-    virtual bool
-    RecvStart() override;
+ public:
+  TestJSONChild() {}
+  virtual ~TestJSONChild() {}
 
-    virtual PTestHandleChild* AllocPTestHandleChild() override
-    {
-        return mKid = new TestHandleChild();
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool DeallocPTestHandleChild(PTestHandleChild* actor) override
-    {
-        delete actor;
-        return true;
-    }
+  PTestHandleChild* AllocPTestHandleChild() {
+    return mKid = new TestHandleChild();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  bool DeallocPTestHandleChild(PTestHandleChild* actor) {
+    delete actor;
+    return true;
+  }
 
-    PTestHandleChild* mKid;
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
+
+  PTestHandleChild* mKid;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestJSON_h
+#endif  // ifndef mozilla__ipdltest_TestJSON_h

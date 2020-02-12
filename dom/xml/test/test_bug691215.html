@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=691215
 -->
 <head>
   <title>Test for Bug 691215</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -21,7 +21,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=691215
 
 SimpleTest.waitForExplicitFinish();
 
-var url = "data:text/xml,<root/>";
+var BASE_URI = "http://mochi.test:8888/tests/dom/xml/test/";
+var url = BASE_URI + "file_bug691215.xml";
 var w;
 
 addLoadEvent(function() {

@@ -7,33 +7,41 @@
  * Tests if keyboard and mouse navigation works in the network requests menu.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
   // It seems that this test may be slow on Ubuntu builds running on ec2.
   requestLongerTimeout(2);
 
-  let { window, $, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { window, document, windowRequire, store } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
   let count = 0;
-  function check(selectedIndex, paneVisibility) {
-    info("Performing check " + (count++) + ".");
+  function check(selectedIndex, panelVisibility) {
+    info("Performing check " + count++ + ".");
 
-    is(RequestsMenu.selectedIndex, selectedIndex,
-      "The selected item in the requests menu was incorrect.");
-    is(NetMonitorView.detailsPaneHidden, !paneVisibility,
-      "The network requests details pane visibility state was incorrect.");
+    const requestItems = Array.from(
+      document.querySelectorAll(".request-list-item")
+    );
+    is(
+      requestItems.findIndex(item => item.matches(".selected")),
+      selectedIndex,
+      "The selected item in the requests menu was incorrect."
+    );
+    is(
+      !!document.querySelector(".network-details-panel"),
+      panelVisibility,
+      "The network details panel should render correctly."
+    );
   }
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(2);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
+
+  document.querySelector(".requests-list-row-group").focus();
 
   check(-1, false);
 
@@ -52,11 +60,8 @@ add_task(function* () {
   EventUtils.sendKey("HOME", window);
   check(0, true);
 
-  wait = waitForNetworkEvents(monitor, 18);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests(18);
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 18);
 
   EventUtils.sendKey("DOWN", window);
   check(1, true);
@@ -120,11 +125,11 @@ add_task(function* () {
   EventUtils.sendKey("DOWN", window);
   check(19, true);
 
-  EventUtils.sendMouseEvent({ type: "mousedown" }, $("#details-pane-toggle"));
-  check(-1, false);
-
-  EventUtils.sendMouseEvent({ type: "mousedown" }, $(".side-menu-widget-item"));
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelector(".request-list-item")
+  );
   check(0, true);
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

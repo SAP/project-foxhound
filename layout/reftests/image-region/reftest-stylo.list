@@ -1,3 +1,0 @@
-# DO NOT EDIT! This is a auto-generated temporary list for Stylo testing
-skip-if((B2G&&browserIsRemote)||Mulet) == image-region.xul image-region.xul
-# Initial mulet triage: parity with B2G/B2G Desktop

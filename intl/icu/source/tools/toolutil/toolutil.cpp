@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
 *
@@ -6,7 +8,7 @@
 *
 *******************************************************************************
 *   file name:  toolutil.c
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -141,7 +143,7 @@ findDirname(const char *path, char *buffer, int32_t bufLen, UErrorCode* status) 
     resultLen = 0;
   } else {
     resultPtr = path;
-    resultLen = basename - path;
+    resultLen = static_cast<int32_t>(basename - path);
     if(resultLen<1) {
       resultLen = 1; /* '/' or '/a' -> '/' */
     }
@@ -312,7 +314,7 @@ utm_hasCapacity(UToolMemory *mem, int32_t capacity) {
         if(mem->array==mem->staticArray) {
             mem->array=uprv_malloc(newCapacity*mem->size);
             if(mem->array!=NULL) {
-                uprv_memcpy(mem->array, mem->staticArray, mem->idx*mem->size);
+                uprv_memcpy(mem->array, mem->staticArray, (size_t)mem->idx*mem->size);
             }
         } else {
             mem->array=uprv_realloc(mem->array, newCapacity*mem->size);

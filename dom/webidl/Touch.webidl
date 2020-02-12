@@ -25,19 +25,27 @@ dictionary TouchInit {
   float force = 0;
 };
 
-[Constructor(TouchInit touchInitDict), 
- Func="mozilla::dom::Touch::PrefEnabled"]
+[Func="mozilla::dom::Touch::PrefEnabled",
+ Exposed=Window]
 interface Touch {
+  constructor(TouchInit touchInitDict);
+ 
   readonly    attribute long         identifier;
   readonly    attribute EventTarget? target;
+  [NeedsCallerType]
   readonly    attribute long         screenX;
+  [NeedsCallerType]
   readonly    attribute long         screenY;
   readonly    attribute long         clientX;
   readonly    attribute long         clientY;
   readonly    attribute long         pageX;
   readonly    attribute long         pageY;
+  [NeedsCallerType]
   readonly    attribute long         radiusX;
+  [NeedsCallerType]
   readonly    attribute long         radiusY;
+  [NeedsCallerType]
   readonly    attribute float        rotationAngle;
+  [NeedsCallerType]
   readonly    attribute float        force;
 };

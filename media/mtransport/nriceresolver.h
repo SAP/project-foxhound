@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 // Original authors: jib@mozilla.com, ekr@rtfm.com
 
 // Some of this code is cut-and-pasted from nICEr. Copyright is:
@@ -51,6 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "nsIDNSService.h"
 #include "nsIDNSListener.h"
 #include "nsICancelable.h"
+#include "nricectx.h"
 
 typedef struct nr_resolver_ nr_resolver;
 typedef struct nr_resolver_vtbl_ nr_resolver_vtbl;
@@ -59,45 +59,48 @@ typedef struct nr_resolver_resource_ nr_resolver_resource;
 
 namespace mozilla {
 
-class NrIceResolver
-{
+class NrIceResolver {
  private:
   ~NrIceResolver();
+
  public:
   NrIceResolver();
 
   nsresult Init();
-  nr_resolver *AllocateResolver();
+  nr_resolver* AllocateResolver();
   void DestroyResolver();
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(NrIceResolver)
 
-  int resolve(nr_resolver_resource *resource,
-              int (*cb)(void *cb_arg, nr_transport_addr *addr),
-              void *cb_arg, void **handle);
+  int resolve(nr_resolver_resource* resource,
+              int (*cb)(void* cb_arg, nr_transport_addr* addr), void* cb_arg,
+              void** handle);
 
  private:
   // Implementations of vtbl functions
-  static int destroy(void **objp);
-  static int resolve(void *obj, nr_resolver_resource *resource,
-                     int (*cb)(void *cb_arg, nr_transport_addr *addr),
-                     void *cb_arg, void **handle);
-  static void resolve_cb(NR_SOCKET s, int how, void *cb_arg);
-  static int cancel(void *obj, void *handle);
+  static int destroy(void** objp);
+  static int resolve(void* obj, nr_resolver_resource* resource,
+                     int (*cb)(void* cb_arg, nr_transport_addr* addr),
+                     void* cb_arg, void** handle);
+  static void resolve_cb(NR_SOCKET s, int how, void* cb_arg);
+  static int cancel(void* obj, void* handle);
 
-  class PendingResolution : public nsIDNSListener
-  {
+  class PendingResolution : public nsIDNSListener {
    public:
-    PendingResolution(nsIEventTarget *thread,
-                      uint16_t port,
-                      int transport,
-                      int (*cb)(void *cb_arg, nr_transport_addr *addr),
-                      void *cb_arg) :
-        thread_(thread),
-        port_(port),
-        transport_(transport),
-        cb_(cb), cb_arg_(cb_arg) {}
-    NS_IMETHOD OnLookupComplete(nsICancelable *request, nsIDNSRecord *record,
+    PendingResolution(nsIEventTarget* thread, uint16_t port, int transport,
+                      int (*cb)(void* cb_arg, nr_transport_addr* addr),
+                      void* cb_arg)
+        : thread_(thread),
+          port_(port),
+          transport_(transport),
+          cb_(cb),
+          cb_arg_(cb_arg) {}
+    NS_IMETHOD OnLookupComplete(nsICancelable* request, nsIDNSRecord* record,
                                 nsresult status) override;
+    NS_IMETHOD OnLookupByTypeComplete(nsICancelable* request,
+                                      nsIDNSByTypeRecord* res,
+                                      nsresult status) override {
+      return NS_OK;
+    }
     int cancel();
     nsCOMPtr<nsICancelable> request_;
     NS_DECL_THREADSAFE_ISUPPORTS
@@ -107,8 +110,8 @@ class NrIceResolver
     nsCOMPtr<nsIEventTarget> thread_;
     uint16_t port_;
     int transport_;
-    int (*cb_)(void *cb_arg, nr_transport_addr *addr);
-    void *cb_arg_;
+    int (*cb_)(void* cb_arg, nr_transport_addr* addr);
+    void* cb_arg_;
   };
 
   nr_resolver_vtbl* vtbl_;

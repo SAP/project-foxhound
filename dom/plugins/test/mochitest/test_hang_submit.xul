@@ -4,10 +4,8 @@
                  type="text/css"?>
 <window title="Basic Plugin Tests"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js" />
   <script type="application/javascript" src="plugin-utils.js"></script>
   <script type="application/javascript">
     setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
@@ -20,12 +18,8 @@
 SimpleTest.waitForExplicitFinish();
 SimpleTest.ignoreAllUncaughtExceptions();
 
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
-
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(Ci.nsICrashReporter);
 const SERVER_URL = "http://example.com/browser/toolkit/crashreporter/test/browser/crashreport.sjs";
@@ -62,14 +56,14 @@ var testObserver = {
     ok("PluginHang" in submitted, "Request should contain PluginHang field");
     ok("additional_minidumps" in submitted, "Request should contain additional_minidumps field");
     let dumpNames = submitted.additional_minidumps.split(',');
-    ok(dumpNames.indexOf("browser") != -1, "additional_minidumps should contain browser");
+    ok(dumpNames.includes("browser"), "additional_minidumps should contain browser");
     info("additional_minidumps="+submitted.additional_minidumps);
     ok("upload_file_minidump" in submitted, "Request should contain upload_file_minidump field");
     ok("upload_file_minidump_browser" in submitted, "Request should contain upload_file_minidump_browser field");
 
     // Cleanup
     // First remove our fake submitted report
-    let file = Services.dirsvc.get("UAppData", Ci.nsILocalFile);
+    let file = Services.dirsvc.get("UAppData", Ci.nsIFile);
     file.append("Crash Reports");
     file.append("submitted");
     file.append(remoteID + ".txt");
@@ -87,9 +81,10 @@ var testObserver = {
     Services.prefs.setIntPref("dom.ipc.plugins.timeoutSecs", oldTimeoutPref);
 
     // Check and cleanup CrashManager.
-    Task.spawn(function* () {
+    (async function() {
       let cm = Services.crashmanager;
-      let store = yield cm._getStore();
+      await cm.ensureCrashIsPresent(crashID);
+      let store = await cm._getStore();
       is(store.crashesCount, 1, "Store should have only 1 item");
 
       let crash = store.getCrash(crashID);
@@ -106,7 +101,7 @@ var testObserver = {
       store.reset();
 
       SimpleTest.finish();
-    });
+    })();
   },
 
   QueryInterface: function(iid) {
@@ -114,22 +109,24 @@ var testObserver = {
         iid.equals(Ci.nsISupportsWeakReference) ||
         iid.equals(Ci.nsISupports))
       return this;
-    throw Components.results.NS_NOINTERFACE;
+    throw Cr.NS_NOINTERFACE;
   }
 };
 
-function onPluginCrashed(aEvent) {
+async function onPluginCrashed(aEvent) {
   ok(true, "Plugin crashed notification received");
   is(aEvent.type, "PluginCrashed", "event is correct type");
 
-  let submitButton = document.getAnonymousElementByAttribute(aEvent.target,
-                                                             "class",
-                                                             "submitButton");
+  await SimpleTest.promiseWaitForCondition(
+    () => aEvent.target.openOrClosedShadowRoot.getElementById("submitButton"),
+    "Waiting for submit button to exist."
+  );
+  let submitButton = aEvent.target.openOrClosedShadowRoot.getElementById("submitButton");
   // try to submit this report
   sendMouseEvent({type:'click'}, submitButton, window);
 }
 
-function runTests() {
+async function runTests() {
   // Default plugin hang timeout is too high for mochitests
   Services.prefs.setIntPref("dom.ipc.plugins.timeoutSecs", 1);
 
@@ -148,15 +145,17 @@ function runTests() {
   document.addEventListener("PluginCrashed", onPluginCrashed, false);
 
   var pluginElement = document.getElementById("plugin1");
+  await SimpleTest.promiseWaitForCondition(() => pluginElement.hang !== undefined,
+                                           "Waited too long for plugin to activate");
   try {
-    Task.spawn(function* () {
+    (async function() {
       // Clear data in CrashManager in case previous tests caused something
       // to be added.
-      let store = yield Services.crashmanager._getStore();
+      let store = await Services.crashmanager._getStore();
       store.reset();
 
       pluginElement.hang();
-    });
+    })();
   } catch (e) {
   }
 }

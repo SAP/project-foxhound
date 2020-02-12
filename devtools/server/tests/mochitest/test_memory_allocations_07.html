@@ -6,47 +6,50 @@ Bug 1192335 - Test getting the byte sizes for allocations.
 <head>
   <meta charset="utf-8">
   <title>Memory monitoring actor test</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
 <pre id="test">
-<script src="memory-helpers.js" type="application/javascript;version=1.8"></script>
+<script src="memory-helpers.js" type="application/javascript"></script>
 <script>
+"use strict";
+
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
 
-  Task.spawn(function* () {
-    var { memory, client } = yield startServerAndGetSelectedTabMemory();
-    yield memory.attach();
+  (async function() {
+    const { memory, target } = await startServerAndGetSelectedTabMemory();
+    await memory.attach();
 
-    var allocs = [];
+    const allocs = [];
     function allocator() {
-      allocs.push(new Object);
+      allocs.push(new Object());
     }
 
-    yield memory.startRecordingAllocations();
+    await memory.startRecordingAllocations();
 
     allocator();
     allocator();
     allocator();
 
-    var response = yield memory.getAllocations();
-    yield memory.stopRecordingAllocations();
+    const response = await memory.getAllocations();
+    await memory.stopRecordingAllocations();
 
     ok(response.allocationSizes, "The response should have bytesizes.");
     is(response.allocationSizes.length, response.allocations.length,
        "There should be a bytesize for every allocation.");
     ok(response.allocationSizes.length >= 3,
        "There are atleast 3 allocations.");
-    ok(response.allocationSizes.every(isPositiveNumber), "every bytesize is a positive number");
+    ok(response.allocationSizes.every(isPositiveNumber),
+       "every bytesize is a positive number");
 
-    yield memory.detach();
-    destroyServerAndFinish(client);
-  });
+    await memory.detach();
+    destroyServerAndFinish(target);
+  })();
 };
 
-function isPositiveNumber (n) {
+function isPositiveNumber(n) {
   return typeof n === "number" && n > 0;
 }
 </script>

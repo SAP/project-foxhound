@@ -7,54 +7,47 @@
 #ifndef mozilla_osfileconstants_h__
 #define mozilla_osfileconstants_h__
 
+#include "nsIObserver.h"
 #include "nsIOSFileConstantsService.h"
 #include "mozilla/Attributes.h"
 
 namespace mozilla {
 
 /**
- * Perform initialization of this module.
- *
- * This function _must_ be called:
- * - from the main thread;
- * - before any Chrome Worker is created.
- *
- * The function is idempotent.
- */
-nsresult InitOSFileConstants();
-
-/**
- * Perform cleanup of this module.
- *
- * This function _must_ be called:
- * - from the main thread;
- * - after all Chrome Workers are dead.
- *
- * The function is idempotent.
- */
-void CleanupOSFileConstants();
-
-/**
- * Define OS-specific constants.
- *
- * This function creates or uses JS object |OS.Constants| to store
- * all its constants.
- */
-bool DefineOSFileConstants(JSContext *cx, JS::Handle<JSObject*> global);
-
-/**
  * XPConnect initializer, for use in the main thread.
+ * This class is thread-safe but it must be first be initialized on the
+ * main-thread.
  */
-class OSFileConstantsService final : public nsIOSFileConstantsService
-{
+class OSFileConstantsService final : public nsIOSFileConstantsService,
+                                     public nsIObserver {
  public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOSFILECONSTANTSSERVICE
+  NS_DECL_NSIOBSERVER
+
+  static already_AddRefed<OSFileConstantsService> GetOrCreate();
+
+  bool DefineOSFileConstants(JSContext* aCx, JS::Handle<JSObject*> aGlobal);
+
+ private:
+  nsresult InitOSFileConstants();
+
   OSFileConstantsService();
-private:
   ~OSFileConstantsService();
+
+  bool mInitialized;
+
+  struct Paths;
+  UniquePtr<Paths> mPaths;
+
+  /**
+   * (Unix) the umask, which goes in OS.Constants.Sys but
+   * can only be looked up (via the system-info service)
+   * on the main thread.
+   */
+  uint32_t mUserUmask;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_osfileconstants_h__
+#endif  // mozilla_osfileconstants_h__

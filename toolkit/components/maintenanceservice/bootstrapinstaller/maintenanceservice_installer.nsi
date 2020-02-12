@@ -13,13 +13,9 @@ CRCCheck on
 
 RequestExecutionLevel admin
 
-; The commands inside this ifdef require NSIS 3.0a2 or greater so the ifdef can
-; be removed after we require NSIS 3.0a2 or greater.
-!ifdef NSIS_PACKEDVERSION
-  Unicode true
-  ManifestSupportedOS all
-  ManifestDPIAware true
-!endif
+Unicode true
+ManifestSupportedOS all
+ManifestDPIAware true
 
 !addplugindir ./
 
@@ -55,7 +51,9 @@ Var BrandFullName
 ; We keep defines.nsi defined so that we get other things like 
 ; the version number, but we redefine BrandFullName
 !define MaintFullName "Mozilla Maintenance Service"
+!ifdef BrandFullName
 !undef BrandFullName
+!endif
 !define BrandFullName "${MaintFullName}"
 
 !include common.nsh
@@ -117,10 +115,7 @@ Function .onInit
   System::Call 'kernel32::SetDllDirectoryW(w "")'
 
   SetSilent silent
-  ; On Windows 2000 we do not install the maintenance service.
-  ; We won't run this installer from the parent installer, but just in case 
-  ; someone tries to execute it on Windows 2000...
-  ${Unless} ${AtLeastWinXP}
+  ${Unless} ${AtLeastWin7}
     Abort
   ${EndUnless}
 FunctionEnd
@@ -129,14 +124,6 @@ Function un.onInit
   ; Remove the current exe directory from the search order.
   ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
   System::Call 'kernel32::SetDllDirectoryW(w "")'
-
-; The commands inside this ifndef are needed prior to NSIS 3.0a2 and can be
-; removed after we require NSIS 3.0a2 or greater.
-!ifndef NSIS_PACKEDVERSION
-  ${If} ${AtLeastWinVista}
-    System::Call 'user32::SetProcessDPIAware()'
-  ${EndIf}
-!endif
 
   StrCpy $BrandFullNameDA "${MaintFullName}"
   StrCpy $BrandFullName "${MaintFullName}"
@@ -207,6 +194,7 @@ Section "MaintenanceService"
   ; Since the Maintenance service can be installed either x86 or x64,
   ; always use the 64-bit registry for checking if an attempt was made.
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView 64
   ${EndIf}
   WriteRegDWORD HKLM "Software\Mozilla\MaintenanceService" "Attempted" 1
@@ -221,6 +209,7 @@ Section "MaintenanceService"
   WriteRegStr HKLM "${FallbackKey}\1" "name" "Mozilla Fake SPC"
   WriteRegStr HKLM "${FallbackKey}\1" "issuer" "Mozilla Fake CA"
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastused
   ${EndIf}
 SectionEnd
@@ -266,12 +255,14 @@ Section "Uninstall"
   DeleteRegKey HKLM "${MaintUninstallKey}"
 
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView 64
   ${EndIf}
   DeleteRegValue HKLM "Software\Mozilla\MaintenanceService" "Installed"
   DeleteRegValue HKLM "Software\Mozilla\MaintenanceService" "FFPrefetchDisabled"
   DeleteRegKey HKLM "${FallbackKey}\"
   ${If} ${RunningX64}
+  ${OrIf} ${IsNativeARM64}
     SetRegView lastused
   ${EndIf}
 SectionEnd

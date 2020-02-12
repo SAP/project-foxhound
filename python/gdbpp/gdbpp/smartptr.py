@@ -4,8 +4,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import gdb
+from __future__ import absolute_import
+
 from gdbpp import GeckoPrettyPrinter
+
 
 @GeckoPrettyPrinter('nsWeakPtr', '^nsCOMPtr<nsIWeakReference>$')
 class weak_ptr_printer(object):
@@ -24,6 +26,7 @@ class weak_ptr_printer(object):
 
         return '[(%s) %s]' % (weak_ptr.dynamic_type, weak_ptr)
 
+
 @GeckoPrettyPrinter('mozilla::StaticAutoPtr', '^mozilla::StaticAutoPtr<.*>$')
 @GeckoPrettyPrinter('mozilla::StaticRefPtr', '^mozilla::StaticRefPtr<.*>$')
 @GeckoPrettyPrinter('nsAutoPtr', '^nsAutoPtr<.*>$')
@@ -41,25 +44,16 @@ class smartptr_printer(object):
 
         return '[(%s) %s]' % (type_name, str(self.value))
 
-@GeckoPrettyPrinter('mozilla::StyleSheetHandle::RefPtr', '^mozilla::HandleRefPtr<mozilla::StyleSheetHandle>$')
-class sheetptr_printer(object):
+
+@GeckoPrettyPrinter('UniquePtr', '^mozilla::UniquePtr<.*>$')
+class uniqueptr_printer(object):
     def __init__(self, value):
-        self.value = 0
-        if (value['mHandle'] and
-            value['mHandle']['mPtr'] and
-            value['mHandle']['mPtr']['mValue']):
-            self.value = int(value['mHandle']['mPtr']['mValue'])
+        self.value = value['mTuple']['mFirstA']
 
     def to_string(self):
-        if self.value == 0:
-            type_name = 'mozilla::StyleSheet *'
-            value = 0
+        if not self.value:
+            type_name = str(self.value.type)
         else:
-            value = int(self.value)
-            if value & 0x1:
-                value = value & ~0x1
-                type_name = 'mozilla::ServoStyleSheet *'
-            else:
-                type_name = 'mozilla::CSSStyleSheet *'
+            type_name = str(self.value.dereference().dynamic_type.pointer())
 
-        return '[(%s) %s]' % (type_name, hex(value))
+        return '[(%s) %s]' % (type_name, str(self.value))

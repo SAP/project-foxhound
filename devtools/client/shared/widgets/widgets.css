@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,47 +12,18 @@
   -moz-user-focus: normal;
 }
 
-/* SimpleListWidget */
-
-.simple-list-widget-container {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-/* FastListWidget */
-
-.fast-list-widget-container {
-  overflow: auto;
-}
-
-/* SideMenuWidget */
-
-.side-menu-widget-container {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.side-menu-widget-item-contents {
-  -moz-user-focus: normal;
-}
-
-.side-menu-widget-group-checkbox .checkbox-label-box,
-.side-menu-widget-item-checkbox .checkbox-label-box {
-  display: none; /* See bug 669507 */
-}
-
 /* VariablesView */
 
 .variables-view-container {
   overflow-x: hidden;
   overflow-y: auto;
+  direction: ltr;
 }
 
 .variables-view-element-details:not([open]) {
   display: none;
 }
 
-.variables-view-scope,
 .variable-or-property {
   -moz-user-focus: normal;
 }

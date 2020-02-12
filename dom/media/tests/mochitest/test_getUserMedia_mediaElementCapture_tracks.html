@@ -2,7 +2,6 @@
 <html>
 <head>
   <script type="application/javascript" src="mediaStreamPlayback.js"></script>
-  <script type="application/javascript" src="head.js"></script>
 </head>
 <body>
 <pre id="test">
@@ -26,7 +25,7 @@ runTest(() => getUserMedia({audio: true, video: true})
     // We need to test with multiple tracks. We add an extra of each kind.
     stream.getTracks().forEach(t => stream.addTrack(t.clone()));
 
-    audioElement = createMediaElement("gUMAudio", "local", "gUMAudio", true);
+    audioElement = createMediaElement("audio", "gUMAudio");
     audioElement.srcObject = stream;
 
     return haveEvent(audioElement, "loadedmetadata", wait(50000, new Error("Timeout")));
@@ -43,7 +42,7 @@ runTest(() => getUserMedia({audio: true, video: true})
     return haveNoEvent(audioCaptureStream, "addtrack");
   })
   .then(() => {
-    videoElement = createMediaElement("gUMVideo", "local", "gUMVideo", false);
+    videoElement = createMediaElement("video", "gUMVideo");
 
     info("Capturing video element (captureStream -> loadedmetadata)");
     videoCaptureStream = videoElement.mozCaptureStream();
@@ -143,7 +142,7 @@ runTest(() => getUserMedia({audio: true, video: true})
 
     info("Testing CaptureStreamUntilEnded");
     untilEndedElement =
-      createMediaElement("gUMVideoUntilEnded", "local", "gUMVideoUntilEnded", false);
+      createMediaElement("video", "gUMVideoUntilEnded");
     untilEndedElement.srcObject = audioElement.srcObject;
 
     return haveEvent(untilEndedElement, "loadedmetadata",
@@ -158,8 +157,6 @@ runTest(() => getUserMedia({audio: true, video: true})
        "video element should capture only 1 video track until ended");
 
     untilEndedElement.srcObject.getTracks().forEach(t => t.stop());
-    // TODO(1208316) We stop the stream to make the media element end.
-    untilEndedElement.srcObject.stop();
 
     return Promise.all([
       haveEvent(untilEndedElement, "ended", wait(50000, new Error("Timeout"))),

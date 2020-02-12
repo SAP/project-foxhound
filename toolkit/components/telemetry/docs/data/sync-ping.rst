@@ -2,9 +2,9 @@
 "sync" ping
 ===========
 
-This is an aggregated format that contains information about each sync that occurred during a timeframe. It is submitted every 12 hours, and on browser shutdown, but only if the syncs property would not be empty. The ping does not contain the enviroment block, nor the clientId.
+This is an aggregated format that contains information about each sync that occurred during a timeframe. It is submitted every 12 hours, and on browser shutdown, but only if the ``syncs`` property would not be empty. The ping does not contain the environment block, nor the clientId.
 
-Each item in the syncs property is generated after a sync is completed, for both successful and failed syncs, and contains measurements pertaining to sync performance and error information.
+Each item in the ``syncs`` property is generated after a sync is completed, for both successful and failed syncs, and contains measurements pertaining to sync performance and error information.
 
 A JSON-schema document describing the exact format of the ping's payload property can be found at `services/sync/tests/unit/sync\_ping\_schema.json <https://dxr.mozilla.org/mozilla-central/source/services/sync/tests/unit/sync_ping_schema.json>`_.
 
@@ -18,16 +18,18 @@ Structure:
       ... common ping data
       payload: {
         version: 1,
+        os : { ... }, // os data from the current telemetry environment. OS specific, but typically includes name, version and locale.
         discarded: <integer count> // Number of syncs discarded -- left out if zero.
-        why: <string>, // Why did we submit the ping? Either "shutdown" or "schedule".
+        why: <string>, // Why did we submit the ping? Either "shutdown", "schedule", or "idchanged".
+        uid: <string>, // Hashed FxA unique ID, or string of 32 zeros. If this changes between syncs, the payload is submitted.
+        deviceID: <string>, // Hashed FxA Device ID, hex string of 64 characters, not included if the user is not logged in. If this changes between syncs, the payload is submitted.
+        sessionStartDate: <ISO date>, // Hourly precision, ISO date in local time
         // Array of recorded syncs. The ping is not submitted if this would be empty
         syncs: [{
           when: <integer milliseconds since epoch>,
           took: <integer duration in milliseconds>,
-          uid: <string>, // Hashed FxA unique ID, or string of 32 zeros.
-          deviceID: <string>, // Hashed FxA Device ID, hex string of 64 characters, not included if the user is not logged in.
           didLogin: <bool>, // Optional, is this the first sync after login? Excluded if we don't know.
-          why: <string>, // Optional, why the sync occured, excluded if we don't know.
+          why: <string>, // Optional, why the sync occurred, excluded if we don't know.
 
           // Optional, excluded if there was no error.
           failureReason: {
@@ -36,6 +38,16 @@ Structure:
             error: <string>, // Only present for "othererror" and "unexpectederror".
             from: <string>, // Optional, and only present for "autherror".
           },
+
+          // Optional, excluded if we couldn't get a valid uid or local device id
+          devices: [{
+            os: <string>, // OS string as reported by Services.appinfo.OS, if known
+            version: <string>, // Firefox version, as reported by Services.appinfo.version if known
+            id: <string>, // Hashed FxA device id for device
+            type: <string>, // broad device "type", as reported by fxa ("mobile", "tv", etc).
+            syncID: <string>, // Hashed Sync device id for device, if the user is a sync user.
+          }],
+
           // Internal sync status information. Omitted if it would be empty.
           status: {
             sync: <string>, // The value of the Status.sync property, unless it indicates success.
@@ -69,18 +81,48 @@ Structure:
               // Optional, excluded if there were no errors
               failureReason: { ... }, // Same as above.
 
+              // Timings and counts for detailed steps that the engine reported
+              // as part of its sync. Optional; omitted if the engine didn't
+              // report any extra steps.
+              steps: {
+                name: <string>, // The step name.
+                took: <integer duration in milliseconds>, // Omitted if 0.
+                // Optional, extra named counts (e.g., number of items handled
+                // in this step). Omitted if the engine didn't report extra
+                // counts.
+                counts: [
+                  {
+                    name: <string>, // The counter name.
+                    count: <integer>, // The counter value.
+                  },
+                ],
+              },
+
               // Optional, excluded if it would be empty or if the engine cannot
-              // or did not run validation on itself. Entries with a count of 0
-              // are excluded.
-              validation: [
-                {
-                  name: <string>, // The problem identified.
-                  count: <integer>, // Number of times it occurred.
-                }
-              ]
+              // or did not run validation on itself.
+              validation: {
+                // Optional validator version, default of 0.
+                version: <integer>,
+                checked: <integer>,
+                took: <non-monotonic integer duration in milliseconds>,
+                // Entries with a count of 0 are excluded, the array is excluded if no problems are found.
+                problems: [
+                  {
+                    name: <string>, // The problem identified.
+                    count: <integer>, // Number of times it occurred.
+                  }
+                ],
+                // Format is same as above, this is only included if we tried and failed
+                // to run validation, and if it's present, all other fields in this object are optional.
+                failureReason: { ... },
+              }
             }
           ]
-        }]
+        }],
+        events: [
+          event_array // See events below.
+        ],
+        histograms: { ... } // See histograms below
       }
     }
 
@@ -90,17 +132,17 @@ info
 discarded
 ~~~~~~~~~
 
-The ping may only contain a certain number of entries in the ``"syncs"`` array, currently 500 (it is determined by the ``"services.sync.telemetry.maxPayloadCount"`` preference).  Entries beyond this are discarded, and recorded in the discarded count.
+The ping may only contain a certain number of entries in the ``"syncs"`` array, currently 500 (it is determined by the ``"services.sync.telemetry.maxPayloadCount"`` preference). Entries beyond this are discarded, and recorded in the discarded count.
 
 syncs.took
 ~~~~~~~~~~
 
-These values should be monotonic.  If we can't get a monotonic timestamp, -1 will be reported on the payload, and the values will be omitted from the engines. Additionally, the value will be omitted from an engine if it would be 0 (either due to timer inaccuracy or finishing instantaneously).
+These values should be monotonic. If we can't get a monotonic timestamp, -1 will be reported on the payload, and the values will be omitted from the engines. Additionally, the value will be omitted from an engine if it would be 0 (either due to timer inaccuracy or finishing instantaneously).
 
-syncs.uid
+uid
 ~~~~~~~~~
 
-This property containing a hash of the FxA account identifier, which is a 32 character hexidecimal string.  In the case that we are unable to authenticate with FxA and have never authenticated in the past, it will be a placeholder string consisting of 32 repeated ``0`` characters.
+This property containing a hash of the FxA account identifier, which is a 32 character hexadecimal string. In the case that we are unable to authenticate with FxA and have never authenticated in the past, it will be a placeholder string consisting of 32 repeated ``0`` characters.
 
 syncs.why
 ~~~~~~~~~
@@ -123,7 +165,7 @@ syncs.failureReason
 
 Stores error information, if any is present. Always contains the "name" property, which identifies the type of error it is. The types can be.
 
-- ``httperror``: Indicates that we recieved an HTTP error response code, but are unable to be more specific about the error. Contains the following properties:
+- ``httperror``: Indicates that we received an HTTP error response code, but are unable to be more specific about the error. Contains the following properties:
 
     - ``code``: Integer HTTP status code.
 
@@ -145,12 +187,97 @@ Stores error information, if any is present. Always contains the "name" property
 
    - ``error``: The message provided by the error.
 
+- ``sqlerror``: Indicates that we received a ``mozIStorageError`` from a database query.
+
+    - ``code``: Value of the ``error.result`` property, one of the constants listed `here <https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Reference/Interface/MozIStorageError#Constants>`_.
+
 syncs.engine.name
 ~~~~~~~~~~~~~~~~~
 
 Third-party engines are not reported, so only the following values are allowed: ``addons``, ``bookmarks``, ``clients``, ``forms``, ``history``, ``passwords``, ``prefs``, and ``tabs``.
 
-syncs.engine.validation
-~~~~~~~~~~~~~~~~~~~~~~~
+syncs.engine.validation.problems
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For engines that can run validation on themselves, an array of objects describing validation errors that have occurred. Items that would have a count of 0 are excluded. Each engine will have its own set of items that it might put in the ``name`` field, but there are a finite number. See ``BookmarkProblemData.getSummary`` in `services/sync/modules/bookmark\_validator.js <https://dxr.mozilla.org/mozilla-central/source/services/sync/modules/bookmark_validator.js>`_ for an example.
+
+syncs.devices
+~~~~~~~~~~~~~
+
+The list of remote devices associated with this account, as reported by the clients collection. The ID of each device is hashed using the same algorithm as the local id.
+
+
+Events in the "sync" ping
+-------------------------
+
+The sync ping includes events in the same format as they are included in the
+main ping, see :ref:`eventtelemetry`.
+
+All events submitted as part of the sync ping which already include the "extra"
+object (the 6th parameter of the event array described in the event telemetry
+documentation) may also include a "serverTime" parameter, which the most recent
+unix timestamp sent from the sync server (as a string). This arrives in the
+``X-Weave-Timestamp`` HTTP header, and may be omitted in cases where the client
+has not yet made a request to the server, or doesn't have it for any other
+reason. It is included to improve flow analysis across multiple clients.
+
+Every event recorded in this ping will have a category of ``sync``. The following
+events are defined, categorized by the event method.
+
+Histograms in the "sync" ping
+-----------------------------
+
+The sync ping includes histograms relating to measurements of password manager usage.
+These histograms are duplicated in the main ping. Histograms are only included in a ping if they have been set by the pwmgr code.
+Currently, the histograms that can be included are:
+
+PWMGR_BLOCKLIST_NUM_SITES
+PWMGR_FORM_AUTOFILL_RESULT
+PWMGR_LOGIN_LAST_USED_DAYS
+PWMGR_LOGIN_PAGE_SAFETY
+PWMGR_MANAGE_COPIED_PASSWORD
+PWMGR_MANAGE_COPIED_USERNAME
+PWMGR_MANAGE_DELETED
+PWMGR_MANAGE_VISIBILITY_TOGGLED
+PWMGR_NUM_PASSWORDS_PER_HOSTNAME
+PWMGR_NUM_SAVED_PASSWORDS
+PWMGR_PROMPT_REMEMBER_ACTION
+PWMGR_PROMPT_UPDATE_ACTION
+PWMGR_SAVING_ENABLED
+
+Histograms are objects with the following 6 properties:
+- min - minimum bucket size
+- max - maximum bucket size
+- histogram_type
+- counts - array representing contents of the buckets in the histogram
+- ranges - array with calculated bucket sizes
+
+sendcommand
+~~~~~~~~~~~
+
+Records that Sync wrote a remote "command" to another client. These commands
+cause that other client to take some action, such as resetting Sync on that
+client, or opening a new URL.
+
+- object: The specific command being written.
+- value: Not used (ie, ``null``)
+- extra: An object with the following attributes:
+
+  - deviceID: A GUID which identifies the device the command is being sent to.
+  - flowID: A GUID which uniquely identifies this command invocation.
+  - serverTime: (optional) Most recent server timestamp, as described above.
+
+processcommand
+~~~~~~~~~~~~~~
+
+Records that Sync processed a remote "command" previously sent by another
+client. This is logically the "other end" of ``sendcommand``.
+
+- object: The specific command being processed.
+- value: Not used (ie, ``null``)
+- extra: An object with the following attributes:
+
+  - flowID: A GUID which uniquely identifies this command invocation. The value
+            for this GUID will be the same as the flowID sent to the client via
+            ``sendcommand``.
+  - serverTime: (optional) Most recent server timestamp, as described above.

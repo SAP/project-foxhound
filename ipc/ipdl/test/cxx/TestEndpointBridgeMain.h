@@ -21,10 +21,10 @@ namespace _ipdltest {
 //-----------------------------------------------------------------------------
 // "Main" process
 //
-class TestEndpointBridgeMainParent :
-    public PTestEndpointBridgeMainParent
-{
-public:
+class TestEndpointBridgeMainParent : public PTestEndpointBridgeMainParent {
+  friend class PTestEndpointBridgeMainParent;
+
+ public:
   TestEndpointBridgeMainParent() {}
   virtual ~TestEndpointBridgeMainParent() {}
 
@@ -33,24 +33,25 @@ public:
 
   void Main();
 
-protected:
-  bool RecvBridged(mozilla::ipc::Endpoint<PTestEndpointBridgeMainSubParent>&& endpoint) override;
+ protected:
+  mozilla::ipc::IPCResult RecvBridged(
+      mozilla::ipc::Endpoint<PTestEndpointBridgeMainSubParent>&& endpoint);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
 
-class TestEndpointBridgeMainSubParent :
-    public PTestEndpointBridgeMainSubParent
-{
-public:
-  explicit TestEndpointBridgeMainSubParent()
-  {}
+class TestEndpointBridgeMainSubParent
+    : public PTestEndpointBridgeMainSubParent {
+  friend class PTestEndpointBridgeMainSubParent;
+
+ public:
+  explicit TestEndpointBridgeMainSubParent() {}
   virtual ~TestEndpointBridgeMainSubParent() {}
 
-protected:
-  virtual bool RecvHello() override;
-  virtual bool RecvHelloSync() override;
-  virtual bool AnswerHelloRpc() override;
+ protected:
+  mozilla::ipc::IPCResult RecvHello();
+  mozilla::ipc::IPCResult RecvHelloSync();
+  mozilla::ipc::IPCResult AnswerHelloRpc();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
@@ -60,32 +61,32 @@ protected:
 //
 class TestEndpointBridgeSubParent;
 
-class TestEndpointBridgeMainChild :
-    public PTestEndpointBridgeMainChild
-{
-public:
+class TestEndpointBridgeMainChild : public PTestEndpointBridgeMainChild {
+  friend class PTestEndpointBridgeMainChild;
+
+ public:
   TestEndpointBridgeMainChild();
   virtual ~TestEndpointBridgeMainChild() {}
 
-protected:
-  virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   IPDLUnitTestSubprocess* mSubprocess;
 };
 
-class TestEndpointBridgeSubParent :
-    public PTestEndpointBridgeSubParent
-{
-public:
+class TestEndpointBridgeSubParent : public PTestEndpointBridgeSubParent {
+  friend class PTestEndpointBridgeSubParent;
+
+ public:
   TestEndpointBridgeSubParent() {}
   virtual ~TestEndpointBridgeSubParent() {}
 
   void Main();
 
-protected:
-  virtual bool RecvBridgeEm() override;
+ protected:
+  mozilla::ipc::IPCResult RecvBridgeEm();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
@@ -93,41 +94,39 @@ protected:
 //-----------------------------------------------------------------------------
 // "Subsub" process --- child of "sub"
 //
-class TestEndpointBridgeSubChild :
-    public PTestEndpointBridgeSubChild
-{
-public:
+class TestEndpointBridgeSubChild : public PTestEndpointBridgeSubChild {
+  friend class PTestEndpointBridgeSubChild;
+
+ public:
   TestEndpointBridgeSubChild();
   virtual ~TestEndpointBridgeSubChild() {}
 
-protected:
-  virtual bool RecvPing() override;
+ protected:
+  mozilla::ipc::IPCResult RecvPing();
 
-  bool RecvBridged(Endpoint<PTestEndpointBridgeMainSubChild>&& endpoint) override;
+  mozilla::ipc::IPCResult RecvBridged(
+      Endpoint<PTestEndpointBridgeMainSubChild>&& endpoint);
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 };
 
-class TestEndpointBridgeMainSubChild :
-    public PTestEndpointBridgeMainSubChild
-{
-public:
-  explicit TestEndpointBridgeMainSubChild()
-   : mGotHi(false)
-  {}
+class TestEndpointBridgeMainSubChild : public PTestEndpointBridgeMainSubChild {
+  friend class PTestEndpointBridgeMainSubChild;
+
+ public:
+  explicit TestEndpointBridgeMainSubChild() : mGotHi(false) {}
   virtual ~TestEndpointBridgeMainSubChild() {}
 
-protected:
-  virtual bool RecvHi() override;
-  virtual bool AnswerHiRpc() override;
+ protected:
+  mozilla::ipc::IPCResult RecvHi();
+  mozilla::ipc::IPCResult AnswerHiRpc();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   bool mGotHi;
 };
 
-} // namespace _ipdltest
-} // namespace mozilla
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-
-#endif // ifndef mozilla__ipdltest_TestEndpointBridgeMain_h
+#endif  // ifndef mozilla__ipdltest_TestEndpointBridgeMain_h

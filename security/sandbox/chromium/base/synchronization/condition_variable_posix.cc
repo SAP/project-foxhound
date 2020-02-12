@@ -8,7 +8,9 @@
 #include <stdint.h>
 #include <sys/time.h>
 
+#include "base/optional.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/scoped_blocking_call.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -62,7 +64,11 @@ ConditionVariable::~ConditionVariable() {
 }
 
 void ConditionVariable::Wait() {
-  base::ThreadRestrictions::AssertWaitAllowed();
+  Optional<internal::ScopedBlockingCallWithBaseSyncPrimitives>
+      scoped_blocking_call;
+  if (waiting_is_blocking_)
+    scoped_blocking_call.emplace(BlockingType::MAY_BLOCK);
+
 #if DCHECK_IS_ON()
   user_lock_->CheckHeldAndUnmark();
 #endif
@@ -74,7 +80,11 @@ void ConditionVariable::Wait() {
 }
 
 void ConditionVariable::TimedWait(const TimeDelta& max_time) {
-  base::ThreadRestrictions::AssertWaitAllowed();
+  Optional<internal::ScopedBlockingCallWithBaseSyncPrimitives>
+      scoped_blocking_call;
+  if (waiting_is_blocking_)
+    scoped_blocking_call.emplace(BlockingType::MAY_BLOCK);
+
   int64_t usecs = max_time.InMicroseconds();
   struct timespec relative_time;
   relative_time.tv_sec = usecs / Time::kMicrosecondsPerSecond;
@@ -118,6 +128,8 @@ void ConditionVariable::TimedWait(const TimeDelta& max_time) {
 #endif  // OS_ANDROID && HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC
 #endif  // OS_MACOSX
 
+  // On failure, we only expect the CV to timeout. Any other error value means
+  // that we've unexpectedly woken up.
   DCHECK(rv == 0 || rv == ETIMEDOUT);
 #if DCHECK_IS_ON()
   user_lock_->CheckUnheldAndMark();

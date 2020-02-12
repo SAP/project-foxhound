@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -16,51 +16,38 @@ var nostorePath = "/nostore" + suffix;
 var test410Path = "/test410" + suffix;
 var test404Path = "/test404" + suffix;
 
-// We attach this to channel when we want to test Private Browsing mode
-function LoadContext(usePrivateBrowsing) {
-  this.usePrivateBrowsing = usePrivateBrowsing;
-  this.originAttributes.privateBrowsingId = usePrivateBrowsing ? 1 : 0;
-}
-
-LoadContext.prototype = {
-  originAttributes: {},
-  usePrivateBrowsing: false,
-  // don't bother defining rest of nsILoadContext fields: don't need 'em
-
-  QueryInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContext))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-
-  getInterface: function(iid) {
-    if (iid.equals(Ci.nsILoadContext))
-      return this;
-    throw Cr.NS_ERROR_NO_INTERFACE;
-  },
-
-  originAttributes: {}
-};
-
-PrivateBrowsingLoadContext = new LoadContext(true);
+var PrivateBrowsingLoadContext = Cu.createPrivateLoadContext();
 
 function make_channel(url, flags, usePrivateBrowsing) {
   var securityFlags = Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
-  if (usePrivateBrowsing) {
-    securityFlags |= Ci.nsILoadInfo.SEC_FORCE_PRIVATE_BROWSING;
-  }
-  var req = NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true,
-                                securityFlags: securityFlags});
+
+  var uri = Services.io.newURI(url);
+  var principal = Services.scriptSecurityManager.createContentPrincipal(uri, {
+    privateBrowsingId: usePrivateBrowsing ? 1 : 0,
+  });
+
+  var req = NetUtil.newChannel({
+    uri,
+    loadingPrincipal: principal,
+    securityFlags,
+    contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
+  });
+
   req.loadFlags = flags;
   if (usePrivateBrowsing) {
     req.notificationCallbacks = PrivateBrowsingLoadContext;
   }
-  req.loadInfo.originAttributes = {privateBrowsingId: usePrivateBrowsing ? 1 : 0};
   return req;
 }
 
-function Test(path, flags, expectSuccess, readFromCache, hitServer, 
-              usePrivateBrowsing /* defaults to false */) {
+function Test(
+  path,
+  flags,
+  expectSuccess,
+  readFromCache,
+  hitServer,
+  usePrivateBrowsing /* defaults to false */
+) {
   this.path = path;
   this.flags = flags;
   this.expectSuccess = expectSuccess;
@@ -78,139 +65,196 @@ Test.prototype = {
   _buffer: "",
   _isFromCache: false,
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIStreamListener) ||
-        iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports))
-      return this;
-    throw Components.results.NS_ERROR_NO_INTERFACE;
-  },
+  QueryInterface: ChromeUtils.generateQI([
+    "nsIStreamListener",
+    "nsIRequestObserver",
+  ]),
 
-  onStartRequest: function(request, context) {
+  onStartRequest(request) {
     var cachingChannel = request.QueryInterface(Ci.nsICacheInfoChannel);
     this._isFromCache = request.isPending() && cachingChannel.isFromCache();
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable(request, stream, offset, count) {
     this._buffer = this._buffer.concat(read_stream(stream, count));
   },
 
-  onStopRequest: function(request, context, status) {
-    do_check_eq(Components.isSuccessCode(status), this.expectSuccess);
-    do_check_eq(this._isFromCache, this.readFromCache);
-    do_check_eq(gHitServer, this.hitServer);
+  onStopRequest(request, status) {
+    Assert.equal(Components.isSuccessCode(status), this.expectSuccess);
+    Assert.equal(this._isFromCache, this.readFromCache);
+    Assert.equal(gHitServer, this.hitServer);
 
     do_timeout(0, run_next_test);
   },
 
-  run: function() {
-    dump("Running:" +
-         "\n  " + this.path +
-         "\n  " + this.flags +
-         "\n  " + this.expectSuccess +
-         "\n  " + this.readFromCache +
-         "\n  " + this.hitServer + "\n");
+  run() {
+    dump(
+      "Running:" +
+        "\n  " +
+        this.path +
+        "\n  " +
+        this.flags +
+        "\n  " +
+        this.expectSuccess +
+        "\n  " +
+        this.readFromCache +
+        "\n  " +
+        this.hitServer +
+        "\n"
+    );
     gHitServer = false;
     var channel = make_channel(this.path, this.flags, this.usePrivateBrowsing);
-    channel.asyncOpen2(this);
-  }
+    channel.asyncOpen(this);
+  },
 };
 
 var gHitServer = false;
 
 var gTests = [
+  new Test(
+    httpBase + shortexpPath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true, // hit server
+    true
+  ), // USE PRIVATE BROWSING, so not cached for later requests
+  new Test(
+    httpBase + shortexpPath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + shortexpPath,
+    0,
+    true, // expect success
+    true, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + shortexpPath,
+    Ci.nsIRequest.LOAD_BYPASS_CACHE,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + shortexpPath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
+    false, // expect success
+    false, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + shortexpPath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE | Ci.nsIRequest.VALIDATE_NEVER,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + shortexpPath,
+    Ci.nsIRequest.LOAD_FROM_CACHE,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
 
-  new Test(httpBase + shortexpPath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true,   // hit server
-           true),  // USE PRIVATE BROWSING, so not cached for later requests
-  new Test(httpBase + shortexpPath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + shortexpPath, 0,
-           true,   // expect success
-           true,   // read from cache
-           true),  // hit server
-  new Test(httpBase + shortexpPath, Ci.nsIRequest.LOAD_BYPASS_CACHE,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + shortexpPath, Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
-           false,  // expect success
-           false,  // read from cache
-           false), // hit server
-  new Test(httpBase + shortexpPath,
-           Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
-           Ci.nsIRequest.VALIDATE_NEVER,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
-  new Test(httpBase + shortexpPath, Ci.nsIRequest.LOAD_FROM_CACHE,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
+  new Test(
+    httpBase + longexpPath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    0,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsIRequest.LOAD_BYPASS_CACHE,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsIRequest.VALIDATE_ALWAYS,
+    true, // expect success
+    true, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE | Ci.nsIRequest.VALIDATE_NEVER,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE | Ci.nsIRequest.VALIDATE_ALWAYS,
+    false, // expect success
+    false, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + longexpPath,
+    Ci.nsIRequest.LOAD_FROM_CACHE,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
 
-  new Test(httpBase + longexpPath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + longexpPath, 0,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
-  new Test(httpBase + longexpPath, Ci.nsIRequest.LOAD_BYPASS_CACHE,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + longexpPath,
-           Ci.nsIRequest.VALIDATE_ALWAYS,
-           true,   // expect success
-           true,   // read from cache
-           true),  // hit server
-  new Test(httpBase + longexpPath, Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
-  new Test(httpBase + longexpPath,
-           Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
-           Ci.nsIRequest.VALIDATE_NEVER,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
-  new Test(httpBase + longexpPath,
-           Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
-           Ci.nsIRequest.VALIDATE_ALWAYS,
-           false,  // expect success
-           false,  // read from cache
-           false), // hit server
-  new Test(httpBase + longexpPath, Ci.nsIRequest.LOAD_FROM_CACHE,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
+  new Test(
+    httpBase + longexp2Path,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + longexp2Path,
+    0,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
 
-  new Test(httpBase + longexp2Path, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + longexp2Path, 0,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
-
-  new Test(httpBase + nocachePath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + nocachePath, 0,
-           true,   // expect success
-           true,   // read from cache
-           true),  // hit server
-  new Test(httpBase + nocachePath, Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
-           false,  // expect success
-           false,  // read from cache
-           false), // hit server
+  new Test(
+    httpBase + nocachePath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + nocachePath,
+    0,
+    true, // expect success
+    true, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + nocachePath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
+    false, // expect success
+    false, // read from cache
+    false
+  ), // hit server
 
   // CACHE2: mayhemer - entry is doomed... I think the logic is wrong, we should not doom them
   // as they are not valid, but take them as they need to reval
@@ -223,12 +267,13 @@ var gTests = [
 
   // LOAD_ONLY_FROM_CACHE would normally fail (because no-cache forces
   // a validation), but VALIDATE_NEVER should override that.
-  new Test(httpBase + nocachePath,
-           Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
-           Ci.nsIRequest.VALIDATE_NEVER,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
+  new Test(
+    httpBase + nocachePath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE | Ci.nsIRequest.VALIDATE_NEVER,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
 
   // ... however, no-cache over ssl should act like no-store and force
   // a validation (and therefore failure) even if VALIDATE_NEVER is
@@ -243,52 +288,76 @@ var gTests = [
            false)  // hit server
   */
 
-  new Test(httpBase + nostorePath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + nostorePath, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + nostorePath, Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
-           false,  // expect success
-           false,  // read from cache
-           false), // hit server
-  new Test(httpBase + nostorePath, Ci.nsIRequest.LOAD_FROM_CACHE,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
+  new Test(
+    httpBase + nostorePath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + nostorePath,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + nostorePath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE,
+    false, // expect success
+    false, // read from cache
+    false
+  ), // hit server
+  new Test(
+    httpBase + nostorePath,
+    Ci.nsIRequest.LOAD_FROM_CACHE,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
   // no-store should force the validation (and therefore failure, with
   // LOAD_ONLY_FROM_CACHE) even if VALIDATE_NEVER is set.
-  new Test(httpBase + nostorePath,
-           Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
-           Ci.nsIRequest.VALIDATE_NEVER,
-           false,  // expect success
-           false,  // read from cache
-           false), // hit server
+  new Test(
+    httpBase + nostorePath,
+    Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE | Ci.nsIRequest.VALIDATE_NEVER,
+    false, // expect success
+    false, // read from cache
+    false
+  ), // hit server
 
-  new Test(httpBase + test410Path, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + test410Path, 0,
-           true,   // expect success
-           true,   // read from cache
-           false), // hit server
+  new Test(
+    httpBase + test410Path,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + test410Path,
+    0,
+    true, // expect success
+    true, // read from cache
+    false
+  ), // hit server
 
-  new Test(httpBase + test404Path, 0,
-           true,   // expect success
-           false,  // read from cache
-           true),  // hit server
-  new Test(httpBase + test404Path, 0,
-           true,   // expect success
-           false,  // read from cache
-           true)   // hit server
+  new Test(
+    httpBase + test404Path,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
+  new Test(
+    httpBase + test404Path,
+    0,
+    true, // expect success
+    false, // read from cache
+    true
+  ), // hit server
 ];
 
-function run_next_test()
-{
+function run_next_test() {
   if (gTests.length == 0) {
     httpserver.stop(do_test_finished);
     return;
@@ -302,7 +371,7 @@ function handler(httpStatus, metadata, response) {
   gHitServer = true;
   try {
     var etag = metadata.getHeader("If-None-Match");
-  } catch(ex) {
+  } catch (ex) {
     var etag = "";
   }
   if (etag == "testtag") {

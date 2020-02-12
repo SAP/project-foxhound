@@ -13,13 +13,13 @@ enum IDBRequestReadyState {
     "done"
 };
 
-[Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface IDBRequest : EventTarget {
     [Throws]
     readonly    attribute any                  result;
 
     [Throws]
-    readonly    attribute DOMError?            error;
+    readonly    attribute DOMException?        error;
 
     readonly    attribute (IDBObjectStore or IDBIndex or IDBCursor)? source;
     readonly    attribute IDBTransaction?      transaction;

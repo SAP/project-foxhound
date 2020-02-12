@@ -5,25 +5,37 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/BasePrincipal.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIBrowserDOMWindow.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIContentSecurityPolicy.h"
+#include "nsIPrincipal.h"
+#include "nsIReferrerInfo.h"
 #include "nsString.h"
 
 namespace mozilla {
-class DocShellOriginAttributes;
-}
+class OriginAttributes;
+namespace dom {
+class Element;
+}  // namespace dom
+}  // namespace mozilla
 
-class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams
-{
-public:
-  NS_DECL_ISUPPORTS
+class nsOpenURIInFrameParams final : public nsIOpenURIInFrameParams {
+ public:
+  NS_DECL_CYCLE_COLLECTION_CLASS(nsOpenURIInFrameParams)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIOPENURIINFRAMEPARAMS
 
-  explicit nsOpenURIInFrameParams(const mozilla::DocShellOriginAttributes& aOriginAttributes);
+  explicit nsOpenURIInFrameParams(
+      const mozilla::OriginAttributes& aOriginAttributes,
+      mozilla::dom::Element* aOpener);
 
-private:
+ private:
   ~nsOpenURIInFrameParams();
 
-  mozilla::DocShellOriginAttributes mOpenerOriginAttributes;
-  nsString mReferrer;
-  bool mIsPrivate;
+  mozilla::OriginAttributes mOpenerOriginAttributes;
+  RefPtr<mozilla::dom::Element> mOpenerBrowser;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
+  nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
+  nsCOMPtr<nsIContentSecurityPolicy> mCsp;
 };

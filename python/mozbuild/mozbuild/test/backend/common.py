@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import unittest
@@ -33,23 +33,85 @@ CONFIGS = defaultdict(lambda: {
     'non_global_defines': [],
     'substs': {'OS_TARGET': 'WINNT'},
 }, {
-    'android_eclipse': {
-        'defines': {
-            'MOZ_ANDROID_MIN_SDK_VERSION': '15',
-        },
-        'non_global_defines': [],
-        'substs': {
-            'ANDROID_TARGET_SDK': '16',
-            'MOZ_WIDGET_TOOLKIT': 'android',
-        },
-    },
     'binary-components': {
         'defines': {},
         'non_global_defines': [],
         'substs': {
             'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
             'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
             'COMPILE_ENVIRONMENT': '1',
+        },
+    },
+    'rust-library': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'RUST_TARGET': 'x86_64-unknown-linux-gnu',
+            'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
+            'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
+        },
+    },
+    'host-rust-library': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'RUST_HOST_TARGET': 'x86_64-unknown-linux-gnu',
+            'RUST_TARGET': 'armv7-linux-androideabi',
+            'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
+            'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
+        },
+    },
+    'host-rust-library-features': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'RUST_HOST_TARGET': 'x86_64-unknown-linux-gnu',
+            'RUST_TARGET': 'armv7-linux-androideabi',
+            'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
+            'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
+        },
+    },
+    'rust-library-features': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'RUST_TARGET': 'x86_64-unknown-linux-gnu',
+            'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
+            'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
+        },
+    },
+    'rust-programs': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'RUST_TARGET': 'i686-pc-windows-msvc',
+            'RUST_HOST_TARGET': 'i686-pc-windows-msvc',
+            'BIN_SUFFIX': '.exe',
+            'HOST_BIN_SUFFIX': '.exe',
+        },
+    },
+    'test-support-binaries-tracked': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'LIB_SUFFIX': 'dll',
+            'BIN_SUFFIX': '.exe',
         },
     },
     'sources': {
@@ -99,6 +161,63 @@ CONFIGS = defaultdict(lambda: {
             'MOZ_APP_NAME': 'my_app',
         },
     },
+    'prog-lib-c-only': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'LIB_SUFFIX': '.a',
+            'BIN_SUFFIX': '',
+        },
+    },
+    'gn-processor': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'BUILD_BACKENDS': [
+                'GnMozbuildWriter',
+                'RecursiveMake',
+            ],
+            'COMPILE_ENVIRONMENT': '1',
+            'STL_FLAGS': [],
+            'RUST_TARGET': 'x86_64-unknown-linux-gnu',
+            'LIB_PREFIX': 'lib',
+            'RUST_LIB_PREFIX': 'lib',
+            'LIB_SUFFIX': 'a',
+            'RUST_LIB_SUFFIX': 'a',
+            'OS_TARGET': 'Darwin',
+        },
+    },
+    'ipdl_sources': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'LIB_SUFFIX': '.a',
+            'BIN_SUFFIX': '',
+        },
+    },
+    'program-paths': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'COMPILE_ENVIRONMENT': '1',
+            'BIN_SUFFIX': '.prog',
+        },
+    },
+    'linkage': {
+        'defines': {},
+        'non_global_defines': [],
+        'substs': {
+            'CC_TYPE': 'clang',
+            'COMPILE_ENVIRONMENT': '1',
+            'LIB_SUFFIX': 'a',
+            'BIN_SUFFIX': '.exe',
+            'DLL_SUFFIX': '.so',
+            'OBJ_SUFFIX': 'o',
+            'EXPAND_LIBS_LIST_STYLE': 'list',
+        },
+    },
 })
 
 
@@ -118,12 +237,16 @@ class BackendTester(unittest.TestCase):
         environment is cleaned up automatically when the test finishes.
         """
         config = CONFIGS[name]
-
-        objdir = mkdtemp()
-        self.addCleanup(rmtree, objdir)
+        config['substs']['MOZ_UI_LOCALE'] = 'en-US'
 
         srcdir = mozpath.join(test_data_path, name)
         config['substs']['top_srcdir'] = srcdir
+
+        # Create the objdir in the srcdir to ensure that they share the
+        # same drive on Windows.
+        objdir = mkdtemp(dir=srcdir)
+        self.addCleanup(rmtree, objdir)
+
         return ConfigEnvironment(srcdir, objdir, **config)
 
     def _emit(self, name, env=None):

@@ -7,103 +7,142 @@
  * Tests if JSONP responses are handled correctly.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(JSONP_URL);
+add_task(async function() {
+  const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+
+  const { tab, monitor } = await initNetMonitor(JSONP_URL);
   info("Starting test... ");
 
-  let { document, EVENTS, L10N, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu, NetworkDetails } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getDisplayedRequests, getSortedRequests } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
 
-  RequestsMenu.lazyUpdate = false;
-  NetworkDetails._json.lazyEmpty = false;
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 2);
 
-  verifyRequestItemTarget(RequestsMenu.getItemAtIndex(0),
-    "GET", CONTENT_TYPE_SJS + "?fmt=jsonp&jsonp=$_0123Fun", {
+  const requestItems = document.querySelectorAll(".request-list-item");
+  for (const requestItem of requestItems) {
+    requestItem.scrollIntoView();
+    const requestsListStatus = requestItem.querySelector(".status-code");
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    await waitUntil(() => requestsListStatus.title);
+  }
+
+  verifyRequestItemTarget(
+    document,
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
+    "GET",
+    CONTENT_TYPE_SJS + "?fmt=jsonp&jsonp=$_0123Fun",
+    {
       status: 200,
       statusText: "OK",
       type: "json",
       fullMimeType: "text/json; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 41),
-      time: true
-    });
-  verifyRequestItemTarget(RequestsMenu.getItemAtIndex(1),
-    "GET", CONTENT_TYPE_SJS + "?fmt=jsonp2&jsonp=$_4567Sad", {
+      time: true,
+    }
+  );
+  verifyRequestItemTarget(
+    document,
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(1),
+    "GET",
+    CONTENT_TYPE_SJS + "?fmt=jsonp2&jsonp=$_4567Sad",
+    {
       status: 200,
       statusText: "OK",
       type: "json",
       fullMimeType: "text/json; charset=utf-8",
       size: L10N.getFormatStrWithNumbers("networkMenu.sizeB", 54),
-      time: true
-    });
+      time: true,
+    }
+  );
 
-  let onEvent = monitor.panelWin.once(EVENTS.RESPONSE_BODY_DISPLAYED);
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.getElementById("details-pane-toggle"));
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll("#details-pane tab")[3]);
-  yield onEvent;
+  info("Testing first request");
+  let wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  store.dispatch(Actions.toggleNetworkDetails());
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#response-tab")
+  );
+  await wait;
 
-  testResponseTab("$_0123Fun", "\"Hello JSONP!\"");
+  testResponseTab("$_0123Fun", "Hello JSONP!");
 
-  onEvent = monitor.panelWin.once(EVENTS.RESPONSE_BODY_DISPLAYED);
-  RequestsMenu.selectedIndex = 1;
-  yield onEvent;
+  info("Testing second request");
+  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
 
-  testResponseTab("$_4567Sad", "\"Hello weird JSONP!\"");
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[1]
+  );
+  await wait;
 
-  yield teardown(monitor);
+  testResponseTab("$_4567Sad", "Hello weird JSONP!");
+
+  await teardown(monitor);
 
   function testResponseTab(func, greeting) {
-    let tabEl = document.querySelectorAll("#details-pane tab")[3];
-    let tabpanel = document.querySelectorAll("#details-pane tabpanel")[3];
+    const tabpanel = document.querySelector("#response-panel");
 
-    is(tabEl.getAttribute("selected"), "true",
-      "The response tab in the network details pane should be selected.");
-
-    is(tabpanel.querySelector("#response-content-info-header")
-      .hasAttribute("hidden"), true,
-      "The response info header doesn't have the intended visibility.");
-    is(tabpanel.querySelector("#response-content-json-box")
-      .hasAttribute("hidden"), false,
-      "The response content json box doesn't have the intended visibility.");
-    is(tabpanel.querySelector("#response-content-textarea-box")
-      .hasAttribute("hidden"), true,
-      "The response content textarea box doesn't have the intended visibility.");
-    is(tabpanel.querySelector("#response-content-image-box")
-      .hasAttribute("hidden"), true,
-      "The response content image box doesn't have the intended visibility.");
-
-    is(tabpanel.querySelectorAll(".variables-view-scope").length, 1,
-      "There should be 1 json scope displayed in this tabpanel.");
-    is(tabpanel.querySelectorAll(".variables-view-property").length, 2,
-      "There should be 2 json properties displayed in this tabpanel.");
-    is(tabpanel.querySelectorAll(".variables-view-empty-notice").length, 0,
-      "The empty notice should not be displayed in this tabpanel.");
-
-    let jsonScope = tabpanel.querySelectorAll(".variables-view-scope")[0];
-
-    is(jsonScope.querySelector(".name").getAttribute("value"),
+    is(
+      tabpanel.querySelector(".response-error-header") === null,
+      true,
+      "The response error header doesn't have the intended visibility."
+    );
+    is(
+      tabpanel.querySelector(".tree-section .treeLabel").textContent,
       L10N.getFormatStr("jsonpScopeName", func),
-      "The json scope doesn't have the correct title.");
+      "The response json view has the intened visibility and correct title."
+    );
+    is(
+      tabpanel.querySelector(".CodeMirror-code") === null,
+      false,
+      "The response editor has the intended visibility."
+    );
+    is(
+      tabpanel.querySelector(".responseImageBox") === null,
+      true,
+      "The response image box doesn't have the intended visibility."
+    );
 
-    is(jsonScope.querySelectorAll(".variables-view-property .name")[0]
-      .getAttribute("value"),
-      "greeting", "The first json property name was incorrect.");
-    is(jsonScope.querySelectorAll(".variables-view-property .value")[0]
-      .getAttribute("value"),
-      greeting, "The first json property value was incorrect.");
+    is(
+      tabpanel.querySelectorAll(".tree-section").length,
+      2,
+      "There should be 2 tree sections displayed in this tabpanel."
+    );
+    is(
+      tabpanel.querySelectorAll(".treeRow:not(.tree-section)").length,
+      1,
+      "There should be 1 json properties displayed in this tabpanel."
+    );
+    is(
+      tabpanel.querySelectorAll(".empty-notice").length,
+      0,
+      "The empty notice should not be displayed in this tabpanel."
+    );
 
-    is(jsonScope.querySelectorAll(".variables-view-property .name")[1]
-      .getAttribute("value"),
-      "__proto__", "The second json property name was incorrect.");
-    is(jsonScope.querySelectorAll(".variables-view-property .value")[1]
-      .getAttribute("value"),
-      "Object", "The second json property value was incorrect.");
+    const labels = tabpanel.querySelectorAll(
+      "tr:not(.tree-section) .treeLabelCell .treeLabel"
+    );
+    const values = tabpanel.querySelectorAll(
+      "tr:not(.tree-section) .treeValueCell .objectBox"
+    );
+
+    is(
+      labels[0].textContent,
+      "greeting",
+      "The first json property name was incorrect."
+    );
+    is(
+      values[0].textContent,
+      greeting,
+      "The first json property value was incorrect."
+    );
   }
 });

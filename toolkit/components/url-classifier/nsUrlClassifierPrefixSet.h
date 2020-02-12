@@ -12,18 +12,26 @@
 #include "nsIFile.h"
 #include "nsIMemoryReporter.h"
 #include "nsIMutableArray.h"
+#include "nsIFileStreams.h"
 #include "nsIUrlClassifierPrefixSet.h"
 #include "nsTArray.h"
 #include "nsToolkitCompsCID.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Poison.h"
 
-class nsUrlClassifierPrefixSet final
-  : public nsIUrlClassifierPrefixSet
-  , public nsIMemoryReporter
-{
-public:
+namespace mozilla {
+namespace safebrowsing {
+
+class VariableLengthPrefixSet;
+
+}  // namespace safebrowsing
+}  // namespace mozilla
+
+class nsUrlClassifierPrefixSet final : public nsIUrlClassifierPrefixSet,
+                                       public nsIMemoryReporter {
+ public:
   nsUrlClassifierPrefixSet();
 
   NS_IMETHOD Init(const nsACString& aName) override;
@@ -31,32 +39,36 @@ public:
   NS_IMETHOD GetPrefixes(uint32_t* aCount, uint32_t** aPrefixes) override;
   NS_IMETHOD Contains(uint32_t aPrefix, bool* aFound) override;
   NS_IMETHOD IsEmpty(bool* aEmpty) override;
-  NS_IMETHOD LoadFromFile(nsIFile* aFile) override;
-  NS_IMETHOD StoreToFile(nsIFile* aFile) override;
 
   nsresult GetPrefixesNative(FallibleTArray<uint32_t>& outArray);
+  nsresult WritePrefixes(nsCOMPtr<nsIOutputStream>& out) const;
+  nsresult LoadPrefixes(nsCOMPtr<nsIInputStream>& in);
+  uint32_t CalculatePreallocateSize() const;
 
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
 
-private:
+  friend class mozilla::safebrowsing::VariableLengthPrefixSet;
+
+ private:
   virtual ~nsUrlClassifierPrefixSet();
 
-  static const uint32_t MAX_BUFFER_SIZE = 64 * 1024;
   static const uint32_t DELTAS_LIMIT = 120;
   static const uint32_t MAX_INDEX_DIFF = (1 << 16);
   static const uint32_t PREFIXSET_VERSION_MAGIC = 1;
 
+  void Clear();
   nsresult MakePrefixSet(const uint32_t* aArray, uint32_t aLength);
-  uint32_t BinSearch(uint32_t start, uint32_t end, uint32_t target);
+  uint32_t BinSearch(uint32_t start, uint32_t end, uint32_t target) const;
+  bool IsEmptyInternal() const;
 
   // Lock to prevent races between the url-classifier thread (which does most
   // of the operations) and the main thread (which does memory reporting).
   // It should be held for all operations between Init() and destruction that
   // touch this class's data members.
-  mozilla::Mutex mLock;
+  mutable mozilla::Mutex mLock;
   // list of fully stored prefixes, that also form the
   // start of a run of deltas in mIndexDeltas.
   nsTArray<uint32_t> mIndexPrefixes;
@@ -64,11 +76,16 @@ private:
   // Index to the place that matches the closest lower
   // prefix from mIndexPrefix. Then every "delta" corresponds
   // to a prefix in the PrefixSet.
+  // This array could be empty when we decide to store all the prefixes
+  // in mIndexPrefixes.
   nsTArray<nsTArray<uint16_t> > mIndexDeltas;
+
   // how many prefixes we have.
   uint32_t mTotalPrefixes;
 
+  nsCString mName;
   nsCString mMemoryReportPath;
+  mozilla::CorruptionCanary mCanary;
 };
 
 #endif

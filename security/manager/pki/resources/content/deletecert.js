@@ -4,82 +4,116 @@
 /* import-globals-from pippki.js */
 "use strict";
 
-const nsIX509Cert = Components.interfaces.nsIX509Cert;
-const nsX509CertDB = "@mozilla.org/security/x509certdb;1";
-const nsIX509CertDB = Components.interfaces.nsIX509CertDB;
-const nsIDialogParamBlock = Components.interfaces.nsIDialogParamBlock;
+/**
+ * @file Implements the functionality of deletecert.xul: a dialog that allows a
+ *       user to confirm whether to delete certain certificates.
+ * @argument {String} window.arguments[0]
+ *           One of the tab IDs listed in certManager.xul.
+ * @argument {nsICertTreeItem[]} window.arguments[1]
+ *           An array of cert tree items representing the certs to delete.
+ * @argument {DeleteCertReturnValues} window.arguments[2]
+ *           Object holding the return values of calling the dialog.
+ */
 
-var certdb;
-var gParams;
+/**
+ * @typedef DeleteCertReturnValues
+ * @type Object
+ * @property {Boolean} deleteConfirmed
+ *           Set to true if the user confirmed deletion of the given certs,
+ *           false otherwise.
+ */
 
-function setWindowName()
-{
-  gParams = window.arguments[0].QueryInterface(nsIDialogParamBlock);
+/**
+ * Returns the element to represent the given nsICertTreeItem.
+ * @param {nsICertTreeItem} certTreeItem
+ *        The item to represent.
+ * @returns {Element}
+ *          A element of each cert tree item.
+ */
+function getLabelForCertTreeItem(certTreeItem) {
+  let element = document.createXULElement("label");
+  let cert = certTreeItem.cert;
+  if (!cert) {
+    element.setAttribute("value", certTreeItem.hostPort);
+    return element;
+  }
 
-  var typeFlag = gParams.GetString(0);
-  var numberOfCerts = gParams.GetInt(0);
+  const attributes = [
+    cert.commonName,
+    cert.organizationalUnit,
+    cert.organization,
+    cert.subjectName,
+  ];
+  for (let attribute of attributes) {
+    if (attribute) {
+      element.setAttribute("value", attribute);
+      return element;
+    }
+  }
 
-  var bundle = document.getElementById("pippki_bundle");
-  var title;
-  var confirm;
-  var impact;
+  document.l10n.setAttributes(element, "cert-with-serial", {
+    serialNumber: cert.serialNumber,
+  });
+  return element;
+}
 
+/**
+ * onload() handler.
+ */
+function onLoad() {
+  let typeFlag = window.arguments[0];
+  let confirm = document.getElementById("confirm");
+  let impact = document.getElementById("impact");
+  let prefixForType;
   switch (typeFlag) {
     case "mine_tab":
-      title = bundle.getString("deleteUserCertTitle");
-      confirm = bundle.getString("deleteUserCertConfirm");
-      impact = bundle.getString("deleteUserCertImpact");
+      prefixForType = "delete-user-cert-";
       break;
     case "websites_tab":
-      title = bundle.getString("deleteSslCertTitle3");
-      confirm = bundle.getString("deleteSslCertConfirm3");
-      impact = bundle.getString("deleteSslCertImpact3");
+      prefixForType = "delete-ssl-cert-";
       break;
     case "ca_tab":
-      title = bundle.getString("deleteCaCertTitle2");
-      confirm = bundle.getString("deleteCaCertConfirm2");
-      impact = bundle.getString("deleteCaCertImpactX2");
+      prefixForType = "delete-ca-cert-";
       break;
     case "others_tab":
-      title = bundle.getString("deleteEmailCertTitle");
-      confirm = bundle.getString("deleteEmailCertConfirm");
-      impact = bundle.getString("deleteEmailCertImpactDesc");
-      break;
-    case "orphan_tab":
-      title = bundle.getString("deleteOrphanCertTitle");
-      confirm = bundle.getString("deleteOrphanCertConfirm");
-      impact = "";
+      prefixForType = "delete-email-cert-";
       break;
     default:
       return;
   }
 
-  var confirReference = document.getElementById('confirm');
-  var impactReference = document.getElementById('impact');
-  document.title = title;
+  document.l10n.setAttributes(
+    document.documentElement,
+    prefixForType + "title"
+  );
+  document.l10n.setAttributes(confirm, prefixForType + "confirm");
+  document.l10n.setAttributes(impact, prefixForType + "impact");
 
-  setText("confirm", confirm);
+  document.addEventListener("dialogaccept", onDialogAccept);
+  document.addEventListener("dialogcancel", onDialogCancel);
 
   let box = document.getElementById("certlist");
-  for (let x = 0; x < numberOfCerts; x++) {
-    var listItem = document.createElement("richlistitem");
-    var label = document.createElement("label");
-    label.setAttribute("value", gParams.GetString(x + 1));
+  let certTreeItems = window.arguments[1];
+  for (let certTreeItem of certTreeItems) {
+    let listItem = document.createXULElement("richlistitem");
+    let label = getLabelForCertTreeItem(certTreeItem);
     listItem.appendChild(label);
     box.appendChild(listItem);
   }
-
-  setText("impact", impact);
 }
 
-function doOK()
-{
-  gParams.SetInt(1, 1); // means OK
-  return true;
+/**
+ * ondialogaccept() handler.
+ */
+function onDialogAccept() {
+  let retVals = window.arguments[2];
+  retVals.deleteConfirmed = true;
 }
 
-function doCancel()
-{
-  gParams.SetInt(1, 0); // means CANCEL
-  return true;
+/**
+ * ondialogcancel() handler.
+ */
+function onDialogCancel() {
+  let retVals = window.arguments[2];
+  retVals.deleteConfirmed = false;
 }

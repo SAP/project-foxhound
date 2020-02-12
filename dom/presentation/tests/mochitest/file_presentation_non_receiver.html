@@ -6,29 +6,29 @@
 </head>
 <body>
 <div id="content"></div>
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 "use strict";
 
 function is(a, b, msg) {
-  alert((a === b ? 'OK ' : 'KO ') + msg);
+  alert((a === b ? "OK " : "KO ") + msg);
 }
 
 function ok(a, msg) {
-  alert((a ? 'OK ' : 'KO ') + msg);
+  alert((a ? "OK " : "KO ") + msg);
 }
 
 function info(msg) {
-  alert('INFO ' + msg);
+  alert("INFO " + msg);
 }
 
 function finish() {
-  alert('DONE');
+  alert("DONE");
 }
 
 function testConnectionAvailable() {
   return new Promise(function(aResolve, aReject) {
-    ok(!navigator.presentation.receiver, "navigator.presentation.receiver shouldn't be available in non-receiving pages.");
+    is(navigator.presentation.receiver, null, "navigator.presentation.receiver shouldn't be available in non-receiving pages.");
     aResolve();
   });
 }

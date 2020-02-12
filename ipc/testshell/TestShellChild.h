@@ -17,25 +17,20 @@ namespace ipc {
 
 class XPCShellEnvironment;
 
-class TestShellChild : public PTestShellChild
-{
-public:
+class TestShellChild : public PTestShellChild {
+ public:
   TestShellChild();
 
-  bool
-  RecvExecuteCommand(const nsString& aCommand);
+  mozilla::ipc::IPCResult RecvExecuteCommand(const nsString& aCommand);
 
-  PTestShellCommandChild*
-  AllocPTestShellCommandChild(const nsString& aCommand);
+  PTestShellCommandChild* AllocPTestShellCommandChild(const nsString& aCommand);
 
-  bool
-  RecvPTestShellCommandConstructor(PTestShellCommandChild* aActor,
-                                   const nsString& aCommand);
+  mozilla::ipc::IPCResult RecvPTestShellCommandConstructor(
+      PTestShellCommandChild* aActor, const nsString& aCommand) override;
 
-  bool
-  DeallocPTestShellCommandChild(PTestShellCommandChild* aCommand);
+  bool DeallocPTestShellCommandChild(PTestShellCommandChild* aCommand);
 
-private:
+ private:
   nsAutoPtr<XPCShellEnvironment> mXPCShell;
 };
 

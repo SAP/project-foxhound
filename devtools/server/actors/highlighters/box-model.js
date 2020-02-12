@@ -1,17 +1,32 @@
- /* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const { extend } = require("sdk/core/heritage");
 const { AutoRefreshHighlighter } = require("./auto-refresh");
 const {
-  CanvasFrameAnonymousContentHelper, moveInfobar,
-  getBindingElementAndPseudo, hasPseudoClassLock, getComputedStyle,
-  createSVGNode, createNode, isNodeValid } = require("./utils/markup");
-const { setIgnoreLayoutChanges } = require("devtools/shared/layout/utils");
-const inspector = require("devtools/server/actors/inspector");
+  CanvasFrameAnonymousContentHelper,
+  createNode,
+  createSVGNode,
+  getBindingElementAndPseudo,
+  hasPseudoClassLock,
+  isNodeValid,
+  moveInfobar,
+} = require("./utils/markup");
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
+const {
+  getCurrentZoom,
+  setIgnoreLayoutChanges,
+} = require("devtools/shared/layout/utils");
+const {
+  getNodeDisplayName,
+  getNodeGridFlexType,
+} = require("devtools/server/actors/inspector/utils");
+const nodeConstants = require("devtools/shared/dom-node-constants");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const STRINGS_URI = "devtools/shared/locales/highlighters.properties";
+const L10N = new LocalizationHelper(STRINGS_URI);
 
 // Note that the order of items in this array is important because it is used
 // for drawing the BoxModelHighlighter's path elements correctly.
@@ -19,8 +34,6 @@ const BOX_MODEL_REGIONS = ["margin", "border", "padding", "content"];
 const BOX_MODEL_SIDES = ["top", "right", "bottom", "left"];
 // Width of boxmodelhighlighter guides
 const GUIDE_STROKE_WIDTH = 1;
-// FIXME: add ":visited" and ":link" after bug 713106 is fixed
-const PSEUDO_CLASSES = [":hover", ":active", ":focus"];
 
 /**
  * The BoxModelHighlighter draws the box model regions on top of a node.
@@ -35,23 +48,21 @@ const PSEUDO_CLASSES = [":hover", ":active", ":focus"];
  * h.hide();
  * h.destroy();
  *
- * Available options:
- * - region {String}
- *   "content", "padding", "border" or "margin"
- *   This specifies the region that the guides should outline.
- *   Defaults to "content"
- * - hideGuides {Boolean}
- *   Defaults to false
- * - hideInfoBar {Boolean}
- *   Defaults to false
- * - showOnly {String}
- *   "content", "padding", "border" or "margin"
- *   If set, only this region will be highlighted. Use with onlyRegionArea to
- *   only highlight the area of the region.
- * - onlyRegionArea {Boolean}
- *   This can be set to true to make each region's box only highlight the area
- *   of the corresponding region rather than the area of nested regions too.
- *   This is useful when used with showOnly.
+ * @param {String} options.region
+ *        Specifies the region that the guides should outline:
+ *          "content" (default), "padding", "border" or "margin".
+ * @param {Boolean} options.hideGuides
+ *        Defaults to false
+ * @param {Boolean} options.hideInfoBar
+ *        Defaults to false
+ * @param {String} options.showOnly
+ *        If set, only this region will be highlighted. Use with onlyRegionArea
+ *        to only highlight the area of the region:
+ *        "content", "padding", "border" or "margin"
+ * @param {Boolean} options.onlyRegionArea
+ *        This can be set to true to make each region's box only highlight the
+ *        area of the corresponding region rather than the area of nested
+ *        regions too. This is useful when used with showOnly.
  *
  * Structure:
  * <div class="highlighter-container">
@@ -76,6 +87,8 @@ const PSEUDO_CLASSES = [":hover", ":active", ":focus"];
  *           <span class="box-model-infobar-id">Node id</span>
  *           <span class="box-model-infobar-classes">.someClass</span>
  *           <span class="box-model-infobar-pseudo-classes">:hover</span>
+ *           <span class="box-model-infobar-grid-type">Grid Type</span>
+ *           <span class="box-model-infobar-flex-type">Flex Type</span>
  *         </div>
  *       </div>
  *       <div class="box-model-infobar-arrow box-model-infobar-arrow-bottom"/>
@@ -83,235 +96,280 @@ const PSEUDO_CLASSES = [":hover", ":active", ":focus"];
  *   </div>
  * </div>
  */
-function BoxModelHighlighter(highlighterEnv) {
-  AutoRefreshHighlighter.call(this, highlighterEnv);
+class BoxModelHighlighter extends AutoRefreshHighlighter {
+  constructor(highlighterEnv) {
+    super(highlighterEnv);
 
-  this.markup = new CanvasFrameAnonymousContentHelper(this.highlighterEnv,
-    this._buildMarkup.bind(this));
+    this.ID_CLASS_PREFIX = "box-model-";
+    this.markup = new CanvasFrameAnonymousContentHelper(
+      this.highlighterEnv,
+      this._buildMarkup.bind(this)
+    );
 
-  /**
-   * Optionally customize each region's fill color by adding an entry to the
-   * regionFill property: `highlighter.regionFill.margin = "red";
-   */
-  this.regionFill = {};
+    /**
+     * Optionally customize each region's fill color by adding an entry to the
+     * regionFill property: `highlighter.regionFill.margin = "red";
+     */
+    this.regionFill = {};
 
-  this._currentNode = null;
-}
+    this.onPageHide = this.onPageHide.bind(this);
+    this.onWillNavigate = this.onWillNavigate.bind(this);
 
-BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
-  typeName: "BoxModelHighlighter",
+    this.highlighterEnv.on("will-navigate", this.onWillNavigate);
 
-  ID_CLASS_PREFIX: "box-model-",
+    const { pageListenerTarget } = highlighterEnv;
+    pageListenerTarget.addEventListener("pagehide", this.onPageHide);
+  }
 
-  get currentNode() {
-    return this._currentNode;
-  },
+  _buildMarkup() {
+    const doc = this.win.document;
 
-  set currentNode(node) {
-    this._currentNode = node;
-    this._computedStyle = null;
-  },
-
-  _buildMarkup: function () {
-    let doc = this.win.document;
-
-    let highlighterContainer = doc.createElement("div");
-    highlighterContainer.className = "highlighter-container";
+    const highlighterContainer = doc.createElement("div");
+    highlighterContainer.setAttribute("role", "presentation");
+    highlighterContainer.className = "highlighter-container box-model";
 
     // Build the root wrapper, used to adapt to the page zoom.
-    let rootWrapper = createNode(this.win, {
+    const rootWrapper = createNode(this.win, {
       parent: highlighterContainer,
       attributes: {
-        "id": "root",
-        "class": "root"
+        id: "root",
+        class: "root",
+        role: "presentation",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Building the SVG element with its polygons and lines
 
-    let svg = createSVGNode(this.win, {
+    const svg = createSVGNode(this.win, {
       nodeType: "svg",
       parent: rootWrapper,
       attributes: {
-        "id": "elements",
-        "width": "100%",
-        "height": "100%",
-        "hidden": "true"
+        id: "elements",
+        width: "100%",
+        height: "100%",
+        hidden: "true",
+        role: "presentation",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
-    let regions = createSVGNode(this.win, {
+    const regions = createSVGNode(this.win, {
       nodeType: "g",
       parent: svg,
       attributes: {
-        "class": "regions"
+        class: "regions",
+        role: "presentation",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
-    for (let region of BOX_MODEL_REGIONS) {
+    for (const region of BOX_MODEL_REGIONS) {
       createSVGNode(this.win, {
         nodeType: "path",
         parent: regions,
         attributes: {
-          "class": region,
-          "id": region
+          class: region,
+          id: region,
+          role: "presentation",
         },
-        prefix: this.ID_CLASS_PREFIX
+        prefix: this.ID_CLASS_PREFIX,
       });
     }
 
-    for (let side of BOX_MODEL_SIDES) {
+    for (const side of BOX_MODEL_SIDES) {
       createSVGNode(this.win, {
         nodeType: "line",
         parent: svg,
         attributes: {
-          "class": "guide-" + side,
-          "id": "guide-" + side,
-          "stroke-width": GUIDE_STROKE_WIDTH
+          class: "guide-" + side,
+          id: "guide-" + side,
+          "stroke-width": GUIDE_STROKE_WIDTH,
+          role: "presentation",
         },
-        prefix: this.ID_CLASS_PREFIX
+        prefix: this.ID_CLASS_PREFIX,
       });
     }
 
     // Building the nodeinfo bar markup
 
-    let infobarContainer = createNode(this.win, {
+    const infobarContainer = createNode(this.win, {
       parent: rootWrapper,
       attributes: {
-        "class": "infobar-container",
-        "id": "infobar-container",
-        "position": "top",
-        "hidden": "true"
+        class: "infobar-container",
+        id: "infobar-container",
+        position: "top",
+        hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
-    let infobar = createNode(this.win, {
+    const infobar = createNode(this.win, {
       parent: infobarContainer,
       attributes: {
-        "class": "infobar"
+        class: "infobar",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
 
-    let texthbox = createNode(this.win, {
+    const texthbox = createNode(this.win, {
       parent: infobar,
       attributes: {
-        "class": "infobar-text"
+        class: "infobar-text",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-tagname",
-        "id": "infobar-tagname"
+        class: "infobar-tagname",
+        id: "infobar-tagname",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-id",
-        "id": "infobar-id"
+        class: "infobar-id",
+        id: "infobar-id",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-classes",
-        "id": "infobar-classes"
+        class: "infobar-classes",
+        id: "infobar-classes",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-pseudo-classes",
-        "id": "infobar-pseudo-classes"
+        class: "infobar-pseudo-classes",
+        id: "infobar-pseudo-classes",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
     });
     createNode(this.win, {
       nodeType: "span",
       parent: texthbox,
       attributes: {
-        "class": "infobar-dimensions",
-        "id": "infobar-dimensions"
+        class: "infobar-dimensions",
+        id: "infobar-dimensions",
       },
-      prefix: this.ID_CLASS_PREFIX
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-grid-type",
+        id: "infobar-grid-type",
+      },
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-flex-type",
+        id: "infobar-flex-type",
+      },
+      prefix: this.ID_CLASS_PREFIX,
     });
 
     return highlighterContainer;
-  },
+  }
 
   /**
    * Destroy the nodes. Remove listeners.
    */
-  destroy: function () {
-    AutoRefreshHighlighter.prototype.destroy.call(this);
+  destroy() {
+    this.highlighterEnv.off("will-navigate", this.onWillNavigate);
+
+    const { pageListenerTarget } = this.highlighterEnv;
+    if (pageListenerTarget) {
+      pageListenerTarget.removeEventListener("pagehide", this.onPageHide);
+    }
 
     this.markup.destroy();
 
-    this._currentNode = null;
-  },
+    AutoRefreshHighlighter.prototype.destroy.call(this);
+  }
 
-  getElement: function (id) {
+  getElement(id) {
     return this.markup.getElement(this.ID_CLASS_PREFIX + id);
-  },
+  }
+
+  /**
+   * Override the AutoRefreshHighlighter's _isNodeValid method to also return true for
+   * text nodes since these can also be highlighted.
+   * @param {DOMNode} node
+   * @return {Boolean}
+   */
+  _isNodeValid(node) {
+    return (
+      node && (isNodeValid(node) || isNodeValid(node, nodeConstants.TEXT_NODE))
+    );
+  }
 
   /**
    * Show the highlighter on a given node
    */
-  _show: function () {
-    if (BOX_MODEL_REGIONS.indexOf(this.options.region) == -1) {
+  _show() {
+    if (!BOX_MODEL_REGIONS.includes(this.options.region)) {
       this.options.region = "content";
     }
 
-    let shown = this._update();
+    const shown = this._update();
     this._trackMutations();
-    this.emit("ready");
     return shown;
-  },
+  }
 
   /**
    * Track the current node markup mutations so that the node info bar can be
    * updated to reflects the node's attributes
    */
-  _trackMutations: function () {
+  _trackMutations() {
     if (isNodeValid(this.currentNode)) {
-      let win = this.currentNode.ownerDocument.defaultView;
+      const win = this.currentNode.ownerGlobal;
       this.currentNodeObserver = new win.MutationObserver(this.update);
-      this.currentNodeObserver.observe(this.currentNode, {attributes: true});
+      this.currentNodeObserver.observe(this.currentNode, { attributes: true });
     }
-  },
+  }
 
-  _untrackMutations: function () {
+  _untrackMutations() {
     if (isNodeValid(this.currentNode) && this.currentNodeObserver) {
       this.currentNodeObserver.disconnect();
       this.currentNodeObserver = null;
     }
-  },
+  }
 
   /**
    * Update the highlighter on the current highlighted node (the one that was
    * passed as an argument to show(node)).
    * Should be called whenever node size or attributes change
    */
-  _update: function () {
+  _update() {
+    const node = this.currentNode;
     let shown = false;
     setIgnoreLayoutChanges(true);
 
     if (this._updateBoxModel()) {
-      if (!this.options.hideInfoBar) {
+      // Show the infobar only if configured to do so and the node is an element or a text
+      // node.
+      if (
+        !this.options.hideInfoBar &&
+        (node.nodeType === node.ELEMENT_NODE ||
+          node.nodeType === node.TEXT_NODE)
+      ) {
         this._showInfobar();
       } else {
         this._hideInfobar();
@@ -323,52 +381,62 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
       this._hide();
     }
 
-    setIgnoreLayoutChanges(false, this.currentNode.ownerDocument.documentElement);
+    setIgnoreLayoutChanges(
+      false,
+      this.highlighterEnv.window.document.documentElement
+    );
 
     return shown;
-  },
+  }
+
+  _scrollUpdate() {
+    this._moveInfobar();
+  }
 
   /**
    * Hide the highlighter, the outline and the infobar.
    */
-  _hide: function () {
+  _hide() {
     setIgnoreLayoutChanges(true);
 
     this._untrackMutations();
     this._hideBoxModel();
     this._hideInfobar();
 
-    setIgnoreLayoutChanges(false, this.currentNode.ownerDocument.documentElement);
-  },
+    setIgnoreLayoutChanges(
+      false,
+      this.highlighterEnv.window.document.documentElement
+    );
+  }
 
   /**
    * Hide the infobar
    */
-  _hideInfobar: function () {
+  _hideInfobar() {
     this.getElement("infobar-container").setAttribute("hidden", "true");
-  },
+  }
 
   /**
    * Show the infobar
    */
-  _showInfobar: function () {
+  _showInfobar() {
     this.getElement("infobar-container").removeAttribute("hidden");
     this._updateInfobar();
-  },
+  }
 
   /**
    * Hide the box model
    */
-  _hideBoxModel: function () {
+  _hideBoxModel() {
     this.getElement("elements").setAttribute("hidden", "true");
-  },
+  }
 
   /**
    * Show the box model
    */
-  _showBoxModel: function () {
+  _showBoxModel() {
     this.getElement("elements").removeAttribute("hidden");
-  },
+  }
 
   /**
    * Calculate an outer quad based on the quads returned by getAdjustedQuads.
@@ -380,17 +448,17 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
    * @param {String} region The box-model region to get the outer quad for.
    * @return {Object} A quad-like object {p1,p2,p3,p4,bounds}
    */
-  _getOuterQuad: function (region) {
-    let quads = this.currentQuads[region];
-    if (!quads.length) {
+  _getOuterQuad(region) {
+    const quads = this.currentQuads[region];
+    if (!quads || !quads.length) {
       return null;
     }
 
-    let quad = {
-      p1: {x: Infinity, y: Infinity},
-      p2: {x: -Infinity, y: Infinity},
-      p3: {x: -Infinity, y: -Infinity},
-      p4: {x: Infinity, y: -Infinity},
+    const quad = {
+      p1: { x: Infinity, y: Infinity },
+      p2: { x: -Infinity, y: Infinity },
+      p3: { x: -Infinity, y: -Infinity },
+      p4: { x: Infinity, y: -Infinity },
       bounds: {
         bottom: -Infinity,
         height: 0,
@@ -400,10 +468,10 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
         width: 0,
         x: 0,
         y: 0,
-      }
+      },
     };
 
-    for (let q of quads) {
+    for (const q of quads) {
       quad.p1.x = Math.min(quad.p1.x, q.p1.x);
       quad.p1.y = Math.min(quad.p1.y, q.p1.y);
       quad.p2.x = Math.max(quad.p2.x, q.p2.x);
@@ -424,7 +492,7 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     quad.bounds.height = quad.bounds.bottom - quad.bounds.top;
 
     return quad;
-  },
+  }
 
   /**
    * Update the box model as per the current node.
@@ -432,8 +500,8 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
    * @return {boolean}
    *         True if the current node has a box model to be highlighted
    */
-  _updateBoxModel: function () {
-    let options = this.options;
+  _updateBoxModel() {
+    const options = this.options;
     options.region = options.region || "content";
 
     if (!this._nodeNeedsHighlighting()) {
@@ -442,9 +510,9 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     }
 
     for (let i = 0; i < BOX_MODEL_REGIONS.length; i++) {
-      let boxType = BOX_MODEL_REGIONS[i];
-      let nextBoxType = BOX_MODEL_REGIONS[i + 1];
-      let box = this.getElement(boxType);
+      const boxType = BOX_MODEL_REGIONS[i];
+      const nextBoxType = BOX_MODEL_REGIONS[i + 1];
+      const box = this.getElement(boxType);
 
       if (this.regionFill[boxType]) {
         box.setAttribute("style", "fill:" + this.regionFill[boxType]);
@@ -454,12 +522,12 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
 
       // Highlight all quads for this region by setting the "d" attribute of the
       // corresponding <path>.
-      let path = [];
+      const path = [];
       for (let j = 0; j < this.currentQuads[boxType].length; j++) {
-        let boxQuad = this.currentQuads[boxType][j];
-        let nextBoxQuad = this.currentQuads[nextBoxType]
-                          ? this.currentQuads[nextBoxType][j]
-                          : null;
+        const boxQuad = this.currentQuads[boxType][j];
+        const nextBoxQuad = this.currentQuads[nextBoxType]
+          ? this.currentQuads[nextBoxType][j]
+          : null;
         path.push(this._getBoxPathCoordinates(boxQuad, nextBoxQuad));
       }
 
@@ -484,70 +552,123 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     }
 
     // Un-zoom the root wrapper if the page was zoomed.
-    let rootId = this.ID_CLASS_PREFIX + "root";
+    const rootId = this.ID_CLASS_PREFIX + "elements";
     this.markup.scaleRootElement(this.currentNode, rootId);
 
     return true;
-  },
+  }
 
-  _getBoxPathCoordinates: function (boxQuad, nextBoxQuad) {
-    let {p1, p2, p3, p4} = boxQuad;
+  _getBoxPathCoordinates(boxQuad, nextBoxQuad) {
+    const { p1, p2, p3, p4 } = boxQuad;
 
     let path;
     if (!nextBoxQuad || !this.options.onlyRegionArea) {
       // If this is the content box (inner-most box) or if we're not being asked
       // to highlight only region areas, then draw a simple rectangle.
-      path = "M" + p1.x + "," + p1.y + " " +
-             "L" + p2.x + "," + p2.y + " " +
-             "L" + p3.x + "," + p3.y + " " +
-             "L" + p4.x + "," + p4.y;
+      path =
+        "M" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        p2.x +
+        "," +
+        p2.y +
+        " " +
+        "L" +
+        p3.x +
+        "," +
+        p3.y +
+        " " +
+        "L" +
+        p4.x +
+        "," +
+        p4.y;
     } else {
       // Otherwise, just draw the region itself, not a filled rectangle.
-      let {p1: np1, p2: np2, p3: np3, p4: np4} = nextBoxQuad;
-      path = "M" + p1.x + "," + p1.y + " " +
-             "L" + p2.x + "," + p2.y + " " +
-             "L" + p3.x + "," + p3.y + " " +
-             "L" + p4.x + "," + p4.y + " " +
-             "L" + p1.x + "," + p1.y + " " +
-             "L" + np1.x + "," + np1.y + " " +
-             "L" + np4.x + "," + np4.y + " " +
-             "L" + np3.x + "," + np3.y + " " +
-             "L" + np2.x + "," + np2.y + " " +
-             "L" + np1.x + "," + np1.y;
+      const { p1: np1, p2: np2, p3: np3, p4: np4 } = nextBoxQuad;
+      path =
+        "M" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        p2.x +
+        "," +
+        p2.y +
+        " " +
+        "L" +
+        p3.x +
+        "," +
+        p3.y +
+        " " +
+        "L" +
+        p4.x +
+        "," +
+        p4.y +
+        " " +
+        "L" +
+        p1.x +
+        "," +
+        p1.y +
+        " " +
+        "L" +
+        np1.x +
+        "," +
+        np1.y +
+        " " +
+        "L" +
+        np4.x +
+        "," +
+        np4.y +
+        " " +
+        "L" +
+        np3.x +
+        "," +
+        np3.y +
+        " " +
+        "L" +
+        np2.x +
+        "," +
+        np2.y +
+        " " +
+        "L" +
+        np1.x +
+        "," +
+        np1.y;
     }
 
     return path;
-  },
+  }
 
-  _nodeNeedsHighlighting: function () {
-    let hasNoQuads = !this.currentQuads.margin.length &&
-                     !this.currentQuads.border.length &&
-                     !this.currentQuads.padding.length &&
-                     !this.currentQuads.content.length;
-    if (!isNodeValid(this.currentNode) || hasNoQuads) {
-      return false;
-    }
+  /**
+   * Can the current node be highlighted? Does it have quads.
+   * @return {Boolean}
+   */
+  _nodeNeedsHighlighting() {
+    return (
+      this.currentQuads.margin.length ||
+      this.currentQuads.border.length ||
+      this.currentQuads.padding.length ||
+      this.currentQuads.content.length
+    );
+  }
 
-    if (!this._computedStyle) {
-      this._computedStyle = getComputedStyle(this.currentNode);
-    }
-
-    return this._computedStyle.getPropertyValue("display") !== "none";
-  },
-
-  _getOuterBounds: function () {
-    for (let region of ["margin", "border", "padding", "content"]) {
-      let quad = this._getOuterQuad(region);
+  _getOuterBounds() {
+    for (const region of ["margin", "border", "padding", "content"]) {
+      const quad = this._getOuterQuad(region);
 
       if (!quad) {
         // Invisible element such as a script tag.
         break;
       }
 
-      let {bottom, height, left, right, top, width, x, y} = quad.bounds;
+      const { bottom, height, left, right, top, width, x, y } = quad.bounds;
 
       if (width > 0 || height > 0) {
-        return {bottom, height, left, right, top, width, x, y};
+        return { bottom, height, left, right, top, width, x, y };
       }
     }
 
@@ -559,26 +680,33 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
       top: 0,
       width: 0,
       x: 0,
-      y: 0
+      y: 0,
     };
-  },
+  }
 
   /**
    * We only want to show guides for horizontal and vertical edges as this helps
    * to line them up. This method finds these edges and displays a guide there.
    * @param {String} region The region around which the guides should be shown.
    */
-  _showGuides: function (region) {
-    let {p1, p2, p3, p4} = this._getOuterQuad(region);
+  _showGuides(region) {
+    const quad = this._getOuterQuad(region);
 
-    let allX = [p1.x, p2.x, p3.x, p4.x].sort((a, b) => a - b);
-    let allY = [p1.y, p2.y, p3.y, p4.y].sort((a, b) => a - b);
-    let toShowX = [];
-    let toShowY = [];
+    if (!quad) {
+      // Invisible element such as a script tag.
+      return;
+    }
 
-    for (let arr of [allX, allY]) {
+    const { p1, p2, p3, p4 } = quad;
+
+    const allX = [p1.x, p2.x, p3.x, p4.x].sort((a, b) => a - b);
+    const allY = [p1.y, p2.y, p3.y, p4.y].sort((a, b) => a - b);
+    const toShowX = [];
+    const toShowY = [];
+
+    for (const arr of [allX, allY]) {
       for (let i = 0; i < arr.length; i++) {
-        let val = arr[i];
+        const val = arr[i];
 
         if (i !== arr.lastIndexOf(val)) {
           if (arr === allX) {
@@ -592,17 +720,17 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     }
 
     // Move guide into place or hide it if no valid co-ordinate was found.
-    this._updateGuide("top", toShowY[0]);
-    this._updateGuide("right", toShowX[1]);
-    this._updateGuide("bottom", toShowY[1]);
-    this._updateGuide("left", toShowX[0]);
-  },
+    this._updateGuide("top", Math.round(toShowY[0]));
+    this._updateGuide("right", Math.round(toShowX[1]) - 1);
+    this._updateGuide("bottom", Math.round(toShowY[1] - 1));
+    this._updateGuide("left", Math.round(toShowX[0]));
+  }
 
-  _hideGuides: function () {
-    for (let side of BOX_MODEL_SIDES) {
+  _hideGuides() {
+    for (const side of BOX_MODEL_SIDES) {
       this.getElement("guide-" + side).setAttribute("hidden", "true");
     }
-  },
+  }
 
   /**
    * Move a guide to the appropriate position and display it. If no point is
@@ -613,8 +741,8 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
    * @param  {Integer} point
    *         x or y co-ordinate. If this is undefined we hide the guide.
    */
-  _updateGuide: function (side, point = -1) {
-    let guide = this.getElement("guide-" + side);
+  _updateGuide(side, point = -1) {
+    const guide = this.getElement("guide-" + side);
 
     if (point <= 0) {
       guide.setAttribute("hidden", "true");
@@ -636,58 +764,111 @@ BoxModelHighlighter.prototype = extend(AutoRefreshHighlighter.prototype, {
     guide.removeAttribute("hidden");
 
     return true;
-  },
+  }
 
   /**
    * Update node information (displayName#id.class)
    */
-  _updateInfobar: function () {
+  _updateInfobar() {
     if (!this.currentNode) {
       return;
     }
 
-    let {bindingElement: node, pseudo} =
-        getBindingElementAndPseudo(this.currentNode);
+    const { bindingElement: node, pseudo } = getBindingElementAndPseudo(
+      this.currentNode
+    );
 
     // Update the tag, id, classes, pseudo-classes and dimensions
-    let displayName = inspector.getNodeDisplayName(node);
+    const displayName = getNodeDisplayName(node);
 
-    let id = node.id ? "#" + node.id : "";
+    const id = node.id ? "#" + node.id : "";
 
-    let classList = (node.classList || []).length
-                    ? "." + [...node.classList].join(".")
-                    : "";
+    const classList = (node.classList || []).length
+      ? "." + [...node.classList].join(".")
+      : "";
 
-    let pseudos = PSEUDO_CLASSES.filter(pseudo => {
-      return hasPseudoClassLock(node, pseudo);
-    }, this).join("");
+    let pseudos = this._getPseudoClasses(node).join("");
     if (pseudo) {
       // Display :after as ::after
       pseudos += ":" + pseudo;
     }
 
-    let rect = this._getOuterQuad("border").bounds;
-    let dim = parseFloat(rect.width.toPrecision(6)) +
-              " \u00D7 " +
-              parseFloat(rect.height.toPrecision(6));
+    // We want to display the original `width` and `height`, instead of the ones affected
+    // by any zoom. Since the infobar can be displayed also for text nodes, we can't
+    // access the computed style for that, and this is why we recalculate them here.
+    const zoom = getCurrentZoom(this.win);
+    const quad = this._getOuterQuad("border");
+
+    if (!quad) {
+      return;
+    }
+
+    const { width, height } = quad.bounds;
+    const dim =
+      parseFloat((width / zoom).toPrecision(6)) +
+      " \u00D7 " +
+      parseFloat((height / zoom).toPrecision(6));
+
+    const { grid: gridType, flex: flexType } = getNodeGridFlexType(node);
+    const gridLayoutTextType = this._getLayoutTextType("gridType", gridType);
+    const flexLayoutTextType = this._getLayoutTextType("flexType", flexType);
 
     this.getElement("infobar-tagname").setTextContent(displayName);
     this.getElement("infobar-id").setTextContent(id);
     this.getElement("infobar-classes").setTextContent(classList);
     this.getElement("infobar-pseudo-classes").setTextContent(pseudos);
     this.getElement("infobar-dimensions").setTextContent(dim);
+    this.getElement("infobar-grid-type").setTextContent(gridLayoutTextType);
+    this.getElement("infobar-flex-type").setTextContent(flexLayoutTextType);
 
     this._moveInfobar();
-  },
+  }
+
+  _getLayoutTextType(layoutTypeKey, { isContainer, isItem }) {
+    if (!isContainer && !isItem) {
+      return "";
+    }
+    if (isContainer && !isItem) {
+      return L10N.getStr(`${layoutTypeKey}.container`);
+    }
+    if (!isContainer && isItem) {
+      return L10N.getStr(`${layoutTypeKey}.item`);
+    }
+    return L10N.getStr(`${layoutTypeKey}.dual`);
+  }
+
+  _getPseudoClasses(node) {
+    if (node.nodeType !== nodeConstants.ELEMENT_NODE) {
+      // hasPseudoClassLock can only be used on Elements.
+      return [];
+    }
+
+    return PSEUDO_CLASSES.filter(pseudo => hasPseudoClassLock(node, pseudo));
+  }
 
   /**
    * Move the Infobar to the right place in the highlighter.
    */
-  _moveInfobar: function () {
-    let bounds = this._getOuterBounds();
-    let container = this.getElement("infobar-container");
+  _moveInfobar() {
+    const bounds = this._getOuterBounds();
+    const container = this.getElement("infobar-container");
 
     moveInfobar(container, bounds, this.win);
   }
-});
+
+  onPageHide({ target }) {
+    // If a pagehide event is triggered for current window's highlighter, hide the
+    // highlighter.
+    if (target.defaultView === this.win) {
+      this.hide();
+    }
+  }
+
+  onWillNavigate({ isTopLevel }) {
+    if (isTopLevel) {
+      this.hide();
+    }
+  }
+}
+
 exports.BoxModelHighlighter = BoxModelHighlighter;

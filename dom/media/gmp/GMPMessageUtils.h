@@ -6,123 +6,72 @@
 #ifndef GMPMessageUtils_h_
 #define GMPMessageUtils_h_
 
+// On Linux X11 headers define Status which ends up colliding with the Status
+// enum from the Widevine headers in unified builds. Make sure it's undefined
+// before we include our headers.
+#ifdef Status
+#  undef Status
+#endif
+
+#include "content_decryption_module.h"
 #include "gmp-video-codec.h"
 #include "gmp-video-frame-encoded.h"
-#include "gmp-audio-codec.h"
-#include "gmp-decryption.h"
+#include "IPCMessageUtils.h"
 
 namespace IPC {
 
 template <>
 struct ParamTraits<GMPErr>
-: public ContiguousEnumSerializer<GMPErr,
-                                  GMPNoErr,
-                                  GMPLastErr>
-{};
-
-struct GMPDomExceptionValidator {
-  static bool IsLegalValue(GMPDOMException aValue) {
-    switch (aValue) {
-      case kGMPNoModificationAllowedError:
-      case kGMPNotFoundError:
-      case kGMPNotSupportedError:
-      case kGMPInvalidStateError:
-      case kGMPSyntaxError:
-      case kGMPInvalidModificationError:
-      case kGMPInvalidAccessError:
-      case kGMPSecurityError:
-      case kGMPAbortError:
-      case kGMPQuotaExceededError:
-      case kGMPTimeoutError:
-        return true;
-      default:
-        return false;
-    }
-  }
-};
+    : public ContiguousEnumSerializer<GMPErr, GMPNoErr, GMPLastErr> {};
 
 template <>
 struct ParamTraits<GMPVideoFrameType>
-: public ContiguousEnumSerializer<GMPVideoFrameType,
-                                  kGMPKeyFrame,
-                                  kGMPVideoFrameInvalid>
-{};
-
-template<>
-struct ParamTraits<GMPDOMException>
-: public EnumSerializer<GMPDOMException, GMPDomExceptionValidator>
-{};
-
-template <>
-struct ParamTraits<GMPSessionMessageType>
-: public ContiguousEnumSerializer<GMPSessionMessageType,
-                                  kGMPLicenseRequest,
-                                  kGMPMessageInvalid>
-{};
-
-template <>
-struct ParamTraits<GMPMediaKeyStatus>
-: public ContiguousEnumSerializer<GMPMediaKeyStatus,
-                                  kGMPUsable,
-                                  kGMPMediaKeyStatusInvalid>
-{};
-
-template <>
-struct ParamTraits<GMPSessionType>
-: public ContiguousEnumSerializer<GMPSessionType,
-                                  kGMPTemporySession,
-                                  kGMPSessionInvalid>
-{};
-
-template <>
-struct ParamTraits<GMPAudioCodecType>
-: public ContiguousEnumSerializer<GMPAudioCodecType,
-                                  kGMPAudioCodecAAC,
-                                  kGMPAudioCodecInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPVideoFrameType, kGMPKeyFrame,
+                                      kGMPVideoFrameInvalid> {};
 
 template <>
 struct ParamTraits<GMPVideoCodecComplexity>
-: public ContiguousEnumSerializer<GMPVideoCodecComplexity,
-                                  kGMPComplexityNormal,
-                                  kGMPComplexityInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPVideoCodecComplexity,
+                                      kGMPComplexityNormal,
+                                      kGMPComplexityInvalid> {};
 
 template <>
 struct ParamTraits<GMPVP8ResilienceMode>
-: public ContiguousEnumSerializer<GMPVP8ResilienceMode,
-                                  kResilienceOff,
-                                  kResilienceInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPVP8ResilienceMode, kResilienceOff,
+                                      kResilienceInvalid> {};
 
 template <>
 struct ParamTraits<GMPVideoCodecType>
-: public ContiguousEnumSerializer<GMPVideoCodecType,
-                                  kGMPVideoCodecVP8,
-                                  kGMPVideoCodecInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPVideoCodecType, kGMPVideoCodecVP8,
+                                      kGMPVideoCodecInvalid> {};
 
 template <>
 struct ParamTraits<GMPVideoCodecMode>
-: public ContiguousEnumSerializer<GMPVideoCodecMode,
-                                  kGMPRealtimeVideo,
-                                  kGMPCodecModeInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPVideoCodecMode, kGMPRealtimeVideo,
+                                      kGMPCodecModeInvalid> {};
 
 template <>
 struct ParamTraits<GMPBufferType>
-: public ContiguousEnumSerializer<GMPBufferType,
-                                  GMP_BufferSingle,
-                                  GMP_BufferInvalid>
-{};
+    : public ContiguousEnumSerializer<GMPBufferType, GMP_BufferSingle,
+                                      GMP_BufferInvalid> {};
 
 template <>
-struct ParamTraits<GMPSimulcastStream>
-{
+struct ParamTraits<GMPEncryptionScheme>
+    : public ContiguousEnumSerializer<
+          GMPEncryptionScheme, GMPEncryptionScheme::kGMPEncryptionNone,
+          GMPEncryptionScheme::kGMPEncryptionInvalid> {};
+
+template <>
+struct ParamTraits<cdm::HdcpVersion>
+    : public ContiguousEnumSerializerInclusive<
+          cdm::HdcpVersion, cdm::HdcpVersion::kHdcpVersionNone,
+          cdm::HdcpVersion::kHdcpVersion2_2> {};
+
+template <>
+struct ParamTraits<GMPSimulcastStream> {
   typedef GMPSimulcastStream paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mWidth);
     WriteParam(aMsg, aParam.mHeight);
     WriteParam(aMsg, aParam.mNumberOfTemporalLayers);
@@ -132,8 +81,8 @@ struct ParamTraits<GMPSimulcastStream>
     WriteParam(aMsg, aParam.mQPMax);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     if (ReadParam(aMsg, aIter, &(aResult->mWidth)) &&
         ReadParam(aMsg, aIter, &(aResult->mHeight)) &&
         ReadParam(aMsg, aIter, &(aResult->mNumberOfTemporalLayers)) &&
@@ -146,24 +95,23 @@ struct ParamTraits<GMPSimulcastStream>
     return false;
   }
 
-  static void Log(const paramType& aParam, std::wstring* aLog)
-  {
-    aLog->append(StringPrintf(L"[%u, %u, %u, %u, %u, %u, %u]", aParam.mWidth, aParam.mHeight,
-                              aParam.mNumberOfTemporalLayers, aParam.mMaxBitrate,
-                              aParam.mTargetBitrate, aParam.mMinBitrate, aParam.mQPMax));
+  static void Log(const paramType& aParam, std::wstring* aLog) {
+    aLog->append(StringPrintf(L"[%u, %u, %u, %u, %u, %u, %u]", aParam.mWidth,
+                              aParam.mHeight, aParam.mNumberOfTemporalLayers,
+                              aParam.mMaxBitrate, aParam.mTargetBitrate,
+                              aParam.mMinBitrate, aParam.mQPMax));
   }
 };
 
 template <>
-struct ParamTraits<GMPVideoCodec>
-{
+struct ParamTraits<GMPVideoCodec> {
   typedef GMPVideoCodec paramType;
 
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
+  static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mGMPApiVersion);
     WriteParam(aMsg, aParam.mCodecType);
-    WriteParam(aMsg, static_cast<const nsCString&>(nsDependentCString(aParam.mPLName)));
+    WriteParam(aMsg, static_cast<const nsCString&>(
+                         nsDependentCString(aParam.mPLName)));
     WriteParam(aMsg, aParam.mPLType);
     WriteParam(aMsg, aParam.mWidth);
     WriteParam(aMsg, aParam.mHeight);
@@ -181,12 +129,12 @@ struct ParamTraits<GMPVideoCodec>
     WriteParam(aMsg, aParam.mMode);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
     // NOTE: make sure this matches any versions supported
     if (!ReadParam(aMsg, aIter, &(aResult->mGMPApiVersion)) ||
-      aResult->mGMPApiVersion != kGMPVersion33) {
-        return false;
+        aResult->mGMPApiVersion != kGMPVersion33) {
+      return false;
     }
     if (!ReadParam(aMsg, aIter, &(aResult->mCodecType))) {
       return false;
@@ -198,7 +146,8 @@ struct ParamTraits<GMPVideoCodec>
       return false;
     }
     memcpy(aResult->mPLName, plName.get(), plName.Length());
-    memset(aResult->mPLName + plName.Length(), 0, kGMPPayloadNameSize - plName.Length());
+    memset(aResult->mPLName + plName.Length(), 0,
+           kGMPPayloadNameSize - plName.Length());
 
     if (!ReadParam(aMsg, aIter, &(aResult->mPLType)) ||
         !ReadParam(aMsg, aIter, &(aResult->mWidth)) ||
@@ -234,19 +183,16 @@ struct ParamTraits<GMPVideoCodec>
     return true;
   }
 
-  static void Log(const paramType& aParam, std::wstring* aLog)
-  {
+  static void Log(const paramType& aParam, std::wstring* aLog) {
     const char* codecName = nullptr;
     if (aParam.mCodecType == kGMPVideoCodecVP8) {
       codecName = "VP8";
     }
-    aLog->append(StringPrintf(L"[%s, %u, %u]",
-                              codecName,
-                              aParam.mWidth,
+    aLog->append(StringPrintf(L"[%s, %u, %u]", codecName, aParam.mWidth,
                               aParam.mHeight));
   }
 };
 
-} // namespace IPC
+}  // namespace IPC
 
-#endif // GMPMessageUtils_h_
+#endif  // GMPMessageUtils_h_

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1823
 -->
 <head>
   <title>Test for Bug 1823</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1823
 <script class="testbody" type="text/javascript">
 
 /** Test for Bug 1823 **/
-ok((document.location + "").indexOf("[") == -1, "location object has a toString()");
+ok(!(document.location + "").includes("["), "location object has a toString()");
 
 
 

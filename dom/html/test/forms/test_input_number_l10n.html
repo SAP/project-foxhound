@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=844744
 -->
 <head>
   <title>Test localization of number control input</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="test_input_number_data.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <meta charset="UTF-8">
@@ -40,8 +40,8 @@ function runTest(test) {
   elem.focus();
   elem.select();
   sendString(test.inputWithGrouping);
-  is(elem.value, String(test.value), "Test " + test.desc + " ('" + test.langTag +
-                                     "') localization with grouping separator");
+  is(elem.value, "", "Test " + test.desc + " ('" + test.langTag +
+                     "') localization with grouping separator");
   elem.value = 0;
   elem.select();
   sendString(test.inputWithoutGrouping);

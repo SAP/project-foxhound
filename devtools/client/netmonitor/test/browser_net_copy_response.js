@@ -7,29 +7,29 @@
  * Tests if copying a request's response works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CONTENT_TYPE_WITHOUT_CACHE_URL);
   info("Starting test... ");
 
   const EXPECTED_RESULT = '{ "greeting": "Hello JSON!" }';
 
-  let { NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document } = monitor.panelWin;
 
-  RequestsMenu.lazyUpdate = false;
+  // Execute requests.
+  await performRequests(monitor, tab, CONTENT_TYPE_WITHOUT_CACHE_REQUESTS);
 
-  let wait = waitForNetworkEvents(monitor, 7);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[3]
+  );
+  EventUtils.sendMouseEvent(
+    { type: "contextmenu" },
+    document.querySelectorAll(".request-list-item")[3]
+  );
 
-  let requestItem = RequestsMenu.getItemAtIndex(3);
-  RequestsMenu.selectedItem = requestItem;
-
-  yield waitForClipboardPromise(function setup() {
-    RequestsMenu.copyResponse();
+  await waitForClipboardPromise(function setup() {
+    getContextMenuItem(monitor, "request-list-context-copy-response").click();
   }, EXPECTED_RESULT);
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

@@ -23,19 +23,21 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/NameSpaceConstants.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
 #include "mozilla/Attributes.h"
-#include "nsIAtom.h"
+#include "mozilla/Maybe.h"
+#include "nsAtom.h"
+#include "nsHashKeys.h"
 
-class nsIDocument;
 class nsNodeInfoManager;
 
 namespace mozilla {
 namespace dom {
 
-class NodeInfo final
-{
-public:
+class Document;
+
+class NodeInfo final {
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(NodeInfo)
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_NATIVE_CLASS_WITH_CUSTOM_DELETE(NodeInfo)
 
@@ -54,10 +56,7 @@ public:
    * For the HTML element "<body>" this will return the "body" atom and for
    * the XML element "<html:body>" this will return the "body" atom.
    */
-  nsIAtom* NameAtom() const
-  {
-    return mInner.mName;
-  }
+  nsAtom* NameAtom() const { return mInner.mName; }
 
   /*
    * Get the qualified name from this node as a string, the qualified name
@@ -66,23 +65,17 @@ public:
    * For the HTML element "<body>" this will return "body" and for the XML
    * element "<html:body>" this will return "html:body".
    */
-  const nsString& QualifiedName() const {
-    return mQualifiedName;
-  }
+  const nsString& QualifiedName() const { return mQualifiedName; }
 
   /*
    * Returns the node's nodeName as defined in DOM Core
    */
-  const nsString& NodeName() const {
-    return mNodeName;
-  }
+  const nsString& NodeName() const { return mNodeName; }
 
   /*
    * Returns the node's localName as defined in DOM Core
    */
-  const nsString& LocalName() const {
-    return mLocalName;
-  }
+  const nsString& LocalName() const { return mLocalName; }
 
   /*
    * Get the prefix from this node as a string.
@@ -98,10 +91,7 @@ public:
    * For the HTML element "<body>" this will return a null atom and for
    * the XML element "<html:body>" this will return the "html" atom.
    */
-  nsIAtom* GetPrefixAtom() const
-  {
-    return mInner.mPrefix;
-  }
+  nsAtom* GetPrefixAtom() const { return mInner.mPrefix; }
 
   /*
    * Get the namespace URI for a node, if the node has a namespace URI.
@@ -112,36 +102,24 @@ public:
    * Get the namespace ID for a node if the node has a namespace, if not this
    * returns kNameSpaceID_None.
    */
-  int32_t NamespaceID() const
-  {
-    return mInner.mNamespaceID;
-  }
+  int32_t NamespaceID() const { return mInner.mNamespaceID; }
 
   /*
-   * Get the nodetype for the node. Returns the values specified in nsIDOMNode
-   * for nsIDOMNode.nodeType
+   * Get the nodetype for the node. Returns the values specified in Node
+   * for Node.nodeType
    */
-  uint16_t NodeType() const
-  {
-    return mInner.mNodeType;
-  }
+  uint16_t NodeType() const { return mInner.mNodeType; }
 
   /*
    * Get the extra name, used by PIs and DocTypes, for the node.
    */
-  nsIAtom* GetExtraName() const
-  {
-    return mInner.mExtraName;
-  }
+  nsAtom* GetExtraName() const { return mInner.mExtraName; }
 
   /**
    * Get the owning node info manager. Only to be used inside Gecko, you can't
    * really do anything with the pointer outside Gecko anyway.
    */
-  nsNodeInfoManager* NodeInfoManager() const
-  {
-    return mOwnerManager;
-  }
+  nsNodeInfoManager* NodeInfoManager() const { return mOwnerManager; }
 
   /*
    * Utility functions that can be used to check if a nodeinfo holds a specific
@@ -152,31 +130,26 @@ public:
 
   bool NameAndNamespaceEquals(NodeInfo* aNodeInfo) const;
 
-  bool Equals(nsIAtom* aNameAtom) const
-  {
+  bool Equals(const nsAtom* aNameAtom) const {
     return mInner.mName == aNameAtom;
   }
 
-  bool Equals(nsIAtom* aNameAtom, nsIAtom* aPrefixAtom) const
-  {
+  bool Equals(const nsAtom* aNameAtom, const nsAtom* aPrefixAtom) const {
     return (mInner.mName == aNameAtom) && (mInner.mPrefix == aPrefixAtom);
   }
 
-  bool Equals(nsIAtom* aNameAtom, int32_t aNamespaceID) const
-  {
+  bool Equals(const nsAtom* aNameAtom, int32_t aNamespaceID) const {
     return ((mInner.mName == aNameAtom) &&
             (mInner.mNamespaceID == aNamespaceID));
   }
 
-  bool Equals(nsIAtom* aNameAtom, nsIAtom* aPrefixAtom, int32_t aNamespaceID) const
-  {
-    return ((mInner.mName == aNameAtom) &&
-            (mInner.mPrefix == aPrefixAtom) &&
+  bool Equals(const nsAtom* aNameAtom, const nsAtom* aPrefixAtom,
+              int32_t aNamespaceID) const {
+    return ((mInner.mName == aNameAtom) && (mInner.mPrefix == aPrefixAtom) &&
             (mInner.mNamespaceID == aNamespaceID));
   }
 
-  bool NamespaceEquals(int32_t aNamespaceID) const
-  {
+  bool NamespaceEquals(int32_t aNamespaceID) const {
     return mInner.mNamespaceID == aNamespaceID;
   }
 
@@ -186,38 +159,35 @@ public:
 
   inline bool Equals(const nsAString& aName, int32_t aNamespaceID) const;
 
-  inline bool Equals(const nsAString& aName, const nsAString& aPrefix, int32_t aNamespaceID) const;
+  inline bool Equals(const nsAString& aName, const nsAString& aPrefix,
+                     int32_t aNamespaceID) const;
 
   bool NamespaceEquals(const nsAString& aNamespaceURI) const;
 
-  inline bool QualifiedNameEquals(nsIAtom* aNameAtom) const;
+  inline bool QualifiedNameEquals(const nsAtom* aNameAtom) const;
 
-  bool QualifiedNameEquals(const nsAString& aQualifiedName) const
-  {
+  bool QualifiedNameEquals(const nsAString& aQualifiedName) const {
     return mQualifiedName == aQualifiedName;
   }
 
   /*
    * Retrieve a pointer to the document that owns this node info.
    */
-  nsIDocument* GetDocument() const
-  {
-    return mDocument;
-  }
+  Document* GetDocument() const { return mDocument; }
 
-private:
-  NodeInfo() = delete; 
+ private:
+  NodeInfo() = delete;
   NodeInfo(const NodeInfo& aOther) = delete;
 
   // NodeInfo is only constructed by nsNodeInfoManager which is a friend class.
   // aName and aOwnerManager may not be null.
-  NodeInfo(nsIAtom* aName, nsIAtom* aPrefix, int32_t aNamespaceID,
-           uint16_t aNodeType, nsIAtom* aExtraName,
+  NodeInfo(nsAtom* aName, nsAtom* aPrefix, int32_t aNamespaceID,
+           uint16_t aNodeType, nsAtom* aExtraName,
            nsNodeInfoManager* aOwnerManager);
 
   ~NodeInfo();
 
-public:
+ public:
   bool CanSkip();
 
   /**
@@ -226,7 +196,7 @@ public:
    */
   void DeleteCycleCollectable();
 
-protected:
+ protected:
   /*
    * NodeInfoInner is used for two things:
    *
@@ -241,33 +211,70 @@ protected:
    * the key is automatically deleted.
    */
 
-  class NodeInfoInner
-  {
-  public:
+  class NodeInfoInner {
+   public:
     NodeInfoInner()
-      : mName(nullptr), mPrefix(nullptr), mNamespaceID(kNameSpaceID_Unknown),
-        mNodeType(0), mNameString(nullptr), mExtraName(nullptr)
-    {
-    }
-    NodeInfoInner(nsIAtom *aName, nsIAtom *aPrefix, int32_t aNamespaceID,
-                    uint16_t aNodeType, nsIAtom* aExtraName)
-      : mName(aName), mPrefix(aPrefix), mNamespaceID(aNamespaceID),
-        mNodeType(aNodeType), mNameString(nullptr), mExtraName(aExtraName)
-    {
-    }
-    NodeInfoInner(const nsAString& aTmpName, nsIAtom *aPrefix,
-                    int32_t aNamespaceID, uint16_t aNodeType)
-      : mName(nullptr), mPrefix(aPrefix), mNamespaceID(aNamespaceID),
-        mNodeType(aNodeType), mNameString(&aTmpName), mExtraName(nullptr)
-    {
+        : mName(nullptr),
+          mPrefix(nullptr),
+          mNamespaceID(kNameSpaceID_Unknown),
+          mNodeType(0),
+          mNameString(nullptr),
+          mExtraName(nullptr),
+          mHash() {}
+    NodeInfoInner(nsAtom* aName, nsAtom* aPrefix, int32_t aNamespaceID,
+                  uint16_t aNodeType, nsAtom* aExtraName)
+        : mName(aName),
+          mPrefix(aPrefix),
+          mNamespaceID(aNamespaceID),
+          mNodeType(aNodeType),
+          mNameString(nullptr),
+          mExtraName(aExtraName),
+          mHash() {}
+    NodeInfoInner(const nsAString& aTmpName, nsAtom* aPrefix,
+                  int32_t aNamespaceID, uint16_t aNodeType)
+        : mName(nullptr),
+          mPrefix(aPrefix),
+          mNamespaceID(aNamespaceID),
+          mNodeType(aNodeType),
+          mNameString(&aTmpName),
+          mExtraName(nullptr),
+          mHash() {}
+
+    bool operator==(const NodeInfoInner& aOther) const {
+      if (mPrefix != aOther.mPrefix || mNamespaceID != aOther.mNamespaceID ||
+          mNodeType != aOther.mNodeType || mExtraName != aOther.mExtraName) {
+        return false;
+      }
+
+      if (mName) {
+        if (aOther.mName) {
+          return mName == aOther.mName;
+        }
+        return mName->Equals(*(aOther.mNameString));
+      }
+
+      if (aOther.mName) {
+        return aOther.mName->Equals(*(mNameString));
+      }
+
+      return mNameString->Equals(*(aOther.mNameString));
     }
 
-    nsCOMPtr<nsIAtom> mName;
-    nsCOMPtr<nsIAtom> mPrefix;
-    int32_t             mNamespaceID;
-    uint16_t            mNodeType; // As defined by nsIDOMNode.nodeType
-    const nsAString*    mNameString;
-    nsCOMPtr<nsIAtom> mExtraName; // Only used by PIs and DocTypes
+    uint32_t Hash() const {
+      if (!mHash) {
+        mHash.emplace(mName ? mName->hash()
+                            : mozilla::HashString(*mNameString));
+      }
+      return mHash.value();
+    }
+
+    nsAtom* const MOZ_OWNING_REF mName;
+    nsAtom* MOZ_OWNING_REF mPrefix;
+    int32_t mNamespaceID;
+    uint16_t mNodeType;  // As defined by Node.nodeType
+    const nsAString* const mNameString;
+    nsAtom* MOZ_OWNING_REF mExtraName;  // Only used by PIs and DocTypes
+    mutable mozilla::Maybe<const uint32_t> mHash;
   };
 
   // nsNodeInfoManager needs to pass mInner to the hash table.
@@ -275,7 +282,7 @@ protected:
 
   // This is a non-owning reference, but it's safe since it's set to nullptr
   // by nsNodeInfoManager::DropDocumentReference when the document is destroyed.
-  nsIDocument* MOZ_NON_OWNING_REF mDocument; // Cache of mOwnerManager->mDocument
+  Document* MOZ_NON_OWNING_REF mDocument;  // Cache of mOwnerManager->mDocument
 
   NodeInfoInner mInner;
 
@@ -297,7 +304,7 @@ protected:
   nsString mLocalName;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* mozilla_dom_NodeInfo_h___ */

@@ -1,14 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* eslint-env mozilla/frame-script */
+
 // Functions that are automatically loaded as frame scripts for
 // timeline tests.
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-var { Task } = Cu.import("resource://gre/modules/Task.jsm", {});
-var { Promise } = Cu.import('resource://gre/modules/Promise.jsm', {});
-
-Cu.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 // Functions that look like mochitest functions but forward to the
 // browser process.
@@ -16,20 +14,21 @@ Cu.import("resource://gre/modules/Timer.jsm");
 this.ok = function(value, message) {
   sendAsyncMessage("browser:test:ok", {
     value: !!value,
-    message: message});
-}
+    message,
+  });
+};
 
 this.is = function(v1, v2, message) {
   ok(v1 == v2, message);
-}
+};
 
 this.info = function(message) {
-  sendAsyncMessage("browser:test:info", {message: message});
-}
+  sendAsyncMessage("browser:test:info", { message });
+};
 
 this.finish = function() {
   sendAsyncMessage("browser:test:finish");
-}
+};
 
 /* Start a task that runs some timeline tests in the ordinary way.
  *
@@ -50,16 +49,13 @@ this.finish = function() {
  *             as an argument and checks the results of the test.
  */
 this.timelineContentTest = function(tests) {
-  Task.spawn(function*() {
-    let docShell = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                          .getInterface(Ci.nsIWebNavigation)
-                          .QueryInterface(Ci.nsIDocShell);
+  (async function() {
+    let docShell = content.docShell;
 
     info("Start recording");
     docShell.recordProfileTimelineMarkers = true;
 
-    for (let {desc, searchFor, setup, check} of tests) {
-
+    for (let { desc, searchFor, setup, check } of tests) {
       info("Running test: " + desc);
 
       info("Flushing the previous markers if any");
@@ -69,11 +65,11 @@ this.timelineContentTest = function(tests) {
       let onMarkers = timelineWaitForMarkers(docShell, searchFor);
       setup(docShell);
       info("Waiting for new markers on the docShell");
-      let markers = yield onMarkers;
+      let markers = await onMarkers;
 
       // Cycle collection markers are non-deterministic, and none of these tests
       // expect them to show up.
-      markers = markers.filter(m => m.name.indexOf("nsCycleCollector") === -1);
+      markers = markers.filter(m => !m.name.includes("nsCycleCollector"));
 
       info("Running the test check function");
       check(markers);
@@ -82,13 +78,13 @@ this.timelineContentTest = function(tests) {
     info("Stop recording");
     docShell.recordProfileTimelineMarkers = false;
     finish();
-  });
-}
+  })();
+};
 
 function timelineWaitForMarkers(docshell, searchFor) {
-  if (typeof(searchFor) == "string") {
+  if (typeof searchFor == "string") {
     let searchForString = searchFor;
-    let f = function (markers) {
+    let f = function(markers) {
       return markers.some(m => m.name == searchForString);
     };
     searchFor = f;

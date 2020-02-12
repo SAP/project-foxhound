@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -14,13 +14,12 @@
 
 namespace mozilla {
 namespace a11y {
- 
-class ApplicationAccessibleWrap: public ApplicationAccessible,
-                                 public IAccessibleApplication
-{
+
+class ApplicationAccessibleWrap : public ApplicationAccessible,
+                                  public IAccessibleApplication {
   ~ApplicationAccessibleWrap() {}
 
-public:
+ public:
   // nsISupporst
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -32,21 +31,19 @@ public:
 
   // IAccessibleApplication
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_appName(
-            /* [retval][out] */ BSTR *name);
+      /* [retval][out] */ BSTR* name);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_appVersion(
-      /* [retval][out] */ BSTR *version);
+      /* [retval][out] */ BSTR* version);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_toolkitName(
-      /* [retval][out] */ BSTR *name);
+      /* [retval][out] */ BSTR* name);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_toolkitVersion(
-          /* [retval][out] */ BSTR *version);
-
+      /* [retval][out] */ BSTR* version);
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif
-

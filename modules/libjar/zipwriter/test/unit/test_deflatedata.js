@@ -9,45 +9,51 @@ const CRC = 0xe6164331;
 // XXX Must use a constant time here away from DST changes. See bug 402434.
 const time = 1199145600000; // Jan 1st 2008
 
-function run_test()
-{
+function run_test() {
   zipW.open(tmpFile, PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE);
 
   // Shouldn't be there to start with.
-  do_check_false(zipW.hasEntry(FILENAME));
+  Assert.ok(!zipW.hasEntry(FILENAME));
 
-  do_check_false(zipW.inQueue);
+  Assert.ok(!zipW.inQueue);
 
-  var stream = Cc["@mozilla.org/io/string-input-stream;1"]
-                .createInstance(Ci.nsIStringInputStream);
+  var stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+    Ci.nsIStringInputStream
+  );
   stream.setData(DATA, DATA.length);
-  zipW.addEntryStream(FILENAME, time * PR_USEC_PER_MSEC,
-                      Ci.nsIZipWriter.COMPRESSION_BEST, stream, false);
+  zipW.addEntryStream(
+    FILENAME,
+    time * PR_USEC_PER_MSEC,
+    Ci.nsIZipWriter.COMPRESSION_BEST,
+    stream,
+    false
+  );
 
   var entry = zipW.getEntry(FILENAME);
 
-  do_check_true(entry != null);
+  Assert.ok(entry != null);
 
   // Check entry seems right.
-  do_check_eq(entry.compression, ZIP_METHOD_DEFLATE);
-  do_check_eq(entry.CRC32, CRC);
-  do_check_eq(entry.realSize, DATA.length);
-  do_check_eq(entry.lastModifiedTime / PR_USEC_PER_MSEC, time);
+  Assert.equal(entry.compression, ZIP_METHOD_DEFLATE);
+  Assert.equal(entry.CRC32, CRC);
+  Assert.equal(entry.realSize, DATA.length);
+  Assert.equal(entry.lastModifiedTime / PR_USEC_PER_MSEC, time);
 
   zipW.close();
 
   // Test the stored data with the zipreader
   var zipR = new ZipReader(tmpFile);
-  do_check_true(zipR.hasEntry(FILENAME));
+  Assert.ok(zipR.hasEntry(FILENAME));
 
   zipR.test(FILENAME);
 
-  var stream = Cc["@mozilla.org/scriptableinputstream;1"]
-                .createInstance(Ci.nsIScriptableInputStream);
+  stream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+    Ci.nsIScriptableInputStream
+  );
   stream.init(zipR.getInputStream(FILENAME));
   var result = stream.read(DATA.length);
   stream.close();
   zipR.close();
 
-  do_check_eq(result, DATA);
+  Assert.equal(result, DATA);
 }

@@ -11,17 +11,15 @@
 function run_test() {
   // --- Common services ---
 
-  const mimeService = Cc["@mozilla.org/mime;1"].
-                      getService(Ci.nsIMIMEService);
+  const mimeService = Cc["@mozilla.org/mime;1"].getService(Ci.nsIMIMEService);
 
-  const categoryManager = Cc["@mozilla.org/categorymanager;1"].
-                          getService(Ci.nsICategoryManager);
+  const categoryManager = Services.catMan;
 
   // --- Test procedure ---
 
-  const kTestExtension          = "testextension";
+  const kTestExtension = "testextension";
   const kTestExtensionMixedCase = "testExtensIon";
-  const kTestMimeType           = "application/x-testextension";
+  const kTestMimeType = "application/x-testextension";
 
   // Ensure that the test extension is not initially recognized by the operating
   // system or the "ext-to-type-mapping" category.
@@ -30,24 +28,38 @@ function run_test() {
     mimeService.getTypeFromExtension(kTestExtension);
     // The line above should have thrown an exception.
     do_throw("nsIMIMEService.getTypeFromExtension succeeded unexpectedly");
-  } catch (e if (e instanceof Ci.nsIException &&
-                 e.result == Cr.NS_ERROR_NOT_AVAILABLE)) {
+  } catch (e) {
+    if (
+      !(e instanceof Ci.nsIException) ||
+      e.result != Cr.NS_ERROR_NOT_AVAILABLE
+    ) {
+      throw e;
+    }
     // This is an expected exception, thrown if the type can't be determined.
     // Any other exception would cause the test to fail.
   }
 
   // Add a temporary category entry mapping the extension to the MIME type.
-  categoryManager.addCategoryEntry("ext-to-type-mapping", kTestExtension,
-                                   kTestMimeType, false, true);
+  categoryManager.addCategoryEntry(
+    "ext-to-type-mapping",
+    kTestExtension,
+    kTestMimeType,
+    false,
+    true
+  );
 
   // Check that the mapping is recognized in the simple case.
   var type = mimeService.getTypeFromExtension(kTestExtension);
-  do_check_eq(type, kTestMimeType);
+  Assert.equal(type, kTestMimeType);
 
   // Check that the mapping is recognized even if the extension has mixed case.
   type = mimeService.getTypeFromExtension(kTestExtensionMixedCase);
-  do_check_eq(type, kTestMimeType);
+  Assert.equal(type, kTestMimeType);
 
   // Clean up after ourselves.
-  categoryManager.deleteCategoryEntry("ext-to-type-mapping", kTestExtension, false);
+  categoryManager.deleteCategoryEntry(
+    "ext-to-type-mapping",
+    kTestExtension,
+    false
+  );
 }

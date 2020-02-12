@@ -4,18 +4,8 @@
 
 %include ../../../shared/extensions/extensions.inc.css
 
-#header-utils-btn .toolbarbutton-icon {
-  list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities-native");
-}
-
-.sorter[checkState="1"] .button-icon {
-  display: -moz-box;
-  list-style-image: url("moz-icon://stock/gtk-sort-descending?size=16");
-}
-
-.sorter[checkState="2"] .button-icon {
-  display: -moz-box;
-  list-style-image: url("moz-icon://stock/gtk-sort-ascending?size=16");
+:root > * {
+  font-size: 1.11em;
 }
 
 .addon .relnotes-toggle {
@@ -33,11 +23,6 @@
 .meta-rating[showrating="average"] > .star {
   list-style-image: url("chrome://mozapps/skin/extensions/rating-not-won.png");
   padding: 0 1px;
-}
-
-.meta-rating[showrating="user"] > .star {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-unrated.png");
-  padding: 2px 3px;
 }
 
 .meta-rating > .star[on="true"],

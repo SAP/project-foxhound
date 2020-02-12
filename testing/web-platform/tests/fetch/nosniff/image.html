@@ -2,28 +2,38 @@
 <script src=/resources/testharnessreport.js></script>
 <div id=log></div>
 <script>
-  var fails = ["", "?type=", "?type=x", "?type=x/x"],
-      passes = ["?type=image/gif", "?type=image/png", "?type=image/png;blah"]
+  // Note: images get always sniffed, nosniff doesn't do anything
+  // (but note the tentative Cross-Origin Read Blocking (CORB) tests
+  // - for example wpt/fetch/corb/img-mime-types-coverage.tentative.sub.html).
+  var passes = [
+      // Empty or non-sensical MIME types
+      null, "", "x", "x/x",
 
-  fails.forEach(function(urlpart) {
-    async_test(function(t) {
-      var img = document.createElement("img")
-      img.onerror = t.step_func_done(function(){})
-      img.onload = t.unreached_func("Unexpected load event")
-      img.src = "resources/image.py" + urlpart
-      document.body.appendChild(img)
-    }, "URL query: " + urlpart)
-  })
+      // Image MIME types
+      "image/gif", "image/png", "image/png;blah", "image/svg+xml",
 
-  passes.forEach(function(urlpart) {
+      // CORB-protected MIME types (but note that CORB doesn't apply here,
+      // because CORB ignores same-origin requests).
+      "text/html", "application/xml", "application/blah+xml"
+  ]
+
+  const get_url = (mime) => {
+    let url = "resources/image.py"
+    if (mime != null) {
+        url += "?type=" + encodeURIComponent(mime)
+    }
+    return url
+  }
+
+  passes.forEach(function(mime) {
     async_test(function(t) {
       var img = document.createElement("img")
       img.onerror = t.unreached_func("Unexpected error event")
       img.onload = t.step_func_done(function(){
         assert_equals(img.width, 96)
       })
-      img.src = "resources/image.py" + urlpart
+      img.src = get_url(mime)
       document.body.appendChild(img)
-    }, "URL query: " + urlpart)
+    }, "URL query: " + mime)
   })
 </script>

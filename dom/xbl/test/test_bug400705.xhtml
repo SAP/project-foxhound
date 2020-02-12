@@ -4,13 +4,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=400705
 -->
 <head>
   <title>Test for Bug 400705</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <bindings xmlns="http://www.mozilla.org/xbl">
     <binding id="test">
       <implementation>
-        <field name="a">XPCNativeWrapper.unwrap(window).countera++</field>
-        <field name="b">XPCNativeWrapper.unwrap(window).counterb++</field>
+        <field name="a">window.countera++</field>
+        <field name="b">window.counterb++</field>
       </implementation>
     </binding>
   </bindings>
@@ -36,7 +36,7 @@ addLoadEvent(function() {
   d.a;
   is(window.countera, 1, "Should have evaluated field");
 
-  d.parentNode.removeChild(d);
+  d.remove();
   is(window.counterb, 0, "Should not evaluate field on binding teardown");
   SimpleTest.finish();
 });

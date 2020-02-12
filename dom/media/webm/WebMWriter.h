@@ -14,9 +14,8 @@ namespace mozilla {
 class EbmlComposer;
 
 // Vorbis meta data structure
-class VorbisMetadata : public TrackMetadataBase
-{
-public:
+class VorbisMetadata : public TrackMetadataBase {
+ public:
   nsTArray<uint8_t> mData;
   int32_t mChannels;
   float mSamplingFrequency;
@@ -24,14 +23,12 @@ public:
 };
 
 // VP8 meta data structure
-class VP8Metadata : public TrackMetadataBase
-{
-public:
+class VP8Metadata : public TrackMetadataBase {
+ public:
   int32_t mWidth;
   int32_t mHeight;
   int32_t mDisplayWidth;
   int32_t mDisplayHeight;
-  int32_t mEncodedFrameRate;
   MetadataKind GetKind() const override { return METADATA_VP8; }
 };
 
@@ -39,37 +36,35 @@ public:
  * WebM writer helper
  * This class accepts encoder to set audio or video meta data or
  * encoded data to ebml Composer, and get muxing data through GetContainerData.
- * The ctor/dtor run in the MediaRecorder thread, others run in MediaEncoder thread.
+ * The ctor/dtor run in the MediaRecorder thread, others run in MediaEncoder
+ * thread.
  */
-class WebMWriter : public ContainerWriter
-{
-public:
-  // aTrackTypes indicate this muxer should multiplex into Video only or A/V foramt.
+class WebMWriter : public ContainerWriter {
+ public:
   // Run in MediaRecorder thread
-  explicit WebMWriter(uint32_t aTrackTypes);
+  WebMWriter();
   virtual ~WebMWriter();
 
-  // WriteEncodedTrack inserts raw packets into WebM stream.
-  nsresult WriteEncodedTrack(const EncodedFrameContainer &aData,
+  // WriteEncodedTrack inserts raw packets into WebM stream. Does not accept
+  // any flags: any specified will be ignored. Writing is finalized via
+  // flushing via GetContainerData().
+  nsresult WriteEncodedTrack(const nsTArray<RefPtr<EncodedFrame>>& aData,
                              uint32_t aFlags = 0) override;
 
   // GetContainerData outputs multiplexing data.
   // aFlags indicates the muxer should enter into finished stage and flush out
   // queue data.
-  nsresult GetContainerData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
+  nsresult GetContainerData(nsTArray<nsTArray<uint8_t>>* aOutputBufs,
                             uint32_t aFlags = 0) override;
 
   // Assign metadata into muxer
-  nsresult SetMetadata(TrackMetadataBase* aMetadata) override;
+  nsresult SetMetadata(
+      const nsTArray<RefPtr<TrackMetadataBase>>& aMetadata) override;
 
-private:
+ private:
   nsAutoPtr<EbmlComposer> mEbmlComposer;
-
-  // Indicate what kind of meta data needed in the writer.
-  // If this value become 0, it means writer can start to generate header.
-  uint8_t mMetadataRequiredFlag;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

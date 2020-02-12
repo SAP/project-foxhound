@@ -1,5 +1,3 @@
-
-#!/usr/bin/env python
 # ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -10,6 +8,8 @@
 script.py, along with config.py and log.py, represents the core of
 mozharness.
 """
+
+from __future__ import print_function
 
 import codecs
 from contextlib import contextmanager
@@ -36,7 +36,9 @@ import zipfile
 import httplib
 import urlparse
 import hashlib
+import zlib
 if os.name == 'nt':
+    import locale
     try:
         import win32file
         import win32api
@@ -52,13 +54,14 @@ except ImportError:
 
 from io import BytesIO
 
+import mozinfo
 from mozprocess import ProcessHandler
 from mozharness.base.config import BaseConfig
-from mozharness.base.log import SimpleFileLogger, MultiFileLogger, \
-    LogMixin, OutputParser, DEBUG, INFO, ERROR, FATAL
+from mozharness.base.log import MultiFileLogger, SimpleFileLogger, ConsoleLogger, \
+    LogMixin, OutputParser, DEBUG, INFO, ERROR, FATAL, WARNING
 
 
-class FetchedIncorrectFilesize(Exception):
+class ContentLengthMismatch(Exception):
     pass
 
 
@@ -116,12 +119,25 @@ class PlatformMixin(object):
         if sys.platform.startswith("linux"):
             return True
 
+    def _is_redhat(self):
+        """ check if the current operating system is a Redhat derived Linux distribution.
+
+        Returns:
+            bool: True if the current platform is a Redhat Linux distro, False otherwise
+        """
+        if not self._is_linux():
+            return False
+        re_redhat_distro = re.compile('Redhat|Fedora|CentOS|Oracle')
+        return re_redhat_distro.match(mozinfo.linux_distro) is not None
+
     def _is_64_bit(self):
         if self._is_darwin():
             # osx is a special snowflake and to ensure the arch, it is better to use the following
             return sys.maxsize > 2**32  # context: https://docs.python.org/2/library/platform.html
         else:
-            return '64' in platform.architecture()[0]  # architecture() returns (bits, linkage)
+            # Using machine() gives you the architecture of the host rather
+            # than the build type of the Python binary
+            return '64' in platform.machine()
 
 
 # ScriptMixin {{{1
@@ -146,6 +162,23 @@ class ScriptMixin(PlatformMixin):
 
     env = None
     script_obj = None
+
+    def query_filesize(self, file_path):
+        self.info("Determining filesize for %s" % file_path)
+        length = os.path.getsize(file_path)
+        self.info(" %s" % str(length))
+        return length
+
+    # TODO this should be parallelized with the to-be-written BaseHelper!
+    def query_sha512sum(self, file_path):
+        self.info("Determining sha512sum for %s" % file_path)
+        m = hashlib.sha512()
+        contents = self.read_from_file(file_path, verbose=False,
+                                       open_mode='rb')
+        m.update(contents)
+        sha512 = m.hexdigest()
+        self.info(" %s" % sha512)
+        return sha512
 
     def platform_name(self):
         """ Return the platform name on which the script is running on.
@@ -297,9 +330,10 @@ class ScriptMixin(PlatformMixin):
                 self._rmtree_windows(full_name)
             else:
                 try:
-                    win32file.SetFileAttributesW('\\\\?\\' + full_name, win32file.FILE_ATTRIBUTE_NORMAL)
+                    win32file.SetFileAttributesW(
+                        '\\\\?\\' + full_name, win32file.FILE_ATTRIBUTE_NORMAL)
                     win32file.DeleteFile('\\\\?\\' + full_name)
-                except:
+                except Exception:
                     # DeleteFile fails on long paths, del /f /q works just fine
                     self.run_command('del /F /Q "%s"' % full_name)
 
@@ -345,8 +379,6 @@ class ScriptMixin(PlatformMixin):
         url_quoted = urllib2.quote(url, safe='%/:=&?~#+!$,;\'@()*[]|')
         return urllib2.urlopen(url_quoted, **kwargs)
 
-
-
     def fetch_url_into_memory(self, url):
         ''' Downloads a file from a url into memory instead of disk.
 
@@ -355,8 +387,8 @@ class ScriptMixin(PlatformMixin):
 
         Raises:
             IOError: When the url points to a file on disk and cannot be found
-            FetchedIncorrectFilesize: When the size of the fetched file does not match the
-                                      expected file size.
+            ContentLengthMismatch: When the length of the retrieved content does not match the
+                                   Content-Length response header.
             ValueError: When the scheme of a url is not what is expected.
 
         Returns:
@@ -366,10 +398,11 @@ class ScriptMixin(PlatformMixin):
         parsed_url = urlparse.urlparse(url)
 
         if parsed_url.scheme in ('', 'file'):
-            if not os.path.isfile(url):
+            path = parsed_url.path
+            if not os.path.isfile(path):
                 raise IOError('Could not find file to extract: {}'.format(url))
 
-            expected_file_size = os.stat(url.replace('file://', '')).st_size
+            content_length = os.stat(path).st_size
 
             # In case we're referrencing a file without file://
             if parsed_url.scheme == '':
@@ -377,41 +410,55 @@ class ScriptMixin(PlatformMixin):
                 parsed_url = urlparse.urlparse(url)
 
         request = urllib2.Request(url)
-        # Exceptions to be retried:
-        # Bug 1300663 - HTTPError: HTTP Error 404: Not Found
-        # Bug 1300413 - HTTPError: HTTP Error 500: Internal Server Error
-        # Bug 1300943 - HTTPError: HTTP Error 503: Service Unavailable
-        # Bug 1300953 - URLError: <urlopen error [Errno -2] Name or service not known>
-        # Bug 1301594 - URLError: <urlopen error [Errno 10054] An existing connection was ...
-        # Bug 1301597 - URLError: <urlopen error [Errno 8] _ssl.c:504: EOF occurred in ...
-        # Bug 1301855 - URLError: <urlopen error [Errno 60] Operation timed out>
-        # Bug 1302237 - URLError: <urlopen error [Errno 104] Connection reset by peer>
-        # Bug 1301807 - BadStatusLine: ''
-        response = urllib2.urlopen(request)
+        # When calling fetch_url_into_memory() you should retry when we raise
+        # one of these exceptions:
+        # * Bug 1300663 - HTTPError: HTTP Error 404: Not Found
+        # * Bug 1300413 - HTTPError: HTTP Error 500: Internal Server Error
+        # * Bug 1300943 - HTTPError: HTTP Error 503: Service Unavailable
+        # * Bug 1300953 - URLError: <urlopen error [Errno -2] Name or service not known>
+        # * Bug 1301594 - URLError: <urlopen error [Errno 10054] An existing connection was ...
+        # * Bug 1301597 - URLError: <urlopen error [Errno 8] _ssl.c:504: EOF occurred in ...
+        # * Bug 1301855 - URLError: <urlopen error [Errno 60] Operation timed out>
+        # * Bug 1302237 - URLError: <urlopen error [Errno 104] Connection reset by peer>
+        # * Bug 1301807 - BadStatusLine: ''
+        #
+        # Bug 1309912 - Adding timeout in hopes to solve blocking on response.read() (bug 1300413)
+        response = urllib2.urlopen(request, timeout=30)
 
         if parsed_url.scheme in ('http', 'https'):
-            expected_file_size = int(response.headers.get('Content-Length'))
+            content_length = int(response.headers.get('Content-Length'))
 
-        self.info('Expected file size: {}'.format(expected_file_size))
-        self.debug('Url: {}'.format(url))
-        self.debug('Content-Encoding {}'.format(response.headers.get('Content-Encoding')))
+        response_body = response.read()
+        response_body_size = len(response_body)
 
-        file_contents = response.read()
-        obtained_file_size = len(file_contents)
+        self.info('Content-Length response header: {}'.format(content_length))
+        self.info('Bytes received: {}'.format(response_body_size))
 
-        if obtained_file_size != expected_file_size:
-            raise FetchedIncorrectFilesize(
-                'The expected file size is {} while we got instead {}'.format(
-                    expected_file_size, obtained_file_size)
+        if response_body_size != content_length:
+            raise ContentLengthMismatch(
+                'The retrieved Content-Length header declares a body length '
+                'of {} bytes, while we actually retrieved {} bytes'.format(
+                    content_length, response_body_size)
             )
+
+        if response.info().get('Content-Encoding') == 'gzip':
+            self.info('Content-Encoding is "gzip", so decompressing response body')
+            # See http://www.zlib.net/manual.html#Advanced
+            # section "ZEXTERN int ZEXPORT inflateInit2 OF....":
+            #   Add 32 to windowBits to enable zlib and gzip decoding with automatic
+            #   header detection, or add 16 to decode only the gzip format (the zlib
+            #   format will return a Z_DATA_ERROR).
+            # Adding 16 since we only wish to support gzip encoding.
+            file_contents = zlib.decompress(response_body, zlib.MAX_WBITS | 16)
+        else:
+            file_contents = response_body
 
         # Use BytesIO instead of StringIO
         # http://stackoverflow.com/questions/34162017/unzip-buffer-with-python/34162395#34162395
         return BytesIO(file_contents)
 
-
     def _download_file(self, url, file_name):
-        """ Helper script for download_file()
+        """ Helper function for download_file()
         Additionaly this function logs all exceptions as warnings before
         re-raising them
 
@@ -443,22 +490,43 @@ class ScriptMixin(PlatformMixin):
             if f.info().get('content-length') is not None:
                 f_length = int(f.info()['content-length'])
                 got_length = 0
-            local_file = open(file_name, 'wb')
+            if f.info().get('Content-Encoding') == 'gzip':
+                # Note, we'll download the full compressed content into its own
+                # file, since that allows the gzip library to seek through it.
+                # Once downloaded, we'll decompress it into the real target
+                # file, and delete the compressed version.
+                local_file = open(file_name + '.gz', 'wb')
+            else:
+                local_file = open(file_name, 'wb')
             while True:
                 block = f.read(1024 ** 2)
                 if not block:
                     if f_length is not None and got_length != f_length:
-                        raise urllib2.URLError("Download incomplete; content-length was %d, but only received %d" % (f_length, got_length))
+                        raise urllib2.URLError(
+                            "Download incomplete; content-length was %d, "
+                            "but only received %d" % (f_length, got_length))
                     break
                 local_file.write(block)
                 if f_length is not None:
                     got_length += len(block)
             local_file.close()
+            if f.info().get('Content-Encoding') == 'gzip':
+                # Decompress file into target location, then remove compressed version
+                with open(file_name, 'wb') as f_out:
+                    # On some execution paths, this could be called with python 2.6
+                    # whereby gzip.open(...) cannot be used with a 'with' statement.
+                    # So let's do this the python 2.6 way...
+                    try:
+                        f_in = gzip.open(file_name + '.gz', 'rb')
+                        shutil.copyfileobj(f_in, f_out)
+                    finally:
+                        f_in.close()
+                os.remove(file_name + '.gz')
             return file_name
-        except urllib2.HTTPError, e:
+        except urllib2.HTTPError as e:
             self.warning("Server returned status %s %s for %s" % (str(e.code), str(e), url))
             raise
-        except urllib2.URLError, e:
+        except urllib2.URLError as e:
             self.warning("URL Error: %s" % url)
 
             # Failures due to missing local files won't benefit from retry.
@@ -466,27 +534,16 @@ class ScriptMixin(PlatformMixin):
             if isinstance(e.args[0], OSError) and e.args[0].errno == errno.ENOENT:
                 raise e.args[0]
 
-            remote_host = urlparse.urlsplit(url)[1]
-            if remote_host:
-                nslookup = self.query_exe('nslookup')
-                error_list = [{
-                    'substr': "server can't find %s" % remote_host,
-                    'level': ERROR,
-                    'explanation': "Either %s is an invalid hostname, or DNS is busted." % remote_host,
-                }]
-                self.run_command([nslookup, remote_host],
-                                 error_list=error_list)
             raise
-        except socket.timeout, e:
+        except socket.timeout as e:
             self.warning("Timed out accessing %s: %s" % (url, str(e)))
             raise
-        except socket.error, e:
+        except socket.error as e:
             self.warning("Socket error when accessing %s: %s" % (url, str(e)))
             raise
 
     def _retry_download(self, url, error_level, file_name=None, retry_config=None):
-        """ Helper method to retry download methods
-        Split out so we can alter the retry logic in mozharness.mozilla.testing.gaia_test.
+        """ Helper method to retry download methods.
 
         This method calls `self.retry` on `self._download_file` using the passed
         parameters if a file_name is specified. If no file is specified, we will
@@ -529,7 +586,6 @@ class ScriptMixin(PlatformMixin):
             **retry_args
         )
 
-
     def _filter_entries(self, namelist, extract_dirs):
         """Filter entries of the archive based on the specified list of to extract dirs."""
         filter_partial = functools.partial(fnmatch.filter, namelist)
@@ -537,7 +593,6 @@ class ScriptMixin(PlatformMixin):
 
         for entry in entries:
             yield entry
-
 
     def unzip(self, compressed_file, extract_to, extract_dirs='*', verbose=False):
         """This method allows to extract a zip file without writing to disk first.
@@ -551,7 +606,7 @@ class ScriptMixin(PlatformMixin):
                                       Defaults to False.
 
         Raises:
-            zipfile.BadZipFile: on contents of zipfile being invalid
+            zipfile.BadZipfile: on contents of zipfile being invalid
         """
         with zipfile.ZipFile(compressed_file) as bundle:
             entries = self._filter_entries(bundle.namelist(), extract_dirs)
@@ -580,7 +635,6 @@ class ScriptMixin(PlatformMixin):
                 except KeyError:
                     self.warning('{} was not found in the zip file'.format(entry))
 
-
     def deflate(self, compressed_file, mode, extract_to='.', *args, **kwargs):
         """This method allows to extract a compressed file from a tar, tar.bz2 and tar.gz files.
 
@@ -591,7 +645,6 @@ class ScriptMixin(PlatformMixin):
         """
         t = tarfile.open(fileobj=compressed_file, mode=mode)
         t.extractall(path=extract_to)
-
 
     def download_unpack(self, url, extract_to='.', extract_dirs='*', verbose=False):
         """Generic method to download and extract a compressed file without writing it to disk first.
@@ -629,6 +682,9 @@ class ScriptMixin(PlatformMixin):
                 'application/zip': {
                     'function': self.unzip,
                 },
+                'application/x-zip-compressed': {
+                    'function': self.unzip,
+                },
             }
 
             filename = url.split('/')[-1]
@@ -664,8 +720,10 @@ class ScriptMixin(PlatformMixin):
                 httplib.BadStatusLine,
                 socket.timeout,
                 socket.error,
-                FetchedIncorrectFilesize,
+                ContentLengthMismatch,
             ),
+            sleeptime=30,
+            attempts=5,
             error_message="Can't download from {}".format(url),
             error_level=FATAL,
         )
@@ -678,8 +736,11 @@ class ScriptMixin(PlatformMixin):
         # 2) We're guaranteed to have download the file with error_level=FATAL
         #    Let's unpack the file
         function, kwargs = _determine_extraction_method_and_kwargs(url)
-        function(**kwargs)
-
+        try:
+            function(**kwargs)
+        except zipfile.BadZipfile:
+            # Dump the exception and exit
+            self.exception(level=FATAL)
 
     def load_json_url(self, url, error_level=None, *args, **kwargs):
         """ Returns a json object from a url (it retries). """
@@ -756,13 +817,15 @@ class ScriptMixin(PlatformMixin):
         try:
             shutil.move(src, dest)
         # http://docs.python.org/tutorial/errors.html
-        except IOError, e:
+        except IOError as e:
             self.log("IO error: %s" % str(e),
                      level=error_level, exit_code=exit_code)
             return -1
-        except shutil.Error, e:
+        except shutil.Error as e:
+            # ERROR level ends up reporting the failure to treeherder &
+            # pollutes the failure summary list.
             self.log("shutil error: %s" % str(e),
-                     level=error_level, exit_code=exit_code)
+                     level=WARNING, exit_code=exit_code)
             return -1
         return 0
 
@@ -780,7 +843,9 @@ class ScriptMixin(PlatformMixin):
         self.info("Chmoding %s to %s" % (path, str(oct(mode))))
         os.chmod(path, mode)
 
-    def copyfile(self, src, dest, log_level=INFO, error_level=ERROR, copystat=False, compress=False):
+    def copyfile(
+        self, src, dest, log_level=INFO, error_level=ERROR, copystat=False, compress=False
+    ):
         """ copy or compress `src` into `dest`.
 
         Args:
@@ -807,7 +872,7 @@ class ScriptMixin(PlatformMixin):
                 outfile.writelines(infile)
                 outfile.close()
                 infile.close()
-            except IOError, e:
+            except IOError as e:
                 self.log("Can't compress %s to %s: %s!" % (src, dest, str(e)),
                          level=error_level)
                 return -1
@@ -815,7 +880,7 @@ class ScriptMixin(PlatformMixin):
             self.log("Copying %s to %s" % (src, dest), level=log_level)
             try:
                 shutil.copyfile(src, dest)
-            except (IOError, shutil.Error), e:
+            except (IOError, shutil.Error) as e:
                 self.log("Can't copy %s to %s: %s!" % (src, dest, str(e)),
                          level=error_level)
                 return -1
@@ -823,7 +888,7 @@ class ScriptMixin(PlatformMixin):
         if copystat:
             try:
                 shutil.copystat(src, dest)
-            except (IOError, shutil.Error), e:
+            except (IOError, shutil.Error) as e:
                 self.log("Can't copy attributes of %s to %s: %s!" % (src, dest, str(e)),
                          level=error_level)
                 return -1
@@ -956,7 +1021,7 @@ class ScriptMixin(PlatformMixin):
         self.info("Reading from file %s" % file_path)
         try:
             fh = open(file_path, open_mode)
-        except IOError, err:
+        except IOError as err:
             self.log("unable to open %s: %s" % (file_path, err.strerror),
                      level=error_level)
             yield None, err
@@ -1099,10 +1164,11 @@ class ScriptMixin(PlatformMixin):
                 status = action(*args, **kwargs)
                 if good_statuses and status not in good_statuses:
                     retry = True
-            except retry_exceptions, e:
+            except retry_exceptions as e:
                 retry = True
                 error_message = "%s\nCaught exception: %s" % (error_message, str(e))
-                self.log('retry: attempt #%d caught exception: %s' % (n, str(e)), level=INFO)
+                self.log('retry: attempt #%d caught %s exception: %s' %
+                         (n, type(e).__name__, str(e)), level=INFO)
 
             if not retry:
                 return status
@@ -1177,6 +1243,13 @@ class ScriptMixin(PlatformMixin):
         for k in purge_env:
             if k in env:
                 del env[k]
+        if os.name == 'nt':
+            pref_encoding = locale.getpreferredencoding()
+            for k, v in env.iteritems():
+                # When run locally on Windows machines, some environment
+                # variables may be unicode.
+                if isinstance(v, unicode):
+                    env[k] = v.encode(pref_encoding)
         if set_self_env:
             self.env = env
         return env
@@ -1219,7 +1292,7 @@ class ScriptMixin(PlatformMixin):
             repl_dict.update(dirs)
         if isinstance(exe, dict):
             found = False
-            # allow for searchable paths of the buildbot exe
+            # allow for searchable paths of the exe
             for name, path in exe.iteritems():
                 if isinstance(path, list) or isinstance(path, tuple):
                     path = [x % repl_dict for x in path]
@@ -1236,8 +1309,9 @@ class ScriptMixin(PlatformMixin):
                     exe = path
                     break
             else:
-                self.log("query_exe was a searchable dict but an existing path could not be "
-                         "determined. Tried searching in paths: %s" % (str(exe)), level=error_level)
+                self.log("query_exe was a searchable dict but an existing "
+                         "path could not be determined. Tried searching in "
+                         "paths: %s" % (str(exe)), level=error_level)
                 return None
         elif isinstance(exe, list) or isinstance(exe, tuple):
             exe = [x % repl_dict for x in exe]
@@ -1254,7 +1328,9 @@ class ScriptMixin(PlatformMixin):
             if isinstance(exe, list):
                 exe = subprocess.list2cmdline(exe)
         elif return_type is not None:
-            self.log("Unknown return_type type %s requested in query_exe!" % return_type, level=error_level)
+            self.log(
+                "Unknown return_type type %s requested in query_exe!"
+                % return_type, level=error_level)
         return exe
 
     def run_command(self, command, cwd=None, error_list=None,
@@ -1331,7 +1407,11 @@ class ScriptMixin(PlatformMixin):
                 self.info("Using partial env: %s" % pprint.pformat(partial_env))
                 env = self.query_env(partial_env=partial_env)
         else:
-            self.info("Using env: %s" % pprint.pformat(env))
+            if hasattr(self, 'previous_env') and env == self.previous_env:
+                self.info("Using env: (same as previous command)")
+            else:
+                self.info("Using env: %s" % pprint.pformat(env))
+                self.previous_env = env
 
         if output_parser is None:
             parser = OutputParser(config=self.config, log_obj=self.log_obj,
@@ -1345,7 +1425,9 @@ class ScriptMixin(PlatformMixin):
                     parser.add_lines(line)
 
                 def onTimeout():
-                    self.info("Automation Error: mozprocess timed out after %s seconds running %s" % (str(output_timeout), str(command)))
+                    self.info(
+                        "Automation Error: mozprocess timed out after "
+                        "%s seconds running %s" % (str(output_timeout), str(command)))
 
                 p = ProcessHandler(command,
                                    shell=shell,
@@ -1365,7 +1447,8 @@ class ScriptMixin(PlatformMixin):
                 returncode = int(p.proc.returncode)
             else:
                 p = subprocess.Popen(command, shell=shell, stdout=subprocess.PIPE,
-                                     cwd=cwd, stderr=subprocess.STDOUT, env=env)
+                                     cwd=cwd, stderr=subprocess.STDOUT, env=env,
+                                     bufsize=0)
                 loop = True
                 while loop:
                     if p.poll() is not None:
@@ -1377,7 +1460,15 @@ class ScriptMixin(PlatformMixin):
                             break
                         parser.add_lines(line)
                 returncode = p.returncode
-        except OSError, e:
+        except KeyboardInterrupt:
+            level = error_level
+            if halt_on_failure:
+                level = FATAL
+            self.log("Process interrupted by the user, killing process with pid %s" % p.pid,
+                     level=level)
+            p.kill()
+            return -1
+        except OSError as e:
             level = error_level
             if halt_on_failure:
                 level = FATAL
@@ -1514,28 +1605,32 @@ class ScriptMixin(PlatformMixin):
         shell = True
         if isinstance(command, list):
             shell = False
+
         p = subprocess.Popen(command, shell=shell, stdout=tmp_stdout,
-                             cwd=cwd, stderr=tmp_stderr, env=env)
+                             cwd=cwd, stderr=tmp_stderr, env=env, bufsize=0)
         # XXX: changed from self.debug to self.log due to this error:
         #      TypeError: debug() takes exactly 1 argument (2 given)
-        self.log("Temporary files: %s and %s" % (tmp_stdout_filename, tmp_stderr_filename), level=DEBUG)
+        self.log(
+            "Temporary files: %s and %s"
+            % (tmp_stdout_filename, tmp_stderr_filename), level=DEBUG)
         p.wait()
         tmp_stdout.close()
         tmp_stderr.close()
         return_level = DEBUG
         output = None
-        if os.path.exists(tmp_stdout_filename) and os.path.getsize(tmp_stdout_filename):
-            output = self.read_from_file(tmp_stdout_filename,
-                                         verbose=False)
-            if not silent:
-                self.log("Output received:", level=log_level)
-                output_lines = output.rstrip().splitlines()
-                for line in output_lines:
-                    if not line or line.isspace():
-                        continue
-                    line = line.decode("utf-8")
-                    self.log(' %s' % line, level=log_level)
-                output = '\n'.join(output_lines)
+        if return_type == 'output' or not silent:
+            if os.path.exists(tmp_stdout_filename) and os.path.getsize(tmp_stdout_filename):
+                output = self.read_from_file(tmp_stdout_filename,
+                                             verbose=False)
+                if not silent:
+                    self.log("Output received:", level=log_level)
+                    output_lines = output.rstrip().splitlines()
+                    for line in output_lines:
+                        if not line or line.isspace():
+                            continue
+                        line = line.decode("utf-8")
+                        self.log(' %s' % line, level=log_level)
+                    output = '\n'.join(output_lines)
         if os.path.exists(tmp_stderr_filename) and os.path.getsize(tmp_stderr_filename):
             if not ignore_errors:
                 return_level = ERROR
@@ -1648,6 +1743,11 @@ class ScriptMixin(PlatformMixin):
         else:
             self.log('No extraction method found for: %s' % filename,
                      level=error_level, exit_code=fatal_exit_code)
+
+    def is_taskcluster(self):
+        """Returns boolean indicating if we're running in TaskCluster."""
+        # This may need expanding in the future to work on
+        return 'TASKCLUSTER_WORKER_TYPE' in os.environ
 
 
 def PreScriptRun(func):
@@ -1782,6 +1882,21 @@ class BaseScript(ScriptMixin, LogMixin, object):
         self.new_log_obj(default_log_level=default_log_level)
         self.script_obj = self
 
+        # Indicate we're a source checkout if VCS directory is present at the
+        # appropriate place. This code will break if this file is ever moved
+        # to another directory.
+        self.topsrcdir = None
+
+        srcreldir = 'testing/mozharness/mozharness/base'
+        here = os.path.normpath(os.path.dirname(__file__))
+        if here.replace('\\', '/').endswith(srcreldir):
+            topsrcdir = os.path.normpath(os.path.join(here, '..', '..',
+                                                      '..', '..'))
+            hg_dir = os.path.join(topsrcdir, '.hg')
+            git_dir = os.path.join(topsrcdir, '.git')
+            if os.path.isdir(hg_dir) or os.path.isdir(git_dir):
+                self.topsrcdir = topsrcdir
+
         # Set self.config to read-only.
         #
         # We can create intermediate config info programmatically from
@@ -1790,7 +1905,7 @@ class BaseScript(ScriptMixin, LogMixin, object):
         # easy-to-write-hard-to-debug writable config.
         #
         # To allow for other, script-specific configurations
-        # (e.g., buildbot props json parsing), before locking,
+        # (e.g., props json parsing), before locking,
         # call self._pre_config_lock().  If needed, this method can
         # alter self.config.
         self._pre_config_lock(rw_config)
@@ -1881,21 +1996,6 @@ class BaseScript(ScriptMixin, LogMixin, object):
         elif error_if_missing:
             self.error("No such method %s!" % method_name)
 
-    @PostScriptRun
-    def copy_logs_to_upload_dir(self):
-        """Copies logs to the upload directory"""
-        self.info("Copying logs to upload dir...")
-        log_files = ['localconfig.json']
-        for log_name in self.log_obj.log_files.keys():
-            log_files.append(self.log_obj.log_files[log_name])
-        dirs = self.query_abs_dirs()
-        for log_file in log_files:
-            self.copy_to_upload_dir(os.path.join(dirs['abs_log_dir'], log_file),
-                                    dest=os.path.join('logs', log_file),
-                                    short_desc='%s log' % log_name,
-                                    long_desc='%s log' % log_name,
-                                    max_backups=self.config.get("log_max_rotate", 0))
-
     def run_action(self, action):
         if action not in self.actions:
             self.action_message("Skipping %s step." % action)
@@ -1927,8 +2027,8 @@ class BaseScript(ScriptMixin, LogMixin, object):
                         method(action, success=False)
                     except Exception:
                         self.error("An additional exception occurred during "
-                                   "post-action for %s: %s" % (action,
-                                   traceback.format_exc()))
+                                   "post-action for %s: %s"
+                                   % (action, traceback.format_exc()))
 
                 self.fatal("Aborting due to exception in pre-action listener.")
 
@@ -2015,8 +2115,6 @@ class BaseScript(ScriptMixin, LogMixin, object):
 
             if not post_success:
                 self.fatal("Aborting due to failure in post-run listener.")
-        if self.config.get("copy_logs_post_run", True):
-            self.copy_logs_to_upload_dir()
 
         return self.return_code
 
@@ -2051,7 +2149,6 @@ class BaseScript(ScriptMixin, LogMixin, object):
         dirs = {}
         dirs['base_work_dir'] = c['base_work_dir']
         dirs['abs_work_dir'] = os.path.join(c['base_work_dir'], c['work_dir'])
-        dirs['abs_upload_dir'] = os.path.join(dirs['abs_work_dir'], 'upload')
         dirs['abs_log_dir'] = os.path.join(c['base_work_dir'], c.get('log_dir', 'logs'))
         self.abs_dirs = dirs
         return self.abs_dirs
@@ -2088,15 +2185,17 @@ class BaseScript(ScriptMixin, LogMixin, object):
             "log_to_console": True,
             "append_to_log": False,
         }
-        log_type = self.config.get("log_type", "multi")
+        log_type = self.config.get("log_type", "console")
         for key in log_config.keys():
             value = self.config.get(key, None)
             if value is not None:
                 log_config[key] = value
         if log_type == "multi":
             self.log_obj = MultiFileLogger(**log_config)
-        else:
+        elif log_type == "simple":
             self.log_obj = SimpleFileLogger(**log_config)
+        else:
+            self.log_obj = ConsoleLogger(**log_config)
 
     def action_message(self, message):
         self.info("[mozharness: %sZ] %s" % (
@@ -2116,24 +2215,13 @@ class BaseScript(ScriptMixin, LogMixin, object):
                 except ValueError:
                     """log is closed; print as a default. Ran into this
                     when calling from __del__()"""
-                    print "### Log is closed! (%s)" % item['message']
+                    print("### Log is closed! (%s)" % item['message'])
 
     def add_summary(self, message, level=INFO):
         self.summary_list.append({'message': message, 'level': level})
         # TODO write to a summary-only log?
         # Summaries need a lot more love.
         self.log(message, level=level)
-
-    def add_failure(self, key, message="%(key)s failed.", level=ERROR,
-                    increment_return_code=True):
-        if key not in self.failures:
-            self.failures.append(key)
-            self.add_summary(message % {'key': key}, level=level)
-            if increment_return_code:
-                self.return_code += 1
-
-    def query_failure(self, key):
-        return key in self.failures
 
     def summarize_success_count(self, success_count, total_count,
                                 message="%d of %d successful.",
@@ -2145,78 +2233,9 @@ class BaseScript(ScriptMixin, LogMixin, object):
         self.add_summary(message % (success_count, total_count),
                          level=level)
 
-    def copy_to_upload_dir(self, target, dest=None, short_desc="unknown",
-                           long_desc="unknown", log_level=DEBUG,
-                           error_level=ERROR, max_backups=None,
-                           compress=False, upload_dir=None):
-        """Copy target file to upload_dir/dest.
-
-        Potentially update a manifest in the future if we go that route.
-
-        Currently only copies a single file; would be nice to allow for
-        recursive copying; that would probably done by creating a helper
-        _copy_file_to_upload_dir().
-
-        short_desc and long_desc are placeholders for if/when we add
-        upload_dir manifests.
-        """
-        dest_filename_given = dest is not None
-        if upload_dir is None:
-            upload_dir = self.query_abs_dirs()['abs_upload_dir']
-        if dest is None:
-            dest = os.path.basename(target)
-        if dest.endswith('/'):
-            dest_file = os.path.basename(target)
-            dest_dir = os.path.join(upload_dir, dest)
-            dest_filename_given = False
-        else:
-            dest_file = os.path.basename(dest)
-            dest_dir = os.path.join(upload_dir, os.path.dirname(dest))
-        if compress and not dest_filename_given:
-            dest_file += ".gz"
-        dest = os.path.join(dest_dir, dest_file)
-        if not os.path.exists(target):
-            self.log("%s doesn't exist!" % target, level=error_level)
-            return None
-        self.mkdir_p(dest_dir)
-        if os.path.exists(dest):
-            if os.path.isdir(dest):
-                self.log("%s exists and is a directory!" % dest, level=error_level)
-                return -1
-            if max_backups:
-                # Probably a better way to do this
-                oldest_backup = 0
-                backup_regex = re.compile("^%s\.(\d+)$" % dest_file)
-                for filename in os.listdir(dest_dir):
-                    r = backup_regex.match(filename)
-                    if r and int(r.groups()[0]) > oldest_backup:
-                        oldest_backup = int(r.groups()[0])
-                for backup_num in range(oldest_backup, 0, -1):
-                    # TODO more error checking?
-                    if backup_num >= max_backups:
-                        self.rmtree(os.path.join(dest_dir, "%s.%d" % (dest_file, backup_num)),
-                                    log_level=log_level)
-                    else:
-                        self.move(os.path.join(dest_dir, "%s.%d" % (dest_file, backup_num)),
-                                  os.path.join(dest_dir, "%s.%d" % (dest_file, backup_num + 1)),
-                                  log_level=log_level)
-                if self.move(dest, "%s.1" % dest, log_level=log_level):
-                    self.log("Unable to move %s!" % dest, level=error_level)
-                    return -1
-            else:
-                if self.rmtree(dest, log_level=log_level):
-                    self.log("Unable to remove %s!" % dest, level=error_level)
-                    return -1
-        self.copyfile(target, dest, log_level=log_level, compress=compress)
-        if os.path.exists(dest):
-            return dest
-        else:
-            self.log("%s doesn't exist after copy!" % dest, level=error_level)
-            return None
-
-    def file_sha512sum(self, file_path):
+    def get_hash_for_file(self, file_path, hash_type="sha512"):
         bs = 65536
-        hasher = hashlib.sha512()
+        hasher = hashlib.new(hash_type)
         with open(file_path, 'rb') as fh:
             buf = fh.read(bs)
             while len(buf) > 0:
@@ -2233,8 +2252,3 @@ class BaseScript(ScriptMixin, LogMixin, object):
         old_return_code, self._return_code = self._return_code, code
         if old_return_code != code:
             self.warning("setting return code to %d" % code)
-
-# __main__ {{{1
-if __name__ == '__main__':
-    """ Useless comparison, due to the `pass` keyword on its body"""
-    pass

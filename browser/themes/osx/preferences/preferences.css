@@ -7,40 +7,12 @@
 
 %include ../../../../toolkit/themes/osx/global/shared.inc
 
-@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
-@namespace html url("http://www.w3.org/1999/xhtml");
-
-.windowDialog {
-  padding: 12px;
+window {
   font: -moz-dialog;
-}
-
-/* ----- APPLICATIONS PREFPANE ----- */
-description {
-  font: small-caption;
-  font-weight: normal;
-  line-height: 1.3em;
-  margin-bottom: 4px !important;
-}
-
-prefpane .groupbox-body {
-  -moz-appearance: none;
-  padding: 8px 4px 4px 4px;
-}
-
-prefpane .groupbox-title {
-  background: url("chrome://global/skin/50pct_transparent_grey.png") repeat-x bottom left;
-  margin-bottom: 4px;
 }
 
 tabpanels {
   padding: 20px 7px 7px;
-}
-
-caption {
-  padding-inline-start: 5px;
-  padding-top: 4px;
-  padding-bottom: 2px;
 }
 
 #popupPolicyRow {
@@ -98,31 +70,9 @@ caption {
   margin-inline-start: 10px;
 }
 
-/**
- * Clear Private Data
- */
-#SanitizeDialogPane > groupbox {
-  margin-top: 0;
-}
-
-
 /* ----- SYNC PANE ----- */
 
-#syncDesc {
-  padding: 0 8em;
-}
-
-#accountCaptionImage {
-  list-style-image: url("chrome://mozapps/skin/profile/profileicon.png");
-}
-
-#syncAddDeviceLabel {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
 #noFxaAccount {
-  margin: 12px 4px;
   line-height: 1.2em;
 }
 

@@ -9,79 +9,67 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestHangsParent : public PTestHangsParent {
+  friend class PTestHangsParent;
 
-class TestHangsParent :
-    public PTestHangsParent
-{
-public:
-    TestHangsParent();
-    virtual ~TestHangsParent();
+ public:
+  TestHangsParent();
+  virtual ~TestHangsParent();
 
-    static bool RunTestInProcesses() { return true; }
+  static bool RunTestInProcesses() { return true; }
 
-    // FIXME/bug 703320 Disabled because parent kills child proc, not
-    //                  clear how that should work in threads.
-    static bool RunTestInThreads() { return false; }
+  // FIXME/bug 703320 Disabled because parent kills child proc, not
+  //                  clear how that should work in threads.
+  static bool RunTestInThreads() { return false; }
 
-    void Main();
+  void Main();
 
-protected:
-    virtual bool ShouldContinueFromReplyTimeout() override;
+ protected:
+  virtual bool ShouldContinueFromReplyTimeout() override;
 
-    virtual bool RecvNonce() {
-        return true;
-    }
+  mozilla::ipc::IPCResult RecvNonce() { return IPC_OK(); }
 
-    virtual bool AnswerStackFrame() override;
+  mozilla::ipc::IPCResult AnswerStackFrame();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (AbnormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (AbnormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 
-    void CleanUp();
+  void CleanUp();
 
-    bool mDetectedHang;
+  bool mDetectedHang;
+  int32_t mNumAnswerStackFrame;
 };
 
+class TestHangsChild : public PTestHangsChild {
+  friend class PTestHangsChild;
 
-class TestHangsChild :
-    public PTestHangsChild
-{
-public:
-    TestHangsChild();
-    virtual ~TestHangsChild();
+ public:
+  TestHangsChild();
+  virtual ~TestHangsChild();
 
-protected:
-    virtual bool RecvStart() override {
-        if (!SendNonce())
-            fail("sending Nonce");
-        return true;
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvStart() {
+    if (!SendNonce()) fail("sending Nonce");
+    return IPC_OK();
+  }
 
-    virtual bool AnswerStackFrame() override
-    {
-        if (CallStackFrame())
-            fail("should have failed");
-        return true;
-    }
+  mozilla::ipc::IPCResult AnswerStackFrame() {
+    if (CallStackFrame()) fail("should have failed");
+    return IPC_OK();
+  }
 
-    virtual bool AnswerHang() override;
+  mozilla::ipc::IPCResult AnswerHang();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (AbnormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (AbnormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestHangs_h
+#endif  // ifndef mozilla__ipdltest_TestHangs_h

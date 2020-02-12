@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=665540
 -->
 <head>
   <title>Test for Bug 665540 Select dropdown position in fullscreen window</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
 </head>
 <body onload="openFullscreenWindow()">
@@ -31,15 +31,16 @@ var eventOffsetX = 2;
 var eventOffsetY = 2;
 
 function openFullscreenWindow() {
-    win = open("bug665540_window.xul", "_blank", "resizable=yes,chrome");
+    win = window.docShell.rootTreeItem.domWindow
+                .openDialog("bug665540_window.xul", "_blank", "resizable=yes,chrome", window);
     win.addEventListener("sizemodechange",
                          function() {
                            info("sizemodechange. windowState = " + win.windowState + " fullScreen = " + win.fullScreen);
-                         }, false);
+                         });
     win.addEventListener("fullscreen",
                          function() {
                            info("fullscreen event. windowState = " + win.windowState + " fullScreen = " + win.fullScreen);
-                         }, false);
+                         });
     info("win.windowState = " + win.windowState);
     info("win.fullScreen = " + win.fullScreen);
 
@@ -72,7 +73,7 @@ function openSelect() {
 
 function checkPosition() {
     optiona = win.document.getElementById("optiona");
-    optiona.addEventListener(eventType, eventReceived, false);
+    optiona.addEventListener(eventType, eventReceived);
 
     // If the select dropdown is opened in the position where
     // getBoundingClientRect() predicts, then optiona will receive the event.
@@ -84,7 +85,7 @@ function checkPosition() {
 
 function eventReceived(event) {
     clearTimeout(timeoutID);
-    optiona.removeEventListener(eventType, eventReceived, false);
+    optiona.removeEventListener(eventType, eventReceived);
 
     var rect = optiona.getBoundingClientRect();
 
@@ -99,7 +100,7 @@ function eventReceived(event) {
 }
 
 function finish() {
-    if (select && navigator.platform.indexOf("Win") >= 0) {
+    if (select && navigator.platform.includes("Win")) {
         todo(false,
              "Should not have to close select before closing its window");
         // This avoids mochitest "Unable to restore focus" errors (bug 670053).

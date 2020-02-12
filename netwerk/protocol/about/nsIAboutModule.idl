@@ -10,11 +10,11 @@ interface nsIChannel;
 interface nsILoadInfo;
 
 [scriptable, uuid(c0c19db9-1b5a-4ac5-b656-ed6f8149fa48)]
-interface nsIAboutModule : nsISupports 
+interface nsIAboutModule : nsISupports
 {
 
     /**
-     * Constructs a new channel for the about protocol module. 
+     * Constructs a new channel for the about protocol module.
      *
      * @param aURI the uri of the new channel
      * @param aLoadInfo the loadinfo of the new channel
@@ -68,8 +68,23 @@ interface nsIAboutModule : nsISupports
     /**
      * A flag that indicates that this URI should be linkable from content.
      * Ignored unless URI_SAFE_FOR_UNTRUSTED_CONTENT is also specified.
+     *
+     * When adding a new about module with this flag make sure to also update
+     * IsSafeToLinkForUntrustedContent() in nsAboutProtocolHandler.cpp
      */
     const unsigned long MAKE_LINKABLE = (1 << 7);
+
+    /**
+     * A flag that indicates that this URI can be loaded in the privileged
+     * activity stream content process if said process is enabled. Ignored unless
+     * URI_MUST_LOAD_IN_CHILD is also specified.
+     */
+    const unsigned long URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS = (1 << 8);
+
+    /**
+     * A flag that indicates that this URI must be loaded in an extension process (if available).
+     */
+    const unsigned long URI_MUST_LOAD_IN_EXTENSION_PROCESS = (1 << 9);
 
     /**
      * A method to get the flags that apply to a given about: URI.  The URI
@@ -81,8 +96,8 @@ interface nsIAboutModule : nsISupports
 
 %{C++
 
-#define NS_ABOUT_MODULE_CONTRACTID        "@mozilla.org/network/protocol/about;1" 
-#define NS_ABOUT_MODULE_CONTRACTID_PREFIX NS_ABOUT_MODULE_CONTRACTID "?what=" 
+#define NS_ABOUT_MODULE_CONTRACTID        "@mozilla.org/network/protocol/about;1"
+#define NS_ABOUT_MODULE_CONTRACTID_PREFIX NS_ABOUT_MODULE_CONTRACTID "?what="
 #define NS_ABOUT_MODULE_CONTRACTID_LENGTH 49      // strlen(NS_ABOUT_MODULE_CONTRACTID_PREFIX)
 
 %}

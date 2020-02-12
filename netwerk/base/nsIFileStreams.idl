@@ -6,7 +6,15 @@
 #include "nsIInputStream.idl"
 #include "nsIOutputStream.idl"
 
+interface nsIEventTarget;
 interface nsIFile;
+interface nsIFileMetadataCallback;
+
+%{C++
+struct PRFileDesc;
+%}
+
+[ptr] native PRFileDescPtr(PRFileDesc);
 
 /**
  * An input stream that allows you to read from a file.
@@ -26,16 +34,6 @@ interface nsIFileInputStream : nsIInputStream
      */
     void init(in nsIFile file, in long ioFlags, in long perm,
               in long behaviorFlags);
-
-    /**
-     * If this is set, the file will be deleted by the time the stream is
-     * closed.  It may be removed before the stream is closed if it is possible
-     * to delete it and still read from it.
-     *
-     * If OPEN_ON_READ is defined, and the file was recreated after the first
-     * delete, the file will be deleted again when it is closed again.
-     */
-    const long DELETE_ON_CLOSE = 1<<1;
 
     /**
      * If this is set, the file will close automatically when the end of the
@@ -132,37 +130,6 @@ interface nsIFileOutputStream : nsIOutputStream
 };
 
 /**
- * An input stream that allows you to read from a slice of a file.
- */
-[scriptable, uuid(3ce03a2f-97f7-4375-b6bb-1788a60cad3b)]
-interface nsIPartialFileInputStream : nsISupports
-{
-    /**
-     * Initialize with a file and new start/end positions. Both start and
-     * start+length must be smaller than the size of the file. Not doing so
-     * will lead to undefined behavior.
-     * You must initialize the stream, and only initialize it once, before it
-     * can be used.
-     * 
-     * @param file          file to read from
-     * @param start         start offset of slice to read. Must be smaller
-     *                      than the size of the file.
-     * @param length        length of slice to read. Must be small enough that
-     *                      start+length is smaller than the size of the file.
-     * @param ioFlags       file open flags listed in prio.h (see
-     *                      PR_Open documentation) or -1 to open the
-     *                      file in default mode (PR_RDONLY).
-     * @param perm          file mode bits listed in prio.h or -1 to
-     *                      use the default value (0)
-     * @param behaviorFlags flags specifying various behaviors of the class
-     *        (see enumerations in nsIFileInputStream)
-     */
-    void init(in nsIFile file, in unsigned long long start,
-              in unsigned long long length,
-              in long ioFlags, in long perm, in long behaviorFlags);
-};
-
-/**
  * A stream that allows you to read from a file or stream to a file.
  */
 [scriptable, uuid(82cf605a-8393-4550-83ab-43cd5578e006)]
@@ -207,13 +174,22 @@ interface nsIFileStream : nsISupports
 
 /**
  * An interface that allows you to get some metadata like file size and
- * file last modified time.
+ * file last modified time. These methods and attributes can throw
+ * NS_BASE_STREAM_WOULD_BLOCK in case the informations are not available yet.
+ * If this happens, consider the use of nsIAsyncFileMetadata.
+ *
+ * If using nsIAsyncFileMetadata, you should retrieve any data via this
+ * interface before taking any action that might consume the underlying stream.
+ * For example, once Available(), Read(), or nsIAsyncInputStream::AsyncWait()
+ * are invoked, these methods may return NS_BASE_STREAM_CLOSED.  This will
+ * happen when using IPCBlobInputStream with an underlying file stream, for
+ * example.
  */
 [scriptable, uuid(07f679e4-9601-4bd1-b510-cd3852edb881)]
 interface nsIFileMetadata : nsISupports
 {
     /**
-     * File size in bytes;
+     * File size in bytes.
      */
     readonly attribute long long size;
 
@@ -222,4 +198,41 @@ interface nsIFileMetadata : nsISupports
      * January 1, 1970 Greenwich Mean Time (GMT).
      */
     readonly attribute long long lastModified;
+
+    /**
+     * The internal file descriptor. It can be used for memory mapping of the
+     * underlying file. Please use carefully! If this returns
+     * NS_BASE_STREAM_WOULD_BLOCK, consider the use of nsIAsyncFileMetadata.
+     */
+    [noscript] PRFileDescPtr getFileDescriptor();
+};
+
+[scriptable, uuid(de15b80b-29ba-4b7f-9220-a3d75b17ae8c)]
+interface nsIAsyncFileMetadata : nsIFileMetadata
+{
+    /**
+     * Asynchronously wait for the object to be ready.
+     *
+     * @param aCallback The callback will be used when the stream is ready to
+     *                  return File metadata. Use a nullptr to cancel a
+     *                  previous operation.
+     *
+     * @param aEventTarget The event target where aCallback will be executed.
+     *                     If aCallback is passed, aEventTarget cannot be null.
+     */
+    void asyncFileMetadataWait(in nsIFileMetadataCallback aCallback,
+                               in nsIEventTarget aEventTarget);
+};
+
+/**
+ * This is a companion interface for
+ * nsIAsyncFileMetadata::asyncFileMetadataWait.
+ */
+[function, scriptable, uuid(d01c7ead-7ba3-4726-b399-618ec8ec7057)]
+interface nsIFileMetadataCallback : nsISupports
+{
+    /**
+     * Called to indicate that the nsIFileMetadata object is ready.
+     */
+    void onFileMetadataReady(in nsIAsyncFileMetadata aObject);
 };

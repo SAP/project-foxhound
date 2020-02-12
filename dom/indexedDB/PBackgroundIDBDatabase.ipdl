@@ -8,8 +8,12 @@ include protocol PBackgroundIDBFactory;
 include protocol PBackgroundIDBTransaction;
 include protocol PBackgroundIDBVersionChangeTransaction;
 include protocol PBackgroundMutableFile;
-include protocol PBlob;
+include protocol PChildToParentStream; // FIXME: bug 792908
+include protocol PFileDescriptorSet; // FIXME: bug 792908
+include protocol PIPCBlobInputStream; // FIXME: bug 792908
+include protocol PParentToChildStream; // FIXME: bug 792908
 
+include IPCBlob;
 include InputStreamParams;
 include PBackgroundIDBSharedTypes;
 
@@ -36,12 +40,6 @@ union DatabaseRequestParams
   CreateFileParams;
 };
 
-union NullableVersion
-{
-  null_t;
-  uint64_t;
-};
-
 sync protocol PBackgroundIDBDatabase
 {
   manager PBackgroundIDBFactory;
@@ -59,7 +57,7 @@ parent:
 
   async Close();
 
-  async PBackgroundIDBDatabaseFile(PBlob blob);
+  async PBackgroundIDBDatabaseFile(IPCBlob blob);
 
   async PBackgroundIDBDatabaseRequest(DatabaseRequestParams params);
 
@@ -68,7 +66,7 @@ parent:
 child:
   async __delete__();
 
-  async VersionChange(uint64_t oldVersion, NullableVersion newVersion);
+  async VersionChange(uint64_t oldVersion, uint64_t? newVersion);
 
   async Invalidate();
 

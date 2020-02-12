@@ -3,35 +3,55 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-
-function run_test() {
+async function run_test() {
   setupTestCommon();
 
-  debugDump("testing cleanup of an update download in progress for an " +
-            "older version of the application on startup (Bug 485624)");
+  debugDump(
+    "testing cleanup of an update download in progress for an " +
+      "older version of the application on startup (Bug 485624)"
+  );
 
-  let patches = getLocalPatchString(null, null, null, null, null, null,
-                                    STATE_DOWNLOADING);
-  let updates = getLocalUpdateString(patches, null, null, "version 0.9", "0.9");
+  let patchProps = { state: STATE_DOWNLOADING };
+  let patches = getLocalPatchString(patchProps);
+  let updateProps = { appVersion: "0.9" };
+  let updates = getLocalUpdateString(updateProps, patches);
   writeUpdatesToXMLFile(getLocalUpdatesXMLString(updates), true);
   writeStatusFile(STATE_DOWNLOADING);
 
-  writeUpdatesToXMLFile(getLocalUpdatesXMLString(""), false);
-
   standardInit();
 
-  if (IS_TOOLKIT_GONK) {
-    // Gonk doesn't resume downloads at boot time, so the update
-    // will remain active until the user chooses a new one, at
-    // which point, the old update will be removed.
-    Assert.ok(!!gUpdateManager.activeUpdate,
-              "there should be an active update");
-  } else {
-    Assert.ok(!gUpdateManager.activeUpdate,
-              "there should not be an active update");
-  }
-  Assert.equal(gUpdateManager.updateCount, 0,
-               "the update manager update count" + MSG_SHOULD_EQUAL);
+  Assert.ok(
+    !gUpdateManager.activeUpdate,
+    "there should not be an active update"
+  );
+  Assert.equal(
+    gUpdateManager.updateCount,
+    1,
+    "the update manager update count" + MSG_SHOULD_EQUAL
+  );
+  let update = gUpdateManager.getUpdateAt(0);
+  Assert.equal(
+    update.state,
+    STATE_FAILED,
+    "the first update state" + MSG_SHOULD_EQUAL
+  );
+  Assert.equal(
+    update.errorCode,
+    ERR_OLDER_VERSION_OR_SAME_BUILD,
+    "the first update errorCode" + MSG_SHOULD_EQUAL
+  );
+  Assert.equal(
+    update.statusText,
+    getString("statusFailed"),
+    "the first update statusText " + MSG_SHOULD_EQUAL
+  );
+  await waitForUpdateXMLFiles();
+
+  let dir = getUpdateDirFile(DIR_PATCH);
+  Assert.ok(dir.exists(), MSG_SHOULD_EXIST);
+
+  let statusFile = getUpdateDirFile(FILE_UPDATE_STATUS);
+  Assert.ok(!statusFile.exists(), MSG_SHOULD_NOT_EXIST);
 
   doTestFinish();
 }

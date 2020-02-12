@@ -30,6 +30,8 @@ Invoking ```./generic/tools/generate.py``` will parse the spec JSON and determin
 
 The spec can be validated by running ```./generic/tools/spec_validator.py```. This is specially important when you're making changes to  ```spec.src.json```. Make sure it's a valid JSON (no comments or trailing commas). The validator should be informative and very specific on any issues.
 
+The ```spec.src.json``` file can be formatted by running ```../common/security-features/tools/format_spec_src_json.py```.
+
 For details about the spec JSON, see **Overview of the spec JSON** below.
 
 
@@ -52,7 +54,7 @@ cd ~/web-platform-tests/referrer-policy
 git add * && git commit -m "Add generated tests"
 
 # Regenerate the manifest.
-../manifest
+../wpt manifest
 
 ```
 
@@ -87,7 +89,7 @@ cd ~/web-platform-tests/referrer-policy
 git add * && git commit -m "Remove generated tests"
 
 # Regenerate the manifest.
-../manifest
+../wpt manifest
 ```
 
 **Important:**
@@ -96,7 +98,7 @@ The ```./generic/tools/clean.py``` utility will only work if there is a valid ``
 
 ## Updating the tests
 
-The main test logic lives in ```./generic/referrer-policy-test-case.js``` with helper functions defined in ```./generic/common.js``` so you should probably start there.
+The main test logic lives in ```./generic/referrer-policy-test-case.sub.js``` with helper functions defined in ```./common/security-features/resources/common.js``` so you should probably start there.
 
 For updating the test suite you will most likely do **a subset** of the following:
 
@@ -105,7 +107,7 @@ For updating the test suite you will most likely do **a subset** of the followin
 
 * Add a sanity check test for a sub-resource to ```./generic/subresource-test/```.
 
-* Implement new or update existing assertions in ```./generic/referrer-policy-test-case.js```.
+* Implement new or update existing assertions in ```./generic/referrer-policy-test-case.sub.js```.
 
 * Exclude or add some tests by updating ```spec.src.json``` test expansions.
 
@@ -136,7 +138,7 @@ cd ~/web-platform-tests/referrer-policy
 git add * && git commit -m "Update generated tests"
 
 # Regenerate the manifest.
-../manifest
+../wpt manifest
 
 
 ```
@@ -164,12 +166,6 @@ git add * && git commit -m "Update generated tests"
 
   The schema used to check if a ```test_expansion``` is valid.
   Each test expansion can only contain fields defined by this schema.
-
-* **subresource_path**
-
-  A 1:1 mapping of a **subresource type** to the URL path of the sub-resource.
-  When adding a new sub-resource, a path to an existing file for it also must be specified.
-
 
 ### Test Expansion Patterns
 
@@ -214,7 +210,7 @@ A single test expansion pattern, be it a requirement or a suppressed pattern, ge
 
 * Expand each field's pattern (single, any of, or all) to list of allowed values (defined by the ```test_expansion_schema```)
 
-* Permute - Recursively enumerate all **selections** accross all fields
+* Permute - Recursively enumerate all **selections** across all fields
 
 Be aware that if there is more than one pattern expanding into a same selection (which also shares the same ```name``` field), the pattern appearing later in the spec JSON will overwrite a previously generated selection. To make sure this is not undetected when generating, set the value of the ```expansion``` field to ```default``` for an expansion appearing earlier and ```override``` for the one appearing later.
 
@@ -229,7 +225,6 @@ var scenario = {
   "source_protocol": "http",
   "target_protocol": "http",
   "subresource": "iframe-tag",
-  "subresource_path": "/referrer-policy/generic/subresource/document.py",
   "referrer_url": "origin"
 };
 ```

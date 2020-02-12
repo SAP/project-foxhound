@@ -11,6 +11,8 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface RadioNodeList : NodeList {
+  [NeedsCallerType]
   attribute DOMString value;
 };

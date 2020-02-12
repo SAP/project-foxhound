@@ -13,10 +13,13 @@ EXPORTS += [
 UNIFIED_SOURCES += [
     'mp3sniff.c',
     'nsMediaSniffer.cpp',
-    'nsMediaSnifferModule.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 FINAL_LIBRARY = 'xul'
 
 with Files('**'):
-    BUG_COMPONENT = ('Core', 'Video/Audio')
+    BUG_COMPONENT = ('Core', 'Audio/Video')

@@ -1,10 +1,10 @@
 // Debugger.Environment.prototype.callee gets the right closure.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger;
 var gw = dbg.addDebuggee(g);
 
-g.eval('function f(x) { return function (y) { debugger; return x + y; } }');
+g.eval('function f(x) { return function (y) { eval(""); debugger; return x + y; } }');
 g.eval('var g = f(2);');
 g.eval('var h = f(3);');
 

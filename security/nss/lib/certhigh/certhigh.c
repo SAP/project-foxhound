@@ -11,6 +11,7 @@
 #include "cert.h"
 #include "certxutl.h"
 
+#include "certi.h"
 #include "nsspki.h"
 #include "pki.h"
 #include "pkit.h"
@@ -289,7 +290,7 @@ CERT_FindUserCertByUsage(CERTCertDBHandle *handle,
         goto loser;
     }
 
-    if (!CERT_LIST_END(CERT_LIST_HEAD(certList), certList)) {
+    if (!CERT_LIST_EMPTY(certList)) {
         cert = CERT_DupCertificate(CERT_LIST_HEAD(certList)->cert);
     }
 
@@ -872,6 +873,7 @@ cert_ImportCAChain(SECItem *certs, int numcerts, SECCertUsage certUsage, PRBool 
     PRBool isca;
     char *nickname;
     unsigned int certtype;
+    PRBool istemp = PR_FALSE;
 
     handle = CERT_GetDefaultCertDB();
 
@@ -949,7 +951,11 @@ cert_ImportCAChain(SECItem *certs, int numcerts, SECCertUsage certUsage, PRBool 
         }
 
         /* if the cert is temp, make it perm; otherwise we're done */
-        if (cert->istemp) {
+        rv = CERT_GetCertIsTemp(cert, &istemp);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+        if (istemp) {
             /* get a default nickname for it */
             nickname = CERT_MakeCANickname(cert);
 
@@ -962,9 +968,6 @@ cert_ImportCAChain(SECItem *certs, int numcerts, SECCertUsage certUsage, PRBool 
         } else {
             rv = SECSuccess;
         }
-
-        CERT_DestroyCertificate(cert);
-        cert = NULL;
 
         if (rv != SECSuccess) {
             goto loser;
@@ -1080,7 +1083,10 @@ CERT_CertChainFromCert(CERTCertificate *cert, SECCertUsage usage,
         derCert.len = (unsigned int)stanCert->encoding.size;
         derCert.data = (unsigned char *)stanCert->encoding.data;
         derCert.type = siBuffer;
-        SECITEM_CopyItem(arena, &chain->certs[i], &derCert);
+        if (SECITEM_CopyItem(arena, &chain->certs[i], &derCert) != SECSuccess) {
+            CERT_DestroyCertificate(cCert);
+            goto loser;
+        }
         stanCert = stanChain[++i];
         if (!stanCert && !cCert->isRoot) {
             /* reached the end of the chain, but the final cert is

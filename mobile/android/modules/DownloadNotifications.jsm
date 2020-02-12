@@ -4,41 +4,75 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["DownloadNotifications"];
+var EXPORTED_SYMBOLS = ["DownloadNotifications"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Downloads",
+  "resource://gre/modules/Downloads.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "FileUtils",
+  "resource://gre/modules/FileUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Notifications",
+  "resource://gre/modules/Notifications.jsm"
+);
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Snackbars",
+  "resource://gre/modules/Snackbars.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UITelemetry",
+  "resource://gre/modules/UITelemetry.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads", "resource://gre/modules/Downloads.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils", "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Notifications", "resource://gre/modules/Notifications.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services", "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Snackbars", "resource://gre/modules/Snackbars.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "UITelemetry", "resource://gre/modules/UITelemetry.jsm");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "ParentalControls",
+  "@mozilla.org/parental-controls-service;1",
+  "nsIParentalControlsService"
+);
 
-XPCOMUtils.defineLazyServiceGetter(this, "ParentalControls",
-  "@mozilla.org/parental-controls-service;1", "nsIParentalControlsService");
+XPCOMUtils.defineLazyGetter(this, "strings", () =>
+  Services.strings.createBundle("chrome://browser/locale/browser.properties")
+);
 
-var Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.i.bind(null, "DownloadNotifications");
-
-XPCOMUtils.defineLazyGetter(this, "strings",
-                            () => Services.strings.createBundle("chrome://browser/locale/browser.properties"));
-
-Object.defineProperty(this, "window",
-                      { get: () => Services.wm.getMostRecentWindow("navigator:browser") });
+Object.defineProperty(this, "window", {
+  get: () => Services.wm.getMostRecentWindow("navigator:browser"),
+});
 
 const kButtons = {
-  PAUSE: new DownloadNotificationButton("pause",
-                                        "drawable://pause",
-                                        "alertDownloadsPause"),
-  RESUME: new DownloadNotificationButton("resume",
-                                         "drawable://play",
-                                         "alertDownloadsResume"),
-  CANCEL: new DownloadNotificationButton("cancel",
-                                         "drawable://close",
-                                         "alertDownloadsCancel")
+  PAUSE: new DownloadNotificationButton(
+    "pause",
+    "drawable://pause",
+    "alertDownloadsPause"
+  ),
+  RESUME: new DownloadNotificationButton(
+    "resume",
+    "drawable://play",
+    "alertDownloadsResume"
+  ),
+  CANCEL: new DownloadNotificationButton(
+    "cancel",
+    "drawable://close",
+    "alertDownloadsCancel"
+  ),
 };
 
 var notifications = new Map();
@@ -46,16 +80,22 @@ var notifications = new Map();
 var DownloadNotifications = {
   _notificationKey: "downloads",
 
-  init: function () {
+  observe: function(subject, topic, data) {
+    if (topic === "chrome-document-loaded") {
+      this.init();
+    }
+  },
+
+  init: function() {
     Downloads.getList(Downloads.ALL)
-             .then(list => list.addView(this))
-             .then(() => this._viewAdded = true, Cu.reportError);
+      .then(list => list.addView(this))
+      .then(() => (this._viewAdded = true), Cu.reportError);
 
     // All click, cancel, and button presses will be handled by this handler as part of the Notifications callback API.
     Notifications.registerHandler(this._notificationKey, this);
   },
 
-  onDownloadAdded: function (download) {
+  onDownloadAdded: function(download) {
     // Don't create notifications for pre-existing succeeded downloads.
     // We still add notifications for canceled downloads in case the
     // user decides to retry the download.
@@ -66,7 +106,10 @@ var DownloadNotifications = {
     if (!ParentalControls.isAllowed(ParentalControls.DOWNLOAD)) {
       download.cancel().catch(Cu.reportError);
       download.removePartialData().catch(Cu.reportError);
-      Snackbars.show(strings.GetStringFromName("downloads.disabledInGuest"), Snackbars.LENGTH_LONG);
+      Snackbars.show(
+        strings.GetStringFromName("downloads.disabledInGuest"),
+        Snackbars.LENGTH_LONG
+      );
       return;
     }
 
@@ -76,31 +119,39 @@ var DownloadNotifications = {
 
     // If this is a new download, show a snackbar as well.
     if (this._viewAdded) {
-      Snackbars.show(strings.GetStringFromName("alertDownloadsToast"), Snackbars.LENGTH_LONG);
+      Snackbars.show(
+        strings.GetStringFromName("alertDownloadsToast"),
+        Snackbars.LENGTH_LONG
+      );
     }
   },
 
-  onDownloadChanged: function (download) {
+  onDownloadChanged: function(download) {
     let notification = notifications.get(download);
 
     if (download.succeeded) {
       let file = new FileUtils.File(download.target.path);
 
-      Snackbars.show(strings.formatStringFromName("alertDownloadSucceeded", [file.leafName], 1), Snackbars.LENGTH_LONG, {
-        action: {
-          label: strings.GetStringFromName("helperapps.open"),
-          callback: () => {
-            UITelemetry.addEvent("launch.1", "toast", null, "downloads");
-            try {
-              file.launch();
-            } catch (ex) {
-              this.showInAboutDownloads(download);
-            }
-            if (notification) {
-              notification.hide();
-            }
-          }
-        }});
+      Snackbars.show(
+        strings.formatStringFromName("alertDownloadSucceeded", [file.leafName]),
+        Snackbars.LENGTH_LONG,
+        {
+          action: {
+            label: strings.GetStringFromName("helperapps.open"),
+            callback: () => {
+              UITelemetry.addEvent("launch.1", "toast", null, "downloads");
+              try {
+                file.launch();
+              } catch (ex) {
+                this.showInAboutDownloads(download);
+              }
+              if (notification) {
+                notification.hide();
+              }
+            },
+          },
+        }
+      );
     }
 
     if (notification) {
@@ -108,7 +159,7 @@ var DownloadNotifications = {
     }
   },
 
-  onDownloadRemoved: function (download) {
+  onDownloadRemoved: function(download) {
     let notification = notifications.get(download);
     if (!notification) {
       Cu.reportError("Download doesn't have a notification.");
@@ -122,7 +173,7 @@ var DownloadNotifications = {
   _findDownloadForCookie: function(cookie) {
     return Downloads.getList(Downloads.ALL)
       .then(list => list.getAll())
-      .then((downloads) => {
+      .then(downloads => {
         for (let download of downloads) {
           let cookie2 = getCookieFromDownload(download);
           if (cookie2 === cookie) {
@@ -130,7 +181,7 @@ var DownloadNotifications = {
           }
         }
 
-        throw "Couldn't find download for " + cookie;
+        throw new Error("Couldn't find download for " + cookie);
       });
   },
 
@@ -138,49 +189,59 @@ var DownloadNotifications = {
     // TODO: I'm not sure what we do here...
   },
 
-  showInAboutDownloads: function (download) {
+  showInAboutDownloads: function(download) {
     let hash = "#" + window.encodeURIComponent(download.target.path);
 
     // Force using string equality to find a tab
-    window.BrowserApp.selectOrAddTab("about:downloads" + hash, null, { startsWith: true });
+    window.BrowserApp.selectOrAddTab("about:downloads" + hash, null, {
+      startsWith: true,
+    });
   },
 
   onClick: function(cookie) {
-    this._findDownloadForCookie(cookie).then((download) => {
-      if (download.succeeded) {
-        // We don't call Download.launch(), because there's (currently) no way to
-        // tell if the file was actually launched or not, and we want to show
-        // about:downloads if the launch failed.
-        let file = new FileUtils.File(download.target.path);
-        try {
-          file.launch();
-        } catch (ex) {
+    this._findDownloadForCookie(cookie)
+      .then(download => {
+        if (download.succeeded) {
+          // We don't call Download.launch(), because there's (currently) no way to
+          // tell if the file was actually launched or not, and we want to show
+          // about:downloads if the launch failed.
+          let file = new FileUtils.File(download.target.path);
+          try {
+            file.launch();
+          } catch (ex) {
+            this.showInAboutDownloads(download);
+          }
+        } else {
           this.showInAboutDownloads(download);
         }
-      } else {
-        ConfirmCancelPrompt.show(download);
-      }
-    }).catch(Cu.reportError);
+      })
+      .catch(Cu.reportError);
   },
 
   onButtonClick: function(button, cookie) {
-    this._findDownloadForCookie(cookie).then((download) => {
-      if (button === kButtons.PAUSE.buttonId) {
-        download.cancel().catch(Cu.reportError);
-      } else if (button === kButtons.RESUME.buttonId) {
-        download.start().catch(Cu.reportError);
-      } else if (button === kButtons.CANCEL.buttonId) {
-        download.cancel().catch(Cu.reportError);
-        download.removePartialData().catch(Cu.reportError);
-      }
-    }).catch(Cu.reportError);
+    this._findDownloadForCookie(cookie)
+      .then(download => {
+        if (button === kButtons.PAUSE.buttonId) {
+          download.cancel().catch(Cu.reportError);
+        } else if (button === kButtons.RESUME.buttonId) {
+          download.start().catch(Cu.reportError);
+        } else if (button === kButtons.CANCEL.buttonId) {
+          download.cancel().catch(Cu.reportError);
+          download.removePartialData().catch(Cu.reportError);
+        }
+      })
+      .catch(Cu.reportError);
   },
 };
 
 function getCookieFromDownload(download) {
-  return download.target.path +
-         download.source.url +
-         download.startTime;
+  // Arbitrary value used to truncate long Data URLs. See bug 1497526
+  const maxUrlLength = 1024;
+  return (
+    download.target.path +
+    download.source.url.slice(-maxUrlLength) +
+    download.startTime
+  );
 }
 
 function DownloadNotification(download) {
@@ -191,7 +252,7 @@ function DownloadNotification(download) {
 }
 
 DownloadNotification.prototype = {
-  _updateFromDownload: function () {
+  _updateFromDownload: function() {
     this._downloading = !this.download.stopped;
     this._paused = this.download.canceled && this.download.hasPartialData;
     this._succeeded = this.download.succeeded;
@@ -207,7 +268,7 @@ DownloadNotification.prototype = {
     let options = {
       icon: "drawable://alert_download",
       cookie: getCookieFromDownload(this.download),
-      handlerKey: DownloadNotifications._notificationKey
+      handlerKey: DownloadNotifications._notificationKey,
     };
 
     if (this._downloading) {
@@ -215,12 +276,16 @@ DownloadNotification.prototype = {
       if (this.download.currentBytes == 0) {
         this._updateOptionsForStatic(options, "alertDownloadsStart2");
       } else {
-        let buttons = this.download.hasPartialData ? [kButtons.PAUSE, kButtons.CANCEL] :
-                                                     [kButtons.CANCEL]
+        let buttons = this.download.hasPartialData
+          ? [kButtons.PAUSE, kButtons.CANCEL]
+          : [kButtons.CANCEL];
         this._updateOptionsForOngoing(options, buttons);
       }
     } else if (this._paused) {
-      this._updateOptionsForOngoing(options, [kButtons.RESUME, kButtons.CANCEL]);
+      this._updateOptionsForOngoing(options, [
+        kButtons.RESUME,
+        kButtons.CANCEL,
+      ]);
     } else if (this._succeeded) {
       options.persistent = false;
       this._updateOptionsForStatic(options, "alertDownloadsDone2");
@@ -229,12 +294,12 @@ DownloadNotification.prototype = {
     return options;
   },
 
-  _updateOptionsForStatic : function (options, titleName) {
+  _updateOptionsForStatic: function(options, titleName) {
     options.title = strings.GetStringFromName(titleName);
     options.message = this._fileName;
   },
 
-  _updateOptionsForOngoing: function (options, buttons) {
+  _updateOptionsForOngoing: function(options, buttons) {
     options.title = this._fileName;
     options.message = this.download.progress + "%";
     options.buttons = buttons;
@@ -243,7 +308,7 @@ DownloadNotification.prototype = {
     options.persistent = true;
   },
 
-  showOrUpdate: function () {
+  showOrUpdate: function() {
     this._updateFromDownload();
 
     if (this._show) {
@@ -263,7 +328,7 @@ DownloadNotification.prototype = {
     }
   },
 
-  hide: function () {
+  hide: function() {
     if (this.id) {
       Notifications.cancel(this.id);
       this.id = null;
@@ -271,20 +336,12 @@ DownloadNotification.prototype = {
   },
 };
 
-var ConfirmCancelPrompt = {
-  show: function (download) {
-    // Open a prompt that offers a choice to cancel the download
-    let title = strings.GetStringFromName("downloadCancelPromptTitle1");
-    let message = strings.GetStringFromName("downloadCancelPromptMessage1");
-
-    if (Services.prompt.confirm(null, title, message)) {
-      download.cancel().catch(Cu.reportError);
-      download.removePartialData().catch(Cu.reportError);
-    }
-  }
-};
-
-function DownloadNotificationButton(buttonId, iconUrl, titleStringName, onClicked) {
+function DownloadNotificationButton(
+  buttonId,
+  iconUrl,
+  titleStringName,
+  onClicked
+) {
   this.buttonId = buttonId;
   this.title = strings.GetStringFromName(titleStringName);
   this.icon = iconUrl;

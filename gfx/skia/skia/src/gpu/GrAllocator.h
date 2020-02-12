@@ -10,8 +10,10 @@
 
 #include "GrConfig.h"
 #include "GrTypes.h"
+#include "SkNoncopyable.h"
 #include "SkTArray.h"
 #include "SkTypes.h"
+#include <new>
 
 class GrAllocator : SkNoncopyable {
 public:
@@ -108,6 +110,24 @@ public:
      * Is the count 0?
      */
     bool empty() const { return 0 == fCount; }
+
+    /**
+     * Access first item, only call if count() != 0
+     */
+    void* front() {
+        SkASSERT(fCount);
+        SkASSERT(fInsertionIndexInBlock > 0);
+        return (char*)(fBlocks.front());
+    }
+
+    /**
+     * Access first item, only call if count() != 0
+     */
+    const void* front() const {
+        SkASSERT(fCount);
+        SkASSERT(fInsertionIndexInBlock > 0);
+        return (const char*)(fBlocks.front());
+    }
 
     /**
      * Access last item, only call if count() != 0
@@ -229,7 +249,7 @@ template <typename T> void* operator new(size_t, GrTAllocator<T>*);
 
 template <typename T> class GrTAllocator : SkNoncopyable {
 public:
-    virtual ~GrTAllocator() { this->reset(); };
+    virtual ~GrTAllocator() { this->reset(); }
 
     /**
      * Create an allocator
@@ -255,6 +275,13 @@ public:
         void* item = fAllocator.push_back();
         SkASSERT(item);
         new (item) T(t);
+        return *(T*)item;
+    }
+
+    template <typename... Args> T& emplace_back(Args&&... args) {
+        void* item = fAllocator.push_back();
+        SkASSERT(item);
+        new (item) T(std::forward<Args>(args)...);
         return *(T*)item;
     }
 
@@ -288,6 +315,20 @@ public:
      * Is the count 0?
      */
     bool empty() const { return fAllocator.empty(); }
+
+    /**
+     * Access first item, only call if count() != 0
+     */
+    T& front() {
+        return *(T*)fAllocator.front();
+    }
+
+    /**
+     * Access first item, only call if count() != 0
+     */
+    const T& front() const {
+        return *(T*)fAllocator.front();
+    }
 
     /**
      * Access last item, only call if count() != 0

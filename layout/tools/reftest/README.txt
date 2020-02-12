@@ -49,15 +49,14 @@ must be one of the following:
 
 1. Inclusion of another manifest
 
-   <failure-type>* include <relative_path>
+   <skip-type>* include <relative_path>
 
-   <failure-type> is the same as listed below for a test item.  As for 
-   test items, multiple failure types listed on the same line are 
-   combined by using the last matching failure type listed.  However, 
-   the failure type on a manifest is combined with the failure type on 
-   the test (or on a nested manifest) with the rule that the last in the
-   following list wins:  fails, random, skip.  (In other words, skip 
-   always wins, and random beats fails.)
+   <skip-type> is one of the skip or skip-if items (see their definitions
+   in <failure-type> below). If any of the skip types evaluate to true (i.e.
+   they are a plain "skip" or they are a "skip-if" with a condition that
+   evaluates to true), then the include statement is skipped. Otherwise,
+   reftests in the specified manifest are included in the set of reftests
+   that are run.
 
 2. A test item
 
@@ -115,16 +114,39 @@ must be one of the following:
                          fast on a 32-bit system but inordinately slow on a
                          64-bit system).
 
-      fuzzy(maxDiff, diffCount)
-          This allows a test to pass if the pixel value differences are <=
-          maxDiff and the total number of different pixels is <= diffCount.
+      fuzzy(minDiff-maxDiff,minPixelCount-maxPixelCount)
+          This allows a test to pass if the pixel value differences are between
+          minDiff and maxDiff, inclusive, and the total number of different
+          pixels is between minPixelCount and maxPixelCount, inclusive.
           It can also be used with '!=' to ensure that the difference is
-          greater than maxDiff.
+          outside the specified interval. Note that with '!=' tests the
+          minimum bounds of the ranges must be zero.
 
-      fuzzy-if(condition, maxDiff, diffCount)
+          Fuzzy tends to be used for two different sorts of cases.  The main
+          case is tests that are expected to be equal, but actually fail in a
+          minor way (e.g., an antialiasing difference), and we want to ensure
+          that the test doesn't regress further so we don't want to mark the
+          test as failing.  For these cases, test annotations should be the
+          tightest bounds possible:  if the behavior is entirely deterministic
+          this means a range like fuzzy(1-1,8-8), and if at all possible, the
+          ranges should not include 0.  In cases where the test only sometimes
+          fails, this unfortunately requires using 0 in both ranges, which
+          means that we won't get reports of an unexpected pass if the problem
+          is fixed (allowing us to remove the fuzzy() annotation and expect
+          the test to pass from then on).
+
+          The second case where fuzzy is used is tests that are supposed
+          to allow some amount of variability (i.e., tests where the
+          specification allows variability such that we can't assert
+          that all pixels are the same).  Such tests should generally be
+          avoided (for example, by covering up the pixels that can vary
+          with another element), but when they are needed, the ranges in
+          the fuzzy() annotation should generally include 0.
+
+      fuzzy-if(condition,minDiff-maxDiff,minPixelCount-maxPixelCount)
           If the condition is met, the test is treated as if 'fuzzy' had been
           specified. This is useful if there are differences on particular
-          platforms.
+          platforms.  See fuzzy() above.
 
       require-or(cond1&&cond2&&...,fallback)
           Require some particular setup be performed or environmental
@@ -156,6 +178,14 @@ must be one of the following:
       asserts-if(condition,count)
       asserts-if(condition,minCount-maxCount)
           Same as above, but only if condition is true.
+
+      noautofuzz
+          Disables the autofuzzing behaviour hard-coded in the reftest harness
+          for specific platform configurations. The autofuzzing is intended to
+          compensate for inherent nondeterminism that results in intermittently
+          fuzzy results (with small amounts of fuzz) across many/all tests on
+          a given platform. Specifying 'noautofuzz' on the test will disable
+          the autofuzzing for that test and require an exact match.
 
       Conditions are JavaScript expressions *without spaces* in them.
       They are evaluated in a sandbox in which a limited set of
@@ -271,6 +301,51 @@ must be one of the following:
 
              url_ref must be omitted. The test may be marked as fails or
              random. (Used to test the JavaScript Engine.)
+      print  The test passes if the printouts (as PDF) of the two renderings
+             are the SAME by applying the following comparisons:
+
+              - The number of pages generated for both printouts must match.
+              - The text content of both printouts must match (rasterized text
+                does not match real text).
+
+             You can specify a print range by setting the reftest-print-range
+             attribute on the document element. Example:
+
+              <html reftest-print-range="2-3">
+              ...
+
+             The following example would lead to a single page print:
+
+              <html reftest-print-range="2-2">
+              ...
+
+             You can also print selected elements only:
+
+              <html reftest-print-range="selection">
+              ...
+
+             Make sure to include code in your test that actually selects something.
+
+             Future additions to the set of comparisons might include:
+
+              - Matching the paper size
+              - Validating printed headers and footers
+              - Testing (fuzzy) position of elements
+              - Testing specific print related CSS properties
+              - ...
+
+             The main difference between 'print' and '=='/'!=' reftests is that
+             'print' makes us compare the structure of print results (by parsing
+             the output PDF) rather than taking screenshots and comparing pixel
+             values. This allows us to test for common printing related issues
+             like text being rasterized when it shouldn't. This difference in
+             behavior is also why this is its own reftest operator, rather than
+             a flavor of ==/!=. It would be somewhat misleading to list these
+             print reftests as ==/!=, because they don't actually check for
+             pixel matching.
+
+             See the chapter about Pagination Tests if you are looking for testing
+             layout in pagination mode.
 
    e. <url> is either a relative file path or an absolute URL for the
       test page
@@ -327,8 +402,9 @@ that do not depend on XUL, or even ones testing other layout engines.
 Running Tests
 =============
 
-(If you're not using a DEBUG build, first set browser.dom.window.dump.enabled
-to true (in about:config, in the profile you'll be using to run the tests).
+(If you're not using a DEBUG build, first set browser.dom.window.dump.enabled,
+devtools.console.stdout.chrome and devtools.console.stdout.content to true (in
+about:config, in the profile you'll be using to run the tests).
 Create the option as a new boolean if it doesn't exist already. If you skip
 this step you won't get any output in the terminal.)
 
@@ -520,6 +596,20 @@ the root element are non-zero, sets the scroll-position-clamping scroll-port
 size to the given size in CSS pixels. This does not affect the size of the
 snapshot that is taken.
 
+Setting Resolution: reftest-resolution="<float>"
+================================================
+
+If the root element of a test has a "reftest-resolution" attribute, the page
+is rendered with the specified resolution (as if the user pinch-zoomed in
+to that scale). Note that the difference between reftest-async-zoom and
+reftest-resolution is that reftest-async-zoom only applies the scale in
+the compositor, while reftest-resolution causes the page to be paint at that
+resolution. This attribute can be used together with initial-scale in meta
+viewport tag, in such cases initial-scale is applied first then
+reftest-resolution changes the scale.
+
+This attributes requires the pref apz.allow_zooming=true to have an effect.
+
 Setting Async Scroll Mode: reftest-async-scroll attribute
 =========================================================
 
@@ -555,9 +645,9 @@ the end of the test take the snapshot with the given async zoom on top of any
 existing zoom. Content is not re-rendered at the new zoom level. This
 corresponds to the mobile style "pinch zoom" style of zoom. This is unsupported
 in many configurations, and any tests using this will probably want to have
-skip-if(!asyncPanZoom) on them.
+pref(apz.allow_zooming,true) on them.
 
-Printing Tests: class="reftest-print"
+Pagination Tests: class="reftest-paged"
 =====================================
 
 Now that the patch for bug 374050 has landed
@@ -568,15 +658,15 @@ The page size used is 5in wide and 3in tall (with the default half-inch
 margins).  This is to allow tests to have less text and to make the
 entire test fit on the screen.
 
-There is a layout/reftests/printing directory for printing reftests; however,
-there is nothing special about this directory.  You can put printing reftests
+There is a layout/reftests/printing directory for pagination reftests; however,
+there is nothing special about this directory.  You can put pagination reftests
 anywhere that is appropriate.
 
-The suggested first lines for any printing test is
-<!DOCTYPE html><html class="reftest-print">
+The suggested first lines for any pagination test is
+<!DOCTYPE html><html class="reftest-paged">
 <style>html{font-size:12pt}</style>
 
-The reftest-print class on the root element triggers the reftest to
+The reftest-paged class on the root element triggers the reftest to
 switch into page mode. Fixing the font size is suggested, although not
 required, because the pages are a fixed size in inches. The switch to page mode
 happens on load if the reftest-wait class is not present; otherwise it happens

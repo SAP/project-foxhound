@@ -13,14 +13,16 @@ namespace quota {
 
 class PQuotaParent;
 
-PQuotaParent*
-AllocPQuotaParent();
+void InitializeQuotaManager();
 
-bool
-DeallocPQuotaParent(PQuotaParent* aActor);
+PQuotaParent* AllocPQuotaParent();
 
-} // namespace quota
-} // namespace dom
-} // namespace mozilla
+bool DeallocPQuotaParent(PQuotaParent* aActor);
 
-#endif // mozilla_dom_quota_ActorsParent_h
+bool RecvShutdownQuotaManager();
+
+}  // namespace quota
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_quota_ActorsParent_h

@@ -10,9 +10,10 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface Attr : Node {
   readonly attribute DOMString localName;
-           [SetterThrows]
+           [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString value;
 
   [Constant]

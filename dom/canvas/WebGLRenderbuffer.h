@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,86 +9,64 @@
 #include "mozilla/LinkedList.h"
 #include "nsWrapperCache.h"
 
-#include "WebGLFramebufferAttachable.h"
+#include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "WebGLTexture.h"
 
 namespace mozilla {
 namespace webgl {
 struct FormatUsageInfo;
 }
 
-class WebGLRenderbuffer final
-    : public nsWrapperCache
-    , public WebGLRefCountedObject<WebGLRenderbuffer>
-    , public LinkedListElement<WebGLRenderbuffer>
-    , public WebGLRectangleObject
-    , public WebGLFramebufferAttachable
-{
-    friend class WebGLContext;
-    friend class WebGLFramebuffer;
-    friend class WebGLFBAttachPoint;
+class WebGLRenderbuffer final : public nsWrapperCache,
+                                public WebGLRefCountedObject<WebGLRenderbuffer>,
+                                public LinkedListElement<WebGLRenderbuffer>,
+                                public WebGLRectangleObject,
+                                public CacheInvalidator {
+  friend class WebGLFramebuffer;
+  friend class WebGLFBAttachPoint;
 
-public:
-    const GLuint mPrimaryRB;
-protected:
-    const bool mEmulatePackedDepthStencil;
-    GLuint mSecondaryRB;
-    const webgl::FormatUsageInfo* mFormat;
-    GLsizei mSamples;
+ public:
+  const GLuint mPrimaryRB;
+  bool mHasBeenBound = false;
 
-    WebGLImageDataStatus mImageDataStatus;
+ protected:
+  const bool mEmulatePackedDepthStencil;
+  GLuint mSecondaryRB;
+  webgl::ImageInfo mImageInfo;
 
-    bool mHasBeenBound;
+ public:
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLRenderbuffer)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLRenderbuffer)
 
-public:
-    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLRenderbuffer)
-    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLRenderbuffer)
+  explicit WebGLRenderbuffer(WebGLContext* webgl);
 
-    explicit WebGLRenderbuffer(WebGLContext* webgl);
+  void Delete();
 
-    void Delete();
+  const auto& ImageInfo() const { return mImageInfo; }
 
-    bool HasUninitializedImageData() const {
-        MOZ_ASSERT(mImageDataStatus != WebGLImageDataStatus::NoImageData);
-        return mImageDataStatus == WebGLImageDataStatus::UninitializedImageData;
-    }
+  WebGLContext* GetParentObject() const { return mContext; }
 
-    bool IsDefined() const {
-        if (!mFormat) {
-            MOZ_ASSERT(!mWidth && !mHeight);
-            return false;
-        }
-        return true;
-    }
+  void RenderbufferStorage(uint32_t samples, GLenum internalFormat,
+                           uint32_t width, uint32_t height);
+  // Only handles a subset of `pname`s.
+  GLint GetRenderbufferParameter(RBTarget target, RBParam pname) const;
 
-    GLsizei Samples() const { return mSamples; }
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> givenProto) override;
 
-    const webgl::FormatUsageInfo* Format() const { return mFormat; }
+  auto MemoryUsage() const { return mImageInfo.MemoryUsage(); }
 
-    int64_t MemoryUsage() const;
+ protected:
+  ~WebGLRenderbuffer() { DeleteOnce(); }
 
-    WebGLContext* GetParentObject() const {
-        return mContext;
-    }
-
-    void RenderbufferStorage(const char* funcName, uint32_t samples,
-                             GLenum internalFormat, uint32_t width, uint32_t height);
-    // Only handles a subset of `pname`s.
-    GLint GetRenderbufferParameter(RBTarget target, RBParam pname) const;
-
-    virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
-
-protected:
-    ~WebGLRenderbuffer() {
-        DeleteOnce();
-    }
-
-    void DoFramebufferRenderbuffer(FBTarget target, GLenum attachment) const;
-    GLenum DoRenderbufferStorage(uint32_t samples, const webgl::FormatUsageInfo* format,
-                                 uint32_t width, uint32_t height);
+  void DoFramebufferRenderbuffer(GLenum attachment) const;
+  GLenum DoRenderbufferStorage(uint32_t samples,
+                               const webgl::FormatUsageInfo* format,
+                               uint32_t width, uint32_t height);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WEBGL_RENDERBUFFER_H_
+#endif  // WEBGL_RENDERBUFFER_H_

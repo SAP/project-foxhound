@@ -9,6 +9,13 @@
 TestRunner.logEnabled = true;
 TestRunner.logger = LogController;
 
+if (!("SpecialPowers" in window)) {
+  dump("SimpleTest setup.js found SpecialPowers unavailable: reloading...\n");
+  setTimeout(() => {
+    window.location.reload();
+  }, 1000);
+}
+
 /* Helper function */
 function parseQueryString(encodedString, useArrays) {
   // strip a leading '?' from the encoded string
@@ -105,7 +112,7 @@ if (params.runUntilFailure) {
 
 // closeWhenDone tells us to close the browser when complete
 if (params.closeWhenDone) {
-  TestRunner.onComplete = SpecialPowers.quit;
+  TestRunner.onComplete = SpecialPowers.quit.bind(SpecialPowers);
 }
 
 if (params.failureFile) {
@@ -119,8 +126,8 @@ if (params.debugOnFailure) {
 
 // logFile to write our results
 if (params.logFile) {
-  var spl = new SpecialPowersLogger(params.logFile);
-  TestRunner.logger.addListener("mozLogger", fileLevel + "", spl.getLogCallback());
+  var mfl = new MozillaFileLogger(params.logFile);
+  TestRunner.logger.addListener("mozLogger", fileLevel + "", mfl.logCallback);
 }
 
 // A temporary hack for android 4.0 where Fennec utilizes the pandaboard so much it reboots
@@ -144,8 +151,16 @@ if (params.interactiveDebugger) {
   TestRunner.interactiveDebugger = true;
 }
 
+if (params.jscovDirPrefix) {
+  TestRunner.jscovDirPrefix = params.jscovDirPrefix;
+}
+
 if (params.maxTimeouts) {
   TestRunner.maxTimeouts = params.maxTimeouts;
+}
+
+if (params.cleanupCrashes) {
+  TestRunner.cleanupCrashes = true;
 }
 
 // Log things to the console if appropriate.
@@ -160,7 +175,7 @@ RunSet.runall = function(e) {
   // This allows for including or excluding tests from the gTestList
   // TODO Only used by ipc tests, remove once those are implemented sanely
   if (params.testManifest) {
-    getTestManifest("http://mochi.test:8888/" + params.testManifest, params, function(filter) { gTestList = filterTests(filter, gTestList, params.runOnly); RunSet.runtests(); });
+    getTestManifest(getTestManifestURL(params.testManifest), params, function(filter) { gTestList = filterTests(filter, gTestList, params.runOnly); RunSet.runtests(); });
   } else {
     RunSet.runtests();
   }
@@ -235,7 +250,7 @@ function toggleNonTests (e) {
 // hook up our buttons
 function hookup() {
   if (params.manifestFile) {
-    getTestManifest("http://mochi.test:8888/" + params.manifestFile, params, hookupTests);
+    getTestManifest(getTestManifestURL(params.manifestFile), params, hookupTests);
   } else {
     hookupTests(gTestList);
   }
@@ -257,4 +272,14 @@ function hookupTests(testList) {
   if (params.autorun) {
     RunSet.runall();
   }
+}
+
+function getTestManifestURL(path) {
+  // The test manifest url scheme should be the same protocol as the containing
+  // window... unless it's not http(s)
+  if (window.location.protocol == "http:" ||
+      window.location.protocol == "https:") {
+    return window.location.protocol + "//" + window.location.host + "/" + path;
+  }
+  return "http://mochi.test:8888/" + path;
 }

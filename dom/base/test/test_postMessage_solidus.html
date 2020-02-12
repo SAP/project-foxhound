@@ -7,7 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=949488
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 949488 - basic support</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -28,7 +28,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=949488
 
   function frameOk() {
     var ifr = document.createElement("iframe");
-    ifr.addEventListener("load", iframeLoaded, false);
+    ifr.addEventListener("load", iframeLoaded);
     ifr.setAttribute('src', "iframe_postMessage_solidus.html");
 
     var div = document.getElementById("content");
@@ -48,7 +48,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=949488
 
   function frameWrong() {
     var ifr = document.createElement("iframe");
-    ifr.addEventListener("load", iframeLoaded, false);
+    ifr.addEventListener("load", iframeLoaded);
     ifr.setAttribute('src', "http://www.example.com/tests/dom/base/test/iframe_postMessage_solidus.html");
 
     var div = document.getElementById("content");
@@ -57,7 +57,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=949488
     function iframeLoaded() {
       addEventListener('message', receiveMessage);
       function receiveMessage(evt) {
-        ok(evt.data, 3, "Message received");
+        is(evt.data, 3, "Message received");
         removeEventListener('message', receiveMessage);
         runTest();
       }

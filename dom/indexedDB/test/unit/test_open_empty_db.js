@@ -5,13 +5,12 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const names = [
-    //"",
+    // "",
     null,
     undefined,
-    this.window ? window.location.pathname : "Splendid Test"
+    this.window ? window.location.pathname : "Splendid Test",
   ];
 
   const version = 1;
@@ -24,8 +23,7 @@ function testSteps()
 
     if (name === null) {
       name = "null";
-    }
-    else if (name === undefined) {
+    } else if (name === undefined) {
       name = "undefined";
     }
 
@@ -36,11 +34,12 @@ function testSteps()
 
     is(db.name, request.result.name, "Bad name");
     is(db.version, request.result.version, "Bad version");
-    is(db.objectStoreNames.length, request.result.objectStoreNames.length,
-       "Bad objectStores list");
+    is(
+      db.objectStoreNames.length,
+      request.result.objectStoreNames.length,
+      "Bad objectStores list"
+    );
   }
 
   finishTest();
-  yield undefined;
 }
-

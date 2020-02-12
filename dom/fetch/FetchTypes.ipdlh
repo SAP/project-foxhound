@@ -8,54 +8,56 @@ include PBackgroundSharedTypes;
 
 using HeadersGuardEnum from "mozilla/dom/FetchIPCTypes.h";
 using ReferrerPolicy from "mozilla/dom/FetchIPCTypes.h";
+using RequestCache from "mozilla/dom/FetchIPCTypes.h";
 using RequestCredentials from "mozilla/dom/FetchIPCTypes.h";
 using RequestMode from "mozilla/dom/FetchIPCTypes.h";
-using ResponseType from "mozilla/dom/FetchIPCTypes.h";
 using RequestRedirect from "mozilla/dom/FetchIPCTypes.h";
-using RequestCache from "mozilla/dom/FetchIPCTypes.h";
+using ResponseType from "mozilla/dom/FetchIPCTypes.h";
 
 namespace mozilla {
 namespace dom {
 
-struct HeadersEntry
-{
+struct HeadersEntry {
   nsCString name;
   nsCString value;
 };
 
-// Note, this does not yet serialize *all* of InternalRequest
-// Make sure that it contains the fields that you care about
-struct IPCInternalRequest
-{
-  nsCString[] urls;
+struct IPCInternalRequest {
   nsCString method;
-  HeadersEntry[] headers;
+  nsCString[] urlList;
   HeadersGuardEnum headersGuard;
+  HeadersEntry[] headers;
+  IPCStream? body;
+  int64_t bodySize;
+  nsCString preferredAlternativeDataType;
+  uint32_t contentPolicyType;
   nsString referrer;
   ReferrerPolicy referrerPolicy;
-  RequestMode mode;
-  RequestCredentials credentials;
-  uint32_t contentPolicyType;
-  RequestCache requestCache;
+  RequestMode requestMode;
+  RequestCredentials requestCredentials;
+  RequestCache cacheMode;
   RequestRedirect requestRedirect;
+  nsString integrity;
+  nsCString fragment;
+  bool createdByFetchEvent;
+  PrincipalInfo? principalInfo;
 };
 
-// Note, this does not yet serialize *all* of InternalResponse
-// Make sure that it contains the fields that you care about
-struct IPCInternalResponse
-{
+struct IPCInternalResponse {
   ResponseType type;
   nsCString[] urlList;
-  uint32_t status;
+  uint16_t status;
   nsCString statusText;
-  HeadersEntry[] headers;
   HeadersGuardEnum headersGuard;
-  IPCChannelInfo channelInfo;
-  OptionalPrincipalInfo principalInfo;
-  OptionalIPCStream body;
+  HeadersEntry[] headers;
+  IPCStream? body;
   int64_t bodySize;
+  nsresult errorCode;
+  nsCString alternativeDataType;
+  IPCStream? alternativeBody;
+  IPCChannelInfo channelInfo;
+  PrincipalInfo? principalInfo;
 };
-
 
 } // namespace ipc
 } // namespace mozilla

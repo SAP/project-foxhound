@@ -12,7 +12,7 @@ dictionary IDBObjectStoreParameters {
     boolean                             autoIncrement = false;
 };
 
-[Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface IDBObjectStore {
     [SetterThrows]
     attribute DOMString name;
@@ -46,7 +46,7 @@ interface IDBObjectStore {
     IDBRequest openCursor (optional any range, optional IDBCursorDirection direction = "next");
 
     [Throws]
-    IDBIndex   createIndex (DOMString name, (DOMString or sequence<DOMString>) keyPath, optional IDBIndexParameters optionalParameters);
+    IDBIndex   createIndex (DOMString name, (DOMString or sequence<DOMString>) keyPath, optional IDBIndexParameters optionalParameters = {});
 
     [Throws]
     IDBIndex   index (DOMString name);
@@ -60,14 +60,14 @@ interface IDBObjectStore {
 
 partial interface IDBObjectStore {
     // Success fires IDBTransactionEvent, result == array of values for given keys
-    [Throws]
-    IDBRequest mozGetAll (optional any key, [EnforceRange] optional unsigned long limit);
+    // If we decide to add use a counter for the mozGetAll function, we'll need
+    // to pull it out into a sepatate operation with a BinaryName mapping to the
+    // same underlying implementation.
+    [Throws, Alias="mozGetAll"]
+    IDBRequest getAll (optional any key, optional [EnforceRange] unsigned long limit);
 
     [Throws]
-    IDBRequest getAll (optional any key, [EnforceRange] optional unsigned long limit);
-
-    [Throws]
-    IDBRequest getAllKeys (optional any key, [EnforceRange] optional unsigned long limit);
+    IDBRequest getAllKeys (optional any key, optional [EnforceRange] unsigned long limit);
 
     [Throws]
     IDBRequest openKeyCursor (optional any range, optional IDBCursorDirection direction = "next");

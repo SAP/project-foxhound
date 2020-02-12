@@ -1,3 +1,6 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <!DOCTYPE HTML>
 <html>
 <!--
@@ -7,18 +10,18 @@ Test for Notification Box. The test is checking:
 <head>
   <meta charset="utf-8">
   <title>Notification Box</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 </head>
 <body>
 <pre id="test">
-<script src="head.js" type="application/javascript;version=1.8"></script>
-<script type="application/javascript;version=1.8">
-window.onload = Task.async(function* () {
+<script src="head.js" type="application/javascript"></script>
+<script type="application/javascript">
+window.onload = async function () {
   try {
     let ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
     let React = browserRequire("devtools/client/shared/vendor/react");
-    let { NotificationBox, PriorityLevels } = browserRequire("devtools/client/shared/components/notification-box");
+    let { NotificationBox, PriorityLevels } = browserRequire("devtools/client/shared/components/NotificationBox");
 
     // Test rendering
     let boxElement = React.createElement(NotificationBox);
@@ -51,7 +54,7 @@ window.onload = Task.async(function* () {
     );
 
     let buttonNodes = notificationNode.querySelectorAll(
-      ".notification-button");
+      ".notificationButton");
 
     is(buttonNodes.length, 2, "There must be two buttons");
 
@@ -74,7 +77,7 @@ window.onload = Task.async(function* () {
   } finally {
     SimpleTest.finish();
   }
-});
+};
 </script>
 </pre>
 </body>

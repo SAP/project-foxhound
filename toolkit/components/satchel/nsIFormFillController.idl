@@ -4,9 +4,12 @@
 
 #include "nsISupports.idl"
 
-interface nsIDocShell;
 interface nsIAutoCompletePopup;
-interface nsIDOMHTMLInputElement;
+
+webidl Document;
+webidl Element;
+webidl Event;
+webidl HTMLInputElement;
 
 /*
  * nsIFormFillController is an interface for controlling form fill behavior
@@ -21,19 +24,33 @@ interface nsIDOMHTMLInputElement;
 interface nsIFormFillController : nsISupports
 {
   /*
-   * Start controlling form fill behavior for the given browser
+   * The input element the form fill controller is currently bound to.
+   */
+  readonly attribute HTMLInputElement focusedInput;
+
+  /*
+   * Whether the autocomplete popup on a password field was automatically opened
+   * by the form fill controller (upon focus).
+   */
+  readonly attribute boolean passwordPopupAutomaticallyOpened;
+
+  /*
+   * Start controlling form fill behavior for the given document
    *
-   * @param docShell - The docShell to attach to
+   * @param document - The document to attach to
    * @param popup - The popup to show when autocomplete results are available
    */
-  void attachToBrowser(in nsIDocShell docShell, in nsIAutoCompletePopup popup);
+  [can_run_script]
+  void attachToDocument(in Document document, in nsIAutoCompletePopup popup);
+  [can_run_script]
+  void attachPopupElementToDocument(in Document document, in Element popup);
 
   /*
    * Stop controlling form fill behavior for the given browser
    *
-   * @param docShell - The docShell to detach from
+   * @param document - The document to detach from
    */
-  void detachFromBrowser(in nsIDocShell docShell);
+  [can_run_script] void detachFromDocument(in Document document);
 
   /*
    * Mark the specified <input> element as being managed by password manager.
@@ -42,5 +59,20 @@ interface nsIFormFillController : nsISupports
    *
    * @param aInput - The HTML <input> element to tag
    */
-  void markAsLoginManagerField(in nsIDOMHTMLInputElement aInput);
+  [can_run_script] void markAsLoginManagerField(in HTMLInputElement aInput);
+
+  /*
+   * Mark the specified <input> element as being managed by a form autofill component.
+   * Autocomplete requests will be handed off to the autofill component.
+   *
+   * @param aInput - The HTML <input> element to mark
+   */
+  [can_run_script] void markAsAutofillField(in HTMLInputElement aInput);
+
+  /*
+   * Open the autocomplete popup, if possible.
+   */
+  [can_run_script] void showPopup();
+
+  [can_run_script] void handleFormEvent(in Event aEvent);
 };

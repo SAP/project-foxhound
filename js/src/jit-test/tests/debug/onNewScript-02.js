@@ -1,6 +1,6 @@
 // Creating a new script with any number of subscripts triggers the newScript hook exactly once.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = Debugger(g);
 var seen = new WeakMap();
 var hits;
@@ -45,9 +45,6 @@ test(function () { return g.Function("a", "b", "return b - a;"); });
 
 // cloning a function with nested functions
 test(function () { g.clone(evaluate("(function(x) { return x + 1; })")); });
-
-// eval declaring a generator
-test(function () { g.eval("function r(n) { for (var i=0;i<n;i++) yield i; }"); });
 
 // eval declaring a star generator
 test(function () { g.eval("function* sg(n) { for (var i=0;i<n;i++) yield i; }"); });

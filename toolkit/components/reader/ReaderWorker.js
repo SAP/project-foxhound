@@ -2,15 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/chrome-worker */
+
 "use strict";
 
 /**
  * A worker dedicated to handle parsing documents for reader view.
  */
 
-importScripts("resource://gre/modules/workers/require.js",
-              "resource://gre/modules/reader/JSDOMParser.js",
-              "resource://gre/modules/reader/Readability.js");
+importScripts(
+  "resource://gre/modules/workers/require.js",
+  "resource://gre/modules/reader/JSDOMParser.js",
+  "resource://gre/modules/reader/Readability.js"
+);
 
 var PromiseWorker = require("resource://gre/modules/workers/PromiseWorker.js");
 
@@ -40,11 +44,12 @@ var Agent = {
    *
    * @param {object} uri URI data for the document.
    * @param {string} serializedDoc The serialized document.
+   * @param {object} options Options object to pass to Readability.
    *
    * @return {object} Article object returned from Readability.
    */
-  parseDocument: function (uri, serializedDoc) {
-    let doc = new JSDOMParser().parse(serializedDoc);
-    return new Readability(uri, doc).parse();
+  parseDocument(uri, serializedDoc, options) {
+    let doc = new JSDOMParser().parse(serializedDoc, uri.spec);
+    return new Readability(doc, options).parse();
   },
 };

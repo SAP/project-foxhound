@@ -6,18 +6,28 @@ function test() {
   Harness.installsCompletedCallback = finish_test;
   Harness.setup();
 
-  var pm = Services.perms;
-  pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    "http://example.com/",
+    "install",
+    Services.perms.ALLOW_ACTION
+  );
 
-  var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": {
-      URL: TESTROOT + "amosigned.xpi",
-      Hash: "sha1:36FFB0ACFD9C6E9682473AAEBAAB394D38B473C9",
-      toString: function() { return this.URL; }
-    }
-  }));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT + "installtrigger.html?" + triggers);
+  var triggers = encodeURIComponent(
+    JSON.stringify({
+      "Unsigned XPI": {
+        URL: TESTROOT + "amosigned.xpi",
+        Hash: "sha1:EE95834AD862245A9EF99CCECC2A857CADC16404",
+        toString() {
+          return this.URL;
+        },
+      },
+    })
+  );
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(
+    gBrowser,
+    TESTROOT + "installtrigger.html?" + triggers
+  );
 }
 
 function install_ended(install, addon) {
@@ -27,7 +37,7 @@ function install_ended(install, addon) {
 function finish_test(count) {
   is(count, 1, "1 Add-on should have been successfully installed");
 
-  Services.perms.remove(makeURI("http://example.com"), "install");
+  PermissionTestUtils.remove("http://example.com", "install");
 
   gBrowser.removeCurrentTab();
   Harness.finish();

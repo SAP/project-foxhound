@@ -7,52 +7,63 @@
 #ifndef mozilla_dom_SVGCircleElement_h
 #define mozilla_dom_SVGCircleElement_h
 
-#include "nsSVGPathGeometryElement.h"
-#include "nsSVGLength2.h"
+#include "nsCSSPropertyID.h"
+#include "SVGGeometryElement.h"
+#include "SVGAnimatedLength.h"
 
-nsresult NS_NewSVGCircleElement(nsIContent **aResult,
-                                already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-
-typedef nsSVGPathGeometryElement SVGCircleElementBase;
+nsresult NS_NewSVGCircleElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
+class ComputedStyle;
+
 namespace dom {
 
-class SVGCircleElement final : public SVGCircleElementBase
-{
-protected:
-  explicit SVGCircleElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
-  friend nsresult (::NS_NewSVGCircleElement(nsIContent **aResult,
-                                            already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+typedef SVGGeometryElement SVGCircleElementBase;
 
-public:
+class SVGCircleElement final : public SVGCircleElementBase {
+ protected:
+  explicit SVGCircleElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
+  friend nsresult(::NS_NewSVGCircleElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+
+ public:
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
-  // nsSVGPathGeometryElement methods:
-  virtual bool GetGeometryBounds(Rect* aBounds, const StrokeOptions& aStrokeOptions,
-                                 const Matrix& aToBoundsSpace,
-                                 const Matrix* aToNonScalingStrokeSpace = nullptr) override;
+  // SVGGeometryElement methods:
+  virtual bool GetGeometryBounds(
+      Rect* aBounds, const StrokeOptions& aStrokeOptions,
+      const Matrix& aToBoundsSpace,
+      const Matrix* aToNonScalingStrokeSpace = nullptr) override;
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  static bool IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
+                                    const ComputedStyle& aOldStyle);
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> Cx();
-  already_AddRefed<SVGAnimatedLength> Cy();
-  already_AddRefed<SVGAnimatedLength> R();
+  already_AddRefed<DOMSVGAnimatedLength> Cx();
+  already_AddRefed<DOMSVGAnimatedLength> Cy();
+  already_AddRefed<DOMSVGAnimatedLength> R();
 
-protected:
-
+ protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
 
   enum { ATTR_CX, ATTR_CY, ATTR_R };
-  nsSVGLength2 mLengthAttributes[3];
+  SVGAnimatedLength mLengthAttributes[3];
   static LengthInfo sLengthInfo[3];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGCircleElement_h
+#endif  // mozilla_dom_SVGCircleElement_h

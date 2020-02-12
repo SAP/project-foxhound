@@ -10,8 +10,19 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
-interface PeriodicWave {
-
+dictionary PeriodicWaveConstraints {
+  boolean disableNormalization = false;
 };
 
+dictionary PeriodicWaveOptions : PeriodicWaveConstraints {
+             sequence<float> real;
+             sequence<float> imag;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface PeriodicWave {
+  [Throws]
+  constructor(BaseAudioContext context,
+              optional PeriodicWaveOptions options = {});
+};

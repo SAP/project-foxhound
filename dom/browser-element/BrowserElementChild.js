@@ -2,13 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+/* global api, CopyPasteAssistent */
+
 "use strict";
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu }  = Components;
-Cu.import("resource://gre/modules/Services.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function debug(msg) {
-  //dump("BrowserElementChild - " + msg + "\n");
+  // dump("BrowserElementChild - " + msg + "\n");
 }
 
 // NB: this must happen before we process any messages from
@@ -20,13 +22,15 @@ function parentDocShell(docshell) {
     return null;
   }
   let treeitem = docshell.QueryInterface(Ci.nsIDocShellTreeItem);
-  return treeitem.parent ? treeitem.parent.QueryInterface(Ci.nsIDocShell) : null;
+  return treeitem.parent
+    ? treeitem.parent.QueryInterface(Ci.nsIDocShell)
+    : null;
 }
 
 function isTopBrowserElement(docShell) {
   while (docShell) {
     docShell = parentDocShell(docShell);
-    if (docShell && docShell.isMozBrowserOrApp) {
+    if (docShell && docShell.isMozBrowser) {
       return false;
     }
   }
@@ -37,45 +41,28 @@ var BrowserElementIsReady;
 
 debug(`Might load BE scripts: BEIR: ${BrowserElementIsReady}`);
 if (!BrowserElementIsReady) {
-  debug("Loading BE scripts")
+  debug("Loading BE scripts");
   if (!("BrowserElementIsPreloaded" in this)) {
-    if (isTopBrowserElement(docShell)) {
-      if (Services.prefs.getBoolPref("dom.mozInputMethod.enabled")) {
-        try {
-          Services.scriptloader.loadSubScript("chrome://global/content/forms.js");
-        } catch (e) {
-        }
-      }
-    }
-
-    if(Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
+    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
       // general content apps
       if (isTopBrowserElement(docShell)) {
-        Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js");
+        Services.scriptloader.loadSubScript(
+          "chrome://global/content/BrowserElementCopyPaste.js",
+          this
+        );
       }
     } else {
       // rocketbar in system app and other in-process case (ex. B2G desktop client)
-      Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementCopyPaste.js");
+      Services.scriptloader.loadSubScript(
+        "chrome://global/content/BrowserElementCopyPaste.js",
+        this
+      );
     }
 
-    if (Services.prefs.getIntPref("dom.w3c_touch_events.enabled") != 0) {
-      if (docShell.asyncPanZoomEnabled === false) {
-        Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementPanningAPZDisabled.js");
-        ContentPanningAPZDisabled.init();
-      }
-
-      Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementPanning.js");
-      ContentPanning.init();
-    }
-
-    Services.scriptloader.loadSubScript("chrome://global/content/BrowserElementChildPreload.js");
-  } else {
-    if (Services.prefs.getIntPref("dom.w3c_touch_events.enabled") != 0) {
-      if (docShell.asyncPanZoomEnabled === false) {
-        ContentPanningAPZDisabled.init();
-      }
-      ContentPanning.init();
-    }
+    Services.scriptloader.loadSubScript(
+      "chrome://global/content/BrowserElementChildPreload.js",
+      this
+    );
   }
 
   function onDestroy() {
@@ -83,12 +70,6 @@ if (!BrowserElementIsReady) {
 
     if (api) {
       api.destroy();
-    }
-    if ("ContentPanning" in this) {
-      ContentPanning.destroy();
-    }
-    if ("ContentPanningAPZDisabled" in this) {
-      ContentPanningAPZDisabled.destroy();
     }
     if ("CopyPasteAssistent" in this) {
       CopyPasteAssistent.destroy();
@@ -103,4 +84,4 @@ if (!BrowserElementIsReady) {
   debug("BE already loaded, abort");
 }
 
-sendAsyncMessage('browser-element-api:call', { 'msg_name': 'hello' });
+sendAsyncMessage("browser-element-api:call", { msg_name: "hello" });

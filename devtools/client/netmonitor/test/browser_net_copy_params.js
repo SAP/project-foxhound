@@ -7,87 +7,166 @@
  * Tests whether copying a request item's parameters works.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(PARAMS_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(PARAMS_URL);
   info("Starting test... ");
 
-  let { document, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 1, 6);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 7);
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(0);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(0, false);
+  await testCopyUrlParams(0, "a");
+  await testCopyPostDataHidden(0, false);
+  await testCopyPostData(0, '{ "foo": "bar" }');
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(1);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a=b");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(1, false);
+  await testCopyUrlParams(1, "a=b");
+  await testCopyPostDataHidden(1, false);
+  await testCopyPostData(1, '{ "foo": "bar" }');
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(2);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a=b");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("foo=bar");
+  await testCopyUrlParamsHidden(2, false);
+  await testCopyUrlParams(2, "a=b");
+  await testCopyPostDataHidden(2, false);
+  await testCopyPostData(2, "foo=bar");
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(3);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(3, false);
+  await testCopyUrlParams(3, "a");
+  await testCopyPostDataHidden(3, false);
+  await testCopyPostData(3, '{ "foo": "bar" }');
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(4);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a=b");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("{ \"foo\": \"bar\" }");
+  await testCopyUrlParamsHidden(4, false);
+  await testCopyUrlParams(4, "a=b");
+  await testCopyPostDataHidden(4, false);
+  await testCopyPostData(4, '{ "foo": "bar" }');
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(5);
-  yield testCopyUrlParamsHidden(false);
-  yield testCopyUrlParams("a=b");
-  yield testCopyPostDataHidden(false);
-  yield testCopyPostData("?foo=bar");
+  await testCopyUrlParamsHidden(5, false);
+  await testCopyUrlParams(5, "a=b");
+  await testCopyPostDataHidden(5, false);
+  await testCopyPostData(5, "?foo=bar");
+  await testCopyRequestDataLabel(5, "POST");
 
-  RequestsMenu.selectedItem = RequestsMenu.getItemAtIndex(6);
-  yield testCopyUrlParamsHidden(true);
-  yield testCopyPostDataHidden(true);
+  await testCopyUrlParamsHidden(6, true);
+  await testCopyPostDataHidden(6, true);
+
+  await testCopyPostDataHidden(7, false);
+  await testCopyRequestDataLabel(7, "PATCH");
+
+  await testCopyPostDataHidden(8, false);
+  await testCopyRequestDataLabel(8, "PUT");
 
   return teardown(monitor);
 
-  function testCopyUrlParamsHidden(hidden) {
-    RequestsMenu._onContextShowing();
-    is(document.querySelector("#request-menu-context-copy-url-params").hidden, hidden,
-      "The \"Copy URL Parameters\" context menu item should" + (hidden ? " " : " not ") +
-        "be hidden.");
+  function testCopyUrlParamsHidden(index, hidden) {
+    EventUtils.sendMouseEvent(
+      { type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    EventUtils.sendMouseEvent(
+      { type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    const copyUrlParamsNode = getContextMenuItem(
+      monitor,
+      "request-list-context-copy-url-params"
+    );
+    is(
+      !!copyUrlParamsNode,
+      !hidden,
+      'The "Copy URL Parameters" context menu item should' +
+        (hidden ? " " : " not ") +
+        "be hidden."
+    );
   }
 
-  function* testCopyUrlParams(queryString) {
-    yield waitForClipboardPromise(function setup() {
-      RequestsMenu.copyUrlParams();
+  async function testCopyUrlParams(index, queryString) {
+    EventUtils.sendMouseEvent(
+      { type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    EventUtils.sendMouseEvent(
+      { type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    await waitForClipboardPromise(function setup() {
+      getContextMenuItem(
+        monitor,
+        "request-list-context-copy-url-params"
+      ).click();
     }, queryString);
     ok(true, "The url query string copied from the selected item is correct.");
   }
 
-  function testCopyPostDataHidden(hidden) {
-    RequestsMenu._onContextShowing();
-    is(document.querySelector("#request-menu-context-copy-post-data").hidden, hidden,
-      "The \"Copy POST Data\" context menu item should" + (hidden ? " " : " not ") +
-        "be hidden.");
+  function testCopyPostDataHidden(index, hidden) {
+    EventUtils.sendMouseEvent(
+      { type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    EventUtils.sendMouseEvent(
+      { type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    const copyPostDataNode = getContextMenuItem(
+      monitor,
+      "request-list-context-copy-post-data"
+    );
+    is(
+      !!copyPostDataNode,
+      !hidden,
+      'The "Copy POST Data" context menu item should' +
+        (hidden ? " " : " not ") +
+        "be hidden."
+    );
   }
 
-  function* testCopyPostData(postData) {
-    yield waitForClipboardPromise(function setup() {
-      RequestsMenu.copyPostData();
+  function testCopyRequestDataLabel(index, method) {
+    EventUtils.sendMouseEvent(
+      { type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    EventUtils.sendMouseEvent(
+      { type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    const copyPostDataNode = getContextMenuItem(
+      monitor,
+      "request-list-context-copy-post-data"
+    );
+    is(
+      copyPostDataNode.attributes.label.value,
+      "Copy " + method + " Data",
+      'The "Copy Data" context menu item should have label - Copy ' +
+        method +
+        " Data"
+    );
+  }
+
+  async function testCopyPostData(index, postData) {
+    // Wait for formDataSections and requestPostData state are ready in redux store
+    // since copyPostData API needs to read these state.
+    await waitUntil(() => {
+      const { requests } = store.getState().requests;
+      const actIDs = [...requests.keys()];
+      const { formDataSections, requestPostData } = requests.get(actIDs[index]);
+      return formDataSections && requestPostData;
+    });
+    EventUtils.sendMouseEvent(
+      { type: "mousedown" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    EventUtils.sendMouseEvent(
+      { type: "contextmenu" },
+      document.querySelectorAll(".request-list-item")[index]
+    );
+    await waitForClipboardPromise(function setup() {
+      getContextMenuItem(
+        monitor,
+        "request-list-context-copy-post-data"
+      ).click();
     }, postData);
     ok(true, "The post data string copied from the selected item is correct.");
   }

@@ -1,6 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import sys
@@ -18,14 +19,9 @@ from mach.config import (
     StringType,
 )
 from mach.decorators import SettingsProvider
-
 from mozunit import main
+from six import string_types
 
-
-if sys.version_info[0] == 3:
-    str_type = str
-else:
-    str_type = basestring
 
 CONFIG1 = r"""
 [foo]
@@ -40,30 +36,31 @@ CONFIG2 = r"""
 bar = value2
 """
 
+
 @SettingsProvider
 class Provider1(object):
     config_settings = [
-        ('foo.bar', StringType),
-        ('foo.baz', PathType),
+        ('foo.bar', StringType, 'desc'),
+        ('foo.baz', PathType, 'desc'),
     ]
 
 
 @SettingsProvider
 class ProviderDuplicate(object):
     config_settings = [
-        ('dupesect.foo', StringType),
-        ('dupesect.foo', StringType),
+        ('dupesect.foo', StringType, 'desc'),
+        ('dupesect.foo', StringType, 'desc'),
     ]
 
 
 @SettingsProvider
 class Provider2(object):
     config_settings = [
-        ('a.string', StringType),
-        ('a.boolean', BooleanType),
-        ('a.pos_int', PositiveIntegerType),
-        ('a.int', IntegerType),
-        ('a.path', PathType),
+        ('a.string', StringType, 'desc'),
+        ('a.boolean', BooleanType, 'desc'),
+        ('a.pos_int', PositiveIntegerType, 'desc'),
+        ('a.int', IntegerType, 'desc'),
+        ('a.path', PathType, 'desc'),
     ]
 
 
@@ -72,27 +69,27 @@ class Provider3(object):
     @classmethod
     def config_settings(cls):
         return [
-            ('a.string', 'string'),
-            ('a.boolean', 'boolean'),
-            ('a.pos_int', 'pos_int'),
-            ('a.int', 'int'),
-            ('a.path', 'path'),
+            ('a.string', 'string', 'desc'),
+            ('a.boolean', 'boolean', 'desc'),
+            ('a.pos_int', 'pos_int', 'desc'),
+            ('a.int', 'int', 'desc'),
+            ('a.path', 'path', 'desc'),
         ]
 
 
 @SettingsProvider
 class Provider4(object):
     config_settings = [
-        ('foo.abc', StringType, 'a', {'choices': set('abc')}),
-        ('foo.xyz', StringType, 'w', {'choices': set('xyz')}),
+        ('foo.abc', StringType, 'desc', 'a', {'choices': set('abc')}),
+        ('foo.xyz', StringType, 'desc', 'w', {'choices': set('xyz')}),
     ]
 
 
 @SettingsProvider
 class Provider5(object):
     config_settings = [
-        ('foo.*', 'string'),
-        ('foo.bar', 'string'),
+        ('foo.*', 'string', 'desc'),
+        ('foo.bar', 'string', 'desc'),
     ]
 
 
@@ -139,7 +136,8 @@ class TestConfigSettings(unittest.TestCase):
         a = s.a
 
         # Assigning an undeclared setting raises.
-        with self.assertRaises(AttributeError):
+        exc_type = AttributeError if sys.version_info < (3, 0) else KeyError
+        with self.assertRaises(exc_type):
             a.undefined = True
 
         with self.assertRaises(KeyError):
@@ -194,11 +192,11 @@ class TestConfigSettings(unittest.TestCase):
         a.int = -4
         a.path = './foo/bar'
 
-        self.assertIsInstance(a.string, str_type)
+        self.assertIsInstance(a.string, string_types)
         self.assertIsInstance(a.boolean, bool)
         self.assertIsInstance(a.pos_int, int)
         self.assertIsInstance(a.int, int)
-        self.assertIsInstance(a.path, str_type)
+        self.assertIsInstance(a.path, string_types)
 
     def test_retrieval_type(self):
         self.retrieval_type_helper(Provider2)

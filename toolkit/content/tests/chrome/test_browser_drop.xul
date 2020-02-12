@@ -6,21 +6,18 @@
         onload="setTimeout(runTest, 0);"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SpawnTask.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
         <script><![CDATA[
 SimpleTest.waitForExplicitFinish();
 function runTest() {
-  add_task(function*() {
-    let win = window.open("window_browser_drop.xul", "_blank", "chrome,width=200,height=200");
-    yield SimpleTest.promiseFocus(win);
+  add_task(async function() {
+    let win = docShell.rootTreeItem.domWindow.openDialog("window_browser_drop.xul", "_blank", "chrome,width=200,height=200", window);
+    await SimpleTest.promiseFocus(win);
     for (let browserType of ["content", "remote-content"]) {
-      yield win.dropLinksOnBrowser(win.document.getElementById(browserType + "child"), browserType);
+      await win.dropLinksOnBrowser(win.document.getElementById(browserType + "child"), browserType);
     }
-    yield win.dropLinksOnBrowser(win.document.getElementById("chromechild"), "chrome");
+    await win.dropLinksOnBrowser(win.document.getElementById("chromechild"), "chrome");
   });
 }
 //]]>

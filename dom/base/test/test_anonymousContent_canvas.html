@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1212477
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1212477 - Needs a way to access to &lt;canvas&gt;'s context (2d, webgl) from Anonymous Content API</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1212477
     <canvas id="canvas-webgl"></canvas>
     <canvas id="canvas-foo"></canvas>
   </div>
-  <script type="application/javascript;version=1.8">
+  <script type="application/javascript">
     let chromeDocument = SpecialPowers.wrap(document);
     let testElement = document.querySelector("div");
 
@@ -43,14 +43,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1212477
       "Get a context using unexisting id should throw"
     );
 
-    let webgl = anonymousContent.getCanvasContext("canvas-webgl", "webgl");
+    const normalWebGL = document.createElement('canvas').getContext('webgl');
+    if (normalWebGL) {
+      let webgl = anonymousContent.getCanvasContext("canvas-webgl", "webgl");
 
-    is(webgl.toString(), "[object WebGLRenderingContext]",
-        "WebGL Context is returned properly");
+      is(webgl.toString(), "[object WebGLRenderingContext]",
+          "WebGL Context is returned properly");
 
-    is(webgl.canvas, null,
-        "WebGL context's canvas property is null in anonymous content");
-
+      is(webgl.canvas, null,
+          "WebGL context's canvas property is null in anonymous content");
+    }
     chromeDocument.removeAnonymousContent(anonymousContent);
   </script>
 </body>

@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=537046
 -->
 <head>
   <title>Test for Bug 537046</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>  
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=537046">Mozilla Bug 537046</a>
@@ -23,23 +23,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=537046
 
 /** Test for Bug 537046 **/
 
-SimpleTest.expectAssertions(1);
-
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
   var ed = document.getElementById("editor");
   var src = document.getElementById("source");
   ed.addEventListener("DOMSubtreeModified", function() {
     src.textContent = ed.innerHTML;
-  }, false);
+  });
   src.addEventListener("DOMSubtreeModified", function() {
     ed.innerHTML = ed.textContent;
-  }, false);
+  });
 
   // Simulate pressing Enter twice
   ed.focus();
-  synthesizeKey("VK_RETURN", {});
-  synthesizeKey("VK_RETURN", {});
+  synthesizeKey("KEY_Enter");
+  synthesizeKey("KEY_Enter");
 
   ok(true, "Didn't crash!");
   SimpleTest.finish();

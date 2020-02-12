@@ -47,19 +47,18 @@
   <script type="application/javascript"><![CDATA[
 
     function ok(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+      window.arguments[0].SimpleTest.ok(condition, message);
     }
 
     function onTestsFinished() {
       window.close();
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
     }
 
     // Force a menu to update itself. All of the menus parents will be updated
     // as well. An empty string will force a complete menu system reload.
     function forceUpdateNativeMenuAt(location) {
-      var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                                          getInterface(Components.interfaces.nsIDOMWindowUtils);
+      var utils = window.windowUtils;
       try {
         utils.forceUpdateNativeMenuAt(location);
       }
@@ -71,8 +70,7 @@
     var executedCommandID = "";
 
     function testItem(location, targetID) {
-      var utils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                                          getInterface(Components.interfaces.nsIDOMWindowUtils);
+      var utils = window.windowUtils;
       var correctCommandHandler = false;
       try {
         utils.activateNativeMenuItemAt(location);

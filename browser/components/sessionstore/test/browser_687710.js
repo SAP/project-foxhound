@@ -10,35 +10,49 @@
 
 var stateBackup = ss.getBrowserState();
 
-var state = {windows:[{tabs:[{entries:[
-  {
-    docIdentifier: 1,
-    url: "http://example.com",
-    children: [
-      {
-        docIdentifier: 2,
-        url: "http://example.com"
-      }
-    ]
-  },
-  {
-    docIdentifier: 2,
-    url: "http://example.com",
-    children: [
-      {
-        docIdentifier: 1,
-        url: "http://example.com"
-      }
-    ]
-  }
-]}]}]}
+var state = {
+  windows: [
+    {
+      tabs: [
+        {
+          entries: [
+            {
+              docIdentifier: 1,
+              url: "http://example.com",
+              triggeringPrincipal_base64,
+              children: [
+                {
+                  docIdentifier: 2,
+                  url: "http://example.com",
+                  triggeringPrincipal_base64,
+                },
+              ],
+            },
+            {
+              docIdentifier: 2,
+              url: "http://example.com",
+              triggeringPrincipal_base64,
+              children: [
+                {
+                  docIdentifier: 1,
+                  url: "http://example.com",
+                  triggeringPrincipal_base64,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
 
-function test() {
-  registerCleanupFunction(function () {
+add_task(async function test() {
+  registerCleanupFunction(function() {
     ss.setBrowserState(stateBackup);
   });
 
   /* This test fails by hanging. */
-  ss.setBrowserState(JSON.stringify(state));
+  await setBrowserState(state);
   ok(true, "Didn't hang!");
-}
+});

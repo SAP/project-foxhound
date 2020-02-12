@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=405242
 -->
 <head>
   <title>Test for Bug 405252</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -27,8 +27,8 @@ sel.appendChild(opt);
 sel.options.remove(0);
 sel.options.remove(1000);
 sel.options.remove(-1);
-is(sel.length, 1, "Unexpected option collection length");
-is(sel[0].value, "10", "Unexpected remained option");
+is(sel.length, 3, "Unexpected option collection length");
+is(sel[2].value, "10", "Unexpected remained option");
 </script>
 </pre>
 </body>

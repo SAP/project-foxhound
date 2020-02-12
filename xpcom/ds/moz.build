@@ -6,11 +6,7 @@
 
 XPIDL_SOURCES += [
     'nsIArray.idl',
-    'nsIAtom.idl',
-    'nsIAtomService.idl',
-    'nsICollection.idl',
-    'nsIEnumerator.idl',
-    'nsIHashable.idl',
+    'nsIArrayExtensions.idl',
     'nsIINIParser.idl',
     'nsIMutableArray.idl',
     'nsIObserver.idl',
@@ -23,7 +19,6 @@ XPIDL_SOURCES += [
     'nsISerializable.idl',
     'nsISimpleEnumerator.idl',
     'nsIStringEnumerator.idl',
-    'nsISupportsArray.idl',
     'nsISupportsIterators.idl',
     'nsISupportsPrimitives.idl',
     'nsIVariant.idl',
@@ -42,61 +37,109 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 
 XPIDL_MODULE = 'xpcom_ds'
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 EXPORTS += [
+    '!nsGkAtomConsts.h',
+    '!nsGkAtomList.h',
     'nsArray.h',
-    'nsAtomService.h',
+    'nsArrayEnumerator.h',
+    'nsArrayUtils.h',
+    'nsAtom.h',
+    'nsBaseHashtable.h',
     'nsCharSeparatedTokenizer.h',
     'nsCheapSets.h',
+    'nsClassHashtable.h',
+    'nsCOMArray.h',
     'nsCRT.h',
+    'nsDataHashtable.h',
+    'nsDeque.h',
+    'nsEnumeratorUtils.h',
     'nsExpirationTracker.h',
+    'nsGkAtoms.h',
+    'nsHashKeys.h',
     'nsHashPropertyBag.h',
+    'nsInterfaceHashtable.h',
+    'nsJSThingHashtable.h',
     'nsMathUtils.h',
-    'nsStaticAtom.h',
+    'nsPersistentProperties.h',
+    'nsPointerHashKeys.h',
+    'nsProperties.h',
+    'nsQuickSort.h',
+    'nsRefPtrHashtable.h',
+    'nsSimpleEnumerator.h',
+    'nsStaticAtomUtils.h',
     'nsStaticNameTable.h',
     'nsStringEnumerator.h',
-    'nsSupportsArray.h',
     'nsSupportsPrimitives.h',
+    'nsTArray-inl.h',
+    'nsTArray.h',
+    'nsTArrayForwardDeclare.h',
+    'nsTHashtable.h',
+    'nsTObserverArray.h',
+    'nsTPriorityQueue.h',
     'nsVariant.h',
     'nsWhitespaceTokenizer.h',
+    'PLDHashTable.h',
 ]
 
 EXPORTS.mozilla += [
+    'ArenaAllocator.h',
+    'ArenaAllocatorExtensions.h',
+    'ArrayIterator.h',
+    'AtomArray.h',
+    'Dafsa.h',
+    'IncrementalTokenizer.h',
+    'MruCache.h',
+    'Observer.h',
+    'PerfectHash.h',
+    'SimpleEnumerator.h',
     'StickyTimeDuration.h',
     'Tokenizer.h',
 ]
 
 UNIFIED_SOURCES += [
+    'Dafsa.cpp',
+    'IncrementalTokenizer.cpp',
     'nsArray.cpp',
-    'nsAtomService.cpp',
+    'nsArrayEnumerator.cpp',
+    'nsArrayUtils.cpp',
     'nsAtomTable.cpp',
+    'nsCOMArray.cpp',
     'nsCRT.cpp',
+    'nsDeque.cpp',
+    'nsEnumeratorUtils.cpp',
+    'nsGkAtoms.cpp',
     'nsHashPropertyBag.cpp',
     'nsINIParserImpl.cpp',
     'nsObserverList.cpp',
     'nsObserverService.cpp',
-    'nsProperties.cpp',
-    'nsStringEnumerator.cpp',
-    'nsSupportsArray.cpp',
-    'nsSupportsArrayEnumerator.cpp',
-    'nsSupportsPrimitives.cpp',
-    'nsVariant.cpp',
-    'Tokenizer.cpp',
-]
-
-# These two files cannot be built in unified mode because they use the
-# PL_ARENA_CONST_ALIGN_MASK macro with plarena.h.
-SOURCES += [
     'nsPersistentProperties.cpp',
+    'nsProperties.cpp',
+    'nsQuickSort.cpp',
+    'nsSimpleEnumerator.cpp',
     'nsStaticNameTable.cpp',
-]
-
-EXTRA_COMPONENTS += [
-    'nsINIProcessor.js',
-    'nsINIProcessor.manifest',
+    'nsStringEnumerator.cpp',
+    'nsSupportsPrimitives.cpp',
+    'nsTArray.cpp',
+    'nsTObserverArray.cpp',
+    'nsVariant.cpp',
+    'PLDHashTable.cpp',
+    'Tokenizer.cpp',
 ]
 
 LOCAL_INCLUDES += [
     '../io',
 ]
+
+GeneratedFile('nsGkAtomList.h', script='StaticAtoms.py',
+              entry_point='generate_nsgkatomlist_h',
+              inputs=['Atom.py', 'HTMLAtoms.py'])
+
+GeneratedFile('nsGkAtomConsts.h', script='StaticAtoms.py',
+              entry_point='generate_nsgkatomconsts_h',
+              inputs=['Atom.py', 'HTMLAtoms.py'])
 
 FINAL_LIBRARY = 'xul'

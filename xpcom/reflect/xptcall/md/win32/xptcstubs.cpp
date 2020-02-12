@@ -6,7 +6,6 @@
 /* Implement shared vtbl methods. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 #ifndef WIN32
 #error "This code is for Win32 only"
@@ -14,7 +13,7 @@
 
 extern "C" {
 
-#if !defined(__GNUC__) && !defined(__clang__)
+#if !defined(__GNUC__)
 static
 #endif
 nsresult __stdcall
@@ -28,7 +27,6 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
     const nsXPTMethodInfo* info = nullptr;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     // If anything fails before stackBytesToPop can be set then
     // the failure is completely catastrophic!
@@ -47,12 +45,17 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
         dispatchParams = paramBuffer;
     NS_ASSERTION(dispatchParams,"no place for params");
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint32_t* ap = args;
     for(i = 0; i < paramCount; i++, ap++)
     {
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext)
+            ap++;
 
         if(param.IsOut() || !type.IsArithmetic())
         {
@@ -82,7 +85,8 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
     }
     *stackBytesToPop = ((uint32_t)ap) - ((uint32_t)args);
 
-    result = self->mOuter->CallMethod((uint16_t)methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t)methodIndex, info,
+                                               dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;
@@ -92,10 +96,15 @@ PrepareAndDispatch(nsXPTCStubBase* self, uint32_t methodIndex,
 
 } // extern "C"
 
-// declspec(naked) is broken in gcc and clang-cl
-#if !defined(__GNUC__) && !defined(__clang__)
-static 
+// declspec(naked) is broken in gcc
+#if !defined(__GNUC__)
+static
 __declspec(naked)
+// Compiler-inserted instrumentation is going to botch our assembly below,
+// so forbid the compiler from doing that.
+#if defined(__clang__)
+__attribute__((no_instrument_function))
+#endif
 void SharedStub(void)
 {
     __asm {
@@ -125,7 +134,7 @@ void SharedStub(void)
 __declspec(naked) nsresult __stdcall nsXPTCStubBase::Stub##n() \
 { __asm mov ecx, n __asm jmp SharedStub }
 
-#else
+#else /* __GNUC__ */
 
 asm(".text\n\t"
     ".align     4\n\t"
@@ -140,7 +149,7 @@ asm(".text\n\t"
     "push       %ecx\n\t"
     "movl       8(%ebp), %eax\n\t"
     "push       %eax\n\t"
-    "call       _PrepareAndDispatch@16\n\t"
+    "call       \"_PrepareAndDispatch@16\"\n\t"
     "mov        4(%ebp), %edx\n\t"
     "mov        -4(%ebp), %ecx\n\t"
     "add        $8, %ecx\n\t"
@@ -150,46 +159,27 @@ asm(".text\n\t"
     "jmp        *%edx"
 );
 
-// The clang-cl specific code below is required because mingw uses the gcc name
-// mangling, but clang-cl implements the MSVC name mangling.
-
-#ifdef __clang__
-
-#define STUB_ENTRY(n) \
-asm(".text\n\t" \
-    ".align     4\n\t" \
-    ".globl     \"?Stub" #n "@nsXPTCStubBase@@UAG?AW4nsresult@@XZ\"\n\t" \
-    ".def       \"?Stub" #n "@nsXPTCStubBase@@UAG?AW4nsresult@@XZ\"; \n\t" \
-    ".scl       2\n\t" \
-    ".type      46\n\t" \
-    ".endef\n\t" \
-    "\"?Stub" #n "@nsXPTCStubBase@@UAG?AW4nsresult@@XZ\":\n\t" \
-    "mov $" #n ", %ecx\n\t" \
-    "jmp SharedStub");
-
-#else
-
 #define STUB_ENTRY(n) \
 asm(".text\n\t" \
     ".align     4\n\t" \
     ".if	" #n " < 10\n\t" \
     ".globl     __ZN14nsXPTCStubBase5Stub" #n "Ev@4\n\t" \
     ".def       __ZN14nsXPTCStubBase5Stub" #n "Ev@4; \n\t" \
-    ".scl       3\n\t" \
+    ".scl       2\n\t" \
     ".type      46\n\t" \
     ".endef\n\t" \
     "__ZN14nsXPTCStubBase5Stub" #n "Ev@4:\n\t" \
     ".elseif	" #n " < 100\n\t" \
     ".globl     __ZN14nsXPTCStubBase6Stub" #n "Ev@4\n\t" \
     ".def       __ZN14nsXPTCStubBase6Stub" #n "Ev@4\n\t" \
-    ".scl       3\n\t" \
+    ".scl       2\n\t" \
     ".type      46\n\t" \
     ".endef\n\t" \
     "__ZN14nsXPTCStubBase6Stub" #n "Ev@4:\n\t" \
     ".elseif    " #n " < 1000\n\t" \
     ".globl     __ZN14nsXPTCStubBase7Stub" #n "Ev@4\n\t" \
     ".def       __ZN14nsXPTCStubBase7Stub" #n "Ev@4\n\t" \
-    ".scl       3\n\t" \
+    ".scl       2\n\t" \
     ".type      46\n\t" \
     ".endef\n\t" \
     "__ZN14nsXPTCStubBase7Stub" #n "Ev@4:\n\t" \
@@ -199,9 +189,7 @@ asm(".text\n\t" \
     "mov $" #n ", %ecx\n\t" \
     "jmp SharedStub");
 
-#endif
-
-#endif /* __GNUC__ || __clang__ */
+#endif /* __GNUC__ */
 
 #define SENTINEL_ENTRY(n) \
 nsresult __stdcall nsXPTCStubBase::Sentinel##n() \
@@ -211,11 +199,12 @@ nsresult __stdcall nsXPTCStubBase::Sentinel##n() \
 }
 
 #ifdef _MSC_VER
+#pragma warning(push)
 #pragma warning(disable : 4035) // OK to have no return value
 #endif
 #include "xptcstubsdef.inc"
 #ifdef _MSC_VER
-#pragma warning(default : 4035) // restore default
+#pragma warning(pop)
 #endif
 
 void

@@ -10,6 +10,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGPatternElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedEnumeration patternUnits;
@@ -27,6 +28,5 @@ interface SVGPatternElement : SVGElement {
   readonly attribute SVGAnimatedLength height;
 };
 
-SVGPatternElement implements SVGFitToViewBox;
-SVGPatternElement implements SVGURIReference;
-SVGPatternElement implements SVGUnitTypes;
+SVGPatternElement includes SVGFitToViewBox;
+SVGPatternElement includes SVGURIReference;

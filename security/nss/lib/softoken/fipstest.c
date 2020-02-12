@@ -5,12 +5,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef NSS_FIPS_DISABLED
 #include "seccomon.h"
 #include "blapi.h"
 #include "softoken.h"
 #include "lowkeyi.h"
 #include "secoid.h"
 #include "secerr.h"
+#include "pkcs11i.h"
 
 /*
  * different platforms have different ways of calling and initial entry point
@@ -625,6 +627,10 @@ sftk_startup_tests(void)
          * the token */
         return;
     }
+    rv = sftk_fips_IKE_PowerUpSelfTests();
+    if (rv != SECSuccess) {
+        return;
+    }
     sftk_self_tests_success = PR_TRUE;
 }
 
@@ -652,3 +658,11 @@ sftk_FIPSEntryOK()
     }
     return CKR_OK;
 }
+#else
+#include "pkcs11t.h"
+CK_RV
+sftk_FIPSEntryOK()
+{
+    return CKR_DEVICE_ERROR;
+}
+#endif /* NSS_FIPS_DISABLED */

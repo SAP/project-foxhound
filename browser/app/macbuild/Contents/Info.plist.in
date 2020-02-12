@@ -29,6 +29,26 @@
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
+				<string>json</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>document.icns</string>
+			<key>CFBundleTypeMIMETypes</key>
+			<array>
+				<string>application/json</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>JSON File</string>
+			<key>CFBundleTypeOSTypes</key>
+			<array>
+				<string>TEXT</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
 				<string>svg</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>
@@ -201,10 +221,19 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>%MAC_BUNDLE_VERSION%</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>NSUserActivityTypeBrowsingWeb</string>
+	</array>
 	<key>NSAppleScriptEnabled</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>LSEnvironment</key>
+	<dict>
+		<key>MallocNanoZone</key>
+		<string>0</string>
+	</dict>
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
@@ -218,7 +247,15 @@
 		<key>org.mozilla.updater</key>
 		<string>identifier "org.mozilla.updater" and ((anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9]) or (anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "43AQ936H96"))</string>
 	</dict>
-  <key>NSDisablePersistence</key>
-  <true/>
+  <key>MozillaDeveloperRepoPath</key>
+  <string>%MOZ_DEVELOPER_REPO_PATH%</string>
+  <key>MozillaDeveloperObjPath</key>
+  <string>%MOZ_DEVELOPER_OBJ_PATH%</string>
+
+  <key>NSCameraUsageDescription</key>
+  <string>Only sites you allow within %MAC_APP_NAME% will be able to use the camera.</string>
+
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Only sites you allow within %MAC_APP_NAME% will be able to use the microphone.</string>
 </dict>
 </plist>

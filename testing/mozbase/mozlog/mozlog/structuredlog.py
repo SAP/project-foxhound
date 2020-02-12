@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 from multiprocessing import current_process
 from threading import current_thread, Lock
@@ -11,14 +11,17 @@ import sys
 import time
 import traceback
 
-from logtypes import Unicode, TestId, Status, SubStatus, Dict, List, Int, Any, Tuple
-from logtypes import log_action, convertor_registry
+from .logtypes import (Unicode, TestId, TestList, Status, SubStatus, Dict, List, Int, Any, Tuple,
+                       Boolean, Nullable)
+from .logtypes import log_action, convertor_registry
+import six
 
 """Structured Logging for recording test results.
 
 Allowed actions, and subfields:
   suite_start
       tests  - List of test names
+      name - Name for the suite
 
   suite_end
 
@@ -33,6 +36,8 @@ Allowed actions, and subfields:
       expected [As for status] - Status that the test was expected to get,
                                  or absent if the test got the expected status
       extra - Dictionary of harness-specific extra information e.g. debug info
+      known_intermittent - List of known intermittent statuses that should
+                           not fail a test. eg. ['FAIL', 'TIMEOUT']
 
   test_status
       test - ID for the test
@@ -40,11 +45,38 @@ Allowed actions, and subfields:
       status [PASS | FAIL | TIMEOUT | NOTRUN | SKIP] - test status
       expected [As for status] - Status that the subtest was expected to get,
                                  or absent if the subtest got the expected status
+      known_intermittent - List of known intermittent statuses that should
+                           not fail a test. eg. ['FAIL', 'TIMEOUT']
 
   process_output
       process - PID of the process
       command - Command line of the process
       data - Output data from the process
+
+  assertion_count
+      count - Number of assertions produced
+      min_expected - Minimum expected number of assertions
+      max_expected - Maximum expected number of assertions
+
+  lsan_leak
+      frames - List of stack frames from the leak report
+      scope - An identifier for the set of tests run during the browser session
+              (e.g. a directory name)
+      allowed_match - A stack frame in the list that matched a rule meaning the
+                      leak is expected
+
+  lsan_summary
+      bytes - Number of bytes leaked
+      allocations - Number of allocations
+      allowed - Boolean indicating whether all detected leaks matched allow rules
+
+  mozleak_object
+     process - Process that leaked
+     bytes - Number of bytes that leaked
+     name - Name of the object that leaked
+     scope - An identifier for the set of tests run during the browser session
+             (e.g. a directory name)
+     allowed - Boolean indicating whether the leak was permitted
 
   log
       level [CRITICAL | ERROR | WARNING |
@@ -62,6 +94,7 @@ Subfields for all messages:
 
 _default_logger_name = None
 
+
 def get_default_logger(component=None):
     """Gets the default logger if available, optionally tagged with component
     name. Will return None if not yet set
@@ -74,6 +107,7 @@ def get_default_logger(component=None):
         return None
 
     return StructuredLogger(_default_logger_name, component=component)
+
 
 def set_default_logger(default_logger):
     """Sets the default logger to logger.
@@ -90,25 +124,40 @@ def set_default_logger(default_logger):
 
     _default_logger_name = default_logger.name
 
+
 log_levels = dict((k.upper(), v) for v, k in
                   enumerate(["critical", "error", "warning", "info", "debug"]))
 
 lint_levels = ["ERROR", "WARNING"]
 
+
 def log_actions():
     """Returns the set of actions implemented by mozlog."""
     return set(convertor_registry.keys())
 
+
+class LoggerShutdownError(Exception):
+    """Raised when attempting to log after logger.shutdown() has been called."""
+
+
 class LoggerState(object):
+
     def __init__(self):
+        self.reset()
+
+    def reset(self):
         self.handlers = []
         self.running_tests = set()
         self.suite_started = False
         self.component_states = {}
+        self.has_shutdown = False
+
 
 class ComponentState(object):
+
     def __init__(self):
         self.filter_ = None
+
 
 class StructuredLogger(object):
     _lock = Lock()
@@ -141,6 +190,13 @@ class StructuredLogger(object):
         """Remove a handler from the current logger"""
         self._state.handlers.remove(handler)
 
+    def reset_state(self):
+        """Resets the logger to a brand new state. This means all handlers
+        are removed, running tests are discarded and components are reset.
+        """
+        self._state.reset()
+        self._component_state = self._state.component_states[self.component] = ComponentState()
+
     def send_message(self, topic, command, *args):
         """Send a message to each handler configured for this logger. This
         part of the api is useful to those users requiring dynamic control
@@ -153,8 +209,8 @@ class StructuredLogger(object):
         """
         rv = []
         for handler in self._state.handlers:
-            if hasattr(handler, "handle_message"):
-                rv += handler.handle_message(topic, command, *args)
+            if hasattr(handler, "message_handler"):
+                rv += handler.message_handler.handle_message(topic, command, *args)
         return rv
 
     @property
@@ -177,8 +233,9 @@ class StructuredLogger(object):
 
         action = raw_data["action"]
         converted_data = convertor_registry[action].convert_known(**raw_data)
-        for k, v in raw_data.iteritems():
-            if k not in converted_data:
+        for k, v in six.iteritems(raw_data):
+            if (k not in converted_data and
+                    k not in convertor_registry[action].optional_args):
                 converted_data[k] = v
 
         data = self._make_log_data(action, converted_data)
@@ -186,7 +243,7 @@ class StructuredLogger(object):
         if action in ("test_status", "test_end"):
             if (data["expected"] == data["status"] or
                 data["status"] == "SKIP" or
-                "expected" not in raw_data):
+                    "expected" not in raw_data):
                 del data["expected"]
 
         if not self._ensure_suite_state(action, data):
@@ -202,6 +259,9 @@ class StructuredLogger(object):
         self._handle_log(log_data)
 
     def _handle_log(self, data):
+        if self._state.has_shutdown:
+            raise LoggerShutdownError("{} action received after shutdown.".format(data['action']))
+
         with self._lock:
             if self.component_filter:
                 data = self.component_filter(data)
@@ -214,8 +274,8 @@ class StructuredLogger(object):
                 except Exception:
                     # Write the exception details directly to stderr because
                     # log() would call this method again which is currently locked.
-                    print >> sys.__stderr__, '%s: Failure calling log handler:' % __name__
-                    print >> sys.__stderr__, traceback.format_exc()
+                    print('%s: Failure calling log handler:' % __name__, file=sys.__stderr__)
+                    print(traceback.format_exc(), file=sys.__stderr__)
 
     def _make_log_data(self, action, data):
         all_data = {"action": action,
@@ -231,8 +291,9 @@ class StructuredLogger(object):
     def _ensure_suite_state(self, action, data):
         if action == 'suite_start':
             if self._state.suite_started:
+                # limit data to reduce unnecessary log bloat
                 self.error("Got second suite_start message before suite_end. " +
-                           "Logged with data: {}".format(json.dumps(data)))
+                           "Logged with data: {}".format(json.dumps(data)[:100]))
                 return False
             self._state.suite_started = True
         elif action == 'suite_end':
@@ -243,17 +304,20 @@ class StructuredLogger(object):
             self._state.suite_started = False
         return True
 
-    @log_action(List("tests", Unicode),
-                Dict("run_info", default=None, optional=True),
-                Dict("version_info", default=None, optional=True),
-                Dict("device_info", default=None, optional=True),
-                Dict("extra", default=None, optional=True))
+    @log_action(TestList("tests"),
+                Unicode("name", default=None, optional=True),
+                Dict(Any, "run_info", default=None, optional=True),
+                Dict(Any, "version_info", default=None, optional=True),
+                Dict(Any, "device_info", default=None, optional=True),
+                Dict(Any, "extra", default=None, optional=True))
     def suite_start(self, data):
         """Log a suite_start message
 
-        :param list tests: Test identifiers that will be run in the suite.
+        :param dict tests: Test identifiers that will be run in the suite, keyed by group name.
+        :param str name: Optional name to identify the suite.
         :param dict run_info: Optional information typically provided by mozinfo.
-        :param dict version_info: Optional target application version information provided by mozversion.
+        :param dict version_info: Optional target application version information provided
+          by mozversion.
         :param dict device_info: Optional target device information provided by mozdevice.
         """
         if not self._ensure_suite_state('suite_start', data):
@@ -261,13 +325,13 @@ class StructuredLogger(object):
 
         self._log_data("suite_start", data)
 
-    @log_action(Dict("extra", default=None, optional=True))
+    @log_action(Dict(Any, "extra", default=None, optional=True))
     def suite_end(self, data):
         """Log a suite_end message"""
         if not self._ensure_suite_state('suite_end', data):
             return
 
-        self._log_data("suite_end")
+        self._log_data("suite_end", data)
 
     @log_action(TestId("test"),
                 Unicode("path", default=None, optional=True))
@@ -295,7 +359,9 @@ class StructuredLogger(object):
                 SubStatus("expected", default="PASS"),
                 Unicode("message", default=None, optional=True),
                 Unicode("stack", default=None, optional=True),
-                Dict("extra", default=None, optional=True))
+                Dict(Any, "extra", default=None, optional=True),
+                List(SubStatus, "known_intermittent", default=None,
+                     optional=True))
     def test_status(self, data):
         """
         Log a test_status message indicating a subtest result. Tests that
@@ -311,7 +377,7 @@ class StructuredLogger(object):
         """
 
         if (data["expected"] == data["status"] or
-            data["status"] == "SKIP"):
+                data["status"] == "SKIP"):
             del data["expected"]
 
         if data["test"] not in self._state.running_tests:
@@ -326,7 +392,9 @@ class StructuredLogger(object):
                 Status("expected", default="OK"),
                 Unicode("message", default=None, optional=True),
                 Unicode("stack", default=None, optional=True),
-                Dict("extra", default=None, optional=True))
+                Dict(Any, "extra", default=None, optional=True),
+                List(Status, "known_intermittent", default=None,
+                     optional=True))
     def test_end(self, data):
         """
         Log a test_end message indicating that a test completed. For tests
@@ -343,7 +411,7 @@ class StructuredLogger(object):
         """
 
         if (data["expected"] == data["status"] or
-             data["status"] == "SKIP"):
+                data["status"] == "SKIP"):
             del data["expected"]
 
         if data["test"] not in self._state.running_tests:
@@ -375,7 +443,7 @@ class StructuredLogger(object):
                 Int("stackwalk_retcode", default=None, optional=True),
                 Unicode("stackwalk_stdout", default=None, optional=True),
                 Unicode("stackwalk_stderr", default=None, optional=True),
-                List("stackwalk_errors", Unicode, default=None))
+                List(Unicode, "stackwalk_errors", default=None))
     def crash(self, data):
         if data["stackwalk_errors"] is None:
             data["stackwalk_errors"] = []
@@ -383,7 +451,7 @@ class StructuredLogger(object):
         self._log_data("crash", data)
 
     @log_action(Unicode("primary", default=None),
-                List("secondary", Unicode, default=None))
+                List(Unicode, "secondary", default=None))
     def valgrind_error(self, data):
         self._log_data("valgrind_error", data)
 
@@ -413,6 +481,68 @@ class StructuredLogger(object):
         """
         self._log_data("process_exit", data)
 
+    @log_action(TestId("test"),
+                Int("count"),
+                Int("min_expected"),
+                Int("max_expected"))
+    def assertion_count(self, data):
+        """Log count of assertions produced when running a test.
+
+        :param count: - Number of assertions produced
+        :param min_expected: - Minimum expected number of assertions
+        :param max_expected: - Maximum expected number of assertions
+        """
+        self._log_data("assertion_count", data)
+
+    @log_action(List(Unicode, "frames"),
+                Unicode("scope", optional=True, default=None),
+                Unicode("allowed_match", optional=True, default=None))
+    def lsan_leak(self, data):
+        self._log_data("lsan_leak", data)
+
+    @log_action(Int("bytes"),
+                Int("allocations"),
+                Boolean("allowed", optional=True, default=False))
+    def lsan_summary(self, data):
+        self._log_data("lsan_summary", data)
+
+    @log_action(Unicode("process"),
+                Int("bytes"),
+                Unicode("name"),
+                Unicode("scope", optional=True, default=None),
+                Boolean("allowed", optional=True, default=False))
+    def mozleak_object(self, data):
+        self._log_data("mozleak_object", data)
+
+    @log_action(Unicode("process"),
+                Nullable(Int, "bytes"),
+                Int("threshold"),
+                List(Unicode, "objects"),
+                Unicode("scope", optional=True, default=None),
+                Boolean("induced_crash", optional=True, default=False),
+                Boolean("ignore_missing", optional=True, default=False))
+    def mozleak_total(self, data):
+        self._log_data("mozleak_total", data)
+
+    @log_action()
+    def shutdown(self, data):
+        """Shutdown the logger.
+
+        This logs a 'shutdown' action after which any further attempts to use
+        the logger will raise a :exc:`LoggerShutdownError`.
+
+        This is also called implicitly from the destructor or
+        when exiting the context manager.
+        """
+        self._log_data('shutdown', data)
+        self._state.has_shutdown = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc, val, tb):
+        self.shutdown()
+
 
 def _log_func(level_name):
     @log_action(Unicode("message"),
@@ -440,6 +570,7 @@ def _log_func(level_name):
     log.__name__ = str(level_name).lower()
     return log
 
+
 def _lint_func(level_name):
     @log_action(Unicode("path"),
                 Unicode("message", default=""),
@@ -448,7 +579,7 @@ def _lint_func(level_name):
                 Unicode("hint", default=None, optional=True),
                 Unicode("source", default=None, optional=True),
                 Unicode("rule", default=None, optional=True),
-                Tuple("lineoffset", (Int, Int), default=None, optional=True),
+                Tuple((Int, Int), "lineoffset", default=None, optional=True),
                 Unicode("linter", default=None, optional=True))
     def lint(self, data):
         data["level"] = level_name
@@ -479,6 +610,7 @@ for level_name in lint_levels:
     name = "lint_%s" % level_name
     setattr(StructuredLogger, name, _lint_func(level_name))
 
+
 class StructuredLogFileLike(object):
     """Wrapper for file-like objects to redirect writes to logger
     instead. Each call to `write` becomes a single log entry of type `log`.
@@ -491,6 +623,7 @@ class StructuredLogFileLike(object):
     :param level: log level to use for each write.
     :param prefix: String prefix to prepend to each log entry.
     """
+
     def __init__(self, logger, level="info", prefix=None):
         self.logger = logger
         self.log_func = getattr(self.logger, level)
@@ -507,4 +640,3 @@ class StructuredLogFileLike(object):
 
     def flush(self):
         pass
-

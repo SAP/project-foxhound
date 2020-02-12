@@ -1,1 +1,1 @@
-skip-if((B2G&&browserIsRemote)||Mulet) == image-region.xul image-region-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
+== chrome://reftest/content/image-region/image-region.xul chrome://reftest/content/image-region/image-region-ref.xul

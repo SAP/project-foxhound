@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Bug 1262406 - Track element doesn't use the URL classifier.</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="classifierHelper.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -20,6 +20,9 @@
   const validtrack_url = "http://mochi.test:8888/" + track_path;
 
   var video = document.createElement("video");
+  video.src = "seek.webm";
+  video.crossOrigin = "anonymous";
+
   document.body.appendChild(video);
 
   function testValidTrack() {
@@ -27,6 +30,7 @@
 
     return new Promise(function(resolve, reject) {
       var track = document.createElement("track");
+      track.track.mode = "hidden";
       track.src = validtrack_url;
       video.appendChild(track);
 
@@ -42,12 +46,12 @@
 
       function finish() {
         track.removeEventListener("load", onload);
-        track.removeEventListener("error", onerror)
+        track.removeEventListener("error", onerror);
         resolve();
       }
 
       track.addEventListener("load", onload);
-      track.addEventListener("error", onerror)
+      track.addEventListener("error", onerror);
     });
   }
 
@@ -56,6 +60,7 @@
 
     return new Promise(function(resolve, reject) {
       var track = document.createElement("track");
+      track.track.mode = "hidden";
       track.src = malware_url;
       video.appendChild(track);
 
@@ -71,12 +76,12 @@
 
       function finish() {
         track.removeEventListener("load", onload);
-        track.removeEventListener("error", onerror)
+        track.removeEventListener("error", onerror);
         resolve();
       }
 
       track.addEventListener("load", onload);
-      track.addEventListener("error", onerror)
+      track.addEventListener("error", onerror);
     });
   }
 
@@ -85,7 +90,7 @@
 
     return new Promise(function(resolve, reject) {
       var track = document.createElement("track");
-
+      track.track.mode = "hidden";
       // Add a query string parameter here to avoid url classifier bypass classify
       // because of cache.
       track.src = malware_url + "?testsbon";
@@ -103,12 +108,12 @@
 
       function finish() {
         track.removeEventListener("load", onload);
-        track.removeEventListener("error", onerror)
+        track.removeEventListener("error", onerror);
         resolve();
       }
 
       track.addEventListener("load", onload);
-      track.addEventListener("error", onerror)
+      track.addEventListener("error", onerror);
     });
   }
 
@@ -119,8 +124,8 @@
   function setup() {
     var testData = [
       { url: "malware.example.com/",
-        db: "test-malware-simple"
-      }
+        db: "test-malware-simple",
+      },
     ];
 
     return classifierHelper.addUrlToDB(testData)

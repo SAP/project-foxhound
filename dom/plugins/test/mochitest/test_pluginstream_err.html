@@ -13,7 +13,7 @@ Tests for plugin stream error conditions.
   <link rel="stylesheet" type="text/css" 
         href="/tests/SimpleTest/test.css" />
 </head>
-<body onload="runNextTest()">
+<body onload="startTests()">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=517078">
   Mozilla Bug 517078</a> - Plugin Stream Error Tests
 <p id="display"></p>
@@ -22,7 +22,7 @@ Tests for plugin stream error conditions.
 </div>
 <div id="test">
 <script class="testbody" type="text/javascript">
-////
+// //
 // These tests verify that nothing "bad" happens when a plugin returns an
 // error from one of the NPP_ stream functions.  "Bad" is defined here
 // as the plugin being terminated, or NPP_ stream functions being
@@ -43,56 +43,59 @@ var tests = [
     "streammode": "normal",
     "functiontofail": "npp_newstream",
     "failurecode": "1",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "src": "loremipsum.txt",
     "streammode": "normal",
     "functiontofail": "npp_newstream",
     "failurecode": "3",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "src": "loremipsum.txt",
     "streammode": "normal",
     "functiontofail": "npp_newstream",
     "failurecode": "5",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "geturl": "loremipsum.txt",
     "streammode": "normal",
     "functiontofail": "npp_newstream",
     "failurecode": "1",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "src": "loremipsum.txt",
     "streammode": "normal",
     "functiontofail": "npp_write",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "src": "loremipsum.txt",
     "streammode": "asfile",
     "functiontofail": "npp_write",
-    "frame": "testframe"
+    "frame": "testframe",
   },
   {
     "src": "loremipsum.txt",
     "streammode": "normal",
     "functiontofail": "npp_destroystream",
     "failurecode": "1",
-    "frame": "testframe"
+    "frame": "testframe",
   },
 ];
 
 function iframeonload(evt) {
-  var contentLength = evt.target.contentDocument.body.innerHTML.length;
+  // We have to use SpecialPowers because nptest.cpp prepends
+  // data: whichs makes the frame cross origin with the including page.
+  var wrappedDoc = SpecialPowers.wrap(evt.target).contentDocument;
+  var contentLength = wrappedDoc.body.innerHTML.length;
   var plugin = gTestWindow.document.getElementById("embedtest");
   var functionToFail = plugin.getAttribute("functiontofail");
   if (contentLength > 0) {
-    is(evt.target.contentDocument.body.innerHTML, "pass",
+    is(wrappedDoc.body.innerHTML, "pass",
       "test frame has unexpected content");
     setTimeout(function() {
       // This verifies that the plugin hasn't been unloaded, and that
@@ -124,7 +127,7 @@ function continueTest() {
   var test = tests[Math.floor(index / 2)];
 
   var p = gTestWindow.document.createElement("p");
-  p.innerHTML = "Plugin Stream Test " + index;
+  p.textContent = "Plugin Stream Test " + Number(index);
   gTestWindow.document.getElementById("test").appendChild(p);
 
   if (test.frame) {
@@ -156,6 +159,12 @@ function continueTest() {
                       .appendChild(document.createElement("br"));
 
   index++;
+}
+
+function startTests() {
+  SpecialPowers.pushPrefEnv({"set": [
+    ["security.data_uri.block_toplevel_data_uri_navigations", false],
+  ]}, runNextTest);
 }
 
 </script>

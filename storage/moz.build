@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "Storage")
+
 DIRS += ['build']
 
 TEST_DIRS += ['test']
@@ -26,8 +29,6 @@ XPIDL_SOURCES += [
     'mozIStorageService.idl',
     'mozIStorageStatement.idl',
     'mozIStorageStatementCallback.idl',
-    'mozIStorageStatementParams.idl',
-    'mozIStorageStatementRow.idl',
     'mozIStorageVacuumParticipant.idl',
     'mozIStorageValueArray.idl',
 ]
@@ -45,6 +46,9 @@ EXPORTS.mozilla += [
 # NOTE When adding something to this list, you probably need to add it to the
 #      storage.h file too.
 EXPORTS.mozilla.storage += [
+    'mozStorageAsyncStatementParams.h',
+    'mozStorageStatementParams.h',
+    'mozStorageStatementRow.h',
     'StatementCache.h',
     'Variant.h',
     'Variant_inl.h',
@@ -73,6 +77,7 @@ UNIFIED_SOURCES += [
     'StorageBaseStatementInternal.cpp',
     'TelemetryVFS.cpp',
     'VacuumManager.cpp',
+    'Variant.cpp',
 ]
 
 # These files need to be built separately because they #include variantToSQLiteT_impl.h.
@@ -85,31 +90,23 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-# Don't use the jemalloc allocator on Android, because we can't guarantee
-# that Gecko will configure sqlite before it is first used (bug 730495).
-#
-# Don't use the jemalloc allocator when using system sqlite. Linked in libraries
-# (such as NSS) might trigger an initialization of sqlite and allocation
-# of memory using the default allocator, prior to the storage service
-# registering its allocator, causing memory management failures (bug 938730).
-# However, this is not an issue if both the jemalloc allocator and the default
-# allocator are the same thing.
-#
-# Note: On Windows our sqlite build assumes we use jemalloc.  If you disable
-# MOZ_STORAGE_MEMORY on Windows, you will also need to change the "ifdef
-# MOZ_MEMORY" options in db/sqlite3/src/Makefile.in.
-if CONFIG['MOZ_MEMORY'] and (not CONFIG['MOZ_SYSTEM_SQLITE']
-                             or CONFIG['MOZ_SYSTEM_JEMALLOC']):
-    if CONFIG['OS_TARGET'] != 'Android':
-        DEFINES['MOZ_STORAGE_MEMORY'] = True
+# Thunderbird needs the 2-argument version of fts3_tokenizer()
+if CONFIG['MOZ_THUNDERBIRD'] or CONFIG['MOZ_SUITE']:
+    DEFINES['MOZ_SQLITE_FTS3_TOKENIZER'] = 1
 
 # This is the default value.  If we ever change it when compiling sqlite, we
 # will need to change it here as well.
 DEFINES['SQLITE_MAX_LIKE_PATTERN_LENGTH'] = 50000
 
+# See Sqlite moz.build for reasoning about TEMP_STORE.
+# For system sqlite we cannot use the compile time option, so we use a pragma.
+if CONFIG['MOZ_SYSTEM_SQLITE'] and (CONFIG['OS_TARGET'] == 'Android'
+                                    or CONFIG['HAVE_64BIT_BUILD']):
+    DEFINES['MOZ_MEMORY_TEMP_STORE_PRAGMA'] = True
+
 LOCAL_INCLUDES += [
-    '/db/sqlite3/src',
     '/dom/base',
+    '/third_party/sqlite3/src',
 ]
 
 CXXFLAGS += CONFIG['SQLITE_CFLAGS']

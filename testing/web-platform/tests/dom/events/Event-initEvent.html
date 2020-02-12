@@ -12,18 +12,20 @@ booleans.forEach(function(bubbles) {
       var e = document.createEvent("Event")
       e.initEvent("type", bubbles, cancelable)
 
-      // Step 3.
+      // Step 2.
       // Stop (immediate) propagation flag is tested later
       assert_equals(e.defaultPrevented, false, "defaultPrevented")
-      // Step 4.
+      assert_equals(e.returnValue, true, "returnValue")
+      // Step 3.
       assert_equals(e.isTrusted, false, "isTrusted")
-      // Step 5.
+      // Step 4.
       assert_equals(e.target, null, "target")
-      // Step 6.
+      assert_equals(e.srcElement, null, "srcElement")
+      // Step 5.
       assert_equals(e.type, "type", "type")
-      // Step 7.
+      // Step 6.
       assert_equals(e.bubbles, bubbles, "bubbles")
-      // Step 8.
+      // Step 7.
       assert_equals(e.cancelable, cancelable, "cancelable")
     }, "Properties of initEvent(type, " + bubbles + ", " + cancelable + ")")
   })
@@ -85,6 +87,7 @@ test(function() {
   var target = document.createElement("div")
   var called = false
   target.addEventListener("type", function() { called = true }, false)
+  assert_false(e.cancelBubble, "cancelBubble must be false")
   assert_true(target.dispatchEvent(e), "dispatchEvent must return true")
   assert_true(called, "Listener must be called")
 }, "Calling initEvent must unset the stop propagation flag.")
@@ -115,4 +118,19 @@ async_test(function() {
 
   this.done()
 }, "Calling initEvent during propagation.")
+
+test(function() {
+  var e = document.createEvent("Event")
+  assert_throws(new TypeError(), function() {
+    e.initEvent()
+  })
+}, "First parameter to initEvent should be mandatory.")
+
+test(function() {
+  var e = document.createEvent("Event")
+  e.initEvent("type")
+  assert_equals(e.type, "type", "type")
+  assert_false(e.bubbles, "bubbles")
+  assert_false(e.cancelable, "cancelable")
+}, "Tests initEvent's default parameter values.")
 </script>

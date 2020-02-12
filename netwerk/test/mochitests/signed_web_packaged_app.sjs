@@ -1,7 +1,3 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-
 function handleRequest(request, response)
 {
   response.setHeader("Content-Type", "application/package", false);
@@ -40,9 +36,6 @@ Content-Type: application/x-web-app-manifest+json\r
     {
       "systemXHR": {
         "description": "Needed to download stuff"
-      },
-      "devicestorage:pictures": {
-        "description": "Need to load pictures"
       }
     }
   ],

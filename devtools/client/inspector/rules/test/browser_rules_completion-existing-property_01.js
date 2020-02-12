@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -15,7 +14,8 @@
 //    is a suggestion selected in the popup,
 //  ]
 
-const OPEN = true, SELECTED = true;
+const OPEN = true,
+  SELECTED = true;
 var testData = [
   ["VK_RIGHT", "font", !OPEN, !SELECTED],
   ["-", "font-size", OPEN, SELECTED],
@@ -68,34 +68,35 @@ var testData = [
 
 const TEST_URI = "<h1 style='font: 24px serif'>Header</h1>";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {toolbox, inspector, view, testActor} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { toolbox, inspector, view, testActor } = await openRuleView();
 
   info("Test autocompletion after 1st page load");
-  yield runAutocompletionTest(toolbox, inspector, view);
+  await runAutocompletionTest(toolbox, inspector, view);
 
   info("Test autocompletion after page navigation");
-  yield reloadPage(inspector, testActor);
-  yield runAutocompletionTest(toolbox, inspector, view);
+  await reloadPage(inspector, testActor);
+  await runAutocompletionTest(toolbox, inspector, view);
 });
 
-function* runAutocompletionTest(toolbox, inspector, view) {
+async function runAutocompletionTest(toolbox, inspector, view) {
   info("Selecting the test node");
-  yield selectNode("h1", inspector);
+  await selectNode("h1", inspector);
 
   info("Focusing the css property editable field");
-  let propertyName = view.styleDocument.querySelectorAll(".ruleview-propertyname")[0];
-  let editor = yield focusEditableField(view, propertyName);
+  const propertyName = view.styleDocument.querySelectorAll(
+    ".ruleview-propertyname"
+  )[0];
+  const editor = await focusEditableField(view, propertyName);
 
   info("Starting to test for css property completion");
   for (let i = 0; i < testData.length; i++) {
-    yield testCompletion(testData[i], editor, view);
+    await testCompletion(testData[i], editor, view);
   }
 }
 
-function* testCompletion([key, completion, open, selected],
-                         editor, view) {
+async function testCompletion([key, completion, open, selected], editor, view) {
   info("Pressing key " + key);
   info("Expecting " + completion);
   info("Is popup opened: " + open);
@@ -104,9 +105,11 @@ function* testCompletion([key, completion, open, selected],
   // Listening for the right event that will tell us when the key has been
   // entered and processed.
   let onSuggest;
-  if (/(left|right|back_space|escape|home|end|page_up|page_down)/ig.test(key)) {
-    info("Adding event listener for " +
-      "left|right|back_space|escape|home|end|page_up|page_down keys");
+  if (/(left|right|back_space|escape|home|end|page_up|page_down)/gi.test(key)) {
+    info(
+      "Adding event listener for " +
+        "left|right|back_space|escape|home|end|page_up|page_down keys"
+    );
     onSuggest = once(editor.input, "keypress");
   } else {
     info("Waiting for after-suggest event on the editor");
@@ -114,17 +117,18 @@ function* testCompletion([key, completion, open, selected],
   }
 
   // Also listening for popup opened/closed events if needed.
-  let popupEvent = open ? "popup-opened" : "popup-closed";
-  let onPopupEvent = editor.popup.isOpen !== open ? once(editor.popup, popupEvent) : null;
+  const popupEvent = open ? "popup-opened" : "popup-closed";
+  const onPopupEvent =
+    editor.popup.isOpen !== open ? once(editor.popup, popupEvent) : null;
 
   info("Synthesizing key " + key);
   EventUtils.synthesizeKey(key, {}, view.styleWindow);
 
-  // Flush the throttle for the preview text.
-  view.throttle.flush();
+  // Flush the debounce for the preview text.
+  view.debounce.flush();
 
-  yield onSuggest;
-  yield onPopupEvent;
+  await onSuggest;
+  await onPopupEvent;
 
   info("Checking the state");
   if (completion !== null) {

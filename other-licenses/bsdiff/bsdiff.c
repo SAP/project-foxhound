@@ -26,11 +26,18 @@
 #ifdef XP_WIN
 #include <io.h>
 #include <winsock2.h>
+#define open _open
+#define close _close
+#define read _read
+#define lseek _lseek
+#define write _write
 #else
 #include <unistd.h>
 #include <arpa/inet.h>
 #define _O_BINARY 0
 #endif
+
+#include "crctable.h"
 
 #undef MIN
 #define MIN(x,y) (((x)<(y)) ? (x) : (y))
@@ -302,7 +309,7 @@ int main(int argc,char *argv[])
 				oldscore++;
 
 			if(((len==oldscore) && (len!=0)) || 
-				(len>oldscore+8)) break;
+				(len>oldscore+10)) break;
 
 			if((scan+lastoffset<oldsize) &&
 				(old[scan+lastoffset] == newbuf[scan]))
@@ -316,7 +323,7 @@ int main(int argc,char *argv[])
 			for(i=0;(lastscan+i<scan)&&(lastpos+i<oldsize);) {
 				if(old[lastpos+i]==newbuf[lastscan+i]) s++;
 				i++;
-				if(s*2-i>Sf*2-lenf) { Sf=s; lenf=i; };
+				if(s*3-i*2>Sf*3-lenf*2) { Sf=s; lenf=i; };
 			};
 
 			lenb=0;
@@ -324,7 +331,7 @@ int main(int argc,char *argv[])
 				s=0;Sb=0;
 				for(i=1;(scan>=lastscan+i)&&(pos>=i);i++) {
 					if(old[pos-i]==newbuf[scan-i]) s++;
-					if(s*2-i>Sb*2-lenb) { Sb=s; lenb=i; };
+					if(s*3-i*2>Sb*3-lenb*2) { Sb=s; lenb=i; };
 				};
 			};
 

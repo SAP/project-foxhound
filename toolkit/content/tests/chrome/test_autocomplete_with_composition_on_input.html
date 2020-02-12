@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>autocomplete with composition tests on HTML input element</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="file_autocomplete_with_composition.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 </head>
@@ -19,36 +19,36 @@
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-
 SimpleTest.waitForExplicitFinish();
 
-function runTests()
-{
+function runTests() {
   var formFillController =
     SpecialPowers.getFormFillController()
-                 .QueryInterface(Components.interfaces.nsIAutoCompleteInput);
+                 .QueryInterface(Ci.nsIAutoCompleteInput);
   var originalFormFillTimeout = formFillController.timeout;
 
   SpecialPowers.attachFormFillControllerTo(window);
   var target = document.getElementById("input");
 
   // Register a word to the form history.
+  let chromeScript = SpecialPowers.loadChromeScript(function addEntry() {
+    let {FormHistory} = ChromeUtils.import("resource://gre/modules/FormHistory.jsm");
+    FormHistory.update({ op: "add", fieldname: "test", value: "Mozilla" });
+  });
+  chromeScript.destroy();
   target.focus();
-  target.value = "Mozilla";
-  synthesizeKey("VK_RETURN", {});
-  target.value = "";
 
-  var test1 = new nsDoTestsForAutoCompleteWithComposition(
+  new nsDoTestsForAutoCompleteWithComposition(
     "Testing on HTML input (asynchronously search)",
     window, target, formFillController.controller, is,
-    function () { return target.value; },
-    function () {
+    function() { return target.value; },
+    function() {
       target.setAttribute("timeout", 0);
-      var test2 = new nsDoTestsForAutoCompleteWithComposition(
+      new nsDoTestsForAutoCompleteWithComposition(
         "Testing on HTML input (synchronously search)",
         window, target, formFillController.controller, is,
-        function () { return target.value; },
-        function () {
+        function() { return target.value; },
+        function() {
           formFillController.timeout = originalFormFillTimeout;
           SpecialPowers.detachFormFillControllerFrom(window);
           SimpleTest.finish();

@@ -1,15 +1,13 @@
 <?xml version="1.0"?>
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
-<?xml-stylesheet href="/tests/SimpleTest/test.css" type="text/css"?>
+<?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 
 <window title="Arrow Panels"
         style="padding: 10px;"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <stack flex="1">
   <label id="topleft" value="Top Left Corner" left="15" top="15"/>
@@ -44,7 +42,7 @@
 
 SimpleTest.waitForExplicitFinish();
 
-const isOSXYosemite = navigator.userAgent.indexOf("Mac OS X 10.10") != -1;
+const isOSXYosemite = navigator.userAgent.includes("Mac OS X 10.10");
 
 var expectedAnchor = null;
 var expectedSide = "", expectedAnchorEdge = "", expectedPack = "", expectedAlignment = "";
@@ -59,7 +57,7 @@ function startTest()
   runNextTest.next();
 }
 
-function nextTest()
+function* nextTest()
 {
   var panel = $("panel");
 
@@ -180,46 +178,37 @@ function nextTest()
     $("bottomright").removeAttribute("right");
   }
 
-  // Test that a transition occurs when opening or closing the popup. The transition is
-  // disabled on Linux.
-  if (navigator.platform.indexOf("Linux") == -1) {
-    var transitions = 0;
+  // Test that a transition occurs when opening or closing the popup.
+  if (SpecialPowers.getBoolPref("xul.panel-animations.enabled")) {
     function transitionEnded(event) {
-      transitions++;
-      // Two properties transition so continue on the second one finishing.
-      if (!(transitions % 2)) {
+      if ($("animatepanel").state != "open") {
+        is($("animatepanel").state, "showing", "state is showing during transitionend");
+        ok(!animatedPopupShown, "popupshown not fired yet")
+      } else {
         is($("animatepanel").state, "open", "state is open after transitionend");
         ok(animatedPopupShown, "popupshown now fired")
         SimpleTest.executeSoon(() => runNextTest.next());
       }
-      else {
-        is($("animatepanel").state, "showing", "state is showing during transitionend");
-        ok(!animatedPopupShown, "popupshown not fired yet")
-      }
     }
 
     // Check that the transition occurs for an arrow panel with animate="true"
-    window.addEventListener("transitionend", transitionEnded, false);
+    $("animatepanel").addEventListener("transitionend", transitionEnded, false);
     $("animatepanel").openPopup($("topleft"), "after_start", 0, 0, false, false, null, "start");
     is($("animatepanel").state, "showing", "state is showing");
     yield;
-    window.removeEventListener("transitionend", transitionEnded, false);
+    $("animatepanel").removeEventListener("transitionend", transitionEnded);
 
-    synthesizeKey("VK_ESCAPE", { });
+    synthesizeKey("KEY_Escape");
     ok(!animatedPopupHidden, "animated popup not hidden yet");
     yield;
   }
 
   SimpleTest.finish()
-  yield;
 }
 
 function setScale(win, scale)
 {
-  var wn = win.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-              .getInterface(Components.interfaces.nsIWebNavigation);
-  var shell = wn.QueryInterface(Components.interfaces.nsIDocShell);
-  var docViewer = shell.contentViewer;
+  var docViewer = win.docShell.contentViewer;
   docViewer.fullZoom = scale;
   zoomFactor = scale;
 }
@@ -229,7 +218,7 @@ function checkPanelPosition(panel)
   let anchor = panel.anchorNode;
   let adj = 0, hwinpos = 0, vwinpos = 0;
   if (anchor.ownerDocument != document) {
-    var framerect = anchor.ownerDocument.defaultView.frameElement.getBoundingClientRect();
+    var framerect = anchor.ownerGlobal.frameElement.getBoundingClientRect();
     hwinpos = framerect.left;
     vwinpos = framerect.top;
   }
@@ -245,11 +234,7 @@ function checkPanelPosition(panel)
 
   var panelRect = panel.getBoundingClientRect();
   var anchorRect = anchor.getBoundingClientRect();
-  var contentBO = panel.firstChild.boxObject;
-  var contentRect = { top: contentBO.y,
-                      left: contentBO.x,
-                      bottom: contentBO.y + contentBO.height,
-                      right: contentBO.x + contentBO.width };
+  var contentRect = panel.firstChild.getBoundingClientRect();
   switch (expectedSide) {
     case "top":
       ok(contentRect.top > vwinpos + anchorRect.bottom * zoomFactor + 5, "panel content is below");
@@ -301,8 +286,8 @@ function checkPanelPosition(panel)
 
   is(anchor, expectedAnchor, "anchor");
 
-  var arrow = document.getAnonymousElementByAttribute(panel, "anonid", "arrow");
-  is(arrow.getAttribute("side"), expectedSide, "panel arrow side");
+  var arrow = panel.shadowRoot.querySelector(".panel-arrow");
+  is(panel.getAttribute("side"), expectedSide, "panel arrow side");
   is(arrow.hidden, false, "panel hidden");
   is(arrow.parentNode.pack, expectedPack, "panel arrow pack");
   is(panel.alignmentPosition, expectedAlignment, "panel alignmentPosition");

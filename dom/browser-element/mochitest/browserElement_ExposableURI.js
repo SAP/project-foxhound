@@ -5,6 +5,9 @@
 // "unexposable" parts before sending them in the locationchange event.
 
 "use strict";
+
+/* global browserElementTestHelpers */
+
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 browserElementTestHelpers.addPermission();
@@ -14,42 +17,29 @@ var iframe;
 function testPassword() {
   function locationchange(e) {
     var uri = e.detail.url;
-    is(uri, 'http://mochi.test:8888/tests/dom/browser-element/mochitest/file_empty.html',
-       "Username and password shouldn't be exposed in uri.");
+    is(
+      uri,
+      "http://mochi.test:8888/tests/dom/browser-element/mochitest/file_empty.html",
+      "Username and password shouldn't be exposed in uri."
+    );
     SimpleTest.finish();
   }
 
-  iframe.addEventListener('mozbrowserlocationchange', locationchange);
-  iframe.src = "http://iamuser:iampassword@mochi.test:8888/tests/dom/browser-element/mochitest/file_empty.html";
-}
-
-function testWyciwyg() {
-  var locationChangeCount = 0;
-
-  function locationchange(e) {
-    // locationChangeCount:
-    //  0 - the first load.
-    //  1 - after document.write().
-    if (locationChangeCount == 0) {
-      locationChangeCount ++;
-    } else if (locationChangeCount == 1) {
-      var uri = e.detail.url;
-      is(uri, 'http://mochi.test:8888/tests/dom/browser-element/mochitest/file_wyciwyg.html', "Scheme in string shouldn't be wyciwyg");
-      iframe.removeEventListener('mozbrowserlocationchange', locationchange);
-      SimpleTest.executeSoon(testPassword);
-    }
-  }
-
-  // file_wyciwyg.html calls document.write() to create a wyciwyg channel.
-  iframe.src = 'file_wyciwyg.html';
-  iframe.addEventListener('mozbrowserlocationchange', locationchange);
+  iframe.addEventListener("mozbrowserlocationchange", locationchange);
+  iframe.src =
+    "http://iamuser:iampassword@mochi.test:8888/tests/dom/browser-element/mochitest/file_empty.html";
 }
 
 function runTest() {
-  iframe = document.createElement('iframe');
-  iframe.setAttribute('mozbrowser', 'true');
-  document.body.appendChild(iframe);
-  testWyciwyg();
+  SpecialPowers.pushPrefEnv(
+    { set: [["network.http.rcwn.enabled", false]] },
+    _ => {
+      iframe = document.createElement("iframe");
+      iframe.setAttribute("mozbrowser", "true");
+      document.body.appendChild(iframe);
+      testPassword();
+    }
+  );
 }
 
-addEventListener('testready', runTest);
+addEventListener("testready", runTest);

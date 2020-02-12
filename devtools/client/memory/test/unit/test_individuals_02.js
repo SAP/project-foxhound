@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 // Test switching to the individuals view when we are in the middle of computing
@@ -16,13 +17,7 @@ const {
   takeSnapshotAndCensus,
   computeDominatorTree,
 } = require("devtools/client/memory/actions/snapshot");
-const {
-  changeView,
-} = require("devtools/client/memory/actions/view");
-
-function run_test() {
-  run_next_test();
-}
+const { changeView } = require("devtools/client/memory/actions/view");
 
 const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.COMPUTING_DOMINATOR_TREE,
@@ -30,19 +25,18 @@ const EXPECTED_INDIVIDUAL_STATES = [
   individualsState.FETCHED,
 ];
 
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
   const { getState, dispatch } = store;
 
-  equal(getState().individuals, null,
-        "no individuals state by default");
+  equal(getState().individuals, null, "no individuals state by default");
 
   dispatch(changeView(viewState.CENSUS));
   dispatch(takeSnapshotAndCensus(front, heapWorker));
-  yield waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
+  await waitUntilCensusState(store, s => s.census, [censusState.SAVED]);
 
   const root = getState().snapshots[0].census.report;
   ok(root, "Should have a census");
@@ -59,30 +53,37 @@ add_task(function* () {
   // Start computing a dominator tree.
 
   dispatch(computeDominatorTree(heapWorker, snapshotId));
-  equal(getState().snapshots[0].dominatorTree.state,
-        dominatorTreeState.COMPUTING,
-        "Should be computing dominator tree");
+  equal(
+    getState().snapshots[0].dominatorTree.state,
+    dominatorTreeState.COMPUTING,
+    "Should be computing dominator tree"
+  );
 
   // Fetch individuals in the middle of computing the dominator tree.
 
-  dispatch(fetchIndividuals(heapWorker, snapshotId, breakdown,
-                            reportLeafIndex));
+  dispatch(
+    fetchIndividuals(heapWorker, snapshotId, breakdown, reportLeafIndex)
+  );
 
   // Wait for each expected state.
-  for (let state of EXPECTED_INDIVIDUAL_STATES) {
-    yield waitUntilState(store, s => {
-      return s.view.state === viewState.INDIVIDUALS &&
-             s.individuals &&
-             s.individuals.state === state;
+  for (const state of EXPECTED_INDIVIDUAL_STATES) {
+    await waitUntilState(store, s => {
+      return (
+        s.view.state === viewState.INDIVIDUALS &&
+        s.individuals &&
+        s.individuals.state === state
+      );
     });
     ok(true, `Reached state = ${state}`);
   }
 
   ok(getState().individuals, "Should have individuals state");
   ok(getState().individuals.nodes, "Should have individuals nodes");
-  ok(getState().individuals.nodes.length > 0,
-     "Should have a positive number of nodes");
+  ok(
+    getState().individuals.nodes.length > 0,
+    "Should have a positive number of nodes"
+  );
 
   heapWorker.destroy();
-  yield front.detach();
+  await front.detach();
 });

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +9,6 @@
 
 #include "mozilla/EnumeratedArray.h"
 
-#include "jsbytecode.h"
 #include "jstypes.h"
 
 #include "jit/JitOptions.h"
@@ -18,285 +17,293 @@
 namespace js {
 namespace jit {
 
-enum class OptimizationLevel : uint8_t
-{
-    Normal,
-    AsmJS,
-    Count,
-    DontCompile
+// [SMDOC] Ion Optimization Levels
+//
+// Ion can do aggressive inlining, but inlining a lot of code will have a
+// negative effect on compilation time and memory usage. It also means we spend
+// more time in the slower Baseline code while compiling the Ion code
+// off-thread or after an invalidation.
+//
+// To address this, Ion consists of two tiers:
+//
+// * Normal: the first tier (warm-up threshold of 1,000) only inlines small
+//           functions one level deep. This tier also has recompile checks to
+//           recompile the script when it becomes very hot.
+//
+// * Full: the second tier (warm-up threshold of 100,000) is only used for very
+//         hot code so we can afford inlining a lot more code.
+//
+// See MRecompileCheck::RecompileCheckType for more info.
+
+enum class OptimizationLevel : uint8_t {
+  Normal,
+  Full,
+  Wasm,
+  Count,
+  DontCompile
 };
 
 #ifdef JS_JITSPEW
-inline const char*
-OptimizationLevelString(OptimizationLevel level)
-{
-    switch (level) {
-      case OptimizationLevel::DontCompile:
-        return "Optimization_DontCompile";
-      case OptimizationLevel::Normal:
-        return "Optimization_Normal";
-      case OptimizationLevel::AsmJS:
-        return "Optimization_AsmJS";
-      case OptimizationLevel::Count:;
-    }
-    MOZ_CRASH("Invalid OptimizationLevel");
+inline const char* OptimizationLevelString(OptimizationLevel level) {
+  switch (level) {
+    case OptimizationLevel::DontCompile:
+      return "Optimization_DontCompile";
+    case OptimizationLevel::Normal:
+      return "Optimization_Normal";
+    case OptimizationLevel::Full:
+      return "Optimization_Full";
+    case OptimizationLevel::Wasm:
+      return "Optimization_Wasm";
+    case OptimizationLevel::Count:;
+  }
+  MOZ_CRASH("Invalid OptimizationLevel");
 }
 #endif
 
-class OptimizationInfo
-{
-  public:
-    OptimizationLevel level_;
+// Class representing the Ion optimization settings for an OptimizationLevel.
+class OptimizationInfo {
+  OptimizationLevel level_;
 
-    // Toggles whether Effective Address Analysis is performed.
-    bool eaa_;
+  // Toggles whether Effective Address Analysis is performed.
+  bool eaa_;
 
-    // Toggles whether Alignment Mask Analysis is performed.
-    bool ama_;
+  // Toggles whether Alignment Mask Analysis is performed.
+  bool ama_;
 
-    // Toggles whether Edge Case Analysis is used.
-    bool edgeCaseAnalysis_;
+  // Toggles whether Edge Case Analysis is used.
+  bool edgeCaseAnalysis_;
 
-    // Toggles whether redundant checks get removed.
-    bool eliminateRedundantChecks_;
+  // Toggles whether redundant checks get removed.
+  bool eliminateRedundantChecks_;
 
-    // Toggles whether interpreted scripts get inlined.
-    bool inlineInterpreted_;
+  // Toggles whether interpreted scripts get inlined.
+  bool inlineInterpreted_;
 
-    // Toggles whether native scripts get inlined.
-    bool inlineNative_;
+  // Toggles whether native scripts get inlined.
+  bool inlineNative_;
 
-    // Toggles whether eager unboxing of SIMD is used.
-    bool eagerSimdUnbox_;
+  // Toggles whether global value numbering is used.
+  bool gvn_;
 
-    // Toggles whether global value numbering is used.
-    bool gvn_;
+  // Toggles whether loop invariant code motion is performed.
+  bool licm_;
 
-    // Toggles whether loop invariant code motion is performed.
-    bool licm_;
+  // Toggles whether Range Analysis is used.
+  bool rangeAnalysis_;
 
-    // Toggles whether Range Analysis is used.
-    bool rangeAnalysis_;
+  // Toggles whether instruction reordering is performed.
+  bool reordering_;
 
-    // Toggles whether loop unrolling is performed.
-    bool loopUnrolling_;
+  // Toggles whether Truncation based on Range Analysis is used.
+  bool autoTruncate_;
 
-    // Toggles whether instruction reordering is performed.
-    bool reordering_;
+  // Toggles whether sink is used.
+  bool sink_;
 
-    // Toggles whether Truncation based on Range Analysis is used.
-    bool autoTruncate_;
+  // Describes which register allocator to use.
+  IonRegisterAllocator registerAllocator_;
 
-    // Toggles whether sincos is used.
-    bool sincos_;
+  // The maximum total bytecode size of an inline call site. We use a lower
+  // value if off-thread compilation is not available, to avoid stalling the
+  // main thread.
+  uint32_t inlineMaxBytecodePerCallSiteHelperThread_;
+  uint32_t inlineMaxBytecodePerCallSiteMainThread_;
 
-    // Toggles whether sink is used.
-    bool sink_;
+  // The maximum value we allow for baselineScript->inlinedBytecodeLength_
+  // when inlining.
+  uint16_t inlineMaxCalleeInlinedBytecodeLength_;
 
-    // Describes which register allocator to use.
-    IonRegisterAllocator registerAllocator_;
+  // The maximum bytecode length we'll inline in a single compilation.
+  uint32_t inlineMaxTotalBytecodeLength_;
 
-    // The maximum total bytecode size of an inline call site. We use a lower
-    // value if off-thread compilation is not available, to avoid stalling the
-    // main thread.
-    uint32_t inlineMaxBytecodePerCallSiteOffThread_;
-    uint32_t inlineMaxBytecodePerCallSiteMainThread_;
+  // The maximum bytecode length the caller may have,
+  // before we stop inlining large functions in that caller.
+  uint32_t inliningMaxCallerBytecodeLength_;
 
-    // The maximum value we allow for baselineScript->inlinedBytecodeLength_
-    // when inlining.
-    uint16_t inlineMaxCalleeInlinedBytecodeLength_;
+  // The maximum inlining depth.
+  uint32_t maxInlineDepth_;
 
-    // The maximum bytecode length we'll inline in a single compilation.
-    uint32_t inlineMaxTotalBytecodeLength_;
+  // Toggles whether scalar replacement is used.
+  bool scalarReplacement_;
 
-    // The maximum bytecode length the caller may have,
-    // before we stop inlining large functions in that caller.
-    uint32_t inliningMaxCallerBytecodeLength_;
+  // The maximum inlining depth for functions.
+  //
+  // Inlining small functions has almost no compiling overhead
+  // and removes the otherwise needed call overhead.
+  // The value is currently very low.
+  // Actually it is only needed to make sure we don't blow out the stack.
+  uint32_t smallFunctionMaxInlineDepth_;
 
-    // The maximum inlining depth.
-    uint32_t maxInlineDepth_;
+  // How many invocations or loop iterations are needed before calls
+  // are inlined, as a fraction of compilerWarmUpThreshold.
+  double inliningWarmUpThresholdFactor_;
 
-    // Toggles whether scalar replacement is used.
-    bool scalarReplacement_;
+  // How many invocations or loop iterations are needed before a function
+  // is hot enough to recompile the outerScript to inline that function,
+  // as a multiplication of inliningWarmUpThreshold.
+  uint32_t inliningRecompileThresholdFactor_;
 
-    // The maximum inlining depth for functions.
-    //
-    // Inlining small functions has almost no compiling overhead
-    // and removes the otherwise needed call overhead.
-    // The value is currently very low.
-    // Actually it is only needed to make sure we don't blow out the stack.
-    uint32_t smallFunctionMaxInlineDepth_;
-
-    // How many invocations or loop iterations are needed before functions
-    // are compiled.
-    uint32_t compilerWarmUpThreshold_;
-
-    // Default compiler warmup threshold, unless it is overridden.
-    static const uint32_t CompilerWarmupThreshold = 1000;
-
-    // How many invocations or loop iterations are needed before small functions
-    // are compiled.
-    uint32_t compilerSmallFunctionWarmUpThreshold_;
-
-    // Default small function compiler warmup threshold, unless it is overridden.
-    static const uint32_t CompilerSmallFunctionWarmupThreshold = 100;
-
-    // How many invocations or loop iterations are needed before calls
-    // are inlined, as a fraction of compilerWarmUpThreshold.
-    double inliningWarmUpThresholdFactor_;
-
-    // How many invocations or loop iterations are needed before a function
-    // is hot enough to recompile the outerScript to inline that function,
-    // as a multiplication of inliningWarmUpThreshold.
-    uint32_t inliningRecompileThresholdFactor_;
-
-    OptimizationInfo()
-    { }
-
-    void initNormalOptimizationInfo();
-    void initAsmjsOptimizationInfo();
-
-    OptimizationLevel level() const {
-        return level_;
+  uint32_t baseCompilerWarmUpThreshold() const {
+    switch (level_) {
+      case OptimizationLevel::Normal:
+        return JitOptions.normalIonWarmUpThreshold;
+      case OptimizationLevel::Full:
+        if (!JitOptions.disableOptimizationLevels) {
+          return JitOptions.fullIonWarmUpThreshold;
+        }
+        // Use the 'normal' threshold so Ion uses a single optimization level,
+        // OptimizationLevel::Full.
+        return JitOptions.normalIonWarmUpThreshold;
+      case OptimizationLevel::DontCompile:
+      case OptimizationLevel::Wasm:
+      case OptimizationLevel::Count:
+        break;
     }
+    MOZ_CRASH("Unexpected optimization level");
+  }
 
-    bool inlineInterpreted() const {
-        return inlineInterpreted_ && !JitOptions.disableInlining;
-    }
+ public:
+  constexpr OptimizationInfo()
+      : level_(OptimizationLevel::Normal),
+        eaa_(false),
+        ama_(false),
+        edgeCaseAnalysis_(false),
+        eliminateRedundantChecks_(false),
+        inlineInterpreted_(false),
+        inlineNative_(false),
+        gvn_(false),
+        licm_(false),
+        rangeAnalysis_(false),
+        reordering_(false),
+        autoTruncate_(false),
+        sink_(false),
+        registerAllocator_(RegisterAllocator_Backtracking),
+        inlineMaxBytecodePerCallSiteHelperThread_(0),
+        inlineMaxBytecodePerCallSiteMainThread_(0),
+        inlineMaxCalleeInlinedBytecodeLength_(0),
+        inlineMaxTotalBytecodeLength_(0),
+        inliningMaxCallerBytecodeLength_(0),
+        maxInlineDepth_(0),
+        scalarReplacement_(false),
+        smallFunctionMaxInlineDepth_(0),
+        inliningWarmUpThresholdFactor_(0.0),
+        inliningRecompileThresholdFactor_(0) {}
 
-    bool inlineNative() const {
-        return inlineNative_ && !JitOptions.disableInlining;
-    }
+  void initNormalOptimizationInfo();
+  void initFullOptimizationInfo();
+  void initWasmOptimizationInfo();
 
-    uint32_t compilerWarmUpThreshold(JSScript* script, jsbytecode* pc = nullptr) const;
+  OptimizationLevel level() const { return level_; }
 
-    bool eagerSimdUnboxEnabled() const {
-        return eagerSimdUnbox_ && !JitOptions.disableEagerSimdUnbox;
-    }
+  bool inlineInterpreted() const {
+    return inlineInterpreted_ && !JitOptions.disableInlining;
+  }
 
-    bool gvnEnabled() const {
-        return gvn_ && !JitOptions.disableGvn;
-    }
+  bool inlineNative() const {
+    return inlineNative_ && !JitOptions.disableInlining;
+  }
 
-    bool licmEnabled() const {
-        return licm_ && !JitOptions.disableLicm;
-    }
+  uint32_t compilerWarmUpThreshold(JSScript* script,
+                                   jsbytecode* pc = nullptr) const;
 
-    bool rangeAnalysisEnabled() const {
-        return rangeAnalysis_ && !JitOptions.disableRangeAnalysis;
-    }
+  uint32_t recompileWarmUpThreshold(JSScript* script, jsbytecode* pc) const;
 
-    bool loopUnrollingEnabled() const {
-        return loopUnrolling_ && !JitOptions.disableLoopUnrolling;
-    }
+  bool gvnEnabled() const { return gvn_ && !JitOptions.disableGvn; }
 
-    bool instructionReorderingEnabled() const {
-        return reordering_ && !JitOptions.disableInstructionReordering;
-    }
+  bool licmEnabled() const { return licm_ && !JitOptions.disableLicm; }
 
-    bool autoTruncateEnabled() const {
-        return autoTruncate_ && rangeAnalysisEnabled();
-    }
+  bool rangeAnalysisEnabled() const {
+    return rangeAnalysis_ && !JitOptions.disableRangeAnalysis;
+  }
 
-    bool sincosEnabled() const {
-        return sincos_ && !JitOptions.disableSincos;
-    }
+  bool instructionReorderingEnabled() const {
+    return reordering_ && !JitOptions.disableInstructionReordering;
+  }
 
-    bool sinkEnabled() const {
-        return sink_ && !JitOptions.disableSink;
-    }
+  bool autoTruncateEnabled() const {
+    return autoTruncate_ && rangeAnalysisEnabled();
+  }
 
-    bool eaaEnabled() const {
-        return eaa_ && !JitOptions.disableEaa;
-    }
+  bool sinkEnabled() const { return sink_ && !JitOptions.disableSink; }
 
-    bool amaEnabled() const {
-        return ama_ && !JitOptions.disableAma;
-    }
+  bool eaaEnabled() const { return eaa_ && !JitOptions.disableEaa; }
 
-    bool edgeCaseAnalysisEnabled() const {
-        return edgeCaseAnalysis_ && !JitOptions.disableEdgeCaseAnalysis;
-    }
+  bool amaEnabled() const { return ama_ && !JitOptions.disableAma; }
 
-    bool eliminateRedundantChecksEnabled() const {
-        return eliminateRedundantChecks_;
-    }
+  bool edgeCaseAnalysisEnabled() const {
+    return edgeCaseAnalysis_ && !JitOptions.disableEdgeCaseAnalysis;
+  }
 
-    bool flowAliasAnalysisEnabled() const {
-        return !JitOptions.disableFlowAA;
-    }
+  bool eliminateRedundantChecksEnabled() const {
+    return eliminateRedundantChecks_;
+  }
 
-    IonRegisterAllocator registerAllocator() const {
-        if (JitOptions.forcedRegisterAllocator.isSome())
-            return JitOptions.forcedRegisterAllocator.ref();
-        return registerAllocator_;
-    }
+  IonRegisterAllocator registerAllocator() const {
+    return JitOptions.forcedRegisterAllocator.valueOr(registerAllocator_);
+  }
 
-    bool scalarReplacementEnabled() const {
-        return scalarReplacement_ && !JitOptions.disableScalarReplacement;
-    }
+  bool scalarReplacementEnabled() const {
+    return scalarReplacement_ && !JitOptions.disableScalarReplacement;
+  }
 
-    uint32_t smallFunctionMaxInlineDepth() const {
-        return smallFunctionMaxInlineDepth_;
-    }
+  uint32_t smallFunctionMaxInlineDepth() const {
+    return smallFunctionMaxInlineDepth_;
+  }
 
-    bool isSmallFunction(JSScript* script) const;
+  bool isSmallFunction(JSScript* script) const;
 
-    uint32_t maxInlineDepth() const {
-        return maxInlineDepth_;
-    }
+  uint32_t maxInlineDepth() const { return maxInlineDepth_; }
 
-    uint32_t inlineMaxBytecodePerCallSite(bool offThread) const {
-        return (offThread || !JitOptions.limitScriptSize)
-               ? inlineMaxBytecodePerCallSiteOffThread_
+  uint32_t inlineMaxBytecodePerCallSite(bool offThread) const {
+    return (offThread || !JitOptions.limitScriptSize)
+               ? inlineMaxBytecodePerCallSiteHelperThread_
                : inlineMaxBytecodePerCallSiteMainThread_;
-    }
+  }
 
-    uint16_t inlineMaxCalleeInlinedBytecodeLength() const {
-        return inlineMaxCalleeInlinedBytecodeLength_;
-    }
+  uint16_t inlineMaxCalleeInlinedBytecodeLength() const {
+    return inlineMaxCalleeInlinedBytecodeLength_;
+  }
 
-    uint32_t inlineMaxTotalBytecodeLength() const {
-        return inlineMaxTotalBytecodeLength_;
-    }
+  uint32_t inlineMaxTotalBytecodeLength() const {
+    return inlineMaxTotalBytecodeLength_;
+  }
 
-    uint32_t inliningMaxCallerBytecodeLength() const {
-        return inliningMaxCallerBytecodeLength_;
-    }
+  uint32_t inliningMaxCallerBytecodeLength() const {
+    return inliningMaxCallerBytecodeLength_;
+  }
 
-    uint32_t inliningWarmUpThreshold() const {
-        uint32_t compilerWarmUpThreshold = compilerWarmUpThreshold_;
-        if (JitOptions.forcedDefaultIonWarmUpThreshold.isSome())
-            compilerWarmUpThreshold = JitOptions.forcedDefaultIonWarmUpThreshold.ref();
-        return compilerWarmUpThreshold * inliningWarmUpThresholdFactor_;
-    }
+  uint32_t inliningWarmUpThreshold() const {
+    return baseCompilerWarmUpThreshold() * inliningWarmUpThresholdFactor_;
+  }
 
-    uint32_t inliningRecompileThreshold() const {
-        return inliningWarmUpThreshold() * inliningRecompileThresholdFactor_;
-    }
+  uint32_t inliningRecompileThreshold() const {
+    return inliningWarmUpThreshold() * inliningRecompileThresholdFactor_;
+  }
 };
 
-class OptimizationLevelInfo
-{
-  private:
-    mozilla::EnumeratedArray<OptimizationLevel, OptimizationLevel::Count, OptimizationInfo> infos_;
+class OptimizationLevelInfo {
+ private:
+  mozilla::EnumeratedArray<OptimizationLevel, OptimizationLevel::Count,
+                           OptimizationInfo>
+      infos_;
 
-  public:
-    OptimizationLevelInfo();
+ public:
+  OptimizationLevelInfo();
 
-    const OptimizationInfo* get(OptimizationLevel level) const {
-        return &infos_[level];
-    }
+  const OptimizationInfo* get(OptimizationLevel level) const {
+    return &infos_[level];
+  }
 
-    OptimizationLevel nextLevel(OptimizationLevel level) const;
-    OptimizationLevel firstLevel() const;
-    bool isLastLevel(OptimizationLevel level) const;
-    OptimizationLevel levelForScript(JSScript* script, jsbytecode* pc = nullptr) const;
+  OptimizationLevel nextLevel(OptimizationLevel level) const;
+  OptimizationLevel firstLevel() const;
+  bool isLastLevel(OptimizationLevel level) const;
+  OptimizationLevel levelForScript(JSScript* script,
+                                   jsbytecode* pc = nullptr) const;
 };
 
-extern OptimizationLevelInfo IonOptimizations;
+extern const OptimizationLevelInfo IonOptimizations;
 
-} // namespace jit
-} // namespace js
+}  // namespace jit
+}  // namespace js
 
 #endif /* jit_IonOptimizationLevels_h */

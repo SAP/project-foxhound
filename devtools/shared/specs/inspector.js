@@ -8,34 +8,8 @@ const {
   Option,
   RetVal,
   generateActorSpec,
-  types
+  types,
 } = require("devtools/shared/protocol");
-const { nodeSpec } = require("devtools/shared/specs/node");
-require("devtools/shared/specs/styles");
-require("devtools/shared/specs/highlighters");
-
-exports.nodeSpec = nodeSpec;
-
-/**
- * Returned from any call that might return a node that isn't connected to root
- * by nodes the child has seen, such as querySelector.
- */
-types.addDictType("disconnectedNode", {
-  // The actual node to return
-  node: "domnode",
-
-  // Nodes that are needed to connect the node to a node the client has already
-  // seen
-  newParents: "array:domnode"
-});
-
-types.addDictType("disconnectedNodeArray", {
-  // The actual node list to return
-  nodes: "array:domnode",
-
-  // Nodes that are needed to connect those nodes to the root.
-  newParents: "array:domnode"
-});
 
 types.addDictType("dommutation", {});
 
@@ -43,31 +17,8 @@ types.addDictType("searchresult", {
   list: "domnodelist",
   // Right now there is isn't anything required for metadata,
   // but it's json so it can be extended with extra data.
-  metadata: "array:json"
+  metadata: "array:json",
 });
-
-const nodeListSpec = generateActorSpec({
-  typeName: "domnodelist",
-
-  methods: {
-    item: {
-      request: { item: Arg(0) },
-      response: RetVal("disconnectedNode")
-    },
-    items: {
-      request: {
-        start: Arg(0, "nullable:number"),
-        end: Arg(1, "nullable:number")
-      },
-      response: RetVal("disconnectedNodeArray")
-    },
-    release: {
-      release: true
-    }
-  }
-});
-
-exports.nodeListSpec = nodeListSpec;
 
 // Some common request/response templates for the dom walker
 
@@ -77,21 +28,23 @@ var nodeArrayMethod = {
     maxNodes: Option(1),
     center: Option(1, "domnode"),
     start: Option(1, "domnode"),
-    whatToShow: Option(1)
+    whatToShow: Option(1),
   },
-  response: RetVal(types.addDictType("domtraversalarray", {
-    nodes: "array:domnode"
-  }))
+  response: RetVal(
+    types.addDictType("domtraversalarray", {
+      nodes: "array:domnode",
+    })
+  ),
 };
 
 var traversalMethod = {
   request: {
     node: Arg(0, "domnode"),
-    whatToShow: Option(1)
+    whatToShow: Option(1),
   },
   response: {
-    node: RetVal("nullable:domnode")
-  }
+    node: RetVal("nullable:domnode"),
+  },
 };
 
 const walkerSpec = generateActorSpec({
@@ -99,49 +52,58 @@ const walkerSpec = generateActorSpec({
 
   events: {
     "new-mutations": {
-      type: "newMutations"
+      type: "newMutations",
     },
     "picker-node-picked": {
       type: "pickerNodePicked",
-      node: Arg(0, "disconnectedNode")
+      node: Arg(0, "disconnectedNode"),
+    },
+    "picker-node-previewed": {
+      type: "pickerNodePreviewed",
+      node: Arg(0, "disconnectedNode"),
     },
     "picker-node-hovered": {
       type: "pickerNodeHovered",
-      node: Arg(0, "disconnectedNode")
+      node: Arg(0, "disconnectedNode"),
     },
     "picker-node-canceled": {
-      type: "pickerNodeCanceled"
+      type: "pickerNodeCanceled",
     },
+    // This event is no longer emitted on Firefox 70 or newer.
+    // It should still be declared in the specs. Otherwise, when we connect to
+    // Firefox 69 or older, event packets for "highlighter-ready" emitted by
+    // the server will be considered as responses to unrelated requests.
     "highlighter-ready": {
-      type: "highlighter-ready"
-    },
-    "highlighter-hide": {
-      type: "highlighter-hide"
+      type: "highlighter-ready",
     },
     "display-change": {
       type: "display-change",
-      nodes: Arg(0, "array:domnode")
+      nodes: Arg(0, "array:domnode"),
+    },
+    "scrollable-change": {
+      type: "scrollable-change",
+      nodes: Arg(0, "array:domnode"),
     },
     // The walker actor emits a useful "resize" event to its front to let
     // clients know when the browser window gets resized. This may be useful
     // for refreshing a DOM node's styles for example, since those may depend on
     // media-queries.
-    "resize": {
-      type: "resize"
-    }
+    resize: {
+      type: "resize",
+    },
   },
 
   methods: {
     release: {
-      release: true
+      release: true,
     },
     pick: {
       request: {},
-      response: RetVal("disconnectedNode")
+      response: RetVal("disconnectedNode"),
     },
     cancelPick: {},
     highlight: {
-      request: {node: Arg(0, "nullable:domnode")}
+      request: { node: Arg(0, "nullable:domnode") },
     },
     document: {
       request: { node: Arg(0, "nullable:domnode") },
@@ -151,19 +113,9 @@ const walkerSpec = generateActorSpec({
       request: { node: Arg(0, "nullable:domnode") },
       response: { node: RetVal("domnode") },
     },
-    parents: {
-      request: {
-        node: Arg(0, "domnode"),
-        sameDocument: Option(1),
-        sameTypeRootTreeItem: Option(1)
-      },
-      response: {
-        nodes: RetVal("array:domnode")
-      },
-    },
     retainNode: {
       request: { node: Arg(0, "domnode") },
-      response: {}
+      response: {},
     },
     unretainNode: {
       request: { node: Arg(0, "domnode") },
@@ -172,40 +124,39 @@ const walkerSpec = generateActorSpec({
     releaseNode: {
       request: {
         node: Arg(0, "domnode"),
-        force: Option(1)
-      }
+        force: Option(1),
+      },
     },
     children: nodeArrayMethod,
-    siblings: nodeArrayMethod,
     nextSibling: traversalMethod,
     previousSibling: traversalMethod,
     findInspectingNode: {
       request: {},
-      response: RetVal("disconnectedNode")
+      response: RetVal("disconnectedNode"),
     },
     querySelector: {
       request: {
         node: Arg(0, "domnode"),
-        selector: Arg(1)
+        selector: Arg(1),
       },
-      response: RetVal("disconnectedNode")
+      response: RetVal("disconnectedNode"),
     },
     querySelectorAll: {
       request: {
         node: Arg(0, "domnode"),
-        selector: Arg(1)
+        selector: Arg(1),
       },
       response: {
-        list: RetVal("domnodelist")
-      }
+        list: RetVal("domnodelist"),
+      },
     },
     multiFrameQuerySelectorAll: {
       request: {
-        selector: Arg(0)
+        selector: Arg(0),
       },
       response: {
-        list: RetVal("domnodelist")
-      }
+        list: RetVal("domnodelist"),
+      },
     },
     search: {
       request: {
@@ -213,157 +164,221 @@ const walkerSpec = generateActorSpec({
       },
       response: {
         list: RetVal("searchresult"),
-      }
+      },
     },
     getSuggestionsForQuery: {
       request: {
         query: Arg(0),
         completing: Arg(1),
-        selectorState: Arg(2)
+        selectorState: Arg(2),
       },
       response: {
-        list: RetVal("array:array:string")
-      }
+        list: RetVal("array:array:string"),
+      },
     },
     addPseudoClassLock: {
       request: {
         node: Arg(0, "domnode"),
         pseudoClass: Arg(1),
-        parents: Option(2)
+        parents: Option(2),
+        enabled: Option(2, "boolean"),
       },
-      response: {}
+      response: {},
     },
     hideNode: {
-      request: { node: Arg(0, "domnode") }
+      request: { node: Arg(0, "domnode") },
     },
     unhideNode: {
-      request: { node: Arg(0, "domnode") }
+      request: { node: Arg(0, "domnode") },
     },
     removePseudoClassLock: {
       request: {
         node: Arg(0, "domnode"),
         pseudoClass: Arg(1),
-        parents: Option(2)
+        parents: Option(2),
       },
-      response: {}
+      response: {},
     },
     clearPseudoClassLocks: {
       request: {
-        node: Arg(0, "nullable:domnode")
+        node: Arg(0, "nullable:domnode"),
       },
-      response: {}
+      response: {},
     },
     innerHTML: {
       request: {
-        node: Arg(0, "domnode")
+        node: Arg(0, "domnode"),
       },
       response: {
-        value: RetVal("longstring")
-      }
+        value: RetVal("longstring"),
+      },
     },
     setInnerHTML: {
       request: {
         node: Arg(0, "domnode"),
         value: Arg(1, "string"),
       },
-      response: {}
+      response: {},
     },
     outerHTML: {
       request: {
-        node: Arg(0, "domnode")
+        node: Arg(0, "domnode"),
       },
       response: {
-        value: RetVal("longstring")
-      }
+        value: RetVal("longstring"),
+      },
     },
     setOuterHTML: {
       request: {
         node: Arg(0, "domnode"),
         value: Arg(1, "string"),
       },
-      response: {}
+      response: {},
     },
     insertAdjacentHTML: {
       request: {
         node: Arg(0, "domnode"),
         position: Arg(1, "string"),
-        value: Arg(2, "string")
+        value: Arg(2, "string"),
       },
-      response: RetVal("disconnectedNodeArray")
+      response: RetVal("disconnectedNodeArray"),
     },
     duplicateNode: {
       request: {
-        node: Arg(0, "domnode")
+        node: Arg(0, "domnode"),
       },
-      response: {}
+      response: {},
     },
     removeNode: {
       request: {
-        node: Arg(0, "domnode")
+        node: Arg(0, "domnode"),
       },
       response: {
-        nextSibling: RetVal("nullable:domnode")
-      }
+        nextSibling: RetVal("nullable:domnode"),
+      },
     },
     removeNodes: {
       request: {
-        node: Arg(0, "array:domnode")
+        node: Arg(0, "array:domnode"),
       },
-      response: {}
+      response: {},
     },
     insertBefore: {
       request: {
         node: Arg(0, "domnode"),
         parent: Arg(1, "domnode"),
-        sibling: Arg(2, "nullable:domnode")
+        sibling: Arg(2, "nullable:domnode"),
       },
-      response: {}
+      response: {},
     },
     editTagName: {
       request: {
         node: Arg(0, "domnode"),
-        tagName: Arg(1, "string")
+        tagName: Arg(1, "string"),
       },
-      response: {}
+      response: {},
     },
     getMutations: {
       request: {
-        cleanup: Option(0)
+        cleanup: Option(0),
       },
       response: {
-        mutations: RetVal("array:dommutation")
-      }
+        mutations: RetVal("array:dommutation"),
+      },
     },
     isInDOMTree: {
       request: { node: Arg(0, "domnode") },
-      response: { attached: RetVal("boolean") }
+      response: { attached: RetVal("boolean") },
     },
     getNodeActorFromObjectActor: {
       request: {
-        objectActorID: Arg(0, "string")
+        objectActorID: Arg(0, "string"),
       },
       response: {
-        nodeFront: RetVal("nullable:disconnectedNode")
-      }
+        nodeFront: RetVal("nullable:disconnectedNode"),
+      },
+    },
+    getNodeActorFromWindowID: {
+      request: {
+        windowID: Arg(0, "string"),
+      },
+      response: {
+        nodeFront: RetVal("nullable:disconnectedNode"),
+      },
+    },
+    getNodeActorFromContentDomReference: {
+      request: {
+        contentDomReference: Arg(0, "json"),
+      },
+      response: {
+        nodeFront: RetVal("nullable:disconnectedNode"),
+      },
     },
     getStyleSheetOwnerNode: {
       request: {
-        styleSheetActorID: Arg(0, "string")
+        styleSheetActorID: Arg(0, "string"),
       },
       response: {
-        ownerNode: RetVal("nullable:disconnectedNode")
-      }
+        ownerNode: RetVal("nullable:disconnectedNode"),
+      },
     },
     getNodeFromActor: {
       request: {
         actorID: Arg(0, "string"),
-        path: Arg(1, "array:string")
+        path: Arg(1, "array:string"),
       },
       response: {
-        node: RetVal("nullable:disconnectedNode")
-      }
-    }
-  }
+        node: RetVal("nullable:disconnectedNode"),
+      },
+    },
+    getLayoutInspector: {
+      request: {},
+      response: {
+        actor: RetVal("layout"),
+      },
+    },
+    getParentGridNode: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+      },
+      response: {
+        node: RetVal("nullable:domnode"),
+      },
+    },
+    getOffsetParent: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+      },
+      response: {
+        node: RetVal("nullable:domnode"),
+      },
+    },
+    hasAccessibilityProperties: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+      },
+      response: {
+        value: RetVal("boolean"),
+      },
+    },
+    setMutationBreakpoints: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+        subtree: Option(1, "nullable:boolean"),
+        removal: Option(1, "nullable:boolean"),
+        attribute: Option(1, "nullable:boolean"),
+      },
+      response: {},
+    },
+    getEmbedderElement: {
+      request: {
+        browsingContextID: Arg(0, "string"),
+      },
+      response: {
+        nodeFront: RetVal("disconnectedNode"),
+      },
+    },
+  },
 });
 
 exports.walkerSpec = walkerSpec;
@@ -374,61 +389,68 @@ const inspectorSpec = generateActorSpec({
   events: {
     "color-picked": {
       type: "colorPicked",
-      color: Arg(0, "string")
+      color: Arg(0, "string"),
     },
     "color-pick-canceled": {
-      type: "colorPickCanceled"
-    }
+      type: "colorPickCanceled",
+    },
   },
 
   methods: {
     getWalker: {
       request: {
-        options: Arg(0, "nullable:json")
+        options: Arg(0, "nullable:json"),
       },
       response: {
-        walker: RetVal("domwalker")
-      }
+        walker: RetVal("domwalker"),
+      },
     },
     getPageStyle: {
       request: {},
       response: {
-        pageStyle: RetVal("pagestyle")
-      }
+        pageStyle: RetVal("pagestyle"),
+      },
     },
     getHighlighter: {
       request: {
-        autohide: Arg(0, "boolean")
+        autohide: Arg(0, "boolean"),
+        useNewBoxModelHighlighter: Arg(1, "nullable:boolean"),
       },
       response: {
-        highligter: RetVal("highlighter")
-      }
+        highligter: RetVal("highlighter"),
+      },
     },
     getHighlighterByType: {
       request: {
-        typeName: Arg(0)
+        typeName: Arg(0),
       },
       response: {
-        highlighter: RetVal("nullable:customhighlighter")
-      }
+        highlighter: RetVal("nullable:customhighlighter"),
+      },
     },
     getImageDataFromURL: {
-      request: {url: Arg(0), maxDim: Arg(1, "nullable:number")},
-      response: RetVal("imageData")
+      request: { url: Arg(0), maxDim: Arg(1, "nullable:number") },
+      response: RetVal("imageData"),
     },
     resolveRelativeURL: {
-      request: {url: Arg(0, "string"), node: Arg(1, "nullable:domnode")},
-      response: {value: RetVal("string")}
+      request: { url: Arg(0, "string"), node: Arg(1, "nullable:domnode") },
+      response: { value: RetVal("string") },
     },
     pickColorFromPage: {
-      request: {options: Arg(0, "nullable:json")},
-      response: {}
+      request: { options: Arg(0, "nullable:json") },
+      response: {},
     },
     cancelPickColorFromPage: {
       request: {},
-      response: {}
-    }
-  }
+      response: {},
+    },
+    supportsHighlighters: {
+      request: {},
+      response: {
+        value: RetVal("boolean"),
+      },
+    },
+  },
 });
 
 exports.inspectorSpec = inspectorSpec;

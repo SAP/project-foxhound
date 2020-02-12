@@ -1,0 +1,35 @@
+FROM ubuntu:16.04 as taintfox-dev
+
+ENV SHELL /bin/bash
+
+RUN apt-get update &&    \
+    apt-get install -y   \
+    	    wget         \
+	    python       \
+	    autoconf2.13 \
+	    ccache \
+	    libnspr4-dev \
+	    software-properties-common \
+	    git 
+
+WORKDIR /usr/local/src/taintfox-master
+
+RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.wdf.sap.corp/WebSecResearch/taintfox -b master . && \
+    ./mach bootstrap --application-choice=browser --no-interactive && \
+    rm -rf /usr/local/src/taintfox-master
+
+RUN apt-get remove -y nasm
+
+WORKDIR /usr/local/src/taintfox
+
+CMD ./mach build
+
+# To run the build
+# docker run -v /path/to/taintfox:/usr/local/src/taint -it taintfox
+
+# To run the container with a bash terminal and X sharing
+# See more here: http://wiki.ros.org/docker/Tutorials/GUI
+#  docker run -v /path/to/taintfox:/usr/local/src/taintfox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw -it --entrypoint=/bin/bash taintfox
+
+# Enable X sharing and allow gdb to work (ptrace)
+# docker run -v /path/to/taintfox:/usr/local/src/firefox --env="DISPLAY" --env="QT_X11_NO_MITSHM=1" -v /tmp/.X11-unix:/tmp/.X11-unix:rw  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -it --entrypoint=/bin/bash taintfox

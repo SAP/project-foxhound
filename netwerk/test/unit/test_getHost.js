@@ -1,7 +1,6 @@
 // Test getLocalHost/getLocalPort and getRemoteHost/getRemotePort.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpserver = new HttpServer();
 httpserver.start(-1);
@@ -12,44 +11,38 @@ var gotOnStartRequest = false;
 function CheckGetHostListener() {}
 
 CheckGetHostListener.prototype = {
-  onStartRequest: function(request, context) {
+  onStartRequest(request) {
     dump("*** listener onStartRequest\n");
 
     gotOnStartRequest = true;
 
-    request.QueryInterface(Components.interfaces.nsIHttpChannelInternal);
+    request.QueryInterface(Ci.nsIHttpChannelInternal);
     try {
-      do_check_eq(request.localAddress, "127.0.0.1");
-      do_check_eq(request.localPort > 0, true);
-      do_check_neq(request.localPort, PORT);
-      do_check_eq(request.remoteAddress, "127.0.0.1");
-      do_check_eq(request.remotePort, PORT);
+      Assert.equal(request.localAddress, "127.0.0.1");
+      Assert.equal(request.localPort > 0, true);
+      Assert.notEqual(request.localPort, PORT);
+      Assert.equal(request.remoteAddress, "127.0.0.1");
+      Assert.equal(request.remotePort, PORT);
     } catch (e) {
-      do_check_true(0, "Get local/remote host/port throws an error!");
+      Assert.ok(0, "Get local/remote host/port throws an error!");
     }
   },
 
-  onStopRequest: function(request, context, statusCode) {
+  onStopRequest(request, statusCode) {
     dump("*** listener onStopRequest\n");
 
-    do_check_eq(gotOnStartRequest, true);
+    Assert.equal(gotOnStartRequest, true);
     httpserver.stop(do_test_finished);
   },
 
-  QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsIRequestObserver) ||
-        iid.equals(Components.interfaces.nsISupports)
-        )
-      return this;
-    throw Components.results.NS_NOINTERFACE;
-  },
-}
+  QueryInterface: ChromeUtils.generateQI(["nsIRequestObserver"]),
+};
 
 function make_channel(url) {
   return NetUtil.newChannel({
     uri: url,
-    loadUsingSystemPrincipal: true
-  }).QueryInterface(Components.interfaces.nsIHttpChannel);
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
 }
 
 function test_handler(metadata, response) {
@@ -63,6 +56,6 @@ function run_test() {
   httpserver.registerPathHandler("/testdir", test_handler);
 
   var channel = make_channel("http://localhost:" + PORT + "/testdir");
-  channel.asyncOpen2(new CheckGetHostListener());
+  channel.asyncOpen(new CheckGetHostListener());
   do_test_pending();
 }

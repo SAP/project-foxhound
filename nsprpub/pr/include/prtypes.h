@@ -64,22 +64,6 @@
 #define PR_CALLBACK_DECL
 #define PR_STATIC_CALLBACK(__x) static __x
 
-#elif defined(XP_BEOS)
-
-#define PR_EXPORT(__type) extern __declspec(dllexport) __type
-#define PR_EXPORT_DATA(__type) extern __declspec(dllexport) __type
-#define PR_IMPORT(__type) extern __declspec(dllexport) __type
-#define PR_IMPORT_DATA(__type) extern __declspec(dllexport) __type
-
-#define PR_EXTERN(__type) extern __declspec(dllexport) __type
-#define PR_IMPLEMENT(__type) __declspec(dllexport) __type
-#define PR_EXTERN_DATA(__type) extern __declspec(dllexport) __type
-#define PR_IMPLEMENT_DATA(__type) __declspec(dllexport) __type
-
-#define PR_CALLBACK
-#define PR_CALLBACK_DECL
-#define PR_STATIC_CALLBACK(__x) static __x
-
 #elif defined(XP_OS2) && defined(__declspec)
 
 #define PR_EXPORT(__type) extern __declspec(dllexport) __type
@@ -91,27 +75,6 @@
 #define PR_IMPLEMENT(__type) __declspec(dllexport) __type
 #define PR_EXTERN_DATA(__type) extern __declspec(dllexport) __type
 #define PR_IMPLEMENT_DATA(__type) __declspec(dllexport) __type
-
-#define PR_CALLBACK
-#define PR_CALLBACK_DECL
-#define PR_STATIC_CALLBACK(__x) static __x
-
-#elif defined(SYMBIAN)
-
-#define PR_EXPORT(__type) extern __declspec(dllexport) __type
-#define PR_EXPORT_DATA(__type) extern __declspec(dllexport) __type
-#ifdef __WINS__
-#define PR_IMPORT(__type) extern __declspec(dllexport) __type
-#define PR_IMPORT_DATA(__type) extern __declspec(dllexport) __type
-#else
-#define PR_IMPORT(__type) extern __declspec(dllimport) __type
-#define PR_IMPORT_DATA(__type) extern __declspec(dllimport) __type
-#endif
-
-#define PR_EXTERN(__type) extern __type
-#define PR_IMPLEMENT(__type) __type
-#define PR_EXTERN_DATA(__type) extern __type
-#define PR_IMPLEMENT_DATA(__type) __type
 
 #define PR_CALLBACK
 #define PR_CALLBACK_DECL
@@ -231,7 +194,7 @@ PR_BEGIN_EXTERN_C
 ** to use <stdint.h>. A patch to do that is in NSPR bug 634793.
 */
 
-#if defined(__APPLE__) || defined(__ANDROID__) || defined(__OpenBSD__)
+#if defined(__APPLE__) || defined(__OpenBSD__)
 #define PR_ALTERNATE_INT64_TYPEDEF
 #endif
 
@@ -245,16 +208,24 @@ PR_BEGIN_EXTERN_C
 #if PR_BYTES_PER_BYTE == 1
 typedef unsigned char PRUint8;
 /*
+** There are two scenarios that require us to define PRInt8 as type 'char'.
+** (1)
 ** Some cfront-based C++ compilers do not like 'signed char' and
 ** issue the warning message:
 **     warning: "signed" not implemented (ignored)
 ** For these compilers, we have to define PRInt8 as plain 'char'.
 ** Make sure that plain 'char' is indeed signed under these compilers.
+** (2)
+** Mozilla C++ code expects the PRInt{N} and int{N}_t types to match (see bug
+** 634793). If a platform defines int8_t as 'char', but NSPR defines it as
+** 'signed char', it results in a type mismatch.
+** On such platforms we define PRInt8 as 'char' to avoid the mismatch.
 */
-#if (defined(HPUX) && defined(__cplusplus) \
+#if (defined(HPUX) && defined(__cplusplus) /* reason 1*/ \
         && !defined(__GNUC__) && __cplusplus < 199707L) \
-    || (defined(SCO) && defined(__cplusplus) \
-        && !defined(__GNUC__) && __cplusplus == 1L)
+    || (defined(SCO) && defined(__cplusplus) /* reason 1 */ \
+        && !defined(__GNUC__) && __cplusplus == 1L) \
+    || (defined(__sun) && defined(__cplusplus)) /* reason 2 */
 typedef char PRInt8;
 #else
 typedef signed char PRInt8;
@@ -544,7 +515,7 @@ typedef unsigned long PRUword;
 ** Fundamental NSPR macros, used nearly everywhere.
 */
 
-#define PR_PUBLIC_API		PR_IMPLEMENT
+#define PR_PUBLIC_API       PR_IMPLEMENT
 
 /*
 ** Macro body brackets so that macros with compound statement definitions

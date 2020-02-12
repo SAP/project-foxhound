@@ -9,14 +9,17 @@
  * the test succeeds if it doesn't trigger any assertions
  */
 
-add_task(function* test() {
+add_task(async function test() {
   // Open the test tab
-  let testTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:addons");
+  let testTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:addons"
+  );
 
   // insert button into test page content
-  yield ContentTask.spawn(gBrowser.selectedBrowser, null, function* () {
+  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
     let doc = content.document;
-    let e = doc.createElement("button");
+    let e = doc.createXULElement("button");
     e.setAttribute("label", "hello");
     e.setAttribute("tooltiptext", "world");
     e.setAttribute("id", "test-button");
@@ -24,7 +27,11 @@ add_task(function* test() {
   });
 
   // open a second tab and select it
-  let tab2 = yield BrowserTestUtils.openNewForegroundTab(gBrowser, "about:blank", true);
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank",
+    true
+  );
   gBrowser.selectedTab = tab2;
 
   // Select the testTab then perform mouse events on inserted button
@@ -32,15 +39,33 @@ add_task(function* test() {
   let browser = gBrowser.selectedBrowser;
   EventUtils.disableNonTestMouseEvents(true);
   try {
-    yield BrowserTestUtils.synthesizeMouse("#test-button", 1, 1, { type: "mouseover" }, browser);
-    yield BrowserTestUtils.synthesizeMouse("#test-button", 2, 6, { type: "mousemove" }, browser);
-    yield BrowserTestUtils.synthesizeMouse("#test-button", 2, 4, { type: "mousemove" }, browser);
+    await BrowserTestUtils.synthesizeMouse(
+      "#test-button",
+      1,
+      1,
+      { type: "mouseover" },
+      browser
+    );
+    await BrowserTestUtils.synthesizeMouse(
+      "#test-button",
+      2,
+      6,
+      { type: "mousemove" },
+      browser
+    );
+    await BrowserTestUtils.synthesizeMouse(
+      "#test-button",
+      2,
+      4,
+      { type: "mousemove" },
+      browser
+    );
   } finally {
     EventUtils.disableNonTestMouseEvents(false);
   }
 
   // cleanup
-  yield BrowserTestUtils.removeTab(testTab);
-  yield BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(testTab);
+  BrowserTestUtils.removeTab(tab2);
   ok(true, "pass if no assertions");
 });

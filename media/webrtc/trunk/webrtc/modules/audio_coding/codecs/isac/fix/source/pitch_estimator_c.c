@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/isac/fix/source/pitch_estimator.h"
+#include "modules/audio_coding/codecs/isac/fix/source/pitch_estimator.h"
 
-#ifdef WEBRTC_ARCH_ARM_NEON
+#ifdef WEBRTC_HAS_NEON
 #include <arm_neon.h>
 #endif
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/system_wrappers/interface/compile_assert_c.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "rtc_base/compile_assert_c.h"
 
 extern int32_t WebRtcIsacfix_Log2Q8(uint32_t x);
 
@@ -34,12 +34,8 @@ void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8) {
   csum32 = 0;
   x = in + PITCH_MAX_LAG / 2 + 2;
   for (n = 0; n < PITCH_CORR_LEN2; n++) {
-    ysum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[n],
-                                        (int16_t)in[n],
-                                        scaling);  // Q0
-    csum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)x[n],
-                                        (int16_t)in[n],
-                                        scaling);  // Q0
+    ysum32 += in[n] * in[n] >> scaling;  // Q0
+    csum32 += x[n] * in[n] >> scaling;  // Q0
   }
   logcorQ8 += PITCH_LAG_SPAN2 - 1;
   lys = WebRtcIsacfix_Log2Q8((uint32_t)ysum32) >> 1; // Q8, sqrt(ysum)
@@ -57,20 +53,18 @@ void WebRtcIsacfix_PCorr2Q32(const int16_t* in, int32_t* logcorQ8) {
 
   for (k = 1; k < PITCH_LAG_SPAN2; k++) {
     inptr = &in[k];
-    ysum32 -= WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[k - 1],
-                                        (int16_t)in[k - 1],
-                                        scaling);
-    ysum32 += WEBRTC_SPL_MUL_16_16_RSFT((int16_t)in[PITCH_CORR_LEN2 + k - 1],
-                                        (int16_t)in[PITCH_CORR_LEN2 + k - 1],
-                                        scaling);
-#ifdef WEBRTC_ARCH_ARM_NEON
+    ysum32 -= in[k - 1] * in[k - 1] >> scaling;
+    ysum32 += in[PITCH_CORR_LEN2 + k - 1] * in[PITCH_CORR_LEN2 + k - 1] >>
+        scaling;
+
+#ifdef WEBRTC_HAS_NEON
     {
       int32_t vbuff[4];
       int32x4_t int_32x4_sum = vmovq_n_s32(0);
       // Can't shift a Neon register to right with a non-constant shift value.
       int32x4_t int_32x4_scale = vdupq_n_s32(-scaling);
       // Assert a codition used in loop unrolling at compile-time.
-      COMPILE_ASSERT(PITCH_CORR_LEN2 %4 == 0);
+      RTC_COMPILE_ASSERT(PITCH_CORR_LEN2 %4 == 0);
 
       for (n = 0; n < PITCH_CORR_LEN2; n += 4) {
         int16x4_t int_16x4_x = vld1_s16(&x[n]);

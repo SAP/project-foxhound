@@ -14,105 +14,56 @@
 
 BEGIN_QUOTA_NAMESPACE
 
-class UsageInfo
-{
-public:
-  UsageInfo()
-  : mCanceled(false), mDatabaseUsage(0), mFileUsage(0), mLimit(0)
-  { }
-
-  virtual ~UsageInfo()
-  { }
-
-  bool
-  Canceled()
-  {
-    return mCanceled;
+class UsageInfo final {
+ public:
+  void Append(const UsageInfo& aUsageInfo) {
+    IncrementUsage(mDatabaseUsage, aUsageInfo.mDatabaseUsage);
+    IncrementUsage(mFileUsage, aUsageInfo.mFileUsage);
   }
 
-  nsresult
-  Cancel()
-  {
-    if (mCanceled.exchange(true)) {
-      NS_WARNING("Canceled more than once?!");
-      return NS_ERROR_UNEXPECTED;
-    }
-    return NS_OK;
+  void AppendToDatabaseUsage(const Maybe<uint64_t>& aUsage) {
+    IncrementUsage(mDatabaseUsage, aUsage);
   }
 
-  void
-  AppendToDatabaseUsage(uint64_t aUsage)
-  {
-    IncrementUsage(&mDatabaseUsage, aUsage);
+  void AppendToFileUsage(const Maybe<uint64_t>& aUsage) {
+    IncrementUsage(mFileUsage, aUsage);
   }
 
-  void
-  AppendToFileUsage(uint64_t aUsage)
-  {
-    IncrementUsage(&mFileUsage, aUsage);
-  }
+  const Maybe<uint64_t>& DatabaseUsage() const { return mDatabaseUsage; }
 
-  void
-  SetLimit(uint64_t aLimit)
-  {
-    mLimit = aLimit;
-  }
+  const Maybe<uint64_t>& FileUsage() const { return mFileUsage; }
 
-  uint64_t
-  DatabaseUsage()
-  {
-    return mDatabaseUsage;
-  }
+  Maybe<uint64_t> TotalUsage() {
+    Maybe<uint64_t> totalUsage;
 
-  uint64_t
-  FileUsage()
-  {
-    return mFileUsage;
-  }
+    IncrementUsage(totalUsage, mDatabaseUsage);
+    IncrementUsage(totalUsage, mFileUsage);
 
-  uint64_t
-  Limit()
-  {
-    return mLimit;
-  }
-
-  uint64_t
-  TotalUsage()
-  {
-    uint64_t totalUsage = mDatabaseUsage;
-    IncrementUsage(&totalUsage, mFileUsage);
     return totalUsage;
   }
 
-  void
-  ResetUsage()
-  {
-    mDatabaseUsage = 0;
-    mFileUsage = 0;
-  }
+  static void IncrementUsage(Maybe<uint64_t>& aUsage,
+                             const Maybe<uint64_t>& aDelta) {
+    if (aDelta.isNothing()) {
+      return;
+    }
 
-  static void
-  IncrementUsage(uint64_t* aUsage, uint64_t aDelta)
-  {
-    MOZ_ASSERT(aUsage);
-    CheckedUint64 value = *aUsage;
-    value += aDelta;
+    CheckedUint64 value = aUsage.valueOr(0);
+
+    value += aDelta.value();
+
     if (value.isValid()) {
-      *aUsage = value.value();
+      aUsage = Some(value.value());
     } else {
-      *aUsage = UINT64_MAX;
+      aUsage = Some(UINT64_MAX);
     }
   }
 
-protected:
-  mozilla::Atomic<bool> mCanceled;
-
-private:
-  uint64_t mDatabaseUsage;
-  uint64_t mFileUsage;
-  uint64_t mLimit;
+ private:
+  Maybe<uint64_t> mDatabaseUsage;
+  Maybe<uint64_t> mFileUsage;
 };
 
 END_QUOTA_NAMESPACE
 
-#endif // mozilla_dom_quota_usageinfo_h__
+#endif  // mozilla_dom_quota_usageinfo_h__

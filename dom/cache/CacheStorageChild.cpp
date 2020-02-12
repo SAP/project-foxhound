@@ -16,64 +16,49 @@ namespace dom {
 namespace cache {
 
 // declared in ActorUtils.h
-void
-DeallocPCacheStorageChild(PCacheStorageChild* aActor)
-{
-  delete aActor;
-}
+void DeallocPCacheStorageChild(PCacheStorageChild* aActor) { delete aActor; }
 
 CacheStorageChild::CacheStorageChild(CacheStorage* aListener,
-                                     CacheWorkerHolder* aWorkerHolder)
-  : mListener(aListener)
-  , mNumChildActors(0)
-  , mDelayedDestroy(false)
-{
+                                     CacheWorkerRef* aWorkerRef)
+    : mListener(aListener), mNumChildActors(0), mDelayedDestroy(false) {
   MOZ_COUNT_CTOR(cache::CacheStorageChild);
-  MOZ_ASSERT(mListener);
+  MOZ_DIAGNOSTIC_ASSERT(mListener);
 
-  SetWorkerHolder(aWorkerHolder);
+  SetWorkerRef(aWorkerRef);
 }
 
-CacheStorageChild::~CacheStorageChild()
-{
+CacheStorageChild::~CacheStorageChild() {
   MOZ_COUNT_DTOR(cache::CacheStorageChild);
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
-  MOZ_ASSERT(!mListener);
+  MOZ_DIAGNOSTIC_ASSERT(!mListener);
 }
 
-void
-CacheStorageChild::ClearListener()
-{
+void CacheStorageChild::ClearListener() {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
-  MOZ_ASSERT(mListener);
+  MOZ_DIAGNOSTIC_ASSERT(mListener);
   mListener = nullptr;
 }
 
-void
-CacheStorageChild::ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
-                             nsISupports* aParent, const CacheOpArgs& aArgs)
-{
+void CacheStorageChild::ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
+                                  nsISupports* aParent,
+                                  const CacheOpArgs& aArgs) {
   mNumChildActors += 1;
   Unused << SendPCacheOpConstructor(
-    new CacheOpChild(GetWorkerHolder(), aGlobal, aParent, aPromise), aArgs);
+      new CacheOpChild(GetWorkerRef(), aGlobal, aParent, aPromise), aArgs);
 }
 
-void
-CacheStorageChild::StartDestroyFromListener()
-{
+void CacheStorageChild::StartDestroyFromListener() {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
 
   // The listener should be held alive by any async operations, so if it
   // is going away then there must not be any child actors.  This in turn
   // ensures that StartDestroy() will not trigger the delayed path.
-  MOZ_ASSERT(!mNumChildActors);
+  MOZ_DIAGNOSTIC_ASSERT(!mNumChildActors);
 
   StartDestroy();
 }
 
-void
-CacheStorageChild::StartDestroy()
-{
+void CacheStorageChild::StartDestroy() {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
 
   // If we have outstanding child actors, then don't destroy ourself yet.
@@ -88,7 +73,7 @@ CacheStorageChild::StartDestroy()
   RefPtr<CacheStorage> listener = mListener;
 
   // StartDestroy() can get called from either CacheStorage or the
-  // CacheWorkerHolder.
+  // CacheWorkerRef.
   // Theoretically we can get double called if the right race happens.  Handle
   // that by just ignoring the second StartDestroy() call.
   if (!listener) {
@@ -98,51 +83,44 @@ CacheStorageChild::StartDestroy()
   listener->DestroyInternal(this);
 
   // CacheStorage listener should call ClearListener() in DestroyInternal()
-  MOZ_ASSERT(!mListener);
+  MOZ_DIAGNOSTIC_ASSERT(!mListener);
 
   // Start actor destruction from parent process
   Unused << SendTeardown();
 }
 
-void
-CacheStorageChild::ActorDestroy(ActorDestroyReason aReason)
-{
+void CacheStorageChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheStorageChild);
   RefPtr<CacheStorage> listener = mListener;
   if (listener) {
     listener->DestroyInternal(this);
     // CacheStorage listener should call ClearListener() in DestroyInternal()
-    MOZ_ASSERT(!mListener);
+    MOZ_DIAGNOSTIC_ASSERT(!mListener);
   }
 
-  RemoveWorkerHolder();
+  RemoveWorkerRef();
 }
 
-PCacheOpChild*
-CacheStorageChild::AllocPCacheOpChild(const CacheOpArgs& aOpArgs)
-{
+PCacheOpChild* CacheStorageChild::AllocPCacheOpChild(
+    const CacheOpArgs& aOpArgs) {
   MOZ_CRASH("CacheOpChild should be manually constructed.");
   return nullptr;
 }
 
-bool
-CacheStorageChild::DeallocPCacheOpChild(PCacheOpChild* aActor)
-{
+bool CacheStorageChild::DeallocPCacheOpChild(PCacheOpChild* aActor) {
   delete aActor;
   NoteDeletedActor();
   return true;
 }
 
-void
-CacheStorageChild::NoteDeletedActor()
-{
-  MOZ_ASSERT(mNumChildActors);
+void CacheStorageChild::NoteDeletedActor() {
+  MOZ_DIAGNOSTIC_ASSERT(mNumChildActors);
   mNumChildActors -= 1;
   if (!mNumChildActors && mDelayedDestroy) {
     StartDestroy();
   }
 }
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Arg, RetVal, generateActorSpec} = require("devtools/shared/protocol");
+const { Arg, RetVal, generateActorSpec } = require("devtools/shared/protocol");
 
 const environmentSpec = generateActorSpec({
   typeName: "environment",
@@ -12,14 +12,14 @@ const environmentSpec = generateActorSpec({
     assign: {
       request: {
         name: Arg(1),
-        value: Arg(2)
-      }
+        value: Arg(2),
+      },
     },
     bindings: {
       request: {},
       response: {
-        bindings: RetVal("json")
-      }
+        bindings: RetVal("json"),
+      },
     },
   },
 });

@@ -14,11 +14,31 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'necko_socket'
 
+LOCAL_INCLUDES += [
+    '/netwerk/base',
+]
+
+EXPORTS += [
+    'nsSocketProviderService.h',
+]
+
 UNIFIED_SOURCES += [
     'nsSocketProviderService.cpp',
     'nsSOCKSIOLayer.cpp',
     'nsSOCKSSocketProvider.cpp',
     'nsUDPSocketProvider.cpp',
 ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    XPIDL_SOURCES += [
+        'nsINamedPipeService.idl',
+    ]
+    EXPORTS += [
+        'nsNamedPipeService.h',
+    ]
+    UNIFIED_SOURCES += [
+        'nsNamedPipeIOLayer.cpp',
+        'nsNamedPipeService.cpp'
+    ]
 
 FINAL_LIBRARY = 'xul'

@@ -7,17 +7,16 @@
 
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/files/scoped_file.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "sandbox/linux/bpf_dsl/codegen.h"
+#include "sandbox/linux/bpf_dsl/policy.h"
 #include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 struct arch_seccomp_data;
-namespace bpf_dsl {
-class Policy;
-}
 
 // This class can be used to apply a syscall sandboxing policy expressed in a
 // bpf_dsl::Policy object to the current process.
@@ -32,7 +31,7 @@ class SANDBOX_EXPORT SandboxBPF {
 
   // Ownership of |policy| is transfered here to the sandbox object.
   // nullptr is allowed for unit tests.
-  explicit SandboxBPF(bpf_dsl::Policy* policy);
+  explicit SandboxBPF(std::unique_ptr<bpf_dsl::Policy> policy);
   // NOTE: Setting a policy and starting the sandbox is a one-way operation.
   // The kernel does not provide any option for unloading a loaded sandbox. The
   // sandbox remains engaged even when the object is destructed.
@@ -104,7 +103,7 @@ class SANDBOX_EXPORT SandboxBPF {
 
   base::ScopedFD proc_fd_;
   bool sandbox_has_started_;
-  scoped_ptr<bpf_dsl::Policy> policy_;
+  std::unique_ptr<bpf_dsl::Policy> policy_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxBPF);
 };

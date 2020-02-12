@@ -2,14 +2,14 @@
 <html>
 <head>
   <title>Test for bug 1319088</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 
 <body>
 <input id="input" type="file"></input>
 
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 function testSetup() {
   SpecialPowers.pushPrefEnv({"set": [["dom.input.dirpicker", true],
@@ -36,7 +36,7 @@ function checkBug() {
   var input = document.getElementById("input");
   is(input.files[0].webkitRelativePath, "", "No relative path!");
 
-  let form = document.createElement('form');
+  let form = document.createElement("form");
   form.appendChild(input);
 
   is(input.files[0].webkitRelativePath, "", "No relative path!");

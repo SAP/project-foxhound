@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import argparse
 import optparse
 import os
@@ -11,30 +13,46 @@ from collections import defaultdict
 from . import handlers
 from . import formatters
 from .structuredlog import StructuredLogger, set_default_logger
+import six
 
 log_formatters = {
-    'raw': (formatters.JSONFormatter, "Raw structured log messages"),
-    'unittest': (formatters.UnittestFormatter, "Unittest style output"),
-    'xunit': (formatters.XUnitFormatter, "xUnit compatible XML"),
-    'html': (formatters.HTMLFormatter, "HTML report"),
-    'mach': (formatters.MachFormatter, "Human-readable output"),
-    'tbpl': (formatters.TbplFormatter, "TBPL style log format"),
+    'raw': (formatters.JSONFormatter, "Raw structured log messages "
+                                      "(provided by mozlog)"),
+    'unittest': (formatters.UnittestFormatter, "Unittest style output "
+                                               "(provided by mozlog)"),
+    'xunit': (formatters.XUnitFormatter, "xUnit compatible XML "
+                                         "(povided by mozlog)"),
+    'html': (formatters.HTMLFormatter, "HTML report "
+                                       "(provided by mozlog)"),
+    'mach': (formatters.MachFormatter, "Human-readable output "
+                                       "(provided by mozlog)"),
+    'tbpl': (formatters.TbplFormatter, "TBPL style log format "
+                                       "(provided by mozlog)"),
+    'grouped': (formatters.GroupingFormatter, "Grouped summary of test results "
+                                              "(provided by mozlog)"),
     'errorsummary': (formatters.ErrorSummaryFormatter, argparse.SUPPRESS),
 }
 
 TEXT_FORMATTERS = ('raw', 'mach')
 """a subset of formatters for non test harnesses related applications"""
 
+
+DOCS_URL = "https://firefox-source-docs.mozilla.org/mozbase/mozlog.html"
+
+
 def level_filter_wrapper(formatter, level):
     return handlers.LogLevelFilter(formatter, level)
+
 
 def verbose_wrapper(formatter, verbose):
     formatter.verbose = verbose
     return formatter
 
+
 def compact_wrapper(formatter, compact):
     formatter.compact = compact
     return formatter
+
 
 def buffer_handler_wrapper(handler, buffer_limit):
     if buffer_limit == "UNLIMITED":
@@ -43,8 +61,15 @@ def buffer_handler_wrapper(handler, buffer_limit):
         buffer_limit = int(buffer_limit)
     return handlers.BufferHandler(handler, buffer_limit)
 
+
+def screenshot_wrapper(formatter, enable_screenshot):
+    formatter.enable_screenshot = enable_screenshot
+    return formatter
+
+
 def valgrind_handler_wrapper(handler):
     return handlers.ValgrindHandler(handler)
+
 
 def default_formatter_options(log_type, overrides):
     formatter_option_defaults = {
@@ -61,21 +86,29 @@ def default_formatter_options(log_type, overrides):
 
     return rv
 
+
 fmt_options = {
     # <option name>: (<wrapper function>, description, <applicable formatters>, action)
     # "action" is used by the commandline parser in use.
     'verbose': (verbose_wrapper,
                 "Enables verbose mode for the given formatter.",
-                ["mach"], "store_true"),
+                {"mach"}, "store_true"),
     'compact': (compact_wrapper,
                 "Enables compact mode for the given formatter.",
-                ["tbpl"], "store_true"),
+                {"tbpl"}, "store_true"),
     'level': (level_filter_wrapper,
-              "A least log level to subscribe to for the given formatter (debug, info, error, etc.)",
-              ["mach", "raw", "tbpl"], "store"),
+              "A least log level to subscribe to for the given formatter "
+              "(debug, info, error, etc.)",
+              {"mach", "raw", "tbpl"}, "store"),
     'buffer': (buffer_handler_wrapper,
                "If specified, enables message buffering at the given buffer size limit.",
                ["mach", "tbpl"], "store"),
+    'screenshot': (screenshot_wrapper,
+                   "Enable logging reftest-analyzer compatible screenshot data.",
+                   {"mach"}, "store_true"),
+    'no-screenshot': (screenshot_wrapper,
+                      "Disable logging reftest-analyzer compatible screenshot data.",
+                      {"mach"}, "store_false"),
 }
 
 
@@ -111,10 +144,12 @@ def add_logging_group(parser, include_formatters=None):
     group_name = "Output Logging"
     group_description = ("Each option represents a possible logging format "
                          "and takes a filename to write that format to, "
-                         "or '-' to write to stdout.")
+                         "or '-' to write to stdout. Some options are "
+                         "provided by the mozlog utility; see %s "
+                         "for extended documentation." % DOCS_URL)
 
     if include_formatters is None:
-        include_formatters = log_formatters.keys()
+        include_formatters = list(log_formatters.keys())
 
     if isinstance(parser, optparse.OptionParser):
         group = optparse.OptionGroup(parser,
@@ -129,17 +164,22 @@ def add_logging_group(parser, include_formatters=None):
         opt_log_type = log_file
         group_add = group.add_argument
 
-    for name, (cls, help_str) in log_formatters.iteritems():
+    for name, (cls, help_str) in six.iteritems(log_formatters):
         if name in include_formatters:
             group_add("--log-" + name, action="append", type=opt_log_type,
                       help=help_str)
 
-    for optname, (cls, help_str, formatters, action) in fmt_options.iteritems():
-        for fmt in formatters:
-            # make sure fmt is in log_formatters and is accepted
-            if fmt in log_formatters and fmt in include_formatters:
-                group_add("--log-%s-%s" % (fmt, optname), action=action,
-                          help=help_str, default=None)
+    for fmt in include_formatters:
+        for optname, (cls, help_str, formatters_, action) in six.iteritems(fmt_options):
+            if fmt not in formatters_:
+                continue
+            if optname.startswith("no-") and action == "store_false":
+                dest = optname.split("-", 1)[1]
+            else:
+                dest = optname
+            dest = dest.replace("-", "_")
+            group_add("--log-%s-%s" % (fmt, optname), action=action,
+                      help=help_str, default=None, dest="log_%s_%s" % (fmt, dest))
 
 
 def setup_handlers(logger, formatters, formatter_options, allow_unused_options=False):
@@ -158,12 +198,12 @@ def setup_handlers(logger, formatters, formatter_options, allow_unused_options=F
                list(unused_options))
         raise ValueError(msg)
 
-    for fmt, streams in formatters.iteritems():
+    for fmt, streams in six.iteritems(formatters):
         formatter_cls = log_formatters[fmt][0]
         formatter = formatter_cls()
         handler_wrappers_and_options = []
 
-        for option, value in formatter_options[fmt].iteritems():
+        for option, value in six.iteritems(formatter_options[fmt]):
             wrapper, wrapper_args = None, ()
             if option == "valgrind":
                 wrapper = valgrind_handler_wrapper
@@ -182,7 +222,8 @@ def setup_handlers(logger, formatters, formatter_options, allow_unused_options=F
             logger.add_handler(handler)
 
 
-def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_unused_options=False):
+def setup_logging(logger, args, defaults=None, formatter_defaults=None,
+                  allow_unused_options=False):
     """
     Configure a structuredlogger based on command line arguments.
 
@@ -206,6 +247,9 @@ def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_un
 
     if not isinstance(logger, StructuredLogger):
         logger = StructuredLogger(logger)
+        # The likely intent when using this function is to get a brand new
+        # logger, so reset state in case it was previously initialized.
+        logger.reset_state()
 
     # Keep track of any options passed for formatters.
     formatter_options = {}
@@ -215,7 +259,7 @@ def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_un
     found_stdout_logger = False
     if args is None:
         args = {}
-    if not hasattr(args, 'iteritems'):
+    if not isinstance(args, dict):
         args = vars(args)
 
     if defaults is None:
@@ -224,7 +268,7 @@ def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_un
         else:
             defaults = {"raw": sys.stdout}
 
-    for name, values in args.iteritems():
+    for name, values in six.iteritems(args):
         parts = name.split('_')
         if len(parts) > 3:
             continue
@@ -238,7 +282,7 @@ def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_un
                 _, formatter = parts
                 for value in values:
                     found = True
-                    if isinstance(value, basestring):
+                    if isinstance(value, six.string_types):
                         value = log_file(value)
                     if value == sys.stdout:
                         found_stdout_logger = True
@@ -250,13 +294,13 @@ def setup_logging(logger, args, defaults=None, formatter_defaults=None, allow_un
                                                                              formatter_defaults)
                 formatter_options[formatter][opt] = values
 
-    #If there is no user-specified logging, go with the default options
+    # If there is no user-specified logging, go with the default options
     if not found:
-        for name, value in defaults.iteritems():
+        for name, value in six.iteritems(defaults):
             formatters[name].append(value)
 
-    elif not found_stdout_logger and sys.stdout in defaults.values():
-        for name, value in defaults.iteritems():
+    elif not found_stdout_logger and sys.stdout in list(defaults.values()):
+        for name, value in six.iteritems(defaults):
             if value == sys.stdout:
                 formatters[name].append(value)
 

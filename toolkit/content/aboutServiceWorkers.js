@@ -2,18 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-
-const bundle = Services.strings.createBundle(
-  "chrome://global/locale/aboutServiceWorkers.properties");
-
-const brandBundle = Services.strings.createBundle(
-  "chrome://branding/locale/brand.properties");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gSWM;
 var gSWCount = 0;
@@ -26,10 +17,13 @@ function init() {
     return;
   }
 
-  gSWM = Cc["@mozilla.org/serviceworkers/manager;1"]
-           .getService(Ci.nsIServiceWorkerManager);
+  gSWM = Cc["@mozilla.org/serviceworkers/manager;1"].getService(
+    Ci.nsIServiceWorkerManager
+  );
   if (!gSWM) {
-    dump("AboutServiceWorkers: Failed to get the ServiceWorkerManager service!\n");
+    dump(
+      "AboutServiceWorkers: Failed to get the ServiceWorkerManager service!\n"
+    );
     return;
   }
 
@@ -48,8 +42,7 @@ function init() {
 
   let ps = undefined;
   try {
-    ps = Cc["@mozilla.org/push/Service;1"]
-           .getService(Ci.nsIPushService);
+    ps = Cc["@mozilla.org/push/Service;1"].getService(Ci.nsIPushService);
   } catch (e) {
     dump("Could not acquire PushService\n");
   }
@@ -57,7 +50,9 @@ function init() {
   for (let i = 0; i < length; ++i) {
     let info = data.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo);
     if (!info) {
-      dump("AboutServiceWorkers: Invalid nsIServiceWorkerRegistrationInfo interface.\n");
+      dump(
+        "AboutServiceWorkers: Invalid nsIServiceWorkerRegistrationInfo interface.\n"
+      );
       continue;
     }
 
@@ -65,120 +60,121 @@ function init() {
   }
 }
 
-function display(info, pushService) {
+async function display(info, pushService) {
   let parent = document.getElementById("serviceworkers");
 
-  let div = document.createElement('div');
+  let div = document.createElement("div");
   parent.appendChild(div);
 
-  let title = document.createElement('h2');
-  let titleStr = bundle.formatStringFromName('title', [info.principal.origin], 1);
-  title.appendChild(document.createTextNode(titleStr));
+  let title = document.createElement("h2");
+  document.l10n.setAttributes(title, "origin-title", {
+    originTitle: info.principal.origin,
+  });
   div.appendChild(title);
 
-  if (info.principal.appId) {
-    let b2gtitle = document.createElement('h3');
-    let trueFalse = bundle.GetStringFromName(info.principal.isInIsolatedMozBrowserElement ? 'true' : 'false');
-
-    let b2gtitleStr =
-      bundle.formatStringFromName('b2gtitle', [ brandBundle.getString("brandShortName"),
-                                                info.principal.appId,
-                                                trueFalse], 2);
-    b2gtitle.appendChild(document.createTextNode(b2gtitleStr));
-    div.appendChild(b2gtitle);
-  }
-
-  let list = document.createElement('ul');
+  let list = document.createElement("ul");
   div.appendChild(list);
 
-  function createItem(title, value, makeLink) {
-    let item = document.createElement('li');
+  function createItem(l10nId, value, makeLink) {
+    let item = document.createElement("li");
     list.appendChild(item);
-
-    let bold = document.createElement('strong');
-    bold.appendChild(document.createTextNode(title + " "));
+    let bold = document.createElement("strong");
+    bold.setAttribute("data-l10n-name", "item-label");
     item.appendChild(bold);
-
-    let textNode = document.createTextNode(value);
-
-    if (makeLink) {
+    if (!value) {
+      document.l10n.setAttributes(item, l10nId);
+    } else if (makeLink) {
       let link = document.createElement("a");
-      link.href = value;
-      link.target = "_blank";
-      link.appendChild(textNode);
+      link.setAttribute("target", "_blank");
+      link.setAttribute("data-l10n-name", "link");
+      link.setAttribute("href", value);
       item.appendChild(link);
+      document.l10n.setAttributes(item, l10nId, { url: value });
     } else {
-      item.appendChild(textNode);
+      document.l10n.setAttributes(item, l10nId, { name: value });
     }
-
-    return textNode;
+    return item;
   }
 
-  createItem(bundle.GetStringFromName('scope'), info.scope);
-  createItem(bundle.GetStringFromName('scriptSpec'), info.scriptSpec, true);
+  createItem("scope", info.scope);
+  createItem("script-spec", info.scriptSpec, true);
   let currentWorkerURL = info.activeWorker ? info.activeWorker.scriptSpec : "";
-  createItem(bundle.GetStringFromName('currentWorkerURL'), currentWorkerURL, true);
+  createItem("current-worker-url", currentWorkerURL, true);
   let activeCacheName = info.activeWorker ? info.activeWorker.cacheName : "";
-  createItem(bundle.GetStringFromName('activeCacheName'), activeCacheName);
+  createItem("active-cache-name", activeCacheName);
   let waitingCacheName = info.waitingWorker ? info.waitingWorker.cacheName : "";
-  createItem(bundle.GetStringFromName('waitingCacheName'), waitingCacheName);
+  createItem("waiting-cache-name", waitingCacheName);
 
-  let pushItem = createItem(bundle.GetStringFromName('pushEndpoint'), bundle.GetStringFromName('waiting'));
+  let pushItem = createItem("push-end-point-waiting");
   if (pushService) {
-    pushService.getSubscription(info.scope, info.principal, (status, pushRecord) => {
-      if (Components.isSuccessCode(status)) {
-        pushItem.data = JSON.stringify(pushRecord);
-      } else {
-        dump("about:serviceworkers - retrieving push registration failed\n");
+    pushService.getSubscription(
+      info.scope,
+      info.principal,
+      (status, pushRecord) => {
+        if (Components.isSuccessCode(status)) {
+          document.l10n.setAttributes(pushItem, "push-end-point-result", {
+            name: JSON.stringify(pushRecord),
+          });
+        } else {
+          dump("about:serviceworkers - retrieving push registration failed\n");
+        }
       }
-    });
+    );
   }
 
   let updateButton = document.createElement("button");
-  updateButton.appendChild(document.createTextNode(bundle.GetStringFromName('update')));
+  document.l10n.setAttributes(updateButton, "update-button");
   updateButton.onclick = function() {
     gSWM.propagateSoftUpdate(info.principal.originAttributes, info.scope);
   };
   div.appendChild(updateButton);
 
   let unregisterButton = document.createElement("button");
-  unregisterButton.appendChild(document.createTextNode(bundle.GetStringFromName('unregister')));
+  document.l10n.setAttributes(unregisterButton, "unregister-button");
   div.appendChild(unregisterButton);
 
-  let loadingMessage = document.createElement('span');
-  loadingMessage.appendChild(document.createTextNode(bundle.GetStringFromName('waiting')));
-  loadingMessage.classList.add('inactive');
+  let loadingMessage = document.createElement("span");
+  document.l10n.setAttributes(loadingMessage, "waiting");
+  loadingMessage.classList.add("inactive");
   div.appendChild(loadingMessage);
 
   unregisterButton.onclick = function() {
     let cb = {
-      unregisterSucceeded: function() {
+      unregisterSucceeded() {
         parent.removeChild(div);
 
         if (!--gSWCount) {
-         let div = document.getElementById("warning_no_serviceworkers");
-         div.classList.add("active");
+          let div = document.getElementById("warning_no_serviceworkers");
+          div.classList.add("active");
         }
       },
 
-      unregisterFailed: function() {
-        alert(bundle.GetStringFromName('unregisterError'));
+      async unregisterFailed() {
+        let [alertMsg] = await document.l10n.formatValues([
+          { id: "unregister-error" },
+        ]);
+        alert(alertMsg);
       },
 
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIServiceWorkerUnregisterCallback])
+      QueryInterface: ChromeUtils.generateQI([
+        Ci.nsIServiceWorkerUnregisterCallback,
+      ]),
     };
 
-    loadingMessage.classList.remove('inactive');
+    loadingMessage.classList.remove("inactive");
     gSWM.propagateUnregister(info.principal, cb, info.scope);
   };
 
-  let sep = document.createElement('hr');
+  let sep = document.createElement("hr");
   div.appendChild(sep);
 
   ++gSWCount;
 }
 
-window.addEventListener("DOMContentLoaded", function load() {
-  window.removeEventListener("DOMContentLoaded", load);
-  init();
-});
+window.addEventListener(
+  "DOMContentLoaded",
+  function() {
+    init();
+  },
+  { once: true }
+);

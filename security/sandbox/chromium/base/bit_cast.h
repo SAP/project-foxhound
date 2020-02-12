@@ -6,6 +6,11 @@
 #define BASE_BIT_CAST_H_
 
 #include <string.h>
+#include <type_traits>
+
+#include "base/compiler_specific.h"
+#include "base/template_util.h"
+#include "build/build_config.h"
 
 // bit_cast<Dest,Source> is a template function that implements the equivalent
 // of "*reinterpret_cast<Dest*>(&source)".  We need this in very low-level
@@ -54,14 +59,15 @@
 // calls to memcpy() with inline object code when the size argument is a
 // compile-time constant.  On a 32-bit system, memcpy(d,s,4) compiles to one
 // load and one store, and memcpy(d,s,8) compiles to two loads and two stores.
-//
-// WARNING: if Dest or Source is a non-POD type, the result of the memcpy
-// is likely to surprise you.
 
 template <class Dest, class Source>
 inline Dest bit_cast(const Source& source) {
   static_assert(sizeof(Dest) == sizeof(Source),
                 "bit_cast requires source and destination to be the same size");
+  static_assert(base::is_trivially_copyable<Dest>::value,
+                "bit_cast requires the destination type to be copyable");
+  static_assert(base::is_trivially_copyable<Source>::value,
+                "bit_cast requires the source type to be copyable");
 
   Dest dest;
   memcpy(&dest, &source, sizeof(dest));

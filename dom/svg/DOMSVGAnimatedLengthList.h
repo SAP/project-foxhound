@@ -7,15 +7,18 @@
 #ifndef MOZILLA_DOMSVGANIMATEDLENGTHLIST_H__
 #define MOZILLA_DOMSVGANIMATEDLENGTHLIST_H__
 
-#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 
 class SVGAnimatedLengthList;
 class SVGLengthList;
+
+namespace dom {
+
 class DOMSVGLengthList;
 
 /**
@@ -80,7 +83,7 @@ class DOMSVGLengthList;
  *
  * Having all the objects keep a reference directly to their element like this
  * would reduce the number of dereferences that they need to make to get their
- * internal counterpart. Hovewer, this design does not meet the "same object"
+ * internal counterpart. However, this design does not meet the "same object"
  * requirement of the SVG specification. If script keeps a reference to a
  * DOMSVGLength or DOMSVGLengthList object, but not to that object's
  * DOMSVGAnimatedLengthList, then the DOMSVGAnimatedLengthList may be garbage
@@ -103,11 +106,10 @@ class DOMSVGLengthList;
  * One drawback of this design is that objects must look up their parent
  * chain to find their element, but that overhead is relatively small.
  */
-class DOMSVGAnimatedLengthList final : public nsWrapperCache
-{
+class DOMSVGAnimatedLengthList final : public nsWrapperCache {
   friend class DOMSVGLengthList;
 
-public:
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMSVGAnimatedLengthList)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DOMSVGAnimatedLengthList)
 
@@ -122,19 +124,17 @@ public:
    * for the SVGAnimatedLengthList will naturally result in a new
    * DOMSVGAnimatedLengthList being returned.
    */
-  static already_AddRefed<DOMSVGAnimatedLengthList>
-    GetDOMWrapper(SVGAnimatedLengthList *aList,
-                  nsSVGElement *aElement,
-                  uint8_t aAttrEnum,
-                  uint8_t aAxis);
+  static already_AddRefed<DOMSVGAnimatedLengthList> GetDOMWrapper(
+      SVGAnimatedLengthList* aList, dom::SVGElement* aElement,
+      uint8_t aAttrEnum, uint8_t aAxis);
 
   /**
    * This method returns the DOMSVGAnimatedLengthList wrapper for an internal
    * SVGAnimatedLengthList object if it currently has a wrapper. If it does
    * not, then nullptr is returned.
    */
-  static DOMSVGAnimatedLengthList*
-    GetDOMWrapperIfExists(SVGAnimatedLengthList *aList);
+  static DOMSVGAnimatedLengthList* GetDOMWrapperIfExists(
+      SVGAnimatedLengthList* aList);
 
   /**
    * Called by internal code to notify us when we need to sync the length of
@@ -158,26 +158,25 @@ public:
   bool IsAnimating() const;
 
   // WebIDL
-  nsSVGElement* GetParentObject() const { return mElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  dom::SVGElement* GetParentObject() const { return mElement; }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
   // These aren't weak refs because mBaseVal and mAnimVal are weak
   already_AddRefed<DOMSVGLengthList> BaseVal();
   already_AddRefed<DOMSVGLengthList> AnimVal();
 
-private:
-
+ private:
   /**
    * Only our static GetDOMWrapper() factory method may create objects of our
    * type.
    */
-  DOMSVGAnimatedLengthList(nsSVGElement *aElement, uint8_t aAttrEnum, uint8_t aAxis)
-    : mBaseVal(nullptr)
-    , mAnimVal(nullptr)
-    , mElement(aElement)
-    , mAttrEnum(aAttrEnum)
-    , mAxis(aAxis)
-  {
-  }
+  DOMSVGAnimatedLengthList(dom::SVGElement* aElement, uint8_t aAttrEnum,
+                           uint8_t aAxis)
+      : mBaseVal(nullptr),
+        mAnimVal(nullptr),
+        mElement(aElement),
+        mAttrEnum(aAttrEnum),
+        mAxis(aAxis) {}
 
   ~DOMSVGAnimatedLengthList();
 
@@ -188,17 +187,18 @@ private:
   // Weak refs to our DOMSVGLengthList baseVal/animVal objects. These objects
   // are friends and take care of clearing these pointers when they die, making
   // these true weak references.
-  DOMSVGLengthList *mBaseVal;
-  DOMSVGLengthList *mAnimVal;
+  DOMSVGLengthList* mBaseVal;
+  DOMSVGLengthList* mAnimVal;
 
   // Strong ref to our element to keep it alive. We hold this not only for
   // ourself, but also for our base/animVal and all of their items.
-  RefPtr<nsSVGElement> mElement;
+  RefPtr<dom::SVGElement> mElement;
 
   uint8_t mAttrEnum;
   uint8_t mAxis;
 };
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // MOZILLA_DOMSVGANIMATEDLENGTHLIST_H__
+#endif  // MOZILLA_DOMSVGANIMATEDLENGTHLIST_H__

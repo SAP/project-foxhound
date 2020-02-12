@@ -8,18 +8,22 @@
  */
 
 dictionary RTCIceCandidateInit {
-  DOMString? candidate = null;
+  DOMString candidate = "";
   DOMString? sdpMid = null;
-  unsigned short sdpMLineIndex;
+  unsigned short? sdpMLineIndex = null;
+  DOMString? usernameFragment = null;
 };
 
 [Pref="media.peerconnection.enabled",
  JSImplementation="@mozilla.org/dom/rtcicecandidate;1",
- Constructor(optional RTCIceCandidateInit candidateInitDict)]
+ Exposed=Window]
 interface RTCIceCandidate {
-  attribute DOMString?      candidate;
+  [Throws]
+  constructor(optional RTCIceCandidateInit candidateInitDict = {});
+
+  attribute DOMString       candidate;
   attribute DOMString?      sdpMid;
   attribute unsigned short? sdpMLineIndex;
-
-  jsonifier;
+  attribute DOMString? usernameFragment;
+  [Default] object toJSON();
 };

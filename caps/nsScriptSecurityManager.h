@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=4 et sw=4 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,163 +9,118 @@
 
 #include "nsIScriptSecurityManager.h"
 
-#include "nsIAddonPolicyService.h"
 #include "mozilla/Maybe.h"
-#include "nsIAddonPolicyService.h"
 #include "nsIPrincipal.h"
 #include "nsCOMPtr.h"
-#include "nsIObserver.h"
 #include "nsServiceManagerUtils.h"
+#include "nsStringFwd.h"
 #include "plstr.h"
 #include "js/TypeDecls.h"
 
 #include <stdint.h>
 
-class nsCString;
 class nsIIOService;
 class nsIStringBundle;
-class nsSystemPrincipal;
 
 namespace mozilla {
-class PrincipalOriginAttributes;
-} // namespace mozilla
+class OriginAttributes;
+class SystemPrincipal;
+}  // namespace mozilla
 
 /////////////////////////////
 // nsScriptSecurityManager //
 /////////////////////////////
-#define NS_SCRIPTSECURITYMANAGER_CID \
-{ 0x7ee2a4c0, 0x4b93, 0x17d3, \
-{ 0xba, 0x18, 0x00, 0x60, 0xb0, 0xf1, 0x99, 0xa2 }}
+#define NS_SCRIPTSECURITYMANAGER_CID                 \
+  {                                                  \
+    0x7ee2a4c0, 0x4b93, 0x17d3, {                    \
+      0xba, 0x18, 0x00, 0x60, 0xb0, 0xf1, 0x99, 0xa2 \
+    }                                                \
+  }
 
-class nsScriptSecurityManager final : public nsIScriptSecurityManager,
-                                      public nsIObserver
-{
-public:
-    static void Shutdown();
+class nsScriptSecurityManager final : public nsIScriptSecurityManager {
+ public:
+  static void Shutdown();
 
-    NS_DEFINE_STATIC_CID_ACCESSOR(NS_SCRIPTSECURITYMANAGER_CID)
+  NS_DEFINE_STATIC_CID_ACCESSOR(NS_SCRIPTSECURITYMANAGER_CID)
 
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSISCRIPTSECURITYMANAGER
-    NS_DECL_NSIOBSERVER
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSISCRIPTSECURITYMANAGER
 
-    static nsScriptSecurityManager*
-    GetScriptSecurityManager();
+  static nsScriptSecurityManager* GetScriptSecurityManager();
 
-    // Invoked exactly once, by XPConnect.
-    static void InitStatics();
+  // Invoked exactly once, by XPConnect.
+  static void InitStatics();
 
-    static nsSystemPrincipal*
-    SystemPrincipalSingletonConstructor();
+  static already_AddRefed<mozilla::SystemPrincipal>
+  SystemPrincipalSingletonConstructor();
 
-    /**
-     * Utility method for comparing two URIs.  For security purposes, two URIs
-     * are equivalent if their schemes, hosts, and ports (if any) match.  This
-     * method returns true if aSubjectURI and aObjectURI have the same origin,
-     * false otherwise.
-     */
-    static bool SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI);
-    static uint32_t SecurityHashURI(nsIURI* aURI);
+  /**
+   * Utility method for comparing two URIs.  For security purposes, two URIs
+   * are equivalent if their schemes, hosts, and ports (if any) match.  This
+   * method returns true if aSubjectURI and aObjectURI have the same origin,
+   * false otherwise.
+   */
+  static bool SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI);
+  static uint32_t SecurityHashURI(nsIURI* aURI);
 
-    static uint16_t AppStatusForPrincipal(nsIPrincipal *aPrin);
+  static nsresult ReportError(const char* aMessageTag, nsIURI* aSource,
+                              nsIURI* aTarget, bool aFromPrivateWindow);
 
-    static nsresult 
-    ReportError(JSContext* cx, const nsAString& messageTag,
-                nsIURI* aSource, nsIURI* aTarget);
+  static uint32_t HashPrincipalByOrigin(nsIPrincipal* aPrincipal);
 
-    static uint32_t
-    HashPrincipalByOrigin(nsIPrincipal* aPrincipal);
+  static bool GetStrictFileOriginPolicy() { return sStrictFileOriginPolicy; }
 
-    static bool
-    GetStrictFileOriginPolicy()
-    {
-        return sStrictFileOriginPolicy;
-    }
+  void DeactivateDomainPolicy();
 
-    void DeactivateDomainPolicy();
+ private:
+  // GetScriptSecurityManager is the only call that can make one
+  nsScriptSecurityManager();
+  virtual ~nsScriptSecurityManager();
 
-private:
+  // Decides, based on CSP, whether or not eval() and stuff can be executed.
+  static bool ContentSecurityPolicyPermitsJSAction(JSContext* cx,
+                                                   JS::HandleValue aValue);
 
-    // GetScriptSecurityManager is the only call that can make one
-    nsScriptSecurityManager();
-    virtual ~nsScriptSecurityManager();
+  static bool JSPrincipalsSubsume(JSPrincipals* first, JSPrincipals* second);
 
-    // Decides, based on CSP, whether or not eval() and stuff can be executed.
-    static bool
-    ContentSecurityPolicyPermitsJSAction(JSContext *cx);
+  nsresult Init();
 
-    static bool
-    JSPrincipalsSubsume(JSPrincipals *first, JSPrincipals *second);
+  nsresult InitPrefs();
 
-    // Returns null if a principal cannot be found; generally callers
-    // should error out at that point.
-    static nsIPrincipal* doGetObjectPrincipal(JSObject* obj);
+  void ScriptSecurityPrefChanged(const char* aPref = nullptr);
 
-    nsresult
-    Init();
+  inline void AddSitesToFileURIAllowlist(const nsCString& aSiteList);
 
-    nsresult
-    InitPrefs();
+  nsresult GetChannelResultPrincipal(nsIChannel* aChannel,
+                                     nsIPrincipal** aPrincipal,
+                                     bool aIgnoreSandboxing);
 
-    inline void
-    ScriptSecurityPrefChanged();
+  nsresult CheckLoadURIFlags(nsIURI* aSourceURI, nsIURI* aTargetURI,
+                             nsIURI* aSourceBaseURI, nsIURI* aTargetBaseURI,
+                             uint32_t aFlags, bool aFromPrivateWindow);
 
-    inline void
-    AddSitesToFileURIWhitelist(const nsCString& aSiteList);
+  // Returns the file URI allowlist, initializing it if it has not been
+  // initialized.
+  const nsTArray<nsCOMPtr<nsIURI>>& EnsureFileURIAllowlist();
 
-    // If aURI is a moz-extension:// URI, set mAddonId to the associated addon.
-    nsresult MaybeSetAddonIdFromURI(mozilla::PrincipalOriginAttributes& aAttrs, nsIURI* aURI);
+  nsCOMPtr<nsIPrincipal> mSystemPrincipal;
+  bool mPrefInitialized;
+  bool mIsJavaScriptEnabled;
 
-    nsresult GetChannelResultPrincipal(nsIChannel* aChannel,
-                                       nsIPrincipal** aPrincipal,
-                                       bool aIgnoreSandboxing);
+  // List of URIs whose domains and sub-domains are allowlisted to allow
+  // access to file: URIs.  Lazily initialized; isNothing() when not yet
+  // initialized.
+  mozilla::Maybe<nsTArray<nsCOMPtr<nsIURI>>> mFileURIAllowlist;
 
-    nsresult
-    CheckLoadURIFlags(nsIURI* aSourceURI, nsIURI* aTargetURI, nsIURI* aSourceBaseURI,
-                      nsIURI* aTargetBaseURI, uint32_t aFlags);
+  // This machinery controls new-style domain policies. The old-style
+  // policy machinery will be removed soon.
+  nsCOMPtr<nsIDomainPolicy> mDomainPolicy;
 
-    // Returns the file URI whitelist, initializing it if it has not been
-    // initialized.
-    const nsTArray<nsCOMPtr<nsIURI>>& EnsureFileURIWhitelist();
+  static bool sStrictFileOriginPolicy;
 
-    nsCOMPtr<nsIPrincipal> mSystemPrincipal;
-    bool mPrefInitialized;
-    bool mIsJavaScriptEnabled;
-
-    // List of URIs whose domains and sub-domains are whitelisted to allow
-    // access to file: URIs.  Lazily initialized; isNothing() when not yet
-    // initialized.
-    mozilla::Maybe<nsTArray<nsCOMPtr<nsIURI>>> mFileURIWhitelist;
-
-    // This machinery controls new-style domain policies. The old-style
-    // policy machinery will be removed soon.
-    nsCOMPtr<nsIDomainPolicy> mDomainPolicy;
-
-    // Cached addon policy service. We can't generate this in Init() because
-    // that's too early to get a service.
-    mozilla::Maybe<nsCOMPtr<nsIAddonPolicyService>> mAddonPolicyService;
-    nsIAddonPolicyService* GetAddonPolicyService()
-    {
-        if (mAddonPolicyService.isNothing()) {
-            mAddonPolicyService.emplace(do_GetService("@mozilla.org/addons/policy-service;1"));
-        }
-        return mAddonPolicyService.ref();
-    }
-
-    static bool sStrictFileOriginPolicy;
-
-    static nsIIOService    *sIOService;
-    static nsIStringBundle *sStrBundle;
-    static JSContext       *sContext;
+  static nsIIOService* sIOService;
+  static nsIStringBundle* sStrBundle;
+  static JSContext* sContext;
 };
 
-namespace mozilla {
-
-void
-GetJarPrefix(uint32_t aAppid,
-             bool aInIsolatedMozBrowser,
-             nsACString& aJarPrefix);
-
-} // namespace mozilla
-
-#endif // nsScriptSecurityManager_h__
+#endif  // nsScriptSecurityManager_h__

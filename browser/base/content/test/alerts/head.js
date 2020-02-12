@@ -1,20 +1,15 @@
-function promiseAlertWindow() {
-  return new Promise(function(resolve) {
-    let listener = {
-      onOpenWindow(window) {
-        let alertWindow = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindow);
-        alertWindow.addEventListener("load", function onLoad() {
-          alertWindow.removeEventListener("load", onLoad);
-          let windowType = alertWindow.document.documentElement.getAttribute("windowtype");
-          if (windowType != "alert:alert") {
-            return;
-          }
-          Services.wm.removeListener(listener);
-          resolve(alertWindow);
-        });
-      },
-    };
-    Services.wm.addListener(listener);
+async function addNotificationPermission(originString) {
+  return new Promise(resolve => {
+    SpecialPowers.pushPermissions(
+      [
+        {
+          type: "desktop-notification",
+          allow: true,
+          context: originString,
+        },
+      ],
+      resolve
+    );
   });
 }
 
@@ -42,11 +37,16 @@ function promiseWindowClosed(window) {
  * rejected after the requested number of miliseconds.
  */
 function openNotification(aBrowser, fn, timeout) {
-  return ContentTask.spawn(aBrowser, { fn, timeout }, function* ({ fn, timeout }) {
-    let win = content.wrappedJSObject;
-    let notification = win[fn]();
-    win._notification = notification;
-    yield new Promise((resolve, reject) => {
+  info(`openNotification: ${fn}`);
+  return ContentTask.spawn(aBrowser, [fn, timeout], async function([
+    contentFn,
+    contentTimeout,
+  ]) {
+    await new Promise((resolve, reject) => {
+      let win = content.wrappedJSObject;
+      let notification = win[contentFn]();
+      win._notification = notification;
+
       function listener() {
         notification.removeEventListener("show", listener);
         resolve();
@@ -54,11 +54,11 @@ function openNotification(aBrowser, fn, timeout) {
 
       notification.addEventListener("show", listener);
 
-      if (timeout) {
+      if (contentTimeout) {
         content.setTimeout(() => {
           notification.removeEventListener("show", listener);
           reject("timed out");
-        }, timeout);
+        }, contentTimeout);
       }
     });
   });

@@ -10,8 +10,7 @@
   xmlns:html="http://www.w3.org/1999/xhtml"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
 <script>
 
@@ -21,7 +20,7 @@
 SimpleTest.waitForExplicitFinish();
 function runTest()
 {
-  window.open("window_subframe_origin.xul", "_blank", "chrome,width=600,height=600");
+  window.openDialog("window_subframe_origin.xul", "_blank", "chrome,width=600,height=600,noopener", window);
 }
 </script>
 

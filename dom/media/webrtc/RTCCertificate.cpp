@@ -11,9 +11,12 @@
 #include "jsapi.h"
 #include "mozilla/dom/CryptoKey.h"
 #include "mozilla/dom/RTCCertificateBinding.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 #include "mozilla/dom/WebCryptoTask.h"
+#include "mozilla/Move.h"
 #include "mozilla/Sprintf.h"
+#include "mtransport/dtlsidentity.h"
 
 #include <cstdio>
 
@@ -32,64 +35,38 @@ NS_INTERFACE_MAP_END
 
 // Note: explicit casts necessary to avoid
 //       warning C4307: '*' : integral constant overflow
-#define ONE_DAY PRTime(PR_USEC_PER_SEC) * PRTime(60) /*sec*/ \
-  * PRTime(60) /*min*/ * PRTime(24) /*hours*/
-#define EXPIRATION_DEFAULT ONE_DAY * PRTime(30)
+#define ONE_DAY                                 \
+  PRTime(PR_USEC_PER_SEC) * PRTime(60)  /*sec*/ \
+      * PRTime(60) /*min*/ * PRTime(24) /*hours*/
+#define EXPIRATION_DEFAULT ONE_DAY* PRTime(30)
 #define EXPIRATION_SLACK ONE_DAY
-#define EXPIRATION_MAX ONE_DAY * PRTime(365) /*year*/
+#define EXPIRATION_MAX ONE_DAY* PRTime(365) /*year*/
 
 const size_t RTCCertificateCommonNameLength = 16;
 const size_t RTCCertificateMinRsaSize = 1024;
 
-class GenerateRTCCertificateTask : public GenerateAsymmetricKeyTask
-{
-public:
+class GenerateRTCCertificateTask : public GenerateAsymmetricKeyTask {
+ public:
   GenerateRTCCertificateTask(nsIGlobalObject* aGlobal, JSContext* aCx,
                              const ObjectOrString& aAlgorithm,
-                             const Sequence<nsString>& aKeyUsages)
+                             const Sequence<nsString>& aKeyUsages,
+                             PRTime aExpires)
       : GenerateAsymmetricKeyTask(aGlobal, aCx, aAlgorithm, true, aKeyUsages),
-        mExpires(0),
+        mExpires(aExpires),
         mAuthType(ssl_kea_null),
         mCertificate(nullptr),
-        mSignatureAlg(SEC_OID_UNKNOWN)
-  {
-    // Expiry is 30 days after by default.
-    // This is a sort of arbitrary range designed to be valid
-    // now with some slack in case the other side expects
-    // some before expiry.
-    //
+        mSignatureAlg(SEC_OID_UNKNOWN) {}
 
-    mExpires = EXPIRATION_DEFAULT;
-    if (!aAlgorithm.IsObject()) {
-      return;
-    }
-
-    // Load the "expires" attribute from the algorithm dictionary.  This is
-    // (currently) non-standard; it exists to support testing of certificate
-    // expiration, since one month is too long to wait for a test to run.
-    JS::Rooted<JS::Value> exp(aCx, JS::UndefinedValue());
-    JS::Rooted<JSObject*> jsval(aCx, aAlgorithm.GetAsObject());
-    bool ok = JS_GetProperty(aCx, jsval, "expires", &exp);
-    int64_t expval;
-    if (ok) {
-      ok = JS::ToInt64(aCx, exp, &expval);
-    }
-    if (ok && expval > 0) {
-      mExpires = std::min(expval, EXPIRATION_MAX);
-    }
-  }
-
-private:
+ private:
   PRTime mExpires;
   SSLKEAType mAuthType;
-  ScopedCERTCertificate mCertificate;
+  UniqueCERTCertificate mCertificate;
   SECOidTag mSignatureAlg;
 
-  static CERTName* GenerateRandomName(PK11SlotInfo* aSlot)
-  {
+  static CERTName* GenerateRandomName(PK11SlotInfo* aSlot) {
     uint8_t randomName[RTCCertificateCommonNameLength];
-    SECStatus rv = PK11_GenerateRandomOnSlot(aSlot, randomName,
-                                             sizeof(randomName));
+    SECStatus rv =
+        PK11_GenerateRandomOnSlot(aSlot, randomName, sizeof(randomName));
     if (rv != SECSuccess) {
       return nullptr;
     }
@@ -97,32 +74,31 @@ private:
     char buf[sizeof(randomName) * 2 + 4];
     PL_strncpy(buf, "CN=", 3);
     for (size_t i = 0; i < sizeof(randomName); ++i) {
-      snprintf(&buf[i * 2 + 3], 2, "%.2x", randomName[i]);
+      snprintf(&buf[i * 2 + 3], 3, "%.2x", randomName[i]);
     }
     buf[sizeof(buf) - 1] = '\0';
 
     return CERT_AsciiToName(buf);
   }
 
-  nsresult GenerateCertificate()
-  {
-    ScopedPK11SlotInfo slot(PK11_GetInternalSlot());
+  nsresult GenerateCertificate() {
+    UniquePK11SlotInfo slot(PK11_GetInternalSlot());
     MOZ_ASSERT(slot.get());
 
-    ScopedCERTName subjectName(GenerateRandomName(slot.get()));
+    UniqueCERTName subjectName(GenerateRandomName(slot.get()));
     if (!subjectName) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
 
-    ScopedSECKEYPublicKey publicKey(mKeyPair->mPublicKey.get()->GetPublicKey());
-    ScopedCERTSubjectPublicKeyInfo spki(
-        SECKEY_CreateSubjectPublicKeyInfo(publicKey));
+    UniqueSECKEYPublicKey publicKey(mKeyPair->mPublicKey->GetPublicKey());
+    UniqueCERTSubjectPublicKeyInfo spki(
+        SECKEY_CreateSubjectPublicKeyInfo(publicKey.get()));
     if (!spki) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
 
-    ScopedCERTCertificateRequest certreq(
-        CERT_CreateCertificateRequest(subjectName, spki, nullptr));
+    UniqueCERTCertificateRequest certreq(
+        CERT_CreateCertificateRequest(subjectName.get(), spki.get(), nullptr));
     if (!certreq) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
@@ -131,7 +107,7 @@ private:
     PRTime notBefore = now - EXPIRATION_SLACK;
     mExpires += now;
 
-    ScopedCERTValidity validity(CERT_CreateValidity(notBefore, mExpires));
+    UniqueCERTValidity validity(CERT_CreateValidity(notBefore, mExpires));
     if (!validity) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
@@ -139,16 +115,14 @@ private:
     unsigned long serial;
     // Note: This serial in principle could collide, but it's unlikely, and we
     // don't expect anyone to be validating certificates anyway.
-    SECStatus rv =
-        PK11_GenerateRandomOnSlot(slot,
-                                  reinterpret_cast<unsigned char *>(&serial),
-                                  sizeof(serial));
+    SECStatus rv = PK11_GenerateRandomOnSlot(
+        slot.get(), reinterpret_cast<unsigned char*>(&serial), sizeof(serial));
     if (rv != SECSuccess) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
 
-    CERTCertificate* cert = CERT_CreateCertificate(serial, subjectName,
-                                                   validity, certreq);
+    CERTCertificate* cert = CERT_CreateCertificate(
+        serial, subjectName.get(), validity.get(), certreq.get());
     if (!cert) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
@@ -156,10 +130,9 @@ private:
     return NS_OK;
   }
 
-  nsresult SignCertificate()
-  {
+  nsresult SignCertificate() {
     MOZ_ASSERT(mSignatureAlg != SEC_OID_UNKNOWN);
-    PLArenaPool *arena = mCertificate->arena;
+    PLArenaPool* arena = mCertificate->arena;
 
     SECStatus rv = SECOID_SetAlgorithmID(arena, &mCertificate->signature,
                                          mSignatureAlg, nullptr);
@@ -171,20 +144,20 @@ private:
     *(mCertificate->version.data) = SEC_CERTIFICATE_VERSION_3;
     mCertificate->version.len = 1;
 
-    SECItem innerDER = { siBuffer, nullptr, 0 };
-    if (!SEC_ASN1EncodeItem(arena, &innerDER, mCertificate,
+    SECItem innerDER = {siBuffer, nullptr, 0};
+    if (!SEC_ASN1EncodeItem(arena, &innerDER, mCertificate.get(),
                             SEC_ASN1_GET(CERT_CertificateTemplate))) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
 
-    SECItem *signedCert = PORT_ArenaZNew(arena, SECItem);
+    SECItem* signedCert = PORT_ArenaZNew(arena, SECItem);
     if (!signedCert) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
 
-    ScopedSECKEYPrivateKey privateKey(mKeyPair->mPrivateKey.get()->GetPrivateKey());
+    UniqueSECKEYPrivateKey privateKey(mKeyPair->mPrivateKey->GetPrivateKey());
     rv = SEC_DerSignData(arena, signedCert, innerDER.data, innerDER.len,
-                         privateKey, mSignatureAlg);
+                         privateKey.get(), mSignatureAlg);
     if (rv != SECSuccess) {
       return NS_ERROR_DOM_UNKNOWN_ERR;
     }
@@ -192,8 +165,7 @@ private:
     return NS_OK;
   }
 
-  nsresult BeforeCrypto() override
-  {
+  nsresult BeforeCrypto() override {
     if (mAlgName.EqualsLiteral(WEBCRYPTO_ALG_RSASSA_PKCS1)) {
       // Double check that size is OK.
       auto sz = static_cast<size_t>(mRsaParams.keySizeInBits);
@@ -201,7 +173,7 @@ private:
         return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
       }
 
-      KeyAlgorithmProxy& alg = mKeyPair->mPublicKey.get()->Algorithm();
+      KeyAlgorithmProxy& alg = mKeyPair->mPublicKey->Algorithm();
       if (alg.mType != KeyAlgorithmProxy::RSA ||
           !alg.mRsa.mHash.mName.EqualsLiteral(WEBCRYPTO_ALG_SHA256)) {
         return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
@@ -222,8 +194,7 @@ private:
     return NS_OK;
   }
 
-  nsresult DoCrypto() override
-  {
+  nsresult DoCrypto() override {
     nsresult rv = GenerateAsymmetricKeyTask::DoCrypto();
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -236,24 +207,47 @@ private:
     return NS_OK;
   }
 
-  virtual void Resolve() override
-  {
+  virtual void Resolve() override {
     // Make copies of the private key and certificate, otherwise, when this
     // object is deleted, the structures they reference will be deleted too.
-    SECKEYPrivateKey* key = mKeyPair->mPrivateKey.get()->GetPrivateKey();
-    CERTCertificate* cert = CERT_DupCertificate(mCertificate);
+    UniqueSECKEYPrivateKey key = mKeyPair->mPrivateKey->GetPrivateKey();
+    CERTCertificate* cert = CERT_DupCertificate(mCertificate.get());
     RefPtr<RTCCertificate> result =
-        new RTCCertificate(mResultPromise->GetParentObject(),
-                           key, cert, mAuthType, mExpires);
+        new RTCCertificate(mResultPromise->GetParentObject(), key.release(),
+                           cert, mAuthType, mExpires);
     mResultPromise->MaybeResolve(result);
   }
 };
 
-already_AddRefed<Promise>
-RTCCertificate::GenerateCertificate(
-    const GlobalObject& aGlobal, const ObjectOrString& aKeygenAlgorithm,
-    ErrorResult& aRv, JSCompartment* aCompartment)
-{
+static PRTime ReadExpires(JSContext* aCx, const ObjectOrString& aOptions,
+                          ErrorResult& aRv) {
+  // This conversion might fail, but we don't really care; use the default.
+  // If this isn't an object, or it doesn't coerce into the right type,
+  // then we won't get the |expires| value.  Either will be caught later.
+  RTCCertificateExpiration expiration;
+  if (!aOptions.IsObject()) {
+    return EXPIRATION_DEFAULT;
+  }
+  JS::RootedValue value(aCx, JS::ObjectValue(*aOptions.GetAsObject()));
+  if (!expiration.Init(aCx, value)) {
+    aRv.NoteJSContextException(aCx);
+    return 0;
+  }
+
+  if (!expiration.mExpires.WasPassed()) {
+    return EXPIRATION_DEFAULT;
+  }
+  static const uint64_t max =
+      static_cast<uint64_t>(EXPIRATION_MAX / PR_USEC_PER_MSEC);
+  if (expiration.mExpires.Value() > max) {
+    return EXPIRATION_MAX;
+  }
+  return static_cast<PRTime>(expiration.mExpires.Value() * PR_USEC_PER_MSEC);
+}
+
+already_AddRefed<Promise> RTCCertificate::GenerateCertificate(
+    const GlobalObject& aGlobal, const ObjectOrString& aOptions,
+    ErrorResult& aRv, JS::Compartment* aCompartment) {
   nsIGlobalObject* global = xpc::NativeGlobal(aGlobal.Get());
   RefPtr<Promise> p = Promise::Create(global, aRv);
   if (aRv.Failed()) {
@@ -261,11 +255,16 @@ RTCCertificate::GenerateCertificate(
   }
   Sequence<nsString> usages;
   if (!usages.AppendElement(NS_LITERAL_STRING("sign"), fallible)) {
+    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
-  RefPtr<WebCryptoTask> task =
-      new GenerateRTCCertificateTask(global, aGlobal.Context(),
-                                     aKeygenAlgorithm, usages);
+
+  PRTime expires = ReadExpires(aGlobal.Context(), aOptions, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  RefPtr<WebCryptoTask> task = new GenerateRTCCertificateTask(
+      global, aGlobal.Context(), aOptions, usages, expires);
   task->DispatchWithPromise(p);
   return p.forget();
 }
@@ -275,82 +274,37 @@ RTCCertificate::RTCCertificate(nsIGlobalObject* aGlobal)
       mPrivateKey(nullptr),
       mCertificate(nullptr),
       mAuthType(ssl_kea_null),
-      mExpires(0)
-{
-}
+      mExpires(0) {}
 
 RTCCertificate::RTCCertificate(nsIGlobalObject* aGlobal,
                                SECKEYPrivateKey* aPrivateKey,
                                CERTCertificate* aCertificate,
-                               SSLKEAType aAuthType,
-                               PRTime aExpires)
+                               SSLKEAType aAuthType, PRTime aExpires)
     : mGlobal(aGlobal),
       mPrivateKey(aPrivateKey),
       mCertificate(aCertificate),
       mAuthType(aAuthType),
-      mExpires(aExpires)
-{
-}
+      mExpires(aExpires) {}
 
-RTCCertificate::~RTCCertificate()
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return;
-  }
-  destructorSafeDestroyNSSReference();
-  shutdown(ShutdownCalledFrom::Object);
-}
-
-// This creates some interesting lifecycle consequences, since the DtlsIdentity
-// holds NSS objects, but does not implement nsNSSShutDownObject.
-
-// Unfortunately, the code that uses DtlsIdentity cannot always use that lock
-// due to external linkage requirements.  Therefore, the lock is held on this
-// object instead.  Consequently, the DtlsIdentity that this method returns must
-// have a lifetime that is strictly shorter than the RTCCertificate.
-//
-// RTCPeerConnection provides this guarantee by holding a strong reference to
-// the RTCCertificate.  It will cleanup any DtlsIdentity instances that it
-// creates before the RTCCertificate reference is released.
-RefPtr<DtlsIdentity>
-RTCCertificate::CreateDtlsIdentity() const
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown() || !mPrivateKey || !mCertificate) {
+RefPtr<DtlsIdentity> RTCCertificate::CreateDtlsIdentity() const {
+  if (!mPrivateKey || !mCertificate) {
     return nullptr;
   }
-  SECKEYPrivateKey* key = SECKEY_CopyPrivateKey(mPrivateKey);
-  CERTCertificate* cert = CERT_DupCertificate(mCertificate);
-  RefPtr<DtlsIdentity> id = new DtlsIdentity(key, cert, mAuthType);
+  UniqueSECKEYPrivateKey key(SECKEY_CopyPrivateKey(mPrivateKey.get()));
+  UniqueCERTCertificate cert(CERT_DupCertificate(mCertificate.get()));
+  RefPtr<DtlsIdentity> id =
+      new DtlsIdentity(std::move(key), std::move(cert), mAuthType);
   return id;
 }
 
-JSObject*
-RTCCertificate::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return RTCCertificateBinding::Wrap(aCx, this, aGivenProto);
+JSObject* RTCCertificate::WrapObject(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
+  return RTCCertificate_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-RTCCertificate::virtualDestroyNSSReference()
-{
-  destructorSafeDestroyNSSReference();
-}
-
-void
-RTCCertificate::destructorSafeDestroyNSSReference()
-{
-  mPrivateKey.dispose();
-  mCertificate.dispose();
-}
-
-bool
-RTCCertificate::WritePrivateKey(JSStructuredCloneWriter* aWriter,
-                                const nsNSSShutDownPreventionLock& aLockProof) const
-{
+bool RTCCertificate::WritePrivateKey(JSStructuredCloneWriter* aWriter) const {
   JsonWebKey jwk;
-  nsresult rv = CryptoKey::PrivateKeyToJwk(mPrivateKey, jwk, aLockProof);
+  nsresult rv = CryptoKey::PrivateKeyToJwk(mPrivateKey.get(), jwk);
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -358,14 +312,11 @@ RTCCertificate::WritePrivateKey(JSStructuredCloneWriter* aWriter,
   if (!jwk.ToJSON(json)) {
     return false;
   }
-  return WriteString(aWriter, json);
+  return StructuredCloneHolder::WriteString(aWriter, json);
 }
 
-bool
-RTCCertificate::WriteCertificate(JSStructuredCloneWriter* aWriter,
-                                 const nsNSSShutDownPreventionLock& /*proof*/) const
-{
-  ScopedCERTCertificateList certs(CERT_CertListFromCert(mCertificate.get()));
+bool RTCCertificate::WriteCertificate(JSStructuredCloneWriter* aWriter) const {
+  UniqueCERTCertificateList certs(CERT_CertListFromCert(mCertificate.get()));
   if (!certs || certs->len <= 0) {
     return false;
   }
@@ -375,77 +326,72 @@ RTCCertificate::WriteCertificate(JSStructuredCloneWriter* aWriter,
   return JS_WriteBytes(aWriter, certs->certs[0].data, certs->certs[0].len);
 }
 
-bool
-RTCCertificate::WriteStructuredClone(JSStructuredCloneWriter* aWriter) const
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown() || !mPrivateKey || !mCertificate) {
+bool RTCCertificate::WriteStructuredClone(
+    JSContext* aCx, JSStructuredCloneWriter* aWriter) const {
+  if (!mPrivateKey || !mCertificate) {
     return false;
   }
 
   return JS_WriteUint32Pair(aWriter, RTCCERTIFICATE_SC_VERSION, mAuthType) &&
-      JS_WriteUint32Pair(aWriter, (mExpires >> 32) & 0xffffffff,
-                         mExpires & 0xffffffff) &&
-      WritePrivateKey(aWriter, locker) &&
-      WriteCertificate(aWriter, locker);
+         JS_WriteUint32Pair(aWriter, (mExpires >> 32) & 0xffffffff,
+                            mExpires & 0xffffffff) &&
+         WritePrivateKey(aWriter) && WriteCertificate(aWriter);
 }
 
-bool
-RTCCertificate::ReadPrivateKey(JSStructuredCloneReader* aReader,
-                               const nsNSSShutDownPreventionLock& aLockProof)
-{
+bool RTCCertificate::ReadPrivateKey(JSStructuredCloneReader* aReader) {
   nsString json;
-  if (!ReadString(aReader, json)) {
+  if (!StructuredCloneHolder::ReadString(aReader, json)) {
     return false;
   }
   JsonWebKey jwk;
   if (!jwk.Init(json)) {
     return false;
   }
-  mPrivateKey = CryptoKey::PrivateKeyFromJwk(jwk, aLockProof);
+  mPrivateKey = CryptoKey::PrivateKeyFromJwk(jwk);
   return !!mPrivateKey;
 }
 
-bool
-RTCCertificate::ReadCertificate(JSStructuredCloneReader* aReader,
-                                const nsNSSShutDownPreventionLock& /*proof*/)
-{
+bool RTCCertificate::ReadCertificate(JSStructuredCloneReader* aReader) {
   CryptoBuffer cert;
   if (!ReadBuffer(aReader, cert) || cert.Length() == 0) {
     return false;
   }
 
-  SECItem der = { siBuffer, cert.Elements(),
-                  static_cast<unsigned int>(cert.Length()) };
-  mCertificate = CERT_NewTempCertificate(CERT_GetDefaultCertDB(),
-                                         &der, nullptr, true, true);
+  SECItem der = {siBuffer, cert.Elements(),
+                 static_cast<unsigned int>(cert.Length())};
+  mCertificate.reset(CERT_NewTempCertificate(CERT_GetDefaultCertDB(), &der,
+                                             nullptr, true, true));
   return !!mCertificate;
 }
 
-bool
-RTCCertificate::ReadStructuredClone(JSStructuredCloneReader* aReader)
-{
-  nsNSSShutDownPreventionLock locker;
-  if (isAlreadyShutDown()) {
-    return false;
+// static
+already_AddRefed<RTCCertificate> RTCCertificate::ReadStructuredClone(
+    JSContext* aCx, nsIGlobalObject* aGlobal,
+    JSStructuredCloneReader* aReader) {
+  if (!NS_IsMainThread()) {
+    // These objects are mainthread-only.
+    return nullptr;
   }
-
   uint32_t version, authType;
   if (!JS_ReadUint32Pair(aReader, &version, &authType) ||
       version != RTCCERTIFICATE_SC_VERSION) {
-    return false;
+    return nullptr;
   }
-  mAuthType = static_cast<SSLKEAType>(authType);
+  RefPtr<RTCCertificate> cert = new RTCCertificate(aGlobal);
+  cert->mAuthType = static_cast<SSLKEAType>(authType);
 
   uint32_t high, low;
   if (!JS_ReadUint32Pair(aReader, &high, &low)) {
-    return false;
+    return nullptr;
   }
-  mExpires = static_cast<PRTime>(high) << 32 | low;
+  cert->mExpires = static_cast<PRTime>(high) << 32 | low;
 
-  return ReadPrivateKey(aReader, locker) &&
-      ReadCertificate(aReader, locker);
+  if (!cert->ReadPrivateKey(aReader) || !cert->ReadCertificate(aReader)) {
+    return nullptr;
+  }
+
+  return cert.forget();
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

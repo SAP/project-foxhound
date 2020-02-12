@@ -111,7 +111,7 @@ enum Role {
 
   /**
    * Represents a document window. A document window is always contained within
-   * an application window. It is used for role="document".
+   * an application window. For role="document", see NON_NATIVE_DOCUMENT.
    */
   DOCUMENT = 15,
 
@@ -130,7 +130,7 @@ enum Role {
   CHART = 17,
 
   /**
-   * Represents a dialog box or message box. It is used for xul:dialog, 
+   * Represents a dialog box or message box. It is used for xul:dialog,
    * role="dialog".
    */
   DIALOG = 18,
@@ -201,8 +201,8 @@ enum Role {
   ROW = 28,
 
   /**
-   * Represents a cell within a table. It is used for html:td,
-   * xul:tree cell and xul:listcell. Also, see TABLE.
+   * Represents a cell within a table. It is used for html:td and xul:tree cell.
+   * Also, see TABLE.
    */
   CELL = 29,
 
@@ -295,7 +295,7 @@ enum Role {
    * html:input@type="checkbox", role="checkbox".
    */
   CHECKBUTTON = 44,
-  
+
   /**
    * Represents an option button, also called a radio button. It is one of a
    * group of mutually exclusive options. All objects sharing a single parent
@@ -304,11 +304,11 @@ enum Role {
    * role="radio".
    */
   RADIOBUTTON = 45,
-  
+
   /**
-   * Represents a combo box; an edit control with an associated list box that
-   * provides a set of predefined choices. It is used for html:select,
-   * xul:menulist, role="combobox".
+   * Represents a combo box; a popup button with an associated list box that
+   * provides a set of predefined choices. It is used for html:select with a
+   * size of 1 and xul:menulist. See also ROLE_EDITCOMBOBOX.
    */
   COMBOBOX = 46,
 
@@ -319,7 +319,7 @@ enum Role {
 
   /**
    * Represents a progress bar, dynamically showing the user the percent
-   * complete of an operation in progress. It is used for xul:progressmeter,
+   * complete of an operation in progress. It is used for html:progress,
    * role="progressbar".
    */
   PROGRESSBAR = 48,
@@ -345,7 +345,7 @@ enum Role {
   /**
    * Represents a spin box, which is a control that allows the user to increment
    * or decrement the value displayed in a separate "buddy" control associated
-   * with the spin box. It is used for xul:spinbuttons.
+   * with the spin box. It is used for input[type=number] spin buttons.
    */
   SPINBUTTON = 52,
 
@@ -353,7 +353,7 @@ enum Role {
    * Represents a graphical image used to diagram data. It is used for svg:svg.
    */
   DIAGRAM = 53,
-  
+
   /**
    * Represents an animation control, which contains content that changes over
    * time, such as a control that displays a series of bitmap frames.
@@ -362,7 +362,8 @@ enum Role {
 
   /**
    * Represents a mathematical equation. It is used by MATHML, where there is a
-   * rich DOM subtree for an equation. Use FLAT_EQUATION for <img role="math" alt="[TeX]"/>
+   * rich DOM subtree for an equation. Use FLAT_EQUATION for <img role="math"
+   * alt="[TeX]"/>
    */
   EQUATION = 55,
 
@@ -418,7 +419,7 @@ enum Role {
   /**
    * Represents an arrow in one of the four cardinal directions.
    */
-  ARROW  = 65,
+  ARROW = 65,
 
   /**
    * Represents a control that can be drawn into and is used to trap events.
@@ -434,7 +435,7 @@ enum Role {
   /**
    * Represents a specialized dialog that lets the user choose a color.
    */
-  COLOR_CHOOSER  = 68,
+  COLOR_CHOOSER = 68,
 
   /**
    * Represents control whose purpose is to allow a user to edit a date.
@@ -643,13 +644,12 @@ enum Role {
   CAPTION = 103,
 
   /**
-   * A visual frame or container which contains a view of document content.
-   * Document frames may occur within another Document instance, in which case
-   * the second document may be said to be embedded in the containing instance.
-   * HTML frames are often DOCUMENT_FRAME. Either this object, or a
-   * singleton descendant, should implement the Document interface.
+   * An element containing content that assistive technology users may want to
+   * browse in a reading mode, rather than a focus/interactive/application mode.
+   * This role is used for role="document". For the container which holds the
+   * content of a web page, see DOCUMENT.
    */
-  DOCUMENT_FRAME = 104,
+  NON_NATIVE_DOCUMENT = 104,
 
   /**
    * Heading.
@@ -982,14 +982,77 @@ enum Role {
    */
   SUMMARY = 168,
 
-  LAST_ROLE = SUMMARY
+  /**
+   * An ARIA landmark. See related NAVIGATION role.
+   */
+  LANDMARK = 169,
+
+  /**
+   * A specific type of ARIA landmark. The ability to distinguish navigation
+   * landmarks from other types of landmarks is, for example, needed on macOS
+   * where specific AXSubrole and AXRoleDescription for navigation landmarks
+   * are used.
+   */
+  NAVIGATION = 170,
+
+  /**
+   * An object that contains the text of a footnote.
+   */
+  FOOTNOTE = 171,
+
+  /**
+   * A complete or self-contained composition in a document, page, application,
+   * or site and that is, in principle, independently distributable or reusable,
+   * e.g. in syndication.
+   */
+  ARTICLE = 172,
+
+  /**
+   * A perceivable section containing content that is relevant to a specific,
+   * author-specified purpose and sufficiently important that users will likely
+   * want to be able to navigate to the section easily and to have it listed in
+   * a summary of the page.
+   */
+  REGION = 173,
+
+  /**
+   * Represents a control with a text input and a popup with a set of predefined
+   * choices. It is used for ARIA's combobox role. See also COMBOBOX.
+   */
+  EDITCOMBOBOX = 174,
+
+  /**
+   * A section of content that is quoted from another source.
+   */
+  BLOCKQUOTE = 175,
+
+  /**
+   * Content previously deleted or proposed for deletion, e.g. in revision
+   * history or a content view providing suggestions from reviewers.
+   */
+  CONTENT_DELETION = 176,
+
+  /**
+   * Content previously inserted or proposed for insertion, e.g. in revision
+   * history or a content view providing suggestions from reviewers.
+   */
+  CONTENT_INSERTION = 177,
+
+  /**
+   * An html:form element with a label provided by WAI-ARIA.
+   * This may also be used if role="form" with a label should be exposed
+   * differently in the future.
+   */
+  FORM_LANDMARK = 178,
+
+  LAST_ROLE = FORM_LANDMARK
 };
 
-} // namespace role
+}  // namespace roles
 
 typedef enum mozilla::a11y::roles::Role role;
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

@@ -3,40 +3,46 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const PROMPT_URL = "chrome://global/content/commonDialog.xul";
-var { interfaces: Ci } = Components;
 
-function test() {
-  waitForExplicitFinish();
+add_task(async function test() {
+  await new Promise(resolve => {
+    let tab = BrowserTestUtils.addTab(gBrowser);
+    isnot(tab, gBrowser.selectedTab, "New tab shouldn't be selected");
 
-  let tab = gBrowser.addTab();
-  isnot(tab, gBrowser.selectedTab, "New tab shouldn't be selected");
+    let listener = {
+      onOpenWindow(xulWin) {
+        var domwindow = xulWin.docShell.domWindow;
+        waitForFocus(() => {
+          is(
+            domwindow.document.location.href,
+            PROMPT_URL,
+            "Should have seen a prompt window"
+          );
+          is(
+            domwindow.args.promptType,
+            "promptUserAndPass",
+            "Should be an authenticate prompt"
+          );
 
-  let listener = {
-    onOpenWindow: function(window) {
-      var domwindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                            .getInterface(Ci.nsIDOMWindow);
-      waitForFocus(() => {
-        is(domwindow.document.location.href, PROMPT_URL, "Should have seen a prompt window");
-        is(domwindow.args.promptType, "promptUserAndPass", "Should be an authenticate prompt");
+          is(gBrowser.selectedTab, tab, "Should have selected the new tab");
 
-        is(gBrowser.selectedTab, tab, "Should have selected the new tab");
+          domwindow.document.documentElement.cancelDialog();
+        }, domwindow);
+      },
 
-        domwindow.document.documentElement.cancelDialog();
-      }, domwindow);
-    },
+      onCloseWindow() {},
+    };
 
-    onCloseWindow: function() {
-    }
-  };
+    Services.wm.addListener(listener);
+    registerCleanupFunction(() => {
+      Services.wm.removeListener(listener);
+      gBrowser.removeTab(tab);
+    });
 
-  Services.wm.addListener(listener);
-  registerCleanupFunction(() => {
-    Services.wm.removeListener(listener);
-    gBrowser.removeTab(tab);
+    BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => finish());
+    BrowserTestUtils.loadURI(
+      tab.linkedBrowser,
+      "http://example.com/browser/toolkit/components/passwordmgr/test/browser/authenticate.sjs"
+    );
   });
-
-  tab.linkedBrowser.addEventListener("load", () => {
-    finish();
-  }, true);
-  tab.linkedBrowser.loadURI("http://example.com/browser/toolkit/components/passwordmgr/test/browser/authenticate.sjs");
-}
+});

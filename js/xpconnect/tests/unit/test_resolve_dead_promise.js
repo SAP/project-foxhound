@@ -6,34 +6,34 @@
 
 function run_test()
 {
-  var sb = Components.utils.Sandbox("http://www.blah.com");
+  var sb = Cu.Sandbox("http://www.blah.com");
   var resolveFun;
   var p1 = new sb.Promise((res, rej) => {resolveFun = res});
   var rejectFun;
   var p2 = new sb.Promise((res, rej) => {rejectFun = rej});
-  Components.utils.nukeSandbox(sb);
-  do_check_true(Components.utils.isDeadWrapper(sb), "sb should be dead");
-  do_check_true(Components.utils.isDeadWrapper(p1), "p1 should be dead");
-  do_check_true(Components.utils.isDeadWrapper(p2), "p2 should be dead");
+  Cu.nukeSandbox(sb);
+  Assert.ok(Cu.isDeadWrapper(sb), "sb should be dead");
+  Assert.ok(Cu.isDeadWrapper(p1), "p1 should be dead");
+  Assert.ok(Cu.isDeadWrapper(p2), "p2 should be dead");
 
   var exception;
 
   try{
     resolveFun(1);
-    do_check_true(false);
+    Assert.ok(false);
   } catch (e) {
     exception = e;
   }
-  do_check_true(exception.toString().includes("can't access dead object"),
-                "Resolving dead wrapped promise should throw");
+  Assert.ok(exception.toString().includes("can't access dead object"),
+            "Resolving dead wrapped promise should throw");
 
   exception = undefined;
   try{
     rejectFun(1);
-    do_check_true(false);
+    Assert.ok(false);
   } catch (e) {
     exception = e;
   }
-  do_check_true(exception.toString().includes("can't access dead object"),
-                "Rejecting dead wrapped promise should throw");
+  Assert.ok(exception.toString().includes("can't access dead object"),
+            "Rejecting dead wrapped promise should throw");
 }

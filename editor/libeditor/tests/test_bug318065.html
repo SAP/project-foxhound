@@ -9,9 +9,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=318065
 
 <head>
   <title>Test for Bug 318065</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>  
+  <script src="/tests/SimpleTest/EventUtils.js"></script>  
 </head>
 
 <body>
@@ -40,21 +40,21 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=318065
           is(this.value, expectedValues[step], messages[step]);
           step++;
           if (step == expectedValues.length) {
-            this.removeEventListener("input", onInput, false); 
+            this.removeEventListener("input", onInput);
             SimpleTest.finish();
           }
         }
 
         var input = document.getElementById("t1");
-        input.addEventListener("input", onInput, false);
+        input.addEventListener("input", onInput);
         var input2 = document.getElementById("t2");
-        input2.addEventListener("input", onInput, false);
+        input2.addEventListener("input", onInput);
 
         input.focus();
 
         // Tests 0 + 1: Input letter and delete it again
-        synthesizeKey("A", {});
-        synthesizeKey("VK_BACK_SPACE", {});
+        sendString("A");
+        synthesizeKey("KEY_Backspace");
 
         // Test 2: Undo deletion. Value of input should be "A"
         synthesizeKey("Z", {accelKey: true});
@@ -65,7 +65,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=318065
         input2.focus();
 
         // Test 4: Input letter
-        synthesizeKey("A", {});
+        sendString("A");
 
         // Test 5: Undo typing. Value of input should be ""
         synthesizeKey("Z", {accelKey: true});

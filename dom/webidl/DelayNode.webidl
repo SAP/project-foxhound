@@ -10,13 +10,21 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
+dictionary DelayOptions : AudioNodeOptions {
+             double maxDelayTime = 1;
+             double delayTime = 0;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface DelayNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context, optional DelayOptions options = {});
 
     readonly attribute AudioParam delayTime;
 
 };
 
 // Mozilla extension
-DelayNode implements AudioNodePassThrough;
+DelayNode includes AudioNodePassThrough;
 

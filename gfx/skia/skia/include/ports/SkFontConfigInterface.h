@@ -8,12 +8,12 @@
 #ifndef SkFontConfigInterface_DEFINED
 #define SkFontConfigInterface_DEFINED
 
-#include "SkDataTable.h"
 #include "SkFontStyle.h"
 #include "SkRefCnt.h"
+#include "SkStream.h"
 #include "SkTypeface.h"
 
-struct SkBaseMutex;
+class SkFontMgr;
 
 /**
  *  \class SkFontConfigInterface
@@ -23,21 +23,19 @@ struct SkBaseMutex;
  */
 class SK_API SkFontConfigInterface : public SkRefCnt {
 public:
-    
 
     /**
-     *  Returns the global SkFontConfigInterface instance, and if it is not
-     *  NULL, calls ref() on it. The caller must balance this with a call to
-     *  unref().
+     *  Returns the global SkFontConfigInterface instance. If it is not
+     *  nullptr, calls ref() on it. The caller must balance this with a call to
+     *  unref(). The default SkFontConfigInterface is the result of calling
+     *  GetSingletonDirectInterface.
      */
-    static SkFontConfigInterface* RefGlobal();
+    static sk_sp<SkFontConfigInterface> RefGlobal();
 
     /**
-     *  Replace the current global instance with the specified one, safely
-     *  ref'ing the new instance, and unref'ing the previous. Returns its
-     *  parameter (the new global instance).
+     *  Replace the current global instance with the specified one.
      */
-    static SkFontConfigInterface* SetGlobal(SkFontConfigInterface*);
+    static void SetGlobal(sk_sp<SkFontConfigInterface> fc);
 
     /**
      *  This should be treated as private to the impl of SkFontConfigInterface.
@@ -63,7 +61,7 @@ public:
 
         // If buffer is NULL, just return the number of bytes that would have
         // been written. Will pad contents to a multiple of 4.
-        size_t writeToMemory(void* buffer = NULL) const;
+        size_t writeToMemory(void* buffer = nullptr) const;
 
         // Recreate from a flattened buffer, returning the number of bytes read.
         size_t readFromMemory(const void* buffer, size_t length);
@@ -81,10 +79,10 @@ public:
      *  If a match is not found, return false, and ignore all out parameters.
      */
     virtual bool matchFamilyName(const char familyName[],
-                                 SkTypeface::Style requested,
+                                 SkFontStyle requested,
                                  FontIdentity* outFontIdentifier,
                                  SkString* outFamilyName,
-                                 SkTypeface::Style* outStyle) = 0;
+                                 SkFontStyle* outStyle) = 0;
 
     /**
      *  Given a FontRef, open a stream to access its data, or return null
@@ -98,23 +96,19 @@ public:
      *
      *  The default implementation simply returns a new typeface built using data obtained from
      *  openStream(), but derived classes may implement more complex caching schemes.
-     *
-     *  Callers are responsible for unref-ing the result.
      */
-    virtual SkTypeface* createTypeface(const FontIdentity& identity) {
-        return SkTypeface::CreateFromStream(this->openStream(identity), identity.fTTCIndex);
+    virtual sk_sp<SkTypeface> makeTypeface(const FontIdentity& identity) {
+        return SkTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset>(this->openStream(identity)),
+                                          identity.fTTCIndex);
+
     }
 
     /**
      *  Return a singleton instance of a direct subclass that calls into
      *  libfontconfig. This does not affect the refcnt of the returned instance.
-     *  The mutex may be used to guarantee the singleton is only constructed once.
      */
-    static SkFontConfigInterface* GetSingletonDirectInterface(SkBaseMutex* mutex = NULL);
+    static SkFontConfigInterface* GetSingletonDirectInterface();
 
-    // New APIS, which have default impls for now (which do nothing)
-
-    virtual SkDataTable* getFamilyNames() { return SkDataTable::NewEmpty(); }
     typedef SkRefCnt INHERITED;
 };
 

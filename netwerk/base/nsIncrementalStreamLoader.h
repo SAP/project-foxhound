@@ -15,10 +15,10 @@
 
 class nsIRequest;
 
-class nsIncrementalStreamLoader final : public nsIIncrementalStreamLoader
-                                      , public nsIThreadRetargetableStreamListener
-{
-public:
+class nsIncrementalStreamLoader final
+    : public nsIIncrementalStreamLoader,
+      public nsIThreadRetargetableStreamListener {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINCREMENTALSTREAMLOADER
   NS_DECL_NSIREQUESTOBSERVER
@@ -27,11 +27,10 @@ public:
 
   nsIncrementalStreamLoader();
 
-  static nsresult
-  Create(nsISupports *aOuter, REFNSIID aIID, void **aResult);
+  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
-protected:
-  ~nsIncrementalStreamLoader();
+ protected:
+  ~nsIncrementalStreamLoader() = default;
 
   static nsresult WriteSegmentFun(void *, const char *, uint32_t, uint32_t,
                                   const StringTaint&, uint32_t *);
@@ -48,8 +47,8 @@ protected:
   void ReleaseData();
 
   nsCOMPtr<nsIIncrementalStreamLoaderObserver> mObserver;
-  nsCOMPtr<nsISupports>             mContext;  // the observer's context
-  nsCOMPtr<nsIRequest>              mRequest;
+  nsCOMPtr<nsISupports> mContext;  // the observer's context
+  nsCOMPtr<nsIRequest> mRequest;
 
   // Buffer to accumulate incoming data. We preallocate if contentSize is
   // available.
@@ -57,7 +56,7 @@ protected:
   StringTaint mTaint;
 
   // Number of consumed bytes from the mData.
-  size_t  mBytesConsumed;
+  size_t mBytesConsumed;
 };
 
-#endif // nsIncrementalStreamLoader_h__
+#endif  // nsIncrementalStreamLoader_h__

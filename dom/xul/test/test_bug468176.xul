@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=468176
   xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <body id="body" xmlns="http://www.w3.org/1999/xhtml">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=468176">Mozilla Bug 468176</a>
@@ -68,7 +68,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=468176
     is(broadcastCount, 5, "Wrong value (15)");
 
     //After removing listener, changes to broadcaster shouldn't have any effect.
-    o1.parentNode.removeChild(o1);
+    o1.remove();
     b1.setAttribute("value", "foo");
     isnot(o1.getAttribute("value"), b1.getAttribute("value"), "Wrong value (16)");
     is(broadcastCount, 5, "Wrong value (17)");

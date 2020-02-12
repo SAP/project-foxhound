@@ -2,16 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from firefox_ui_harness.testcases import FirefoxTestCase
+from __future__ import absolute_import
+from firefox_puppeteer import PuppeteerMixin
+from marionette_harness import MarionetteTestCase
 
 
-class TestPageInfoWindow(FirefoxTestCase):
+class TestPageInfoWindow(PuppeteerMixin, MarionetteTestCase):
 
     def tearDown(self):
         try:
-            self.windows.close_all([self.browser])
+            self.puppeteer.windows.close_all([self.browser])
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestPageInfoWindow, self).tearDown()
 
     def test_elements(self):
         """Test correct retrieval of elements."""
@@ -20,32 +22,28 @@ class TestPageInfoWindow(FirefoxTestCase):
         self.assertNotEqual(page_info.dtds, [])
         self.assertNotEqual(page_info.properties, [])
 
-        self.assertEqual(page_info.deck.element.get_attribute('localName'), 'deck')
-
-        # feed panel
-        self.assertEqual(page_info.deck.feed.element.get_attribute('localName'), 'vbox')
+        self.assertEqual(page_info.deck.element.get_property('localName'), 'deck')
 
         # general panel
-        self.assertEqual(page_info.deck.general.element.get_attribute('localName'), 'vbox')
+        self.assertEqual(page_info.deck.general.element.get_property('localName'), 'vbox')
 
         # media panel
-        self.assertEqual(page_info.deck.media.element.get_attribute('localName'), 'vbox')
+        self.assertEqual(page_info.deck.media.element.get_property('localName'), 'vbox')
 
         # permissions panel
-        self.assertEqual(page_info.deck.permissions.element.get_attribute('localName'), 'vbox')
+        self.assertEqual(page_info.deck.permissions.element.get_property('localName'), 'vbox')
 
         # security panel
         panel = page_info.deck.select(page_info.deck.security)
 
-        self.assertEqual(panel.element.get_attribute('localName'), 'vbox')
+        self.assertEqual(panel.element.get_property('localName'), 'vbox')
 
-        self.assertEqual(panel.domain.get_attribute('localName'), 'textbox')
-        self.assertEqual(panel.owner.get_attribute('localName'), 'textbox')
-        self.assertEqual(panel.verifier.get_attribute('localName'), 'textbox')
+        self.assertEqual(panel.domain.get_property('localName'), 'textbox')
+        self.assertEqual(panel.owner.get_property('localName'), 'textbox')
+        self.assertEqual(panel.verifier.get_property('localName'), 'textbox')
 
-        self.assertEqual(panel.view_certificate.get_attribute('localName'), 'button')
-        self.assertEqual(panel.view_cookies.get_attribute('localName'), 'button')
-        self.assertEqual(panel.view_passwords.get_attribute('localName'), 'button')
+        self.assertEqual(panel.view_certificate.get_property('localName'), 'button')
+        self.assertEqual(panel.view_passwords.get_property('localName'), 'button')
 
     def test_select(self):
         """Test properties and methods for switching between panels."""
@@ -67,30 +65,33 @@ class TestPageInfoWindow(FirefoxTestCase):
                            opener,
                            )
 
+        platformName = self.marionette.session_capabilities['platformName']
         for trigger in open_strategies:
-            if trigger == 'shortcut' and self.platform == 'windows_nt':
+            if trigger == 'shortcut' and platformName == 'windows':
                 # The shortcut for page info window does not exist on windows.
                 self.assertRaises(ValueError, self.browser.open_page_info_window,
                                   trigger=trigger)
                 continue
 
             page_info = self.browser.open_page_info_window(trigger=trigger)
-            self.assertEquals(page_info, self.windows.current)
+            self.assertEquals(page_info, self.puppeteer.windows.current)
             page_info.close()
 
     def test_close_window(self):
         """Test various closing strategies."""
         def closer(win):
-            win.send_shortcut(win.get_entity('closeWindow.key'), accel=True)
+            win.send_shortcut(win.localize_entity('closeWindow.key'),
+                              accel=True)
 
         # Close a tab by each trigger method
         close_strategies = ('menu',
                             'shortcut',
                             closer,
                             )
+        platformName = self.marionette.session_capabilities['platformName']
         for trigger in close_strategies:
             # menu only works on OS X
-            if trigger == 'menu' and self.platform != 'darwin':
+            if trigger == 'menu' and platformName != 'mac':
                 continue
 
             page_info = self.browser.open_page_info_window()

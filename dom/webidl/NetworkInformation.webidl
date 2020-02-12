@@ -18,7 +18,8 @@ enum ConnectionType {
     "unknown"
 };
 
-[Pref="dom.netinfo.enabled"]
+[Pref="dom.netinfo.enabled",
+ Exposed=(Window,Worker)]
 interface NetworkInformation : EventTarget {
     readonly    attribute ConnectionType type;
                 attribute EventHandler   ontypechange;

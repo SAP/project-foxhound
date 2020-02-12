@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -11,61 +12,85 @@
  * 3) Empty user message visibility
  * 4) Number of requests displayed
  */
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
-  is(document.querySelector("#details-pane-toggle").hasAttribute("disabled"), true,
-    "The pane toggle button should be disabled when the frontend is opened.");
-  is(document.querySelector("#requests-menu-empty-notice").hasAttribute("hidden"), false,
-    "An empty notice should be displayed when the frontend is opened.");
-  is(RequestsMenu.itemCount, 0,
-    "The requests menu should be empty when the frontend is opened.");
-  is(NetMonitorView.detailsPaneHidden, true,
-    "The details pane should be hidden when the frontend is opened.");
+  ok(
+    document.querySelector(".request-list-empty-notice"),
+    "An empty notice should be displayed when the frontend is opened."
+  );
+  is(
+    store.getState().requests.requests.size,
+    0,
+    "The requests menu should be empty when the frontend is opened."
+  );
+  is(
+    !!document.querySelector(".network-details-panel"),
+    false,
+    "The network details panel should be hidden when the frontend is opened."
+  );
 
-  yield reloadAndWait();
+  await reloadAndWait();
 
-  is(document.querySelector("#details-pane-toggle").hasAttribute("disabled"), false,
-    "The pane toggle button should be enabled after the first request.");
-  is(document.querySelector("#requests-menu-empty-notice").hasAttribute("hidden"), true,
-    "The empty notice should be hidden after the first request.");
-  is(RequestsMenu.itemCount, 1,
-    "The requests menu should not be empty after the first request.");
-  is(NetMonitorView.detailsPaneHidden, true,
-    "The details pane should still be hidden after the first request.");
+  ok(
+    !document.querySelector(".request-list-empty-notice"),
+    "The empty notice should be hidden after the first request."
+  );
+  is(
+    store.getState().requests.requests.size,
+    1,
+    "The requests menu should not be empty after the first request."
+  );
+  is(
+    !!document.querySelector(".network-details-panel"),
+    false,
+    "The network details panel should still be hidden after the first request."
+  );
 
-  yield reloadAndWait();
+  await reloadAndWait();
 
-  is(document.querySelector("#details-pane-toggle").hasAttribute("disabled"), false,
-    "The pane toggle button should be still be enabled after a reload.");
-  is(document.querySelector("#requests-menu-empty-notice").hasAttribute("hidden"), true,
-    "The empty notice should be still hidden after a reload.");
-  is(RequestsMenu.itemCount, 1,
-    "The requests menu should not be empty after a reload.");
-  is(NetMonitorView.detailsPaneHidden, true,
-    "The details pane should still be hidden after a reload.");
+  ok(
+    !document.querySelector(".request-list-empty-notice"),
+    "The empty notice should be still hidden after a reload."
+  );
+  is(
+    store.getState().requests.requests.size,
+    1,
+    "The requests menu should not be empty after a reload."
+  );
+  is(
+    !!document.querySelector(".network-details-panel"),
+    false,
+    "The network details panel should still be hidden after a reload."
+  );
 
-  RequestsMenu.clear();
+  store.dispatch(Actions.clearRequests());
 
-  is(document.querySelector("#details-pane-toggle").hasAttribute("disabled"), true,
-    "The pane toggle button should be disabled when after clear.");
-  is(document.querySelector("#requests-menu-empty-notice").hasAttribute("hidden"), false,
-    "An empty notice should be displayed again after clear.");
-  is(RequestsMenu.itemCount, 0,
-    "The requests menu should be empty after clear.");
-  is(NetMonitorView.detailsPaneHidden, true,
-    "The details pane should be hidden after clear.");
+  ok(
+    document.querySelector(".request-list-empty-notice"),
+    "An empty notice should be displayed again after clear."
+  );
+  is(
+    store.getState().requests.requests.size,
+    0,
+    "The requests menu should be empty after clear."
+  );
+  is(
+    !!document.querySelector(".network-details-panel"),
+    false,
+    "The network details panel should still be hidden after clear."
+  );
 
   return teardown(monitor);
 
-  function* reloadAndWait() {
-    let wait = waitForNetworkEvents(monitor, 1);
+  function reloadAndWait() {
+    const wait = waitForNetworkEvents(monitor, 1);
     tab.linkedBrowser.reload();
     return wait;
   }

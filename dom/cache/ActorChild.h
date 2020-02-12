@@ -13,36 +13,30 @@ namespace mozilla {
 namespace dom {
 namespace cache {
 
-class CacheWorkerHolder;
+class CacheWorkerRef;
 
-class ActorChild
-{
-public:
-  virtual void
-  StartDestroy() = 0;
+class ActorChild {
+ public:
+  virtual void StartDestroy() = 0;
 
-  void
-  SetWorkerHolder(CacheWorkerHolder* aWorkerHolder);
+  void SetWorkerRef(CacheWorkerRef* aWorkerRef);
 
-  void
-  RemoveWorkerHolder();
+  void RemoveWorkerRef();
 
-  CacheWorkerHolder*
-  GetWorkerHolder() const;
+  CacheWorkerRef* GetWorkerRef() const;
 
-  bool
-  WorkerHolderNotified() const;
+  bool WorkerRefNotified() const;
 
-protected:
+ protected:
   ActorChild();
   ~ActorChild();
 
-private:
-  RefPtr<CacheWorkerHolder> mWorkerHolder;
+ private:
+  RefPtr<CacheWorkerRef> mWorkerRef;
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_ActioChild_h
+#endif  // mozilla_dom_cache_ActioChild_h

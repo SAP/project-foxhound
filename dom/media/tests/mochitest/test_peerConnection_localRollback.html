@@ -23,10 +23,12 @@
         },
 
         function PC_REMOTE_ROLLBACK(test) {
-          return test.setLocalDescription(
-              test.pcRemote,
-              new RTCSessionDescription({ type: "rollback", sdp: ""}),
-              STABLE);
+          // the negotiationNeeded slot should have been true both before and
+          // after this SLD, so the event should fire again.
+          test.pcRemote.expectNegotiationNeeded();
+          return test.setLocalDescription(test.pcRemote,
+                                          { type: "rollback", sdp: "" },
+                                          STABLE);
         },
 
         // Rolling back should shut down gathering

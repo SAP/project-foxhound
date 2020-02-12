@@ -9,45 +9,62 @@
 
 const HTML_LONG_URL = CONTENT_TYPE_SJS + "?fmt=html-long";
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
   info("Starting test... ");
 
   // This test could potentially be slow because over 100 KB of stuff
   // is going to be requested and displayed in the source editor.
   requestLongerTimeout(2);
 
-  let { document, EVENTS, Editor, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getDisplayedRequests, getSortedRequests } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, HTML_LONG_URL, function* (url) {
+  await ContentTask.spawn(tab.linkedBrowser, HTML_LONG_URL, async function(
+    url
+  ) {
     content.wrappedJSObject.performRequests(1, url);
   });
-  yield wait;
+  await wait;
 
-  verifyRequestItemTarget(RequestsMenu.getItemAtIndex(0),
-    "GET", CONTENT_TYPE_SJS + "?fmt=html-long", {
+  const requestItem = document.querySelector(".request-list-item");
+  requestItem.scrollIntoView();
+  const requestsListStatus = requestItem.querySelector(".status-code");
+  EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+  await waitUntil(() => requestsListStatus.title);
+
+  verifyRequestItemTarget(
+    document,
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
+    "GET",
+    CONTENT_TYPE_SJS + "?fmt=html-long",
+    {
       status: 200,
-      statusText: "OK"
-    });
+      statusText: "OK",
+    }
+  );
 
-  let onEvent = monitor.panelWin.once(EVENTS.RESPONSE_BODY_DISPLAYED);
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.getElementById("details-pane-toggle"));
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll("#details-pane tab")[3]);
-  yield onEvent;
+  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  store.dispatch(Actions.toggleNetworkDetails());
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#response-tab")
+  );
+  await wait;
 
-  let editor = yield NetMonitorView.editor("#response-content-textarea");
-  ok(editor.getText().match(/^<p>/),
-    "The text shown in the source editor is incorrect.");
-  is(editor.getMode(), Editor.modes.text,
-    "The mode active in the source editor is incorrect.");
+  ok(
+    getCodeMirrorValue(monitor).match(/^<p>/),
+    "The text shown in the source editor is incorrect."
+  );
 
-  yield teardown(monitor);
+  await teardown(monitor);
 
   // This test uses a lot of memory, so force a GC to help fragmentation.
   info("Forcing GC after netmonitor test.");

@@ -14,60 +14,156 @@
 #include "nsTArray.h"
 
 #define BEGIN_QUOTA_NAMESPACE \
-  namespace mozilla { namespace dom { namespace quota {
+  namespace mozilla {         \
+  namespace dom {             \
+  namespace quota {
 #define END_QUOTA_NAMESPACE \
-  } /* namespace quota */ } /* namespace dom */ } /* namespace mozilla */
-#define USING_QUOTA_NAMESPACE \
-  using namespace mozilla::dom::quota;
+  } /* namespace quota */   \
+  } /* namespace dom */     \
+  } /* namespace mozilla */
+#define USING_QUOTA_NAMESPACE using namespace mozilla::dom::quota;
 
 #define DSSTORE_FILE_NAME ".DS_Store"
+#define DESKTOP_FILE_NAME ".desktop"
+#define DESKTOP_INI_FILE_NAME "desktop.ini"
+#define THUMBS_DB_FILE_NAME "thumbs.db"
 
-#define QM_WARNING(...)                                                        \
-  do {                                                                         \
-    nsPrintfCString str(__VA_ARGS__);                                          \
-    mozilla::dom::quota::ReportInternalError(__FILE__, __LINE__, str.get());   \
-    NS_WARNING(str.get());                                                     \
+#define QM_WARNING(...)                                                      \
+  do {                                                                       \
+    nsPrintfCString str(__VA_ARGS__);                                        \
+    mozilla::dom::quota::ReportInternalError(__FILE__, __LINE__, str.get()); \
+    NS_WARNING(str.get());                                                   \
   } while (0)
+
+// Telemetry probes to collect number of failure during the initialization.
+#ifdef NIGHTLY_BUILD
+#  define REPORT_TELEMETRY_INIT_ERR(_key, _label)   \
+    mozilla::Telemetry::AccumulateCategoricalKeyed( \
+        mozilla::dom::quota::_key,                  \
+        mozilla::Telemetry::LABELS_QM_INIT_TELEMETRY_ERROR::_label);
+
+#  define REPORT_TELEMETRY_ERR_IN_INIT(_initializing, _key, _label) \
+    do {                                                            \
+      if (_initializing) {                                          \
+        REPORT_TELEMETRY_INIT_ERR(_key, _label)                     \
+      }                                                             \
+    } while (0)
+
+#  define RECORD_IN_NIGHTLY(_recorder, _status) \
+    do {                                        \
+      if (NS_SUCCEEDED(_recorder)) {            \
+        _recorder = _status;                    \
+      }                                         \
+    } while (0)
+
+#  define CONTINUE_IN_NIGHTLY_RETURN_IN_OTHERS(_dummy) continue
+
+#  define RETURN_STATUS_OR_RESULT(_status, _rv) \
+    return NS_FAILED(_status) ? _status : _rv
+#else
+#  define REPORT_TELEMETRY_INIT_ERR(_key, _label) \
+    {}
+
+#  define REPORT_TELEMETRY_ERR_IN_INIT(_initializing, _key, _label) \
+    {}
+
+#  define RECORD_IN_NIGHTLY(_dummy, _status) \
+    {}
+
+#  define CONTINUE_IN_NIGHTLY_RETURN_IN_OTHERS(_rv) return _rv
+
+#  define RETURN_STATUS_OR_RESULT(_status, _rv) return _rv
+#endif
 
 class nsIEventTarget;
 
-BEGIN_QUOTA_NAMESPACE
+namespace mozilla {
 
-class BackgroundThreadObject
-{
-protected:
-  nsCOMPtr<nsIEventTarget> mOwningThread;
+class LogModule;
 
-public:
-  void
-  AssertIsOnOwningThread() const
-#ifdef DEBUG
-  ;
+namespace dom {
+namespace quota {
+
+extern const char kQuotaGenericDelimiter;
+
+// Telemetry keys to indicate types of errors.
+#ifdef NIGHTLY_BUILD
+extern const nsLiteralCString kQuotaInternalError;
+extern const nsLiteralCString kQuotaExternalError;
 #else
-  { }
+// No need for these when we're not collecting telemetry.
+#  define kQuotaInternalError
+#  define kQuotaExternalError
 #endif
 
-  nsIEventTarget*
-  OwningThread() const;
+class BackgroundThreadObject {
+ protected:
+  nsCOMPtr<nsIEventTarget> mOwningThread;
 
-protected:
+ public:
+  void AssertIsOnOwningThread() const
+#ifdef DEBUG
+      ;
+#else
+  {
+  }
+#endif
+
+  nsIEventTarget* OwningThread() const;
+
+ protected:
   BackgroundThreadObject();
 
   explicit BackgroundThreadObject(nsIEventTarget* aOwningThread);
 };
 
-void
-AssertIsOnIOThread();
+void AssertIsOnIOThread();
 
-void
-AssertCurrentThreadOwnsQuotaMutex();
+void AssertCurrentThreadOwnsQuotaMutex();
 
-bool
-IsOnIOThread();
+bool IsOnIOThread();
 
-void
-ReportInternalError(const char* aFile, uint32_t aLine, const char* aStr);
+void ReportInternalError(const char* aFile, uint32_t aLine, const char* aStr);
 
-END_QUOTA_NAMESPACE
+LogModule* GetQuotaManagerLogger();
 
-#endif // mozilla_dom_quota_quotacommon_h__
+void AnonymizeCString(nsACString& aCString);
+
+class AnonymizedCString : public nsCString {
+ public:
+  explicit AnonymizedCString(const nsACString& aCString) : nsCString(aCString) {
+    AnonymizeCString(*this);
+  }
+};
+
+void AnonymizeOriginString(nsACString& aOriginString);
+
+class AnonymizedOriginString : public nsCString {
+ public:
+  explicit AnonymizedOriginString(const nsACString& aOriginString)
+      : nsCString(aOriginString) {
+    AnonymizeOriginString(*this);
+  }
+};
+
+template <typename T>
+void StringifyTableKeys(const T& aTable, nsACString& aResult) {
+  bool first = true;
+  for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+    if (first) {
+      first = false;
+    } else {
+      aResult.Append(NS_LITERAL_CSTRING(", "));
+    }
+
+    const auto& key = iter.Get()->GetKey();
+
+    aResult.Append(key);
+  }
+}
+
+}  // namespace quota
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_quota_quotacommon_h__

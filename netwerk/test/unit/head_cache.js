@@ -1,111 +1,116 @@
-Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
-Components.utils.import('resource://gre/modules/LoadContextInfo.jsm');
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var _CSvc;
 function get_cache_service() {
-  if (_CSvc)
+  if (_CSvc) {
     return _CSvc;
+  }
 
-  return _CSvc = Components.classes["@mozilla.org/netwerk/cache-storage-service;1"]
-                           .getService(Components.interfaces.nsICacheStorageService);
+  return (_CSvc = Cc["@mozilla.org/netwerk/cache-storage-service;1"].getService(
+    Ci.nsICacheStorageService
+  ));
 }
 
-function evict_cache_entries(where)
-{
-  var clearDisk = (!where || where == "disk" || where == "all");
-  var clearMem = (!where || where == "memory" || where == "all");
-  var clearAppCache = (where == "appcache");
+function evict_cache_entries(where) {
+  var clearDisk = !where || where == "disk" || where == "all";
+  var clearMem = !where || where == "memory" || where == "all";
+  var clearAppCache = where == "appcache";
 
   var svc = get_cache_service();
   var storage;
 
   if (clearMem) {
-    storage = svc.memoryCacheStorage(LoadContextInfo.default);
+    storage = svc.memoryCacheStorage(Services.loadContextInfo.default);
     storage.asyncEvictStorage(null);
   }
 
   if (clearDisk) {
-    storage = svc.diskCacheStorage(LoadContextInfo.default, false);
+    storage = svc.diskCacheStorage(Services.loadContextInfo.default, false);
     storage.asyncEvictStorage(null);
   }
 
   if (clearAppCache) {
-    storage = svc.appCacheStorage(LoadContextInfo.default, null);
+    storage = svc.appCacheStorage(Services.loadContextInfo.default, null);
     storage.asyncEvictStorage(null);
   }
 }
 
-function createURI(urispec)
-{
-  var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
-                         .getService(Components.interfaces.nsIIOService);
-  return ioServ.newURI(urispec, null, null);
+function createURI(urispec) {
+  var ioServ = Cc["@mozilla.org/network/io-service;1"].getService(
+    Ci.nsIIOService
+  );
+  return ioServ.newURI(urispec);
 }
 
-function getCacheStorage(where, lci, appcache)
-{
-  if (!lci) lci = LoadContextInfo.default;
+function getCacheStorage(where, lci, appcache) {
+  if (!lci) {
+    lci = Services.loadContextInfo.default;
+  }
   var svc = get_cache_service();
   switch (where) {
-    case "disk": return svc.diskCacheStorage(lci, false);
-    case "memory": return svc.memoryCacheStorage(lci);
-    case "appcache": return svc.appCacheStorage(lci, appcache);
-    case "pin": return svc.pinningCacheStorage(lci);
+    case "disk":
+      return svc.diskCacheStorage(lci, false);
+    case "memory":
+      return svc.memoryCacheStorage(lci);
+    case "appcache":
+      return svc.appCacheStorage(lci, appcache);
+    case "pin":
+      return svc.pinningCacheStorage(lci);
   }
   return null;
 }
 
-function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
-{
+function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache) {
   key = createURI(key);
 
-  function CacheListener() { }
+  function CacheListener() {}
   CacheListener.prototype = {
     _appCache: appcache,
 
-    QueryInterface: function (iid) {
-      if (iid.equals(Components.interfaces.nsICacheEntryOpenCallback) ||
-          iid.equals(Components.interfaces.nsISupports))
-        return this;
-      throw Components.results.NS_ERROR_NO_INTERFACE;
-    },
+    QueryInterface: ChromeUtils.generateQI(["nsICacheEntryOpenCallback"]),
 
-    onCacheEntryCheck: function(entry, appCache) {
-      if (typeof callback === "object")
+    onCacheEntryCheck(entry, appCache) {
+      if (typeof callback === "object") {
         return callback.onCacheEntryCheck(entry, appCache);
+      }
       return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
     },
 
-    onCacheEntryAvailable: function (entry, isnew, appCache, status) {
+    onCacheEntryAvailable(entry, isnew, appCache, status) {
       if (typeof callback === "object") {
         // Root us at the callback
         callback.__cache_listener_root = this;
         callback.onCacheEntryAvailable(entry, isnew, appCache, status);
-      }
-      else
+      } else {
         callback(status, entry, appCache);
+      }
     },
 
-    run: function () {
+    run() {
       var storage = getCacheStorage(where, lci, this._appCache);
       storage.asyncOpenURI(key, "", flags, this);
-    }
+    },
   };
 
-  (new CacheListener()).run();
+  new CacheListener().run();
 }
 
-function syncWithCacheIOThread(callback, force)
-{
-  if (!newCacheBackEndUsed() || force) {
+function syncWithCacheIOThread(callback, force) {
+  if (force) {
     asyncOpenCacheEntry(
-      "http://nonexistententry/", "disk", Ci.nsICacheStorage.OPEN_READONLY, null,
+      "http://nonexistententry/",
+      "disk",
+      Ci.nsICacheStorage.OPEN_READONLY,
+      null,
       function(status, entry) {
-        do_check_eq(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND);
+        Assert.equal(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
         callback();
-      });
-  }
-  else {
+      }
+    );
+  } else {
     callback();
   }
 }
@@ -118,8 +123,8 @@ function get_device_entry_count(where, lci, continuation) {
   }
 
   var visitor = {
-    onCacheStorageInfo: function (entryCount, consumption) {
-      do_execute_soon(function() {
+    onCacheStorageInfo(entryCount, consumption) {
+      executeSoon(function() {
         continuation(entryCount, consumption);
       });
     },
@@ -129,19 +134,32 @@ function get_device_entry_count(where, lci, continuation) {
   storage.asyncVisitStorage(visitor, false);
 }
 
-function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation, appCache)
-{
-  asyncOpenCacheEntry(key, where, Ci.nsICacheStorage.OPEN_READONLY, null,
+function asyncCheckCacheEntryPresence(
+  key,
+  where,
+  shouldExist,
+  continuation,
+  appCache
+) {
+  asyncOpenCacheEntry(
+    key,
+    where,
+    Ci.nsICacheStorage.OPEN_READONLY,
+    null,
     function(status, entry) {
       if (shouldExist) {
         dump("TEST-INFO | checking cache key " + key + " exists @ " + where);
-        do_check_eq(status, Cr.NS_OK);
-        do_check_true(!!entry);
+        Assert.equal(status, Cr.NS_OK);
+        Assert.ok(!!entry);
       } else {
-        dump("TEST-INFO | checking cache key " + key + " doesn't exist @ " + where);
-        do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
-        do_check_null(entry);
+        dump(
+          "TEST-INFO | checking cache key " + key + " doesn't exist @ " + where
+        );
+        Assert.equal(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
+        Assert.equal(null, entry);
       }
       continuation();
-    }, appCache);
+    },
+    appCache
+  );
 }

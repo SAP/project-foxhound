@@ -1,6 +1,6 @@
 // frame.onStep can coexist with breakpoints.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = Debugger(g);
 var log = '';
 dbg.onEnterFrame = function (frame) {
@@ -22,8 +22,8 @@ g.eval("one = 1;\n" +
        "four = 4;\n");
 assertEq(g.four, 4);
 
-// Breakpoints hit on all four lines.
-assertEq(log.replace(/[^B]/g, ''), 'BBBB');
+// Breakpoints hit on all four lines, plus the final line.
+assertEq(log.replace(/[^B]/g, ''), 'BBBBB');
 
 // onStep was called between each pair of breakpoints.
 assertEq(/BB/.exec(log), null);

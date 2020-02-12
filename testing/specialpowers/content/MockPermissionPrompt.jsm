@@ -2,36 +2,34 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["MockPermissionPrompt"];
+var EXPORTED_SYMBOLS = ["MockPermissionPrompt"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
 const Cm = Components.manager;
-const Cu = Components.utils;
 
 const CONTRACT_ID = "@mozilla.org/content-permission/prompt;1";
 
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
 var oldClassID, oldFactory;
-var newClassID = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator).generateUUID();
+var newClassID = Cc["@mozilla.org/uuid-generator;1"]
+  .getService(Ci.nsIUUIDGenerator)
+  .generateUUID();
 var newFactory = {
-  createInstance: function(aOuter, aIID) {
-    if (aOuter)
-      throw Components.results.NS_ERROR_NO_AGGREGATION;
+  createInstance(aOuter, aIID) {
+    if (aOuter) {
+      throw Cr.NS_ERROR_NO_AGGREGATION;
+    }
     return new MockPermissionPromptInstance().QueryInterface(aIID);
   },
-  lockFactory: function(aLock) {
-    throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
+  lockFactory(aLock) {
+    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
 };
 
-this.MockPermissionPrompt = {
-  init: function() {
+var MockPermissionPrompt = {
+  init() {
     this.reset();
     if (!registrar.isCIDRegistered(newClassID)) {
       try {
@@ -40,8 +38,10 @@ this.MockPermissionPrompt = {
       } catch (ex) {
         oldClassID = "";
         oldFactory = null;
-        dump("TEST-INFO | can't get permission prompt registered component, " +
-            "assuming there is none");
+        dump(
+          "TEST-INFO | can't get permission prompt registered component, " +
+            "assuming there is none"
+        );
       }
       if (oldFactory) {
         registrar.unregisterFactory(oldClassID, oldFactory);
@@ -49,11 +49,10 @@ this.MockPermissionPrompt = {
       registrar.registerFactory(newClassID, "", CONTRACT_ID, newFactory);
     }
   },
-  
-  reset: function() {
-  },
-  
-  cleanup: function() {
+
+  reset() {},
+
+  cleanup() {
     this.reset();
     if (oldFactory) {
       registrar.unregisterFactory(newClassID, newFactory);
@@ -62,36 +61,27 @@ this.MockPermissionPrompt = {
   },
 };
 
-function MockPermissionPromptInstance() { };
+function MockPermissionPromptInstance() {}
 MockPermissionPromptInstance.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIContentPermissionPrompt]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPermissionPrompt]),
 
   promptResult: Ci.nsIPermissionManager.UNKNOWN_ACTION,
 
-  prompt: function(request) {
-
+  prompt(request) {
     let perms = request.types.QueryInterface(Ci.nsIArray);
     for (let idx = 0; idx < perms.length; idx++) {
       let perm = perms.queryElementAt(idx, Ci.nsIContentPermissionType);
-      if (Services.perms.testExactPermissionFromPrincipal(
-           request.principal, perm.type) != Ci.nsIPermissionManager.ALLOW_ACTION) {
+      if (
+        Services.perms.testExactPermissionFromPrincipal(
+          request.principal,
+          perm.type
+        ) != Ci.nsIPermissionManager.ALLOW_ACTION
+      ) {
         request.cancel();
         return;
       }
     }
 
     request.allow();
-  }
+  },
 };
-
-// Expose everything to content. We call reset() here so that all of the relevant
-// lazy expandos get added.
-MockPermissionPrompt.reset();
-function exposeAll(obj) {
-  var props = {};
-  for (var prop in obj)
-    props[prop] = 'rw';
-  obj.__exposedProps__ = props;
-}
-exposeAll(MockPermissionPrompt);
-exposeAll(MockPermissionPromptInstance.prototype);

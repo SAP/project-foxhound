@@ -7,25 +7,23 @@
  * Tests if the clear button empties the request menu.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { $, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
-  let detailsPane = $("#details-pane");
-  let detailsPaneToggleButton = $("#details-pane-toggle");
-  let clearButton = $("#requests-menu-clear-button");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const clearButton = document.querySelector(".requests-list-clear-button");
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
   // Make sure we start in a sane state
-  assertNoRequestState(RequestsMenu, detailsPaneToggleButton);
+  assertNoRequestState();
 
   // Load one request and assert it shows up in the list
-  let networkEvent = monitor.panelWin.once(monitor.panelWin.EVENTS.NETWORK_EVENT);
+  let onMonitorUpdated = waitForAllRequestsFinished(monitor);
   tab.linkedBrowser.reload();
-  yield networkEvent;
+  await onMonitorUpdated;
 
   assertSingleRequestState();
 
@@ -34,24 +32,29 @@ add_task(function* () {
   assertNoRequestState();
 
   // Load a second request and make sure they still show up
-  networkEvent = monitor.panelWin.once(monitor.panelWin.EVENTS.NETWORK_EVENT);
+  onMonitorUpdated = waitForAllRequestsFinished(monitor);
   tab.linkedBrowser.reload();
-  yield networkEvent;
+  await onMonitorUpdated;
 
   assertSingleRequestState();
 
-  // Make sure we can now open the details pane
-  NetMonitorView.toggleDetailsPane({ visible: true, animated: false });
-  ok(!detailsPane.classList.contains("pane-collapsed") &&
-    !detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should be visible after clicking the toggle button.");
+  // Make sure we can now open the network details panel
+  store.dispatch(Actions.toggleNetworkDetails());
+  const detailsPanelToggleButton = document.querySelector(".sidebar-toggle");
+  ok(
+    detailsPanelToggleButton &&
+      !detailsPanelToggleButton.classList.contains("pane-collapsed"),
+    "The details pane should be visible."
+  );
 
   // Click clear and make sure the details pane closes
   EventUtils.sendMouseEvent({ type: "click" }, clearButton);
+
   assertNoRequestState();
-  ok(detailsPane.classList.contains("pane-collapsed") &&
-    detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should not be visible clicking 'clear'.");
+  ok(
+    !document.querySelector(".network-details-panel"),
+    "The details pane should not be visible clicking 'clear'."
+  );
 
   return teardown(monitor);
 
@@ -59,19 +62,21 @@ add_task(function* () {
    * Asserts the state of the network monitor when one request has loaded
    */
   function assertSingleRequestState() {
-    is(RequestsMenu.itemCount, 1,
-      "The request menu should have one item at this point.");
-    is(detailsPaneToggleButton.hasAttribute("disabled"), false,
-      "The pane toggle button should be enabled after a request is made.");
+    is(
+      store.getState().requests.requests.size,
+      1,
+      "The request menu should have one item at this point."
+    );
   }
 
   /**
    * Asserts the state of the network monitor when no requests have loaded
    */
   function assertNoRequestState() {
-    is(RequestsMenu.itemCount, 0,
-      "The request menu should be empty at this point.");
-    is(detailsPaneToggleButton.hasAttribute("disabled"), true,
-      "The pane toggle button should be disabled when the request menu is cleared.");
+    is(
+      store.getState().requests.requests.size,
+      0,
+      "The request menu should be empty at this point."
+    );
   }
 });

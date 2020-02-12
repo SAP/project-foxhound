@@ -10,6 +10,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGMaskElement : SVGElement {
 
   // Mask Types
@@ -29,6 +30,4 @@ interface SVGMaskElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedLength height;
 };
-
-SVGMaskElement implements SVGUnitTypes;
 

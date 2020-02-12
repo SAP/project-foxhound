@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -54,22 +53,21 @@ const KEY_STATES = [
   ["VK_BACK_SPACE", ""],
 ];
 
-const TEST_URL = URL_ROOT +
-  "doc_inspector_search-suggestions.html";
+const TEST_URL = URL_ROOT + "doc_inspector_search-suggestions.html";
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URL);
-  yield focusSearchBoxUsingShortcut(inspector.panelWin);
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
+  await focusSearchBoxUsingShortcut(inspector.panelWin);
 
-  for (let [key, query] of KEY_STATES) {
+  for (const [key, query] of KEY_STATES) {
     info("Pressing key " + key + " to get searchbox value as " + query);
 
-    let done = inspector.searchSuggestions.once("processing-done");
+    const done = inspector.searchSuggestions.once("processing-done");
     EventUtils.synthesizeKey(key, {}, inspector.panelWin);
-    yield done;
+    await done;
 
     info("Waiting for search query to complete");
-    yield inspector.searchSuggestions._lastQuery;
+    await inspector.searchSuggestions._lastQuery;
 
     is(inspector.searchBox.value, query, "The searchbox value is correct");
   }

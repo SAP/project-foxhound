@@ -10,8 +10,8 @@ const { PrefsHelper } = require("devtools/client/shared/prefs");
  * Localization convenience methods.
  */
 exports.L10N = new MultiLocalizationHelper(
-  "devtools/locale/markers.properties",
-  "devtools/locale/performance.properties"
+  "devtools/client/locales/markers.properties",
+  "devtools/client/locales/performance.properties"
 );
 
 /**
@@ -30,7 +30,7 @@ exports.PREFS = new PrefsHelper("devtools.performance", {
   "memory-sample-probability": ["Float", "memory.sample-probability"],
   "memory-max-log-length": ["Int", "memory.max-log-length"],
   "profiler-buffer-size": ["Int", "profiler.buffer-size"],
-  "profiler-sample-frequency": ["Int", "profiler.sample-frequency-khz"],
+  "profiler-sample-frequency": ["Int", "profiler.sample-frequency-hz"],
   // TODO: re-enable once we flame charts via bug 1148663.
   "enable-memory-flame": ["Bool", "ui.enable-memory-flame"],
 });

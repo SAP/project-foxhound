@@ -1,22 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
-<body onLoad="addPluginElement()">
+<body onLoad="addPerms()">
 
   <script type="text/javascript">
    SimpleTest.waitForExplicitFinish();
-   SpecialPowers.setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
+   function addPerms() {
+     SpecialPowers.pushPermissions([{type: "plugin:flash", allow: true, context: document}], addPluginElement);
+   }
 
    function addPluginElement() {
-     var p = document.createElement('embed');
-     p.setAttribute('id', 'plugin2');
-     p.setAttribute('type', 'application/x-shockwave-flash-test');
-     p.setAttribute('scale', 'noscale');
-     p.setAttribute('salign', 'lt');
+     SpecialPowers.DOMWindowUtils.plugins[0].playPlugin();
+     var p = document.createElement("embed");
+     p.setAttribute("id", "plugin2");
+     p.setAttribute("type", "application/x-shockwave-flash-test");
+     p.setAttribute("scale", "noscale");
+     p.setAttribute("salign", "lt");
      document.body.appendChild(p);
      SimpleTest.executeSoon(function() {
       runTests();
@@ -24,9 +27,9 @@
    }
 
    function runTests() {
-     p = document.getElementById('plugin1');
+     var p = document.getElementById("plugin1");
      ok(p.setColor != undefined, "Static plugin parameter (salign/scale) ordering were correct");
-     p2 = document.getElementById('plugin2');
+     var p2 = document.getElementById("plugin2");
      ok(p2.setColor != undefined, "Dynamic plugin parameter (salign/scale) ordering were correct");
      SimpleTest.finish();
    }

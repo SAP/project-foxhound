@@ -4,12 +4,14 @@
 
 include protocol PCache;
 include protocol PCacheStreamControl;
-include protocol PSendStream;
+include protocol PChildToParentStream;
 include IPCStream;
 include ChannelInfo;
 include PBackgroundSharedTypes;
 
 using HeadersGuardEnum from "mozilla/dom/FetchIPCTypes.h";
+using Namespace from "mozilla/dom/cache/IPCUtils.h";
+using OpenMode from "mozilla/dom/cache/IPCUtils.h";
 using ReferrerPolicy from "mozilla/dom/FetchIPCTypes.h";
 using RequestCredentials from "mozilla/dom/FetchIPCTypes.h";
 using RequestMode from "mozilla/dom/FetchIPCTypes.h";
@@ -36,13 +38,7 @@ struct CacheReadStream
 {
   nsID id;
   nullable PCacheStreamControl control;
-  IPCStream stream;
-};
-
-union CacheReadStreamOrVoid
-{
-  void_t;
-  CacheReadStream;
+  IPCStream? stream;
 };
 
 struct HeadersEntry
@@ -50,29 +46,23 @@ struct HeadersEntry
   nsCString name;
   nsCString value;
 };
-
 struct CacheRequest
 {
   nsCString method;
   nsCString urlWithoutQuery;
   nsCString urlQuery;
+  nsCString urlFragment;
   HeadersEntry[] headers;
   HeadersGuardEnum headersGuard;
   nsString referrer;
   ReferrerPolicy referrerPolicy;
   RequestMode mode;
   RequestCredentials credentials;
-  CacheReadStreamOrVoid body;
+  CacheReadStream? body;
   uint32_t contentPolicyType;
   RequestCache requestCache;
   RequestRedirect requestRedirect;
   nsString integrity;
-};
-
-union CacheRequestOrVoid
-{
-  void_t;
-  CacheRequest;
 };
 
 struct CacheResponse
@@ -83,15 +73,11 @@ struct CacheResponse
   nsCString statusText;
   HeadersEntry[] headers;
   HeadersGuardEnum headersGuard;
-  CacheReadStreamOrVoid body;
+  CacheReadStream? body;
   IPCChannelInfo channelInfo;
-  OptionalPrincipalInfo principalInfo;
-};
-
-union CacheResponseOrVoid
-{
-  void_t;
-  CacheResponse;
+  PrincipalInfo? principalInfo;
+  uint32_t paddingInfo;
+  int64_t paddingSize;
 };
 
 struct CacheRequestResponse
@@ -104,12 +90,14 @@ struct CacheMatchArgs
 {
   CacheRequest request;
   CacheQueryParams params;
+  OpenMode openMode;
 };
 
 struct CacheMatchAllArgs
 {
-  CacheRequestOrVoid requestOrVoid;
+  CacheRequest? maybeRequest;
   CacheQueryParams params;
+  OpenMode openMode;
 };
 
 struct CachePutAllArgs
@@ -125,14 +113,16 @@ struct CacheDeleteArgs
 
 struct CacheKeysArgs
 {
-  CacheRequestOrVoid requestOrVoid;
+  CacheRequest? maybeRequest;
   CacheQueryParams params;
+  OpenMode openMode;
 };
 
 struct StorageMatchArgs
 {
   CacheRequest request;
   CacheQueryParams params;
+  OpenMode openMode;
 };
 
 struct StorageHasArgs
@@ -170,7 +160,7 @@ union CacheOpArgs
 
 struct CacheMatchResult
 {
-  CacheResponseOrVoid responseOrVoid;
+  CacheResponse? maybeResponse;
 };
 
 struct CacheMatchAllResult
@@ -194,7 +184,7 @@ struct CacheKeysResult
 
 struct StorageMatchResult
 {
-  CacheResponseOrVoid responseOrVoid;
+  CacheResponse? maybeResponse;
 };
 
 struct StorageHasResult
@@ -205,6 +195,7 @@ struct StorageHasResult
 struct StorageOpenResult
 {
   nullable PCache actor;
+  Namespace ns;
 };
 
 struct StorageDeleteResult

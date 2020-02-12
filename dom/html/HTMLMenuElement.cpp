@@ -8,6 +8,7 @@
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLMenuElementBinding.h"
 #include "mozilla/dom/HTMLMenuItemElement.h"
 #include "nsIMenuBuilder.h"
@@ -22,143 +23,97 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Menu)
 namespace mozilla {
 namespace dom {
 
-enum MenuType : uint8_t
-{
-  MENU_TYPE_CONTEXT = 1,
-  MENU_TYPE_TOOLBAR,
-  MENU_TYPE_LIST
-};
+enum MenuType : uint8_t { MENU_TYPE_CONTEXT = 1, MENU_TYPE_TOOLBAR };
 
 static const nsAttrValue::EnumTable kMenuTypeTable[] = {
-  { "context", MENU_TYPE_CONTEXT },
-  { "toolbar", MENU_TYPE_TOOLBAR },
-  { "list", MENU_TYPE_LIST },
-  { nullptr, 0 }
-};
+    {"context", MENU_TYPE_CONTEXT},
+    {"toolbar", MENU_TYPE_TOOLBAR},
+    {nullptr, 0}};
 
-static const nsAttrValue::EnumTable* kMenuDefaultType =
-  &kMenuTypeTable[2];
+static const nsAttrValue::EnumTable* kMenuDefaultType = &kMenuTypeTable[1];
 
-enum SeparatorType
-{
-  ST_TRUE_INIT = -1,
-  ST_FALSE = 0,
-  ST_TRUE = 1
-};
+enum SeparatorType { ST_TRUE_INIT = -1, ST_FALSE = 0, ST_TRUE = 1 };
 
+HTMLMenuElement::HTMLMenuElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : nsGenericHTMLElement(std::move(aNodeInfo)), mType(MENU_TYPE_TOOLBAR) {}
 
-
-HTMLMenuElement::HTMLMenuElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo), mType(MENU_TYPE_LIST)
-{
-}
-
-HTMLMenuElement::~HTMLMenuElement()
-{
-}
-
-NS_IMPL_ISUPPORTS_INHERITED(HTMLMenuElement, nsGenericHTMLElement,
-                            nsIDOMHTMLMenuElement, nsIHTMLMenu)
+HTMLMenuElement::~HTMLMenuElement() {}
 
 NS_IMPL_ELEMENT_CLONE(HTMLMenuElement)
 
-NS_IMPL_BOOL_ATTR(HTMLMenuElement, Compact, compact)
-NS_IMPL_ENUM_ATTR_DEFAULT_VALUE(HTMLMenuElement, Type, type,
-                                kMenuDefaultType->tag)
-NS_IMPL_STRING_ATTR(HTMLMenuElement, Label, label)
-
-
-NS_IMETHODIMP
-HTMLMenuElement::SendShowEvent()
-{
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
-  nsCOMPtr<nsIDocument> document = GetComposedDoc();
+void HTMLMenuElement::SendShowEvent() {
+  nsCOMPtr<Document> document = GetComposedDoc();
   if (!document) {
-    return NS_ERROR_FAILURE;
+    return;
   }
 
   WidgetEvent event(true, eShow);
   event.mFlags.mBubbles = false;
   event.mFlags.mCancelable = false;
 
-  nsCOMPtr<nsIPresShell> shell = document->GetShell();
-  if (!shell) {
-    return NS_ERROR_FAILURE;
+  RefPtr<nsPresContext> presContext = document->GetPresContext();
+  if (!presContext) {
+    return;
   }
- 
-  RefPtr<nsPresContext> presContext = shell->GetPresContext();
+
   nsEventStatus status = nsEventStatus_eIgnore;
-  EventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext,
-                            &event, nullptr, &status);
-
-  return NS_OK;
+  EventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext, &event,
+                            nullptr, &status);
 }
 
-NS_IMETHODIMP
-HTMLMenuElement::CreateBuilder(nsIMenuBuilder** _retval)
-{
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
-  nsCOMPtr<nsIMenuBuilder> builder = CreateBuilder();
-  builder.swap(*_retval);
-  return NS_OK;
-}
-
-already_AddRefed<nsIMenuBuilder>
-HTMLMenuElement::CreateBuilder()
-{
+already_AddRefed<nsIMenuBuilder> HTMLMenuElement::CreateBuilder() {
   if (mType != MENU_TYPE_CONTEXT) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIMenuBuilder> builder = do_CreateInstance(HTMLMENUBUILDER_CONTRACTID);
+  nsCOMPtr<nsIMenuBuilder> builder =
+      do_CreateInstance(HTMLMENUBUILDER_CONTRACTID);
   NS_WARNING_ASSERTION(builder, "No builder available");
   return builder.forget();
 }
 
-NS_IMETHODIMP
-HTMLMenuElement::Build(nsIMenuBuilder* aBuilder)
-{
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
+void HTMLMenuElement::Build(nsIMenuBuilder* aBuilder) {
   if (!aBuilder) {
-    return NS_OK;
+    return;
   }
 
   BuildSubmenu(EmptyString(), this, aBuilder);
-
-  return NS_OK;
 }
 
-
-bool
-HTMLMenuElement::ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult)
-{
-  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
-    bool success = aResult.ParseEnumValue(aValue, kMenuTypeTable,
-                                            false);
-    if (success) {
-      mType = aResult.GetEnumValue();
+nsresult HTMLMenuElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                       const nsAttrValue* aValue,
+                                       const nsAttrValue* aOldValue,
+                                       nsIPrincipal* aSubjectPrincipal,
+                                       bool aNotify) {
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::type) {
+    if (aValue) {
+      mType = aValue->GetEnumValue();
     } else {
       mType = kMenuDefaultType->value;
     }
+  }
 
-    return success;
+  return nsGenericHTMLElement::AfterSetAttr(
+      aNameSpaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
+}
+
+bool HTMLMenuElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                     const nsAString& aValue,
+                                     nsIPrincipal* aMaybeScriptedPrincipal,
+                                     nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
+    return aResult.ParseEnumValue(aValue, kMenuTypeTable, false,
+                                  kMenuDefaultType);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-void
-HTMLMenuElement::BuildSubmenu(const nsAString& aLabel,
-                              nsIContent* aContent,
-                              nsIMenuBuilder* aBuilder)
-{
+void HTMLMenuElement::BuildSubmenu(const nsAString& aLabel,
+                                   nsIContent* aContent,
+                                   nsIMenuBuilder* aBuilder) {
   aBuilder->OpenContainer(aLabel);
 
   int8_t separator = ST_TRUE_INIT;
@@ -172,19 +127,17 @@ HTMLMenuElement::BuildSubmenu(const nsAString& aLabel,
 }
 
 // static
-bool
-HTMLMenuElement::CanLoadIcon(nsIContent* aContent, const nsAString& aIcon)
-{
+bool HTMLMenuElement::CanLoadIcon(nsIContent* aContent,
+                                  const nsAString& aIcon) {
   if (aIcon.IsEmpty()) {
     return false;
   }
 
-  nsIDocument* doc = aContent->OwnerDoc();
+  Document* doc = aContent->OwnerDoc();
 
-  nsCOMPtr<nsIURI> baseURI = aContent->GetBaseURI();
   nsCOMPtr<nsIURI> uri;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), aIcon, doc,
-                                            baseURI);
+                                            aContent->GetBaseURI());
 
   if (!uri) {
     return false;
@@ -194,21 +147,19 @@ HTMLMenuElement::CanLoadIcon(nsIContent* aContent, const nsAString& aIcon)
                                       aContent->NodePrincipal());
 }
 
-void
-HTMLMenuElement::TraverseContent(nsIContent* aContent,
-                                 nsIMenuBuilder* aBuilder,
-                                 int8_t& aSeparator)
-{
+void HTMLMenuElement::TraverseContent(nsIContent* aContent,
+                                      nsIMenuBuilder* aBuilder,
+                                      int8_t& aSeparator) {
   nsCOMPtr<nsIContent> child;
   for (child = aContent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    nsGenericHTMLElement* element = nsGenericHTMLElement::FromContent(child);
+    nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(child);
     if (!element) {
       continue;
     }
 
     if (child->IsHTMLElement(nsGkAtoms::menuitem)) {
-      HTMLMenuItemElement* menuitem = HTMLMenuItemElement::FromContent(child);
+      HTMLMenuItemElement* menuitem = HTMLMenuItemElement::FromNode(child);
 
       if (menuitem->IsHidden()) {
         continue;
@@ -229,9 +180,9 @@ HTMLMenuElement::TraverseContent(nsIContent* aContent,
     } else if (child->IsHTMLElement(nsGkAtoms::hr)) {
       aBuilder->AddSeparator();
     } else if (child->IsHTMLElement(nsGkAtoms::menu) && !element->IsHidden()) {
-      if (child->HasAttr(kNameSpaceID_None, nsGkAtoms::label)) {
+      if (child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::label)) {
         nsAutoString label;
-        child->GetAttr(kNameSpaceID_None, nsGkAtoms::label, label);
+        child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, label);
 
         BuildSubmenu(label, child, aBuilder);
 
@@ -247,22 +198,20 @@ HTMLMenuElement::TraverseContent(nsIContent* aContent,
   }
 }
 
-inline void
-HTMLMenuElement::AddSeparator(nsIMenuBuilder* aBuilder, int8_t& aSeparator)
-{
+inline void HTMLMenuElement::AddSeparator(nsIMenuBuilder* aBuilder,
+                                          int8_t& aSeparator) {
   if (aSeparator) {
     return;
   }
- 
+
   aBuilder->AddSeparator();
   aSeparator = ST_TRUE;
 }
 
-JSObject*
-HTMLMenuElement::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLMenuElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLMenuElement::WrapNode(JSContext* aCx,
+                                    JS::Handle<JSObject*> aGivenProto) {
+  return HTMLMenuElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

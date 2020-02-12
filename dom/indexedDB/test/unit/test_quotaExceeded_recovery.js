@@ -7,23 +7,26 @@ var disableWorkerTest = "Need a way to set temporary prefs from a worker";
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const spec = "http://foo.com";
-  const name =
-    this.window ? window.location.pathname : "test_quotaExceeded_recovery";
+  const name = this.window
+    ? window.location.pathname
+    : "test_quotaExceeded_recovery";
   const objectStoreName = "foo";
 
-  // We want 8 MB database on Android and 32 MB database on other platforms.
-  const groupLimitMB = mozinfo.os == "android" ? 8 : 32;
+  const android = mozinfo.os == "android";
+
+  // We want 512 KB database on Android and 4 MB database on other platforms.
+  const groupLimitKB = android ? 512 : 4096;
 
   // The group limit is calculated as 20% of the global temporary storage limit.
-  const tempStorageLimitKB = groupLimitMB * 5 * 1024;
+  const tempStorageLimitKB = groupLimitKB * 5;
 
-  // Store in 1 MB chunks.
-  const dataSize = 1024 * 1024;
+  // We want 64 KB chunks on Android and 512 KB chunks on other platforms.
+  const dataSizeKB = android ? 64 : 512;
+  const dataSize = dataSizeKB * 1024;
 
-  const maxIter = 10;
+  const maxIter = 5;
 
   for (let blobs of [false, true]) {
     setTemporaryStorageLimit(tempStorageLimitKB);
@@ -35,7 +38,7 @@ function testSteps()
 
     let request = indexedDB.openForPrincipal(getPrincipal(spec), name);
     request.onerror = errorHandler;
-    request.onupgradeneeded = grabEventAndContinueHandler;;
+    request.onupgradeneeded = grabEventAndContinueHandler;
     request.onsuccess = unexpectedSuccessHandler;
 
     yield undefined;
@@ -57,8 +60,8 @@ function testSteps()
     ok(true, "Filling database");
 
     let obj = {
-      name: "foo"
-    }
+      name: "foo",
+    };
 
     if (!blobs) {
       obj.data = getRandomView(dataSize);
@@ -74,22 +77,21 @@ function testSteps()
 
       let trans = db.transaction(objectStoreName, "readwrite");
       request = trans.objectStore(objectStoreName).add(obj);
-      request.onerror = function(event)
-      {
+      request.onerror = function(event) {
         event.stopPropagation();
-      }
+      };
 
       trans.oncomplete = function(event) {
         if (iter == 1) {
           i++;
         }
         j++;
-        testGenerator.send(true);
-      }
+        testGenerator.next(true);
+      };
       trans.onabort = function(event) {
         is(trans.error.name, "QuotaExceededError", "Reached quota limit");
-        testGenerator.send(false);
-      }
+        testGenerator.next(false);
+      };
 
       let completeFired = yield undefined;
       if (completeFired) {
@@ -123,10 +125,10 @@ function testSteps()
             cursor.delete();
             cursor.continue();
           }
-        }
+        };
       }
 
-      trans.onabort = unexpectedSuccessHandler;;
+      trans.onabort = unexpectedSuccessHandler;
       trans.oncomplete = grabEventAndContinueHandler;
 
       yield undefined;

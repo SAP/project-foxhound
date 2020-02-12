@@ -12,21 +12,28 @@
 namespace nss_test {
 
 #ifdef UNSAFE_FUZZER_MODE
+#define FUZZ_F(c, f) TEST_F(c, Fuzz_##f)
+#define FUZZ_P(c, f) TEST_P(c, Fuzz_##f)
+#else
+#define FUZZ_F(c, f) TEST_F(c, DISABLED_Fuzz_##f)
+#define FUZZ_P(c, f) TEST_P(c, DISABLED_Fuzz_##f)
+#endif
 
 const uint8_t kShortEmptyFinished[8] = {0};
 const uint8_t kLongEmptyFinished[128] = {0};
 
-class TlsFuzzTest : public ::testing::Test {};
+class TlsFuzzTest : public TlsConnectGeneric {};
 
 // Record the application data stream.
 class TlsApplicationDataRecorder : public TlsRecordFilter {
  public:
-  TlsApplicationDataRecorder() : buffer_() {}
+  TlsApplicationDataRecorder(const std::shared_ptr<TlsAgent>& a)
+      : TlsRecordFilter(a), buffer_() {}
 
-  virtual PacketFilter::Action FilterRecord(const RecordHeader& header,
+  virtual PacketFilter::Action FilterRecord(const TlsRecordHeader& header,
                                             const DataBuffer& input,
                                             DataBuffer* output) {
-    if (header.content_type() == kTlsApplicationDataType) {
+    if (header.content_type() == ssl_ct_application_data) {
       buffer_.Append(input);
     }
 
@@ -39,56 +46,21 @@ class TlsApplicationDataRecorder : public TlsRecordFilter {
   DataBuffer buffer_;
 };
 
-// Damages an SKE or CV signature.
-class TlsSignatureDamager : public TlsHandshakeFilter {
- public:
-  TlsSignatureDamager(uint8_t type) : type_(type) {}
-  virtual PacketFilter::Action FilterHandshake(
-      const TlsHandshakeFilter::HandshakeHeader& header,
-      const DataBuffer& input, DataBuffer* output) {
-    if (header.handshake_type() != type_) {
-      return KEEP;
-    }
-
-    *output = input;
-
-    // Modify the last byte of the signature.
-    output->data()[output->len() - 1]++;
-    return CHANGE;
-  }
-
- private:
-  uint8_t type_;
-};
-
-void ResetState() {
-  // Clear the list of RSA blinding params.
-  BL_Cleanup();
-
-  // Reinit the list of RSA blinding params.
-  EXPECT_EQ(SECSuccess, BL_Init());
-
-  // Reset the RNG state.
-  EXPECT_EQ(SECSuccess, RNG_ResetForFuzzing());
-}
-
-// Ensure that ssl_Time() returns a constant value.
-TEST_F(TlsFuzzTest, Fuzz_SSL_Time_Constant) {
-  PRInt32 now = ssl_Time();
-  PR_Sleep(PR_SecondsToInterval(2));
-  EXPECT_EQ(ssl_Time(), now);
-}
-
 // Check that due to the deterministic PRNG we derive
 // the same master secret in two consecutive TLS sessions.
-TEST_P(TlsConnectGeneric, Fuzz_DeterministicExporter) {
+FUZZ_P(TlsFuzzTest, DeterministicExporter) {
   const char kLabel[] = "label";
   std::vector<unsigned char> out1(32), out2(32);
 
+  // Make sure we have RSA blinding params.
+  Connect();
+
+  Reset();
   ConfigureSessionCache(RESUME_NONE, RESUME_NONE);
   DisableECDHEServerKeyReuse();
 
-  ResetState();
+  // Reset the RNG state.
+  EXPECT_EQ(SECSuccess, RNG_RandomUpdate(NULL, 0));
   Connect();
 
   // Export a key derived from the MS and nonces.
@@ -101,7 +73,8 @@ TEST_P(TlsConnectGeneric, Fuzz_DeterministicExporter) {
   ConfigureSessionCache(RESUME_NONE, RESUME_NONE);
   DisableECDHEServerKeyReuse();
 
-  ResetState();
+  // Reset the RNG state.
+  EXPECT_EQ(SECSuccess, RNG_RandomUpdate(NULL, 0));
   Connect();
 
   // Export another key derived from the MS and nonces.
@@ -115,7 +88,10 @@ TEST_P(TlsConnectGeneric, Fuzz_DeterministicExporter) {
 
 // Check that due to the deterministic RNG two consecutive
 // TLS sessions will have the exact same transcript.
-TEST_P(TlsConnectGeneric, Fuzz_DeterministicTranscript) {
+FUZZ_P(TlsFuzzTest, DeterministicTranscript) {
+  // Make sure we have RSA blinding params.
+  Connect();
+
   // Connect a few times and compare the transcripts byte-by-byte.
   DataBuffer last;
   for (size_t i = 0; i < 5; i++) {
@@ -124,15 +100,16 @@ TEST_P(TlsConnectGeneric, Fuzz_DeterministicTranscript) {
     DisableECDHEServerKeyReuse();
 
     DataBuffer buffer;
-    client_->SetPacketFilter(new TlsConversationRecorder(buffer));
-    server_->SetPacketFilter(new TlsConversationRecorder(buffer));
+    MakeTlsFilter<TlsConversationRecorder>(client_, buffer);
+    MakeTlsFilter<TlsConversationRecorder>(server_, buffer);
 
-    ResetState();
+    // Reset the RNG state.
+    EXPECT_EQ(SECSuccess, RNG_RandomUpdate(NULL, 0));
     Connect();
 
     // Ensure the filters go away before |buffer| does.
-    client_->SetPacketFilter(nullptr);
-    server_->SetPacketFilter(nullptr);
+    client_->ClearFilter();
+    server_->ClearFilter();
 
     if (last.len() > 0) {
       EXPECT_EQ(last, buffer);
@@ -146,14 +123,10 @@ TEST_P(TlsConnectGeneric, Fuzz_DeterministicTranscript) {
 // with all supported TLS versions, STREAM and DGRAM.
 // Check that records are NOT encrypted.
 // Check that records don't have a MAC.
-TEST_P(TlsConnectGeneric, Fuzz_ConnectSendReceive_NullCipher) {
-  EnsureTlsSetup();
-
+FUZZ_P(TlsFuzzTest, ConnectSendReceive_NullCipher) {
   // Set up app data filters.
-  auto client_recorder = new TlsApplicationDataRecorder();
-  client_->SetPacketFilter(client_recorder);
-  auto server_recorder = new TlsApplicationDataRecorder();
-  server_->SetPacketFilter(server_recorder);
+  auto client_recorder = MakeTlsFilter<TlsApplicationDataRecorder>(client_);
+  auto server_recorder = MakeTlsFilter<TlsApplicationDataRecorder>(server_);
 
   Connect();
 
@@ -175,49 +148,108 @@ TEST_P(TlsConnectGeneric, Fuzz_ConnectSendReceive_NullCipher) {
 }
 
 // Check that an invalid Finished message doesn't abort the connection.
-TEST_P(TlsConnectGeneric, Fuzz_BogusClientFinished) {
+FUZZ_P(TlsFuzzTest, BogusClientFinished) {
   EnsureTlsSetup();
 
-  auto i1 = new TlsInspectorReplaceHandshakeMessage(
-      kTlsHandshakeFinished,
+  MakeTlsFilter<TlsInspectorReplaceHandshakeMessage>(
+      client_, kTlsHandshakeFinished,
       DataBuffer(kShortEmptyFinished, sizeof(kShortEmptyFinished)));
-  client_->SetPacketFilter(i1);
   Connect();
   SendReceive();
 }
 
 // Check that an invalid Finished message doesn't abort the connection.
-TEST_P(TlsConnectGeneric, Fuzz_BogusServerFinished) {
+FUZZ_P(TlsFuzzTest, BogusServerFinished) {
   EnsureTlsSetup();
 
-  auto i1 = new TlsInspectorReplaceHandshakeMessage(
-      kTlsHandshakeFinished,
+  MakeTlsFilter<TlsInspectorReplaceHandshakeMessage>(
+      server_, kTlsHandshakeFinished,
       DataBuffer(kLongEmptyFinished, sizeof(kLongEmptyFinished)));
-  server_->SetPacketFilter(i1);
   Connect();
   SendReceive();
 }
 
 // Check that an invalid server auth signature doesn't abort the connection.
-TEST_P(TlsConnectGeneric, Fuzz_BogusServerAuthSignature) {
+FUZZ_P(TlsFuzzTest, BogusServerAuthSignature) {
   EnsureTlsSetup();
   uint8_t msg_type = version_ == SSL_LIBRARY_VERSION_TLS_1_3
                          ? kTlsHandshakeCertificateVerify
                          : kTlsHandshakeServerKeyExchange;
-  server_->SetPacketFilter(new TlsSignatureDamager(msg_type));
+  MakeTlsFilter<TlsLastByteDamager>(server_, msg_type);
   Connect();
   SendReceive();
 }
 
 // Check that an invalid client auth signature doesn't abort the connection.
-TEST_P(TlsConnectGeneric, Fuzz_BogusClientAuthSignature) {
+FUZZ_P(TlsFuzzTest, BogusClientAuthSignature) {
   EnsureTlsSetup();
   client_->SetupClientAuth();
   server_->RequestClientAuth(true);
-  client_->SetPacketFilter(
-      new TlsSignatureDamager(kTlsHandshakeCertificateVerify));
+  MakeTlsFilter<TlsLastByteDamager>(client_, kTlsHandshakeCertificateVerify);
   Connect();
 }
 
-#endif
+// Check that session ticket resumption works.
+FUZZ_P(TlsFuzzTest, SessionTicketResumption) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  Connect();
+  SendReceive();
+
+  Reset();
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  ExpectResumption(RESUME_TICKET);
+  Connect();
+  SendReceive();
 }
+
+// Check that session tickets are not encrypted.
+FUZZ_P(TlsFuzzTest, UnencryptedSessionTickets) {
+  ConfigureSessionCache(RESUME_TICKET, RESUME_TICKET);
+
+  auto filter = MakeTlsFilter<TlsHandshakeRecorder>(
+      server_, kTlsHandshakeNewSessionTicket);
+  Connect();
+
+  std::cerr << "ticket" << filter->buffer() << std::endl;
+  size_t offset = 4;  // Skip lifetime.
+
+  if (version_ == SSL_LIBRARY_VERSION_TLS_1_3) {
+    offset += 4;  // Skip ticket_age_add.
+    uint32_t nonce_len = 0;
+    EXPECT_TRUE(filter->buffer().Read(offset, 1, &nonce_len));
+    offset += 1 + nonce_len;
+  }
+
+  offset += 2;  // Skip the ticket length.
+
+  // This bit parses the contents of the ticket, which would ordinarily be
+  // encrypted.  Start by checking that we have the right version.  This needs
+  // to be updated every time that TLS_EX_SESS_TICKET_VERSION is changed.  But
+  // we don't use the #define.  That way, any time that code is updated, this
+  // test will fail unless it is manually checked.
+  uint32_t ticket_version;
+  EXPECT_TRUE(filter->buffer().Read(offset, 2, &ticket_version));
+  EXPECT_EQ(0x010aU, ticket_version);
+  offset += 2;
+
+  // Check the protocol version number.
+  uint32_t tls_version = 0;
+  EXPECT_TRUE(filter->buffer().Read(offset, sizeof(version_), &tls_version));
+  EXPECT_EQ(version_, static_cast<decltype(version_)>(tls_version));
+  offset += sizeof(version_);
+
+  // Check the cipher suite.
+  uint32_t suite = 0;
+  EXPECT_TRUE(filter->buffer().Read(offset, 2, &suite));
+  client_->CheckCipherSuite(static_cast<uint16_t>(suite));
+}
+
+INSTANTIATE_TEST_CASE_P(
+    FuzzStream, TlsFuzzTest,
+    ::testing::Combine(TlsConnectTestBase::kTlsVariantsStream,
+                       TlsConnectTestBase::kTlsVAll));
+INSTANTIATE_TEST_CASE_P(
+    FuzzDatagram, TlsFuzzTest,
+    ::testing::Combine(TlsConnectTestBase::kTlsVariantsDatagram,
+                       TlsConnectTestBase::kTlsV11Plus));
+}  // namespace nss_test

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,8 +37,6 @@
 
 const Services = require("Services");
 
-const DEFAULT_HTTP_VERSION = "HTTP/1.1";
-
 const Curl = {
   /**
    * Generates a cURL command string which can be used from the command line etc.
@@ -54,75 +50,91 @@ const Curl = {
    *        - httpVersion:string, http protocol version rfc2616 formatted. Eg. "HTTP/1.1"
    *        - postDataText:string, optional - the request payload.
    *
+   * @param string platform
+   *        Optional parameter to override platform,
+   *        Fallbacks to current platform if not defined.
+   *
    * @return string
    *         A cURL command.
    */
-  generateCommand: function (data) {
-    let utils = CurlUtils;
+  generateCommand: function(data, platform) {
+    const utils = CurlUtils;
 
     let command = ["curl"];
-    let ignoredHeaders = new Set();
+    const ignoredHeaders = new Set();
+
+    const currentPlatform = platform || Services.appinfo.OS;
 
     // The cURL command is expected to run on the same platform that Firefox runs
     // (it may be different from the inspected page platform).
-    let escapeString = Services.appinfo.OS == "WINNT" ?
-                       utils.escapeStringWin : utils.escapeStringPosix;
+    const escapeString =
+      currentPlatform == "WINNT"
+        ? utils.escapeStringWin
+        : utils.escapeStringPosix;
 
     // Add URL.
     command.push(escapeString(data.url));
 
     let postDataText = null;
-    let multipartRequest = utils.isMultipartRequest(data);
+    const multipartRequest = utils.isMultipartRequest(data);
 
     // Create post data.
-    let postData = [];
-    if (utils.isUrlEncodedRequest(data) || data.method == "PUT") {
+    const postData = [];
+    if (multipartRequest) {
+      // WINDOWS KNOWN LIMITATIONS: Due to the specificity of running curl on
+      // cmd.exe even correctly escaped windows newline \r\n will be
+      // treated by curl as plain local newline. It corresponds in unix
+      // to single \n and that's what curl will send in payload.
+      // It may be particularly hurtful for multipart/form-data payloads
+      // which composed using \n only, not \r\n, may be not parsable for
+      // peers which split parts of multipart payload using \r\n.
+      postDataText = data.postDataText;
+      postData.push("--data-binary");
+      const boundary = utils.getMultipartBoundary(data);
+      const text = utils.removeBinaryDataFromMultipartText(
+        postDataText,
+        boundary
+      );
+      postData.push(escapeString(text));
+      ignoredHeaders.add("content-length");
+    } else if (
+      utils.isUrlEncodedRequest(data) ||
+      ["PUT", "POST", "PATCH"].includes(data.method)
+    ) {
       postDataText = data.postDataText;
       postData.push("--data");
       postData.push(escapeString(utils.writePostDataTextParams(postDataText)));
-      ignoredHeaders.add("Content-Length");
-    } else if (multipartRequest) {
-      postDataText = data.postDataText;
-      postData.push("--data-binary");
-      let boundary = utils.getMultipartBoundary(data);
-      let text = utils.removeBinaryDataFromMultipartText(postDataText, boundary);
-      postData.push(escapeString(text));
-      ignoredHeaders.add("Content-Length");
+      ignoredHeaders.add("content-length");
     }
-
-    // Add method.
-    // For GET and POST requests this is not necessary as GET is the
-    // default. If --data or --binary is added POST is the default.
-    if (!(data.method == "GET" || data.method == "POST")) {
-      command.push("-X");
-      command.push(data.method);
-    }
+    // curl generates the host header itself based on the given URL
+    ignoredHeaders.add("host");
 
     // Add -I (HEAD)
     // For servers that supports HEAD.
     // This will fetch the header of a document only.
     if (data.method == "HEAD") {
       command.push("-I");
-    }
-
-    // Add http version.
-    if (data.httpVersion && data.httpVersion != DEFAULT_HTTP_VERSION) {
-      command.push("--" + data.httpVersion.split("/")[1]);
+    } else if (!(data.method == "GET" || data.method == "POST")) {
+      // Add method.
+      // For HEAD, GET and POST requests this is not necessary. GET is the
+      // default, if --data or --binary is added POST is used, -I implies HEAD.
+      command.push("-X");
+      command.push(data.method);
     }
 
     // Add request headers.
     let headers = data.headers;
     if (multipartRequest) {
-      let multipartHeaders = utils.getHeadersFromMultipartText(postDataText);
+      const multipartHeaders = utils.getHeadersFromMultipartText(postDataText);
       headers = headers.concat(multipartHeaders);
     }
     for (let i = 0; i < headers.length; i++) {
-      let header = headers[i];
-      if (header.name === "Accept-Encoding") {
+      const header = headers[i];
+      if (header.name.toLowerCase() === "accept-encoding") {
         command.push("--compressed");
         continue;
       }
-      if (ignoredHeaders.has(header.name)) {
+      if (ignoredHeaders.has(header.name.toLowerCase())) {
         continue;
       }
       command.push("-H");
@@ -133,7 +145,7 @@ const Curl = {
     command = command.concat(postData);
 
     return command.join(" ");
-  }
+  },
 };
 
 exports.Curl = Curl;
@@ -150,21 +162,25 @@ const CurlUtils = {
    * @return boolean
    *         True if the request is URL encoded, false otherwise.
    */
-  isUrlEncodedRequest: function (data) {
+  isUrlEncodedRequest: function(data) {
     let postDataText = data.postDataText;
     if (!postDataText) {
       return false;
     }
 
     postDataText = postDataText.toLowerCase();
-    if (postDataText.includes("content-type: application/x-www-form-urlencoded")) {
+    if (
+      postDataText.includes("content-type: application/x-www-form-urlencoded")
+    ) {
       return true;
     }
 
-    let contentType = this.findHeader(data.headers, "content-type");
+    const contentType = this.findHeader(data.headers, "content-type");
 
-    return (contentType &&
-      contentType.toLowerCase().includes("application/x-www-form-urlencoded"));
+    return (
+      contentType &&
+      contentType.toLowerCase().includes("application/x-www-form-urlencoded")
+    );
   },
 
   /**
@@ -175,7 +191,7 @@ const CurlUtils = {
    * @return boolean
    *         True if the request is multipart reqeust, false otherwise.
    */
-  isMultipartRequest: function (data) {
+  isMultipartRequest: function(data) {
     let postDataText = data.postDataText;
     if (!postDataText) {
       return false;
@@ -186,10 +202,11 @@ const CurlUtils = {
       return true;
     }
 
-    let contentType = this.findHeader(data.headers, "content-type");
+    const contentType = this.findHeader(data.headers, "content-type");
 
-    return (contentType &&
-      contentType.toLowerCase().includes("multipart/form-data;"));
+    return (
+      contentType && contentType.toLowerCase().includes("multipart/form-data;")
+    );
   },
 
   /**
@@ -200,8 +217,11 @@ const CurlUtils = {
    * @return string
    *         Post data parameters.
    */
-  writePostDataTextParams: function (postDataText) {
-    let lines = postDataText.split("\r\n");
+  writePostDataTextParams: function(postDataText) {
+    if (!postDataText) {
+      return "";
+    }
+    const lines = postDataText.split("\r\n");
     return lines[lines.length - 1];
   },
 
@@ -215,13 +235,13 @@ const CurlUtils = {
    * @return string
    *         The found header value or null if not found.
    */
-  findHeader: function (headers, name) {
+  findHeader: function(headers, name) {
     if (!headers) {
       return null;
     }
 
     name = name.toLowerCase();
-    for (let header of headers) {
+    for (const header of headers) {
       if (name == header.name.toLowerCase()) {
         return header.value;
       }
@@ -238,18 +258,18 @@ const CurlUtils = {
    * @return string
    *         The boundary string for the request.
    */
-  getMultipartBoundary: function (data) {
-    let boundaryRe = /\bboundary=(-{3,}\w+)/i;
+  getMultipartBoundary: function(data) {
+    const boundaryRe = /\bboundary=(-{3,}\w+)/i;
 
     // Get the boundary string from the Content-Type request header.
-    let contentType = this.findHeader(data.headers, "Content-Type");
+    const contentType = this.findHeader(data.headers, "Content-Type");
     if (boundaryRe.test(contentType)) {
       return contentType.match(boundaryRe)[1];
     }
     // Temporary workaround. As of 2014-03-11 the requestHeaders array does not
     // always contain the Content-Type header for mulitpart requests. See bug 978144.
     // Find the header from the request payload.
-    let boundaryString = data.postDataText.match(boundaryRe)[1];
+    const boundaryString = data.postDataText.match(boundaryRe)[1];
     if (boundaryString) {
       return boundaryString;
     }
@@ -267,11 +287,11 @@ const CurlUtils = {
    * @return string
    *         The multipart text without the binary data.
    */
-  removeBinaryDataFromMultipartText: function (multipartText, boundary) {
+  removeBinaryDataFromMultipartText: function(multipartText, boundary) {
     let result = "";
     boundary = "--" + boundary;
-    let parts = multipartText.split(boundary);
-    for (let part of parts) {
+    const parts = multipartText.split(boundary);
+    for (const part of parts) {
       // Each part is expected to have a content disposition line.
       let contentDispositionLine = part.trimLeft().split("\r\n")[0];
       if (!contentDispositionLine) {
@@ -282,10 +302,10 @@ const CurlUtils = {
         if (contentDispositionLine.includes("filename=")) {
           // The header lines and the binary blob is separated by 2 CRLF's.
           // Add only the headers to the result.
-          let headers = part.split("\r\n\r\n")[0];
-          result += boundary + "\r\n" + headers + "\r\n\r\n";
+          const headers = part.split("\r\n\r\n")[0];
+          result += boundary + headers + "\r\n\r\n";
         } else {
-          result += boundary + "\r\n" + part;
+          result += boundary + part;
         }
       }
     }
@@ -302,24 +322,24 @@ const CurlUtils = {
    * @return array
    *         An array of header objects {name:x, value:x}
    */
-  getHeadersFromMultipartText: function (multipartText) {
-    let headers = [];
+  getHeadersFromMultipartText: function(multipartText) {
+    const headers = [];
     if (!multipartText || multipartText.startsWith("---")) {
       return headers;
     }
 
     // Get the header section.
-    let index = multipartText.indexOf("\r\n\r\n");
+    const index = multipartText.indexOf("\r\n\r\n");
     if (index == -1) {
       return headers;
     }
 
     // Parse the header lines.
-    let headersText = multipartText.substring(0, index);
-    let headerLines = headersText.split("\r\n");
+    const headersText = multipartText.substring(0, index);
+    const headerLines = headersText.split("\r\n");
     let lastHeaderName = null;
 
-    for (let line of headerLines) {
+    for (const line of headerLines) {
       // Create a header for each line in fields that spans across multiple lines.
       // Subsquent lines always begins with at least one space or tab character.
       // (rfc2616)
@@ -328,12 +348,15 @@ const CurlUtils = {
         continue;
       }
 
-      let indexOfColon = line.indexOf(":");
+      const indexOfColon = line.indexOf(":");
       if (indexOfColon == -1) {
         continue;
       }
 
-      let header = [line.slice(0, indexOfColon), line.slice(indexOfColon + 1)];
+      const header = [
+        line.slice(0, indexOfColon),
+        line.slice(indexOfColon + 1),
+      ];
       if (header.length != 2) {
         continue;
       }
@@ -348,12 +371,14 @@ const CurlUtils = {
    * Escape util function for POSIX oriented operating systems.
    * Credit: Google DevTools
    */
-  escapeStringPosix: function (str) {
+  escapeStringPosix: function(str) {
     function escapeCharacter(x) {
       let code = x.charCodeAt(0);
       if (code < 256) {
         // Add leading zero when needed to not care about the next character.
-        return code < 16 ? "\\x0" + code.toString(16) : "\\x" + code.toString(16);
+        return code < 16
+          ? "\\x0" + code.toString(16)
+          : "\\x" + code.toString(16);
       }
       code = code.toString(16);
       return "\\u" + ("0000" + code).substr(code.length, 4);
@@ -361,11 +386,17 @@ const CurlUtils = {
 
     if (/[^\x20-\x7E]|\'/.test(str)) {
       // Use ANSI-C quoting syntax.
-      return "$\'" + str.replace(/\\/g, "\\\\")
-                        .replace(/\'/g, "\\\'")
-                        .replace(/\n/g, "\\n")
-                        .replace(/\r/g, "\\r")
-                        .replace(/[^\x20-\x7E]/g, escapeCharacter) + "'";
+      return (
+        "$'" +
+        str
+          .replace(/\\/g, "\\\\")
+          .replace(/\'/g, "\\'")
+          .replace(/\n/g, "\\n")
+          .replace(/\r/g, "\\r")
+          .replace(/!/g, "\\041")
+          .replace(/[^\x20-\x7E]/g, escapeCharacter) +
+        "'"
+      );
     }
 
     // Use single quote syntax.
@@ -376,7 +407,7 @@ const CurlUtils = {
    * Escape util function for Windows systems.
    * Credit: Google DevTools
    */
-  escapeStringWin: function (str) {
+  escapeStringWin: function(str) {
     /* Replace quote by double quote (but not by \") because it is
        recognized by both cmd.exe and MS Crt arguments parser.
 
@@ -389,13 +420,23 @@ const CurlUtils = {
        MS Crt arguments parser won't collapse them.
 
        Replace new line outside of quotes since cmd.exe doesn't let
-       to do it inside.
+       to do it inside. At the same time it gets duplicated,
+       because first newline is consumed by ^.
+       So for quote: `"Text-start\r\ntext-continue"`,
+       we get: `"Text-start"^\r\n\r\n"text-continue"`,
+       where `^\r\n` is just breaking the command, the `\r\n` right
+       after is actual escaped newline.
     */
-    return "\"" + str.replace(/"/g, "\"\"")
-                     .replace(/%/g, "\"%\"")
-                     .replace(/\\/g, "\\\\")
-                     .replace(/[\r\n]+/g, "\"^$&\"") + "\"";
-  }
+    return (
+      '"' +
+      str
+        .replace(/"/g, '""')
+        .replace(/%/g, '"%"')
+        .replace(/\\/g, "\\\\")
+        .replace(/[\r\n]{1,2}/g, '"^$&$&"') +
+      '"'
+    );
+  },
 };
 
 exports.CurlUtils = CurlUtils;

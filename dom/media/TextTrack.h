@@ -12,6 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
+#include "TimeUnits.h"
 
 namespace mozilla {
 namespace dom {
@@ -20,12 +21,9 @@ class TextTrackList;
 class TextTrackCue;
 class TextTrackCueList;
 class HTMLTrackElement;
+class HTMLMediaElement;
 
-enum TextTrackSource {
-  Track,
-  AddTextTrack,
-  MediaResourceSpecific
-};
+enum TextTrackSource { Track, AddTextTrack, MediaResourceSpecific };
 
 // Constants for numeric readyState property values.
 enum TextTrackReadyState {
@@ -35,52 +33,37 @@ enum TextTrackReadyState {
   FailedToLoad = 3U
 };
 
-class TextTrack final : public DOMEventTargetHelper
-{
-public:
+class TextTrack final : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TextTrack, DOMEventTargetHelper)
 
-  TextTrack(nsPIDOMWindowInner* aOwnerWindow,
-            TextTrackKind aKind,
-            const nsAString& aLabel,
-            const nsAString& aLanguage,
-            TextTrackMode aMode,
-            TextTrackReadyState aReadyState,
+  TextTrack(nsPIDOMWindowInner* aOwnerWindow, TextTrackKind aKind,
+            const nsAString& aLabel, const nsAString& aLanguage,
+            TextTrackMode aMode, TextTrackReadyState aReadyState,
             TextTrackSource aTextTrackSource);
-  TextTrack(nsPIDOMWindowInner* aOwnerWindow,
-            TextTrackList* aTextTrackList,
-            TextTrackKind aKind,
-            const nsAString& aLabel,
-            const nsAString& aLanguage,
-            TextTrackMode aMode,
-            TextTrackReadyState aReadyState,
-            TextTrackSource aTextTrackSource);
+  TextTrack(nsPIDOMWindowInner* aOwnerWindow, TextTrackList* aTextTrackList,
+            TextTrackKind aKind, const nsAString& aLabel,
+            const nsAString& aLanguage, TextTrackMode aMode,
+            TextTrackReadyState aReadyState, TextTrackSource aTextTrackSource);
 
   void SetDefaultSettings();
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  TextTrackKind Kind() const
-  {
-    return mKind;
-  }
+  TextTrackKind Kind() const { return mKind; }
   void GetLabel(nsAString& aLabel) const;
   void GetLanguage(nsAString& aLanguage) const;
-  void GetInBandMetadataTrackDispatchType(nsAString& aType) const
-  {
+  void GetInBandMetadataTrackDispatchType(nsAString& aType) const {
     aType = mType;
   }
   void GetId(nsAString& aId) const;
 
-  TextTrackMode Mode() const
-  {
-    return mMode;
-  }
+  TextTrackMode Mode() const { return mMode; }
   void SetMode(TextTrackMode aValue);
 
-  TextTrackCueList* GetCues() const
-  {
+  TextTrackCueList* GetCues() const {
     if (mMode == TextTrackMode::Disabled) {
       return nullptr;
     }
@@ -88,7 +71,6 @@ public:
   }
 
   TextTrackCueList* GetActiveCues();
-  void UpdateActiveCueList();
   void GetActiveCueArray(nsTArray<RefPtr<TextTrackCue> >& aCues);
 
   TextTrackReadyState ReadyState() const;
@@ -108,18 +90,36 @@ public:
   HTMLTrackElement* GetTrackElement();
   void SetTrackElement(HTMLTrackElement* aTrackElement);
 
-  TextTrackSource GetTextTrackSource() {
-    return mTextTrackSource;
-  }
+  TextTrackSource GetTextTrackSource() { return mTextTrackSource; }
 
   void SetCuesInactive();
 
-  void NotifyCueUpdated(TextTrackCue *aCue);
+  void NotifyCueUpdated(TextTrackCue* aCue);
 
   void DispatchAsyncTrustedEvent(const nsString& aEventName);
 
-private:
+  bool IsLoaded();
+
+  // Called when associated cue's active flag has been changed, and then we
+  // would add or remove the cue to the active cue list.
+  void NotifyCueActiveStateChanged(TextTrackCue* aCue);
+
+  // Use this function to request current cues, which start time are less than
+  // or equal to the current playback position and whose end times are greater
+  // than the current playback position, and other cues, which are not in the
+  // current cues. Because there would be LOTS of cues in the other cues, and we
+  // don't actually need all of them. Therefore, we use a time interval to get
+  // the cues which are overlapping within the time interval.
+  void GetCurrentCuesAndOtherCues(RefPtr<TextTrackCueList>& aCurrentCues,
+                                  RefPtr<TextTrackCueList>& aOtherCues,
+                                  const media::TimeInterval& aInterval) const;
+
+  void ClearAllCues();
+
+ private:
   ~TextTrack();
+
+  HTMLMediaElement* GetMediaElement() const;
 
   RefPtr<TextTrackList> mTextTrackList;
 
@@ -141,7 +141,7 @@ private:
   TextTrackSource mTextTrackSource;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TextTrack_h
+#endif  // mozilla_dom_TextTrack_h

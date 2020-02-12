@@ -4,15 +4,15 @@
   <meta charset="utf8">
   <title>Test that WebIDL attributes with the LenientThis extended attribute
          do not appear in the wrong objects</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript;version=1.8" src="common.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
 </head>
 <body>
 <p>Test for the native getters in object actors</p>
 
-<script class="testbody" type="text/javascript;version=1.8">
+<script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
 function startTest()
@@ -25,17 +25,15 @@ function startTest()
 function onAttach(aState, aResponse)
 {
   onConsoleCall = onConsoleCall.bind(null, aState);
-  aState.dbgClient.addListener("consoleAPICall", onConsoleCall);
+  aState.webConsoleFront.on("consoleAPICall", onConsoleCall);
 
   let docAsProto = Object.create(document);
 
   top.console.log("hello", docAsProto);
 }
 
-function onConsoleCall(aState, aType, aPacket)
+function onConsoleCall(aState, aPacket)
 {
-  is(aPacket.from, aState.actor, "console API call actor");
-
   info("checking the console API call packet");
 
   checkConsoleAPICall(aPacket.message, {
@@ -48,14 +46,14 @@ function onConsoleCall(aState, aType, aPacket)
     }],
   });
 
-  aState.dbgClient.removeListener("consoleAPICall", onConsoleCall);
+  aState.webConsoleFront.off("consoleAPICall", onConsoleCall);
 
   info("inspecting object properties");
   let args = aPacket.message.arguments;
   onProperties = onProperties.bind(null, aState);
 
   let client = new ObjectClient(aState.dbgClient, args[1]);
-  client.getPrototypeAndProperties(onProperties);
+  client.getPrototypeAndProperties().then(onProperties);
 }
 
 function onProperties(aState, aResponse)

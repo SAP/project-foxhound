@@ -4,7 +4,7 @@
 load(libdir + "asserts.js");
 load(libdir + "debuggerNXHelper.js");
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 var dbg = new Debugger(g);
 
 g.eval(`
@@ -21,10 +21,6 @@ var handlers = [() => { g.f(); },
 
 function testHookEnabled(hookName, trigger) {
   for (var h of handlers) {
-    assertThrowsInstanceOf(h, Debugger.DebuggeeWouldRun);
-    dbg.enabled = false;
-    h();
-    dbg.enabled = true;
     assertThrowsInstanceOf(h, Debugger.DebuggeeWouldRun);
   }
 }

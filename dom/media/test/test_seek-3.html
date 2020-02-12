@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: seek tests</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
   <script type="text/javascript" src="seek_support.js"></script>
@@ -33,7 +33,7 @@ function startTest() {
 
 function timeupdate() {
   gotTimeupdate = true;
-  v.removeEventListener("timeupdate", timeupdate, false);
+  v.removeEventListener("timeupdate", timeupdate);
 }
 
 function seekStarted() {
@@ -41,7 +41,7 @@ function seekStarted() {
     return;
 
   ok(v.currentTime >= seekTime - 0.1, "Video currentTime should be around " + seekTime + ": " + v.currentTime);
-  v.addEventListener("timeupdate", timeupdate, false);
+  v.addEventListener("timeupdate", timeupdate);
   startPassed = true;
 }
 
@@ -56,9 +56,9 @@ function seekEnded() {
   finish();
 }
 
-v.addEventListener("loadedmetadata", startTest, false);
-v.addEventListener("seeking", seekStarted, false);
-v.addEventListener("seeked", seekEnded, false);
+v.addEventListener("loadedmetadata", startTest);
+v.addEventListener("seeking", seekStarted);
+v.addEventListener("seeked", seekEnded);
 
 }
 

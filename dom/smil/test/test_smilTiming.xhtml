@@ -1,7 +1,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Test for SMIL timing</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -132,10 +132,10 @@ function main() {
   testCases.push(StartTimeTest('3;', 3));
   testCases.push(StartTimeTest('3; ', 3));
   testCases.push(StartTimeTest('3 ; ', 3));
-  testCases.push(StartTimeTest('3;;', 'none'));
-  testCases.push(StartTimeTest('3;; ', 'none'));
-  testCases.push(StartTimeTest(';3', 'none'));
-  testCases.push(StartTimeTest(' ;3', 'none'));
+  testCases.push(StartTimeTest('3;;', 3));
+  testCases.push(StartTimeTest('3;; ', 3));
+  testCases.push(StartTimeTest(';3', 3));
+  testCases.push(StartTimeTest(' ;3', 3));
   testCases.push(StartTimeTest('3;4', 3));
   testCases.push(StartTimeTest(' 3 ; 4 ', 3));
 
@@ -235,7 +235,7 @@ function main() {
          "Got unexpected start time for " + params);
     }
 
-    anim.parentNode.removeChild(anim);
+    anim.remove();
   }
 
   SimpleTest.finish();
@@ -283,7 +283,7 @@ function StartTimeTest(beginSpec, expectedStartTime) {
            'startTime': expectedStartTime };
 }
 
-window.addEventListener("load", main, false);
+window.addEventListener("load", main);
 ]]>
 </script>
 </pre>

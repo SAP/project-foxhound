@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for XMLHttpRequest.GetResponseHeader(foo) byte-inflates the output</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <meta charset="utf-8">
 </head>
@@ -12,7 +12,7 @@
 
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.7">
+<script class="testbody" type="application/javascript">
 "use strict";
 SimpleTest.waitForExplicitFinish();
 
@@ -20,7 +20,8 @@ let xhr = new XMLHttpRequest();
 xhr.open('GET', 'file_XHR_header.sjs', true);
 xhr.onreadystatechange = function() {
   if (xhr.readyState == 4) {
-    ok(xhr.getResponseHeader('X-Custom-Header-Bytes') == "\xE2\x80\xA6", 'getResponseHeader byte-inflates the output');
+    ok(xhr.getResponseHeader('X-Custom-Header-Bytes') == "\xE2\x80\xA6",
+       "getResponseHeader returns a string of the header's raw bytes");
     SimpleTest.finish();
   }
 }

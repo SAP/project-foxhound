@@ -3,7 +3,7 @@
  * Script.prototype.sourceLength should comprise the entire script (excluding
  * arguments in the case of Function constructors)
  */
-let g = newGlobal();
+let g = newGlobal({newCompartment: true});
 let dbg = new Debugger(g);
 
 var count = 0;
@@ -20,6 +20,6 @@ function test(string, range) {
 }
 
 test("eval('2 * 3')", [0, 5]);
-test("new Function('2 * 3')", [0, 5]);
-test("new Function('x', 'x * x')", [0, 5]);
+test("new Function('2 * 3')", [0, 31]);
+test("new Function('x', 'x * x')", [0, 32]);
 assertEq(count, 6);

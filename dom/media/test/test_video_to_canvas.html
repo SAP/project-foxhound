@@ -7,7 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=486646
 <head>
   <title>Test for Bug 486646</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -34,7 +34,7 @@ function loaded(e) {
   }
 
   v._finished = true;
-  v.parentNode.removeChild(v);
+  v.remove();
   manager.finished(v.token);
 }
 
@@ -51,7 +51,7 @@ function startTest(test, token) {
   v._finished = false;
   v.autoplay = true;
   v.style.display = "none";
-  v.addEventListener("ended", loaded, false);
+  v.addEventListener("ended", loaded);
   document.body.appendChild(v);
 }
 

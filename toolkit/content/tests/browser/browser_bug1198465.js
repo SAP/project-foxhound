@@ -11,8 +11,8 @@ registerCleanupFunction(function() {
   Services.prefs.clearUserPref(kPrefName);
 });
 
-add_task(function* () {
-  let aTab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, kEmptyURI);
+add_task(async function() {
+  let aTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, kEmptyURI);
   ok(!gFindBarInitialized, "findbar isn't initialized yet");
 
   // Note: the use case here is when the user types directly in the findbar
@@ -26,6 +26,11 @@ add_task(function* () {
   //    browser has dispatched its return message with the prefill value for
   //    the findbar, which essentially nulls these tests.
 
+  // The parent-side of the sidebar initialization is also async, so we do
+  // need to wait for that. We verify a bit further down that _startFindDeferred
+  // hasn't been resolved yet.
+  await gFindBarPromise;
+
   let findBar = gFindBar;
   is(findBar._findField.value, "", "findbar is empty");
 
@@ -35,9 +40,7 @@ add_task(function* () {
   findBar._findField.value = "xy";
   findBar.startFind();
   is(findBar._findField.value, "xy", "findbar should have xy initial query");
-  is(findBar._findField.mInputField,
-    document.activeElement,
-    "findbar is now focused");
+  is(findBar._findField, document.activeElement, "findbar is now focused");
 
   EventUtils.sendChar("z", window);
   is(findBar._findField.value, "z", "z erases xy");
@@ -50,9 +53,7 @@ add_task(function* () {
 
   findBar.startFind();
   ok(findBar._startFindDeferred, "prefilled value hasn't been fetched yet");
-  is(findBar._findField.mInputField,
-    document.activeElement,
-    "findbar is still focused");
+  is(findBar._findField, document.activeElement, "findbar is still focused");
 
   EventUtils.sendChar("a", window);
   EventUtils.sendChar("b", window);
@@ -68,5 +69,8 @@ add_task(function* () {
   EventUtils.sendChar("c", window);
   is(findBar._findField.value, "abc", "c is appended after ab");
 
-  yield BrowserTestUtils.removeTab(aTab);
+  // Clear the findField value to make the test  run successfully
+  // for multiple runs in the same browser session.
+  findBar._findField.value = "";
+  BrowserTestUtils.removeTab(aTab);
 });

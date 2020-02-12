@@ -16,27 +16,22 @@ namespace mozilla {
 class ErrorResult;
 
 namespace dom {
-namespace workers {
-class WorkerPrivate;
-} // namespace workers
-
 class Promise;
 struct PromiseDebuggingStateHolder;
 class GlobalObject;
 class UncaughtRejectionObserver;
 class FlushRejections;
+class WorkerPrivate;
 
 void TriggerFlushRejections();
 
-class PromiseDebugging
-{
-public:
+class PromiseDebugging {
+ public:
   static void Init();
   static void Shutdown();
 
   static void GetState(GlobalObject&, JS::Handle<JSObject*> aPromise,
-                       PromiseDebuggingStateHolder& aState,
-                       ErrorResult& aRv);
+                       PromiseDebuggingStateHolder& aState, ErrorResult& aRv);
 
   static void GetPromiseID(GlobalObject&, JS::Handle<JSObject*>, nsString&,
                            ErrorResult&);
@@ -52,46 +47,27 @@ public:
                                    JS::MutableHandle<JSObject*> aStack,
                                    ErrorResult& aRv);
 
-#ifndef SPIDERMONKEY_PROMISE
-  static void GetDependentPromises(GlobalObject&,
-                                   JS::Handle<JSObject*> aPromise,
-                                   nsTArray<RefPtr<Promise>>& aPromises,
-                                   ErrorResult& aRv);
-  static double GetPromiseLifetime(GlobalObject&,
-                                   JS::Handle<JSObject*> aPromise,
-                                   ErrorResult& aRv);
-  static double GetTimeToSettle(GlobalObject&, JS::Handle<JSObject*> aPromise,
-                                ErrorResult& aRv);
-#endif // SPIDERMONKEY_PROMISE
-
   // Mechanism for watching uncaught instances of Promise.
-  static void AddUncaughtRejectionObserver(GlobalObject&,
-                                           UncaughtRejectionObserver& aObserver);
-  static bool RemoveUncaughtRejectionObserver(GlobalObject&,
-                                              UncaughtRejectionObserver& aObserver);
+  static void AddUncaughtRejectionObserver(
+      GlobalObject&, UncaughtRejectionObserver& aObserver);
+  static bool RemoveUncaughtRejectionObserver(
+      GlobalObject&, UncaughtRejectionObserver& aObserver);
 
-#ifdef SPIDERMONKEY_PROMISE
   // Mark a Promise as having been left uncaught at script completion.
   static void AddUncaughtRejection(JS::HandleObject);
   // Mark a Promise previously added with `AddUncaughtRejection` as
   // eventually consumed.
   static void AddConsumedRejection(JS::HandleObject);
-#else
-  // Mark a Promise as having been left uncaught at script completion.
-  static void AddUncaughtRejection(Promise&);
-  // Mark a Promise previously added with `AddUncaughtRejection` as
-  // eventually consumed.
-  static void AddConsumedRejection(Promise&);
-#endif // SPIDERMONKEY_PROMISE
   // Propagate the informations from AddUncaughtRejection
   // and AddConsumedRejection to observers.
   static void FlushUncaughtRejections();
 
-protected:
+ protected:
   static void FlushUncaughtRejectionsInternal();
   friend class FlushRejections;
-  friend class mozilla::dom::workers::WorkerPrivate;
-private:
+  friend class mozilla::dom::WorkerPrivate;
+
+ private:
   // Identity of the process.
   // This property is:
   // - set during initialization of the layout module,
@@ -102,7 +78,7 @@ private:
   static nsString sIDPrefix;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PromiseDebugging_h
+#endif  // mozilla_dom_PromiseDebugging_h

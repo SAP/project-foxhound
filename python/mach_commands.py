@@ -4,11 +4,22 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import __main__
 import argparse
 import logging
-import mozpack.path as mozpath
 import os
+import sys
+import tempfile
+from multiprocessing import cpu_count
+
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+    thread,
+)
+
+import mozinfo
+from manifestparser import TestManifest
+from manifestparser import filters as mpf
 
 from mozbuild.base import (
     MachCommandBase,
@@ -20,139 +31,235 @@ from mach.decorators import (
     Command,
 )
 
+here = os.path.abspath(os.path.dirname(__file__))
+
 
 @CommandProvider
 class MachCommands(MachCommandBase):
     @Command('python', category='devenv',
-        description='Run Python.')
+             description='Run Python.')
+    @CommandArgument('--no-virtualenv', action='store_true',
+                     help='Do not set up a virtualenv')
+    @CommandArgument('--exec-file',
+                     default=None,
+                     help='Execute this Python file using `execfile`')
     @CommandArgument('args', nargs=argparse.REMAINDER)
-    def python(self, args):
+    def python(self, no_virtualenv, exec_file, args):
         # Avoid logging the command
         self.log_manager.terminal_handler.setLevel(logging.CRITICAL)
 
-        self._activate_virtualenv()
+        # Note: subprocess requires native strings in os.environ on Windows.
+        append_env = {
+            b'PYTHONDONTWRITEBYTECODE': str('1'),
+        }
 
-        return self.run_process([self.virtualenv_manager.python_path] + args,
-            pass_thru=True,  # Allow user to run Python interactively.
-            ensure_exit_code=False,  # Don't throw on non-zero exit code.
-            # Note: subprocess requires native strings in os.environ on Windows
-            append_env={b'PYTHONDONTWRITEBYTECODE': str('1')})
+        if no_virtualenv:
+            python_path = sys.executable
+            append_env[b'PYTHONPATH'] = os.pathsep.join(sys.path)
+        else:
+            self._activate_virtualenv()
+            python_path = self.virtualenv_manager.python_path
+
+        if exec_file:
+            exec(open(exec_file).read())
+            return 0
+
+        return self.run_process([python_path] + args,
+                                pass_thru=True,  # Allow user to run Python interactively.
+                                ensure_exit_code=False,  # Don't throw on non-zero exit code.
+                                append_env=append_env)
 
     @Command('python-test', category='testing',
-        description='Run Python unit tests with an appropriate test runner.')
-    @CommandArgument('--verbose',
-        default=False,
-        action='store_true',
-        help='Verbose output.')
-    @CommandArgument('--stop',
-        default=False,
-        action='store_true',
-        help='Stop running tests after the first error or failure.')
-    @CommandArgument('--path-only',
-        default=False,
-        action='store_true',
-        help=('Collect all tests under given path instead of default '
-              'test resolution. Supports pytest-style tests.'))
+             description='Run Python unit tests with an appropriate test runner.')
+    @CommandArgument('-v', '--verbose',
+                     default=False,
+                     action='store_true',
+                     help='Verbose output.')
+    @CommandArgument('--python',
+                     default='2.7',
+                     help='Version of Python for Pipenv to use. When given a '
+                          'Python version, Pipenv will automatically scan your '
+                          'system for a Python that matches that given version.')
+    @CommandArgument('-j', '--jobs',
+                     default=None,
+                     type=int,
+                     help='Number of concurrent jobs to run. Default is the number of CPUs '
+                          'in the system.')
+    @CommandArgument('-x', '--exitfirst',
+                     default=False,
+                     action='store_true',
+                     help='Runs all tests sequentially and breaks at the first failure.')
+    @CommandArgument('--subsuite',
+                     default=None,
+                     help=('Python subsuite to run. If not specified, all subsuites are run. '
+                           'Use the string `default` to only run tests without a subsuite.'))
     @CommandArgument('tests', nargs='*',
-        metavar='TEST',
-        help=('Tests to run. Each test can be a single file or a directory. '
-              'Default test resolution relies on PYTHON_UNIT_TESTS.'))
-    def python_test(self,
-                    tests=[],
-                    test_objects=None,
-                    subsuite=None,
-                    verbose=False,
-                    path_only=False,
-                    stop=False):
-        self._activate_virtualenv()
+                     metavar='TEST',
+                     help=('Tests to run. Each test can be a single file or a directory. '
+                           'Default test resolution relies on PYTHON_UNITTEST_MANIFESTS.'))
+    @CommandArgument('extra', nargs=argparse.REMAINDER,
+                     metavar='PYTEST ARGS',
+                     help=('Arguments that aren\'t recognized by mach. These will be '
+                           'passed as it is to pytest'))
+    def python_test(self, *args, **kwargs):
+        try:
+            tempdir = os.environ[b'PYTHON_TEST_TMP'] = str(tempfile.mkdtemp(suffix='-python-test'))
+            return self.run_python_tests(*args, **kwargs)
+        finally:
+            import mozfile
+            mozfile.remove(tempdir)
 
-        def find_tests_by_path():
-            import glob
-            files = []
-            for t in tests:
-                if t.endswith('.py') and os.path.isfile(t):
-                    files.append(t)
-                elif os.path.isdir(t):
-                    for root, _, _ in os.walk(t):
-                        files += glob.glob(mozpath.join(root, 'test*.py'))
-                        files += glob.glob(mozpath.join(root, 'unit*.py'))
-                else:
-                    self.log(logging.WARN, 'python-test',
-                                 {'test': t},
-                                 'TEST-UNEXPECTED-FAIL | Invalid test: {test}')
-                    if stop:
-                        break
-            return files
+    def run_python_tests(self,
+                         tests=None,
+                         test_objects=None,
+                         subsuite=None,
+                         verbose=False,
+                         jobs=None,
+                         python=None,
+                         exitfirst=False,
+                         extra=None,
+                         **kwargs):
+        python = python or self.virtualenv_manager.python_path
+        self.activate_pipenv(pipfile=None, populate=True, python=python)
 
-        # Python's unittest, and in particular discover, has problems with
-        # clashing namespaces when importing multiple test modules. What follows
-        # is a simple way to keep environments separate, at the price of
-        # launching Python multiple times. Most tests are run via mozunit,
-        # which produces output in the format Mozilla infrastructure expects.
-        # Some tests are run via pytest.
-        return_code = 0
-        found_tests = False
         if test_objects is None:
-            # If we're not being called from `mach test`, do our own
-            # test resolution.
-            if path_only:
-                if tests:
-                    test_objects = [{'path': p} for p in find_tests_by_path()]
-                else:
-                    self.log(logging.WARN, 'python-test', {},
-                             'TEST-UNEXPECTED-FAIL | No tests specified')
-                    test_objects = []
-            else:
-                from mozbuild.testing import TestResolver
-                resolver = self._spawn(TestResolver)
-                if tests:
-                    # If we were given test paths, try to find tests matching them.
-                    test_objects = resolver.resolve_tests(paths=tests,
-                                                          flavor='python')
-                else:
-                    # Otherwise just run everything in PYTHON_UNIT_TESTS
-                    test_objects = resolver.resolve_tests(flavor='python')
+            from moztest.resolve import TestResolver
+            resolver = self._spawn(TestResolver)
+            # If we were given test paths, try to find tests matching them.
+            test_objects = resolver.resolve_tests(paths=tests, flavor='python')
+        else:
+            # We've received test_objects from |mach test|. We need to ignore
+            # the subsuite because python-tests don't use this key like other
+            # harnesses do and |mach test| doesn't realize this.
+            subsuite = None
 
-        for test in test_objects:
-            found_tests = True
-            f = test['path']
-            file_displayed_test = []  # Used as a boolean.
+        mp = TestManifest()
+        mp.tests.extend(test_objects)
 
-            def _line_handler(line):
-                if not file_displayed_test:
-                    output = ('Ran' in line or 'collected' in line or
-                              line.startswith('TEST-'))
-                    if output:
-                        file_displayed_test.append(True)
+        filters = []
+        if subsuite == 'default':
+            filters.append(mpf.subsuite(None))
+        elif subsuite:
+            filters.append(mpf.subsuite(subsuite))
 
-            inner_return_code = self.run_process(
-                [self.virtualenv_manager.python_path, f],
-                ensure_exit_code=False,  # Don't throw on non-zero exit code.
-                log_name='python-test',
-                # subprocess requires native strings in os.environ on Windows
-                append_env={b'PYTHONDONTWRITEBYTECODE': str('1')},
-                line_handler=_line_handler)
-            return_code += inner_return_code
+        tests = mp.active_tests(
+            filters=filters,
+            disabled=False,
+            python=self.virtualenv_manager.version_info[0],
+            **mozinfo.info)
 
-            if not file_displayed_test:
-                self.log(logging.WARN, 'python-test', {'file': f},
-                         'TEST-UNEXPECTED-FAIL | No test output (missing mozunit.main() call?): {file}')
-
-            if verbose:
-                if inner_return_code != 0:
-                    self.log(logging.INFO, 'python-test', {'file': f},
-                             'Test failed: {file}')
-                else:
-                    self.log(logging.INFO, 'python-test', {'file': f},
-                             'Test passed: {file}')
-            if stop and return_code > 0:
-                return 1
-
-        if not found_tests:
-            message = 'TEST-UNEXPECTED-FAIL | No tests collected'
-            if not path_only:
-                 message += ' (Not in PYTHON_UNIT_TESTS? Try --path-only?)'
+        if not tests:
+            submsg = "for subsuite '{}' ".format(subsuite) if subsuite else ""
+            message = "TEST-UNEXPECTED-FAIL | No tests collected " + \
+                      "{}(Not in PYTHON_UNITTEST_MANIFESTS?)".format(submsg)
             self.log(logging.WARN, 'python-test', {}, message)
             return 1
 
-        return 0 if return_code == 0 else 1
+        parallel = []
+        sequential = []
+        os.environ.setdefault('PYTEST_ADDOPTS', '')
+
+        if extra:
+            os.environ['PYTEST_ADDOPTS'] += " " + " ".join(extra)
+
+        if exitfirst:
+            sequential = tests
+            os.environ['PYTEST_ADDOPTS'] += " -x"
+        else:
+            for test in tests:
+                if test.get('sequential'):
+                    sequential.append(test)
+                else:
+                    parallel.append(test)
+
+        self.jobs = jobs or cpu_count()
+        self.terminate = False
+        self.verbose = verbose
+
+        return_code = 0
+
+        def on_test_finished(result):
+            output, ret, test_path = result
+
+            for line in output:
+                self.log(logging.INFO, 'python-test', {'line': line.rstrip()}, '{line}')
+
+            if ret and not return_code:
+                self.log(logging.ERROR, 'python-test', {'test_path': test_path, 'ret': ret},
+                         'Setting retcode to {ret} from {test_path}')
+            return return_code or ret
+
+        with ThreadPoolExecutor(max_workers=self.jobs) as executor:
+            futures = [executor.submit(self._run_python_test, test)
+                       for test in parallel]
+
+            try:
+                for future in as_completed(futures):
+                    return_code = on_test_finished(future.result())
+            except KeyboardInterrupt:
+                # Hack to force stop currently running threads.
+                # https://gist.github.com/clchiou/f2608cbe54403edb0b13
+                executor._threads.clear()
+                thread._threads_queues.clear()
+                raise
+
+        for test in sequential:
+            return_code = on_test_finished(self._run_python_test(test))
+            if return_code and exitfirst:
+                break
+
+        self.log(logging.INFO, 'python-test', {'return_code': return_code},
+                 'Return code from mach python-test: {return_code}')
+        return return_code
+
+    def _run_python_test(self, test):
+        from mozprocess import ProcessHandler
+
+        if test.get('requirements'):
+            self.virtualenv_manager.install_pip_requirements(test['requirements'], quiet=True)
+
+        output = []
+
+        def _log(line):
+            # Buffer messages if more than one worker to avoid interleaving
+            if self.jobs > 1:
+                output.append(line)
+            else:
+                self.log(logging.INFO, 'python-test', {'line': line.rstrip()}, '{line}')
+
+        file_displayed_test = []  # used as boolean
+
+        def _line_handler(line):
+            if not file_displayed_test:
+                output = ('Ran' in line or 'collected' in line or
+                          line.startswith('TEST-'))
+                if output:
+                    file_displayed_test.append(True)
+
+            # Hack to make sure treeherder highlights pytest failures
+            if b'FAILED' in line.rsplit(b' ', 1)[-1]:
+                line = line.replace(b'FAILED', b'TEST-UNEXPECTED-FAIL')
+
+            _log(line)
+
+        _log(test['path'])
+        cmd = [self.virtualenv_manager.python_path, test['path']]
+        env = os.environ.copy()
+        env[b'PYTHONDONTWRITEBYTECODE'] = b'1'
+
+        proc = ProcessHandler(cmd, env=env, processOutputLine=_line_handler, storeOutput=False)
+        proc.run()
+
+        return_code = proc.wait()
+
+        if not file_displayed_test:
+            _log('TEST-UNEXPECTED-FAIL | No test output (missing mozunit.main() '
+                 'call?): {}'.format(test['path']))
+
+        if self.verbose:
+            if return_code != 0:
+                _log('Test failed: {}'.format(test['path']))
+            else:
+                _log('Test passed: {}'.format(test['path']))
+
+        return output, return_code, test['path']

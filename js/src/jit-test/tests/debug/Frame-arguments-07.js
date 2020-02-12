@@ -1,9 +1,10 @@
 // When argument[x] is assigned, where x > callee.length, frame.arguments reflects the change.
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 g.eval("function f(a, b) {\n" +
        "    for (var i = 0; i < arguments.length; i++)\n" +
        "        arguments[i] = i;\n" +
+       "    eval(\"\");\n" +
        "    debugger;\n" +
        "}\n");
 

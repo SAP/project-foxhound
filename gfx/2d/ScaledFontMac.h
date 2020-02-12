@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,10 +8,10 @@
 #define MOZILLA_GFX_SCALEDFONTMAC_H_
 
 #ifdef MOZ_WIDGET_COCOA
-#include <ApplicationServices/ApplicationServices.h>
+#  include <ApplicationServices/ApplicationServices.h>
 #else
-#include <CoreGraphics/CoreGraphics.h>
-#include <CoreText/CoreText.h>
+#  include <CoreGraphics/CoreGraphics.h>
+#  include <CoreText/CoreText.h>
 #endif
 
 #include "2D.h"
@@ -20,45 +21,76 @@
 namespace mozilla {
 namespace gfx {
 
-class ScaledFontMac : public ScaledFontBase
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(ScaledFontMac)
-  ScaledFontMac(CGFontRef aFont, Float aSize);
-  virtual ~ScaledFontMac();
+class UnscaledFontMac;
 
-  virtual FontType GetType() const { return FontType::MAC; }
+class ScaledFontMac : public ScaledFontBase {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(ScaledFontMac, override)
+  ScaledFontMac(CGFontRef aFont, const RefPtr<UnscaledFont>& aUnscaledFont, Float aSize,
+                bool aOwnsFont = false, const Color& aFontSmoothingBackgroundColor = Color(),
+                bool aUseFontSmoothing = true, bool aApplySyntheticBold = false);
+  ~ScaledFontMac();
+
+  FontType GetType() const override { return FontType::MAC; }
 #ifdef USE_SKIA
-  virtual SkTypeface* GetSkTypeface();
+  SkTypeface* CreateSkTypeface() override;
+  void SetupSkFontDrawOptions(SkFont& aFont) override;
 #endif
-  virtual already_AddRefed<Path> GetPathForGlyphs(const GlyphBuffer &aBuffer, const DrawTarget *aTarget);
-  virtual void CopyGlyphsToBuilder(const GlyphBuffer &aBuffer, PathBuilder *aBuilder, const Matrix *aTransformHint);
-  virtual bool GetFontFileData(FontFileDataOutput aDataCallback, void *aBaton);
+  already_AddRefed<Path> GetPathForGlyphs(const GlyphBuffer& aBuffer,
+                                          const DrawTarget* aTarget) override;
+
+  bool GetFontInstanceData(FontInstanceDataOutput aCb, void* aBaton) override;
+
+  bool GetWRFontInstanceOptions(Maybe<wr::FontInstanceOptions>* aOutOptions,
+                                Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
+                                std::vector<FontVariation>* aOutVariations) override;
+
+  bool CanSerialize() override { return true; }
+
+  Color FontSmoothingBackgroundColor() { return mFontSmoothingBackgroundColor; }
 
 #ifdef USE_CAIRO_SCALED_FONT
-  cairo_font_face_t* GetCairoFontFace();
+  cairo_font_face_t* CreateCairoFontFace(cairo_font_options_t* aFontOptions) override;
 #endif
 
-private:
-  friend class DrawTargetCG;
+ private:
   friend class DrawTargetSkia;
-  CGFontRef mFont;
-  CTFontRef mCTFont; // only created if CTFontDrawGlyphs is available, otherwise null
+  friend class UnscaledFontMac;
 
-  typedef void (CTFontDrawGlyphsFuncT)(CTFontRef,
-                                       const CGGlyph[], const CGPoint[],
-                                       size_t, CGContextRef);
+  CGFontRef mFont;
+  CTFontRef mCTFont;  // only created if CTFontDrawGlyphs is available, otherwise null
+
+  Color mFontSmoothingBackgroundColor;
+  bool mUseFontSmoothing;
+  bool mApplySyntheticBold;
+
+  struct InstanceData {
+    explicit InstanceData(ScaledFontMac* aScaledFont)
+        : mFontSmoothingBackgroundColor(aScaledFont->mFontSmoothingBackgroundColor),
+          mUseFontSmoothing(aScaledFont->mUseFontSmoothing),
+          mApplySyntheticBold(aScaledFont->mApplySyntheticBold) {}
+
+    InstanceData(const wr::FontInstanceOptions* aOptions,
+                 const wr::FontInstancePlatformOptions* aPlatformOptions);
+
+    Color mFontSmoothingBackgroundColor;
+    bool mUseFontSmoothing;
+    bool mApplySyntheticBold;
+  };
+
+  typedef void(CTFontDrawGlyphsFuncT)(CTFontRef, const CGGlyph[], const CGPoint[], size_t,
+                                      CGContextRef);
 
   static bool sSymbolLookupDone;
 
-public:
+ public:
   // function pointer for CTFontDrawGlyphs, if available;
   // initialized the first time a ScaledFontMac is created,
   // so it will be valid by the time DrawTargetCG wants to use it
   static CTFontDrawGlyphsFuncT* CTFontDrawGlyphsPtr;
 };
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
 #endif /* MOZILLA_GFX_SCALEDFONTMAC_H_ */

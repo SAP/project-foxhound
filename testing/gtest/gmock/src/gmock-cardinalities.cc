@@ -26,8 +26,7 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: wan@google.com (Zhanyong Wan)
+
 
 // Google Mock - a framework for writing C++ mock classes.
 //
@@ -75,7 +74,7 @@ class BetweenCardinalityImpl : public CardinalityInterface {
   virtual int ConservativeUpperBound() const { return max_; }
 
   virtual bool IsSatisfiedByCallCount(int call_count) const {
-    return min_ <= call_count && call_count <= max_ ;
+    return min_ <= call_count && call_count <= max_;
   }
 
   virtual bool IsSaturatedByCallCount(int call_count) const {
@@ -83,6 +82,7 @@ class BetweenCardinalityImpl : public CardinalityInterface {
   }
 
   virtual void DescribeTo(::std::ostream* os) const;
+
  private:
   const int min_;
   const int max_;
@@ -91,7 +91,7 @@ class BetweenCardinalityImpl : public CardinalityInterface {
 };
 
 // Formats "n times" in a human-friendly way.
-inline internal::string FormatTimes(int n) {
+inline std::string FormatTimes(int n) {
   if (n == 1) {
     return "once";
   } else if (n == 2) {
@@ -136,20 +136,20 @@ void Cardinality::DescribeActualCallCountTo(int actual_call_count,
 }
 
 // Creates a cardinality that allows at least n calls.
-Cardinality AtLeast(int n) { return Between(n, INT_MAX); }
+GTEST_API_ Cardinality AtLeast(int n) { return Between(n, INT_MAX); }
 
 // Creates a cardinality that allows at most n calls.
-Cardinality AtMost(int n) { return Between(0, n); }
+GTEST_API_ Cardinality AtMost(int n) { return Between(0, n); }
 
 // Creates a cardinality that allows any number of calls.
-Cardinality AnyNumber() { return AtLeast(0); }
+GTEST_API_ Cardinality AnyNumber() { return AtLeast(0); }
 
 // Creates a cardinality that allows between min and max calls.
-Cardinality Between(int min, int max) {
+GTEST_API_ Cardinality Between(int min, int max) {
   return Cardinality(new BetweenCardinalityImpl(min, max));
 }
 
 // Creates a cardinality that allows exactly n calls.
-Cardinality Exactly(int n) { return Between(n, n); }
+GTEST_API_ Cardinality Exactly(int n) { return Between(n, n); }
 
 }  // namespace testing

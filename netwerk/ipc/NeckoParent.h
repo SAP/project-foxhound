@@ -8,13 +8,12 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/net/PNeckoParent.h"
 #include "mozilla/net/NeckoCommon.h"
-#include "mozilla/net/OfflineObserver.h"
 #include "nsIAuthPrompt2.h"
 #include "nsINetworkPredictor.h"
 #include "nsNetUtil.h"
 
 #ifndef mozilla_net_NeckoParent_h
-#define mozilla_net_NeckoParent_h
+#  define mozilla_net_NeckoParent_h
 
 namespace mozilla {
 namespace net {
@@ -27,20 +26,17 @@ enum PBOverrideStatus {
 };
 
 // Header file contents
-class NeckoParent
-  : public PNeckoParent
-  , public DisconnectableParent
-{
-public:
+class NeckoParent : public PNeckoParent {
+  friend class PNeckoParent;
+
+ public:
   NeckoParent();
-  virtual ~NeckoParent();
+  virtual ~NeckoParent() = default;
 
   MOZ_MUST_USE
-  static const char *
-  GetValidatedOriginAttributes(const SerializedLoadContext& aSerialized,
-                               PContentParent* aBrowser,
-                               nsIPrincipal* aRequestingPrincipal,
-                               mozilla::DocShellOriginAttributes& aAttrs);
+  static const char* GetValidatedOriginAttributes(
+      const SerializedLoadContext& aSerialized, PContentParent* aBrowser,
+      nsIPrincipal* aRequestingPrincipal, mozilla::OriginAttributes& aAttrs);
 
   /*
    * Creates LoadContext for parent-side of an e10s channel.
@@ -50,199 +46,214 @@ public:
    * Returns null if successful, or an error string if failed.
    */
   MOZ_MUST_USE
-  static const char*
-  CreateChannelLoadContext(const PBrowserOrId& aBrowser,
-                           PContentParent* aContent,
-                           const SerializedLoadContext& aSerialized,
-                           nsIPrincipal* aRequestingPrincipal,
-                           nsCOMPtr<nsILoadContext> &aResult);
+  static const char* CreateChannelLoadContext(
+      const PBrowserOrId& aBrowser, PContentParent* aContent,
+      const SerializedLoadContext& aSerialized,
+      nsIPrincipal* aRequestingPrincipal, nsCOMPtr<nsILoadContext>& aResult);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
-  virtual nsresult OfflineNotification(nsISupports *) override;
-  virtual uint32_t GetAppId() override { return NECKO_UNKNOWN_APP_ID; }
-  virtual PCookieServiceParent* AllocPCookieServiceParent() override;
-  virtual bool
-  RecvPCookieServiceConstructor(PCookieServiceParent* aActor) override
-  {
+  PCookieServiceParent* AllocPCookieServiceParent();
+  virtual mozilla::ipc::IPCResult RecvPCookieServiceConstructor(
+      PCookieServiceParent* aActor) override {
     return PNeckoParent::RecvPCookieServiceConstructor(aActor);
   }
 
   /*
-   * This implementation of nsIAuthPrompt2 is used for nested remote iframes that
-   * want an auth prompt.  This class lives in the parent process and informs the
-   * NeckoChild that we want an auth prompt, which forwards the request to the
-   * TabParent in the remote iframe that contains the nested iframe
+   * This implementation of nsIAuthPrompt2 is used for nested remote iframes
+   * that want an auth prompt.  This class lives in the parent process and
+   * informs the NeckoChild that we want an auth prompt, which forwards the
+   * request to the BrowserParent in the remote iframe that contains the nested
+   * iframe
    */
-  class NestedFrameAuthPrompt final : public nsIAuthPrompt2
-  {
+  class NestedFrameAuthPrompt final : public nsIAuthPrompt2 {
     ~NestedFrameAuthPrompt() {}
 
-  public:
+   public:
     NS_DECL_ISUPPORTS
 
     NestedFrameAuthPrompt(PNeckoParent* aParent, TabId aNestedFrameId);
 
-    NS_IMETHOD PromptAuth(nsIChannel*, uint32_t, nsIAuthInformation*, bool*) override
-    {
+    NS_IMETHOD PromptAuth(nsIChannel*, uint32_t, nsIAuthInformation*,
+                          bool*) override {
       return NS_ERROR_NOT_IMPLEMENTED;
     }
 
-    NS_IMETHOD AsyncPromptAuth(nsIChannel* aChannel, nsIAuthPromptCallback* callback,
-                               nsISupports*, uint32_t,
-                               nsIAuthInformation* aInfo, nsICancelable**) override;
+    NS_IMETHOD AsyncPromptAuth(nsIChannel* aChannel,
+                               nsIAuthPromptCallback* callback, nsISupports*,
+                               uint32_t, nsIAuthInformation* aInfo,
+                               nsICancelable**) override;
 
-  protected:
+   protected:
     PNeckoParent* mNeckoParent;
     TabId mNestedFrameId;
   };
 
-protected:
-  virtual PHttpChannelParent*
-    AllocPHttpChannelParent(const PBrowserOrId&, const SerializedLoadContext&,
-                            const HttpChannelCreationArgs& aOpenArgs) override;
-  virtual bool
-    RecvPHttpChannelConstructor(
-                      PHttpChannelParent* aActor,
-                      const PBrowserOrId& aBrowser,
-                      const SerializedLoadContext& aSerialized,
-                      const HttpChannelCreationArgs& aOpenArgs) override;
-  virtual bool DeallocPHttpChannelParent(PHttpChannelParent*) override;
-  virtual bool DeallocPCookieServiceParent(PCookieServiceParent*) override;
-  virtual PWyciwygChannelParent* AllocPWyciwygChannelParent() override;
-  virtual bool DeallocPWyciwygChannelParent(PWyciwygChannelParent*) override;
-  virtual PFTPChannelParent*
-    AllocPFTPChannelParent(const PBrowserOrId& aBrowser,
-                           const SerializedLoadContext& aSerialized,
-                           const FTPChannelCreationArgs& aOpenArgs) override;
-  virtual bool
-    RecvPFTPChannelConstructor(
-                      PFTPChannelParent* aActor,
-                      const PBrowserOrId& aBrowser,
-                      const SerializedLoadContext& aSerialized,
-                      const FTPChannelCreationArgs& aOpenArgs) override;
-  virtual bool DeallocPFTPChannelParent(PFTPChannelParent*) override;
-  virtual PWebSocketParent*
-    AllocPWebSocketParent(const PBrowserOrId& browser,
-                          const SerializedLoadContext& aSerialized,
-                          const uint32_t& aSerial) override;
-  virtual bool DeallocPWebSocketParent(PWebSocketParent*) override;
-  virtual PTCPSocketParent* AllocPTCPSocketParent(const nsString& host,
-                                                  const uint16_t& port) override;
+ protected:
+  bool mSocketProcessBridgeInited;
 
-  virtual PRemoteOpenFileParent*
-    AllocPRemoteOpenFileParent(const SerializedLoadContext& aSerialized,
-                               const URIParams& aFileURI,
-                               const OptionalURIParams& aAppURI) override;
-  virtual bool
-    RecvPRemoteOpenFileConstructor(PRemoteOpenFileParent* aActor,
-                                   const SerializedLoadContext& aSerialized,
-                                   const URIParams& aFileURI,
-                                   const OptionalURIParams& aAppURI)
-                                   override;
-  virtual bool DeallocPRemoteOpenFileParent(PRemoteOpenFileParent* aActor)
-                                            override;
+  already_AddRefed<PHttpChannelParent> AllocPHttpChannelParent(
+      const PBrowserOrId&, const SerializedLoadContext&,
+      const HttpChannelCreationArgs& aOpenArgs);
+  virtual mozilla::ipc::IPCResult RecvPHttpChannelConstructor(
+      PHttpChannelParent* aActor, const PBrowserOrId& aBrowser,
+      const SerializedLoadContext& aSerialized,
+      const HttpChannelCreationArgs& aOpenArgs) override;
 
-  virtual bool DeallocPTCPSocketParent(PTCPSocketParent*) override;
-  virtual PTCPServerSocketParent*
-    AllocPTCPServerSocketParent(const uint16_t& aLocalPort,
-                                const uint16_t& aBacklog,
-                                const bool& aUseArrayBuffers) override;
-  virtual bool RecvPTCPServerSocketConstructor(PTCPServerSocketParent*,
-                                               const uint16_t& aLocalPort,
-                                               const uint16_t& aBacklog,
-                                               const bool& aUseArrayBuffers) override;
-  virtual bool DeallocPTCPServerSocketParent(PTCPServerSocketParent*) override;
-  virtual PUDPSocketParent* AllocPUDPSocketParent(const Principal& aPrincipal,
-                                                  const nsCString& aFilter) override;
-  virtual bool RecvPUDPSocketConstructor(PUDPSocketParent*,
-                                         const Principal& aPrincipal,
-                                         const nsCString& aFilter) override;
-  virtual bool DeallocPUDPSocketParent(PUDPSocketParent*) override;
-  virtual PDNSRequestParent* AllocPDNSRequestParent(const nsCString& aHost,
-                                                    const uint32_t& aFlags,
-                                                    const nsCString& aNetworkInterface) override;
-  virtual bool RecvPDNSRequestConstructor(PDNSRequestParent* actor,
-                                          const nsCString& hostName,
-                                          const uint32_t& flags,
-                                          const nsCString& aNetworkInterface) override;
-  virtual bool DeallocPDNSRequestParent(PDNSRequestParent*) override;
-  virtual bool RecvSpeculativeConnect(const URIParams& aURI, const bool& aAnonymous) override;
-  virtual bool RecvHTMLDNSPrefetch(const nsString& hostname,
-                                   const uint16_t& flags) override;
-  virtual bool RecvCancelHTMLDNSPrefetch(const nsString& hostname,
-                                         const uint16_t& flags,
-                                         const nsresult& reason) override;
-  virtual PWebSocketEventListenerParent*
-    AllocPWebSocketEventListenerParent(const uint64_t& aInnerWindowID) override;
-  virtual bool DeallocPWebSocketEventListenerParent(PWebSocketEventListenerParent*) override;
+  PStunAddrsRequestParent* AllocPStunAddrsRequestParent();
+  bool DeallocPStunAddrsRequestParent(PStunAddrsRequestParent* aActor);
 
-  virtual mozilla::ipc::IProtocol*
-  CloneProtocol(Channel* aChannel,
-                mozilla::ipc::ProtocolCloneContext* aCtx) override;
+  PWebrtcTCPSocketParent* AllocPWebrtcTCPSocketParent(
+      const Maybe<TabId>& aTabId);
+  bool DeallocPWebrtcTCPSocketParent(PWebrtcTCPSocketParent* aActor);
 
-  virtual PDataChannelParent*
-    AllocPDataChannelParent(const uint32_t& channelId) override;
-  virtual bool DeallocPDataChannelParent(PDataChannelParent* parent) override;
+  PAltDataOutputStreamParent* AllocPAltDataOutputStreamParent(
+      const nsCString& type, const int64_t& predictedSize,
+      PHttpChannelParent* channel);
+  bool DeallocPAltDataOutputStreamParent(PAltDataOutputStreamParent* aActor);
 
-  virtual bool RecvPDataChannelConstructor(PDataChannelParent* aActor,
-                                           const uint32_t& channelId) override;
+  bool DeallocPCookieServiceParent(PCookieServiceParent*);
+  PFTPChannelParent* AllocPFTPChannelParent(
+      const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+      const FTPChannelCreationArgs& aOpenArgs);
+  virtual mozilla::ipc::IPCResult RecvPFTPChannelConstructor(
+      PFTPChannelParent* aActor, const PBrowserOrId& aBrowser,
+      const SerializedLoadContext& aSerialized,
+      const FTPChannelCreationArgs& aOpenArgs) override;
+  bool DeallocPFTPChannelParent(PFTPChannelParent*);
+  PWebSocketParent* AllocPWebSocketParent(
+      const PBrowserOrId& browser, const SerializedLoadContext& aSerialized,
+      const uint32_t& aSerial);
+  bool DeallocPWebSocketParent(PWebSocketParent*);
+  PTCPSocketParent* AllocPTCPSocketParent(const nsString& host,
+                                          const uint16_t& port);
 
-  virtual PRtspControllerParent* AllocPRtspControllerParent() override;
-  virtual bool DeallocPRtspControllerParent(PRtspControllerParent*) override;
+  already_AddRefed<PDocumentChannelParent> AllocPDocumentChannelParent(
+      const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+      const DocumentChannelCreationArgs& args);
+  virtual mozilla::ipc::IPCResult RecvPDocumentChannelConstructor(
+      PDocumentChannelParent* aActor, const PBrowserOrId& aBrowser,
+      const SerializedLoadContext& aSerialized,
+      const DocumentChannelCreationArgs& aArgs) override;
+  bool DeallocPDocumentChannelParent(PDocumentChannelParent* channel);
 
-  virtual PRtspChannelParent*
-    AllocPRtspChannelParent(const RtspChannelConnectArgs& aArgs)
-                            override;
-  virtual bool
-    RecvPRtspChannelConstructor(PRtspChannelParent* aActor,
-                                const RtspChannelConnectArgs& aArgs)
-                                override;
-  virtual bool DeallocPRtspChannelParent(PRtspChannelParent*) override;
+  bool DeallocPTCPSocketParent(PTCPSocketParent*);
+  PTCPServerSocketParent* AllocPTCPServerSocketParent(
+      const uint16_t& aLocalPort, const uint16_t& aBacklog,
+      const bool& aUseArrayBuffers);
+  virtual mozilla::ipc::IPCResult RecvPTCPServerSocketConstructor(
+      PTCPServerSocketParent*, const uint16_t& aLocalPort,
+      const uint16_t& aBacklog, const bool& aUseArrayBuffers) override;
+  bool DeallocPTCPServerSocketParent(PTCPServerSocketParent*);
+  PUDPSocketParent* AllocPUDPSocketParent(nsIPrincipal* aPrincipal,
+                                          const nsCString& aFilter);
+  virtual mozilla::ipc::IPCResult RecvPUDPSocketConstructor(
+      PUDPSocketParent*, nsIPrincipal* aPrincipal,
+      const nsCString& aFilter) override;
+  bool DeallocPUDPSocketParent(PUDPSocketParent*);
+  PDNSRequestParent* AllocPDNSRequestParent(
+      const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+      const uint32_t& aFlags);
+  virtual mozilla::ipc::IPCResult RecvPDNSRequestConstructor(
+      PDNSRequestParent* actor, const nsCString& hostName,
+      const OriginAttributes& aOriginAttributes,
+      const uint32_t& flags) override;
+  bool DeallocPDNSRequestParent(PDNSRequestParent*);
+  mozilla::ipc::IPCResult RecvSpeculativeConnect(const URIParams& aURI,
+                                                 nsIPrincipal* aPrincipal,
+                                                 const bool& aAnonymous);
+  mozilla::ipc::IPCResult RecvHTMLDNSPrefetch(
+      const nsString& hostname, const bool& isHttps,
+      const OriginAttributes& aOriginAttributes, const uint16_t& flags);
+  mozilla::ipc::IPCResult RecvCancelHTMLDNSPrefetch(
+      const nsString& hostname, const bool& isHttps,
+      const OriginAttributes& aOriginAttributes, const uint16_t& flags,
+      const nsresult& reason);
+  PWebSocketEventListenerParent* AllocPWebSocketEventListenerParent(
+      const uint64_t& aInnerWindowID);
+  bool DeallocPWebSocketEventListenerParent(PWebSocketEventListenerParent*);
 
-  virtual PChannelDiverterParent*
-  AllocPChannelDiverterParent(const ChannelDiverterArgs& channel) override;
-  virtual bool
-  RecvPChannelDiverterConstructor(PChannelDiverterParent* actor,
-                                  const ChannelDiverterArgs& channel) override;
-  virtual bool DeallocPChannelDiverterParent(PChannelDiverterParent* actor)
-                                                                override;
-  virtual PTransportProviderParent*
-  AllocPTransportProviderParent() override;
-  virtual bool
-  DeallocPTransportProviderParent(PTransportProviderParent* aActor) override;
+  already_AddRefed<PDataChannelParent> AllocPDataChannelParent(
+      const uint32_t& channelId);
 
-  virtual bool RecvOnAuthAvailable(const uint64_t& aCallbackId,
-                                   const nsString& aUser,
-                                   const nsString& aPassword,
-                                   const nsString& aDomain) override;
-  virtual bool RecvOnAuthCancelled(const uint64_t& aCallbackId,
-                                   const bool& aUserCancel) override;
+  virtual mozilla::ipc::IPCResult RecvPDataChannelConstructor(
+      PDataChannelParent* aActor, const uint32_t& channelId) override;
+
+  PSimpleChannelParent* AllocPSimpleChannelParent(const uint32_t& channelId);
+  bool DeallocPSimpleChannelParent(PSimpleChannelParent* parent);
+
+  virtual mozilla::ipc::IPCResult RecvPSimpleChannelConstructor(
+      PSimpleChannelParent* aActor, const uint32_t& channelId) override;
+
+  already_AddRefed<PFileChannelParent> AllocPFileChannelParent(
+      const uint32_t& channelId);
+
+  virtual mozilla::ipc::IPCResult RecvPFileChannelConstructor(
+      PFileChannelParent* aActor, const uint32_t& channelId) override;
+
+  PChannelDiverterParent* AllocPChannelDiverterParent(
+      const ChannelDiverterArgs& channel);
+  virtual mozilla::ipc::IPCResult RecvPChannelDiverterConstructor(
+      PChannelDiverterParent* actor,
+      const ChannelDiverterArgs& channel) override;
+  bool DeallocPChannelDiverterParent(PChannelDiverterParent* actor);
+  PTransportProviderParent* AllocPTransportProviderParent();
+  bool DeallocPTransportProviderParent(PTransportProviderParent* aActor);
+
+  mozilla::ipc::IPCResult RecvOnAuthAvailable(const uint64_t& aCallbackId,
+                                              const nsString& aUser,
+                                              const nsString& aPassword,
+                                              const nsString& aDomain);
+  mozilla::ipc::IPCResult RecvOnAuthCancelled(const uint64_t& aCallbackId,
+                                              const bool& aUserCancel);
 
   /* Predictor Messages */
-  virtual bool RecvPredPredict(const ipc::OptionalURIParams& aTargetURI,
-                               const ipc::OptionalURIParams& aSourceURI,
-                               const PredictorPredictReason& aReason,
-                               const IPC::SerializedLoadContext& aLoadContext,
-                               const bool& hasVerifier) override;
+  mozilla::ipc::IPCResult RecvPredPredict(
+      const Maybe<ipc::URIParams>& aTargetURI,
+      const Maybe<ipc::URIParams>& aSourceURI,
+      const PredictorPredictReason& aReason,
+      const OriginAttributes& aOriginAttributes, const bool& hasVerifier);
 
-  virtual bool RecvPredLearn(const ipc::URIParams& aTargetURI,
-                             const ipc::OptionalURIParams& aSourceURI,
-                             const PredictorPredictReason& aReason,
-                             const IPC::SerializedLoadContext& aLoadContext) override;
-  virtual bool RecvPredReset() override;
+  mozilla::ipc::IPCResult RecvPredLearn(
+      const ipc::URIParams& aTargetURI, const Maybe<ipc::URIParams>& aSourceURI,
+      const PredictorPredictReason& aReason,
+      const OriginAttributes& aOriginAttributes);
+  mozilla::ipc::IPCResult RecvPredReset();
 
-  virtual bool RecvRemoveRequestContext(const nsCString& rcid) override;
+  mozilla::ipc::IPCResult RecvRequestContextLoadBegin(const uint64_t& rcid);
+  mozilla::ipc::IPCResult RecvRequestContextAfterDOMContentLoaded(
+      const uint64_t& rcid);
+  mozilla::ipc::IPCResult RecvRemoveRequestContext(const uint64_t& rcid);
 
-private:
-  RefPtr<OfflineObserver> mObserver;
+  /* WebExtensions */
+  mozilla::ipc::IPCResult RecvGetExtensionStream(
+      const URIParams& aURI, GetExtensionStreamResolver&& aResolve);
+
+  mozilla::ipc::IPCResult RecvGetExtensionFD(const URIParams& aURI,
+                                             GetExtensionFDResolver&& aResolve);
+
+  PClassifierDummyChannelParent* AllocPClassifierDummyChannelParent(
+      nsIURI* aURI, nsIURI* aTopWindowURI,
+      nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
+      const Maybe<LoadInfoArgs>& aLoadInfo);
+
+  bool DeallocPClassifierDummyChannelParent(
+      PClassifierDummyChannelParent* aParent);
+
+  virtual mozilla::ipc::IPCResult RecvPClassifierDummyChannelConstructor(
+      PClassifierDummyChannelParent* aActor, nsIURI* aURI,
+      nsIURI* aTopWindowURI, nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
+      const Maybe<LoadInfoArgs>& aLoadInfo) override;
+
+  mozilla::ipc::IPCResult RecvInitSocketProcessBridge(
+      InitSocketProcessBridgeResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvEnsureHSTSData(
+      EnsureHSTSDataResolver&& aResolver);
 };
 
-/**
- * Reference to the PNecko Parent protocol.
- */
-extern PNeckoParent *gNeckoParent;
+}  // namespace net
+}  // namespace mozilla
 
-} // namespace net
-} // namespace mozilla
-
-#endif // mozilla_net_NeckoParent_h
+#endif  // mozilla_net_NeckoParent_h

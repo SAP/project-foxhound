@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_
 
 /* sampling frequency (Hz) */
 #define FS                                      16000
@@ -168,8 +168,6 @@ enum IsacSamplingRate {kIsacWideband = 16,  kIsacSuperWideband = 32};
 #define RCU_TRANSCODING_SCALE_UB                0.50f
 #define RCU_TRANSCODING_SCALE_UB_INVERSE        2.0f
 
-#define SIZE_RESAMPLER_STATE  6
-
 /* Define Error codes */
 /* 6000 General */
 #define ISAC_MEMORY_ALLOCATION_FAILED    6010
@@ -204,4 +202,4 @@ enum IsacSamplingRate {kIsacWideband = 16,  kIsacSuperWideband = 32};
 /* 6800 Call setup formats */
 #define ISAC_INCOMPATIBLE_FORMATS     6810
 
-#endif /* WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_ */
+#endif /* MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_SETTINGS_H_ */

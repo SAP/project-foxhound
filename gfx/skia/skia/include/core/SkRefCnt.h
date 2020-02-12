@@ -8,14 +8,15 @@
 #ifndef SkRefCnt_DEFINED
 #define SkRefCnt_DEFINED
 
-#include "../private/SkAtomics.h"
-#include "../private/SkTLogic.h"
 #include "SkTypes.h"
+
+#include <atomic>
+#include <cstddef>
 #include <functional>
 #include <memory>
+#include <ostream>
+#include <type_traits>
 #include <utility>
-
-#define SK_SUPPORT_TRANSITION_TO_SP_INTERFACES
 
 /** \class SkRefCntBase
 
@@ -27,7 +28,7 @@
     destructor to be called explicitly (or via the object going out of scope on
     the stack or calling delete) if getRefCnt() > 1.
 */
-class SK_API SkRefCntBase : SkNoncopyable {
+class SK_API SkRefCntBase {
 public:
     /** Default construct, initializing the reference count to 1.
     */
@@ -36,20 +37,18 @@ public:
     /** Destruct, asserting that the reference count is 1.
     */
     virtual ~SkRefCntBase() {
-#ifdef SK_DEBUG
-        SkASSERTF(fRefCnt == 1, "fRefCnt was %d", fRefCnt);
-        fRefCnt = 0;    // illegal value, to catch us if we reuse after delete
-#endif
+    #ifdef SK_DEBUG
+        SkASSERTF(this->getRefCnt() == 1, "fRefCnt was %d", this->getRefCnt());
+        // illegal value, to catch us if we reuse after delete
+        fRefCnt.store(0, std::memory_order_relaxed);
+    #endif
     }
-
-    /** Return the reference count. Use only for debugging. */
-    int32_t getRefCnt() const { return fRefCnt; }
 
     /** May return true if the caller is the only owner.
      *  Ensures that all previous owner's actions are complete.
      */
     bool unique() const {
-        if (1 == sk_atomic_load(&fRefCnt, sk_memory_order_acquire)) {
+        if (1 == fRefCnt.load(std::memory_order_acquire)) {
             // The acquire barrier is only really needed if we return true.  It
             // prevents code conditioned on the result of unique() from running
             // until previous owners are all totally done calling unref().
@@ -61,16 +60,9 @@ public:
     /** Increment the reference count. Must be balanced by a call to unref().
     */
     void ref() const {
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-        // Android employs some special subclasses that enable the fRefCnt to
-        // go to zero, but not below, prior to reusing the object.  This breaks
-        // the use of unique() on such objects and as such should be removed
-        // once the Android code is fixed.
-        SkASSERT(fRefCnt >= 0);
-#else
-        SkASSERT(fRefCnt > 0);
-#endif
-        (void)sk_atomic_fetch_add(&fRefCnt, +1, sk_memory_order_relaxed);  // No barrier required.
+        SkASSERT(this->getRefCnt() > 0);
+        // No barrier required.
+        (void)fRefCnt.fetch_add(+1, std::memory_order_relaxed);
     }
 
     /** Decrement the reference count. If the reference count is 1 before the
@@ -78,41 +70,32 @@ public:
         the object needs to have been allocated via new, and not on the stack.
     */
     void unref() const {
-        SkASSERT(fRefCnt > 0);
+        SkASSERT(this->getRefCnt() > 0);
         // A release here acts in place of all releases we "should" have been doing in ref().
-        if (1 == sk_atomic_fetch_add(&fRefCnt, -1, sk_memory_order_acq_rel)) {
+        if (1 == fRefCnt.fetch_add(-1, std::memory_order_acq_rel)) {
             // Like unique(), the acquire is only needed on success, to make sure
             // code in internal_dispose() doesn't happen before the decrement.
             this->internal_dispose();
         }
     }
 
-#ifdef SK_DEBUG
-    void validate() const {
-        SkASSERT(fRefCnt > 0);
-    }
-#endif
-
-protected:
-    /**
-     *  Allow subclasses to call this if they've overridden internal_dispose
-     *  so they can reset fRefCnt before the destructor is called. Should only
-     *  be called right before calling through to inherited internal_dispose()
-     *  or before calling the destructor.
-     */
-    void internal_dispose_restore_refcnt_to_1() const {
-#ifdef SK_DEBUG
-        SkASSERT(0 == fRefCnt);
-        fRefCnt = 1;
-#endif
-    }
-
 private:
+
+#ifdef SK_DEBUG
+    /** Return the reference count. Use only for debugging. */
+    int32_t getRefCnt() const {
+        return fRefCnt.load(std::memory_order_relaxed);
+    }
+#endif
+
     /**
      *  Called when the ref count goes to 0.
      */
     virtual void internal_dispose() const {
-        this->internal_dispose_restore_refcnt_to_1();
+    #ifdef SK_DEBUG
+        SkASSERT(0 == this->getRefCnt());
+        fRefCnt.store(1, std::memory_order_relaxed);
+    #endif
         delete this;
     }
 
@@ -120,9 +103,12 @@ private:
     // and conditionally call SkRefCnt::internal_dispose().
     friend class SkWeakRefCnt;
 
-    mutable int32_t fRefCnt;
+    mutable std::atomic<int32_t> fRefCnt;
 
-    typedef SkNoncopyable INHERITED;
+    SkRefCntBase(SkRefCntBase&&) = delete;
+    SkRefCntBase(const SkRefCntBase&) = delete;
+    SkRefCntBase& operator=(SkRefCntBase&&) = delete;
+    SkRefCntBase& operator=(const SkRefCntBase&) = delete;
 };
 
 #ifdef SK_REF_CNT_MIXIN_INCLUDE
@@ -130,22 +116,16 @@ private:
 // This SkRefCnt should normally derive from SkRefCntBase.
 #include SK_REF_CNT_MIXIN_INCLUDE
 #else
-class SK_API SkRefCnt : public SkRefCntBase { };
+class SK_API SkRefCnt : public SkRefCntBase {
+    // "#include SK_REF_CNT_MIXIN_INCLUDE" doesn't work with this build system.
+    #if defined(SK_BUILD_FOR_GOOGLE3)
+    public:
+        void deref() const { this->unref(); }
+    #endif
+};
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-
-/** Helper macro to safely assign one SkRefCnt[TS]* to another, checking for
-    null in on each side of the assignment, and ensuring that ref() is called
-    before unref(), in case the two pointers point to the same object.
- */
-#define SkRefCnt_SafeAssign(dst, src)   \
-    do {                                \
-        if (src) src->ref();            \
-        if (dst) dst->unref();          \
-        dst = src;                      \
-    } while (0)
-
 
 /** Call obj->ref() and return obj. The obj must not be nullptr.
  */
@@ -172,66 +152,44 @@ template <typename T> static inline void SkSafeUnref(T* obj) {
     }
 }
 
-template<typename T> static inline void SkSafeSetNull(T*& obj) {
-    if (obj) {
-        obj->unref();
-        obj = nullptr;
-    }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
-
-template <typename T> struct SkTUnref {
-    void operator()(T* t) { t->unref(); }
-};
-
-/**
- *  Utility class that simply unref's its argument in the destructor.
- */
-template <typename T> class SkAutoTUnref : public std::unique_ptr<T, SkTUnref<T>> {
-public:
-    explicit SkAutoTUnref(T* obj = nullptr) : std::unique_ptr<T, SkTUnref<T>>(obj) {}
-
-    operator T*() const { return this->get(); }
-
-#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
-    // Need to update graphics/Shader.cpp.
-    T* detach() { return this->release(); }
-#endif
-};
-// Can't use the #define trick below to guard a bare SkAutoTUnref(...) because it's templated. :(
-
-class SkAutoUnref : public SkAutoTUnref<SkRefCnt> {
-public:
-    SkAutoUnref(SkRefCnt* obj) : SkAutoTUnref<SkRefCnt>(obj) {}
-};
-#define SkAutoUnref(...) SK_REQUIRE_LOCAL_VAR(SkAutoUnref)
 
 // This is a variant of SkRefCnt that's Not Virtual, so weighs 4 bytes instead of 8 or 16.
 // There's only benefit to using this if the deriving class does not otherwise need a vtable.
 template <typename Derived>
-class SkNVRefCnt : SkNoncopyable {
+class SkNVRefCnt {
 public:
     SkNVRefCnt() : fRefCnt(1) {}
-    ~SkNVRefCnt() { SkASSERTF(1 == fRefCnt, "NVRefCnt was %d", fRefCnt); }
+    ~SkNVRefCnt() {
+    #ifdef SK_DEBUG
+        int rc = fRefCnt.load(std::memory_order_relaxed);
+        SkASSERTF(rc == 1, "NVRefCnt was %d", rc);
+    #endif
+    }
 
     // Implementation is pretty much the same as SkRefCntBase. All required barriers are the same:
     //   - unique() needs acquire when it returns true, and no barrier if it returns false;
     //   - ref() doesn't need any barrier;
     //   - unref() needs a release barrier, and an acquire if it's going to call delete.
 
-    bool unique() const { return 1 == sk_atomic_load(&fRefCnt, sk_memory_order_acquire); }
-    void    ref() const { (void)sk_atomic_fetch_add(&fRefCnt, +1, sk_memory_order_relaxed); }
+    bool unique() const { return 1 == fRefCnt.load(std::memory_order_acquire); }
+    void ref() const { (void)fRefCnt.fetch_add(+1, std::memory_order_relaxed); }
     void  unref() const {
-        if (1 == sk_atomic_fetch_add(&fRefCnt, -1, sk_memory_order_acq_rel)) {
-            SkDEBUGCODE(fRefCnt = 1;)  // restore the 1 for our destructor's assert
+        if (1 == fRefCnt.fetch_add(-1, std::memory_order_acq_rel)) {
+            // restore the 1 for our destructor's assert
+            SkDEBUGCODE(fRefCnt.store(1, std::memory_order_relaxed));
             delete (const Derived*)this;
         }
     }
     void  deref() const { this->unref(); }
 
 private:
-    mutable int32_t fRefCnt;
+    mutable std::atomic<int32_t> fRefCnt;
+
+    SkNVRefCnt(SkNVRefCnt&&) = delete;
+    SkNVRefCnt(const SkNVRefCnt&) = delete;
+    SkNVRefCnt& operator=(SkNVRefCnt&&) = delete;
+    SkNVRefCnt& operator=(const SkNVRefCnt&) = delete;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -244,20 +202,19 @@ private:
  *  may have its ref/unref be thread-safe, but that is not assumed/imposed by sk_sp.
  */
 template <typename T> class sk_sp {
-    /** Supports safe bool idiom. Obsolete with explicit operator bool. */
-    using unspecified_bool_type = T* sk_sp::*;
 public:
     using element_type = T;
 
-    sk_sp() : fPtr(nullptr) {}
-    sk_sp(std::nullptr_t) : fPtr(nullptr) {}
+    constexpr sk_sp() : fPtr(nullptr) {}
+    constexpr sk_sp(std::nullptr_t) : fPtr(nullptr) {}
 
     /**
      *  Shares the underlying object by calling ref(), so that both the argument and the newly
      *  created sk_sp both have a reference to it.
      */
     sk_sp(const sk_sp<T>& that) : fPtr(SkSafeRef(that.get())) {}
-    template <typename U, typename = skstd::enable_if_t<skstd::is_convertible<U*, T*>::value>>
+    template <typename U,
+              typename = typename std::enable_if<std::is_convertible<U*, T*>::value>::type>
     sk_sp(const sk_sp<U>& that) : fPtr(SkSafeRef(that.get())) {}
 
     /**
@@ -266,7 +223,8 @@ public:
      *  No call to ref() or unref() will be made.
      */
     sk_sp(sk_sp<T>&& that) : fPtr(that.release()) {}
-    template <typename U, typename = skstd::enable_if_t<skstd::is_convertible<U*, T*>::value>>
+    template <typename U,
+              typename = typename std::enable_if<std::is_convertible<U*, T*>::value>::type>
     sk_sp(sk_sp<U>&& that) : fPtr(that.release()) {}
 
     /**
@@ -291,10 +249,13 @@ public:
      *  object.
      */
     sk_sp<T>& operator=(const sk_sp<T>& that) {
-        this->reset(SkSafeRef(that.get()));
+        if (this != &that) {
+            this->reset(SkSafeRef(that.get()));
+        }
         return *this;
     }
-    template <typename U, typename = skstd::enable_if_t<skstd::is_convertible<U*, T*>::value>>
+    template <typename U,
+              typename = typename std::enable_if<std::is_convertible<U*, T*>::value>::type>
     sk_sp<T>& operator=(const sk_sp<U>& that) {
         this->reset(SkSafeRef(that.get()));
         return *this;
@@ -309,7 +270,8 @@ public:
         this->reset(that.release());
         return *this;
     }
-    template <typename U, typename = skstd::enable_if_t<skstd::is_convertible<U*, T*>::value>>
+    template <typename U,
+              typename = typename std::enable_if<std::is_convertible<U*, T*>::value>::type>
     sk_sp<T>& operator=(sk_sp<U>&& that) {
         this->reset(that.release());
         return *this;
@@ -320,12 +282,7 @@ public:
         return *this->get();
     }
 
-    // MSVC 2013 does not work correctly with explicit operator bool.
-    // https://chromium-cpp.appspot.com/#core-blacklist
-    // When explicit operator bool can be used, remove operator! and operator unspecified_bool_type.
-    //explicit operator bool() const { return this->get() != nullptr; }
-    operator unspecified_bool_type() const { return this->get() ? &sk_sp::fPtr : nullptr; }
-    bool operator!() const { return this->get() == nullptr; }
+    explicit operator bool() const { return this->get() != nullptr; }
 
     T* get() const { return fPtr; }
     T* operator->() const { return fPtr; }
@@ -391,7 +348,7 @@ template <typename T, typename U> inline bool operator<(const sk_sp<T>& a, const
     // Provide defined total order on sk_sp.
     // http://wg21.cmeerw.net/lwg/issue1297
     // http://wg21.cmeerw.net/lwg/issue1401 .
-    return std::less<void*>()((void*)a.get(), (void*)b.get());
+    return std::less<typename std::common_type<T*, U*>::type>()(a.get(), b.get());
 }
 template <typename T> inline bool operator<(const sk_sp<T>& a, std::nullptr_t) {
     return std::less<T*>()(a.get(), nullptr);
@@ -430,25 +387,28 @@ template <typename T> inline bool operator>=(std::nullptr_t, const sk_sp<T>& b) 
     return !(nullptr < b);
 }
 
-template <typename T, typename... Args>
-sk_sp<T> sk_make_sp(Args&&... args) {
-    return sk_sp<T>(new T(std__forward<Args>(args)...));
+template <typename C, typename CT, typename T>
+auto operator<<(std::basic_ostream<C, CT>& os, const sk_sp<T>& sp) -> decltype(os << sp.get()) {
+    return os << sp.get();
 }
 
-#ifdef SK_SUPPORT_TRANSITION_TO_SP_INTERFACES
+template <typename T, typename... Args>
+sk_sp<T> sk_make_sp(Args&&... args) {
+    return sk_sp<T>(new T(std::forward<Args>(args)...));
+}
 
 /*
  *  Returns a sk_sp wrapping the provided ptr AND calls ref on it (if not null).
  *
  *  This is different than the semantics of the constructor for sk_sp, which just wraps the ptr,
  *  effectively "adopting" it.
- *
- *  This function may be helpful while we convert callers from ptr-based to sk_sp-based parameters.
  */
 template <typename T> sk_sp<T> sk_ref_sp(T* obj) {
     return sk_sp<T>(SkSafeRef(obj));
 }
 
-#endif
+template <typename T> sk_sp<T> sk_ref_sp(const T* obj) {
+    return sk_sp<T>(const_cast<T*>(SkSafeRef(obj)));
+}
 
 #endif

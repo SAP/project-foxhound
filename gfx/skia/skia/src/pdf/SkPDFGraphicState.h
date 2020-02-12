@@ -9,41 +9,27 @@
 #ifndef SkPDFGraphicState_DEFINED
 #define SkPDFGraphicState_DEFINED
 
-#include "SkPaint.h"
-#include "SkPDFStream.h"
-#include "SkChecksum.h"
+#include "SkMacros.h"
+#include "SkOpts.h"
+#include "SkPDFTypes.h"
 
-class SkPDFCanon;
-class SkPDFFormXObject;
+class SkPaint;
+
 
 /** \class SkPDFGraphicState
     SkPaint objects roughly correspond to graphic state dictionaries that can
     be installed. So that a given dictionary is only output to the pdf file
     once, we want to canonicalize them.
 */
-class SkPDFGraphicState final : public SkPDFObject {
-
-public:
+namespace SkPDFGraphicState {
     enum SkPDFSMaskMode {
         kAlpha_SMaskMode,
         kLuminosity_SMaskMode
     };
 
-    // Override emitObject so that we can populate the dictionary on
-    // demand.
-    void emitObject(SkWStream* stream,
-                    const SkPDFObjNumMap& objNumMap,
-                    const SkPDFSubstituteMap& substitutes) const override;
-
-    /** Get the graphic state for the passed SkPaint. The reference count of
-     *  the object is incremented and it is the caller's responsibility to
-     *  unreference it when done. This is needed to accommodate the weak
-     *  reference pattern used when the returned object is new and has no
-     *  other references.
-     *  @param paint  The SkPaint to emulate.
+    /** Get the graphic state for the passed SkPaint.
      */
-    static SkPDFGraphicState* GetGraphicStateForPaint(SkPDFCanon* canon,
-                                                      const SkPaint& paint);
+    SkPDFIndirectReference GetGraphicStateForPaint(SkPDFDocument*, const SkPaint&);
 
     /** Make a graphic state that only sets the passed soft mask.
      *  @param sMask     The form xobject to use as a soft mask.
@@ -52,31 +38,34 @@ public:
      *
      *  These are not de-duped.
      */
-    static sk_sp<SkPDFDict> GetSMaskGraphicState(SkPDFFormXObject* sMask,
-                                                 bool invert,
-                                                 SkPDFSMaskMode sMaskMode,
-                                                 SkPDFCanon* canon);
+    SkPDFIndirectReference GetSMaskGraphicState(SkPDFIndirectReference sMask,
+                                                bool invert,
+                                                SkPDFSMaskMode sMaskMode,
+                                                SkPDFDocument* doc);
+}
 
-    /** Make a graphic state that only unsets the soft mask. */
-    static sk_sp<SkPDFDict> MakeNoSmaskGraphicState();
-    static sk_sp<SkPDFStream> MakeInvertFunction();
-
-    bool operator==(const SkPDFGraphicState& rhs) const {
-        return 0 == memcmp(&fStrokeWidth, &rhs.fStrokeWidth, 12);
-    }
-    uint32_t hash() const { return SkChecksum::Murmur3(&fStrokeWidth, 12); }
-
-private:
-    const SkScalar fStrokeWidth;
-    const SkScalar fStrokeMiter;
-    const uint8_t fAlpha;
-    const uint8_t fStrokeCap;   // SkPaint::Cap
-    const uint8_t fStrokeJoin;  // SkPaint::Join
-    const uint8_t fMode;        // SkXfermode::Mode
-
-    SkPDFGraphicState(const SkPaint&);
-
-    typedef SkPDFDict INHERITED;
+SK_BEGIN_REQUIRE_DENSE
+struct SkPDFStrokeGraphicState {
+    SkScalar fStrokeWidth;
+    SkScalar fStrokeMiter;
+    SkScalar fAlpha;
+    uint8_t fStrokeCap;   // SkPaint::Cap
+    uint8_t fStrokeJoin;  // SkPaint::Join
+    uint8_t fBlendMode;   // SkBlendMode
+    uint8_t fPADDING = 0;
+    bool operator==(const SkPDFStrokeGraphicState& o) const { return !memcmp(this, &o, sizeof(o)); }
+    bool operator!=(const SkPDFStrokeGraphicState& o) const { return !(*this == o); }
 };
+SK_END_REQUIRE_DENSE
+
+SK_BEGIN_REQUIRE_DENSE
+struct SkPDFFillGraphicState {
+    SkScalar fAlpha;
+    uint8_t fBlendMode;
+    uint8_t fPADDING[3] = {0, 0, 0};
+    bool operator==(const SkPDFFillGraphicState& o) const { return !memcmp(this, &o, sizeof(o)); }
+    bool operator!=(const SkPDFFillGraphicState& o) const { return !(*this == o); }
+};
+SK_END_REQUIRE_DENSE
 
 #endif

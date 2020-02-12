@@ -7,35 +7,19 @@
 
 #include "SkTypes.h"
 
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 
-// Workaround for:
-// http://connect.microsoft.com/VisualStudio/feedback/details/621653/
-// http://crbug.com/225822
-// In VS2010 both intsafe.h and stdint.h define the following without guards.
-// SkTypes brought in windows.h and stdint.h and the following defines are
-// not used by this file. However, they may be re-introduced by wincodec.h.
-#undef INT8_MIN
-#undef INT16_MIN
-#undef INT32_MIN
-#undef INT64_MIN
-#undef INT8_MAX
-#undef UINT8_MAX
-#undef INT16_MAX
-#undef UINT16_MAX
-#undef INT32_MAX
-#undef UINT32_MAX
-#undef INT64_MAX
-#undef UINT64_MAX
-
-#include <wincodec.h>
 #include "SkAutoCoInitialize.h"
+#include "SkAutoMalloc.h"
 #include "SkBitmap.h"
-#include "SkImageEncoder.h"
+#include "SkImageEncoderPriv.h"
 #include "SkIStream.h"
+#include "SkImageEncoder.h"
 #include "SkStream.h"
 #include "SkTScopedComPtr.h"
+#include "SkTemplates.h"
 #include "SkUnPreMultiply.h"
+#include <wincodec.h>
 
 //All Windows SDKs back to XPSP2 export the CLSID_WICImagingFactory symbol.
 //In the Windows8 SDK the CLSID_WICImagingFactory symbol is still exported
@@ -46,71 +30,69 @@
 #undef CLSID_WICImagingFactory
 #endif
 
-class SkImageEncoder_WIC : public SkImageEncoder {
-public:
-    SkImageEncoder_WIC(Type t) : fType(t) {}
-
-    // DO NOT USE this constructor.  This exists only so SkForceLinking can
-    // link the WIC image encoder.
-    SkImageEncoder_WIC() {}
-
-protected:
-    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality);
-
-private:
-    Type fType;
-};
-
-bool SkImageEncoder_WIC::onEncode(SkWStream* stream
-                                , const SkBitmap& bitmapOrig
-                                , int quality)
-{
+bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
+                          SkEncodedImageFormat format, int quality) {
     GUID type;
-    switch (fType) {
-        case kBMP_Type:
-            type = GUID_ContainerFormatBmp;
-            break;
-        case kICO_Type:
-            type = GUID_ContainerFormatIco;
-            break;
-        case kJPEG_Type:
+    switch (format) {
+        case SkEncodedImageFormat::kJPEG:
             type = GUID_ContainerFormatJpeg;
             break;
-        case kPNG_Type:
+        case SkEncodedImageFormat::kPNG:
             type = GUID_ContainerFormatPng;
             break;
         default:
             return false;
     }
+    SkBitmap bitmapOrig;
+    if (!bitmapOrig.installPixels(pixmap)) {
+        return false;
+    }
+    bitmapOrig.setImmutable();
 
-    //Convert to 8888 if needed.
-    const SkBitmap* bitmap;
-    SkBitmap bitmapCopy;
-    if (kN32_SkColorType == bitmapOrig.colorType() && bitmapOrig.isOpaque()) {
-        bitmap = &bitmapOrig;
-    } else {
-        if (!bitmapOrig.copyTo(&bitmapCopy, kN32_SkColorType)) {
-            return false;
-        }
-        bitmap = &bitmapCopy;
+    // First convert to BGRA if necessary.
+    SkBitmap bitmap;
+    if (!bitmap.tryAllocPixels(bitmapOrig.info().makeColorType(kBGRA_8888_SkColorType)) ||
+        !bitmapOrig.readPixels(bitmap.info(), bitmap.getPixels(), bitmap.rowBytes(), 0, 0))
+    {
+        return false;
     }
 
-    // We cannot use PBGRA so we need to unpremultiply ourselves
-    if (!bitmap->isOpaque()) {
-        SkAutoLockPixels alp(*bitmap);
-
-        uint8_t* pixels = reinterpret_cast<uint8_t*>(bitmap->getPixels());
-        for (int y = 0; y < bitmap->height(); ++y) {
-            for (int x = 0; x < bitmap->width(); ++x) {
-                uint8_t* bytes = pixels + y * bitmap->rowBytes() + x * bitmap->bytesPerPixel();
-
+    // WIC expects unpremultiplied pixels.  Unpremultiply if necessary.
+    if (kPremul_SkAlphaType == bitmap.alphaType()) {
+        uint8_t* pixels = reinterpret_cast<uint8_t*>(bitmap.getPixels());
+        for (int y = 0; y < bitmap.height(); ++y) {
+            for (int x = 0; x < bitmap.width(); ++x) {
+                uint8_t* bytes = pixels + y * bitmap.rowBytes() + x * bitmap.bytesPerPixel();
                 SkPMColor* src = reinterpret_cast<SkPMColor*>(bytes);
                 SkColor* dst = reinterpret_cast<SkColor*>(bytes);
-
                 *dst = SkUnPreMultiply::PMColorToColor(*src);
             }
         }
     }
+
+    // Finally, if we are performing a jpeg encode, we must convert to BGR.
+    void* pixels = bitmap.getPixels();
+    size_t rowBytes = bitmap.rowBytes();
+    SkAutoMalloc pixelStorage;
+    WICPixelFormatGUID formatDesired = GUID_WICPixelFormat32bppBGRA;
+    if (SkEncodedImageFormat::kJPEG == format) {
+        formatDesired = GUID_WICPixelFormat24bppBGR;
+        rowBytes = SkAlign4(bitmap.width() * 3);
+        pixelStorage.reset(rowBytes * bitmap.height());
+        for (int y = 0; y < bitmap.height(); y++) {
+            uint8_t* dstRow = SkTAddOffset<uint8_t>(pixelStorage.get(), y * rowBytes);
+            for (int x = 0; x < bitmap.width(); x++) {
+                uint32_t bgra = *bitmap.getAddr32(x, y);
+                dstRow[0] = (uint8_t) ((bgra >>  0) & 0xFF);
+                dstRow[1] = (uint8_t) ((bgra >>  8) & 0xFF);
+                dstRow[2] = (uint8_t) ((bgra >> 16) & 0xFF);
+                dstRow += 3;
+            }
+        }
+
+        pixels = pixelStorage.get();
+    }
+
 
     //Initialize COM.
     SkAutoCoInitialize scopedCo;
@@ -155,10 +137,11 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     }
 
     if (SUCCEEDED(hr)) {
-        PROPBAG2 name = { 0 };
+        PROPBAG2 name;
+        memset(&name, 0, sizeof(name));
         name.dwType = PROPBAG2_TYPE_DATA;
         name.vt = VT_R4;
-        name.pstrName = L"ImageQuality";
+        name.pstrName = const_cast<LPOLESTR>(L"ImageQuality");
 
         VARIANT value;
         VariantInit(&value);
@@ -176,15 +159,14 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     }
 
     //Set the size of the frame.
-    const UINT width = bitmap->width();
-    const UINT height = bitmap->height();
+    const UINT width = bitmap.width();
+    const UINT height = bitmap.height();
     if (SUCCEEDED(hr)) {
         hr = piBitmapFrameEncode->SetSize(width, height);
     }
 
     //Set the pixel format of the frame.  If native encoded format cannot match BGRA,
     //it will choose the closest pixel format that it supports.
-    const WICPixelFormatGUID formatDesired = GUID_WICPixelFormat32bppBGRA;
     WICPixelFormatGUID formatGUID = formatDesired;
     if (SUCCEEDED(hr)) {
         hr = piBitmapFrameEncode->SetPixelFormat(&formatGUID);
@@ -196,13 +178,10 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
 
     //Write the pixels into the frame.
     if (SUCCEEDED(hr)) {
-        SkAutoLockPixels alp(*bitmap);
-        const UINT stride = (UINT) bitmap->rowBytes();
-        hr = piBitmapFrameEncode->WritePixels(
-            height
-            , stride
-            , stride * height
-            , reinterpret_cast<BYTE*>(bitmap->getPixels()));
+        hr = piBitmapFrameEncode->WritePixels(height,
+                                              (UINT) rowBytes,
+                                              (UINT) rowBytes * height,
+                                              reinterpret_cast<BYTE*>(pixels));
     }
 
     if (SUCCEEDED(hr)) {
@@ -216,22 +195,4 @@ bool SkImageEncoder_WIC::onEncode(SkWStream* stream
     return SUCCEEDED(hr);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-static SkImageEncoder* sk_imageencoder_wic_factory(SkImageEncoder::Type t) {
-    switch (t) {
-        case SkImageEncoder::kBMP_Type:
-        case SkImageEncoder::kICO_Type:
-        case SkImageEncoder::kPNG_Type:
-            break;
-        default:
-            return nullptr;
-    }
-    return new SkImageEncoder_WIC(t);
-}
-
-static SkImageEncoder_EncodeReg gEReg(sk_imageencoder_wic_factory);
-
-DEFINE_ENCODER_CREATOR(ImageEncoder_WIC);
-
-#endif // defined(SK_BUILD_FOR_WIN32)
+#endif // defined(SK_BUILD_FOR_WIN)

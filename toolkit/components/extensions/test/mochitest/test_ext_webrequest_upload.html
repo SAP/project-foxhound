@@ -3,9 +3,8 @@
 <html>
 <head>
 <meta charset="utf-8">
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
   <script type="text/javascript" src="head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -16,7 +15,7 @@
   target="_blank"
   enctype="multipart/form-data"
   >
-<input type="text" name="&quot;special&quot; chˆrs" value="spÛcial">
+<input type="text" name="&quot;special&quot; chï¿½rs" value="spï¿½cial">
 <input type="file" name="testFile">
 <input type="file" name="emptyFile">
 <input type="text" name="textInput1" value="value1">
@@ -44,10 +43,10 @@
 "use strict";
 
 let files, testFile, blob, file, uploads;
-add_task(function* test_setup() {
-  files = yield new Promise(resolve => {
-    SpecialPowers.createFiles([{name: "testFile.pdf", data: "Not really a PDF file :)", "type": "application/x-pdf"}], (files) => {
-      resolve(files);
+add_task(async function test_setup() {
+  files = await new Promise(resolve => {
+    SpecialPowers.createFiles([{name: "testFile.pdf", data: "Not really a PDF file :)", "type": "application/x-pdf"}], (result) => {
+      resolve(result);
     });
   });
   testFile = files[0];
@@ -67,21 +66,17 @@ add_task(function* test_setup() {
 });
 
 function background() {
-  let events = {
-    "onBeforeRequest":  [{urls: ["<all_urls>"]}, ["blocking", "requestBody"]],
-    "onCompleted":      [{urls: ["<all_urls>"]}, ["responseHeaders"]],
-  };
-
-  let requestBodySupported = true;
+  const FILTERS = {urls: ["<all_urls>"]};
 
   function onUpload(details) {
     let url = new URL(details.url);
     let upload = url.searchParams.get("upload");
-    if (!upload || !requestBodySupported) {
+    if (!upload) {
       return;
     }
+
     let requestBody = details.requestBody;
-    browser.test.log(`onUpload ${details.url} ${JSON.stringify(details.requestBody)}`);
+    browser.test.log(`onBeforeRequest upload: ${details.url} ${JSON.stringify(details.requestBody)}`);
     browser.test.assertTrue(!!requestBody, `Intercepted upload ${details.url} #${details.requestId} ${upload} have a requestBody`);
     if (!requestBody) {
       return;
@@ -89,7 +84,7 @@ function background() {
     let byteLength = parseInt(upload, 10);
     if (byteLength) {
       browser.test.assertTrue(!!requestBody.raw, `Binary upload ${details.url} #${details.requestId} ${upload} have a raw attribute`);
-      browser.test.assertEq(byteLength, requestBody.raw && requestBody.raw.map(r => r.bytes && r.bytes.byteLength || 0).reduce((a, b) => a + b), `Binary upload size matches`);
+      browser.test.assertEq(byteLength, requestBody.raw && requestBody.raw.map(r => r.bytes ? r.bytes.byteLength : 0).reduce((a, b) => a + b), `Binary upload size matches`);
       return;
     }
     if ("raw" in requestBody) {
@@ -99,42 +94,49 @@ function background() {
     }
   }
 
-  function listener(name, details) {
-    browser.test.log(`${name} ${details.requestId} ${details.url}`);
-
-    if (name == "onBeforeRequest") {
-      onUpload(details);
-    } else if (name == "onCompleted") {
-      browser.test.sendMessage("done");
-    }
-  }
-
-  for (let [name, args] of Object.entries(events)) {
-    try {
-      browser.test.log(`adding listener for ${name}`);
-      browser.webRequest[name].addListener(
-        listener.bind(null, name), ...args);
-    } catch (e) {
-      browser.test.assertTrue(/\brequestBody\b/.test(e.message),
-                              "Request body is unsupported");
-
-      // requestBody is disabled in release builds
-      if (!/\brequestBody\b/.test(e.message)) {
-        throw e;
+  browser.webRequest.onCompleted.addListener(
+    details => {
+      browser.test.log(`onCompleted ${details.requestId} ${details.url}`);
+      // See bug 1471387
+      if (details.url.endsWith("/favicon.ico") || details.originUrl == "about:newtab") {
+        return;
       }
 
-      requestBodySupported = false;
-      args.pop();
-      browser.webRequest[name].addListener(
-        listener.bind(null, name), ...args);
+      browser.test.sendMessage("done");
+    },
+    FILTERS);
+
+  let onBeforeRequest = details => {
+    browser.test.log(`${name} ${details.requestId} ${details.url}`);
+    // See bug 1471387
+    if (details.url.endsWith("/favicon.ico") || details.originUrl == "about:newtab") {
+      return;
     }
-  }
+
+    onUpload(details);
+  };
+
+  browser.webRequest.onBeforeRequest.addListener(
+    onBeforeRequest, FILTERS, ["requestBody"]);
+
+  let tab;
+  browser.tabs.onCreated.addListener(newTab => {
+    tab = newTab;
+  });
+
+  browser.test.onMessage.addListener(msg => {
+    if (msg === "close-tab") {
+      browser.tabs.remove(tab.id);
+      browser.test.sendMessage("tab-closed");
+    }
+  });
 }
 
-add_task(function* test_xhr_forms() {
+add_task(async function test_xhr_forms() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       permissions: [
+        "tabs",
         "webRequest",
         "webRequestBlocking",
         "<all_urls>",
@@ -143,7 +145,14 @@ add_task(function* test_xhr_forms() {
     background,
   });
 
-  yield extension.startup();
+  await extension.startup();
+
+  async function doneAndTabClosed() {
+    await extension.awaitMessage("done");
+    let closed = extension.awaitMessage("tab-closed");
+    extension.sendMessage("close-tab");
+    await closed;
+  }
 
   for (let form of document.forms) {
     if (file.name in form.elements) {
@@ -165,7 +174,7 @@ add_task(function* test_xhr_forms() {
 
     form.action = action;
     form.submit();
-    yield extension.awaitMessage("done");
+    await doneAndTabClosed();
 
     if (form.enctype !== "multipart/form-data") {
       continue;
@@ -177,26 +186,26 @@ add_task(function* test_xhr_forms() {
       xhr.open("POST", action.href);
       xhr.send(data);
       action.searchParams.delete("xhr");
-      return extension.awaitMessage("done");
+      return doneAndTabClosed();
     };
 
     formData.append(blob.name, blob.content, blob.fileName);
     formData.append("formDataField", "some value");
     updateActionURL();
-    yield post(formData);
+    await post(formData);
 
     action.searchParams.set("upload", JSON.stringify([{file: "<file>"}]));
-    yield post(testFile);
+    await post(testFile);
 
     action.searchParams.set("upload", `${blob.content.size} bytes`);
-    yield post(blob.content);
+    await post(blob.content);
 
     let byteLength = 16;
     action.searchParams.set("upload", `${byteLength} bytes`);
-    yield post(new ArrayBuffer(byteLength));
+    await post(new ArrayBuffer(byteLength));
   }
 
-  yield extension.unload();
+  await extension.unload();
 });
 </script>
 </body>

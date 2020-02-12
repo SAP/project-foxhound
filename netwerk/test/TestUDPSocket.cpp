@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TestCommon.h"
-#include "TestHarness.h"
+#include "gtest/gtest.h"
 #include "nsIUDPSocket.h"
 #include "nsISocketTransportService.h"
 #include "nsISocketTransport.h"
@@ -12,52 +12,20 @@
 #include "nsINetAddr.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsITimer.h"
+#include "nsContentUtils.h"
 #include "mozilla/net/DNS.h"
-#ifdef XP_WIN
-#include "mozilla/WindowsVersion.h"
-#endif
 #include "prerror.h"
 
-#define REQUEST  0x68656c6f
+#define REQUEST 0x68656c6f
 #define RESPONSE 0x6f6c6568
 #define MULTICAST_TIMEOUT 2000
 
-#define EXPECT_SUCCESS(rv, ...) \
-  PR_BEGIN_MACRO \
-  if (NS_FAILED(rv)) { \
-    fail(__VA_ARGS__); \
-    return false; \
-  } \
-  PR_END_MACRO
-
-
-#define EXPECT_FAILURE(rv, ...) \
-  PR_BEGIN_MACRO \
-  if (NS_SUCCEEDED(rv)) { \
-    fail(__VA_ARGS__); \
-    return false; \
-  } \
-  PR_END_MACRO
-
-#define REQUIRE_EQUAL(a, b, ...) \
-  PR_BEGIN_MACRO \
-  if (a != b) { \
-    fail(__VA_ARGS__); \
-    return false; \
-  } \
-  PR_END_MACRO
-
-enum TestPhase {
-  TEST_OUTPUT_STREAM,
-  TEST_SEND_API,
-  TEST_MULTICAST,
-  TEST_NONE
-};
+enum TestPhase { TEST_OUTPUT_STREAM, TEST_SEND_API, TEST_MULTICAST, TEST_NONE };
 
 static TestPhase phase = TEST_NONE;
 
-static bool CheckMessageContent(nsIUDPMessage *aMessage, uint32_t aExpectedContent)
-{
+static bool CheckMessageContent(nsIUDPMessage* aMessage,
+                                uint32_t aExpectedContent) {
   nsCString data;
   aMessage->GetData(data);
 
@@ -68,13 +36,14 @@ static bool CheckMessageContent(nsIUDPMessage *aMessage, uint32_t aExpectedConte
   uint32_t rawLen = rawData.Length();
 
   if (len != rawLen) {
-    fail("Raw data length(%d) do not matches String data length(%d).", rawLen, len);
+    ADD_FAILURE() << "Raw data length " << rawLen
+                  << " does not match String data length " << len;
     return false;
   }
 
   for (uint32_t i = 0; i < len; i++) {
     if (buffer[i] != rawData[i]) {
-      fail("Raw data(%s) do not matches String data(%s)", rawData.Elements() ,buffer);
+      ADD_FAILURE();
       return false;
     }
   }
@@ -84,39 +53,43 @@ static bool CheckMessageContent(nsIUDPMessage *aMessage, uint32_t aExpectedConte
     input += buffer[i] << (8 * i);
   }
 
-  if (len != sizeof(uint32_t) || input != aExpectedContent)
-  {
-    fail("Request 0x%x received, expected 0x%x", input, aExpectedContent);
+  if (len != sizeof(uint32_t)) {
+    ADD_FAILURE() << "Message length mismatch, expected " << sizeof(uint32_t)
+                  << " got " << len;
     return false;
-  } else {
-    passed("Request 0x%x received as expected", input);
-    return true;
   }
+  if (input != aExpectedContent) {
+    ADD_FAILURE() << "Message content mismatch, expected 0x" << std::hex
+                  << aExpectedContent << " got 0x" << input;
+    return false;
+  }
+
+  return true;
 }
 
 /*
  * UDPClientListener: listens for incomming UDP packets
  */
-class UDPClientListener : public nsIUDPSocketListener
-{
-protected:
+class UDPClientListener : public nsIUDPSocketListener {
+ protected:
   virtual ~UDPClientListener();
 
-public:
+ public:
+  explicit UDPClientListener(WaitForCondition* waiter) : mWaiter(waiter) {}
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
-  nsresult mResult;
+  nsresult mResult = NS_ERROR_FAILURE;
+  RefPtr<WaitForCondition> mWaiter;
 };
 
 NS_IMPL_ISUPPORTS(UDPClientListener, nsIUDPSocketListener)
 
-UDPClientListener::~UDPClientListener()
-{
-}
+UDPClientListener::~UDPClientListener() = default;
 
 NS_IMETHODIMP
-UDPClientListener::OnPacketReceived(nsIUDPSocket* socket, nsIUDPMessage* message)
-{
+UDPClientListener::OnPacketReceived(nsIUDPSocket* socket,
+                                    nsIUDPMessage* message) {
   mResult = NS_OK;
 
   uint16_t port;
@@ -125,60 +98,59 @@ UDPClientListener::OnPacketReceived(nsIUDPSocket* socket, nsIUDPMessage* message
   message->GetFromAddr(getter_AddRefs(fromAddr));
   fromAddr->GetPort(&port);
   fromAddr->GetAddress(ip);
-  passed("Packet received on client from %s:%d", ip.get(), port);
 
   if (TEST_SEND_API == phase && CheckMessageContent(message, REQUEST)) {
     uint32_t count;
-    const uint32_t data = RESPONSE;
-    printf("*** Attempting to write response 0x%x to server by SendWithAddr...\n", RESPONSE);
-    mResult = socket->SendWithAddr(fromAddr, (const uint8_t*)&data,
-                                   sizeof(uint32_t), &count);
+    nsTArray<uint8_t> data;
+    const uint32_t dataBuffer = RESPONSE;
+    data.AppendElements((const uint8_t*)&dataBuffer, sizeof(uint32_t));
+    mResult = socket->SendWithAddr(fromAddr, data, &count);
     if (mResult == NS_OK && count == sizeof(uint32_t)) {
-      passed("Response written");
+      SUCCEED();
     } else {
-      fail("Response written");
+      ADD_FAILURE();
     }
     return NS_OK;
-  } else if (TEST_OUTPUT_STREAM != phase || !CheckMessageContent(message, RESPONSE)) {
+  } else if (TEST_OUTPUT_STREAM != phase ||
+             !CheckMessageContent(message, RESPONSE)) {
     mResult = NS_ERROR_FAILURE;
   }
 
   // Notify thread
-  QuitPumpingEvents();
+  mWaiter->Notify();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-UDPClientListener::OnStopListening(nsIUDPSocket*, nsresult)
-{
-  QuitPumpingEvents();
+UDPClientListener::OnStopListening(nsIUDPSocket*, nsresult) {
+  mWaiter->Notify();
   return NS_OK;
 }
 
 /*
  * UDPServerListener: listens for incomming UDP packets
  */
-class UDPServerListener : public nsIUDPSocketListener
-{
-protected:
+class UDPServerListener : public nsIUDPSocketListener {
+ protected:
   virtual ~UDPServerListener();
 
-public:
+ public:
+  explicit UDPServerListener(WaitForCondition* waiter) : mWaiter(waiter) {}
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
 
-  nsresult mResult;
+  nsresult mResult = NS_ERROR_FAILURE;
+  RefPtr<WaitForCondition> mWaiter;
 };
 
 NS_IMPL_ISUPPORTS(UDPServerListener, nsIUDPSocketListener)
 
-UDPServerListener::~UDPServerListener()
-{
-}
+UDPServerListener::~UDPServerListener() = default;
 
 NS_IMETHODIMP
-UDPServerListener::OnPacketReceived(nsIUDPSocket* socket, nsIUDPMessage* message)
-{
+UDPServerListener::OnPacketReceived(nsIUDPSocket* socket,
+                                    nsIUDPMessage* message) {
   mResult = NS_OK;
 
   uint16_t port;
@@ -187,168 +159,148 @@ UDPServerListener::OnPacketReceived(nsIUDPSocket* socket, nsIUDPMessage* message
   message->GetFromAddr(getter_AddRefs(fromAddr));
   fromAddr->GetPort(&port);
   fromAddr->GetAddress(ip);
-  passed("Packet received on server from %s:%d", ip.get(), port);
+  SUCCEED();
 
-  if (TEST_OUTPUT_STREAM == phase && CheckMessageContent(message, REQUEST))
-  {
+  if (TEST_OUTPUT_STREAM == phase && CheckMessageContent(message, REQUEST)) {
     nsCOMPtr<nsIOutputStream> outstream;
     message->GetOutputStream(getter_AddRefs(outstream));
 
     uint32_t count;
     const uint32_t data = RESPONSE;
-    printf("*** Attempting to write response 0x%x to client by OutputStream...\n", RESPONSE);
     mResult = outstream->Write((const char*)&data, sizeof(uint32_t), &count);
 
     if (mResult == NS_OK && count == sizeof(uint32_t)) {
-      passed("Response written");
+      SUCCEED();
     } else {
-      fail("Response written");
+      ADD_FAILURE();
     }
     return NS_OK;
   } else if (TEST_MULTICAST == phase && CheckMessageContent(message, REQUEST)) {
     mResult = NS_OK;
-  } else if (TEST_SEND_API != phase || !CheckMessageContent(message, RESPONSE)) {
+  } else if (TEST_SEND_API != phase ||
+             !CheckMessageContent(message, RESPONSE)) {
     mResult = NS_ERROR_FAILURE;
   }
 
   // Notify thread
-  QuitPumpingEvents();
+  mWaiter->Notify();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-UDPServerListener::OnStopListening(nsIUDPSocket*, nsresult)
-{
-  QuitPumpingEvents();
+UDPServerListener::OnStopListening(nsIUDPSocket*, nsresult) {
+  mWaiter->Notify();
   return NS_OK;
 }
 
 /**
  * Multicast timer callback: detects delivery failure
  */
-class MulticastTimerCallback : public nsITimerCallback
-{
-protected:
+class MulticastTimerCallback : public nsITimerCallback {
+ protected:
   virtual ~MulticastTimerCallback();
 
-public:
+ public:
+  explicit MulticastTimerCallback(WaitForCondition* waiter)
+      : mResult(NS_ERROR_NOT_INITIALIZED), mWaiter(waiter) {}
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
 
   nsresult mResult;
+  RefPtr<WaitForCondition> mWaiter;
 };
 
 NS_IMPL_ISUPPORTS(MulticastTimerCallback, nsITimerCallback)
 
-MulticastTimerCallback::~MulticastTimerCallback()
-{
-}
+MulticastTimerCallback::~MulticastTimerCallback() = default;
 
 NS_IMETHODIMP
-MulticastTimerCallback::Notify(nsITimer* timer)
-{
+MulticastTimerCallback::Notify(nsITimer* timer) {
   if (TEST_MULTICAST != phase) {
     return NS_OK;
   }
   // Multicast ping failed
   printf("Multicast ping timeout expired\n");
   mResult = NS_ERROR_FAILURE;
-  QuitPumpingEvents();
+  mWaiter->Notify();
   return NS_OK;
 }
 
 /**** Main ****/
-int
-main(int32_t argc, char *argv[])
+
+TEST(TestUDPSocket, TestUDPSocketMain)
 {
   nsresult rv;
-  ScopedXPCOM xpcom("UDP ServerSocket");
-  if (xpcom.failed())
-    return -1;
 
   // Create UDPSocket
   nsCOMPtr<nsIUDPSocket> server, client;
   server = do_CreateInstance("@mozilla.org/network/udp-socket;1", &rv);
-  NS_ENSURE_SUCCESS(rv, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
   client = do_CreateInstance("@mozilla.org/network/udp-socket;1", &rv);
-  NS_ENSURE_SUCCESS(rv, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  RefPtr<WaitForCondition> waiter = new WaitForCondition();
 
   // Create UDPServerListener to process UDP packets
-  RefPtr<UDPServerListener> serverListener = new UDPServerListener();
+  RefPtr<UDPServerListener> serverListener = new UDPServerListener(waiter);
 
-  nsCOMPtr<nsIScriptSecurityManager> secman =
-    do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, -1);
-
-  nsCOMPtr<nsIPrincipal> systemPrincipal;
-  rv = secman->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
-  NS_ENSURE_SUCCESS(rv, -1);
+  nsCOMPtr<nsIPrincipal> systemPrincipal = nsContentUtils::GetSystemPrincipal();
 
   // Bind server socket to 0.0.0.0
   rv = server->Init(0, false, systemPrincipal, true, 0);
-  NS_ENSURE_SUCCESS(rv, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
   int32_t serverPort;
   server->GetPort(&serverPort);
   server->AsyncListen(serverListener);
 
   // Bind clinet on arbitrary port
-  RefPtr<UDPClientListener> clientListener = new UDPClientListener();
+  RefPtr<UDPClientListener> clientListener = new UDPClientListener(waiter);
   client->Init(0, false, systemPrincipal, true, 0);
   client->AsyncListen(clientListener);
 
   // Write data to server
   uint32_t count;
-  const uint32_t data = REQUEST;
+  nsTArray<uint8_t> data;
+  const uint32_t dataBuffer = REQUEST;
+  data.AppendElements((const uint8_t*)&dataBuffer, sizeof(uint32_t));
 
   phase = TEST_OUTPUT_STREAM;
-  rv = client->Send(NS_LITERAL_CSTRING("127.0.0.1"), serverPort, (uint8_t*)&data, sizeof(uint32_t), &count);
-  NS_ENSURE_SUCCESS(rv, -1);
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Request written by Send");
+  rv = client->Send(NS_LITERAL_CSTRING("127.0.0.1"), serverPort, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server
-  PumpEvents();
-  NS_ENSURE_SUCCESS(serverListener->mResult, -1);
+  waiter->Wait(1);
+  ASSERT_TRUE(NS_SUCCEEDED(serverListener->mResult));
 
   // Read response from server
-  NS_ENSURE_SUCCESS(clientListener->mResult, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(clientListener->mResult));
 
   mozilla::net::NetAddr clientAddr;
   rv = client->GetAddress(&clientAddr);
-  NS_ENSURE_SUCCESS(rv, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
   // The client address is 0.0.0.0, but Windows won't receive packets there, so
   // use 127.0.0.1 explicitly
   clientAddr.inet.ip = PR_htonl(127 << 24 | 1);
 
   phase = TEST_SEND_API;
-  rv = server->SendWithAddress(&clientAddr, (uint8_t*)&data, sizeof(uint32_t), &count);
-  NS_ENSURE_SUCCESS(rv, -1);
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Request written by SendWithAddress");
+  rv = server->SendWithAddress(&clientAddr, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server
-  PumpEvents();
-  NS_ENSURE_SUCCESS(serverListener->mResult, -1);
+  waiter->Wait(1);
+  ASSERT_TRUE(NS_SUCCEEDED(serverListener->mResult));
 
   // Read response from server
-  NS_ENSURE_SUCCESS(clientListener->mResult, -1);
+  ASSERT_TRUE(NS_SUCCEEDED(clientListener->mResult));
 
   // Setup timer to detect multicast failure
-  nsCOMPtr<nsITimer> timer = do_CreateInstance("@mozilla.org/timer;1");
-  if (NS_WARN_IF(!timer)) {
-    return -1;
-  }
-  RefPtr<MulticastTimerCallback> timerCb = new MulticastTimerCallback();
-
-  // The following multicast tests using multiple sockets require a firewall
-  // exception on Windows XP (the earliest version of Windows we now support)
-  // before they pass. For now, we'll skip them here. Later versions of Windows
-  // (Win2003 and onward) don't seem to have this issue.
-#ifdef XP_WIN
-  if (!mozilla::IsWin2003OrLater()) {   // i.e. if it is WinXP
-    goto close;
-  }
-#endif
+  nsCOMPtr<nsITimer> timer = NS_NewTimer();
+  ASSERT_TRUE(timer);
+  RefPtr<MulticastTimerCallback> timerCb = new MulticastTimerCallback(waiter);
 
   // Join multicast group
   printf("Joining multicast group\n");
@@ -358,30 +310,20 @@ main(int32_t argc, char *argv[])
   multicastAddr.inet.ip = PR_htonl(224 << 24 | 255);
   multicastAddr.inet.port = PR_htons(serverPort);
   rv = server->JoinMulticastAddr(multicastAddr, nullptr);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data, sizeof(uint32_t), &count);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Multicast ping written by SendWithAddress");
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server to receive successfully
-  PumpEvents();
-  if (NS_WARN_IF(NS_FAILED(serverListener->mResult))) {
-    return -1;
-  }
-  if (NS_WARN_IF(NS_FAILED(timerCb->mResult))) {
-    return -1;
-  }
+  waiter->Wait(1);
+  ASSERT_TRUE(NS_SUCCEEDED(serverListener->mResult));
+  ASSERT_TRUE(NS_SUCCEEDED(timerCb->mResult));
   timer->Cancel();
-  passed("Server received ping successfully");
 
   // Disable multicast loopback
   printf("Disable multicast loopback\n");
@@ -391,27 +333,20 @@ main(int32_t argc, char *argv[])
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data, sizeof(uint32_t), &count);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Multicast ping written by SendWithAddress");
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server to fail to receive
-  PumpEvents();
-  if (NS_WARN_IF(NS_SUCCEEDED(timerCb->mResult))) {
-    return -1;
-  }
+  waiter->Wait(1);
+  ASSERT_FALSE(NS_SUCCEEDED(timerCb->mResult));
   timer->Cancel();
-  passed("Server failed to receive ping correctly");
 
   // Reset state
   client->SetMulticastLoopback(true);
   server->SetMulticastLoopback(true);
 
   // Change multicast interface
-  printf("Changing multicast interface\n");
   mozilla::net::NetAddr loopbackAddr;
   loopbackAddr.inet.family = AF_INET;
   loopbackAddr.inet.ip = PR_htonl(INADDR_LOOPBACK);
@@ -420,20 +355,14 @@ main(int32_t argc, char *argv[])
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data, sizeof(uint32_t), &count);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Multicast ping written by SendWithAddress");
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server to fail to receive
-  PumpEvents();
-  if (NS_WARN_IF(NS_SUCCEEDED(timerCb->mResult))) {
-    return -1;
-  }
+  waiter->Wait(1);
+  ASSERT_FALSE(NS_SUCCEEDED(timerCb->mResult));
   timer->Cancel();
-  passed("Server failed to receive ping correctly");
 
   // Reset state
   mozilla::net::NetAddr anyAddr;
@@ -442,38 +371,28 @@ main(int32_t argc, char *argv[])
   client->SetMulticastInterfaceAddr(anyAddr);
 
   // Leave multicast group
-  printf("Leave multicast group\n");
   rv = server->LeaveMulticastAddr(multicastAddr, nullptr);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
 
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data, sizeof(uint32_t), &count);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return -1;
-  }
-  REQUIRE_EQUAL(count, sizeof(uint32_t), "Error");
-  passed("Multicast ping written by SendWithAddress");
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_EQ(count, sizeof(uint32_t));
 
   // Wait for server to fail to receive
-  PumpEvents();
-  if (NS_WARN_IF(NS_SUCCEEDED(timerCb->mResult))) {
-    return -1;
-  }
+  waiter->Wait(1);
+  ASSERT_FALSE(NS_SUCCEEDED(timerCb->mResult));
   timer->Cancel();
-  passed("Server failed to receive ping correctly");
-  goto close;
+
+  goto close;  // suppress warning about unused label
 
 close:
   // Close server
-  printf("*** Attempting to close server ...\n");
   server->Close();
   client->Close();
-  PumpEvents();
-  passed("Server closed");
 
-  return 0; // failure is a non-zero return
+  // Wait for client and server to see closing
+  waiter->Wait(2);
 }

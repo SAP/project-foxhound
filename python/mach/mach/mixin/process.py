@@ -8,9 +8,11 @@ from __future__ import absolute_import, unicode_literals
 
 import logging
 import os
+import signal
 import subprocess
 import sys
 
+from mozbuild.util import ensure_subprocess_env
 from mozprocess.processhandler import ProcessHandlerMixin
 
 from .logging import LoggingMixin
@@ -41,9 +43,9 @@ class ProcessExecutionMixin(LoggingMixin):
     """Mix-in that provides process execution functionality."""
 
     def run_process(self, args=None, cwd=None, append_env=None,
-        explicit_env=None, log_name=None, log_level=logging.INFO,
-        line_handler=None, require_unix_environment=False,
-        ensure_exit_code=0, ignore_children=False, pass_thru=False):
+                    explicit_env=None, log_name=None, log_level=logging.INFO,
+                    line_handler=None, require_unix_environment=False,
+                    ensure_exit_code=0, ignore_children=False, pass_thru=False):
         """Runs a single process to completion.
 
         Takes a list of arguments to run where the first item is the
@@ -101,22 +103,7 @@ class ProcessExecutionMixin(LoggingMixin):
 
         self.log(logging.DEBUG, 'process', {'env': use_env}, 'Environment: {env}')
 
-        # There is a bug in subprocess where it doesn't like unicode types in
-        # environment variables. Here, ensure all unicode are converted to
-        # binary. utf-8 is our globally assumed default. If the caller doesn't
-        # want UTF-8, they shouldn't pass in a unicode instance.
-        normalized_env = {}
-        for k, v in use_env.items():
-            if isinstance(k, unicode):
-                k = k.encode('utf-8', 'strict')
-
-            if isinstance(v, unicode):
-                v = v.encode('utf-8', 'strict')
-
-            normalized_env[k] = v
-
-        use_env = normalized_env
-
+        use_env = ensure_subprocess_env(use_env)
         if pass_thru:
             proc = subprocess.Popen(args, cwd=cwd, env=use_env)
             status = None
@@ -131,11 +118,25 @@ class ProcessExecutionMixin(LoggingMixin):
                     pass
         else:
             p = ProcessHandlerMixin(args, cwd=cwd, env=use_env,
-                processOutputLine=[handleLine], universal_newlines=True,
-                ignore_children=ignore_children)
+                                    processOutputLine=[handleLine],
+                                    universal_newlines=True,
+                                    ignore_children=ignore_children)
             p.run()
             p.processOutput()
-            status = p.wait()
+            status = None
+            sig = None
+            while status is None:
+                try:
+                    if sig is None:
+                        status = p.wait()
+                    else:
+                        status = p.kill(sig=sig)
+                except KeyboardInterrupt:
+                    if sig is None:
+                        sig = signal.SIGINT
+                    elif sig == signal.SIGINT:
+                        # If we've already tried SIGINT, escalate.
+                        sig = signal.SIGKILL
 
         if ensure_exit_code is False:
             return status

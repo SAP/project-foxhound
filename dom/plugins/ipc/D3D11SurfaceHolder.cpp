@@ -18,30 +18,22 @@ using namespace mozilla::layers;
 D3D11SurfaceHolder::D3D11SurfaceHolder(ID3D11Texture2D* back,
                                        SurfaceFormat format,
                                        const IntSize& size)
- : mDevice11(DeviceManagerDx::Get()->GetContentDevice()),
-   mBack(back),
-   mFormat(format),
-   mSize(size)
-{
-}
+    : mDevice11(DeviceManagerDx::Get()->GetContentDevice()),
+      mBack(back),
+      mFormat(format),
+      mSize(size) {}
 
-D3D11SurfaceHolder::~D3D11SurfaceHolder()
-{
-}
+D3D11SurfaceHolder::~D3D11SurfaceHolder() {}
 
-bool
-D3D11SurfaceHolder::IsValid()
-{
+bool D3D11SurfaceHolder::IsValid() {
   // If a TDR occurred, platform devices will be recreated.
   if (DeviceManagerDx::Get()->GetContentDevice() != mDevice11) {
-     return false;
+    return false;
   }
   return true;
 }
 
-bool
-D3D11SurfaceHolder::CopyToTextureClient(TextureClient* aClient)
-{
+bool D3D11SurfaceHolder::CopyToTextureClient(TextureClient* aClient) {
   MOZ_ASSERT(NS_IsMainThread());
 
   D3D11TextureData* data = aClient->GetInternalData()->AsD3D11TextureData();
@@ -65,23 +57,25 @@ D3D11SurfaceHolder::CopyToTextureClient(TextureClient* aClient)
   }
 
   RefPtr<IDXGIKeyedMutex> mutex;
-  HRESULT hr = mBack->QueryInterface(__uuidof(IDXGIKeyedMutex), (void **)getter_AddRefs(mutex));
+  HRESULT hr = mBack->QueryInterface(__uuidof(IDXGIKeyedMutex),
+                                     (void**)getter_AddRefs(mutex));
   if (FAILED(hr) || !mutex) {
     NS_WARNING("Could not acquire an IDXGIKeyedMutex");
     return false;
   }
 
-  hr = mutex->AcquireSync(0, 0);
-  if (hr == WAIT_ABANDONED || hr == WAIT_TIMEOUT || FAILED(hr)) {
-    NS_WARNING("Could not acquire DXGI surface lock - plugin forgot to release?");
-    return false;
+  {
+    AutoTextureLock lock(mutex, hr);
+    if (hr == WAIT_ABANDONED || hr == WAIT_TIMEOUT || FAILED(hr)) {
+      NS_WARNING(
+          "Could not acquire DXGI surface lock - plugin forgot to release?");
+      return false;
+    }
+
+    context->CopyResource(data->GetD3D11Texture(), mBack);
   }
-
-  context->CopyResource(data->GetD3D11Texture(), mBack);
-
-  mutex->ReleaseSync(0);
   return true;
 }
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla

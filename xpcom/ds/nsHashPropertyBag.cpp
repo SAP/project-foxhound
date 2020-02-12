@@ -9,23 +9,33 @@
 #include "nsArrayEnumerator.h"
 #include "nsIVariant.h"
 #include "nsIProperty.h"
+#include "nsThreadUtils.h"
 #include "nsVariant.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Move.h"
+
+extern "C" {
+
+// This function uses C linkage because it's exposed to Rust to support the
+// `HashPropertyBag` wrapper in the `storage_variant` crate.
+void NS_NewHashPropertyBag(nsIWritablePropertyBag** aBag) {
+  MakeRefPtr<nsHashPropertyBag>().forget(aBag);
+}
+
+}  // extern "C"
 
 /*
  * nsHashPropertyBagBase implementation.
  */
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::HasKey(const nsAString& aName, bool* aResult)
-{
+nsHashPropertyBagBase::HasKey(const nsAString& aName, bool* aResult) {
   *aResult = mPropertyHash.Get(aName, nullptr);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::Get(const nsAString& aName, nsIVariant** aResult)
-{
+nsHashPropertyBagBase::Get(const nsAString& aName, nsIVariant** aResult) {
   if (!mPropertyHash.Get(aName, aResult)) {
     *aResult = nullptr;
   }
@@ -34,8 +44,8 @@ nsHashPropertyBagBase::Get(const nsAString& aName, nsIVariant** aResult)
 }
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::GetProperty(const nsAString& aName, nsIVariant** aResult)
-{
+nsHashPropertyBagBase::GetProperty(const nsAString& aName,
+                                   nsIVariant** aResult) {
   bool isFound = mPropertyHash.Get(aName, aResult);
   if (!isFound) {
     return NS_ERROR_FAILURE;
@@ -45,8 +55,7 @@ nsHashPropertyBagBase::GetProperty(const nsAString& aName, nsIVariant** aResult)
 }
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::SetProperty(const nsAString& aName, nsIVariant* aValue)
-{
+nsHashPropertyBagBase::SetProperty(const nsAString& aName, nsIVariant* aValue) {
   if (NS_WARN_IF(!aValue)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -57,41 +66,24 @@ nsHashPropertyBagBase::SetProperty(const nsAString& aName, nsIVariant* aValue)
 }
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::DeleteProperty(const nsAString& aName)
-{
-  // is it too much to ask for ns*Hashtable to return
-  // a boolean indicating whether RemoveEntry succeeded
-  // or not?!?!
-  bool isFound = mPropertyHash.Get(aName, nullptr);
-  if (!isFound) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // then from the hash
-  mPropertyHash.Remove(aName);
-
-  return NS_OK;
+nsHashPropertyBagBase::DeleteProperty(const nsAString& aName) {
+  return mPropertyHash.Remove(aName) ? NS_OK : NS_ERROR_FAILURE;
 }
-
 
 //
 // nsSimpleProperty class and impl; used for GetEnumerator
 //
 
-class nsSimpleProperty final : public nsIProperty
-{
+class nsSimpleProperty final : public nsIProperty {
   ~nsSimpleProperty() {}
 
-public:
+ public:
   nsSimpleProperty(const nsAString& aName, nsIVariant* aValue)
-    : mName(aName)
-    , mValue(aValue)
-  {
-  }
+      : mName(aName), mValue(aValue) {}
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROPERTY
-protected:
+ protected:
   nsString mName;
   nsCOMPtr<nsIVariant> mValue;
 };
@@ -99,15 +91,13 @@ protected:
 NS_IMPL_ISUPPORTS(nsSimpleProperty, nsIProperty)
 
 NS_IMETHODIMP
-nsSimpleProperty::GetName(nsAString& aName)
-{
+nsSimpleProperty::GetName(nsAString& aName) {
   aName.Assign(mName);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSimpleProperty::GetValue(nsIVariant** aValue)
-{
+nsSimpleProperty::GetValue(nsIVariant** aValue) {
   NS_IF_ADDREF(*aValue = mValue);
   return NS_OK;
 }
@@ -115,8 +105,7 @@ nsSimpleProperty::GetValue(nsIVariant** aValue)
 // end nsSimpleProperty
 
 NS_IMETHODIMP
-nsHashPropertyBagBase::GetEnumerator(nsISimpleEnumerator** aResult)
-{
+nsHashPropertyBagBase::GetEnumerator(nsISimpleEnumerator** aResult) {
   nsCOMPtr<nsIMutableArray> propertyArray = nsArray::Create();
   if (!propertyArray) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -126,29 +115,28 @@ nsHashPropertyBagBase::GetEnumerator(nsISimpleEnumerator** aResult)
     const nsAString& key = iter.Key();
     nsIVariant* data = iter.UserData();
     nsSimpleProperty* sprop = new nsSimpleProperty(key, data);
-    propertyArray->AppendElement(sprop, false);
+    propertyArray->AppendElement(sprop);
   }
 
-  return NS_NewArrayEnumerator(aResult, propertyArray);
+  return NS_NewArrayEnumerator(aResult, propertyArray, NS_GET_IID(nsIProperty));
 }
 
-#define IMPL_GETSETPROPERTY_AS(Name, Type) \
-NS_IMETHODIMP \
-nsHashPropertyBagBase::GetPropertyAs ## Name (const nsAString & prop, Type *_retval) \
-{ \
-    nsIVariant* v = mPropertyHash.GetWeak(prop); \
-    if (!v) \
-        return NS_ERROR_NOT_AVAILABLE; \
-    return v->GetAs ## Name(_retval); \
-} \
-\
-NS_IMETHODIMP \
-nsHashPropertyBagBase::SetPropertyAs ## Name (const nsAString & prop, Type value) \
-{ \
-    nsCOMPtr<nsIWritableVariant> var = new nsVariant(); \
-    var->SetAs ## Name(value); \
-    return SetProperty(prop, var); \
-}
+#define IMPL_GETSETPROPERTY_AS(Name, Type)                          \
+  NS_IMETHODIMP                                                     \
+  nsHashPropertyBagBase::GetPropertyAs##Name(const nsAString& prop, \
+                                             Type* _retval) {       \
+    nsIVariant* v = mPropertyHash.GetWeak(prop);                    \
+    if (!v) return NS_ERROR_NOT_AVAILABLE;                          \
+    return v->GetAs##Name(_retval);                                 \
+  }                                                                 \
+                                                                    \
+  NS_IMETHODIMP                                                     \
+  nsHashPropertyBagBase::SetPropertyAs##Name(const nsAString& prop, \
+                                             Type value) {          \
+    nsCOMPtr<nsIWritableVariant> var = new nsVariant();             \
+    var->SetAs##Name(value);                                        \
+    return SetProperty(prop, var);                                  \
+  }
 
 IMPL_GETSETPROPERTY_AS(Int32, int32_t)
 IMPL_GETSETPROPERTY_AS(Uint32, uint32_t)
@@ -157,11 +145,9 @@ IMPL_GETSETPROPERTY_AS(Uint64, uint64_t)
 IMPL_GETSETPROPERTY_AS(Double, double)
 IMPL_GETSETPROPERTY_AS(Bool, bool)
 
-
 NS_IMETHODIMP
 nsHashPropertyBagBase::GetPropertyAsAString(const nsAString& aProp,
-                                            nsAString& aResult)
-{
+                                            nsAString& aResult) {
   nsIVariant* v = mPropertyHash.GetWeak(aProp);
   if (!v) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -171,8 +157,7 @@ nsHashPropertyBagBase::GetPropertyAsAString(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::GetPropertyAsACString(const nsAString& aProp,
-                                             nsACString& aResult)
-{
+                                             nsACString& aResult) {
   nsIVariant* v = mPropertyHash.GetWeak(aProp);
   if (!v) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -182,8 +167,7 @@ nsHashPropertyBagBase::GetPropertyAsACString(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::GetPropertyAsAUTF8String(const nsAString& aProp,
-                                                nsACString& aResult)
-{
+                                                nsACString& aResult) {
   nsIVariant* v = mPropertyHash.GetWeak(aProp);
   if (!v) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -194,8 +178,7 @@ nsHashPropertyBagBase::GetPropertyAsAUTF8String(const nsAString& aProp,
 NS_IMETHODIMP
 nsHashPropertyBagBase::GetPropertyAsInterface(const nsAString& aProp,
                                               const nsIID& aIID,
-                                              void** aResult)
-{
+                                              void** aResult) {
   nsIVariant* v = mPropertyHash.GetWeak(aProp);
   if (!v) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -215,8 +198,7 @@ nsHashPropertyBagBase::GetPropertyAsInterface(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::SetPropertyAsAString(const nsAString& aProp,
-                                            const nsAString& aValue)
-{
+                                            const nsAString& aValue) {
   nsCOMPtr<nsIWritableVariant> var = new nsVariant();
   var->SetAsAString(aValue);
   return SetProperty(aProp, var);
@@ -224,8 +206,7 @@ nsHashPropertyBagBase::SetPropertyAsAString(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::SetPropertyAsACString(const nsAString& aProp,
-                                             const nsACString& aValue)
-{
+                                             const nsACString& aValue) {
   nsCOMPtr<nsIWritableVariant> var = new nsVariant();
   var->SetAsACString(aValue);
   return SetProperty(aProp, var);
@@ -233,8 +214,7 @@ nsHashPropertyBagBase::SetPropertyAsACString(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::SetPropertyAsAUTF8String(const nsAString& aProp,
-                                                const nsACString& aValue)
-{
+                                                const nsACString& aValue) {
   nsCOMPtr<nsIWritableVariant> var = new nsVariant();
   var->SetAsAUTF8String(aValue);
   return SetProperty(aProp, var);
@@ -242,13 +222,11 @@ nsHashPropertyBagBase::SetPropertyAsAUTF8String(const nsAString& aProp,
 
 NS_IMETHODIMP
 nsHashPropertyBagBase::SetPropertyAsInterface(const nsAString& aProp,
-                                              nsISupports* aValue)
-{
+                                              nsISupports* aValue) {
   nsCOMPtr<nsIWritableVariant> var = new nsVariant();
   var->SetAsISupports(aValue);
   return SetProperty(aProp, var);
 }
-
 
 /*
  * nsHashPropertyBag implementation.
@@ -265,6 +243,35 @@ NS_INTERFACE_MAP_BEGIN(nsHashPropertyBag)
   NS_INTERFACE_MAP_ENTRY(nsIWritablePropertyBag2)
 NS_INTERFACE_MAP_END
 
+/*
+ * We need to ensure that the hashtable is destroyed on the main thread, as
+ * the nsIVariant values are main-thread only objects.
+ */
+class ProxyHashtableDestructor final : public mozilla::Runnable {
+ public:
+  using HashtableType = nsInterfaceHashtable<nsStringHashKey, nsIVariant>;
+  explicit ProxyHashtableDestructor(HashtableType&& aTable)
+      : mozilla::Runnable("ProxyHashtableDestructor"),
+        mPropertyHash(std::move(aTable)) {}
+
+  NS_IMETHODIMP
+  Run() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    HashtableType table(std::move(mPropertyHash));
+    return NS_OK;
+  }
+
+ private:
+  HashtableType mPropertyHash;
+};
+
+nsHashPropertyBag::~nsHashPropertyBag() {
+  if (!NS_IsMainThread()) {
+    RefPtr<ProxyHashtableDestructor> runnable =
+        new ProxyHashtableDestructor(std::move(mPropertyHash));
+    MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(runnable));
+  }
+}
 
 /*
  * nsHashPropertyBagCC implementation.

@@ -21,17 +21,19 @@ namespace cache {
 class CacheStreamControlParent;
 class Manager;
 
-class StreamList final : public Context::Activity
-{
-public:
+class StreamList final : public Context::Activity {
+ public:
   StreamList(Manager* aManager, Context* aContext);
+
+  Manager* GetManager() const;
+  bool ShouldOpenStreamFor(const nsID& aId) const;
 
   void SetStreamControl(CacheStreamControlParent* aStreamControl);
   void RemoveStreamControl(CacheStreamControlParent* aStreamControl);
 
   void Activate(CacheId aCacheId);
 
-  void Add(const nsID& aId, nsIInputStream* aStream);
+  void Add(const nsID& aId, nsCOMPtr<nsIInputStream>&& aStream);
   already_AddRefed<nsIInputStream> Extract(const nsID& aId);
 
   void NoteClosed(const nsID& aId);
@@ -43,10 +45,12 @@ public:
   virtual void Cancel() override;
   virtual bool MatchesCacheId(CacheId aCacheId) const override;
 
-private:
+ private:
   ~StreamList();
-  struct Entry
-  {
+  struct Entry {
+    explicit Entry(const nsID& aId, nsCOMPtr<nsIInputStream>&& aStream)
+        : mId(aId), mStream(std::move(aStream)) {}
+
     nsID mId;
     nsCOMPtr<nsIInputStream> mStream;
   };
@@ -57,12 +61,12 @@ private:
   nsTArray<Entry> mList;
   bool mActivated;
 
-public:
+ public:
   NS_INLINE_DECL_REFCOUNTING(cache::StreamList)
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_StreamList_h
+#endif  // mozilla_dom_cache_StreamList_h

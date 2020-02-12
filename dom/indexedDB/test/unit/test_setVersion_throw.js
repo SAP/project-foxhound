@@ -5,8 +5,7 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "test_setVersion_throw";
 
   // This test requires two databases. The first needs to be a low version
@@ -28,7 +27,7 @@ function testSteps()
   db.onversionchange = function(event) {
     info("Got versionchange event for db 1");
     event.target.close();
-  }
+  };
 
   executeSoon(continueToNextStepSync);
   yield undefined;
@@ -39,6 +38,7 @@ function testSteps()
   request.onupgradeneeded = function(event) {
     info("Got upgradeneeded event for db 2");
     expectUncaughtException(true);
+    // eslint-disable-next-line no-undef
     trigger_js_exception_by_calling_a_nonexistent_function();
   };
   event = yield undefined;
@@ -46,9 +46,8 @@ function testSteps()
   event.preventDefault();
 
   is(event.type, "error", "Got an error event for db 2");
-  ok(event.target.error instanceof DOMError, "Request has a DOMError");
+  ok(event.target.error instanceof DOMException, "Request has a DOMException");
   is(event.target.error.name, "AbortError", "Request has AbortError");
 
   finishTest();
-  yield undefined;
 }

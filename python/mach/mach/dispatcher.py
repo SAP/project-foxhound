@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import print_function
 from __future__ import absolute_import, unicode_literals
 
 import argparse
@@ -22,7 +23,11 @@ from .decorators import SettingsProvider
 @SettingsProvider
 class DispatchSettings():
     config_settings = [
-        ('alias.*', 'string'),
+        ('alias.*', 'string', """
+Create a command alias of the form `<alias>=<command> <args>`.
+Aliases can also be used to set default arguments:
+<command>=<command> <args>
+""".strip()),
     ]
 
 
@@ -64,7 +69,7 @@ class CommandAction(argparse.Action):
     For more, read the docs in __call__.
     """
     def __init__(self, option_strings, dest, required=True, default=None,
-        registrar=None, context=None):
+                 registrar=None, context=None):
         # A proper API would have **kwargs here. However, since we are a little
         # hacky, we intentionally omit it as a way of detecting potentially
         # breaking changes with argparse's implementation.
@@ -72,7 +77,7 @@ class CommandAction(argparse.Action):
         # In a similar vein, default is passed in but is not needed, so we drop
         # it.
         argparse.Action.__init__(self, option_strings, dest, required=required,
-            help=argparse.SUPPRESS, nargs=argparse.REMAINDER)
+                                 help=argparse.SUPPRESS, nargs=argparse.REMAINDER)
 
         self._mach_registrar = registrar
         self._context = context
@@ -103,7 +108,7 @@ class CommandAction(argparse.Action):
             if command == 'help':
                 if args and args[0] not in ['-h', '--help']:
                     # Make sure args[0] is indeed a command.
-                    self._handle_command_help(parser, args[0])
+                    self._handle_command_help(parser, args[0], args, namespace.print_command)
                 else:
                     self._handle_main_help(parser, namespace.verbose)
                 sys.exit(0)
@@ -113,10 +118,10 @@ class CommandAction(argparse.Action):
                     # -- is in command arguments
                     if '-h' in args[:args.index('--')] or '--help' in args[:args.index('--')]:
                         # Honor -h or --help only if it appears before --
-                        self._handle_command_help(parser, command)
+                        self._handle_command_help(parser, command, args, namespace.print_command)
                         sys.exit(0)
                 else:
-                    self._handle_command_help(parser, command)
+                    self._handle_command_help(parser, command, args, namespace.print_command)
                     sys.exit(0)
         else:
             raise NoCommandError()
@@ -132,6 +137,12 @@ class CommandAction(argparse.Action):
             # Try to find similar commands, may raise UnknownCommandError.
             command = self._suggest_command(command)
 
+        # This is used by the `mach` driver to find the command name amidst
+        # global arguments.
+        if namespace.print_command:
+            print(command)
+            sys.exit(0)
+
         handler = self._mach_registrar.command_handlers.get(command)
 
         usage = '%(prog)s [global arguments] ' + command + \
@@ -141,16 +152,11 @@ class CommandAction(argparse.Action):
 
         # If there are sub-commands, parse the intent out immediately.
         if handler.subcommand_handlers and args:
-            if len(args) == 1 and args[0] in ('help', '--help'):
-                self._handle_subcommand_main_help(parser, handler)
-                sys.exit(0)
             # mach <command> help <subcommand>
-            elif len(args) == 2 and args[0] == 'help':
-                subcommand = args[1]
-                subhandler = handler.subcommand_handlers[subcommand]
-                self._handle_subcommand_help(parser, command, subcommand, subhandler)
+            if set(args).intersection(('help', '--help')):
+                self._handle_subcommand_help(parser, handler, args)
                 sys.exit(0)
-            # We are running a sub command.
+            # mach <command> <subcommand> ...
             elif args[0] in handler.subcommand_handlers:
                 subcommand = args[0]
                 handler = handler.subcommand_handlers[subcommand]
@@ -194,7 +200,7 @@ class CommandAction(argparse.Action):
                 # pick any extra argument, wherever they are.
                 # Assume a limited CommandArgument for those arguments.
                 assert len(arg[0]) == 1
-                assert all(k in ('default', 'nargs', 'help') for k in arg[1])
+                assert all(k in ('default', 'nargs', 'help', 'metavar') for k in arg[1])
                 remainder = arg
             else:
                 subparser.add_argument(*arg[0], **arg[1])
@@ -277,7 +283,7 @@ class CommandAction(argparse.Action):
 
                 description = handler.description
                 group.add_argument(command, help=description,
-                    action='store_true')
+                                   action='store_true')
 
         if disabled_commands and 'disabled' in r.categories:
             title, description, _priority = r.categories['disabled']
@@ -304,14 +310,18 @@ class CommandAction(argparse.Action):
                 group = extra_groups[group_name]
             group.add_argument(*arg[0], **arg[1])
 
-    def _handle_command_help(self, parser, command):
+    def _handle_command_help(self, parser, command, args, print_command):
         handler = self._mach_registrar.command_handlers.get(command)
 
         if not handler:
             raise UnknownCommandError(command, 'query')
 
+        if print_command:
+            print(command)
+            sys.exit(0)
+
         if handler.subcommand_handlers:
-            self._handle_subcommand_main_help(parser, handler)
+            self._handle_subcommand_help(parser, handler, args)
             return
 
         # This code is worth explaining. Because we are doing funky things with
@@ -375,9 +385,9 @@ class CommandAction(argparse.Action):
             ' subcommand [subcommand arguments]'
         group = parser.add_argument_group('Sub Commands')
 
-        for subcommand, subhandler in sorted(handler.subcommand_handlers.iteritems()):
+        for subcommand, subhandler in sorted(handler.subcommand_handlers.items()):
             group.add_argument(subcommand, help=subhandler.description,
-                action='store_true')
+                               action='store_true')
 
         if handler.docstring:
             parser.description = format_docstring(handler.docstring)
@@ -386,19 +396,26 @@ class CommandAction(argparse.Action):
 
         parser.print_help()
 
-    def _handle_subcommand_help(self, parser, command, subcommand, handler):
-        parser.usage = '%(prog)s [global arguments] ' + command + \
-            ' ' + subcommand + ' [command arguments]'
+    def _handle_subcommand_help(self, parser, handler, args):
+        subcommand = set(args).intersection(list(handler.subcommand_handlers.keys()))
+        if not subcommand:
+            return self._handle_subcommand_main_help(parser, handler)
 
-        c_parser = argparse.ArgumentParser(add_help=False,
-            formatter_class=CommandFormatter)
+        subcommand = subcommand.pop()
+        subhandler = handler.subcommand_handlers[subcommand]
+
+        c_parser = subhandler.parser or argparse.ArgumentParser(add_help=False)
+        c_parser.formatter_class = CommandFormatter
+
         group = c_parser.add_argument_group('Sub Command Arguments')
-        self._populate_command_group(c_parser, handler, group)
+        self._populate_command_group(c_parser, subhandler, group)
 
-        if handler.docstring:
-            parser.description = format_docstring(handler.docstring)
+        if subhandler.docstring:
+            parser.description = format_docstring(subhandler.docstring)
 
         parser.formatter_class = argparse.RawDescriptionHelpFormatter
+        parser.usage = '%(prog)s [global arguments] ' + handler.name + \
+            ' ' + subcommand + ' [command arguments]'
 
         parser.print_help()
         print('')
@@ -407,21 +424,19 @@ class CommandAction(argparse.Action):
     def _suggest_command(self, command):
         # Make sure we don't suggest any deprecated commands.
         names = [h.name for h in self._mach_registrar.command_handlers.values()
-                    if h.cls.__name__ != 'DeprecatedCommands']
-        # We first try to look for a valid command that is very similar to the given command.
-        suggested_commands = difflib.get_close_matches(command, names, cutoff=0.8)
-        # If we find more than one matching command, or no command at all,
-        # we give command suggestions instead (with a lower matching threshold).
-        # All commands that start with the given command (for instance:
-        # 'mochitest-plain', 'mochitest-chrome', etc. for 'mochitest-')
-        # are also included.
-        if len(suggested_commands) != 1:
-            suggested_commands = set(difflib.get_close_matches(command, names, cutoff=0.5))
-            suggested_commands |= {cmd for cmd in names if cmd.startswith(command)}
-            raise UnknownCommandError(command, 'run', suggested_commands)
-        sys.stderr.write("We're assuming the '%s' command is '%s' and we're "
-                         "executing it for you.\n\n" % (command, suggested_commands[0]))
-        return suggested_commands[0]
+                 if h.cls.__name__ != 'DeprecatedCommands']
+
+        # Bug 1577908 - We used to automatically re-execute the suggested
+        # command with the proper spelling. But because the `mach` driver now
+        # uses a whitelist to determine which command to run with Python 2, all
+        # misspellings are automatically run with Python 3 (and would fail if
+        # we were to correct a Python 2 command here). So we now suggest the
+        # command instead. Once the Python 3 migration has completed, we can
+        # turn autosuggestions back on. We could alternatively figure out a way
+        # to compare the suggested command against the mach whitelist.
+        suggested_commands = set(difflib.get_close_matches(command, names, cutoff=0.5))
+        suggested_commands |= {cmd for cmd in names if cmd.startswith(command)}
+        raise UnknownCommandError(command, 'run', suggested_commands)
 
 
 class NoUsageFormatter(argparse.HelpFormatter):
@@ -437,13 +452,13 @@ def format_docstring(docstring):
     if not docstring:
         return ''
     lines = docstring.expandtabs().splitlines()
-    indent = sys.maxint
+    indent = sys.maxsize
     for line in lines[1:]:
         stripped = line.lstrip()
         if stripped:
             indent = min(indent, len(line) - len(stripped))
     trimmed = [lines[0].strip()]
-    if indent < sys.maxint:
+    if indent < sys.maxsize:
         for line in lines[1:]:
             trimmed.append(line[indent:].rstrip())
     while trimmed and not trimmed[-1]:

@@ -4,21 +4,24 @@
 
 let getExtension = () => {
   return ExtensionTestUtils.loadExtension({
-    background() {
-      browser.tabs.query({active: true, currentWindow: true}, tabs => {
-        browser.pageAction.show(tabs[0].id);
+    background: async function() {
+      let [tab] = await browser.tabs.query({
+        active: true,
+        currentWindow: true,
       });
+      await browser.pageAction.show(tab.id);
+      browser.test.sendMessage("pageAction ready");
     },
 
     manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "browser_style": false,
+      browser_action: {
+        default_popup: "popup.html",
+        browser_style: false,
       },
 
-      "page_action": {
-        "default_popup": "popup.html",
-        "browser_style": false,
+      page_action: {
+        default_popup: "popup.html",
+        browser_style: false,
       },
     },
 
@@ -29,46 +32,49 @@ let getExtension = () => {
   });
 };
 
-add_task(function* testStandaloneBrowserAction() {
+add_task(async function testStandaloneBrowserAction() {
   info("Test stand-alone browserAction popup");
 
   let extension = getExtension();
-  yield extension.startup();
+  await extension.startup();
+  await extension.awaitMessage("pageAction ready");
 
   clickBrowserAction(extension);
-  let browser = yield awaitExtensionPanel(extension);
+  let browser = await awaitExtensionPanel(extension);
   let panel = getPanelForNode(browser);
 
-  yield extension.unload();
+  await extension.unload();
 
   is(panel.parentNode, null, "Panel should be removed from the document");
 });
 
-add_task(function* testMenuPanelBrowserAction() {
+add_task(async function testMenuPanelBrowserAction() {
   let extension = getExtension();
-  yield extension.startup();
+  await extension.startup();
+  await extension.awaitMessage("pageAction ready");
 
   let widget = getBrowserActionWidget(extension);
-  CustomizableUI.addWidgetToArea(widget.id, CustomizableUI.AREA_PANEL);
+  CustomizableUI.addWidgetToArea(widget.id, getCustomizableUIPanelID());
 
   clickBrowserAction(extension);
-  let browser = yield awaitExtensionPanel(extension);
+  let browser = await awaitExtensionPanel(extension);
   let panel = getPanelForNode(browser);
 
-  yield extension.unload();
+  await extension.unload();
 
   is(panel.state, "closed", "Panel should be closed");
 });
 
-add_task(function* testPageAction() {
+add_task(async function testPageAction() {
   let extension = getExtension();
-  yield extension.startup();
+  await extension.startup();
+  await extension.awaitMessage("pageAction ready");
 
   clickPageAction(extension);
-  let browser = yield awaitExtensionPanel(extension);
+  let browser = await awaitExtensionPanel(extension);
   let panel = getPanelForNode(browser);
 
-  yield extension.unload();
+  await extension.unload();
 
   is(panel.parentNode, null, "Panel should be removed from the document");
 });

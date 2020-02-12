@@ -13,42 +13,65 @@
 namespace mozilla {
 namespace dom {
 
-class HTMLHeadingElement final : public nsGenericHTMLElement
-{
-public:
-  explicit HTMLHeadingElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-    : nsGenericHTMLElement(aNodeInfo)
-  {
+class HTMLHeadingElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLHeadingElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : nsGenericHTMLElement(std::move(aNodeInfo)) {
+    MOZ_ASSERT(IsHTMLHeadingElement());
   }
 
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                              nsIAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsAttrValue& aResult) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  void SetAlign(const nsAString& aAlign, ErrorResult& aError)
-  {
+  void SetAlign(const nsAString& aAlign, ErrorResult& aError) {
     return SetHTMLAttr(nsGkAtoms::align, aAlign, aError);
   }
-  void GetAlign(DOMString& aAlign) const
-  {
+  void GetAlign(DOMString& aAlign) const {
     return GetHTMLAttr(nsGkAtoms::align, aAlign);
   }
 
-protected:
+  int32_t AccessibilityLevel() const;
+
+  int32_t BaseAccessibilityLevel() const {
+    nsAtom* name = NodeInfo()->NameAtom();
+    if (name == nsGkAtoms::h1) {
+      return 1;
+    }
+    if (name == nsGkAtoms::h2) {
+      return 2;
+    }
+    if (name == nsGkAtoms::h3) {
+      return 3;
+    }
+    if (name == nsGkAtoms::h4) {
+      return 4;
+    }
+    if (name == nsGkAtoms::h5) {
+      return 5;
+    }
+    MOZ_ASSERT(name == nsGkAtoms::h6);
+    return 6;
+  }
+
+  NS_IMPL_FROMNODE_HELPER(HTMLHeadingElement, IsHTMLHeadingElement())
+
+ protected:
   virtual ~HTMLHeadingElement();
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-private:
+ private:
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    nsRuleData* aData);
+                                    MappedDeclarations&);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_HTMLHeadingElement_h
+#endif  // mozilla_dom_HTMLHeadingElement_h

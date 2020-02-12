@@ -13,32 +13,34 @@ namespace mozilla {
 
 namespace dom {
 class ContentParent;
-} // namespace dom
+}  // namespace dom
+
+namespace ipc {
+template <class PFooSide>
+class Endpoint;
+}  // namespace ipc
 
 namespace plugins {
 
-bool
-SetupBridge(uint32_t aPluginId, dom::ContentParent* aContentParent,
-            bool aForceBridgeNow, nsresult* aResult, uint32_t* aRunID);
+class PPluginModuleParent;
 
-nsresult
-FindPluginsForContent(uint32_t aPluginEpoch,
-                      nsTArray<PluginTag>* aPlugins,
-                      uint32_t* aNewPluginEpoch);
+bool SetupBridge(uint32_t aPluginId, dom::ContentParent* aContentParent,
+                 nsresult* aResult, uint32_t* aRunID,
+                 ipc::Endpoint<PPluginModuleParent>* aEndpoint);
 
-void
-TakeFullMinidump(uint32_t aPluginId,
-                 base::ProcessId aContentProcessId,
-                 const nsAString& aBrowserDumpId,
-                 nsString& aDumpId);
+nsresult FindPluginsForContent(uint32_t aPluginEpoch,
+                               nsTArray<PluginTag>* aPlugins,
+                               nsTArray<FakePluginTag>* aFakePlugins,
+                               uint32_t* aNewPluginEpoch);
 
-void
-TerminatePlugin(uint32_t aPluginId,
-                base::ProcessId aContentProcessId,
-                const nsCString& aMonitorDescription,
-                const nsAString& aDumpId);
+void TakeFullMinidump(uint32_t aPluginId, base::ProcessId aContentProcessId,
+                      const nsAString& aBrowserDumpId, nsString& aDumpId);
 
-} // namespace plugins
-} // namespace mozilla
+void TerminatePlugin(uint32_t aPluginId, base::ProcessId aContentProcessId,
+                     const nsCString& aMonitorDescription,
+                     const nsAString& aDumpId);
 
-#endif // mozilla_plugins_PluginBridge_h
+}  // namespace plugins
+}  // namespace mozilla
+
+#endif  // mozilla_plugins_PluginBridge_h

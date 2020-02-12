@@ -4,7 +4,9 @@
 "use strict";
 
 const { L10N } = require("devtools/client/performance/modules/global");
-const { Formatters } = require("devtools/client/performance/modules/marker-formatters");
+const {
+  Formatters,
+} = require("devtools/client/performance/modules/marker-formatters");
 
 /**
  * A simple schema for mapping markers to the timeline UI. The keys correspond
@@ -28,7 +30,6 @@ const { Formatters } = require("devtools/client/performance/modules/marker-forma
  *              adding a new color, be sure to check that there's an entry
  *              for `.marker-color-graphs-{COLORNAME}` for the equivilent
  *              entry in "./devtools/client/themes/performance.css"
- *              https://developer.mozilla.org/en-US/docs/Tools/DevToolsColors
  * - collapsible: Whether or not this marker can contain other markers it
  *                eclipses, and becomes collapsible to reveal its nestable
  *                children. Defaults to true.
@@ -39,7 +40,7 @@ const TIMELINE_BLUEPRINT = {
   /* Default definition used for markers that occur but are not defined here.
    * Should ultimately be defined, but this gives us room to work on the
    * front end separately from the platform. */
-  "UNKNOWN": {
+  UNKNOWN: {
     group: 2,
     colorName: "graphs-grey",
     label: Formatters.UnknownLabel,
@@ -47,28 +48,33 @@ const TIMELINE_BLUEPRINT = {
 
   /* Group 0 - Reflow and Rendering pipeline */
 
-  "Styles": {
+  Styles: {
     group: 0,
     colorName: "graphs-purple",
     label: L10N.getStr("marker.label.styles"),
     fields: Formatters.StylesFields,
   },
-  "Reflow": {
+  StylesApplyChanges: {
+    group: 0,
+    colorName: "graphs-purple",
+    label: L10N.getStr("marker.label.stylesApplyChanges"),
+  },
+  Reflow: {
     group: 0,
     colorName: "graphs-purple",
     label: L10N.getStr("marker.label.reflow"),
   },
-  "Paint": {
+  Paint: {
     group: 0,
     colorName: "graphs-green",
     label: L10N.getStr("marker.label.paint"),
   },
-  "Composite": {
+  Composite: {
     group: 0,
     colorName: "graphs-green",
     label: L10N.getStr("marker.label.composite"),
   },
-  "CompositeForwardTransaction": {
+  CompositeForwardTransaction: {
     group: 0,
     colorName: "graphs-bluegrey",
     label: L10N.getStr("marker.label.compositeForwardTransaction"),
@@ -76,7 +82,7 @@ const TIMELINE_BLUEPRINT = {
 
   /* Group 1 - JS */
 
-  "DOMEvent": {
+  DOMEvent: {
     group: 1,
     colorName: "graphs-yellow",
     label: L10N.getStr("marker.label.domevent"),
@@ -85,18 +91,18 @@ const TIMELINE_BLUEPRINT = {
   "document::DOMContentLoaded": {
     group: 1,
     colorName: "graphs-full-red",
-    label: "DOMContentLoaded"
+    label: "DOMContentLoaded",
   },
   "document::Load": {
     group: 1,
     colorName: "graphs-full-blue",
-    label: "Load"
+    label: "Load",
   },
-  "Javascript": {
+  Javascript: {
     group: 1,
     colorName: "graphs-yellow",
     label: Formatters.JSLabel,
-    fields: Formatters.JSFields
+    fields: Formatters.JSFields,
   },
   "Parse HTML": {
     group: 1,
@@ -108,13 +114,13 @@ const TIMELINE_BLUEPRINT = {
     colorName: "graphs-yellow",
     label: L10N.getStr("marker.label.parseXML"),
   },
-  "GarbageCollection": {
+  GarbageCollection: {
     group: 1,
     colorName: "graphs-red",
     label: Formatters.GCLabel,
     fields: Formatters.GCFields,
   },
-  "MinorGC": {
+  MinorGC: {
     group: 1,
     colorName: "graphs-red",
     label: L10N.getStr("marker.label.minorGC"),
@@ -132,35 +138,39 @@ const TIMELINE_BLUEPRINT = {
     label: L10N.getStr("marker.label.cycleCollection.forgetSkippable"),
     fields: Formatters.CycleCollectionFields,
   },
-  "Worker": {
+  Worker: {
     group: 1,
     colorName: "graphs-orange",
     label: L10N.getStr("marker.label.worker"),
-    fields: Formatters.WorkerFields
+    fields: Formatters.WorkerFields,
   },
-  "MessagePort": {
+  MessagePort: {
     group: 1,
     colorName: "graphs-orange",
     label: L10N.getStr("marker.label.messagePort"),
-    fields: Formatters.MessagePortFields
+    fields: Formatters.MessagePortFields,
   },
 
   /* Group 2 - User Controlled */
 
-  "ConsoleTime": {
+  ConsoleTime: {
     group: 2,
     colorName: "graphs-blue",
-    label: Formatters.labelForProperty(L10N.getStr("marker.label.consoleTime"),
-                                       "causeName"),
+    label: Formatters.labelForProperty(
+      L10N.getStr("marker.label.consoleTime"),
+      "causeName"
+    ),
     fields: Formatters.ConsoleTimeFields,
     nestable: false,
     collapsible: false,
   },
-  "TimeStamp": {
+  TimeStamp: {
     group: 2,
     colorName: "graphs-blue",
-    label: Formatters.labelForProperty(L10N.getStr("marker.label.timestamp"),
-                                       "causeName"),
+    label: Formatters.labelForProperty(
+      L10N.getStr("marker.label.timestamp"),
+      "causeName"
+    ),
     fields: Formatters.TimeStampFields,
     collapsible: false,
   },

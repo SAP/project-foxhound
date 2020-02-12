@@ -7,15 +7,31 @@
   <head>
     <title>Test for SharedWorker</title>
   </head>
-  <body>
-    <script type="text/javascript;version=1.7">
+  <body onload="notifyOpenerLoadEvent();">
+    <script type="text/javascript">
       "use strict";
+
+      function postMessageToParentOrOpener(message) {
+        if (parent != window) {
+          parent.postMessage(message, "*");
+        }
+        if (opener) {
+          opener.postMessage(message, "*");
+        }
+      }
+
+      // Used by test_multi_sharedWorker_lifetimes.html
+      function notifyOpenerLoadEvent() {
+        if (opener) {
+          opener.postMessage({event: "load"}, "*");
+        }
+      }
 
       function debug(message) {
         if (typeof(message) != "string") {
           throw new Error("debug() only accepts strings!");
         }
-        parent.postMessage(message, "*");
+        postMessageToParentOrOpener(message);
       }
 
       let worker;
@@ -24,23 +40,23 @@
         if (!worker) {
           worker = new SharedWorker("multi_sharedWorker_sharedWorker.js",
                                     "FrameWorker");
-          worker.onerror = function(event) {
-            debug("Worker error: " + event.message);
-            event.preventDefault();
+          worker.onerror = function(error) {
+            debug("Worker error: " + error.message);
+            error.preventDefault();
 
             let data = {
               type: "error",
-              message: event.message,
-              filename: event.filename,
-              lineno: event.lineno,
-              isErrorEvent: event instanceof ErrorEvent
+              message: error.message,
+              filename: error.filename,
+              lineno: error.lineno,
+              isErrorEvent: error instanceof ErrorEvent
             };
-            parent.postMessage(data, "*");
+            postMessageToParentOrOpener(data);
           };
 
-          worker.port.onmessage = function(event) {
-            debug("Worker message: " + JSON.stringify(event.data));
-            parent.postMessage(event.data, "*");
+          worker.port.onmessage = function(msg) {
+            debug("Worker message: " + JSON.stringify(msg.data));
+            postMessageToParentOrOpener(msg.data);
           };
         }
 

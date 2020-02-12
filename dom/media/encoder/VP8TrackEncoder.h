@@ -16,73 +16,81 @@ typedef struct vpx_codec_enc_cfg vpx_codec_enc_cfg_t;
 typedef struct vpx_image vpx_image_t;
 
 /**
- * VP8TrackEncoder implements VideoTrackEncoder by using libvpx library.
- * We implement a realtime and fixed FPS encoder. In order to achieve that,
- * there is a pick target frame and drop frame encoding policy implemented in
- * GetEncodedTrack.
+ * VP8TrackEncoder implements VideoTrackEncoder by using the libvpx library.
+ * We implement a realtime and variable frame rate encoder. In order to achieve
+ * that, there is a frame-drop encoding policy implemented in GetEncodedTrack.
  */
-class VP8TrackEncoder : public VideoTrackEncoder
-{
+class VP8TrackEncoder : public VideoTrackEncoder {
   enum EncodeOperation {
-    ENCODE_NORMAL_FRAME, // VP8 track encoder works normally.
-    ENCODE_I_FRAME, // The next frame will be encoded as I-Frame.
-    SKIP_FRAME, // Skip the next frame.
+    ENCODE_NORMAL_FRAME,  // VP8 track encoder works normally.
+    ENCODE_I_FRAME,       // The next frame will be encoded as I-Frame.
+    SKIP_FRAME,           // Skip the next frame.
   };
-public:
-  explicit VP8TrackEncoder(TrackRate aTrackRate);
+
+ public:
+  VP8TrackEncoder(RefPtr<DriftCompensator> aDriftCompensator,
+                  TrackRate aTrackRate, FrameDroppingMode aFrameDroppingMode);
   virtual ~VP8TrackEncoder();
 
-  already_AddRefed<TrackMetadataBase> GetMetadata() final override;
+  already_AddRefed<TrackMetadataBase> GetMetadata() final;
 
-  nsresult GetEncodedTrack(EncodedFrameContainer& aData) final override;
+  nsresult GetEncodedTrack(nsTArray<RefPtr<EncodedFrame>>& aData) final;
 
-  void ReplyGetSourceSurface(already_AddRefed<gfx::SourceSurface> aSurf);
-protected:
-  nsresult Init(int32_t aWidth, int32_t aHeight,
-                int32_t aDisplayWidth, int32_t aDisplayHeight) final override;
+ protected:
+  nsresult Init(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
+                int32_t aDisplayHeight) final;
 
-private:
-  // Calculate the target frame's encoded duration.
-  StreamTime CalculateEncodedDuration(StreamTime aDurationCopied);
-
-  // Calculate the mRemainingTicks for next target frame.
-  StreamTime CalculateRemainingTicks(StreamTime aDurationCopied,
-                                     StreamTime aEncodedDuration);
-
+ private:
   // Get the EncodeOperation for next target frame.
   EncodeOperation GetNextEncodeOperation(TimeDuration aTimeElapsed,
-                                         StreamTime aProcessedDuration);
+                                         TrackTime aProcessedDuration);
 
   // Get the encoded data from encoder to aData.
-  // Return value: false if the vpx_codec_get_cx_data returns null
-  //               for EOS detection.
-  bool GetEncodedPartitions(EncodedFrameContainer& aData);
+  // Return value: NS_ERROR_NOT_AVAILABABLE if the vpx_codec_get_cx_data returns
+  //                                        null for EOS detection.
+  //               NS_OK if some data was appended to aData.
+  //               An error nsresult otherwise.
+  nsresult GetEncodedPartitions(nsTArray<RefPtr<EncodedFrame>>& aData);
 
   // Prepare the input data to the mVPXImageWrapper for encoding.
-  nsresult PrepareRawFrame(VideoChunk &aChunk);
+  nsresult PrepareRawFrame(VideoChunk& aChunk);
 
-  already_AddRefed<gfx::SourceSurface> GetSourceSurface(already_AddRefed<layers::Image> aImg);
+  // Re-configures an existing encoder with a new frame size.
+  nsresult Reconfigure(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
+                       int32_t aDisplayHeight);
 
-  // Output frame rate.
-  uint32_t mEncodedFrameRate;
-  // Duration for the output frame, reciprocal to mEncodedFrameRate.
-  StreamTime mEncodedFrameDuration;
+  // Destroys the context and image wrapper. Does not de-allocate the structs.
+  void Destroy();
+
+  // Helper method to set the values on a VPX configuration.
+  nsresult SetConfigurationValues(int32_t aWidth, int32_t aHeight,
+                                  int32_t aDisplayWidth, int32_t aDisplayHeight,
+                                  vpx_codec_enc_cfg_t& config);
+
   // Encoded timestamp.
-  StreamTime mEncodedTimestamp;
-  // Duration to the next encode frame.
-  StreamTime mRemainingTicks;
+  TrackTime mEncodedTimestamp = 0;
+
+  // Total duration in mTrackRate extracted by GetEncodedPartitions().
+  CheckedInt64 mExtractedDuration;
+
+  // Total duration in microseconds extracted by GetEncodedPartitions().
+  CheckedInt64 mExtractedDurationUs;
 
   // Muted frame, we only create it once.
   RefPtr<layers::Image> mMuteFrame;
 
   // I420 frame, for converting to I420.
-  nsTArray<uint8_t> mI420Frame;
+  UniquePtr<uint8_t[]> mI420Frame;
+  size_t mI420FrameSize = 0;
+
+  /**
+   * A duration of non-key frames in milliseconds.
+   */
+  TrackTime mDurationSinceLastKeyframe = 0;
 
   /**
    * A local segment queue which takes the raw data out from mRawSegment in the
-   * call of GetEncodedTrack(). Since we implement the fixed FPS encoding
-   * policy, it needs to be global in order to store the leftover segments
-   * taken from mRawSegment.
+   * call of GetEncodedTrack().
    */
   VideoSegment mSourceSegment;
 
@@ -91,9 +99,8 @@ private:
   nsAutoPtr<vpx_codec_ctx_t> mVPXContext;
   // Image Descriptor.
   nsAutoPtr<vpx_image_t> mVPXImageWrapper;
-  RefPtr<gfx::SourceSurface> mSourceSurface;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

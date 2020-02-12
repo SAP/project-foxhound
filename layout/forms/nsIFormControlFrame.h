@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,22 +8,21 @@
 #define nsIFormControlFrame_h___
 
 #include "nsQueryFrame.h"
+#include "nsStringFwd.h"
 
-class nsAString;
-class nsIAtom;
+class nsAtom;
 
-/** 
-  * nsIFormControlFrame is the common interface for frames of form controls. It
-  * provides a uniform way of creating widgets, resizing, and painting.
-  * @see nsLeafFrame and its base classes for more info
-  */
-class nsIFormControlFrame : public nsQueryFrame
-{
-public:
+/**
+ * nsIFormControlFrame is the common interface for frames of form controls. It
+ * provides a uniform way of creating widgets, resizing, and painting.
+ * @see nsLeafFrame and its base classes for more info
+ */
+class nsIFormControlFrame : public nsQueryFrame {
+ public:
   NS_DECL_QUERYFRAME_TARGET(nsIFormControlFrame)
 
   /**
-   * 
+   *
    * @param aOn
    * @param aRepaint
    */
@@ -35,8 +35,7 @@ public:
    * @param aValue value of the property
    * @returns NS_OK if the property name is valid, otherwise an error code
    */
-  virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) = 0;
+  virtual nsresult SetFormProperty(nsAtom* aName, const nsAString& aValue) = 0;
 };
 
 #endif
-

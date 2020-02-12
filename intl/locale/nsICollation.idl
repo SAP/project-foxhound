@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsILocale.idl"
+#include "nsISupports.idl"
 
 interface nsICollation;
 
@@ -11,17 +11,18 @@ interface nsICollation;
 interface nsICollationFactory : nsISupports
 {
     /**
-     * Create the collation for a given locale.
+     * Create a new collation for the current application locale.
      *
-     * Use NULL as the locale parameter to use the user's locale preference
-     * from the operating system.
-     *
-     * @param locale
-     *        The locale for which to create the collation or null to use
-     *        user preference.
-     * @return A collation for the given locale.
+     * @return A new collation.
      */
-    nsICollation CreateCollation(in nsILocale locale);
+    nsICollation CreateCollation();
+
+    /**
+     * Create a new collation for a given locale.
+     *
+     * @return A new collation.
+     */
+    nsICollation CreateCollationForLocale(in ACString locale);
 };
 
 [scriptable, uuid(b0132cc0-3786-4557-9874-910d7def5f93)]
@@ -30,10 +31,10 @@ interface nsICollation : nsISupports {
   // use the primary comparison for the given locale - no flags
   const long kCollationStrengthDefault = 0;
 
-  // do not consider case differences when doing the comparison i.e. A=a) 
+  // do not consider case differences when doing the comparison i.e. A=a)
   const long kCollationCaseInsensitiveAscii = 1;
 
-  // do not consider accent differences when doing the comparison a=á) 
+  // do not consider accent differences when doing the comparison a=á)
   const long kCollationAccentInsenstive = 2;
 
   // case sensitive collation (default)
@@ -43,7 +44,7 @@ interface nsICollation : nsISupports {
   const long kCollationCaseInSensitive = (kCollationCaseInsensitiveAscii | kCollationAccentInsenstive);
 
   // init this interface to a specified locale (should only be called by collation factory)
-  void initialize(in nsILocale locale);
+  void initialize(in ACString locale);
 
   // compare two strings
   // result is same as strcmp
@@ -51,7 +52,7 @@ interface nsICollation : nsISupports {
 
   // allocate sort key from input string
   // returns newly allocated key, and its band its byte length
-  [noscript] void allocateRawSortKey(in long strength, 
+  [noscript] void allocateRawSortKey(in long strength,
                                      in AString stringIn,
                                      [array,size_is(outLen)] out octet key,
                                      out unsigned long outLen);

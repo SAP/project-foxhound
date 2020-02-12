@@ -17,14 +17,17 @@ enum MediaKeyMessageType {
   "individualization-request"
 };
 
-[Pref="media.eme.apiVisible", Constructor(DOMString type, optional MediaKeyMessageEventInit eventInitDict)]
+[Exposed=Window]
 interface MediaKeyMessageEvent : Event {
+  [Throws]
+  constructor(DOMString type, MediaKeyMessageEventInit eventInitDict);
+
   readonly attribute MediaKeyMessageType messageType;
   [Throws]
   readonly attribute ArrayBuffer message;
 };
 
 dictionary MediaKeyMessageEventInit : EventInit {
-  MediaKeyMessageType messageType = "license-request";
-  ArrayBuffer message;
+  required MediaKeyMessageType messageType;
+  required ArrayBuffer message;
 };

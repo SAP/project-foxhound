@@ -9,6 +9,11 @@ const NUM_SLICES = root.NUM_SLICES = 10;
 let fired = false;
 let slicesFound = 0;
 
+Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
+});
+
 dbg.memory.onGarbageCollection = data => {
   fired = true;
 

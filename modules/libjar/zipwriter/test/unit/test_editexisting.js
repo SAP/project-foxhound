@@ -9,46 +9,44 @@ var TESTS = [
     name: "test.txt",
     size: 232,
     crc: 0x0373ac26,
-    time: Date.UTC(2007, 4, 1, 20, 44, 55)
+    time: Date.UTC(2007, 4, 1, 20, 44, 55),
   },
   {
     name: "test.png",
     size: 3402,
     crc: 0x504a5c30,
-    time: Date.UTC(2007, 4, 1, 20, 49, 39)
-  }
+    time: Date.UTC(2007, 4, 1, 20, 49, 39),
+  },
 ];
 var BADENTRY = "unknown.txt";
 
-function run_test()
-{
+function run_test() {
   // Copy our test zip to the tmp dir so we can modify it
   var testzip = do_get_file(DATA_DIR + "test.zip");
   testzip.copyTo(tmpDir, tmpFile.leafName);
 
-  do_check_true(tmpFile.exists());
+  Assert.ok(tmpFile.exists());
 
   zipW.open(tmpFile, PR_RDWR);
 
-  for (var i = 0; i < TESTS.length; i++) {
-    do_check_true(zipW.hasEntry(TESTS[i].name));
+  for (let i = 0; i < TESTS.length; i++) {
+    Assert.ok(zipW.hasEntry(TESTS[i].name));
     var entry = zipW.getEntry(TESTS[i].name);
-    do_check_true(entry != null);
+    Assert.ok(entry != null);
 
-    do_check_eq(entry.realSize, TESTS[i].size);
-    do_check_eq(entry.CRC32, TESTS[i].crc);
-    do_check_eq(entry.lastModifiedTime / PR_USEC_PER_MSEC, TESTS[i].time);
+    Assert.equal(entry.realSize, TESTS[i].size);
+    Assert.equal(entry.CRC32, TESTS[i].crc);
+    Assert.equal(entry.lastModifiedTime / PR_USEC_PER_MSEC, TESTS[i].time);
   }
 
   try {
     zipW.removeEntry(BADENTRY, false);
     do_throw("shouldn't be able to remove an entry that doesn't exist");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_FILE_NOT_FOUND);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_FILE_NOT_FOUND);
   }
 
-  for (var i = 0; i < TESTS.length; i++) {
+  for (let i = 0; i < TESTS.length; i++) {
     zipW.removeEntry(TESTS[i].name, false);
   }
 
@@ -58,5 +56,5 @@ function run_test()
   tmpFile = tmpFile.clone();
 
   // Empty zip file should just be the end of central directory marker
-  do_check_eq(tmpFile.fileSize, ZIP_EOCDR_HEADER_SIZE);
+  Assert.equal(tmpFile.fileSize, ZIP_EOCDR_HEADER_SIZE);
 }

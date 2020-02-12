@@ -17,54 +17,35 @@
 namespace mozilla {
 namespace dom {
 
-OSFileSystem::OSFileSystem(const nsAString& aRootDir)
-{
-  mLocalOrDeviceStorageRootPath = aRootDir;
-  mPermissionCheckType = ePermissionCheckNotRequired;
-
-#ifdef DEBUG
-  mPermission.AssignLiteral("never-used");
-#endif
+OSFileSystem::OSFileSystem(const nsAString& aRootDir) {
+  mLocalRootPath = aRootDir;
 }
 
-already_AddRefed<FileSystemBase>
-OSFileSystem::Clone()
-{
+already_AddRefed<FileSystemBase> OSFileSystem::Clone() {
   AssertIsOnOwningThread();
 
-  RefPtr<OSFileSystem> fs = new OSFileSystem(mLocalOrDeviceStorageRootPath);
-  if (mParent) {
-    fs->Init(mParent);
+  RefPtr<OSFileSystem> fs = new OSFileSystem(mLocalRootPath);
+  if (mGlobal) {
+    fs->Init(mGlobal);
   }
 
   return fs.forget();
 }
 
-void
-OSFileSystem::Init(nsISupports* aParent)
-{
+void OSFileSystem::Init(nsIGlobalObject* aGlobal) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(!mParent, "No duple Init() calls");
-  MOZ_ASSERT(aParent);
+  MOZ_ASSERT(!mGlobal, "No duple Init() calls");
+  MOZ_ASSERT(aGlobal);
 
-  mParent = aParent;
-
-#ifdef DEBUG
-  nsCOMPtr<nsIGlobalObject> obj = do_QueryInterface(aParent);
-  MOZ_ASSERT(obj);
-#endif
+  mGlobal = aGlobal;
 }
 
-nsISupports*
-OSFileSystem::GetParentObject() const
-{
+nsIGlobalObject* OSFileSystem::GetParentObject() const {
   AssertIsOnOwningThread();
-  return mParent;
+  return mGlobal;
 }
 
-bool
-OSFileSystem::IsSafeFile(nsIFile* aFile) const
-{
+bool OSFileSystem::IsSafeFile(nsIFile* aFile) const {
   // The concept of "safe files" is specific to the Device Storage API where
   // files are only "safe" if they're of a type that is appropriate for the
   // area of device storage that is being used.
@@ -72,9 +53,7 @@ OSFileSystem::IsSafeFile(nsIFile* aFile) const
   return true;
 }
 
-bool
-OSFileSystem::IsSafeDirectory(Directory* aDir) const
-{
+bool OSFileSystem::IsSafeDirectory(Directory* aDir) const {
   // The concept of "safe directory" is specific to the Device Storage API
   // where a directory is only "safe" if it belongs to the area of device
   // storage that it is being used with.
@@ -82,42 +61,30 @@ OSFileSystem::IsSafeDirectory(Directory* aDir) const
   return true;
 }
 
-void
-OSFileSystem::Unlink()
-{
+void OSFileSystem::Unlink() {
   AssertIsOnOwningThread();
-  mParent = nullptr;
+  mGlobal = nullptr;
 }
 
-void
-OSFileSystem::Traverse(nsCycleCollectionTraversalCallback &cb)
-{
+void OSFileSystem::Traverse(nsCycleCollectionTraversalCallback& cb) {
   AssertIsOnOwningThread();
 
   OSFileSystem* tmp = this;
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal);
 }
 
-void
-OSFileSystem::SerializeDOMPath(nsAString& aOutput) const
-{
+void OSFileSystem::SerializeDOMPath(nsAString& aOutput) const {
   AssertIsOnOwningThread();
-  aOutput = mLocalOrDeviceStorageRootPath;
+  aOutput = mLocalRootPath;
 }
 
 /**
  * OSFileSystemParent
  */
 
-OSFileSystemParent::OSFileSystemParent(const nsAString& aRootDir)
-{
-  mLocalOrDeviceStorageRootPath = aRootDir;
-  mPermissionCheckType = ePermissionCheckNotRequired;
-
-#ifdef DEBUG
-  mPermission.AssignLiteral("never-used");
-#endif
+OSFileSystemParent::OSFileSystemParent(const nsAString& aRootDir) {
+  mLocalRootPath = aRootDir;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

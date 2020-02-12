@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,9 +17,8 @@ namespace dom {
 class MessagePortParent;
 class SharedMessagePortMessage;
 
-class MessagePortService final
-{
-public:
+class MessagePortService final {
+ public:
   NS_INLINE_DECL_REFCOUNTING(MessagePortService)
 
   static MessagePortService* Get();
@@ -28,22 +29,21 @@ public:
                          const uint32_t& aSequenceID);
 
   bool DisentanglePort(
-                 MessagePortParent* aParent,
-                 FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
+      MessagePortParent* aParent,
+      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
 
   bool ClosePort(MessagePortParent* aParent);
 
   bool PostMessages(
-                 MessagePortParent* aParent,
-                 FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
+      MessagePortParent* aParent,
+      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
 
   void ParentDestroy(MessagePortParent* aParent);
 
-  bool ForceClose(const nsID& aUUID,
-                  const nsID& aDestinationUUID,
+  bool ForceClose(const nsID& aUUID, const nsID& aDestinationUUID,
                   const uint32_t& aSequenceID);
 
-private:
+ private:
   ~MessagePortService() {}
 
   void CloseAll(const nsID& aUUID, bool aForced = false);
@@ -54,7 +54,7 @@ private:
   nsClassHashtable<nsIDHashKey, MessagePortServiceData> mPorts;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_MessagePortService_h
+#endif  // mozilla_dom_MessagePortService_h

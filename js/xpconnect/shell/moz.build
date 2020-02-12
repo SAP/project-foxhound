@@ -6,11 +6,6 @@
 
 GeckoProgram('xpcshell', linkage='dependent')
 
-if CONFIG['COMPILE_ENVIRONMENT']:
-    SDK_FILES.bin += [
-        '!xpcshell%s' % CONFIG['BIN_SUFFIX'],
-    ]
-
 SOURCES += [
     'xpcshell.cpp',
 ]
@@ -26,7 +21,7 @@ LOCAL_INCLUDES += [
     '/toolkit/xre',
 ]
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     # Always enter a Windows program through wmain, whether or not we're
     # a console application.
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']

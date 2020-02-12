@@ -4,11 +4,12 @@
  */
 
 function check_state(aTag, aExpectedClicktoplay, aExpectedDisabled) {
-  do_check_eq(aTag.clicktoplay, aExpectedClicktoplay);
-  do_check_eq(aTag.disabled, aExpectedDisabled);
+  Assert.equal(aTag.clicktoplay, aExpectedClicktoplay);
+  Assert.equal(aTag.disabled, aExpectedDisabled);
 }
 
 function run_test() {
+  allow_all_plugins();
   let tag = get_test_plugintag();
   tag.enabledState = Ci.nsIPluginTag.STATE_ENABLED;
   check_state(tag, false, false);

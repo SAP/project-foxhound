@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -18,29 +17,35 @@ const TEST_URI = `
   Testing the color picker tooltip!
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {view} = yield openRuleView();
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { view } = await openRuleView();
 
-  let swatch = getRuleViewProperty(view, "body", "color").valueSpan
-    .querySelector(".ruleview-colorswatch");
+  const swatch = getRuleViewProperty(
+    view,
+    "body",
+    "color"
+  ).valueSpan.querySelector(".ruleview-colorswatch");
 
-  let bgImageSpan = getRuleViewProperty(view, "body", "background-image").valueSpan;
-  let uriSpan = bgImageSpan.querySelector(".theme-link");
+  const bgImageSpan = getRuleViewProperty(view, "body", "background-image")
+    .valueSpan;
+  const uriSpan = bgImageSpan.querySelector(".theme-link");
 
-  let colorPicker = view.tooltips.colorPicker;
+  const colorPicker = view.tooltips.getTooltip("colorPicker");
   info("Showing the color picker tooltip by clicking on the color swatch");
-  let onColorPickerReady = colorPicker.once("ready");
+  const onColorPickerReady = colorPicker.once("ready");
   swatch.click();
-  yield onColorPickerReady;
+  await onColorPickerReady;
 
   info("Now showing the image preview tooltip to hide the color picker");
-  let onHidden = colorPicker.tooltip.once("hidden");
+  const onHidden = colorPicker.tooltip.once("hidden");
   // Hiding the color picker refreshes the value.
-  let onRuleViewChanged = view.once("ruleview-changed");
-  yield assertHoverTooltipOn(view.tooltips.previewTooltip, uriSpan);
-  yield onHidden;
-  yield onRuleViewChanged;
+  const onRuleViewChanged = view.once("ruleview-changed");
+  const previewTooltip = await assertShowPreviewTooltip(view, uriSpan);
+  await onHidden;
+  await onRuleViewChanged;
+
+  await assertTooltipHiddenOnMouseOut(previewTooltip, uriSpan);
 
   ok(true, "The color picker closed when the image preview tooltip appeared");
 });

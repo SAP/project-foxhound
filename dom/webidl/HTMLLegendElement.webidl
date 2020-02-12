@@ -13,12 +13,15 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-legend-element
+[Exposed=Window]
 interface HTMLLegendElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   readonly attribute HTMLFormElement? form;
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLLegendElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString align;
 };

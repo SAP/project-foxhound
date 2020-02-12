@@ -8,10 +8,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
 -->
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="Mozilla Bug 434998" onload="runTest();">
-  <script type="application/javascript"
-    src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <body xmlns="http://www.w3.org/1999/xhtml">
   <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=434998"
@@ -19,7 +17,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
   <p/>
   <editor xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
           id="editor"
-          type="content-primary"
+          type="content"
+          primary="true"
           editortype="html"
           style="width: 400px; height: 100px; border: thin solid black"/>
   <p/>
@@ -42,18 +41,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
       this.mEditor = aEditor;
     },
 
-    QueryInterface : function(aIID)
-    {
-      if (aIID.equals(Components.interfaces.nsIWebProgressListener) ||
-          aIID.equals(Components.interfaces.nsISupportsWeakReference) ||
-          aIID.equals(Components.interfaces.nsISupports))
-        return this;
-      throw Components.results.NS_NOINTERFACE;
-    },
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener,
+                                            Ci.nsISupportsWeakReference]),
 
     onStateChange : function(aWebProgress, aRequest, aStateFlags, aStatus)
     {
-      if (aStateFlags & Components.interfaces.nsIWebProgressListener.STATE_STOP)
+      if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP)
       {
         var editor = this.mEditor.getEditor(this.mEditor.contentWindow);
         if (editor) {
@@ -65,7 +58,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
             threw = true;
           }
           ok(!threw, "The execCommand API should work on <xul:editor>");
-          progress.removeProgressListener(progressListener, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
+          progress.removeProgressListener(progressListener, Ci.nsIWebProgress.NOTIFY_ALL);
           SimpleTest.finish();
         }
       }
@@ -90,6 +83,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
     {
     },
 
+    onContentBlockingEvent : function(aWebProgress, aRequest, aEvent)
+    {
+    },
+
     mEditor: null
   };
 
@@ -98,10 +95,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=434998
   function runTest() {
     var newEditorElement = document.getElementById("editor");
     newEditorElement.makeEditable("html", true);
-    var docShell = newEditorElement.boxObject.docShell;
-    progress = docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIWebProgress);
+    var docShell = newEditorElement.docShell;
+    progress = docShell.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebProgress);
     progressListener = new EditorContentListener(newEditorElement);
-    progress.addProgressListener(progressListener, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
+    progress.addProgressListener(progressListener, Ci.nsIWebProgress.NOTIFY_ALL);
     newEditorElement.setAttribute("src", "data:text/html,");
   }
 ]]>

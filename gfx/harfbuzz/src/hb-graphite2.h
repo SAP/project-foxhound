@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2011  Martin Hosken
- * Copyright (C) 2011  SIL International
+ * Copyright © 2011  Martin Hosken
+ * Copyright © 2011  SIL International
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -39,8 +39,12 @@ HB_BEGIN_DECLS
 HB_EXTERN gr_face *
 hb_graphite2_face_get_gr_face (hb_face_t *face);
 
-HB_EXTERN gr_font *
+#ifndef HB_DISABLE_DEPRECATED
+
+HB_EXTERN HB_DEPRECATED_FOR (hb_graphite2_face_get_gr_face) gr_font *
 hb_graphite2_font_get_gr_font (hb_font_t *font);
+
+#endif
 
 
 HB_END_DECLS

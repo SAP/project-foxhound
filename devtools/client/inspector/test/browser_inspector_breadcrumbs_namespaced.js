@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -23,33 +22,49 @@ const XHTML = `
 const TEST_URI = "data:application/xhtml+xml;charset=utf-8," + encodeURI(XHTML);
 
 const NODES = [
-  {selector: "clipPath", nodes: ["svg:svg", "svg:clipPath"],
-    nodeName: "svg:clipPath", title: "svg:clipPath#clip"},
-  {selector: "circle", nodes: ["svg:svg", "svg:circle"],
-    nodeName: "svg:circle", title: "svg:circle"},
+  {
+    selector: "clipPath",
+    nodes: ["svg:svg", "svg:clipPath"],
+    nodeName: "svg:clipPath",
+    title: "svg:clipPath#clip",
+  },
+  {
+    selector: "circle",
+    nodes: ["svg:svg", "svg:circle"],
+    nodeName: "svg:circle",
+    title: "svg:circle",
+  },
 ];
 
-add_task(function* () {
-  let { inspector } = yield openInspectorForURL(TEST_URI);
-  let container = inspector.panelDoc.getElementById("inspector-breadcrumbs");
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URI);
+  const container = inspector.panelDoc.getElementById("inspector-breadcrumbs");
 
-  for (let node of NODES) {
+  for (const node of NODES) {
     info("Testing node " + node.selector);
 
     info("Selecting node and waiting for breadcrumbs to update");
-    let breadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-    yield selectNode(node.selector, inspector);
-    yield breadcrumbsUpdated;
+    const breadcrumbsUpdated = inspector.once("breadcrumbs-updated");
+    await selectNode(node.selector, inspector);
+    await breadcrumbsUpdated;
 
     info("Performing checks for node " + node.selector);
 
-    let checkedButton = container.querySelector("button[checked]");
+    const checkedButton = container.querySelector("button[checked]");
 
-    let labelTag = checkedButton.querySelector(".breadcrumbs-widget-item-tag");
-    is(labelTag.textContent, node.nodeName,
-      "Node " + node.selector + " has the expected tag name");
+    const labelTag = checkedButton.querySelector(
+      ".breadcrumbs-widget-item-tag"
+    );
+    is(
+      labelTag.textContent,
+      node.nodeName,
+      "Node " + node.selector + " has the expected tag name"
+    );
 
-    is(checkedButton.getAttribute("title"), node.title,
-      "Node " + node.selector + " has the expected tooltip");
+    is(
+      checkedButton.getAttribute("title"),
+      node.title,
+      "Node " + node.selector + " has the expected tooltip"
+    );
   }
 });

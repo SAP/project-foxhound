@@ -11,7 +11,6 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "SerializedLoadContext.h"
-#include "nsIOService.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/WebSocketChannel.h"
 
@@ -20,101 +19,60 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(WebSocketChannelParent,
-                  nsIWebSocketListener,
+NS_IMPL_ISUPPORTS(WebSocketChannelParent, nsIWebSocketListener,
                   nsIInterfaceRequestor)
 
-WebSocketChannelParent::WebSocketChannelParent(nsIAuthPromptProvider* aAuthProvider,
-                                               nsILoadContext* aLoadContext,
-                                               PBOverrideStatus aOverrideStatus,
-                                               uint32_t aSerial)
-  : mAuthProvider(aAuthProvider)
-  , mLoadContext(aLoadContext)
-  , mIPCOpen(true)
-  , mSerial(aSerial)
-{
+WebSocketChannelParent::WebSocketChannelParent(
+    nsIAuthPromptProvider* aAuthProvider, nsILoadContext* aLoadContext,
+    PBOverrideStatus aOverrideStatus, uint32_t aSerial)
+    : mAuthProvider(aAuthProvider),
+      mLoadContext(aLoadContext),
+      mSerial(aSerial) {
   // Websocket channels can't have a private browsing override
   MOZ_ASSERT_IF(!aLoadContext, aOverrideStatus == kPBOverride_Unset);
-  mObserver = new OfflineObserver(this);
-}
-
-WebSocketChannelParent::~WebSocketChannelParent()
-{
-  if (mObserver) {
-    mObserver->RemoveObserver();
-  }
 }
 //-----------------------------------------------------------------------------
 // WebSocketChannelParent::PWebSocketChannelParent
 //-----------------------------------------------------------------------------
 
-bool
-WebSocketChannelParent::RecvDeleteSelf()
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvDeleteSelf() {
   LOG(("WebSocketChannelParent::RecvDeleteSelf() %p\n", this));
   mChannel = nullptr;
   mAuthProvider = nullptr;
-  return mIPCOpen ? Send__delete__(this) : true;
+  IProtocol* mgr = Manager();
+  if (CanRecv() && !Send__delete__(this)) {
+    return IPC_FAIL_NO_REASON(mgr);
+  }
+  return IPC_OK();
 }
 
-bool
-WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
-                                      const nsCString& aOrigin,
-                                      const uint64_t& aInnerWindowID,
-                                      const nsCString& aProtocol,
-                                      const bool& aSecure,
-                                      const uint32_t& aPingInterval,
-                                      const bool& aClientSetPingInterval,
-                                      const uint32_t& aPingTimeout,
-                                      const bool& aClientSetPingTimeout,
-                                      const OptionalLoadInfoArgs& aLoadInfoArgs,
-                                      const OptionalTransportProvider& aTransportProvider,
-                                      const nsCString& aNegotiatedExtensions)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
+    const Maybe<URIParams>& aURI, const nsCString& aOrigin,
+    const uint64_t& aInnerWindowID, const nsCString& aProtocol,
+    const bool& aSecure, const uint32_t& aPingInterval,
+    const bool& aClientSetPingInterval, const uint32_t& aPingTimeout,
+    const bool& aClientSetPingTimeout, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+    const Maybe<PTransportProviderParent*>& aTransportProvider,
+    const nsCString& aNegotiatedExtensions) {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
 
   nsresult rv;
   nsCOMPtr<nsIURI> uri;
   nsCOMPtr<nsILoadInfo> loadInfo;
-  bool appOffline = false;
-  uint32_t appId = NECKO_NO_APP_ID;
-  NeckoOriginAttributes attrs;
 
   rv = LoadInfoArgsToLoadInfo(aLoadInfoArgs, getter_AddRefs(loadInfo));
   if (NS_FAILED(rv)) {
     goto fail;
   }
 
-  if (loadInfo) {
-    rv = loadInfo->GetOriginAttributes(&attrs);
-    if (NS_FAILED(rv)) {
-      goto fail;
-    }
-
-    appId = attrs.mAppId;
-  } else {
-    // If the WebSocket is a server-side socket, then
-    // loadInfo will be null (since it's an incoming connection).
-    // AppID is irrelevant in these circumstances.
-    appId = NECKO_UNKNOWN_APP_ID;
-  }
-  if (appId != NECKO_UNKNOWN_APP_ID &&
-      appId != NECKO_NO_APP_ID) {
-    gIOService->IsAppOffline(appId, &appOffline);
-    if (appOffline) {
-      goto fail;
-    }
-  }
-
   if (aSecure) {
     mChannel =
-      do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
+        do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
   } else {
     mChannel =
-      do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
+        do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
   }
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   rv = mChannel->SetSerial(mSerial);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -127,17 +85,14 @@ WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
   }
 
   rv = mChannel->SetNotificationCallbacks(this);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
   rv = mChannel->SetProtocol(aProtocol);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
-  if (aTransportProvider.type() != OptionalTransportProvider::Tvoid_t) {
+  if (aTransportProvider.isSome()) {
     RefPtr<TransportProviderParent> provider =
-      static_cast<TransportProviderParent*>(
-        aTransportProvider.get_PTransportProviderParent());
+        static_cast<TransportProviderParent*>(aTransportProvider.value());
     rv = mChannel->SetServerParameters(provider, aNegotiatedExtensions);
     if (NS_FAILED(rv)) {
       goto fail;
@@ -154,73 +109,71 @@ WebSocketChannelParent::RecvAsyncOpen(const OptionalURIParams& aURI,
   if (aClientSetPingInterval) {
     // IDL allows setting in seconds, so must be multiple of 1000 ms
     MOZ_ASSERT(aPingInterval >= 1000 && !(aPingInterval % 1000));
-    mChannel->SetPingInterval(aPingInterval / 1000);
+    DebugOnly<nsresult> rv = mChannel->SetPingInterval(aPingInterval / 1000);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
   if (aClientSetPingTimeout) {
     MOZ_ASSERT(aPingTimeout >= 1000 && !(aPingTimeout % 1000));
-    mChannel->SetPingTimeout(aPingTimeout / 1000);
+    DebugOnly<nsresult> rv = mChannel->SetPingTimeout(aPingTimeout / 1000);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
   rv = mChannel->AsyncOpen(uri, aOrigin, aInnerWindowID, this, nullptr);
-  if (NS_FAILED(rv))
-    goto fail;
+  if (NS_FAILED(rv)) goto fail;
 
-  return true;
+  return IPC_OK();
 
 fail:
   mChannel = nullptr;
-  return SendOnStop(rv);
+  if (!SendOnStop(rv)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
-WebSocketChannelParent::RecvClose(const uint16_t& code, const nsCString& reason)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvClose(
+    const uint16_t& code, const nsCString& reason) {
   LOG(("WebSocketChannelParent::RecvClose() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->Close(code, reason);
-    NS_ENSURE_SUCCESS(rv, true);
+    NS_ENSURE_SUCCESS(rv, IPC_OK());
   }
 
-  return true;
+  return IPC_OK();
 }
 
-bool
-WebSocketChannelParent::RecvSendMsg(const nsCString& aMsg)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendMsg(
+    const nsCString& aMsg) {
   LOG(("WebSocketChannelParent::RecvSendMsg() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->SendMsg(aMsg);
-    NS_ENSURE_SUCCESS(rv, true);
+    NS_ENSURE_SUCCESS(rv, IPC_OK());
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
-WebSocketChannelParent::RecvSendBinaryMsg(const nsCString& aMsg)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendBinaryMsg(
+    const nsCString& aMsg) {
   LOG(("WebSocketChannelParent::RecvSendBinaryMsg() %p\n", this));
   if (mChannel) {
     nsresult rv = mChannel->SendBinaryMsg(aMsg);
-    NS_ENSURE_SUCCESS(rv, true);
+    NS_ENSURE_SUCCESS(rv, IPC_OK());
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
-WebSocketChannelParent::RecvSendBinaryStream(const InputStreamParams& aStream,
-                                             const uint32_t& aLength)
-{
+mozilla::ipc::IPCResult WebSocketChannelParent::RecvSendBinaryStream(
+    const IPCStream& aStream, const uint32_t& aLength) {
   LOG(("WebSocketChannelParent::RecvSendBinaryStream() %p\n", this));
   if (mChannel) {
-    nsTArray<mozilla::ipc::FileDescriptor> fds;
-    nsCOMPtr<nsIInputStream> stream = DeserializeInputStream(aStream, fds);
+    nsCOMPtr<nsIInputStream> stream = DeserializeIPCStream(aStream);
     if (!stream) {
-      return false;
+      return IPC_FAIL_NO_REASON(this);
     }
     nsresult rv = mChannel->SendBinaryStream(stream, aLength);
-    NS_ENSURE_SUCCESS(rv, true);
+    NS_ENSURE_SUCCESS(rv, IPC_OK());
   }
-  return true;
+  return IPC_OK();
 }
 
 //-----------------------------------------------------------------------------
@@ -228,15 +181,17 @@ WebSocketChannelParent::RecvSendBinaryStream(const InputStreamParams& aStream,
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnStart(nsISupports *aContext)
-{
+WebSocketChannelParent::OnStart(nsISupports* aContext) {
   LOG(("WebSocketChannelParent::OnStart() %p\n", this));
   nsAutoCString protocol, extensions;
   nsString effectiveURL;
   bool encrypted = false;
+  uint64_t httpChannelId = 0;
   if (mChannel) {
-    mChannel->GetProtocol(protocol);
-    mChannel->GetExtensions(extensions);
+    DebugOnly<nsresult> rv = mChannel->GetProtocol(protocol);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    rv = mChannel->GetExtensions(extensions);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     RefPtr<WebSocketChannel> channel;
     channel = static_cast<WebSocketChannel*>(mChannel.get());
@@ -244,69 +199,72 @@ WebSocketChannelParent::OnStart(nsISupports *aContext)
 
     channel->GetEffectiveURL(effectiveURL);
     encrypted = channel->IsEncrypted();
+    httpChannelId = channel->HttpChannelId();
   }
-  if (!mIPCOpen || !SendOnStart(protocol, extensions, effectiveURL, encrypted)) {
+  if (!CanRecv() || !SendOnStart(protocol, extensions, effectiveURL, encrypted,
+                                 httpChannelId)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnStop(nsISupports *aContext, nsresult aStatusCode)
-{
+WebSocketChannelParent::OnStop(nsISupports* aContext, nsresult aStatusCode) {
   LOG(("WebSocketChannelParent::OnStop() %p\n", this));
-  if (!mIPCOpen || !SendOnStop(aStatusCode)) {
+  if (!CanRecv() || !SendOnStop(aStatusCode)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnMessageAvailable(nsISupports *aContext, const nsACString& aMsg)
-{
+WebSocketChannelParent::OnMessageAvailable(nsISupports* aContext,
+                                           const nsACString& aMsg) {
   LOG(("WebSocketChannelParent::OnMessageAvailable() %p\n", this));
-  if (!mIPCOpen || !SendOnMessageAvailable(nsCString(aMsg))) {
+  if (!CanRecv() || !SendOnMessageAvailable(nsCString(aMsg))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnBinaryMessageAvailable(nsISupports *aContext, const nsACString& aMsg)
-{
+WebSocketChannelParent::OnBinaryMessageAvailable(nsISupports* aContext,
+                                                 const nsACString& aMsg) {
   LOG(("WebSocketChannelParent::OnBinaryMessageAvailable() %p\n", this));
-  if (!mIPCOpen || !SendOnBinaryMessageAvailable(nsCString(aMsg))) {
+  if (!CanRecv() || !SendOnBinaryMessageAvailable(nsCString(aMsg))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnAcknowledge(nsISupports *aContext, uint32_t aSize)
-{
+WebSocketChannelParent::OnAcknowledge(nsISupports* aContext, uint32_t aSize) {
   LOG(("WebSocketChannelParent::OnAcknowledge() %p\n", this));
-  if (!mIPCOpen || !SendOnAcknowledge(aSize)) {
+  if (!CanRecv() || !SendOnAcknowledge(aSize)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
-WebSocketChannelParent::OnServerClose(nsISupports *aContext,
-                                      uint16_t code, const nsACString & reason)
-{
+WebSocketChannelParent::OnServerClose(nsISupports* aContext, uint16_t code,
+                                      const nsACString& reason) {
   LOG(("WebSocketChannelParent::OnServerClose() %p\n", this));
-  if (!mIPCOpen || !SendOnServerClose(code, nsCString(reason))) {
+  if (!CanRecv() || !SendOnServerClose(code, nsCString(reason))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
-void
-WebSocketChannelParent::ActorDestroy(ActorDestroyReason why)
-{
+void WebSocketChannelParent::ActorDestroy(ActorDestroyReason why) {
   LOG(("WebSocketChannelParent::ActorDestroy() %p\n", this));
-  mIPCOpen = false;
+
+  // Make sure we close the channel if the content process dies without going
+  // through a clean shutdown.
+  if (mChannel) {
+    Unused << mChannel->Close(nsIWebSocketChannel::CLOSE_GOING_AWAY,
+                              NS_LITERAL_CSTRING("Child was killed"));
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -314,8 +272,7 @@ WebSocketChannelParent::ActorDestroy(ActorDestroyReason why)
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-WebSocketChannelParent::GetInterface(const nsIID & iid, void **result)
-{
+WebSocketChannelParent::GetInterface(const nsIID& iid, void** result) {
   LOG(("WebSocketChannelParent::GetInterface() %p\n", this));
   if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider)))
     return mAuthProvider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL,
@@ -331,33 +288,5 @@ WebSocketChannelParent::GetInterface(const nsIID & iid, void **result)
   return QueryInterface(iid, result);
 }
 
-void
-WebSocketChannelParent::OfflineDisconnect()
-{
-  if (mChannel) {
-    mChannel->Close(nsIWebSocketChannel::CLOSE_GOING_AWAY,
-                    nsCString("App is offline"));
-  }
-}
-
-uint32_t
-WebSocketChannelParent::GetAppId()
-{
-  nsresult rv;
-
-  uint32_t appId = NECKO_UNKNOWN_APP_ID;
-  if (mChannel) {
-    nsCOMPtr<nsILoadInfo> loadInfo;
-    rv = mChannel->GetLoadInfo(getter_AddRefs(loadInfo));
-
-    if (NS_SUCCEEDED(rv) && loadInfo) {
-      NeckoOriginAttributes attrs;
-      loadInfo->GetOriginAttributes(&attrs);
-      appId = attrs.mAppId;
-    }
-  }
-  return appId;
-}
-
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla

@@ -28,15 +28,17 @@ Types = (
     'intptr_t',
     'uintptr_t',
 
-    # stddef types
-    'size_t',
-    'ssize_t',
+    # You may be tempted to add size_t. Do not! See bug 1525199.
 
     # Mozilla types: "less" standard things we know how serialize/deserialize
     'nsresult',
     'nsString',
     'nsCString',
+    'nsDependentSubstring',
+    'nsDependentCSubstring',
     'mozilla::ipc::Shmem',
+    'mozilla::ipc::ByteBuf',
+    'mozilla::UniquePtr',
     'mozilla::ipc::FileDescriptor'
 )
 
@@ -46,11 +48,12 @@ HeaderIncludes = (
     'IPCMessageStart.h',
     'ipc/IPCMessageUtils.h',
     'mozilla/RefPtr.h',
-    'nsStringGlue.h',
+    'nsString.h',
     'nsTArray.h',
     'mozilla/ipc/ProtocolUtils.h',
     'nsTHashtable.h',
     'mozilla/OperatorNewExtensions.h',
+    'mozilla/UniquePtr.h',
 )
 
 CppIncludes = (

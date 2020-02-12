@@ -4,38 +4,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "GMPDecoderModule.h"
 #include "DecoderDoctorDiagnostics.h"
-#include "GMPAudioDecoder.h"
+#include "GMPDecoderModule.h"
+#include "GMPService.h"
+#include "GMPUtils.h"
 #include "GMPVideoDecoder.h"
-#include "MediaDataDecoderProxy.h"
-#include "MediaPrefs.h"
-#include "VideoUtils.h"
-#include "mozIGeckoMediaPluginService.h"
-#include "nsServiceManagerUtils.h"
-#include "mozilla/StaticMutex.h"
-#include "gmp-audio-decode.h"
-#include "gmp-video-decode.h"
 #include "MP4Decoder.h"
+#include "MediaDataDecoderProxy.h"
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
+#include "gmp-video-decode.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "mozilla/StaticMutex.h"
+#include "nsServiceManagerUtils.h"
 #ifdef XP_WIN
-#include "WMFDecoderModule.h"
+#  include "WMFDecoderModule.h"
 #endif
 
 namespace mozilla {
 
-GMPDecoderModule::GMPDecoderModule()
-{
-}
+GMPDecoderModule::GMPDecoderModule() {}
 
-GMPDecoderModule::~GMPDecoderModule()
-{
-}
+GMPDecoderModule::~GMPDecoderModule() {}
 
-static already_AddRefed<MediaDataDecoderProxy>
-CreateDecoderWrapper(MediaDataDecoderCallback* aCallback)
-{
-  RefPtr<gmp::GeckoMediaPluginService> s(gmp::GeckoMediaPluginService::GetGeckoMediaPluginService());
+static already_AddRefed<MediaDataDecoderProxy> CreateDecoderWrapper() {
+  RefPtr<gmp::GeckoMediaPluginService> s(
+      gmp::GeckoMediaPluginService::GetGeckoMediaPluginService());
   if (!s) {
     return nullptr;
   }
@@ -43,204 +37,57 @@ CreateDecoderWrapper(MediaDataDecoderCallback* aCallback)
   if (!thread) {
     return nullptr;
   }
-  RefPtr<MediaDataDecoderProxy> decoder(new MediaDataDecoderProxy(thread.forget(), aCallback));
+  RefPtr<MediaDataDecoderProxy> decoder(
+      new MediaDataDecoderProxy(thread.forget()));
   return decoder.forget();
 }
 
-already_AddRefed<MediaDataDecoder>
-GMPDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
-{
+already_AddRefed<MediaDataDecoder> GMPDecoderModule::CreateVideoDecoder(
+    const CreateDecoderParams& aParams) {
   if (!MP4Decoder::IsH264(aParams.mConfig.mMimeType) &&
       !VPXDecoder::IsVP8(aParams.mConfig.mMimeType) &&
       !VPXDecoder::IsVP9(aParams.mConfig.mMimeType)) {
     return nullptr;
   }
 
-  if (aParams.mDiagnostics) {
-    const Maybe<nsCString> preferredGMP = PreferredGMP(aParams.mConfig.mMimeType);
-    if (preferredGMP.isSome()) {
-      aParams.mDiagnostics->SetGMP(preferredGMP.value());
-    }
-  }
-
-  RefPtr<MediaDataDecoderProxy> wrapper = CreateDecoderWrapper(aParams.mCallback);
-  auto params = GMPVideoDecoderParams(aParams).WithCallback(wrapper);
+  RefPtr<MediaDataDecoderProxy> wrapper = CreateDecoderWrapper();
+  auto params = GMPVideoDecoderParams(aParams);
   wrapper->SetProxyTarget(new GMPVideoDecoder(params));
   return wrapper.forget();
 }
 
-already_AddRefed<MediaDataDecoder>
-GMPDecoderModule::CreateAudioDecoder(const CreateDecoderParams& aParams)
-{
-  if (!aParams.mConfig.mMimeType.EqualsLiteral("audio/mp4a-latm")) {
-    return nullptr;
-  }
-
-  if (aParams.mDiagnostics) {
-    const Maybe<nsCString> preferredGMP = PreferredGMP(aParams.mConfig.mMimeType);
-    if (preferredGMP.isSome()) {
-      aParams.mDiagnostics->SetGMP(preferredGMP.value());
-    }
-  }
-
-  RefPtr<MediaDataDecoderProxy> wrapper = CreateDecoderWrapper(aParams.mCallback);
-  auto params = GMPAudioDecoderParams(aParams).WithCallback(wrapper);
-  wrapper->SetProxyTarget(new GMPAudioDecoder(params));
-  return wrapper.forget();
-}
-
-PlatformDecoderModule::ConversionRequired
-GMPDecoderModule::DecoderNeedsConversion(const TrackInfo& aConfig) const
-{
-  // GMPVideoCodecType::kGMPVideoCodecH264 specifies that encoded frames must be in AVCC format.
-  if (aConfig.IsVideo() && MP4Decoder::IsH264(aConfig.mMimeType)) {
-    return ConversionRequired::kNeedAVCC;
-  } else {
-    return ConversionRequired::kNeedNone;
-  }
-}
-
-static bool
-HasGMPFor(const nsACString& aAPI,
-          const nsACString& aCodec,
-          const nsACString& aGMP)
-{
-#ifdef XP_WIN
-  // gmp-clearkey uses WMF for decoding, so if we're using clearkey we must
-  // verify that WMF works before continuing.
-  if (aGMP.Equals(kEMEKeySystemClearkey)) {
-    RefPtr<WMFDecoderModule> pdm(new WMFDecoderModule());
-    if (aCodec.EqualsLiteral("aac") &&
-        !pdm->SupportsMimeType(NS_LITERAL_CSTRING("audio/mp4a-latm"),
-                               /* DecoderDoctorDiagnostics* */ nullptr)) {
-      return false;
-    }
-    if (aCodec.EqualsLiteral("h264") &&
-        !pdm->SupportsMimeType(NS_LITERAL_CSTRING("video/avc"),
-                               /* DecoderDoctorDiagnostics* */ nullptr)) {
-      return false;
-    }
-  }
-#endif
-  MOZ_ASSERT(NS_IsMainThread(),
-             "HasPluginForAPI must be called on the main thread");
-  nsTArray<nsCString> tags;
-  tags.AppendElement(aCodec);
-  tags.AppendElement(aGMP);
-  nsCOMPtr<mozIGeckoMediaPluginService> mps =
-    do_GetService("@mozilla.org/gecko-media-plugin-service;1");
-  if (NS_WARN_IF(!mps)) {
-    return false;
-  }
-  bool hasPlugin = false;
-  if (NS_FAILED(mps->HasPluginForAPI(aAPI, &tags, &hasPlugin))) {
-    return false;
-  }
-  return hasPlugin;
-}
-
-StaticMutex sGMPCodecsMutex;
-
-struct GMPCodecs {
-  const nsLiteralCString mKeySystem;
-  bool mHasAAC;
-  bool mHasH264;
-  bool mHasVP8;
-  bool mHasVP9;
-};
-
-static GMPCodecs sGMPCodecs[] = {
-  { kEMEKeySystemClearkey, false, false, false, false },
-  { kEMEKeySystemWidevine, false, false, false, false },
-  { kEMEKeySystemPrimetime, false, false, false, false },
-};
-
-void
-GMPDecoderModule::UpdateUsableCodecs()
-{
-  MOZ_ASSERT(NS_IsMainThread());
-
-  StaticMutexAutoLock lock(sGMPCodecsMutex);
-  for (GMPCodecs& gmp : sGMPCodecs) {
-    gmp.mHasAAC = HasGMPFor(NS_LITERAL_CSTRING(GMP_API_AUDIO_DECODER),
-                            NS_LITERAL_CSTRING("aac"),
-                            gmp.mKeySystem);
-    gmp.mHasH264 = HasGMPFor(NS_LITERAL_CSTRING(GMP_API_VIDEO_DECODER),
-                             NS_LITERAL_CSTRING("h264"),
-                             gmp.mKeySystem);
-    gmp.mHasVP8 = HasGMPFor(NS_LITERAL_CSTRING(GMP_API_VIDEO_DECODER),
-                            NS_LITERAL_CSTRING("vp8"),
-                            gmp.mKeySystem);
-    gmp.mHasVP9 = HasGMPFor(NS_LITERAL_CSTRING(GMP_API_VIDEO_DECODER),
-                            NS_LITERAL_CSTRING("vp9"),
-                            gmp.mKeySystem);
-  }
+already_AddRefed<MediaDataDecoder> GMPDecoderModule::CreateAudioDecoder(
+    const CreateDecoderParams& aParams) {
+  return nullptr;
 }
 
 /* static */
-void
-GMPDecoderModule::Init()
-{
-  MOZ_ASSERT(NS_IsMainThread());
-  // GMPService::HasPluginForAPI is main thread only, so to implement
-  // SupportsMimeType() we build a table of the codecs which each whitelisted
-  // GMP has and update it when any GMPs are removed or added at runtime.
-  UpdateUsableCodecs();
-}
-
-/* static */
-const Maybe<nsCString>
-GMPDecoderModule::PreferredGMP(const nsACString& aMimeType)
-{
-  Maybe<nsCString> rv;
-  if (aMimeType.EqualsLiteral("audio/mp4a-latm")) {
-    switch (MediaPrefs::GMPAACPreferred()) {
-      case 1: rv.emplace(kEMEKeySystemClearkey); break;
-      case 2: rv.emplace(kEMEKeySystemPrimetime); break;
-      default: break;
-    }
+bool GMPDecoderModule::SupportsMimeType(const nsACString& aMimeType,
+                                        const Maybe<nsCString>& aGMP) {
+  if (aGMP.isNothing()) {
+    return false;
   }
+
+  nsCString api = NS_LITERAL_CSTRING(CHROMIUM_CDM_API);
 
   if (MP4Decoder::IsH264(aMimeType)) {
-    switch (MediaPrefs::GMPH264Preferred()) {
-      case 1: rv.emplace(kEMEKeySystemClearkey); break;
-      case 2: rv.emplace(kEMEKeySystemPrimetime); break;
-      default: break;
-    }
+    return HaveGMPFor(api, {NS_LITERAL_CSTRING("h264"), aGMP.value()});
   }
 
-  return rv;
-}
+  if (VPXDecoder::IsVP9(aMimeType)) {
+    return HaveGMPFor(api, {NS_LITERAL_CSTRING("vp9"), aGMP.value()});
+  }
 
-/* static */
-bool
-GMPDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                   const Maybe<nsCString>& aGMP)
-{
-  StaticMutexAutoLock lock(sGMPCodecsMutex);
-  for (GMPCodecs& gmp : sGMPCodecs) {
-    if (((aMimeType.EqualsLiteral("audio/mp4a-latm") && gmp.mHasAAC) ||
-         (MP4Decoder::IsH264(aMimeType) && gmp.mHasH264) ||
-         (VPXDecoder::IsVP8(aMimeType) && gmp.mHasVP8) ||
-         (VPXDecoder::IsVP9(aMimeType) && gmp.mHasVP9)) &&
-        (aGMP.isNothing() || aGMP.value().Equals(gmp.mKeySystem))) {
-      return true;
-    }
+  if (VPXDecoder::IsVP8(aMimeType)) {
+    return HaveGMPFor(api, {NS_LITERAL_CSTRING("vp8"), aGMP.value()});
   }
 
   return false;
 }
 
-bool
-GMPDecoderModule::SupportsMimeType(const nsACString& aMimeType,
-                                   DecoderDoctorDiagnostics* aDiagnostics) const
-{
-  const Maybe<nsCString> preferredGMP = PreferredGMP(aMimeType);
-  bool rv = SupportsMimeType(aMimeType, preferredGMP);
-  if (rv && aDiagnostics && preferredGMP.isSome()) {
-    aDiagnostics->SetGMP(preferredGMP.value());
-  }
-  return rv;
+bool GMPDecoderModule::SupportsMimeType(
+    const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
+  return false;
 }
 
-} // namespace mozilla
+}  // namespace mozilla

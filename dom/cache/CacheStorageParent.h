@@ -17,31 +17,27 @@ namespace cache {
 
 class ManagerId;
 
-class CacheStorageParent final : public PCacheStorageParent
-                               , public PrincipalVerifier::Listener
-{
-public:
+class CacheStorageParent final : public PCacheStorageParent,
+                                 public PrincipalVerifier::Listener {
+  friend class PCacheStorageParent;
+
+ public:
   CacheStorageParent(PBackgroundParent* aManagingActor, Namespace aNamespace,
                      const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
   virtual ~CacheStorageParent();
 
-private:
+ private:
   // PCacheStorageParent methods
-  virtual void
-  ActorDestroy(ActorDestroyReason aReason) override;
+  virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
-  virtual PCacheOpParent*
-  AllocPCacheOpParent(const CacheOpArgs& aOpArgs) override;
+  PCacheOpParent* AllocPCacheOpParent(const CacheOpArgs& aOpArgs);
 
-  virtual bool
-  DeallocPCacheOpParent(PCacheOpParent* aActor) override;
+  bool DeallocPCacheOpParent(PCacheOpParent* aActor);
 
-  virtual bool
-  RecvPCacheOpConstructor(PCacheOpParent* actor,
-                          const CacheOpArgs& aOpArgs) override;
+  virtual mozilla::ipc::IPCResult RecvPCacheOpConstructor(
+      PCacheOpParent* actor, const CacheOpArgs& aOpArgs) override;
 
-  virtual bool
-  RecvTeardown() override;
+  mozilla::ipc::IPCResult RecvTeardown();
 
   // PrincipalVerifier::Listener methods
   virtual void OnPrincipalVerified(nsresult aRv,
@@ -53,8 +49,8 @@ private:
   RefPtr<ManagerId> mManagerId;
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_CacheStorageParent_h
+#endif  // mozilla_dom_cache_CacheStorageParent_h

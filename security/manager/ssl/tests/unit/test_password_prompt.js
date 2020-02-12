@@ -16,43 +16,48 @@ var gMockPrompter = {
   // This intentionally does not use arrow function syntax to avoid an issue
   // where in the context of the arrow function, |this != gMockPrompter| due to
   // how objects get wrapped when going across xpcom boundaries.
-  promptPassword: function(dialogTitle, text, password, checkMsg, checkValue) {
+  promptPassword(dialogTitle, text, password, checkMsg, checkValue) {
     this.numPrompts++;
-    if (this.numPrompts > 1) { // don't keep retrying a bad password
+    if (this.numPrompts > 1) {
+      // don't keep retrying a bad password
       return false;
     }
-    equal(text,
-          "Please enter the master password for the Software Security Device.",
-          "password prompt text should be as expected");
+    equal(
+      text,
+      "Please enter your master password.",
+      "password prompt text should be as expected"
+    );
     equal(checkMsg, null, "checkMsg should be null");
     ok(this.passwordToTry, "passwordToTry should be non-null");
     password.value = this.passwordToTry;
     return true;
   },
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIPrompt]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIPrompt]),
 };
 
 // Mock nsIWindowWatcher. PSM calls getNewPrompter on this to get an nsIPrompt
 // to call promptPassword. We return the mock one, above.
 var gWindowWatcher = {
   getNewPrompter: () => gMockPrompter,
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowWatcher]),
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowWatcher]),
 };
 
 function run_test() {
   do_get_profile();
 
-  let windowWatcherCID =
-    MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1",
-                           gWindowWatcher);
-  do_register_cleanup(() => {
+  let windowWatcherCID = MockRegistrar.register(
+    "@mozilla.org/embedcomp/window-watcher;1",
+    gWindowWatcher
+  );
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(windowWatcherCID);
   });
 
   // Set an initial password.
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"]
-                  .getService(Ci.nsIPK11TokenDB);
+  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
+    Ci.nsIPK11TokenDB
+  );
   let token = tokenDB.getInternalKeyToken();
   token.initPassword("hunter2");
   token.logoutSimple();
@@ -61,8 +66,9 @@ function run_test() {
   gMockPrompter.passwordToTry = "hunter2";
   // Using nsISecretDecoderRing will cause the password prompt to come up if the
   // token has a password and is logged out.
-  let sdr = Cc["@mozilla.org/security/sdr;1"]
-              .getService(Ci.nsISecretDecoderRing);
+  let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
+    Ci.nsISecretDecoderRing
+  );
   sdr.encryptString("poke");
   equal(gMockPrompter.numPrompts, 1, "should have prompted for password once");
 
@@ -72,7 +78,10 @@ function run_test() {
 
   // Try with an incorrect password.
   gMockPrompter.passwordToTry = "*******";
-  throws(() => sdr.encryptString("poke2"), /NS_ERROR_FAILURE/,
-         "logging in with the wrong password should fail");
+  throws(
+    () => sdr.encryptString("poke2"),
+    /NS_ERROR_FAILURE/,
+    "logging in with the wrong password should fail"
+  );
   equal(gMockPrompter.numPrompts, 2, "should have prompted for password twice");
 }

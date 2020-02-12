@@ -9,10 +9,8 @@
 #define GrVkFramebuffer_DEFINED
 
 #include "GrTypes.h"
-
 #include "GrVkResource.h"
-
-#include "vk/GrVkDefines.h"
+#include "vk/GrVkTypes.h"
 
 class GrVkGpu;
 class GrVkImageView;
@@ -24,10 +22,15 @@ public:
                                    int width, int height,
                                    const GrVkRenderPass* renderPass,
                                    const GrVkImageView* colorAttachment,
-                                   const GrVkImageView* resolveAttachment,
                                    const GrVkImageView* stencilAttachment);
 
     VkFramebuffer framebuffer() const { return fFramebuffer; }
+
+#ifdef SK_TRACE_VK_RESOURCES
+    void dumpInfo() const override {
+        SkDebugf("GrVkFramebuffer: %d (%d refs)\n", fFramebuffer, this->getRefCnt());
+    }
+#endif
 
 private:
     GrVkFramebuffer(VkFramebuffer framebuffer) : INHERITED(), fFramebuffer(framebuffer) {}
@@ -35,7 +38,7 @@ private:
     GrVkFramebuffer(const GrVkFramebuffer&);
     GrVkFramebuffer& operator=(const GrVkFramebuffer&);
 
-    void freeGPUData(const GrVkGpu* gpu) const override;
+    void freeGPUData(GrVkGpu* gpu) const override;
 
     VkFramebuffer  fFramebuffer;
 

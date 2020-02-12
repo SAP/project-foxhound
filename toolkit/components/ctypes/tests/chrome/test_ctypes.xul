@@ -5,25 +5,23 @@
 
 <window title="DOM Worker Threads Test"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        onload="test();">
+        onload="test();"
+        onunload="onunload();">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/chrome-harness.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/chrome-harness.js"/>
 
   <script type="application/javascript">
   <![CDATA[
-    Components.utils.import("resource://gre/modules/ctypes.jsm");
+    const {ctypes} = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
     CTYPES_TEST_LIB = ctypes.libraryName("jsctypes-test");
     CTYPES_UNICODE_LIB = ctypes.libraryName("jsctyp\u00E8s-t\u00EB\u00DFt");
 
     /*
      * input: string of the url where we are running from
-     * return: nsILocalFile
+     * return: nsIFile
      */
     function getCurrentDir(path) {
       var rootDir = getRootDirectory(window.location.href);
@@ -37,9 +35,9 @@
     }
 
     function getLocalDir(path) {
-      let dir = Components.classes["@mozilla.org/file/directory_service;1"]
-                          .getService(Components.interfaces.nsIProperties)
-                          .get("CurWorkD", Components.interfaces.nsILocalFile);
+      let dir = Cc["@mozilla.org/file/directory_service;1"]
+                  .getService(Ci.nsIProperties)
+                  .get("CurWorkD", Ci.nsIFile);
       path = location.pathname;
       path = path.slice("content/".length,
                                          -1 * "/test_ctypes.xul".length);
@@ -62,12 +60,19 @@
       let unicodeFile = path.clone();
       unicodeFile.append(CTYPES_UNICODE_LIB);
       ok(unicodeFile.exists(), "ctypes unicode test library doesn't exist!?");
-      unicodeFile.remove(false);
+
+      // Tolerate remove() failure because Firefox may have the DLL open
+      // for examination.
+      try {
+        unicodeFile.remove(false);
+      } catch (e) {}
     }
 
     function test()
     {
       SimpleTest.waitForExplicitFinish();
+
+      Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
       var dir = getCurrentDir(location.path);
       ok(dir.exists() && dir.isDirectory(), "Chrome test dir doesn't exist?!");
@@ -80,10 +85,11 @@
         SimpleTest.finish();
       }
       worker.onerror = function(event) {
-        if (event.message == "uncaught exception: 7.5 million years for that?" ||
-            event.message == "uncaught exception: Just following orders, sir!") {
+        if (event.message == "Error: 7.5 million years for that?" ||
+            event.message == "Error: Just following orders, sir!") {
           // We throw those on purpose in the worker, so ignore them.
-          return true;
+          event.preventDefault();
+          return;
         }
         ok(false, "Worker had an error: " + event.message);
         worker.terminate();
@@ -91,7 +97,12 @@
         SimpleTest.finish();
       }
 
-      worker.postMessage({dir: dir.path, os: Components.classes["@mozilla.org/xre/app-info;1"].getService(Components.interfaces.nsIXULRuntime).OS});
+      worker.postMessage({dir: dir.path, os: Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime).OS});
+    }
+
+    function onunload()
+    {
+      Services.prefs.clearUserPref("security.allow_eval_with_system_principal");
     }
 
   ]]>

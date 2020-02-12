@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 from __future__ import unicode_literals
 
 from mach.decorators import (
@@ -9,13 +10,16 @@ from mach.decorators import (
     Command,
 )
 
+
 def is_foo(cls):
     """Foo must be true"""
     return cls.foo
 
+
 def is_bar(cls):
     """Bar must be true"""
     return cls.bar
+
 
 @CommandProvider
 class ConditionsProvider(object):
@@ -33,6 +37,7 @@ class ConditionsProvider(object):
     @Command('cmd_foobar', category='testing', conditions=[is_foo, is_bar])
     def run_foobar(self):
         pass
+
 
 @CommandProvider
 class ConditionsContextProvider(object):

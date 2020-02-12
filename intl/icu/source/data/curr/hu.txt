@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/hu.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 hu{
     Currencies{
         ADP{
@@ -192,9 +186,13 @@ hu{
             "BYB",
             "Fehérorosz új rubel (1994–1999)",
         }
+        BYN{
+            "BYN",
+            "fehérorosz rubel",
+        }
         BYR{
             "BYR",
-            "fehérorosz rubel",
+            "fehérorosz rubel (2000–2016)",
         }
         BZD{
             "BZD",
@@ -227,6 +225,10 @@ hu{
         CLP{
             "CLP",
             "chilei peso",
+        }
+        CNH{
+            "CNH",
+            "kínai jüan (offshore)",
         }
         CNY{
             "CNY",
@@ -354,7 +356,7 @@ hu{
         }
         GBP{
             "GBP",
-            "brit font",
+            "angol font",
         }
         GEK{
             "GEK",
@@ -614,6 +616,10 @@ hu{
         }
         MRO{
             "MRO",
+            "mauritániai ouguiya (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "mauritániai ouguiya",
         }
         MTL{
@@ -706,15 +712,15 @@ hu{
         }
         PEI{
             "PEI",
-            "Perui inti",
+            "perui inti",
         }
         PEN{
             "PEN",
-            "perui sol nuevo",
+            "perui sol",
         }
         PES{
             "PES",
-            "Perui sol",
+            "perui sol (1863–1965)",
         }
         PGK{
             "PGK",
@@ -842,6 +848,10 @@ hu{
         }
         STD{
             "STD",
+            "São Tomé és Príncipe-i dobra (1977–2017)",
+        }
+        STN{
+            "STN",
             "São Tomé és Príncipe-i dobra",
         }
         SUR{
@@ -962,6 +972,10 @@ hu{
         }
         VEF{
             "VEF",
+            "venezuelai bolivar (2008–2018)",
+        }
+        VES{
+            "VES",
             "venezuelai bolivar",
         }
         VND{
@@ -1049,7 +1063,7 @@ hu{
             "Tesztelési pénznemkód",
         }
         XXX{
-            "XXX",
+            "¤",
             "ismeretlen pénznem",
         }
         YDD{
@@ -1110,102 +1124,31 @@ hu{
         }
     }
     Currencies%narrow{
-        AOA{"Kz"}
         ARS{"$"}
-        AUD{"$"}
-        BAM{"KM"}
-        BBD{"$"}
-        BDT{"৳"}
-        BMD{"$"}
-        BND{"$"}
-        BOB{"Bs"}
         BRL{"R$"}
-        BSD{"$"}
-        BWP{"P"}
-        BYR{"р."}
-        BZD{"$"}
-        CAD{"$"}
-        CLP{"$"}
         CNY{"¥"}
         COP{"$"}
-        CRC{"₡"}
-        CUC{"$"}
-        CUP{"$"}
-        CZK{"Kč"}
         DKK{"kr"}
-        DOP{"$"}
-        EGP{"E£"}
         EUR{"€"}
-        FJD{"$"}
-        FKP{"£"}
         GBP{"£"}
-        GIP{"£"}
-        GNF{"FG"}
-        GTQ{"Q"}
         GYD{"$"}
         HKD{"$"}
-        HNL{"L"}
         HRK{"kn"}
-        HUF{"Ft"}
-        IDR{"Rp"}
-        ILS{"₪"}
-        INR{"₹"}
         ISK{"kr"}
-        JMD{"$"}
         JPY{"¥"}
-        KHR{"៛"}
-        KMF{"CF"}
         KPW{"₩"}
         KRW{"₩"}
-        KYD{"$"}
-        KZT{"₸"}
-        LAK{"₭"}
-        LBP{"L£"}
-        LKR{"Rs"}
-        LRD{"$"}
-        MGA{"Ar"}
-        MMK{"K"}
         MNT{"₮"}
-        MUR{"Rs"}
-        MXN{"$"}
-        MYR{"RM"}
-        NAD{"$"}
-        NGN{"₦"}
-        NIO{"C$"}
         NOK{"kr"}
-        NPR{"Rs"}
-        NZD{"$"}
-        PHP{"₱"}
-        PKR{"Rs"}
         PLN{"zł"}
         PYG{"₲"}
-        RUB{"₽"}
-        RWF{"RF"}
-        SBD{"$"}
         SEK{"kr"}
-        SGD{"$"}
-        SHP{"£"}
         SRD{"$"}
-        SSP{"£"}
-        STD{"Db"}
-        SYP{"£"}
-        THB{"฿"}
-        TOP{"T$"}
-        TRY{"₺"}
-        TTD{"$"}
         TWD{"NT$"}
-        UAH{"₴"}
-        USD{"$"}
         UYU{"$"}
-        VEF{"Bs"}
-        VND{"₫"}
-        XCD{"$"}
-        ZAR{"R"}
-        ZMW{"ZK"}
     }
     Currencies%variant{
         GEL{"₾"}
-        TRY{"TL"}
     }
     CurrencyPlurals{
         ADP{
@@ -1384,9 +1327,13 @@ hu{
             one{"botswanai pula"}
             other{"botswanai pula"}
         }
-        BYR{
+        BYN{
             one{"fehérorosz rubel"}
             other{"fehérorosz rubel"}
+        }
+        BYR{
+            one{"fehérorosz rubel (2000–2016)"}
+            other{"fehérorosz rubel (2000–2016)"}
         }
         BZD{
             one{"belize-i dollár"}
@@ -1407,6 +1354,10 @@ hu{
         CLP{
             one{"chilei peso"}
             other{"chilei peso"}
+        }
+        CNH{
+            one{"kínai jüan (offshore)"}
+            other{"kínai jüan (offshore)"}
         }
         CNY{
             one{"kínai jüan"}
@@ -1477,8 +1428,8 @@ hu{
             other{"falkland-szigeteki font"}
         }
         GBP{
-            one{"brit font"}
-            other{"brit font"}
+            one{"angol font"}
+            other{"angol font"}
         }
         GEL{
             one{"grúz lari"}
@@ -1661,6 +1612,10 @@ hu{
             other{"makaói pataca"}
         }
         MRO{
+            one{"mauritániai ouguiya (1973–2017)"}
+            other{"mauritániai ouguiya (1973–2017)"}
+        }
+        MRU{
             one{"mauritániai ouguiya"}
             other{"mauritániai ouguiya"}
         }
@@ -1721,8 +1676,8 @@ hu{
             other{"panamai balboa"}
         }
         PEN{
-            one{"perui sol nuevo"}
-            other{"perui sol nuevo"}
+            one{"perui sol"}
+            other{"perui sol"}
         }
         PGK{
             one{"pápua új-guineai kina"}
@@ -1829,6 +1784,10 @@ hu{
             other{"dél-szudáni font"}
         }
         STD{
+            one{"São Tomé és Príncipe-i dobra (1977–2017)"}
+            other{"São Tomé és Príncipe-i dobra (1977–2017)"}
+        }
+        STN{
             one{"São Tomé és Príncipe-i dobra"}
             other{"São Tomé és Príncipe-i dobra"}
         }
@@ -1921,6 +1880,10 @@ hu{
             other{"Venezuelai bolivar (1871–2008)"}
         }
         VEF{
+            one{"venezuelai bolivar (2008–2018)"}
+            other{"venezuelai bolivar (2008–2018)"}
+        }
+        VES{
             one{"venezuelai bolivar"}
             other{"venezuelai bolivar"}
         }
@@ -2009,5 +1972,5 @@ hu{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.19.17"}
+    Version{"2.1.48.42"}
 }

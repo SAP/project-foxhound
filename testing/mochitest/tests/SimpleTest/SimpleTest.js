@@ -22,7 +22,7 @@ var parentRunner = null;
 // In normal test runs, the window that has a TestRunner in its parent is
 // the primary window.  In single test runs, if there is no parent and there
 // is no opener then it is the primary window.
-var isSingleTestRun = (parent == window && !opener)
+var isSingleTestRun = (parent == window && !(opener || window.arguments && window.arguments[0].SimpleTest));
 try {
   var isPrimaryTestWindow = !!parent.TestRunner || isSingleTestRun;
 } catch(e) {
@@ -39,7 +39,7 @@ try {
 // includes SimpleTest.js.
 (function() {
     function ancestor(w) {
-        return w.parent != w ? w.parent : w.opener;
+        return w.parent != w ? w.parent : w.opener || w.arguments && w.arguments[0];
     }
 
     var w = ancestor(window);
@@ -204,7 +204,7 @@ if (typeof(computedStyle) == 'undefined') {
         if (typeof(document.defaultView) == 'undefined' || document === null) {
             return undefined;
         }
-        var style = document.defaultView.getComputedStyle(elem, null);
+        var style = document.defaultView.getComputedStyle(elem);
         if (typeof(style) == 'undefined' || style === null) {
             return undefined;
         }
@@ -220,13 +220,48 @@ SimpleTest._tests = [];
 SimpleTest._stopOnLoad = true;
 SimpleTest._cleanupFunctions = [];
 SimpleTest._timeoutFunctions = [];
+SimpleTest._inChaosMode = false;
+// When using failure pattern file to filter unexpected issues,
+// SimpleTest.expected would be an array of [pattern, expected count],
+// and SimpleTest.num_failed would be an array of actual counts which
+// has the same length as SimpleTest.expected.
 SimpleTest.expected = 'pass';
 SimpleTest.num_failed = 0;
-SimpleTest._inChaosMode = false;
+
+SpecialPowers.setAsDefaultAssertHandler();
+
+function usesFailurePatterns() {
+  return Array.isArray(SimpleTest.expected);
+}
+
+/**
+ * Checks whether there is any failure pattern matches the given error
+ * message, and if found, bumps the counter of the failure pattern.
+ * Returns whether a matched failure pattern is found.
+ */
+function recordIfMatchesFailurePattern(name, diag) {
+  let index = SimpleTest.expected.findIndex(([pat, count]) => {
+    return pat == null ||
+      (typeof name == "string" && name.includes(pat)) ||
+      (typeof diag == "string" && diag.includes(pat));
+  });
+  if (index >= 0) {
+    SimpleTest.num_failed[index]++;
+    return true;
+  }
+  return false;
+}
 
 SimpleTest.setExpected = function () {
   if (parent.TestRunner) {
-    SimpleTest.expected = parent.TestRunner.expected;
+    if (!Array.isArray(parent.TestRunner.expected)) {
+      SimpleTest.expected = parent.TestRunner.expected;
+    } else {
+      // Assertions are checked by the runner.
+      SimpleTest.expected = parent.TestRunner.expected.filter(([pat]) => pat != "ASSERTION");
+      SimpleTest.num_failed = new Array(SimpleTest.expected.length);
+      SimpleTest.num_failed.fill(0);
+    }
   }
 }
 SimpleTest.setExpected();
@@ -234,8 +269,16 @@ SimpleTest.setExpected();
 /**
  * Something like assert.
 **/
-SimpleTest.ok = function (condition, name, diag) {
+SimpleTest.ok = function (condition, name) {
+    if (arguments.length > 2) {
+      const diag = "Too many arguments passed to `ok(condition, name)`";
+      SimpleTest.record(false, name, diag);
+    } else {
+      SimpleTest.record(condition, name);
+    }
+};
 
+SimpleTest.record = function (condition, name, diag, stack) {
     var test = {'result': !!condition, 'name': name, 'diag': diag};
     if (SimpleTest.expected == 'fail') {
       if (!test.result) {
@@ -244,13 +287,22 @@ SimpleTest.ok = function (condition, name, diag) {
       }
       var successInfo = {status:"FAIL", expected:"FAIL", message:"TEST-KNOWN-FAIL"};
       var failureInfo = {status:"PASS", expected:"FAIL", message:"TEST-UNEXPECTED-PASS"};
+    } else if (!test.result && usesFailurePatterns()) {
+      if (recordIfMatchesFailurePattern(name, diag)) {
+        test.result = true;
+        // Add a mark for unexpected failures suppressed by failure pattern.
+        name = '[suppressed] ' + name;
+      }
+      var successInfo = {status:"FAIL", expected:"FAIL", message:"TEST-KNOWN-FAIL"};
+      var failureInfo = {status:"FAIL", expected:"PASS", message:"TEST-UNEXPECTED-FAIL"};
     } else {
       var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
       var failureInfo = {status:"FAIL", expected:"PASS", message:"TEST-UNEXPECTED-FAIL"};
     }
 
-    var stack = null;
-    if (!condition) {
+    if (condition) {
+        stack = null;
+    } else if (!stack) {
       stack = (new Error).stack.replace(/^(.*@)http:\/\/mochi.test:8888\/tests\//gm, '    $1').split('\n');
       stack.splice(0, 1);
       stack = stack.join('\n');
@@ -267,19 +319,19 @@ SimpleTest.is = function (a, b, name) {
     // Be lazy and use Object.is til we want to test a browser without it.
     var pass = Object.is(a, b);
     var diag = pass ? "" : "got " + repr(a) + ", expected " + repr(b)
-    SimpleTest.ok(pass, name, diag);
+    SimpleTest.record(pass, name, diag);
 };
 
 SimpleTest.isfuzzy = function (a, b, epsilon, name) {
   var pass = (a >= b - epsilon) && (a <= b + epsilon);
   var diag = pass ? "" : "got " + repr(a) + ", expected " + repr(b) + " epsilon: +/- " + repr(epsilon)
-  SimpleTest.ok(pass, name, diag);
+  SimpleTest.record(pass, name, diag);
 };
 
 SimpleTest.isnot = function (a, b, name) {
     var pass = !Object.is(a, b);
     var diag = pass ? "" : "didn't expect " + repr(a) + ", but got it";
-    SimpleTest.ok(pass, name, diag);
+    SimpleTest.record(pass, name, diag);
 };
 
 /**
@@ -297,6 +349,16 @@ SimpleTest.doesThrow = function(fn, name) {
 
 SimpleTest.todo = function(condition, name, diag) {
     var test = {'result': !!condition, 'name': name, 'diag': diag, todo: true};
+    if (test.result && usesFailurePatterns() &&
+        recordIfMatchesFailurePattern(name, diag)) {
+      // Flipping the result to false so we don't get unexpected result. There
+      // is no perfect way here. A known failure can trigger unexpected pass,
+      // in which case, tagging it as KNOWN-FAIL probably makes more sense than
+      // marking it PASS.
+      test.result = false;
+      // Add a mark for unexpected failures suppressed by failure pattern.
+      name = '[suppressed] ' + name;
+    }
     var successInfo = {status:"PASS", expected:"FAIL", message:"TEST-UNEXPECTED-PASS"};
     var failureInfo = {status:"FAIL", expected:"FAIL", message:"TEST-KNOWN-FAIL"};
     SimpleTest._logResult(test, successInfo, failureInfo);
@@ -307,7 +369,7 @@ SimpleTest.todo = function(condition, name, diag) {
  * Returns the absolute URL to a test data file from where tests
  * are served. i.e. the file doesn't necessarely exists where tests
  * are executed.
- * (For b2g and android, mochitest are executed on the device, while
+ * (For android, mochitest are executed on the device, while
  * all mochitest html (and others) files are served from the test runner
  * slave)
  */
@@ -653,7 +715,7 @@ SimpleTest._pendingWaitForFocusCount = 0;
  * cannot be resolved with CPOWs). If you require the focused window,
  * you should use waitForFocus instead.
  */
-SimpleTest.promiseFocus = function *(targetWindow, expectBlankPage)
+SimpleTest.promiseFocus = function (targetWindow, expectBlankPage)
 {
     return new Promise(function (resolve, reject) {
         SimpleTest.waitForFocus(win => {
@@ -679,7 +741,7 @@ SimpleTest.promiseFocus = function *(targetWindow, expectBlankPage)
  * @param targetWindow
  *        optional window to be loaded and focused, defaults to 'window'.
  *        This may also be a <browser> element, in which case the window within
- *        that browser will be focused.
+ *        that browser will be focused. This cannot be a window CPOW.
  * @param expectBlankPage
  *        true if targetWindow.location is 'about:blank'. Defaults to false
  */
@@ -705,8 +767,8 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
 
       function focusedWindow() {
           if (isChildProcess) {
-              return Components.classes["@mozilla.org/focus-manager;1"].
-                      getService(Components.interfaces.nsIFocusManager).focusedWindow;
+              return Cc["@mozilla.org/focus-manager;1"].
+                      getService(Ci.nsIFocusManager).focusedWindow;
           }
           return SpecialPowers.focusedWindow();
       }
@@ -768,8 +830,8 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
 
           var childDesiredWindow = { };
           if (isChildProcess) {
-              var fm = Components.classes["@mozilla.org/focus-manager;1"].
-                         getService(Components.interfaces.nsIFocusManager);
+              var fm = Cc["@mozilla.org/focus-manager;1"].
+                         getService(Ci.nsIFocusManager);
               fm.getFocusedElementForWindow(desiredWindow, true, childDesiredWindow);
               childDesiredWindow = childDesiredWindow.value;
           } else {
@@ -813,10 +875,20 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
 
     // If this is a request to focus a remote child window, the request must
     // be forwarded to the child process.
-    // XXXndeakin now sure what this issue with Components.utils is about, but
-    // browser tests require the former and plain tests require the latter.
-    var Cu = Components.utils || SpecialPowers.Cu;
-    var Ci = Components.interfaces || SpecialPowers.Ci;
+    //
+    // Even if the real |Components| doesn't exist, we might shim in a simple JS
+    // placebo for compat. An easy way to differentiate this from the real thing
+    // is whether the property is read-only or not.  The real |Components|
+    // property is read-only.
+    var c = Object.getOwnPropertyDescriptor(window, 'Components');
+    var Cu, Ci;
+    if (c && c.value && !c.writable) {
+        Cu = Components.utils;
+        Ci = Components.interfaces;
+    } else {
+        Cu = SpecialPowers.Cu;
+        Ci = SpecialPowers.Ci;
+    }
 
     var browser = null;
     if (typeof(XULElement) != "undefined" &&
@@ -826,35 +898,15 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
     }
 
     var isWrapper = Cu.isCrossProcessWrapper(targetWindow);
-    if (isWrapper || (browser && browser.isRemoteBrowser)) {
-        var mustFocusSubframe = false;
-        if (isWrapper) {
-            // Look for a tabbrowser and see if targetWindow corresponds to one
-            // within that tabbrowser. If not, just return.
-            var tabBrowser = document.getElementsByTagName("tabbrowser")[0] || null;
-            browser = tabBrowser ? tabBrowser.getBrowserForContentWindow(targetWindow.top) : null;
-            if (!browser) {
-                SimpleTest.info("child process window cannot be focused");
-                return;
-            }
+    if (isWrapper) {
+        throw new Error("Can't pass CPOW to SimpleTest.focus as the content window.");
+    }
 
-            mustFocusSubframe = (targetWindow != targetWindow.top);
-        }
-
-        // If a subframe in a child process needs to be focused, first focus the
-        // parent frame, then send a WaitForFocus:FocusChild message to the child
-        // containing the subframe to focus.
+    if (browser && browser.isRemoteBrowser) {
         browser.messageManager.addMessageListener("WaitForFocus:ChildFocused", function waitTest(msg) {
-            if (mustFocusSubframe) {
-                mustFocusSubframe = false;
-                var mm = gBrowser.selectedBrowser.messageManager;
-                mm.sendAsyncMessage("WaitForFocus:FocusChild", {}, { child: targetWindow } );
-            }
-            else {
-                browser.messageManager.removeMessageListener("WaitForFocus:ChildFocused", waitTest);
-                SimpleTest._pendingWaitForFocusCount--;
-                setTimeout(callback, 0, browser ? browser.contentWindowAsCPOW : targetWindow);
-            }
+            browser.messageManager.removeMessageListener("WaitForFocus:ChildFocused", waitTest);
+            SimpleTest._pendingWaitForFocusCount--;
+            setTimeout(callback, 0, browser);
         });
 
         // Serialize the waitForFocusInner function and run it in the child process.
@@ -874,8 +926,6 @@ SimpleTest.waitForFocus = function (callback, targetWindow, expectBlankPage) {
     }
 };
 
-SimpleTest.waitForClipboard_polls = 0;
-
 /*
  * Polls the clipboard waiting for the expected value. A known value different than
  * the expected value is put on the clipboard first (and also polled for) so we
@@ -885,7 +935,7 @@ SimpleTest.waitForClipboard_polls = 0;
  *
  * @param aExpectedStringOrValidatorFn
  *        The string value that is expected to be on the clipboard or a
- *        validator function getting cripboard data and returning a bool.
+ *        validator function getting expected clipboard data and returning a bool.
  * @param aSetupFn
  *        A function responsible for setting the clipboard to the expected value,
  *        called after the known value setting succeeds.
@@ -904,19 +954,25 @@ SimpleTest.waitForClipboard_polls = 0;
  *        aExpectedStringOrValidatorFn must be null, as it won't be used.
  *        Defaults to false.
  */
-SimpleTest.__waitForClipboardMonotonicCounter = 0;
-SimpleTest.__defineGetter__("_waitForClipboardMonotonicCounter", function () {
-  return SimpleTest.__waitForClipboardMonotonicCounter++;
-});
 SimpleTest.waitForClipboard = function(aExpectedStringOrValidatorFn, aSetupFn,
                                        aSuccessFn, aFailureFn, aFlavor, aTimeout, aExpectFailure) {
-    var requestedFlavor = aFlavor || "text/unicode";
+    let promise = SimpleTest.promiseClipboardChange(aExpectedStringOrValidatorFn, aSetupFn,
+                                                    aFlavor, aTimeout, aExpectFailure);
+    promise.then(aSuccessFn).catch(aFailureFn);
+}
+
+/**
+ * Promise-oriented version of waitForClipboard.
+ */
+SimpleTest.promiseClipboardChange = async function(aExpectedStringOrValidatorFn, aSetupFn,
+                                                   aFlavor, aTimeout, aExpectFailure) {
+    let requestedFlavor = aFlavor || "text/unicode";
 
     // The known value we put on the clipboard before running aSetupFn
-    var initialVal = SimpleTest._waitForClipboardMonotonicCounter +
-                     "-waitForClipboard-known-value";
+    let initialVal = "waitForClipboard-known-value-" + Math.random();
+    let preExpectedVal = initialVal;
 
-    var inputValidatorFn;
+    let inputValidatorFn;
     if (aExpectFailure) {
         // If we expect failure, the aExpectedStringOrValidatorFn should be null
         if (aExpectedStringOrValidatorFn !== null) {
@@ -933,54 +989,43 @@ SimpleTest.waitForClipboard = function(aExpectedStringOrValidatorFn, aSetupFn,
             : aExpectedStringOrValidatorFn;
     }
 
-    var maxPolls = aTimeout ? aTimeout / 100 : 50;
+    let maxPolls = aTimeout ? aTimeout / 100 : 50;
 
-    // reset for the next use
-    function reset() {
-        SimpleTest.waitForClipboard_polls = 0;
-    }
+    async function putAndVerify(operationFn, validatorFn, flavor) {
+        await operationFn();
 
-    var lastValue;
-    function wait(validatorFn, successFn, failureFn, flavor) {
-        if (SimpleTest.waitForClipboard_polls == 0) {
-          lastValue = undefined;
+        let data;
+        for (let i = 0; i < maxPolls; i++) {
+            data = SpecialPowers.getClipboardData(flavor);
+            if (validatorFn(data)) {
+                // Don't show the success message when waiting for preExpectedVal
+                if (preExpectedVal) {
+                    preExpectedVal = null;
+                } else {
+                    SimpleTest.ok(!aExpectFailure, "Clipboard has the given value: '" + data + "'");
+                }
+
+                return data;
+            }
+
+            // Wait 100ms and check again.
+            await new Promise(resolve => { SimpleTest._originalSetTimeout.apply(window, [resolve, 100]); });
         }
 
-        if (++SimpleTest.waitForClipboard_polls > maxPolls) {
-            // Log the failure.
-            SimpleTest.ok(aExpectFailure, "Timed out while polling clipboard for pasted data");
-            dump("Got this value: " + lastValue);
-            reset();
-            failureFn();
-            return;
-        }
-
-        var data = SpecialPowers.getClipboardData(flavor);
-
-        if (validatorFn(data)) {
-            // Don't show the success message when waiting for preExpectedVal
-            if (preExpectedVal)
-                preExpectedVal = null;
-            else
-                SimpleTest.ok(!aExpectFailure, "Clipboard has the given value");
-            reset();
-            successFn();
-        } else {
-            lastValue = data;
-            SimpleTest._originalSetTimeout.apply(window, [function() { return wait(validatorFn, successFn, failureFn, flavor); }, 100]);
+        SimpleTest.ok(aExpectFailure, "Timed out while polling clipboard for pasted data, got: " + data);
+        if (!aExpectFailure) {
+          throw "failed";
         }
     }
 
     // First we wait for a known value different from the expected one.
-    var preExpectedVal = initialVal;
-    SpecialPowers.clipboardCopyString(preExpectedVal);
-    wait(function(aData) { return aData  == preExpectedVal; },
-         function() {
-           // Call the original setup fn
-           aSetupFn();
-           wait(inputValidatorFn, aSuccessFn, aFailureFn, requestedFlavor);
-         }, aFailureFn, "text/unicode");
+    await putAndVerify(function() { SpecialPowers.clipboardCopyString(preExpectedVal); },
+                       function(aData) { return aData  == preExpectedVal; },
+                       "text/unicode");
+
+    return await putAndVerify(aSetupFn, inputValidatorFn, requestedFlavor);
 }
+
 
 /**
  * Wait for a condition for a while (actually up to 3s here).
@@ -1030,7 +1075,7 @@ SimpleTest.executeSoon = function(aFunc) {
         return SpecialPowers.executeSoon(aFunc, window);
     }
     setTimeout(aFunc, 0);
-    return null;		// Avoid warning.
+    return null;   // Avoid warning.
 };
 
 SimpleTest.registerCleanupFunction = function(aFunc) {
@@ -1050,9 +1095,9 @@ SimpleTest.testInChaosMode = function() {
     SimpleTest._inChaosMode = true;
 };
 
-SimpleTest.timeout = function() {
-    for (let func of SimpleTest._timeoutFunctions) {
-        func();
+SimpleTest.timeout = async function() {
+    for (const func of SimpleTest._timeoutFunctions) {
+        await func();
     }
     SimpleTest._timeoutFunctions = [];
 }
@@ -1079,6 +1124,24 @@ SimpleTest.finish = function() {
 
         SimpleTest._logResult(test, successInfo, failureInfo);
         SimpleTest._tests.push(test);
+    } else if (usesFailurePatterns()) {
+        SimpleTest.expected.forEach(([pat, expected_count], i) => {
+            let count = SimpleTest.num_failed[i];
+            let diag;
+            if (expected_count === null && count == 0) {
+                diag = "expected some failures but got none";
+            } else if (expected_count !== null && expected_count != count) {
+                diag = `expected ${expected_count} failures but got ${count}`;
+            } else {
+                return;
+            }
+            var name = pat ? `failure pattern \`${pat}\` in this test` : "failures in this test";
+            var test = {'result': false, name, diag};
+            var successInfo = {status:"PASS", expected:"PASS", message:"TEST-PASS"};
+            var failureInfo = {status:"FAIL", expected:"PASS", message:"TEST-UNEXPECTED-FAIL"};
+            SimpleTest._logResult(test, successInfo, failureInfo);
+            SimpleTest._tests.push(test);
+        });
     }
 
     SimpleTest._timeoutFunctions = [];
@@ -1092,7 +1155,7 @@ SimpleTest.finish = function() {
         SimpleTest._inChaosMode = false;
     }
 
-    var afterCleanup = function() {
+    var afterCleanup = async function() {
         SpecialPowers.removeFiles();
 
         if (SpecialPowers.DOMWindowUtils.isTestControllingRefreshes) {
@@ -1117,27 +1180,48 @@ SimpleTest.finish = function() {
                                + "SimpleTest.waitForExplicitFinish() if you need "
                                + "it.)");
         }
+
+        let workers = await SpecialPowers.registeredServiceWorkers();
+        let promise = null;
         if (SimpleTest._expectingRegisteredServiceWorker) {
-            if (!SpecialPowers.isServiceWorkerRegistered()) {
+            if (workers.length === 0) {
                 SimpleTest.ok(false, "This test is expected to leave a service worker registered");
             }
         } else {
-            if (SpecialPowers.isServiceWorkerRegistered()) {
+            if (workers.length > 0) {
                 SimpleTest.ok(false, "This test left a service worker registered without cleaning it up");
+                for (let worker of workers) {
+                    SimpleTest.ok(false, `Left over worker: ${worker.scriptSpec} (scope: ${worker.scope})`);
+                }
+                promise = SpecialPowers.removeAllServiceWorkerData();
             }
         }
 
-        if (parentRunner) {
-            /* We're running in an iframe, and the parent has a TestRunner */
-            parentRunner.testFinished(SimpleTest._tests);
+        // If we want to wait for removeAllServiceWorkerData to finish, above,
+        // there's a small chance that spinning the event loop could cause
+        // SpecialPowers and SimpleTest to go away (e.g. if the test did
+        // document.open). promise being non-null should be rare (a test would
+        // have had to already fail by leaving a service worker around), so
+        // limit the chances of the async wait happening to that case.
+        function finish() {
+            if (parentRunner) {
+                /* We're running in an iframe, and the parent has a TestRunner */
+                parentRunner.testFinished(SimpleTest._tests);
+            }
+
+            if (!parentRunner || parentRunner.showTestReport) {
+                SpecialPowers.flushPermissions(function () {
+                  SpecialPowers.flushPrefEnv(function() {
+                    SimpleTest.showReport();
+                  });
+                });
+            }
         }
 
-        if (!parentRunner || parentRunner.showTestReport) {
-            SpecialPowers.flushPermissions(function () {
-              SpecialPowers.flushPrefEnv(function() {
-                SimpleTest.showReport();
-              });
-            });
+        if (promise) {
+            promise.then(finish);
+        } else {
+            finish();
         }
     }
 
@@ -1524,9 +1608,9 @@ SimpleTest.isDeeply = function (it, as, name) {
     var stack = [{ vals: [it, as] }];
     var seen = [];
     if ( SimpleTest._deepCheck(it, as, stack, seen)) {
-        SimpleTest.ok(true, name);
+        SimpleTest.record(true, name);
     } else {
-        SimpleTest.ok(false, name, SimpleTest._formatStack(stack));
+        SimpleTest.record(false, name, SimpleTest._formatStack(stack));
     }
 };
 
@@ -1549,6 +1633,7 @@ SimpleTest.isa = function (object, clas) {
 
 // Global symbols:
 var ok = SimpleTest.ok;
+var record = SimpleTest.record;
 var is = SimpleTest.is;
 var isfuzzy = SimpleTest.isfuzzy;
 var isnot = SimpleTest.isnot;
@@ -1578,8 +1663,9 @@ window.onerror = function simpletestOnerror(errorMsg, url, lineNumber,
     }
     if (!SimpleTest._ignoringAllUncaughtExceptions) {
         // Don't log if SimpleTest.finish() is already called, it would cause failures
-        if (!SimpleTest._alreadyFinished)
-          SimpleTest.ok(isExpected, message, error);
+        if (!SimpleTest._alreadyFinished) {
+            SimpleTest.record(isExpected, message, error);
+        }
         SimpleTest._expectingUncaughtException = false;
     } else {
         SimpleTest.todo(false, message + ": " + error);
@@ -1620,13 +1706,13 @@ function getAndroidSdk() {
         var iframe = document.documentElement.appendChild(document.createElement("iframe"));
         iframe.style.display = "none";
         var nav = iframe.contentWindow.navigator;
-        if (nav.userAgent.indexOf("Mobile") == -1 &&
-            nav.userAgent.indexOf("Tablet") == -1) {
+        if (!nav.userAgent.includes("Mobile") &&
+            !nav.userAgent.includes("Tablet")) {
             gAndroidSdk = -1;
         } else {
             // See nsSystemInfo.cpp, the getProperty('version') returns different value
-            // on each platforms, so we need to distinguish the android and B2G platform.
-            var versionString = nav.userAgent.indexOf("Android") != -1 ?
+            // on each platforms, so we need to distinguish the android platform.
+            var versionString = nav.userAgent.includes("Android") ?
                                 'version' : 'sdk_version';
             gAndroidSdk = SpecialPowers.Cc['@mozilla.org/system-info;1']
                                        .getService(SpecialPowers.Ci.nsIPropertyBag2)
@@ -1635,4 +1721,108 @@ function getAndroidSdk() {
         document.documentElement.removeChild(iframe);
     }
     return gAndroidSdk;
+}
+
+// add_task(generatorFunction):
+// Call `add_task(generatorFunction)` for each separate
+// asynchronous task in a mochitest. Tasks are run consecutively.
+// Before the first task, `SimpleTest.waitForExplicitFinish()`
+// will be called automatically, and after the last task,
+// `SimpleTest.finish()` will be called.
+var add_task = (function () {
+  // The list of tasks to run.
+  var task_list = [];
+  var run_only_this_task = null;
+
+  function isGenerator(value) {
+    return value && typeof value === "object" && typeof value.next === "function";
+  }
+
+  // The "add_task" function
+  return function (generatorFunction) {
+    if (task_list.length === 0) {
+      // This is the first time add_task has been called.
+      // First, confirm that SimpleTest is available.
+      if (!SimpleTest) {
+        throw new Error("SimpleTest not available.");
+      }
+      // Don't stop tests until asynchronous tasks are finished.
+      SimpleTest.waitForExplicitFinish();
+      // Because the client is using add_task for this set of tests,
+      // we need to spawn a "master task" that calls each task in succesion.
+      // Use setTimeout to ensure the master task runs after the client
+      // script finishes.
+      setTimeout(function nextTick() {
+        // If we are in a HTML document, we should wait for the document
+        // to be fully loaded.
+        // These checks ensure that we are in an HTML document without
+        // throwing TypeError; also I am told that readyState in XUL documents
+        // are totally bogus so we don't try to do this there.
+        if (typeof window !== "undefined" &&
+            typeof HTMLDocument !== "undefined" &&
+            window.document instanceof HTMLDocument &&
+            window.document.readyState !== "complete") {
+          setTimeout(nextTick);
+          return;
+        }
+
+        (async () => {
+          // Allow for a task to be skipped; we need only use the structured logger
+          // for this, whilst deactivating log buffering to ensure that messages
+          // are always printed to stdout.
+          function skipTask(name) {
+            let logger = parentRunner && parentRunner.structuredLogger;
+            if (!logger) {
+              info("add_task | Skipping test " + name);
+              return;
+            }
+            logger.deactivateBuffering();
+            logger.testStatus(SimpleTest._getCurrentTestURL(), name, "SKIP");
+            logger.warning("add_task | Skipping test " + name);
+            logger.activateBuffering();
+          }
+
+          // We stop the entire test file at the first exception because this
+          // may mean that the state of subsequent tests may be corrupt.
+          try {
+            for (var task of task_list) {
+              var name = task.name || "";
+              if (task.__skipMe || (run_only_this_task && task != run_only_this_task)) {
+                skipTask(name);
+                continue;
+              }
+              info("add_task | Entering test " + name);
+              let result = await task();
+              if (isGenerator(result)) {
+                ok(false, "Task returned a generator");
+              }
+              info("add_task | Leaving test " + name);
+            }
+          } catch (ex) {
+            try {
+              SimpleTest.record(false, "" + ex, "Should not throw any errors", ex.stack);
+            } catch (ex2) {
+              SimpleTest.record(false, "(The exception cannot be converted to string.)",
+                 "Should not throw any errors", ex.stack);
+            }
+          }
+          // All tasks are finished.
+          SimpleTest.finish();
+        })();
+      });
+    }
+    generatorFunction.skip = () => generatorFunction.__skipMe = true;
+    generatorFunction.only = () => run_only_this_task = generatorFunction;
+    // Add the task to the list of tasks to run after
+    // the main thread is finished.
+    task_list.push(generatorFunction);
+    return generatorFunction;
+  };
+})();
+
+
+// Request complete log when using failure patterns so that failure info
+// from infra can be useful.
+if (usesFailurePatterns()) {
+  SimpleTest.requestCompleteLog();
 }

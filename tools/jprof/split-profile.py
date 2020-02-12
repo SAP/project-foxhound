@@ -32,8 +32,10 @@
 # The input file format looks like the following:
 #
 #   poll g_main_poll
-#   GetRuleCascade CSSRuleProcessor::GetRuleCascade(nsPresContext *, nsIAtom *)
-#   RuleProcessorData RuleProcessorData::RuleProcessorData(nsPresContext *, nsIContent *, nsRuleWalker *, nsCompatibility *)
+#   GetRuleCascade CSSRuleProcessor::GetRuleCascade(nsPresContext *, nsAtom *)
+#   RuleProcessorData RuleProcessorData::RuleProcessorData
+#        (nsPresContext *, nsIContent *, nsRuleWalker *, nsCompatibility *)
+#
 #
 # From this input file, the script will construct a profile called
 # jprof-0.html that contains the whole profile, a profile called
@@ -49,6 +51,8 @@
 # jprof-0.html, are mutually exclusive.  Thus clever ordering of the
 # functions in the input file can lead to a logical splitting of the
 # profile into segments.
+
+from __future__ import absolute_import, print_function
 
 import sys
 import subprocess
@@ -67,6 +71,7 @@ for f in [jprof, splitfile]:
         sys.stderr.write("could not find file: {0}\n".format(f))
         sys.exit(1)
 
+
 def read_splits(splitfile):
     """
     Read splitfile (each line of which contains a name, a space, and
@@ -77,21 +82,23 @@ def read_splits(splitfile):
     def line_to_split(line):
         line = line.strip("\r\n")
         idx = line.index(" ")
-        return (line[0:idx], line[idx+1:])
+        return (line[0:idx], line[idx + 1:])
 
     io = open(splitfile, "r")
     result = [line_to_split(line) for line in io]
     io.close()
     return result
 
+
 splits = read_splits(splitfile)
+
 
 def generate_profile(options, destfile):
     """
     Run jprof to generate one split of the profile.
     """
     args = [jprof] + options + passthrough
-    print "Generating {0}".format(destfile)
+    print("Generating {}".format(destfile))
     destio = open(destfile, "w")
     # jprof expects the "jprof-map" file to be in its current working directory
     cwd = None
@@ -99,14 +106,16 @@ def generate_profile(options, destfile):
         if option.find("jprof-log"):
             cwd = os.path.dirname(option)
     if cwd is None:
-        raise StandardError("no jprof-log option given")
+        raise Exception("no jprof-log option given")
     process = subprocess.Popen(args, stdout=destio, cwd=cwd)
     process.wait()
     destio.close()
     if process.returncode != 0:
         os.remove(destfile)
-        sys.stderr.write("Error {0} from command:\n  {1}\n".format(process.returncode, " ".join(args)))
+        sys.stderr.write("Error {0} from command:\n  {1}\n".format(
+            process.returncode, " ".join(args)))
         sys.exit(process.returncode)
+
 
 def output_filename(number, splitname):
     """
@@ -126,6 +135,7 @@ def output_filename(number, splitname):
 
     return os.path.join(os.path.dirname(splitfile),
                         "jprof-{0}.html".format(name))
+
 
 # generate the complete profile
 generate_profile([], output_filename(0, None))

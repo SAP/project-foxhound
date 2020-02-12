@@ -1,7 +1,6 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
-enableSPSProfiling();
+enableGeckoProfiling();
 oomTest(() => {
     try {
         for (var quit of oomTest.gcparam("//").ArrayBuffer(1)) {}

@@ -5,8 +5,5 @@
 function testBody() {
   // Check that we properly implement whatever behavior is specified by the
   // default profile for this configuration.
-  checkWatchdog(isWatchdogEnabled(), continueTest);
-  yield;
-  do_test_finished();
-  yield;
+  return checkWatchdog(isWatchdogEnabled());
 }

@@ -16,6 +16,8 @@
  */
 class GrGpuResource::ResourcePriv {
 public:
+    SkDEBUGCODE(bool hasPendingIO_debugOnly() const { return fResource->internalHasPendingIO(); })
+
     /**
      * Sets a unique key for the resource. If the resource was previously cached as scratch it will
      * be converted to a uniquely-keyed resource. If the key is invalid then this is equivalent to
@@ -41,18 +43,19 @@ public:
     void makeUnbudgeted() { fResource->makeUnbudgeted(); }
 
     /**
-     * Does the resource count against the resource budget?
+     * Get the resource's budgeted-type which indicates whether it counts against the resource cache
+     * budget and if not whether it is allowed to be cached.
      */
-    SkBudgeted isBudgeted() const {
-        bool ret = GrGpuResource::kCached_LifeCycle == fResource->fLifeCycle;
-        SkASSERT(ret || !fResource->getUniqueKey().isValid());
-        return SkBudgeted(ret);
+    GrBudgetedType budgetedType() const {
+        SkASSERT(GrBudgetedType::kBudgeted == fResource->fBudgetedType ||
+                 !fResource->getUniqueKey().isValid() || fResource->fRefsWrappedObjects);
+        return fResource->fBudgetedType;
     }
 
     /**
      * Is the resource object wrapping an externally allocated GPU resource?
      */
-    bool isExternal() const { return fResource->isExternal(); }
+    bool refsWrappedObjects() const { return fResource->fRefsWrappedObjects; }
 
     /**
      * If this resource can be used as a scratch resource this returns a valid scratch key.
@@ -66,6 +69,10 @@ public:
      * at resource creation time, this means the resource will never again be used as scratch.
      */
     void removeScratchKey() const { fResource->removeScratchKey();  }
+
+    bool isPurgeable() const { return fResource->isPurgeable(); }
+
+    bool hasRefOrPendingIO() const { return fResource->hasRefOrPendingIO(); }
 
 protected:
     ResourcePriv(GrGpuResource* resource) : fResource(resource) {   }

@@ -8,37 +8,58 @@
  * when loaded directly from an HTML page.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CYRILLIC_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CYRILLIC_URL);
   info("Starting test... ");
 
-  let { document, EVENTS, Editor, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
-
-  RequestsMenu.lazyUpdate = false;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const { getDisplayedRequests, getSortedRequests } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
 
   let wait = waitForNetworkEvents(monitor, 1);
   tab.linkedBrowser.reload();
-  yield wait;
+  await wait;
 
-  verifyRequestItemTarget(RequestsMenu.getItemAtIndex(0),
-    "GET", CYRILLIC_URL, {
+  const requestItem = document.querySelectorAll(".request-list-item")[0];
+  const requestsListStatus = requestItem.querySelector(".status-code");
+  requestItem.scrollIntoView();
+  EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+  await waitUntil(() => requestsListStatus.title);
+
+  verifyRequestItemTarget(
+    document,
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
+    "GET",
+    CYRILLIC_URL,
+    {
       status: 200,
-      statusText: "OK"
-    });
+      statusText: "OK",
+    }
+  );
 
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.getElementById("details-pane-toggle"));
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll("#details-pane tab")[3]);
+  wait = waitForDOM(document, "#headers-panel");
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
+  await wait;
+  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#response-tab")
+  );
+  await wait;
 
-  yield monitor.panelWin.once(EVENTS.RESPONSE_BODY_DISPLAYED);
-  let editor = yield NetMonitorView.editor("#response-content-textarea");
-  // u044F = я
-  is(editor.getText().indexOf("\u044F"), 486,
-    "The text shown in the source editor is correct.");
-  is(editor.getMode(), Editor.modes.html,
-    "The mode active in the source editor is correct.");
+  // CodeMirror will only load lines currently in view to the DOM. getValue()
+  // retrieves all lines pending render after a user begins scrolling.
+  const text = document.querySelector(".CodeMirror").CodeMirror.getValue();
+
+  ok(
+    text.includes("\u0411\u0440\u0430\u0442\u0430\u043d"),
+    "The text shown in the source editor is correct."
+  );
 
   return teardown(monitor);
 });

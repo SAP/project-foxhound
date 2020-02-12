@@ -15,9 +15,8 @@ class mozIStorageRow;
 namespace mozilla {
 namespace storage {
 
-class ResultSet final : public mozIStorageResultSet
-{
-public:
+class ResultSet final : public mozIStorageResultSet {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_MOZISTORAGERESULTSET
 
@@ -26,14 +25,14 @@ public:
   /**
    * Adds a tuple to this result set.
    */
-  nsresult add(mozIStorageRow *aTuple);
+  nsresult add(mozIStorageRow* aTuple);
 
   /**
    * @returns the number of rows this result set holds.
    */
   int32_t rows() const { return mData.Count(); }
 
-private:
+ private:
   ~ResultSet();
 
   /**
@@ -47,7 +46,7 @@ private:
   nsCOMArray<mozIStorageRow> mData;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // mozStorageResultSet_h
+#endif  // mozStorageResultSet_h

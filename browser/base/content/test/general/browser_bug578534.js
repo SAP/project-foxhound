@@ -2,27 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-function test() {
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
+add_task(async function test() {
   let uriString = "http://example.com/";
   let cookieBehavior = "network.cookie.cookieBehavior";
-  let uriObj = Services.io.newURI(uriString, null, null)
-  let cp = Components.classes["@mozilla.org/cookie/permission;1"]
-                     .getService(Components.interfaces.nsICookiePermission);
 
-  Services.prefs.setIntPref(cookieBehavior, 2);
+  await SpecialPowers.pushPrefEnv({ set: [[cookieBehavior, 2]] });
+  PermissionTestUtils.add(uriString, "cookie", Services.perms.ALLOW_ACTION);
 
-  cp.setAccess(uriObj, cp.ACCESS_ALLOW);
-  gBrowser.selectedTab = gBrowser.addTab(uriString);
-  waitForExplicitFinish();
-  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(onTabLoaded);
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: uriString },
+    async function(browser) {
+      await ContentTask.spawn(browser, null, function() {
+        is(
+          content.navigator.cookieEnabled,
+          true,
+          "navigator.cookieEnabled should be true"
+        );
+      });
+    }
+  );
 
-  function onTabLoaded() {
-    is(gBrowser.selectedBrowser.contentWindow.navigator.cookieEnabled, true,
-       "navigator.cookieEnabled should be true");
-    // Clean up
-    gBrowser.removeTab(gBrowser.selectedTab);
-    Services.prefs.setIntPref(cookieBehavior, 0);
-    cp.setAccess(uriObj, cp.ACCESS_DEFAULT);
-    finish();
-  }
-}
+  PermissionTestUtils.add(uriString, "cookie", Services.perms.UNKNOWN_ACTION);
+});

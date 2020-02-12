@@ -5,13 +5,13 @@
 
 var testGenerator = testSteps();
 
-function testSteps() {
-  const dbName = this.window ?
-                 window.location.pathname :
-                 "test_transaction_error";
+function* testSteps() {
+  const dbName = this.window
+    ? window.location.pathname
+    : "test_transaction_error";
   const dbVersion = 1;
   const objectStoreName = "foo";
-  const data = { };
+  const data = {};
   const dataKey = 1;
   const expectedError = "ConstraintError";
 
@@ -59,8 +59,11 @@ function testSteps() {
   is(event.type, "error", "Got an error event");
   is(event.target, request, "Error event targeted request");
   is(event.currentTarget, request, "Got request error first");
-  is(event.currentTarget.error.name, expectedError,
-     "Request has correct error");
+  is(
+    event.currentTarget.error.name,
+    expectedError,
+    "Request has correct error"
+  );
   event.preventDefault();
 
   event = yield undefined;
@@ -74,8 +77,11 @@ function testSteps() {
 
   is(event.type, "complete", "Got a complete event");
   is(event.target, transaction, "Complete event targeted transaction");
-  is(event.currentTarget, transaction,
-     "Complete event only targeted transaction");
+  is(
+    event.currentTarget,
+    transaction,
+    "Complete event only targeted transaction"
+  );
   is(event.currentTarget.error, null, "Transaction has null error");
 
   // Try again without preventDefault().
@@ -88,22 +94,6 @@ function testSteps() {
 
   info("Adding duplicate entry without preventDefault()");
 
-  if ("SimpleTest" in this) {
-    SimpleTest.expectUncaughtException();
-  } else if ("DedicatedWorkerGlobalScope" in self &&
-             self instanceof DedicatedWorkerGlobalScope) {
-    let oldErrorFunction = self.onerror;
-    self.onerror = function(message, file, line) {
-      self.onerror = oldErrorFunction;
-      oldErrorFunction = null;
-
-      is(message,
-        "ConstraintError",
-        "Got expected ConstraintError on DedicatedWorkerGlobalScope");
-      return true;
-    };
-  }
-
   request = objectStore.add(data, dataKey);
   request.onsuccess = unexpectedSuccessHandler;
   request.onerror = grabEventAndContinueHandler;
@@ -112,8 +102,11 @@ function testSteps() {
   is(event.type, "error", "Got an error event");
   is(event.target, request, "Error event targeted request");
   is(event.currentTarget, request, "Got request error first");
-  is(event.currentTarget.error.name, expectedError,
-     "Request has correct error");
+  is(
+    event.currentTarget.error.name,
+    expectedError,
+    "Request has correct error"
+  );
 
   event = yield undefined;
 
@@ -126,11 +119,12 @@ function testSteps() {
 
   is(event.type, "abort", "Got an abort event");
   is(event.target, transaction, "Abort event targeted transaction");
-  is(event.currentTarget, transaction,
-     "Abort event only targeted transaction");
-  is(event.currentTarget.error.name, expectedError,
-     "Transaction has correct error");
+  is(event.currentTarget, transaction, "Abort event only targeted transaction");
+  is(
+    event.currentTarget.error.name,
+    expectedError,
+    "Transaction has correct error"
+  );
 
   finishTest();
-  yield undefined;
 }

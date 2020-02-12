@@ -7,59 +7,46 @@
 #ifndef mozilla_dom_NodeInfoInlines_h___
 #define mozilla_dom_NodeInfoInlines_h___
 
-#include "nsIAtom.h"
-#include "nsIDOMNode.h"
+#include "nsAtom.h"
+#include "nsINode.h"
 #include "nsDOMString.h"
 #include "nsGkAtoms.h"
 
 namespace mozilla {
 namespace dom {
 
-inline bool
-NodeInfo::Equals(NodeInfo *aNodeInfo) const
-{
-  return aNodeInfo == this || aNodeInfo->Equals(mInner.mName, mInner.mPrefix,
-                                                mInner.mNamespaceID);
+inline bool NodeInfo::Equals(NodeInfo* aNodeInfo) const {
+  return aNodeInfo == this ||
+         aNodeInfo->Equals(mInner.mName, mInner.mPrefix, mInner.mNamespaceID);
 }
 
-inline bool
-NodeInfo::NameAndNamespaceEquals(NodeInfo *aNodeInfo) const
-{
-  return aNodeInfo == this || aNodeInfo->Equals(mInner.mName,
-                                                mInner.mNamespaceID);
+inline bool NodeInfo::NameAndNamespaceEquals(NodeInfo* aNodeInfo) const {
+  return aNodeInfo == this ||
+         aNodeInfo->Equals(mInner.mName, mInner.mNamespaceID);
 }
 
-inline bool
-NodeInfo::Equals(const nsAString& aName) const
-{
+inline bool NodeInfo::Equals(const nsAString& aName) const {
   return mInner.mName->Equals(aName);
 }
 
-inline bool
-NodeInfo::Equals(const nsAString& aName, const nsAString& aPrefix) const
-{
+inline bool NodeInfo::Equals(const nsAString& aName,
+                             const nsAString& aPrefix) const {
   return mInner.mName->Equals(aName) &&
-    (mInner.mPrefix ? mInner.mPrefix->Equals(aPrefix) : aPrefix.IsEmpty());
+         (mInner.mPrefix ? mInner.mPrefix->Equals(aPrefix) : aPrefix.IsEmpty());
 }
 
-inline bool
-NodeInfo::Equals(const nsAString& aName, int32_t aNamespaceID) const
-{
-  return mInner.mNamespaceID == aNamespaceID &&
-    mInner.mName->Equals(aName);
+inline bool NodeInfo::Equals(const nsAString& aName,
+                             int32_t aNamespaceID) const {
+  return mInner.mNamespaceID == aNamespaceID && mInner.mName->Equals(aName);
 }
 
-inline bool
-NodeInfo::Equals(const nsAString& aName, const nsAString& aPrefix,
-                 int32_t aNamespaceID) const
-{
+inline bool NodeInfo::Equals(const nsAString& aName, const nsAString& aPrefix,
+                             int32_t aNamespaceID) const {
   return mInner.mName->Equals(aName) && mInner.mNamespaceID == aNamespaceID &&
-    (mInner.mPrefix ? mInner.mPrefix->Equals(aPrefix) : aPrefix.IsEmpty());
+         (mInner.mPrefix ? mInner.mPrefix->Equals(aPrefix) : aPrefix.IsEmpty());
 }
 
-inline bool
-NodeInfo::QualifiedNameEquals(nsIAtom* aNameAtom) const
-{
+inline bool NodeInfo::QualifiedNameEquals(const nsAtom* aNameAtom) const {
   MOZ_ASSERT(aNameAtom, "Must have name atom");
   if (!GetPrefixAtom()) {
     return Equals(aNameAtom);
@@ -68,48 +55,44 @@ NodeInfo::QualifiedNameEquals(nsIAtom* aNameAtom) const
   return aNameAtom->Equals(mQualifiedName);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-inline void
-CheckValidNodeInfo(uint16_t aNodeType, nsIAtom *aName, int32_t aNamespaceID,
-                   nsIAtom* aExtraName)
-{
-  MOZ_ASSERT(aNodeType == nsIDOMNode::ELEMENT_NODE ||
-             aNodeType == nsIDOMNode::ATTRIBUTE_NODE ||
-             aNodeType == nsIDOMNode::TEXT_NODE ||
-             aNodeType == nsIDOMNode::CDATA_SECTION_NODE ||
-             aNodeType == nsIDOMNode::PROCESSING_INSTRUCTION_NODE ||
-             aNodeType == nsIDOMNode::COMMENT_NODE ||
-             aNodeType == nsIDOMNode::DOCUMENT_NODE ||
-             aNodeType == nsIDOMNode::DOCUMENT_TYPE_NODE ||
-             aNodeType == nsIDOMNode::DOCUMENT_FRAGMENT_NODE ||
-             aNodeType == UINT16_MAX,
+inline void CheckValidNodeInfo(uint16_t aNodeType, const nsAtom* aName,
+                               int32_t aNamespaceID, const nsAtom* aExtraName) {
+  MOZ_ASSERT(aNodeType == nsINode::ELEMENT_NODE ||
+                 aNodeType == nsINode::ATTRIBUTE_NODE ||
+                 aNodeType == nsINode::TEXT_NODE ||
+                 aNodeType == nsINode::CDATA_SECTION_NODE ||
+                 aNodeType == nsINode::PROCESSING_INSTRUCTION_NODE ||
+                 aNodeType == nsINode::COMMENT_NODE ||
+                 aNodeType == nsINode::DOCUMENT_NODE ||
+                 aNodeType == nsINode::DOCUMENT_TYPE_NODE ||
+                 aNodeType == nsINode::DOCUMENT_FRAGMENT_NODE ||
+                 aNodeType == UINT16_MAX,
              "Invalid nodeType");
-  MOZ_ASSERT((aNodeType == nsIDOMNode::PROCESSING_INSTRUCTION_NODE ||
-              aNodeType == nsIDOMNode::DOCUMENT_TYPE_NODE) ==
-             !!aExtraName,
+  MOZ_ASSERT((aNodeType == nsINode::PROCESSING_INSTRUCTION_NODE ||
+              aNodeType == nsINode::DOCUMENT_TYPE_NODE) == !!aExtraName,
              "Supply aExtraName for and only for PIs and doctypes");
-  MOZ_ASSERT(aNodeType == nsIDOMNode::ELEMENT_NODE ||
-             aNodeType == nsIDOMNode::ATTRIBUTE_NODE ||
-             aNodeType == UINT16_MAX ||
-             aNamespaceID == kNameSpaceID_None,
+  MOZ_ASSERT(aNodeType == nsINode::ELEMENT_NODE ||
+                 aNodeType == nsINode::ATTRIBUTE_NODE ||
+                 aNodeType == UINT16_MAX || aNamespaceID == kNameSpaceID_None,
              "Only attributes and elements can be in a namespace");
   MOZ_ASSERT(aName && aName != nsGkAtoms::_empty, "Invalid localName");
-  MOZ_ASSERT(((aNodeType == nsIDOMNode::TEXT_NODE) ==
+  MOZ_ASSERT(((aNodeType == nsINode::TEXT_NODE) ==
               (aName == nsGkAtoms::textTagName)) &&
-             ((aNodeType == nsIDOMNode::CDATA_SECTION_NODE) ==
-              (aName == nsGkAtoms::cdataTagName)) &&
-             ((aNodeType == nsIDOMNode::COMMENT_NODE) ==
-              (aName == nsGkAtoms::commentTagName)) &&
-             ((aNodeType == nsIDOMNode::DOCUMENT_NODE) ==
-              (aName == nsGkAtoms::documentNodeName)) &&
-             ((aNodeType == nsIDOMNode::DOCUMENT_FRAGMENT_NODE) ==
-              (aName == nsGkAtoms::documentFragmentNodeName)) &&
-             ((aNodeType == nsIDOMNode::DOCUMENT_TYPE_NODE) ==
-              (aName == nsGkAtoms::documentTypeNodeName)) &&
-             ((aNodeType == nsIDOMNode::PROCESSING_INSTRUCTION_NODE) ==
-              (aName == nsGkAtoms::processingInstructionTagName)),
+                 ((aNodeType == nsINode::CDATA_SECTION_NODE) ==
+                  (aName == nsGkAtoms::cdataTagName)) &&
+                 ((aNodeType == nsINode::COMMENT_NODE) ==
+                  (aName == nsGkAtoms::commentTagName)) &&
+                 ((aNodeType == nsINode::DOCUMENT_NODE) ==
+                  (aName == nsGkAtoms::documentNodeName)) &&
+                 ((aNodeType == nsINode::DOCUMENT_FRAGMENT_NODE) ==
+                  (aName == nsGkAtoms::documentFragmentNodeName)) &&
+                 ((aNodeType == nsINode::DOCUMENT_TYPE_NODE) ==
+                  (aName == nsGkAtoms::documentTypeNodeName)) &&
+                 ((aNodeType == nsINode::PROCESSING_INSTRUCTION_NODE) ==
+                  (aName == nsGkAtoms::processingInstructionTagName)),
              "Wrong localName for nodeType");
 }
 

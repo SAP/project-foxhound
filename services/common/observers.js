@@ -2,14 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Observers"];
+var EXPORTED_SYMBOLS = ["Observers"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * A service for adding, removing and notifying observers of notifications.
@@ -17,7 +12,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
  *
  * @version 0.2
  */
-this.Observers = {
+var Observers = {
   /**
    * Register the given callback as an observer of the given topic.
    *
@@ -33,10 +28,10 @@ this.Observers = {
    *
    * @returns the observer
    */
-  add: function(topic, callback, thisObject) {
+  add(topic, callback, thisObject) {
     let observer = new Observer(topic, callback, thisObject);
     this._cache.push(observer);
-    this._service.addObserver(observer, topic, true);
+    Services.obs.addObserver(observer, topic, true);
 
     return observer;
   },
@@ -53,17 +48,20 @@ this.Observers = {
    * @param thisObject  {Object}  [optional]
    *        the object being used as |this| when calling a Function callback
    */
-  remove: function(topic, callback, thisObject) {
+  remove(topic, callback, thisObject) {
     // This seems fairly inefficient, but I'm not sure how much better
     // we can make it.  We could index by topic, but we can't index by callback
     // or thisObject, as far as I know, since the keys to JavaScript hashes
     // (a.k.a. objects) can apparently only be primitive values.
-    let [observer] = this._cache.filter(v => v.topic      == topic    &&
-                                             v.callback   == callback &&
-                                             v.thisObject == thisObject);
+    let [observer] = this._cache.filter(
+      v =>
+        v.topic == topic && v.callback == callback && v.thisObject == thisObject
+    );
     if (observer) {
-      this._service.removeObserver(observer, topic);
+      Services.obs.removeObserver(observer, topic);
       this._cache.splice(this._cache.indexOf(observer), 1);
+    } else {
+      throw new Error("Attempt to remove non-existing observer");
     }
   },
 
@@ -83,14 +81,11 @@ this.Observers = {
    *        the observer, wrap them in an object and pass them via the subject
    *        parameter (i.e.: { foo: 1, bar: "some string", baz: myObject })
    */
-  notify: function(topic, subject, data) {
-    subject = (typeof subject == "undefined") ? null : new Subject(subject);
-       data = (typeof    data == "undefined") ? null : data;
-    this._service.notifyObservers(subject, topic, data);
+  notify(topic, subject, data) {
+    subject = typeof subject == "undefined" ? null : new Subject(subject);
+    data = typeof data == "undefined" ? null : data;
+    Services.obs.notifyObservers(subject, topic, data);
   },
-
-  _service: Cc["@mozilla.org/observer-service;1"].
-            getService(Ci.nsIObserverService),
 
   /**
    * A cache of observers that have been added.
@@ -102,9 +97,8 @@ this.Observers = {
    * Could we fix that by making this an independent top-level object
    * rather than a property of this object?
    */
-  _cache: []
+  _cache: [],
 };
-
 
 function Observer(topic, callback, thisObject) {
   this.topic = topic;
@@ -113,38 +107,46 @@ function Observer(topic, callback, thisObject) {
 }
 
 Observer.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver, Ci.nsISupportsWeakReference]),
-  observe: function(subject, topic, data) {
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIObserver,
+    Ci.nsISupportsWeakReference,
+  ]),
+  observe(subject, topic, data) {
     // Extract the wrapped object for subjects that are one of our wrappers
     // around a JS object.  This way we support both wrapped subjects created
     // using this module and those that are real XPCOM components.
-    if (subject && typeof subject == "object" &&
-        ("wrappedJSObject" in subject) &&
-        ("observersModuleSubjectWrapper" in subject.wrappedJSObject))
+    if (
+      subject &&
+      typeof subject == "object" &&
+      "wrappedJSObject" in subject &&
+      "observersModuleSubjectWrapper" in subject.wrappedJSObject
+    ) {
       subject = subject.wrappedJSObject.object;
+    }
 
     if (typeof this.callback == "function") {
-      if (this.thisObject)
+      if (this.thisObject) {
         this.callback.call(this.thisObject, subject, data);
-      else
+      } else {
         this.callback(subject, data);
-    }
-    else // typeof this.callback == "object" (nsIObserver)
+      }
+    } else {
+      // typeof this.callback == "object" (nsIObserver)
       this.callback.observe(subject, topic, data);
-  }
-}
-
+    }
+  },
+};
 
 function Subject(object) {
   // Double-wrap the object and set a property identifying the wrappedJSObject
   // as one of our wrappers to distinguish between subjects that are one of our
   // wrappers (which we should unwrap when notifying our observers) and those
   // that are real JS XPCOM components (which we should pass through unaltered).
-  this.wrappedJSObject = { observersModuleSubjectWrapper: true, object: object };
+  this.wrappedJSObject = { observersModuleSubjectWrapper: true, object };
 }
 
 Subject.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([]),
-  getScriptableHelper: function() {},
-  getInterfaces: function() {}
+  QueryInterface: ChromeUtils.generateQI([]),
+  getScriptableHelper() {},
+  getInterfaces() {},
 };

@@ -19,8 +19,13 @@
 #ifndef SANDBOX_WIN_SRC_SANDBOX_H_
 #define SANDBOX_WIN_SRC_SANDBOX_H_
 
+#if !defined(SANDBOX_FUZZ_TARGET)
 #include <windows.h>
+#else
+#include "sandbox/win/fuzzer/fuzzer_types.h"
+#endif
 
+#include "base/memory/ref_counted.h"
 #include "sandbox/win/src/sandbox_policy.h"
 #include "sandbox/win/src/sandbox_types.h"
 
@@ -56,7 +61,7 @@ class BrokerServices {
   // Returns the interface pointer to a new, empty policy object. Use this
   // interface to specify the sandbox policy for new processes created by
   // SpawnTarget()
-  virtual TargetPolicy* CreatePolicy() = 0;
+  virtual scoped_refptr<TargetPolicy> CreatePolicy() = 0;
 
   // Creates a new target (child process) in a suspended state.
   // Parameters:
@@ -67,6 +72,11 @@ class BrokerServices {
   //   process. This can be null if the exe_path parameter is not null.
   //   policy: This is the pointer to the policy object for the sandbox to
   //   be created.
+  //   last_warning: The argument will contain an indication on whether
+  //   the process security was initialized completely, Only set if the
+  //   process can be used without a serious compromise in security.
+  //   last_error: If an error or warning is returned from this method this
+  //   parameter will hold the last Win32 error value.
   //   target: returns the resulting target process information such as process
   //   handle and PID just as if CreateProcess() had been called. The caller is
   //   responsible for closing the handles returned in this structure.
@@ -74,7 +84,10 @@ class BrokerServices {
   //   ALL_OK if successful. All other return values imply failure.
   virtual ResultCode SpawnTarget(const wchar_t* exe_path,
                                  const wchar_t* command_line,
-                                 TargetPolicy* policy,
+                                 base::EnvironmentMap& env_map,
+                                 scoped_refptr<TargetPolicy> policy,
+                                 ResultCode* last_warning,
+                                 DWORD* last_error,
                                  PROCESS_INFORMATION* target) = 0;
 
   // This call blocks (waits) for all the targets to terminate.
@@ -92,14 +105,8 @@ class BrokerServices {
   //   more information.
   virtual ResultCode AddTargetPeer(HANDLE peer_process) = 0;
 
-  // Install the AppContainer with the specified sid an name. Returns ALL_OK if
-  // successful or an error code if the AppContainer cannot be installed.
-  virtual ResultCode InstallAppContainer(const wchar_t* sid,
-                                         const wchar_t* name) = 0;
-
-  // Removes from the system the AppContainer with the specified sid.
-  // Returns ALL_OK if successful or an error code otherwise.
-  virtual ResultCode UninstallAppContainer(const wchar_t* sid) = 0;
+ protected:
+  ~BrokerServices() {}
 };
 
 // TargetServices models the current process from the perspective
@@ -115,7 +122,7 @@ class BrokerServices {
 // The typical usage is as follows:
 //
 //   TargetServices* target_services = Sandbox::GetTargetServices();
-//   if (NULL != target_services) {
+//   if (target_services) {
 //     // We are the target.
 //     target_services->Init();
 //     // Do work that requires high privileges here.
@@ -156,9 +163,11 @@ class TargetServices {
                                      HANDLE* target_handle,
                                      DWORD desired_access,
                                      DWORD options) = 0;
+
+ protected:
+  ~TargetServices() {}
 };
 
 }  // namespace sandbox
-
 
 #endif  // SANDBOX_WIN_SRC_SANDBOX_H_

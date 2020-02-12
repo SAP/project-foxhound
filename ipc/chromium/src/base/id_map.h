@@ -12,17 +12,17 @@
 #include "base/logging.h"
 
 // This object maintains a list of IDs that can be quickly converted to
-// pointers to objects. It is implemented as a hash table, optimized for
+// objects. It is implemented as a hash table, optimized for
 // relatively small data sets (in the common case, there will be exactly one
 // item in the list).
 //
 // Items can be inserted into the container with arbitrary ID, but the caller
 // must ensure they are unique. Inserting IDs and relying on automatically
 // generated ones is not allowed because they can collide.
-template<class T>
+template <class T>
 class IDMap {
  private:
-  typedef base::hash_map<int32_t, T*> HashTable;
+  typedef base::hash_map<int32_t, T> HashTable;
   typedef typename HashTable::iterator iterator;
 
  public:
@@ -30,21 +30,14 @@ class IDMap {
   // Note, use iterator->first to get the ID, iterator->second to get the T*
   typedef typename HashTable::const_iterator const_iterator;
 
-  IDMap() : next_id_(1) {
-  }
-  IDMap(const IDMap& other) : next_id_(other.next_id_),
-                                        data_(other.data_) {
-  }
+  IDMap() : next_id_(1) {}
+  IDMap(const IDMap& other) : next_id_(other.next_id_), data_(other.data_) {}
 
-  const_iterator begin() const {
-    return data_.begin();
-  }
-  const_iterator end() const {
-    return data_.end();
-  }
+  const_iterator begin() const { return data_.begin(); }
+  const_iterator end() const { return data_.end(); }
 
   // Adds a view with an automatically generated unique ID. See AddWithID.
-  int32_t Add(T* data) {
+  int32_t Add(const T& data) {
     int32_t this_id = next_id_;
     DCHECK(data_.find(this_id) == data_.end()) << "Inserting duplicate item";
     data_[this_id] = data;
@@ -56,7 +49,7 @@ class IDMap {
   // the list. The caller either must generate all unique IDs itself and use
   // this function, or allow this object to generate IDs and call Add. These
   // two methods may not be mixed, or duplicate IDs may be generated
-  void AddWithID(T* data, int32_t id) {
+  void AddWithID(const T& data, int32_t id) {
     DCHECK(data_.find(id) == data_.end()) << "Inserting duplicate item";
     data_[id] = data;
   }
@@ -70,32 +63,36 @@ class IDMap {
     data_.erase(i);
   }
 
-  bool IsEmpty() const {
-    return data_.empty();
+  void RemoveIfPresent(int32_t id) {
+    iterator i = data_.find(id);
+    if (i != data_.end()) {
+      data_.erase(i);
+    }
   }
 
-  void Clear() {
-    data_.clear();
+  void ReplaceWithID(const T& data, int32_t id) {
+    DCHECK(data_.find(id) != data_.end()) << "item doesn't exist";
+    data_[id] = data;
   }
 
-  bool HasData(const T* data) const {
+  bool IsEmpty() const { return data_.empty(); }
+
+  void Clear() { data_.clear(); }
+
+  bool HasData(const T& data) const {
     // XXX would like to use <algorithm> here ...
     for (const_iterator it = begin(); it != end(); ++it)
-      if (data == it->second)
-        return true;
+      if (data == it->second) return true;
     return false;
   }
 
-  T* Lookup(int32_t id) const {
+  T Lookup(int32_t id) const {
     const_iterator i = data_.find(id);
-    if (i == data_.end())
-      return NULL;
+    if (i == data_.end()) return T();
     return i->second;
   }
 
-  size_t size() const {
-    return data_.size();
-  }
+  size_t size() const { return data_.size(); }
 
  protected:
   // The next ID that we will return from Add()

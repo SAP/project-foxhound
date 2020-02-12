@@ -1,27 +1,22 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
-
 // Test that the Shutdown Terminator records durations correctly
 
-var Cu = Components.utils;
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 
-Cu.import("resource://gre/modules/Services.jsm", this);
-Cu.import("resource://gre/modules/osfile.jsm", this);
-Cu.import("resource://gre/modules/Timer.jsm", this);
-Cu.import("resource://gre/modules/Task.jsm", this);
-
-var {Path, File, Constants} = OS;
+var { Path, File, Constants } = OS;
 
 var PATH;
 var PATH_TMP;
 var terminator;
 
-add_task(function* init() {
+add_task(async function init() {
   do_get_profile();
   PATH = Path.join(Constants.Path.localProfileDir, "ShutdownDuration.json");
   PATH_TMP = PATH + ".tmp";
@@ -29,44 +24,45 @@ add_task(function* init() {
   // Initialize the terminator
   // (normally, this is done through the manifest file, but xpcshell
   // doesn't take them into account).
-  do_print("Initializing the Terminator");
-  terminator = Cc["@mozilla.org/toolkit/shutdown-terminator;1"].
-    createInstance(Ci.nsIObserver);
+  info("Initializing the Terminator");
+  terminator = Cc["@mozilla.org/toolkit/shutdown-terminator;1"].createInstance(
+    Ci.nsIObserver
+  );
   terminator.observe(null, "profile-after-change", null);
 });
 
-var promiseShutdownDurationData = Task.async(function*() {
+var promiseShutdownDurationData = async function() {
   // Wait until PATH exists.
   // Timeout if it is never created.
-  do_print("Waiting for file creation: " + PATH);
+  info("Waiting for file creation: " + PATH);
   while (true) {
-    if ((yield OS.File.exists(PATH))) {
+    if (await OS.File.exists(PATH)) {
       break;
     }
 
-    do_print("The file does not exist yet. Waiting 1 second.");
-    yield new Promise(resolve => setTimeout(resolve, 1000));
+    info("The file does not exist yet. Waiting 1 second.");
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  do_print("The file has been created");
-  let raw = yield OS.File.read(PATH, { encoding: "utf-8"} );
-  do_print(raw);
+  info("The file has been created");
+  let raw = await OS.File.read(PATH, { encoding: "utf-8" });
+  info(raw);
   return JSON.parse(raw);
-});
+};
 
-add_task(function* test_record() {
+add_task(async function test_record() {
   let PHASE0 = "profile-change-teardown";
   let PHASE1 = "profile-before-change";
   let PHASE2 = "xpcom-will-shutdown";
   let t0 = Date.now();
 
-  do_print("Starting shutdown");
+  info("Starting shutdown");
   terminator.observe(null, "profile-change-teardown", null);
 
-  do_print("Moving to next phase");
+  info("Moving to next phase");
   terminator.observe(null, PHASE1, null);
 
-  let data = yield promiseShutdownDurationData();
+  let data = await promiseShutdownDurationData();
 
   let t1 = Date.now();
 
@@ -74,35 +70,46 @@ add_task(function* test_record() {
   let duration = data[PHASE0];
   Assert.equal(typeof duration, "number");
   Assert.ok(duration >= 0, "Duration is a non-negative number");
-  Assert.ok(duration <= Math.ceil((t1 - t0) / 1000) + 1,
-    "Duration is reasonable");
+  Assert.ok(
+    duration <= Math.ceil((t1 - t0) / 1000) + 1,
+    "Duration is reasonable"
+  );
 
-  Assert.equal(Object.keys(data).length, 1, "Data does not contain other durations");
+  Assert.equal(
+    Object.keys(data).length,
+    1,
+    "Data does not contain other durations"
+  );
 
-  do_print("Cleaning up and moving to next phase");
-  yield File.remove(PATH);
-  yield File.remove(PATH_TMP);
+  info("Cleaning up and moving to next phase");
+  await File.remove(PATH);
+  await File.remove(PATH_TMP);
 
-  do_print("Waiting at least one tick");
+  info("Waiting at least one tick");
   let WAIT_MS = 2000;
-  yield new Promise(resolve => setTimeout(resolve, WAIT_MS));
+  await new Promise(resolve => setTimeout(resolve, WAIT_MS));
 
   terminator.observe(null, PHASE2, null);
-  data = yield promiseShutdownDurationData();
+  data = await promiseShutdownDurationData();
 
   let t2 = Date.now();
 
-  Assert.equal(Object.keys(data).sort().join(", "),
-               [PHASE0, PHASE1].sort().join(", "),
-               "The file contains the expected keys");
+  Assert.equal(
+    Object.keys(data)
+      .sort()
+      .join(", "),
+    [PHASE0, PHASE1].sort().join(", "),
+    "The file contains the expected keys"
+  );
   Assert.equal(data[PHASE0], duration, "Duration of phase 0 hasn't changed");
   let duration2 = data[PHASE1];
   Assert.equal(typeof duration2, "number");
-  Assert.ok(duration2 >= WAIT_MS / 2000, "We have waited at least " + (WAIT_MS / 2000) + " ticks");
-  Assert.ok(duration2 <= Math.ceil((t2 - t1) / 1000) + 1,
-    "Duration is reasonable");
+  Assert.ok(
+    duration2 >= WAIT_MS / 2000,
+    "We have waited at least " + WAIT_MS / 2000 + " ticks"
+  );
+  Assert.ok(
+    duration2 <= Math.ceil((t2 - t1) / 1000) + 1,
+    "Duration is reasonable"
+  );
 });
-
-function run_test() {
-  run_next_test();
-}

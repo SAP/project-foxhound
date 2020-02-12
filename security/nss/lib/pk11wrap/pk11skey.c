@@ -18,6 +18,8 @@
 #include "secerr.h"
 #include "hasht.h"
 
+static ECPointEncoding pk11_ECGetPubkeyEncoding(const SECKEYPublicKey *pubKey);
+
 static void
 pk11_EnterKeyMonitor(PK11SymKey *symKey)
 {
@@ -179,6 +181,10 @@ PK11_FreeSymKey(PK11SymKey *symKey)
 {
     PK11SlotInfo *slot;
     PRBool freeit = PR_TRUE;
+
+    if (!symKey) {
+        return;
+    }
 
     if (PR_ATOMIC_DECREMENT(&symKey->refCount) == 0) {
         PK11SymKey *parent = symKey->parent;
@@ -351,7 +357,9 @@ PK11_SymKeyFromHandle(PK11SlotInfo *slot, PK11SymKey *parent, PK11Origin origin,
 }
 
 /*
- * turn key handle into an appropriate key object
+ * Restore a symmetric wrapping key that was saved using PK11_SetWrapKey.
+ *
+ * This function is provided for ABI compatibility; see PK11_SetWrapKey below.
  */
 PK11SymKey *
 PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
@@ -359,33 +367,51 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
 {
     PK11SymKey *symKey = NULL;
 
-    if (slot->series != series)
+    PK11_EnterSlotMonitor(slot);
+    if (slot->series != series ||
+        slot->refKeys[wrap] == CK_INVALID_HANDLE) {
+        PK11_ExitSlotMonitor(slot);
         return NULL;
-    if (slot->refKeys[wrap] == CK_INVALID_HANDLE)
-        return NULL;
-    if (type == CKM_INVALID_MECHANISM)
+    }
+
+    if (type == CKM_INVALID_MECHANISM) {
         type = slot->wrapMechanism;
+    }
 
     symKey = PK11_SymKeyFromHandle(slot, NULL, PK11_OriginDerive,
                                    slot->wrapMechanism, slot->refKeys[wrap], PR_FALSE, wincx);
+    PK11_ExitSlotMonitor(slot);
     return symKey;
 }
 
 /*
- * This function is not thread-safe because it sets wrapKey->sessionOwner
- * without using a lock or atomic routine.  It can only be called when
- * only one thread has a reference to wrapKey.
+ * This function sets an attribute on the current slot with a wrapping key.  The
+ * data saved is ephemeral; it needs to be run every time the program is
+ * invoked.
+ *
+ * Since NSS 3.45, this function is marginally more thread safe.  It uses the
+ * slot lock (if present) and fails silently if a value is already set.  Use
+ * PK11_GetWrapKey() after calling this function to get the current wrapping key
+ * in case there was an update on another thread.
+ *
+ * Either way, using this function is inadvisable.  It's provided for ABI
+ * compatibility only.
  */
 void
 PK11_SetWrapKey(PK11SlotInfo *slot, int wrap, PK11SymKey *wrapKey)
 {
-    /* save the handle and mechanism for the wrapping key */
-    /* mark the key and session as not owned by us to they don't get freed
-     * when the key goes way... that lets us reuse the key later */
-    slot->refKeys[wrap] = wrapKey->objectID;
-    wrapKey->owner = PR_FALSE;
-    wrapKey->sessionOwner = PR_FALSE;
-    slot->wrapMechanism = wrapKey->type;
+    PK11_EnterSlotMonitor(slot);
+    if (wrap < PR_ARRAY_SIZE(slot->refKeys) &&
+        slot->refKeys[wrap] == CK_INVALID_HANDLE) {
+        /* save the handle and mechanism for the wrapping key */
+        /* mark the key and session as not owned by us so they don't get freed
+         * when the key goes way... that lets us reuse the key later */
+        slot->refKeys[wrap] = wrapKey->objectID;
+        wrapKey->owner = PR_FALSE;
+        wrapKey->sessionOwner = PR_FALSE;
+        slot->wrapMechanism = wrapKey->type;
+    }
+    PK11_ExitSlotMonitor(slot);
 }
 
 /*
@@ -1592,6 +1618,7 @@ PK11_DeriveWithTemplate(PK11SymKey *baseKey, CK_MECHANISM_TYPE derive,
         PK11_FreeSymKey(newBaseKey);
     if (crv != CKR_OK) {
         PK11_FreeSymKey(symKey);
+        PORT_SetError(PK11_MapError(crv));
         return NULL;
     }
     return symKey;
@@ -1834,6 +1861,35 @@ loser:
 }
 
 /*
+ * This regenerate a public key from a private key. This function is currently
+ * NSS private. If we want to make it public, we need to add and optional
+ * template or at least flags (a.la. PK11_DeriveWithFlags).
+ */
+CK_OBJECT_HANDLE
+PK11_DerivePubKeyFromPrivKey(SECKEYPrivateKey *privKey)
+{
+    PK11SlotInfo *slot = privKey->pkcs11Slot;
+    CK_MECHANISM mechanism;
+    CK_OBJECT_HANDLE objectID = CK_INVALID_HANDLE;
+    CK_RV crv;
+
+    mechanism.mechanism = CKM_NSS_PUB_FROM_PRIV;
+    mechanism.pParameter = NULL;
+    mechanism.ulParameterLen = 0;
+
+    PK11_EnterSlotMonitor(slot);
+    crv = PK11_GETTAB(slot)->C_DeriveKey(slot->session, &mechanism,
+                                         privKey->pkcs11ID, NULL, 0,
+                                         &objectID);
+    PK11_ExitSlotMonitor(slot);
+    if (crv != CKR_OK) {
+        PORT_SetError(PK11_MapError(crv));
+        return CK_INVALID_HANDLE;
+    }
+    return objectID;
+}
+
+/*
  * This Generates a wrapping key based on a privateKey, publicKey, and two
  * random numbers. For Mail usage RandomB should be NULL. In the Sender's
  * case RandomA is generate, outherwize it is passed.
@@ -2005,7 +2061,7 @@ PK11_PubDerive(SECKEYPrivateKey *privKey, SECKEYPublicKey *pubKey,
 
             /* old PKCS #11 spec was ambiguous on what needed to be passed,
              * try this again with and encoded public key */
-            if (crv != CKR_OK) {
+            if (crv != CKR_OK && pk11_ECGetPubkeyEncoding(pubKey) != ECPoint_XOnly) {
                 SECItem *pubValue = SEC_ASN1EncodeItem(NULL, NULL,
                                                        &pubKey->u.ec.publicValue,
                                                        SEC_ASN1_GET(SEC_OctetStringTemplate));
@@ -2037,6 +2093,40 @@ PK11_PubDerive(SECKEYPrivateKey *privKey, SECKEYPublicKey *pubKey,
     return NULL;
 }
 
+/* Test for curves that are known to use a special encoding.
+ * Extend this function when additional curves are added. */
+static ECPointEncoding
+pk11_ECGetPubkeyEncoding(const SECKEYPublicKey *pubKey)
+{
+    SECItem oid;
+    SECStatus rv;
+    PORTCheapArenaPool tmpArena;
+    ECPointEncoding encoding = ECPoint_Undefined;
+
+    PORT_InitCheapArena(&tmpArena, DER_DEFAULT_CHUNKSIZE);
+
+    /* decode the OID tag */
+    rv = SEC_QuickDERDecodeItem(&tmpArena.arena, &oid,
+                                SEC_ASN1_GET(SEC_ObjectIDTemplate),
+                                &pubKey->u.ec.DEREncodedParams);
+    if (rv == SECSuccess) {
+        SECOidTag tag = SECOID_FindOIDTag(&oid);
+        switch (tag) {
+            case SEC_OID_CURVE25519:
+                encoding = ECPoint_XOnly;
+                break;
+            case SEC_OID_SECG_EC_SECP256R1:
+            case SEC_OID_SECG_EC_SECP384R1:
+            case SEC_OID_SECG_EC_SECP521R1:
+            default:
+                /* unknown curve, default to uncompressed */
+                encoding = ECPoint_Uncompressed;
+        }
+    }
+    PORT_DestroyCheapArena(&tmpArena);
+    return encoding;
+}
+
 /* Returns the size of the public key, or 0 if there
  * is an error. */
 static CK_ULONG
@@ -2044,10 +2134,11 @@ pk11_ECPubKeySize(SECKEYPublicKey *pubKey)
 {
     SECItem *publicValue = &pubKey->u.ec.publicValue;
 
-    if (pubKey->u.ec.encoding == ECPoint_XOnly) {
+    ECPointEncoding encoding = pk11_ECGetPubkeyEncoding(pubKey);
+    if (encoding == ECPoint_XOnly) {
         return publicValue->len;
     }
-    if (publicValue->data[0] == 0x04) {
+    if (encoding == ECPoint_Uncompressed) {
         /* key encoded in uncompressed form */
         return ((publicValue->len - 1) / 2);
     }
@@ -2176,6 +2267,11 @@ pk11_PubDeriveECKeyWithKDF(
     /* old PKCS #11 spec was ambiguous on what needed to be passed,
      * try this again with an encoded public key */
     if (crv != CKR_OK) {
+        /* For curves that only use X as public value and no encoding we don't
+         * have to try again. (Currently only Curve25519) */
+        if (pk11_ECGetPubkeyEncoding(pubKey) == ECPoint_XOnly) {
+            goto loser;
+        }
         SECItem *pubValue = SEC_ASN1EncodeItem(NULL, NULL,
                                                &pubKey->u.ec.publicValue,
                                                SEC_ASN1_GET(SEC_OctetStringTemplate));

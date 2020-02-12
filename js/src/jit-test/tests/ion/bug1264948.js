@@ -1,5 +1,4 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
 loadFile(`
   T = TypedObject
@@ -10,8 +9,9 @@ loadFile(`
         whatever.push;
   }
   testGC(o)
-  function writeObject()
-    o.f = v
+  function writeObject() {
+    return o.f = v;
+  }
     writeObject({function() { } })
   for (var i ; i < 5 ; ++i)
     try {} catch (StringStruct) {}

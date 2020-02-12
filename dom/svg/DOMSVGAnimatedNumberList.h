@@ -7,17 +7,20 @@
 #ifndef MOZILLA_DOMSVGANIMATEDNUMBERLIST_H__
 #define MOZILLA_DOMSVGANIMATEDNUMBERLIST_H__
 
-#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 
-class DOMSVGNumberList;
 class SVGAnimatedNumberList;
 class SVGNumberList;
+
+namespace dom {
+
+class DOMSVGNumberList;
 
 /**
  * Class DOMSVGAnimatedNumberList
@@ -35,11 +38,10 @@ class SVGNumberList;
  * weak refs).
  */
 class DOMSVGAnimatedNumberList final : public nsISupports,
-                                       public nsWrapperCache
-{
+                                       public nsWrapperCache {
   friend class DOMSVGNumberList;
 
-public:
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGAnimatedNumberList)
 
@@ -54,18 +56,17 @@ public:
    * for the SVGAnimatedNumberList will naturally result in a new
    * DOMSVGAnimatedNumberList being returned.
    */
-  static already_AddRefed<DOMSVGAnimatedNumberList>
-    GetDOMWrapper(SVGAnimatedNumberList *aList,
-                  nsSVGElement *aElement,
-                  uint8_t aAttrEnum);
+  static already_AddRefed<DOMSVGAnimatedNumberList> GetDOMWrapper(
+      SVGAnimatedNumberList* aList, dom::SVGElement* aElement,
+      uint8_t aAttrEnum);
 
   /**
    * This method returns the DOMSVGAnimatedNumberList wrapper for an internal
    * SVGAnimatedNumberList object if it currently has a wrapper. If it does
    * not, then nullptr is returned.
    */
-  static DOMSVGAnimatedNumberList*
-    GetDOMWrapperIfExists(SVGAnimatedNumberList *aList);
+  static DOMSVGAnimatedNumberList* GetDOMWrapperIfExists(
+      SVGAnimatedNumberList* aList);
 
   /**
    * Called by internal code to notify us when we need to sync the length of
@@ -89,25 +90,23 @@ public:
   bool IsAnimating() const;
 
   // WebIDL
-  nsSVGElement* GetParentObject() const { return mElement; }
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  dom::SVGElement* GetParentObject() const { return mElement; }
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
   // These aren't weak refs because mBaseVal and mAnimVal are weak
   already_AddRefed<DOMSVGNumberList> BaseVal();
   already_AddRefed<DOMSVGNumberList> AnimVal();
 
-private:
-
+ private:
   /**
    * Only our static GetDOMWrapper() factory method may create objects of our
    * type.
    */
-  DOMSVGAnimatedNumberList(nsSVGElement *aElement, uint8_t aAttrEnum)
-    : mBaseVal(nullptr)
-    , mAnimVal(nullptr)
-    , mElement(aElement)
-    , mAttrEnum(aAttrEnum)
-  {
-  }
+  DOMSVGAnimatedNumberList(dom::SVGElement* aElement, uint8_t aAttrEnum)
+      : mBaseVal(nullptr),
+        mAnimVal(nullptr),
+        mElement(aElement),
+        mAttrEnum(aAttrEnum) {}
 
   ~DOMSVGAnimatedNumberList();
 
@@ -118,16 +117,17 @@ private:
   // Weak refs to our DOMSVGNumberList baseVal/animVal objects. These objects
   // are friends and take care of clearing these pointers when they die, making
   // these true weak references.
-  DOMSVGNumberList *mBaseVal;
-  DOMSVGNumberList *mAnimVal;
+  DOMSVGNumberList* mBaseVal;
+  DOMSVGNumberList* mAnimVal;
 
   // Strong ref to our element to keep it alive. We hold this not only for
   // ourself, but also for our base/animVal and all of their items.
-  RefPtr<nsSVGElement> mElement;
+  RefPtr<dom::SVGElement> mElement;
 
   uint8_t mAttrEnum;
 };
 
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // MOZILLA_DOMSVGANIMATEDNUMBERLIST_H__
+#endif  // MOZILLA_DOMSVGANIMATEDNUMBERLIST_H__

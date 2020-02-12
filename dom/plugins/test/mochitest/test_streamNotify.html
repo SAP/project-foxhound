@@ -1,6 +1,6 @@
 <head>
   <title>NPN_Get/PostURLNotify tests</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
 
 <body onload="runTests()">
@@ -11,7 +11,7 @@
 
   var pending = 5;
   function testDone() {
-    dump("testDone: " + pending + "\n")
+    dump("testDone: " + pending + "\n");
     --pending;
 
     // Wait for a bit so that any unexpected notifications from the
@@ -21,7 +21,7 @@
   }
 
   function runTests() {
-    var p = document.getElementById('plugin1');
+    var p = document.getElementById("plugin1");
 
     ok(p.streamTest("loremipsum.txt", false, null, null,
                     function(r, t) {
@@ -83,6 +83,17 @@
                      function(r, t) {
                        todo(false, "Shouldn't get callback for invalid data: URI");
                      }, null, true), "streamTest GET bad data: URI");
+
+    ok(!p.postFileToURLTest("post.sjs"), "postFileToURLTest POST a file");
+
+    ok(!p.streamTest("post.sjs", true, "non-existent-file",
+                     function(r, t) {
+                       ok(false, "Shouldn't get write callback from file post");
+                     }, function(r, t) {
+                       ok(false, "Shouldn't get notify callback from file post");
+                     }, function(r, t) {
+                       ok(false, "Shouldn't get redirect callback from file post");
+                     }, true, true), "streamTest POST a file");
   }
   </script>
 

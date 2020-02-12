@@ -5,7 +5,7 @@
 
 #include "nsISupports.idl"
 
-[scriptable, uuid(b74fb158-1265-4102-91eb-edd0136b49f8)]
+[scriptable, builtinclass, uuid(b74fb158-1265-4102-91eb-edd0136b49f8)]
 interface nsIPlaintextEditor : nsISupports
 {
 
@@ -64,12 +64,6 @@ interface nsIPlaintextEditor : nsISupports
     */
   readonly attribute long textLength;
 
-  /**
-    * The maximum number of characters allowed.
-    *   default: -1 (unlimited).
-    */
-  attribute long maxTextLength;
-
   /** Get and set the body wrap width.
     *
     * Special values:
@@ -77,14 +71,6 @@ interface nsIPlaintextEditor : nsISupports
     *   -1 = no wrap at all
     */
   attribute long wrapWidth;
-
-  /**
-   * Similar to the setter for wrapWidth, but just sets the editor
-   * internal state without actually changing the content being edited
-   * to wrap at that column.  This should only be used by callers who
-   * are sure that their content is already set up correctly.
-   */
-  void setWrapColumn(in long aWrapColumn);
 
   /** Get and set newline handling.
    *
@@ -100,7 +86,8 @@ interface nsIPlaintextEditor : nsISupports
    *
    * @param aString   the string to be inserted
    */
-   void insertText(in DOMString aStringToInsert);
+   [can_run_script]
+   void insertText(in AString aStringToInsert);
 
   /**
    * Insert a line break into the content model.
@@ -108,5 +95,6 @@ interface nsIPlaintextEditor : nsISupports
    * it may enter a character, split a node in the tree, etc.
    * This may be more efficient than calling InsertText with a newline.
    */
+  [can_run_script]
   void insertLineBreak();
 };

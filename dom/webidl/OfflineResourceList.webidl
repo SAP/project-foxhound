@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+[Pref="browser.cache.offline.enable", Func="nsGlobalWindowInner::OfflineCacheAllowedForContext",
+Exposed=Window]
 interface OfflineResourceList : EventTarget {
   /**
    * State of the application cache this object is associated with.
@@ -92,6 +94,12 @@ partial interface OfflineResourceList {
    */
   [Throws]
   getter DOMString mozItem(unsigned long index);
+
+  /**
+   * We need a "length" to actually be valid Web IDL, given that we have an
+   * indexed getter.
+   */
+  readonly attribute unsigned long length;
 
   /**
    * Add an item to the list of dynamically-managed entries.  The resource

@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/shi_Latn.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 shi_Latn{
     %%Parent{"root"}
     Currencies{
@@ -131,6 +125,10 @@ shi_Latn{
         }
         MRO{
             "MRO",
+            "uqiyya n muṛiṭanya (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "uqiyya n muṛiṭanya",
         }
         MUR{
@@ -187,6 +185,10 @@ shi_Latn{
         }
         STD{
             "STD",
+            "adubra n sanṭumi (1977–2017)",
+        }
+        STN{
+            "STN",
             "adubra n sanṭumi",
         }
         SZL{
@@ -234,5 +236,5 @@ shi_Latn{
             "adular n zimbabwi",
         }
     }
-    Version{"2.1.19.14"}
+    Version{"2.1.47.82"}
 }

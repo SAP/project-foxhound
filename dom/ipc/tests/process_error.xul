@@ -6,53 +6,50 @@
 
   <browser id="thebrowser" type="content" remote="true" />
   <script type="application/javascript"><![CDATA[
-    Components.utils.import("resource://gre/modules/Services.jsm");
+    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 
-    const ok = window.opener.wrappedJSObject.ok;
-    const is = window.opener.wrappedJSObject.is;
-    const done = window.opener.wrappedJSObject.done;
-    const SimpleTest = window.opener.wrappedJSObject.SimpleTest;
+    const ok = window.arguments[0].ok;
+    const is = window.arguments[0].is;
+    const done = window.arguments[0].done;
+    const SimpleTest = window.arguments[0].SimpleTest;
 
-    function getMinidumpDirectory() {
-      var dir = Services.dirsvc.get('ProfD', Components.interfaces.nsIFile);
-      dir.append("minidumps");
-      return dir;
-    }
+    // Allow the browser to get connected before using the messageManager to cause
+    // a crash:
+    addEventListener("DOMContentLoaded", () => {
+      let browser = document.getElementById('thebrowser');
 
-    function removeFile(directory, filename) {
-      var file = directory.clone();
-      file.append(filename);
-      if (file.exists()) {
-        file.remove(false);
-      }
-    }
+      let observerPromise = new Promise(resolve => {
+        let crashObserver = (subject, topic, data) => {
+          is(topic, 'ipc:content-shutdown', 'Received correct observer topic.');
+          ok(subject instanceof Ci.nsIPropertyBag2,
+             'Subject implements nsIPropertyBag2.');
 
-    function crashObserver(subject, topic, data) {
-      is(topic, 'ipc:content-shutdown', 'Received correct observer topic.');
-      ok(subject instanceof Components.interfaces.nsIPropertyBag2,
-         'Subject implements nsIPropertyBag2.');
+          var dumpID;
+          if ('nsICrashReporter' in Ci) {
+            dumpID = subject.getPropertyAsAString('dumpID');
+            ok(dumpID, "dumpID is present and not an empty string");
+          }
 
-      var dumpID;
-      if ('nsICrashReporter' in Components.interfaces) {
-        dumpID = subject.getPropertyAsAString('dumpID');
-        ok(dumpID, "dumpID is present and not an empty string");
-      }
+          Services.obs.removeObserver(crashObserver, 'ipc:content-shutdown');
+          resolve();
+        }
 
-      if (dumpID) {
-        var minidumpDirectory = getMinidumpDirectory();
-        removeFile(minidumpDirectory, dumpID + '.dmp');
-        removeFile(minidumpDirectory, dumpID + '.extra');
-      }
+        Services.obs.addObserver(crashObserver, 'ipc:content-shutdown');
+      });
 
-      Services.obs.removeObserver(crashObserver, 'ipc:content-shutdown');
-      done();
-    }
-    Services.obs.addObserver(crashObserver, 'ipc:content-shutdown', false);
+      let browsingContextId = browser.frameLoader.browsingContext.id;
 
-    document.getElementById('thebrowser')
-            .QueryInterface(Components.interfaces.nsIFrameLoaderOwner)
-            .frameLoader.messageManager
-            .loadFrameScript('chrome://mochitests/content/chrome/dom/ipc/tests/process_error_contentscript.js', true);
+      let eventFiredPromise = BrowserTestUtils.waitForEvent(browser, "oop-browser-crashed");
+      let eventPromise = eventFiredPromise.then(event => {
+        is(event.browsingContextId, browsingContextId,
+           "Expected the right browsing context id on the oop-browser-crashed event.");
+      })
+
+      BrowserTestUtils.crashFrame(browser, true, false);
+
+      Promise.all([observerPromise, eventPromise]).then(done);
+    });
   ]]></script>
 
 </window>

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=73586
 -->
 <head>
   <title>Test for Bug 73586</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style type="text/css">
 
@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=73586
 <div id="display"></div>
 
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript">
@@ -50,8 +50,6 @@ function check_children(p, check_cb) {
         ++elt;
     }
 }
-
-var display = document.getElementById("display");
 
 function run_series(check_cb) {
     var display = document.getElementById("display");
@@ -113,9 +111,9 @@ run_series(function(child, elt, elts, node, nodes) {
            " match :only-child");
     });
 
-styleText.data = "span:-moz-first-node { text-decoration: underline; }";
+styleText.data = "span:-moz-first-node { text-decoration-line: underline; }";
 run_series(function(child, elt, elts, node, nodes) {
-        is(cs(child).textDecoration, (node == 0) ? "underline" : "none",
+        is(cs(child).textDecorationLine, (node == 0) ? "underline" : "none",
            "child " + node + " should " + ((node == 0) ? "" : "NOT ") +
            " match :-moz-first-node");
     });
@@ -189,4 +187,3 @@ run_series(function(child, elt, elts, node, nodes) {
 </pre>
 </body>
 </html>
-

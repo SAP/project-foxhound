@@ -4,23 +4,8 @@
 
 %include ../../../shared/extensions/extensions.inc.css
 
-#header-utils-btn {
-  list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities");
-  margin-inline-end: 16px;
-}
-
-@media not all and (-moz-windows-default-theme) {
-  #header-utils-btn {
-    list-style-image: url("chrome://mozapps/skin/extensions/utilities.svg#utilities-native");
-  }
-}
-
-.sorter[checkState="1"] {
-  list-style-image: url("chrome://global/skin/arrow/arrow-dn.gif");
-}
-
-.sorter[checkState="2"] {
-  list-style-image: url("chrome://global/skin/arrow/arrow-up.gif");
+:root > * {
+  font-size: 1.25em;
 }
 
 .addon .relnotes-toggle {
@@ -39,4 +24,8 @@
 
 .meta-rating > .star[on="true"] {
   list-style-image: url("chrome://mozapps/skin/extensions/rating-won.png");
+}
+
+#detail-view .legacy-warning {
+  margin-top: 1rem;
 }

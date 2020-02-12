@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=417075
 -->
 <head>
   <title>postMessage from a page with username/password in its URI</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -32,14 +32,14 @@ function receiveMessage(evt)
   SimpleTest.finish();
 }
 
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 
 function sendMessage(evt)
 {
   window.frames.userPassKid.postMessage("parent-message", "http://example.org");
 }
 
-window.addEventListener("load", sendMessage, false);
+window.addEventListener("load", sendMessage);
 </script>
 </pre>
 </body>

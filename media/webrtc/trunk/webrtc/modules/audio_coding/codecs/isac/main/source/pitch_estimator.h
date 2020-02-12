@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_
 
 #include "structs.h"
 
@@ -61,11 +61,15 @@ void WebRtcIsac_PitchfilterPre_gains(double *indat,
 
 void WebRtcIsac_WeightingFilter(const double *in, double *weiout, double *whiout, WeightFiltstr *wfdata);
 
-void WebRtcIsac_Highpass(const double *in, double *out, double *state, int N);
+void WebRtcIsac_Highpass(const double *in,
+                         double *out,
+                         double *state,
+                         size_t N);
 
 void WebRtcIsac_DecimateAllpass(const double *in,
-                                double *state_in,        /* array of size: 2*ALLPASSSECTIONS+1 */
-                                int N,                   /* number of input samples */
-                                double *out);            /* array of size N/2 */
+                                double *state_in,  /* array of size:
+                                                    *     2*ALLPASSSECTIONS+1 */
+                                size_t N,          /* number of input samples */
+                                double *out);      /* array of size N/2 */
 
-#endif /* WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_ */
+#endif /* MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_SOURCE_PITCH_ESTIMATOR_H_ */

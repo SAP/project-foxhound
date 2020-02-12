@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=557087
 -->
 <head>
   <title>Test for Bug 557087</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -97,9 +97,8 @@ function checkClickEvent(aFieldset)
   aFieldset.disabled = true;
 
   aFieldset.addEventListener("click", function(aEvent) {
-    aEvent.target.removeEventListener("click", arguments.callee, false);
     clickHandled = true;
-  }, false);
+  }, {once: true});
 
   sendMouseEvent({type:'click'}, aFieldset);
   SimpleTest.executeSoon(function() {

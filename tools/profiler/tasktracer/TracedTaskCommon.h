@@ -7,27 +7,44 @@
 #ifndef TRACED_TASK_COMMON_H
 #define TRACED_TASK_COMMON_H
 
-#include "base/task.h"
 #include "GeckoTaskTracer.h"
+
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace tasktracer {
 
-class TracedTaskCommon
-{
-public:
+class TracedTaskCommon {
+ public:
   TracedTaskCommon();
+  TracedTaskCommon(const TracedTaskCommon& aSrc)
+      : mSourceEventType(aSrc.mSourceEventType),
+        mSourceEventId(aSrc.mSourceEventId),
+        mParentTaskId(aSrc.mParentTaskId),
+        mTaskId(aSrc.mTaskId),
+        mIsTraceInfoInit(aSrc.mIsTraceInfoInit) {}
   virtual ~TracedTaskCommon();
 
   void DispatchTask(int aDelayTimeMs = 0);
 
-  void SetTLSTraceInfo();
-  void GetTLSTraceInfo();
+  void SetTLSTraceInfo() {
+    if (mIsTraceInfoInit) {
+      DoSetTLSTraceInfo();
+    }
+  }
+  void GetTLSTraceInfo() {
+    if (IsStartLogging()) {
+      DoGetTLSTraceInfo();
+    }
+  }
   void ClearTLSTraceInfo();
 
-protected:
+ private:
+  void DoSetTLSTraceInfo();
+  void DoGetTLSTraceInfo();
+
+ protected:
   void Init();
 
   // TraceInfo of TLS will be set by the following parameters, including source
@@ -40,34 +57,74 @@ protected:
   bool mIsTraceInfoInit;
 };
 
-class TracedRunnable : public TracedTaskCommon
-                     , public nsRunnable
-{
-public:
+class TracedRunnable : public TracedTaskCommon, public nsIRunnable {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
-  TracedRunnable(already_AddRefed<nsIRunnable>&& aOriginalObj);
+  explicit TracedRunnable(already_AddRefed<nsIRunnable>&& aOriginalObj);
 
-private:
+ private:
   virtual ~TracedRunnable();
 
   nsCOMPtr<nsIRunnable> mOriginalObj;
 };
 
-class TracedTask : public TracedTaskCommon
-                 , public Task
-{
-public:
-  TracedTask(Task* aOriginalObj);
-  ~TracedTask();
+/**
+ * This class is used to create a logical task, without a real
+ * runnable.
+ */
+class VirtualTask : public TracedTaskCommon {
+ public:
+  VirtualTask() : TracedTaskCommon() {}
 
-  virtual void Run();
+  VirtualTask(const VirtualTask& aSrc) : TracedTaskCommon(aSrc) {}
 
-private:
-  Task* mOriginalObj;
+  /**
+   * Initialize the task to create an unique ID, and store other
+   * information.
+   *
+   * This method may be called for one or more times.
+   */
+  void Init(uintptr_t* aVPtr = nullptr) {
+    TracedTaskCommon::Init();
+    if (aVPtr) {
+      extern void LogVirtualTablePtr(uint64_t aTaskId, uint64_t aSourceEventId,
+                                     uintptr_t * aVptr);
+      LogVirtualTablePtr(mTaskId, mSourceEventId, aVPtr);
+    }
+    DispatchTask();
+  }
+
+  /**
+   * Define the life-span of a VirtualTask.
+   *
+   * VirtualTask is not a real task, goes without a runnable, it's
+   * instances are never dispatched and ran by event loops.  This
+   * class used to define running time as the life-span of it's
+   * instance.
+   */
+  class AutoRunTask : public AutoSaveCurTraceInfo {
+    VirtualTask* mTask;
+    void StartScope(VirtualTask* aTask);
+    void StopScope();
+
+   public:
+    explicit AutoRunTask(VirtualTask* aTask)
+        : AutoSaveCurTraceInfo(), mTask(aTask) {
+      if (HasSavedTraceInfo()) {
+        StartScope(aTask);
+      }
+    }
+    ~AutoRunTask() {
+      if (HasSavedTraceInfo()) {
+        StopScope();
+      }
+    }
+  };
 };
 
-} // namespace tasktracer
-} // namespace mozilla
+}  // namespace tasktracer
+}  // namespace mozilla
 
 #endif

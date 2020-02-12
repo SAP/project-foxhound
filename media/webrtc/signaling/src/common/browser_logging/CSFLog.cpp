@@ -7,7 +7,7 @@
 #include <stdarg.h>
 
 #include "CSFLog.h"
-#include "base/basictypes.h"
+#include "rtc_base/basictypes.h"
 
 #include <map>
 #include "prrwlock.h"
@@ -15,46 +15,27 @@
 #include "nsThreadUtils.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/Sprintf.h"
 
-static PRLogModuleInfo *gLogModuleInfo = nullptr;
+mozilla::LazyLogModule gSignalingLog("signaling");
 
-PRLogModuleInfo *GetSignalingLogInfo()
-{
-  if (gLogModuleInfo == nullptr)
-    gLogModuleInfo = PR_NewLogModule("signaling");
-
-  return gLogModuleInfo;
-}
-
-static PRLogModuleInfo *gWebRTCLogModuleInfo = nullptr;
-
-PRLogModuleInfo *GetWebRTCLogInfo()
-{
-  if (gWebRTCLogModuleInfo == nullptr)
-    gWebRTCLogModuleInfo = PR_NewLogModule("webrtc_trace");
-
-  return gWebRTCLogModuleInfo;
-}
-
-
-void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine, const char* tag , const char* format, va_list args)
-{
+void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine,
+             const char* tag, const char* format, va_list args) {
 #ifdef STDOUT_LOGGING
-  printf("%s\n:",tag);
+  printf("%s\n:", tag);
   vprintf(format, args);
 #else
 
-  mozilla::LogLevel level = static_cast<mozilla::LogLevel>(priority);
-
-  GetSignalingLogInfo();
+  mozilla::LogLevel level =
+      static_cast<mozilla::LogLevel>(static_cast<unsigned int>(priority));
 
   // Skip doing any of this work if we're not logging the indicated level...
-  if (!MOZ_LOG_TEST(gLogModuleInfo,level)) {
+  if (!MOZ_LOG_TEST(gSignalingLog, level)) {
     return;
   }
 
   // Trim the path component from the filename
-  const char *lastSlash = sourceFile;
+  const char* lastSlash = sourceFile;
   while (*sourceFile) {
     if (*sourceFile == '/' || *sourceFile == '\\') {
       lastSlash = sourceFile;
@@ -66,10 +47,10 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine, const
     sourceFile++;
   }
 
-#define MAX_MESSAGE_LENGTH 1024
+#  define MAX_MESSAGE_LENGTH 1024
   char message[MAX_MESSAGE_LENGTH];
 
-  const char *threadName = NULL;
+  const char* threadName = NULL;
 
   // Check if we're the main thread...
   if (NS_IsMainThread()) {
@@ -83,20 +64,23 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine, const
     threadName = "";
   }
 
-  vsnprintf(message, MAX_MESSAGE_LENGTH, format, args);
-  MOZ_LOG(gLogModuleInfo, level, ("[%s|%s] %s:%d: %s",
-                                  threadName, tag, sourceFile, sourceLine,
-                                  message));
+  VsprintfLiteral(message, format, args);
+  MOZ_LOG(
+      gSignalingLog, level,
+      ("[%s|%s] %s:%d: %s", threadName, tag, sourceFile, sourceLine, message));
 #endif
-
 }
 
-void CSFLog( CSFLogLevel priority, const char* sourceFile, int sourceLine, const char* tag , const char* format, ...)
-{
-	va_list ap;
+void CSFLog(CSFLogLevel priority, const char* sourceFile, int sourceLine,
+            const char* tag, const char* format, ...) {
+  va_list ap;
   va_start(ap, format);
 
   CSFLogV(priority, sourceFile, sourceLine, tag, format, ap);
   va_end(ap);
 }
 
+int CSFLogTestLevel(CSFLogLevel priority) {
+  return MOZ_LOG_TEST(gSignalingLog, static_cast<mozilla::LogLevel>(
+                                         static_cast<unsigned int>(priority)));
+}

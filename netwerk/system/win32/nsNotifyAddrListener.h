@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set et sw=4 ts=4: */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:set et sw=2 ts=4: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,88 +13,96 @@
 #include "nsIRunnable.h"
 #include "nsIObserver.h"
 #include "nsThreadUtils.h"
+#include "nsThreadPool.h"
 #include "nsCOMPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/SHA1.h"
 
 class nsNotifyAddrListener : public nsINetworkLinkService,
                              public nsIRunnable,
-                             public nsIObserver
-{
-    virtual ~nsNotifyAddrListener();
+                             public nsIObserver {
+  virtual ~nsNotifyAddrListener();
 
-public:
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSINETWORKLINKSERVICE
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSINETWORKLINKSERVICE
+  NS_DECL_NSIRUNNABLE
+  NS_DECL_NSIOBSERVER
+
+  nsNotifyAddrListener();
+
+  nsresult Init(void);
+  void CheckLinkStatus(void);
+  static void HashSortedNetworkIds(const std::vector<GUID> nwGUIDS,
+                                   mozilla::SHA1Sum& sha1);
+
+ protected:
+  class ChangeEvent : public mozilla::Runnable {
+   public:
     NS_DECL_NSIRUNNABLE
-    NS_DECL_NSIOBSERVER
+    ChangeEvent(nsINetworkLinkService* aService, const char* aEventID)
+        : Runnable("nsNotifyAddrListener::ChangeEvent"),
+          mService(aService),
+          mEventID(aEventID) {}
 
-    nsNotifyAddrListener();
+   private:
+    nsCOMPtr<nsINetworkLinkService> mService;
+    const char* mEventID;
+  };
 
-    nsresult Init(void);
-    void CheckLinkStatus(void);
+  bool mLinkUp;
+  bool mStatusKnown;
+  bool mCheckAttempted;
 
-protected:
-    class ChangeEvent : public mozilla::Runnable {
-    public:
-        NS_DECL_NSIRUNNABLE
-        ChangeEvent(nsINetworkLinkService *aService, const char *aEventID)
-            : mService(aService), mEventID(aEventID) {
-        }
-    private:
-        nsCOMPtr<nsINetworkLinkService> mService;
-        const char *mEventID;
-    };
+  nsresult Shutdown(void);
+  nsresult SendEvent(const char* aEventID);
 
-    bool mLinkUp;
-    bool mStatusKnown;
-    bool mCheckAttempted;
+  DWORD CheckAdaptersAddresses(void);
 
-    nsresult Shutdown(void);
-    nsresult SendEvent(const char *aEventID);
+  // Checks for an Internet Connection Sharing (ICS) gateway.
+  bool CheckICSGateway(PIP_ADAPTER_ADDRESSES aAdapter);
+  bool CheckICSStatus(PWCHAR aAdapterName);
 
-    DWORD CheckAdaptersAddresses(void);
+  // This threadpool only ever holds 1 thread. It is a threadpool and not a
+  // regular thread so that we may call shutdownWithTimeout on it.
+  nsCOMPtr<nsIThreadPool> mThread;
 
-    // Checks for an Internet Connection Sharing (ICS) gateway.
-    bool  CheckICSGateway(PIP_ADAPTER_ADDRESSES aAdapter);
-    bool  CheckICSStatus(PWCHAR aAdapterName);
+ private:
+  // Returns the new timeout period for coalescing (or INFINITE)
+  DWORD nextCoalesceWaitTime();
 
-    nsCOMPtr<nsIThread> mThread;
+  // Called for every detected network change
+  nsresult NetworkChanged();
 
-private:
-    // Returns the new timeout period for coalescing (or INFINITE)
-    DWORD nextCoalesceWaitTime();
+  // Figure out the current network identification
+  void calculateNetworkId(void);
+  bool findMac(char* gateway);
 
-    // Called for every detected network change
-    nsresult NetworkChanged();
+  mozilla::Mutex mMutex;
+  nsCString mNetworkId;
+  nsTArray<nsCString> mDnsSuffixList;
 
-    // Figure out the current network identification
-    void calculateNetworkId(void);
-    bool findMac(char *gateway);
-    nsCString mNetworkId;
+  HANDLE mCheckEvent;
 
-    HANDLE mCheckEvent;
+  // set true when mCheckEvent means shutdown
+  bool mShutdown;
 
-    // set true when mCheckEvent means shutdown
-    bool mShutdown;
+  // This is a checksum of various meta data for all network interfaces
+  // considered UP at last check.
+  ULONG mIPInterfaceChecksum;
 
-    // This is a checksum of various meta data for all network interfaces
-    // considered UP at last check.
-    ULONG mIPInterfaceChecksum;
+  // start time of the checking
+  mozilla::TimeStamp mStartTime;
 
-    // start time of the checking
-    mozilla::TimeStamp mStartTime;
+  // Flag set while coalescing change events
+  bool mCoalescingActive;
 
-    // Network changed events are enabled
-    bool mAllowChangedEvent;
+  // Time stamp for first event during coalescing
+  mozilla::TimeStamp mChangeTime;
 
-    // Check for IPv6 network changes
-    bool mIPv6Changes;
-
-    // Flag set while coalescing change events
-    bool mCoalescingActive;
-
-    // Time stamp for first event during coalescing
-    mozilla::TimeStamp mChangeTime;
+  // Time stamp of last NS_NETWORK_LINK_DATA_CHANGED event
+  mozilla::TimeStamp mNetworkChangeTime;
 };
 
 #endif /* NSNOTIFYADDRLISTENER_H_ */

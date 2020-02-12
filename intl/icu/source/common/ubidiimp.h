@@ -1,12 +1,14 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
 *
-*   Copyright (C) 1999-2015, International Business Machines
+*   Copyright (C) 1999-2016, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 ******************************************************************************
 *   file name:  ubidiimp.h
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -18,6 +20,7 @@
 #define UBIDIIMP_H
 
 #include "unicode/utypes.h"
+#include "unicode/ubidi.h"
 #include "unicode/uchar.h"
 #include "ubidi_props.h"
 
@@ -250,8 +253,6 @@ struct UBiDi {
      * real value after a successful execution of ubidi_setPara or ubidi_setLine
      */
     const UBiDi * pParaBiDi;
-
-    const UBiDiProps *bdp;
 
     /* alias pointer to the current text */
     const UChar *text;

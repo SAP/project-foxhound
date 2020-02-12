@@ -12,7 +12,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Test for Bug 497003: support sending OnDataAvailable() to other threads</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -46,10 +46,13 @@ function expectInitialContent(e) {
 
   // Set up listener for second load.
   removeEventListener("load", expectInitialContent, false);
-  frameElement.addEventListener("load", expectFullContent, false);
+  frameElement.addEventListener("load", expectFullContent);
 
-  // Reload.
-  frameElement.src="partial_content.sjs";
+  var reload = ()=>frameElement.src = "partial_content.sjs";
+
+  // Before reload, disable rcwn to avoid racing and a non-range request.
+  SpecialPowers.pushPrefEnv({set: [["network.http.rcwn.enabled", false]]},
+                            reload);
 }
 
 /* Check that the iframe has all the content after the second load.

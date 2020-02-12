@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=534785
 -->
 <head>
   <title>Test for Bug 534785</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -32,8 +32,8 @@ SimpleTest.waitForFocus(function() {
     is(i.value, "test", "Sanity check");
 
     is(document.activeElement, i, "Should be focused before frame reconstruction");
-    synthesizeKey("1", {});
-    is(i.value, "test1", "Can accept keyboard events before frame reconstruction");
+    sendString("1");
+    is(i.value, "1test", "Can accept keyboard events before frame reconstruction");
 
     // force frame reconstruction
     i.style.display = "none";
@@ -42,8 +42,8 @@ SimpleTest.waitForFocus(function() {
     document.offsetHeight;
 
     is(document.activeElement, i, "Should be focused after frame reconstruction");
-    synthesizeKey("2", {});
-    is(i.value, "test12", "Can accept keyboard events after frame reconstruction");
+    sendString("2");
+    is(i.value, "12test", "Can accept keyboard events after frame reconstruction");
 
     // Make sure reframing happens gracefully
     var reframeDiv = document.getElementById("reframe");
@@ -78,7 +78,7 @@ SimpleTest.waitForFocus(function() {
     is(inputWithValue.value, "test", "Value should persist correctly with editor");
 
     SimpleTest.finish();
-  }, false);
+  });
   i.focus();
 });
 

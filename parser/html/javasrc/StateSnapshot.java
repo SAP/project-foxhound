@@ -37,8 +37,6 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
 
     private final T headPointer;
 
-    private final T deepTreeSurrogateParent;
-
     private final int mode;
 
     private final int originalMode;
@@ -64,14 +62,13 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      */
     StateSnapshot(StackNode<T>[] stack,
             StackNode<T>[] listOfActiveFormattingElements, int[] templateModeStack, T formPointer,
-            T headPointer, T deepTreeSurrogateParent, int mode, int originalMode,
+            T headPointer, int mode, int originalMode,
             boolean framesetOk, boolean needToDropLF, boolean quirks) {
         this.stack = stack;
         this.listOfActiveFormattingElements = listOfActiveFormattingElements;
         this.templateModeStack = templateModeStack;
         this.formPointer = formPointer;
         this.headPointer = headPointer;
-        this.deepTreeSurrogateParent = deepTreeSurrogateParent;
         this.mode = mode;
         this.originalMode = originalMode;
         this.framesetOk = framesetOk;
@@ -82,6 +79,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getStack()
      */
+    @Override
     public StackNode<T>[] getStack() {
         return stack;
     }
@@ -89,6 +87,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getTemplateModeStack()
      */
+    @Override
     public int[] getTemplateModeStack() {
         return templateModeStack;
     }
@@ -96,6 +95,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getListOfActiveFormattingElements()
      */
+    @Override
     public StackNode<T>[] getListOfActiveFormattingElements() {
         return listOfActiveFormattingElements;
     }
@@ -103,6 +103,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getFormPointer()
      */
+    @Override
     public T getFormPointer() {
         return formPointer;
     }
@@ -112,24 +113,17 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * 
      * @return the headPointer
      */
+    @Override
     public T getHeadPointer() {
         return headPointer;
     }
 
     /**
-     * Returns the deepTreeSurrogateParent.
-     * 
-     * @return the deepTreeSurrogateParent
-     */
-    public T getDeepTreeSurrogateParent() {
-        return deepTreeSurrogateParent;
-    }
-    
-    /**
      * Returns the mode.
      * 
      * @return the mode
      */
+    @Override
     public int getMode() {
         return mode;
     }
@@ -139,6 +133,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * 
      * @return the originalMode
      */
+    @Override
     public int getOriginalMode() {
         return originalMode;
     }
@@ -148,6 +143,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * 
      * @return the framesetOk
      */
+    @Override
     public boolean isFramesetOk() {
         return framesetOk;
     }
@@ -157,6 +153,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * 
      * @return the needToDropLF
      */
+    @Override
     public boolean isNeedToDropLF() {
         return needToDropLF;
     }
@@ -166,6 +163,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
      * 
      * @return the quirks
      */
+    @Override
     public boolean isQuirks() {
         return quirks;
     }
@@ -173,6 +171,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getListOfActiveFormattingElementsLength()
      */
+    @Override
     public int getListOfActiveFormattingElementsLength() {
         return listOfActiveFormattingElements.length;
     }
@@ -180,6 +179,7 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getStackLength()
      */
+    @Override
     public int getStackLength() {
         return stack.length;
     }
@@ -187,17 +187,18 @@ public class StateSnapshot<T> implements TreeBuilderState<T> {
     /**
      * @see nu.validator.htmlparser.impl.TreeBuilderState#getTemplateModeStackLength()
      */
+    @Override
     public int getTemplateModeStackLength() {
         return templateModeStack.length;
     }
 
     @SuppressWarnings("unused") private void destructor() {
         for (int i = 0; i < stack.length; i++) {
-            stack[i].release();
+            stack[i].release(null);
         }
         for (int i = 0; i < listOfActiveFormattingElements.length; i++) {
             if (listOfActiveFormattingElements[i] != null) {
-                listOfActiveFormattingElements[i].release();                
+                listOfActiveFormattingElements[i].release(null);
             }
         }
     }

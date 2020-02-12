@@ -4,8 +4,7 @@
   <title>nsIAccessible::getAccessibleRelated() tests</title>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -15,8 +14,7 @@
           src="../role.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       // html:label@for
       testRelation("label1_1", RELATION_LABEL_FOR, "control1_1");
       testRelation("control1_1", RELATION_LABELLED_BY, "label1_1");
@@ -188,11 +186,19 @@
       testRelation("control1_1", RELATION_CONTAINING_TAB_PANE, getTabDocAccessible("control1_1"));
       testRelation("control1_1", RELATION_CONTAINING_APPLICATION, getApplicationAccessible());
 
+      // details
+      testRelation("has_details", RELATION_DETAILS, "details");
+      testRelation("details", RELATION_DETAILS_FOR, "has_details");
+
+      // error
+      testRelation("has_error", RELATION_ERRORMSG, "error");
+      testRelation("error", RELATION_ERRORMSG_FOR, "has_error");
+
       // finish test
       SimpleTest.finish();
     }
 
-    disableLogging(); // from test_embeds.xul
+    disableLogging(); // from test_embeds.xhtml
     SimpleTest.waitForExplicitFinish();
     addA11yLoadEvent(doTest);
   </script>
@@ -391,5 +397,8 @@
     <legend id="legend">legend</legend>
     <input />
   </fieldset>
+
+  <input id="has_details" aria-details="details"><section id="details"></section>
+  <input id="has_error" aria-errormessage="error"><section id="error"></section>
 </body>
 </html>

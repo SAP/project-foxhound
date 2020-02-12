@@ -8,16 +8,22 @@
  */
 
 dictionary PerformanceObserverInit {
-  required sequence<DOMString> entryTypes;
+  sequence<DOMString> entryTypes;
+	DOMString type;
+  boolean buffered;
 };
 
-callback PerformanceObserverCallback = void (PerformanceObserverEntryList entries, PerformanceObserver observer);
+callback PerformanceObserverCallback = void (PerformanceObserverEntryList entries,
+                                             PerformanceObserver observer);
 
-[Func="Performance::IsObserverEnabled",
- Constructor(PerformanceObserverCallback callback),
+[Pref="dom.enable_performance_observer",
  Exposed=(Window,Worker)]
 interface PerformanceObserver {
-  [Throws]
-  void observe(PerformanceObserverInit options);
-  void disconnect();
+    [Throws]
+    constructor(PerformanceObserverCallback callback);
+
+    [Throws] void observe(optional PerformanceObserverInit options = {});
+    void disconnect();
+    PerformanceEntryList takeRecords();
+    static readonly attribute object supportedEntryTypes;
 };

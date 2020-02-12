@@ -8,38 +8,46 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording, waitForOverviewRenderedWithMarkers } = require("devtools/client/performance/test/helpers/actions");
+const {
+  initPerformanceInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+  waitForOverviewRenderedWithMarkers,
+} = require("devtools/client/performance/test/helpers/actions");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { WaterfallView } = panel.panelWin;
+  const { WaterfallView } = panel.panelWin;
 
-  yield startRecording(panel);
+  await startRecording(panel);
   ok(true, "Recording has started.");
 
   // Ensure overview is rendering and some markers were received.
-  yield waitForOverviewRenderedWithMarkers(panel);
+  await waitForOverviewRenderedWithMarkers(panel);
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
   ok(true, "Recording has ended.");
 
   // Test the waterfall background.
 
-  ok(WaterfallView._waterfallHeader._canvas,
-    "A canvas should be created after the recording ended.");
-  ok(WaterfallView._waterfallHeader._ctx,
-    "A 2d context should be created after the recording ended.");
+  ok(
+    WaterfallView.canvas,
+    "A canvas should be created after the recording ended."
+  );
 
-  is(WaterfallView._waterfallHeader._canvas.width,
-    WaterfallView._markersRoot._waterfallWidth,
-    "The canvas width is correct.");
-  is(WaterfallView._waterfallHeader._canvas.height, 1,
-    "The canvas height is correct.");
+  is(
+    WaterfallView.canvas.width,
+    WaterfallView.waterfallWidth,
+    "The canvas width is correct."
+  );
+  is(WaterfallView.canvas.height, 1, "The canvas height is correct.");
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

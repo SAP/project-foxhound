@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "xptcprivate.h"
-#include "xptiprivate.h"
 
 /*
  * This is for Windows 64 bit (x86_64) using GCC syntax
@@ -32,7 +31,6 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
     const nsXPTMethodInfo* info = nullptr;
     uint8_t paramCount;
     uint8_t i;
-    nsresult result = NS_ERROR_FAILURE;
 
     NS_ASSERTION(self, "no self");
 
@@ -52,6 +50,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
 
     NS_ASSERTION(dispatchParams,"no place for params");
 
+    const uint8_t indexOfJSContext = info->IndexOfJSContext();
+
     uint64_t* ap = args;
     uint32_t iCount = 0;
 
@@ -60,6 +60,13 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         const nsXPTParamInfo& param = info->GetParam(i);
         const nsXPTType& type = param.GetType();
         nsXPTCMiniVariant* dp = &dispatchParams[i];
+
+        if (i == indexOfJSContext) {
+            if (iCount < PARAM_GPR_COUNT)
+                iCount++;
+            else
+                ap++;
+        }
 
         if(param.IsOut() || !type.IsArithmetic())
         {
@@ -131,7 +138,10 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
 
         case nsXPTType::T_FLOAT:
              if (iCount < PARAM_FPR_COUNT)
-                dp->val.f  = (float)fprData[iCount++];
+                // The value in xmm register is already prepared to
+                // be retrieved as a float. Therefore, we pass the
+                // value verbatim, as a double without conversion.
+                dp->val.d  = (double)fprData[iCount++];
              else
                 dp->val.f  = *((float*)ap++);
              break;
@@ -145,7 +155,9 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
 
         case nsXPTType::T_BOOL:
            if (iCount < PARAM_GPR_COUNT)
-              dp->val.b  = (bool)gprData[iCount++];
+              // We need the cast to uint8_t to remove garbage on upper 56-bit
+              // at first.
+              dp->val.b  = (bool)(uint8_t)gprData[iCount++];
            else
               dp->val.b  = *((bool*)ap++);
            break;
@@ -170,7 +182,8 @@ PrepareAndDispatch(nsXPTCStubBase * self, uint32_t methodIndex,
         }
     }
 
-    result = self->mOuter->CallMethod((uint16_t)methodIndex, info, dispatchParams);
+    nsresult result = self->mOuter->CallMethod((uint16_t)methodIndex, info,
+                                               dispatchParams);
 
     if(dispatchParams != paramBuffer)
         delete [] dispatchParams;
@@ -258,26 +271,26 @@ asm(".intel_syntax noprefix\n" /* this is in intel syntax */ \
     ".text\n" \
     ".align 2\n" \
     ".if        " #n " < 10\n" \
-    ".globl       _ZN14nsXPTCStubBase5Stub" #n "Ev@4\n" \
-    ".def         _ZN14nsXPTCStubBase5Stub" #n "Ev@4\n" \
-    ".scl         3\n" /* private */ \
+    ".globl       _ZN14nsXPTCStubBase5Stub" #n "Ev\n" \
+    ".def         _ZN14nsXPTCStubBase5Stub" #n "Ev\n" \
+    ".scl         2\n" /* external */ \
     ".type        46\n" /* function returning unsigned int */ \
     ".endef\n" \
-    "_ZN14nsXPTCStubBase5Stub" #n "Ev@4:\n" \
+    "_ZN14nsXPTCStubBase5Stub" #n "Ev:\n" \
     ".elseif    " #n " < 100\n" \
-    ".globl       _ZN14nsXPTCStubBase6Stub" #n "Ev@4\n" \
-    ".def         _ZN14nsXPTCStubBase6Stub" #n "Ev@4\n" \
-    ".scl         3\n" /* private */\
+    ".globl       _ZN14nsXPTCStubBase6Stub" #n "Ev\n" \
+    ".def         _ZN14nsXPTCStubBase6Stub" #n "Ev\n" \
+    ".scl         2\n" /* external */\
     ".type        46\n" /* function returning unsigned int */ \
     ".endef\n" \
-    "_ZN14nsXPTCStubBase6Stub" #n "Ev@4:\n" \
+    "_ZN14nsXPTCStubBase6Stub" #n "Ev:\n" \
     ".elseif    " #n " < 1000\n" \
-    ".globl       _ZN14nsXPTCStubBase7Stub" #n "Ev@4\n" \
-    ".def         _ZN14nsXPTCStubBase7Stub" #n "Ev@4\n" \
-    ".scl         3\n" /* private */ \
+    ".globl       _ZN14nsXPTCStubBase7Stub" #n "Ev\n" \
+    ".def         _ZN14nsXPTCStubBase7Stub" #n "Ev\n" \
+    ".scl         2\n" /* external */ \
     ".type        46\n" /* function returning unsigned int */ \
     ".endef\n" \
-    "_ZN14nsXPTCStubBase7Stub" #n "Ev@4:\n" \
+    "_ZN14nsXPTCStubBase7Stub" #n "Ev:\n" \
     ".else\n" \
     ".err       \"stub number " #n " >= 1000 not yet supported\"\n" \
     ".endif\n" \
@@ -294,4 +307,3 @@ nsresult nsXPTCStubBase::Sentinel##n() \
 }
 
 #include "xptcstubsdef.inc"
-

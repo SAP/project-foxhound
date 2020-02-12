@@ -19,48 +19,46 @@ namespace net {
 
 class nsProxyInfo;
 
-class NullHttpChannel final
-  : public nsINullChannel
-  , public nsIHttpChannel
-  , public nsITimedChannel
-{
+class NullHttpChannel final : public nsINullChannel,
+                              public nsIHttpChannel,
+                              public nsITimedChannel {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSINULLCHANNEL
   NS_DECL_NSIHTTPCHANNEL
   NS_DECL_NSITIMEDCHANNEL
   NS_DECL_NSIREQUEST
   NS_DECL_NSICHANNEL
+  NS_DECL_NSIIDENTCHANNEL
 
   NullHttpChannel();
 
   // Copies the URI, Principal and Timing-Allow-Origin headers from the
   // passed channel to this object, to be used for resource timing checks
-  explicit NullHttpChannel(nsIHttpChannel * chan);
+  explicit NullHttpChannel(nsIHttpChannel* chan);
 
   // Same signature as nsHttpChannel::Init
-  nsresult Init(nsIURI *aURI, uint32_t aCaps, nsProxyInfo *aProxyInfo,
-                        uint32_t aProxyResolveFlags,
-                        nsIURI *aProxyURI);
-private:
-  ~NullHttpChannel() { }
+  MOZ_MUST_USE nsresult Init(nsIURI* aURI, uint32_t aCaps,
+                             nsProxyInfo* aProxyInfo,
+                             uint32_t aProxyResolveFlags, nsIURI* aProxyURI);
 
-protected:
+ private:
+  ~NullHttpChannel() = default;
+
+ protected:
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mOriginalURI;
 
-  nsString  mInitiatorType;
-  PRTime    mChannelCreationTime;
+  nsString mInitiatorType;
+  PRTime mChannelCreationTime;
   TimeStamp mAsyncOpenTime;
   TimeStamp mChannelCreationTimestamp;
   nsCOMPtr<nsIPrincipal> mResourcePrincipal;
   nsCString mTimingAllowOriginHeader;
-  bool      mAllRedirectsSameOrigin;
-  bool      mAllRedirectsPassTimingAllowCheck;
+  bool mAllRedirectsSameOrigin;
+  bool mAllRedirectsPassTimingAllowCheck;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-
-
-#endif // mozilla_net_NullHttpChannel_h
+#endif  // mozilla_net_NullHttpChannel_h

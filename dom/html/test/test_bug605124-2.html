@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=605124
 -->
 <head>
   <title>Test for Bug 605124</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -44,9 +44,9 @@ function checkElement(aElement)
   aElement.focus();
   checkPseudoClass(aElement, false);
   // with keys
-  synthesizeKey('f', {});
+  sendString("f");
   checkPseudoClass(aElement, false);
-  synthesizeKey('VK_BACK_SPACE', {});
+  synthesizeKey("KEY_Backspace");
   checkPseudoClass(aElement, false);
   // with .value
   aElement.value = 'f';
@@ -62,9 +62,9 @@ function checkElement(aElement)
   aElement.focus();
   checkPseudoClass(aElement, true);
   // with keys
-  synthesizeKey('f', {});
+  sendString("f");
   checkPseudoClass(aElement, false);
-  synthesizeKey('VK_BACK_SPACE', {});
+  synthesizeKey("KEY_Backspace");
   checkPseudoClass(aElement, true);
   // with .value
   aElement.value = 'f';
@@ -88,17 +88,17 @@ function checkSelectElement(aElement)
   checkPseudoClass(aElement, false);
 
   aElement.blur();
-  checkPseudoClass(aElement, true);
+  checkPseudoClass(aElement, !aElement.multiple);
 
   // Focusing while :-moz-ui-invalid applies,
   // the pseudo-class should apply while changing selection if appropriate.
   aElement.focus();
-  checkPseudoClass(aElement, true);
+  checkPseudoClass(aElement, !aElement.multiple);
 
   aElement.selectedIndex = 1;
   checkPseudoClass(aElement, false);
   aElement.selectedIndex = 0;
-  checkPseudoClass(aElement, true);
+  checkPseudoClass(aElement, !aElement.multiple);
 }
 
 checkElement(document.getElementsByTagName('input')[0]);

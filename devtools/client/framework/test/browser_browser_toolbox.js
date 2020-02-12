@@ -1,44 +1,55 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+// There are shutdown issues for which multiple rejections are left uncaught.
+// See bug 1018184 for resolving these issues.
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
+PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
 
 // On debug test slave, it takes about 50s to run the test.
 requestLongerTimeout(4);
 
-add_task(function* runTest() {
-  yield new Promise(done => {
-    let options = {"set": [
-      ["devtools.debugger.prompt-connection", false],
-      ["devtools.debugger.remote-enabled", true],
-      ["devtools.chrome.enabled", true],
-      // Test-only pref to allow passing `testScript` argument to the browser
-      // toolbox
-      ["devtools.browser-toolbox.allow-unsafe-script", true],
-      // On debug test slave, it takes more than the default time (20s)
-      // to get a initialized console
-      ["devtools.debugger.remote-timeout", 120000]
-    ]};
-    SpecialPowers.pushPrefEnv(options, done);
-  });
+add_task(async function() {
+  await setupPreferencesForBrowserToolbox();
 
   // Wait for a notification sent by a script evaluated in the webconsole
   // of the browser toolbox.
-  let onCustomMessage = new Promise(done => {
-    Services.obs.addObserver(function listener() {
+  const onCustomMessage = new Promise(done => {
+    Services.obs.addObserver(function listener(target, aTop, data) {
       Services.obs.removeObserver(listener, "browser-toolbox-console-works");
-      done();
-    }, "browser-toolbox-console-works", false);
+      done(data === "true");
+    }, "browser-toolbox-console-works");
   });
 
   // Be careful, this JS function is going to be executed in the addon toolbox,
   // which lives in another process. So do not try to use any scope variable!
-  let env = Components.classes["@mozilla.org/process/environment;1"].getService(Components.interfaces.nsIEnvironment);
-  let testScript = function () {
-    toolbox.selectTool("webconsole")
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  /* global toolbox */
+  const testScript = function() {
+    toolbox
+      .selectTool("webconsole")
       .then(console => {
-        let { jsterm } = console.hud;
-        let js = "Services.obs.notifyObservers(null, 'browser-toolbox-console-works', null);";
-        return jsterm.execute(js);
+        // This is for checking Browser Toolbox doesn't have a close button.
+        const hasCloseButton = !!toolbox.doc.getElementById("toolbox-close");
+        const { wrapper } = console.hud.ui;
+        const js = `Services.obs.notifyObservers(null, 'browser-toolbox-console-works', ${hasCloseButton} )`;
+        const onResult = new Promise(resolve => {
+          const onNewMessages = messages => {
+            for (const message of messages) {
+              if (message.node.classList.contains("result")) {
+                console.hud.ui.off("new-messages", onNewMessages);
+                resolve();
+              }
+            }
+          };
+          console.hud.ui.on("new-messages", onNewMessages);
+        });
+        wrapper.dispatchEvaluateExpression(js);
+        return onResult;
       })
       .then(() => toolbox.destroy());
   };
@@ -47,19 +58,38 @@ add_task(function* runTest() {
     env.set("MOZ_TOOLBOX_TEST_SCRIPT", "");
   });
 
-  let { BrowserToolboxProcess } = Cu.import("resource://devtools/client/framework/ToolboxProcess.jsm", {});
+  const { BrowserToolboxProcess } = ChromeUtils.import(
+    "resource://devtools/client/framework/ToolboxProcess.jsm"
+  );
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    false,
+    "No session state initially"
+  );
+
   let closePromise;
-  yield new Promise(onRun => {
+  await new Promise(onRun => {
     closePromise = new Promise(onClose => {
       info("Opening the browser toolbox\n");
       BrowserToolboxProcess.init(onClose, onRun);
     });
   });
   ok(true, "Browser toolbox started\n");
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    true,
+    "Has session state"
+  );
 
-  yield onCustomMessage;
+  const hasCloseButton = await onCustomMessage;
   ok(true, "Received the custom message");
+  ok(!hasCloseButton, "Browser toolbox doesn't have a close button");
 
-  yield closePromise;
+  await closePromise;
   ok(true, "Browser toolbox process just closed");
+  is(
+    BrowserToolboxProcess.getBrowserToolboxSessionState(),
+    false,
+    "No session state after closing"
+  );
 });

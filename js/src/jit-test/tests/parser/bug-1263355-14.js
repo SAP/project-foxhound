@@ -1,3 +1,5 @@
+// |jit-test| allow-unhandlable-oom
+gczeal(0);
 function g() {
     for (var j = 0; j < 999; ++j) {
         try {

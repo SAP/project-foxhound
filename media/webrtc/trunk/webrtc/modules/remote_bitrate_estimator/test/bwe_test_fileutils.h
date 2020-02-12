@@ -8,15 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_
-#define WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_
+#ifndef MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_
+#define MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_
 
 #include <stdio.h>
 
 #include <string>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/modules/interface/module_common_types.h"
+#include "modules/include/module_common_types.h"
+#include "rtc_base/constructormagic.h"
 
 namespace webrtc {
 namespace testing {
@@ -35,7 +35,7 @@ class ResourceFileReader {
  private:
   explicit ResourceFileReader(FILE* file) : file_(file) {}
   FILE* file_;
-  DISALLOW_IMPLICIT_CONSTRUCTORS(ResourceFileReader);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(ResourceFileReader);
 };
 
 class OutputFileWriter {
@@ -50,10 +50,10 @@ class OutputFileWriter {
  private:
   explicit OutputFileWriter(FILE* file) : file_(file) {}
   FILE* file_;
-  DISALLOW_IMPLICIT_CONSTRUCTORS(OutputFileWriter);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(OutputFileWriter);
 };
 }  // namespace bwe
 }  // namespace testing
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_
+#endif  // MODULES_REMOTE_BITRATE_ESTIMATOR_TEST_BWE_TEST_FILEUTILS_H_

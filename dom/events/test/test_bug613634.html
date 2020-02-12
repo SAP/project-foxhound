@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=613634
 -->
 <head>
   <title>Test for Bug 613634</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -67,7 +67,7 @@ document.body.dispatchEvent(ev);
 is(eventCount, 3, "Event listener should have been called on document and window!");
 
 document.removeEventListener("foo", l);
-window.removeEventListener("foo", l, false);
+window.removeEventListener("foo", l);
 ev = document.createEvent("Event");
 ev.initEvent("foo", true, true);
 document.body.dispatchEvent(ev);

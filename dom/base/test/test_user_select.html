@@ -34,6 +34,7 @@ a { position:absolute; bottom: 0; right:0; }
 <div id="testB"><n><s>aaaa</s>aaa</n>bbbbbbbbccccccc</div>
 <div id="testC">aaaaaaabbbbbbbb<n>cc<s>c</s>cccc</n></div>
 <div id="testE">aaa<s id="testEc1">aaaa<a class="text">bbbb</a>dd<a>cccc</a>ddddddd</s>eeee</div>
+<div id="testI">aaa<span contenteditable="true" spellcheck="false">bbb</span><s>ccc</s>ddd</div>
 <div id="testF">aaaa
 <div class="non-selectable">x</div>
 <div class="non-selectable">x</div>
@@ -44,8 +45,11 @@ bbbb</div>
 <div class="non-selectable">x</div>
 <div class="non-selectable">x</div>
 bbbb</div>
+<div id="testH" style="white-space:pre">aaaa
+<div class="non-selectable">x</div><input>
+bbbbbbb</div>
 
-<iframe id="testD" src="data:text/html,<body>aaaa<span style='-moz-user-select:none'>bbbb</span>cccc"></iframe>
+<iframe id="testD" srcdoc="<body>aaaa<span style='-moz-user-select:none'>bbbb</span>cccc"></iframe>
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
@@ -242,6 +246,13 @@ function test()
   checkRange(2, [2,0,2,2], e);
   doneTest(e);
 
+  clear();
+  e = document.getElementById('testI');
+  dragSelect(e, 200, 80);
+  checkText('bbd', e);
+  checkRangeCount(2, e);
+  doneTest(e);
+
   // ======================================================
   // ================== shift+click tests =================
   // ======================================================
@@ -282,10 +293,20 @@ function test()
   e = document.getElementById('testG');
   synthesizeMouse(e, 1, 1, {});
   synthesizeMouse(e, 400, 180, { shiftKey: true });
-  checkText("aaaa bbbb", e); // XXX this doesn't seem right - bug 1247799
+  checkText("aaaa\n\n\n\nbbbb", e);
   checkRanges([[0,0,-1,1],[2,0,-1,3],[4,0,-1,5],[6,0,6,5]], e);
   doneTest(e);
 
+  clear();
+  e = document.getElementById('testH');
+  synthesizeMouse(e, 1, 1, {});
+  synthesizeMouse(e, 30, 90, { shiftKey: true });
+  synthesizeMouse(e, 50, 90, { shiftKey: true });
+  synthesizeMouse(e, 70, 90, { shiftKey: true });
+  checkText("aaaa\n\nbbb", e);
+  checkRanges([[0,0,-1,1],[-1,2,3,4]], e);
+
+  doneTest(e);
   // ======================================================
   // ==================== Script tests ====================
   // ======================================================
@@ -320,7 +341,15 @@ function test()
   clear();
   SimpleTest.finish();
 }
-window.onload = function() { setTimeout(test, 0); };
+
+// These tests depends on the Ahem font being loaded and rendered so wait for
+// font to load, then wait a frame for them to be rendered too.
+window.onload = function() {
+  document.fonts.ready.then(function() {
+    requestAnimationFrame(test);
+  });
+};
+
 SimpleTest.waitForExplicitFinish();
 </script>
 </pre>

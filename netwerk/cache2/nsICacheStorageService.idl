@@ -9,6 +9,8 @@ interface nsILoadContextInfo;
 interface nsIApplicationCache;
 interface nsIEventTarget;
 interface nsICacheStorageConsumptionObserver;
+interface nsICacheStorageVisitor;
+interface nsIPrincipal;
 
 /**
  * Provides access to particual cache storages of the network URI cache.
@@ -70,6 +72,14 @@ interface nsICacheStorageService : nsISupports
   nsICacheStorage synthesizedCacheStorage(in nsILoadContextInfo aLoadContextInfo);
 
   /**
+   * Evict any cache entry having the same origin of aPrincipal.
+   *
+   * @param aPrincipal
+   *   The principal to compare the entries with.
+   */
+  void clearOrigin(in nsIPrincipal aPrincipal);
+
+  /**
    * Evict the whole cache.
    */
   void clear();
@@ -109,6 +119,17 @@ interface nsICacheStorageService : nsISupports
    *    NOTE: the observer MUST implement nsISupportsWeakReference.
    */
   void asyncGetDiskConsumption(in nsICacheStorageConsumptionObserver aObserver);
+
+  /**
+   * Asynchronously visits all storages of the disk cache and memory cache.
+   * @see nsICacheStorageVisitor
+   * @param aVisitor
+   *   A visitor callback.
+   * @param aVisitEntries
+   *   A boolean indicates whether visits entries.
+   */
+  void asyncVisitAllStorages(in nsICacheStorageVisitor aVisitor,
+                             in boolean aVisitEntries);
 };
 
 [scriptable, uuid(7728ab5b-4c01-4483-a606-32bf5b8136cb)]

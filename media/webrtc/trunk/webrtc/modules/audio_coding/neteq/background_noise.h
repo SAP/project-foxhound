@@ -8,16 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_
+#define MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_
 
 #include <string.h>  // size_t
+#include <memory>
 
-#include "webrtc/base/constructormagic.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/audio_coding/neteq/audio_multi_vector.h"
-#include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
-#include "webrtc/typedefs.h"
+#include "modules/audio_coding/neteq/audio_multi_vector.h"
+#include "modules/audio_coding/neteq/include/neteq.h"
+#include "rtc_base/constructormagic.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -29,7 +29,7 @@ class BackgroundNoise {
  public:
   // TODO(hlundin): For 48 kHz support, increase kMaxLpcOrder to 10.
   // Will work anyway, but probably sound a little worse.
-  static const int kMaxLpcOrder = 8;  // 32000 / 8000 + 4.
+  static const size_t kMaxLpcOrder = 8;  // 32000 / 8000 + 4.
 
   explicit BackgroundNoise(size_t num_channels);
   virtual ~BackgroundNoise();
@@ -76,10 +76,10 @@ class BackgroundNoise {
 
  private:
   static const int kThresholdIncrement = 229;  // 0.0035 in Q16.
-  static const int kVecLen = 256;
+  static const size_t kVecLen = 256;
   static const int kLogVecLen = 8;  // log2(kVecLen).
-  static const int kResidualLength = 64;
-  static const int kLogResidualLength = 6;  // log2(kResidualLength)
+  static const size_t kResidualLength = 64;
+  static const int16_t kLogResidualLength = 6;  // log2(kResidualLength)
 
   struct ChannelParameters {
     // Constructor.
@@ -95,7 +95,7 @@ class BackgroundNoise {
       memset(filter_state, 0, sizeof(filter_state));
       memset(filter, 0, sizeof(filter));
       filter[0] = 4096;
-      mute_factor = 0,
+      mute_factor = 0;
       scale = 20000;
       scale_shift = 24;
     }
@@ -112,7 +112,7 @@ class BackgroundNoise {
   };
 
   int32_t CalculateAutoCorrelation(const int16_t* signal,
-                                   int length,
+                                   size_t length,
                                    int32_t* auto_correlation) const;
 
   // Increments the energy threshold by a factor 1 + |kThresholdIncrement|.
@@ -126,12 +126,12 @@ class BackgroundNoise {
                       int32_t residual_energy);
 
   size_t num_channels_;
-  rtc::scoped_ptr<ChannelParameters[]> channel_parameters_;
+  std::unique_ptr<ChannelParameters[]> channel_parameters_;
   bool initialized_;
   NetEq::BackgroundNoiseMode mode_;
 
-  DISALLOW_COPY_AND_ASSIGN(BackgroundNoise);
+  RTC_DISALLOW_COPY_AND_ASSIGN(BackgroundNoise);
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_BACKGROUND_NOISE_H_

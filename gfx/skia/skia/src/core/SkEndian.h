@@ -28,7 +28,7 @@
     e.g. 0x1234 -> 0x3412
 */
 static inline uint16_t SkEndianSwap16(uint16_t value) {
-    return static_cast<uint16_t>((value >> 8) | (value << 8));
+    return static_cast<uint16_t>((value >> 8) | ((value & 0xFF) << 8));
 }
 
 template<uint16_t N> struct SkTEndianSwap16 {
@@ -50,7 +50,7 @@ static inline void SkEndianSwap16s(uint16_t array[], int count) {
 /** Reverse all 4 bytes in a 32bit value.
     e.g. 0x12345678 -> 0x78563412
 */
-static inline uint32_t SkEndianSwap32(uint32_t value) {
+static constexpr uint32_t SkEndianSwap32(uint32_t value) {
     return ((value & 0xFF) << 24) |
            ((value & 0xFF00) << 8) |
            ((value & 0xFF0000) >> 8) |

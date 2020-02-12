@@ -3,10 +3,10 @@
 
 "use strict";
 
-const {KeyCodes} = require("devtools/client/shared/keycodes");
+const { KeyCodes } = require("devtools/client/shared/keycodes");
 
-add_task(function* () {
-  for (let key in KeyCodes) {
-    is(KeyCodes[key], Ci.nsIDOMKeyEvent[key], "checking value for " + key);
+add_task(async function() {
+  for (const key in KeyCodes) {
+    is(KeyCodes[key], KeyboardEvent[key], "checking value for " + key);
   }
 });

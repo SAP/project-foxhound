@@ -4,15 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Internationalization")
+
 EXPORTS.mozilla.dom += [
-    'EncodingUtils.h',
     'FallbackEncoding.h',
     'TextDecoder.h',
     'TextEncoder.h',
 ]
 
 UNIFIED_SOURCES += [
-    'EncodingUtils.cpp',
     'FallbackEncoding.cpp',
     'TextDecoder.cpp',
     'TextEncoder.cpp',
@@ -23,22 +24,22 @@ LOCAL_INCLUDES += [
     '/intl/locale',
 ]
 
-props2arrays = '/intl/locale/props2arrays.py'
+props2arrays = 'encodings2arrays.py'
 prefixes = (
     'domainsfallbacks',
-    'encodingsgroups',
     'labelsencodings',
     'localesfallbacks',
-    'nonparticipatingdomains',
 )
 
 for prefix in prefixes:
     input_file = prefix + '.properties'
     header = prefix + '.properties.h'
-    GENERATED_FILES += [header]
-    props = GENERATED_FILES[header]
-    props.script = props2arrays
-    props.inputs = [input_file]
+    GeneratedFile(header, script=props2arrays, inputs=[input_file])
+
+input_file = 'nonparticipatingdomains.properties'
+header = input_file + '.h'
+GeneratedFile(header, script='../../intl/locale/props2arrays.py',
+              inputs=[input_file])
 
 MOCHITEST_MANIFESTS += [
     'test/mochitest.ini',

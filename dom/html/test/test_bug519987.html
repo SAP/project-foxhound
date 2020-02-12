@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=519987
 -->
 <head>
   <title>Test for Bug 519987</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ is((new Image()).namespaceURI, xmlns, "Unexpected namespace for new Image()");
 is((new Audio()).namespaceURI, xmlns, "Unexpected namespace for new Audio()");
 var titles = document.getElementsByTagName("title");
 var t = titles[0];
-t.parentNode.removeChild(t);
+t.remove();
 document.title = "abcdefg";
 is(titles[0].namespaceURI, xmlns, "Unexpected namespace for new <title>");
 

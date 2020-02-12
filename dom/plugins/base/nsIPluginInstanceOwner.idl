@@ -7,7 +7,7 @@
 #include "nspluginroot.idl"
 #include "nsIInputStream.idl"
 
-interface nsIDocument;
+webidl Document;
 
 %{C++
 #include "npapi.h"
@@ -17,8 +17,7 @@ class nsNPAPIPluginInstance;
 enum nsPluginTagType {
   nsPluginTagType_Unknown,
   nsPluginTagType_Embed,
-  nsPluginTagType_Object,
-  nsPluginTagType_Applet
+  nsPluginTagType_Object
 };
 %}
 
@@ -37,7 +36,7 @@ interface nsIPluginInstanceOwner : nsISupports
   /**
    * Get the instance associated with this owner.
    */
-  nsNPAPIPluginInstancePtr getInstance();
+  [notxpcom, nostdcall] nsNPAPIPluginInstancePtr getInstance();
 
   /**
    * Get a handle to the window structure of the owner.
@@ -64,7 +63,7 @@ interface nsIPluginInstanceOwner : nsISupports
    * with nullptr aTarget.
    */
   NS_IMETHOD
-  GetURL(const char *aURL, const char *aTarget, 
+  GetURL(const char *aURL, const char *aTarget,
          nsIInputStream *aPostStream,
          void *aHeadersData, uint32_t aHeadersDataLen,
          bool aDoCheckLoadURIChecks) = 0;
@@ -73,7 +72,7 @@ interface nsIPluginInstanceOwner : nsISupports
   /**
    * Get the associated document.
    */
-  readonly attribute nsIDocument document;
+  readonly attribute Document document;
 
   /**
    * Invalidate the rectangle

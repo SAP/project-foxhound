@@ -6,49 +6,41 @@
 #ifndef nsEditingSession_h__
 #define nsEditingSession_h__
 
-
-#ifndef nsWeakReference_h__
-#include "nsWeakReference.h"            // for nsSupportsWeakReference, etc
-#endif
-
-#include "nsCOMPtr.h"                   // for nsCOMPtr
-#include "nsISupportsImpl.h"            // for NS_DECL_ISUPPORTS
-#include "nsIWeakReferenceUtils.h"      // for nsWeakPtr
-#include "nsWeakReference.h"            // for nsSupportsWeakReference, etc
-#include "nscore.h"                     // for nsresult
+#include "nsCOMPtr.h"               // for nsCOMPtr
+#include "nsISupportsImpl.h"        // for NS_DECL_ISUPPORTS
+#include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
+#include "nsWeakReference.h"        // for nsSupportsWeakReference, etc
+#include "nscore.h"                 // for nsresult
 
 #ifndef __gen_nsIWebProgressListener_h__
-#include "nsIWebProgressListener.h"
+#  include "nsIWebProgressListener.h"
 #endif
 
 #ifndef __gen_nsIEditingSession_h__
-#include "nsIEditingSession.h"          // for NS_DECL_NSIEDITINGSESSION, etc
+#  include "nsIEditingSession.h"  // for NS_DECL_NSIEDITINGSESSION, etc
 #endif
 
-#include "nsString.h"                   // for nsCString
+#include "nsString.h"  // for nsCString
 
 class mozIDOMWindowProxy;
+class nsBaseCommandController;
 class nsIDOMWindow;
 class nsISupports;
 class nsITimer;
-
-#define NS_EDITINGSESSION_CID                            \
-{ 0xbc26ff01, 0xf2bd, 0x11d4, { 0xa7, 0x3c, 0xe5, 0xa4, 0xb5, 0xa8, 0xbd, 0xfc } }
-
-
-class nsComposerCommandsUpdater;
 class nsIChannel;
 class nsIControllers;
 class nsIDocShell;
-class nsIEditor;
 class nsIWebProgress;
+
+namespace mozilla {
+class ComposerCommandsUpdater;
+class HTMLEditor;
+}  // namespace mozilla
 
 class nsEditingSession final : public nsIEditingSession,
                                public nsIWebProgressListener,
-                               public nsSupportsWeakReference
-{
-public:
-
+                               public nsSupportsWeakReference {
+ public:
   nsEditingSession();
 
   // nsISupports
@@ -60,88 +52,119 @@ public:
   // nsIEditingSession
   NS_DECL_NSIEDITINGSESSION
 
-protected:
-  virtual         ~nsEditingSession();
+  /**
+   * Removes all the editor's controllers/listeners etc and makes the window
+   * uneditable.
+   */
+  nsresult DetachFromWindow(nsPIDOMWindowOuter* aWindow);
 
-  nsresult        SetupEditorCommandController(const char *aControllerClassName,
-                                               mozIDOMWindowProxy* aWindow,
-                                               nsISupports *aContext,
-                                               uint32_t *aControllerId);
+  /**
+   * Undos DetachFromWindow(), reattaches this editing session/editor
+   * to the window.
+   */
+  nsresult ReattachToWindow(nsPIDOMWindowOuter* aWindow);
 
-  nsresult        SetContextOnControllerById(nsIControllers* aControllers,
-                                            nsISupports* aContext,
-                                            uint32_t aID);
+ protected:
+  virtual ~nsEditingSession();
 
-  nsresult        PrepareForEditing(nsPIDOMWindowOuter* aWindow);
+  typedef already_AddRefed<nsBaseCommandController> (*ControllerCreatorFn)();
 
-  static void     TimerCallback(nsITimer *aTimer, void *aClosure);
-  nsCOMPtr<nsITimer>  mLoadBlankDocTimer;
+  nsresult SetupEditorCommandController(
+      ControllerCreatorFn aControllerCreatorFn, mozIDOMWindowProxy* aWindow,
+      nsISupports* aContext, uint32_t* aControllerId);
+
+  nsresult SetContextOnControllerById(nsIControllers* aControllers,
+                                      nsISupports* aContext, uint32_t aID);
+
+  /**
+   *  Set the editor on the controller(s) for this window
+   */
+  nsresult SetEditorOnControllers(nsPIDOMWindowOuter& aWindow,
+                                  mozilla::HTMLEditor* aEditor);
+
+  /**
+   *  Setup editor and related support objects
+   */
+  MOZ_CAN_RUN_SCRIPT nsresult SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow);
+
+  nsresult PrepareForEditing(nsPIDOMWindowOuter* aWindow);
+
+  static void TimerCallback(nsITimer* aTimer, void* aClosure);
+  nsCOMPtr<nsITimer> mLoadBlankDocTimer;
 
   // progress load stuff
-  nsresult        StartDocumentLoad(nsIWebProgress *aWebProgress,
-                                    bool isToBeMadeEditable);
-  nsresult        EndDocumentLoad(nsIWebProgress *aWebProgress,
-                                  nsIChannel* aChannel, nsresult aStatus,
-                                  bool isToBeMadeEditable);
-  nsresult        StartPageLoad(nsIChannel *aChannel);
-  nsresult        EndPageLoad(nsIWebProgress *aWebProgress,
-                              nsIChannel* aChannel, nsresult aStatus);
+  nsresult StartDocumentLoad(nsIWebProgress* aWebProgress,
+                             bool isToBeMadeEditable);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  nsresult EndDocumentLoad(nsIWebProgress* aWebProgress, nsIChannel* aChannel,
+                           nsresult aStatus, bool isToBeMadeEditable);
+  nsresult StartPageLoad(nsIChannel* aChannel);
+  nsresult EndPageLoad(nsIWebProgress* aWebProgress, nsIChannel* aChannel,
+                       nsresult aStatus);
 
-  bool            IsProgressForTargetDocument(nsIWebProgress *aWebProgress);
+  bool IsProgressForTargetDocument(nsIWebProgress* aWebProgress);
 
-  void            RemoveEditorControllers(nsPIDOMWindowOuter* aWindow);
-  void            RemoveWebProgressListener(nsPIDOMWindowOuter* aWindow);
-  void            RestoreAnimationMode(nsPIDOMWindowOuter* aWindow);
-  void            RemoveListenersAndControllers(nsPIDOMWindowOuter* aWindow,
-                                                nsIEditor *aEditor);
+  void RemoveEditorControllers(nsPIDOMWindowOuter* aWindow);
+  void RemoveWebProgressListener(nsPIDOMWindowOuter* aWindow);
+  void RestoreAnimationMode(nsPIDOMWindowOuter* aWindow);
+  void RemoveListenersAndControllers(nsPIDOMWindowOuter* aWindow,
+                                     mozilla::HTMLEditor* aHTMLEditor);
 
-protected:
+  /**
+   * Disable scripts and plugins in aDocShell.
+   */
+  nsresult DisableJSAndPlugins(nsIDocShell& aDocShell);
 
-  bool            mDoneSetup;    // have we prepared for editing yet?
+  /**
+   * Restore JS and plugins (enable/disable them) according to the state they
+   * were before the last call to disableJSAndPlugins.
+   */
+  nsresult RestoreJSAndPlugins(nsPIDOMWindowOuter* aWindow);
+
+ protected:
+  bool mDoneSetup;  // have we prepared for editing yet?
 
   // Used to prevent double creation of editor because nsIWebProgressListener
   //  receives a STATE_STOP notification before the STATE_START
   //  for our document, so we wait for the STATE_START, then STATE_STOP
   //  before creating an editor
-  bool            mCanCreateEditor;
+  bool mCanCreateEditor;
 
-  bool            mInteractive;
-  bool            mMakeWholeDocumentEditable;
+  bool mInteractive;
+  bool mMakeWholeDocumentEditable;
 
-  bool            mDisabledJSAndPlugins;
+  bool mDisabledJSAndPlugins;
 
   // True if scripts were enabled before the editor turned scripts
   // off, otherwise false.
-  bool            mScriptsEnabled;
+  bool mScriptsEnabled;
 
   // True if plugins were enabled before the editor turned plugins
   // off, otherwise false.
-  bool            mPluginsEnabled;
+  bool mPluginsEnabled;
 
-  bool            mProgressListenerRegistered;
+  bool mProgressListenerRegistered;
 
   // The image animation mode before it was turned off.
-  uint16_t        mImageAnimationMode;
+  uint16_t mImageAnimationMode;
 
   // THE REMAINING MEMBER VARIABLES WILL BECOME A SET WHEN WE EDIT
   // MORE THAN ONE EDITOR PER EDITING SESSION
-  RefPtr<nsComposerCommandsUpdater> mStateMaintainer;
+  RefPtr<mozilla::ComposerCommandsUpdater> mComposerCommandsUpdater;
 
   // Save the editor type so we can create the editor after loading uri
-  nsCString       mEditorType;
-  uint32_t        mEditorFlags;
-  uint32_t        mEditorStatus;
-  uint32_t        mBaseCommandControllerId;
-  uint32_t        mDocStateControllerId;
-  uint32_t        mHTMLCommandControllerId;
+  nsCString mEditorType;
+  uint32_t mEditorFlags;
+  uint32_t mEditorStatus;
+  uint32_t mBaseCommandControllerId;
+  uint32_t mDocStateControllerId;
+  uint32_t mHTMLCommandControllerId;
 
   // Make sure the docshell we use is safe
-  nsWeakPtr       mDocShell;
+  nsWeakPtr mDocShell;
 
   // See if we can reuse an existing editor
-  nsWeakPtr       mExistingEditor;
+  nsWeakPtr mExistingEditor;
 };
 
-
-
-#endif // nsEditingSession_h__
+#endif  // nsEditingSession_h__

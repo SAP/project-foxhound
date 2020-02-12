@@ -10,10 +10,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/FileSystemDirectoryEntry.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-
-class nsIGlobalObject;
 
 namespace mozilla {
 namespace dom {
@@ -22,44 +21,39 @@ class Directory;
 class FileSystem;
 class FileSystemEntriesCallback;
 
-class FileSystemDirectoryReader
-  : public nsISupports
-  , public nsWrapperCache
-{
-public:
+class FileSystemDirectoryReader : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(FileSystemDirectoryReader)
 
-  explicit FileSystemDirectoryReader(nsIGlobalObject* aGlobalObject,
+  explicit FileSystemDirectoryReader(FileSystemDirectoryEntry* aDirectoryEntry,
                                      FileSystem* aFileSystem,
                                      Directory* aDirectory);
 
-  nsIGlobalObject*
-  GetParentObject() const
-  {
-    return mParent;
+  nsIGlobalObject* GetParentObject() const {
+    return mParentEntry->GetParentObject();
   }
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual void
-  ReadEntries(FileSystemEntriesCallback& aSuccessCallback,
-              const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
-              ErrorResult& aRv);
+  virtual void ReadEntries(
+      FileSystemEntriesCallback& aSuccessCallback,
+      const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
+      ErrorResult& aRv);
 
-protected:
+ protected:
   virtual ~FileSystemDirectoryReader();
 
-private:
-  nsCOMPtr<nsIGlobalObject> mParent;
+ private:
+  RefPtr<FileSystemDirectoryEntry> mParentEntry;
   RefPtr<FileSystem> mFileSystem;
   RefPtr<Directory> mDirectory;
 
   bool mAlreadyRead;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FileSystemDirectoryReader_h
+#endif  // mozilla_dom_FileSystemDirectoryReader_h

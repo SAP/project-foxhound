@@ -11,10 +11,10 @@
 #ifndef mozilla_image_IDecodingTask_h
 #define mozilla_image_IDecodingTask_h
 
+#include "imgFrame.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
-
-#include "imgFrame.h"
+#include "nsIEventTarget.h"
 #include "SourceBuffer.h"
 
 namespace mozilla {
@@ -24,18 +24,13 @@ class Decoder;
 class RasterImage;
 
 /// A priority hint that DecodePool can use when scheduling an IDecodingTask.
-enum class TaskPriority : uint8_t
-{
-  eLow,
-  eHigh
-};
+enum class TaskPriority : uint8_t { eLow, eHigh };
 
 /**
  * An interface for tasks which can execute on the ImageLib DecodePool.
  */
-class IDecodingTask : public IResumable
-{
-public:
+class IDecodingTask : public IResumable {
+ public:
   /// Run the task.
   virtual void Run() = 0;
 
@@ -49,26 +44,30 @@ public:
   /// DecodePool. Subclasses can override this if they need different behavior.
   void Resume() override;
 
-protected:
+ protected:
+  virtual ~IDecodingTask() {}
+
   /// Notify @aImage of @aDecoder's progress.
-  static void NotifyProgress(NotNull<RasterImage*> aImage,
-                             NotNull<Decoder*> aDecoder);
+  void NotifyProgress(NotNull<RasterImage*> aImage, NotNull<Decoder*> aDecoder);
 
   /// Notify @aImage that @aDecoder has finished.
-  static void NotifyDecodeComplete(NotNull<RasterImage*> aImage,
-                                   NotNull<Decoder*> aDecoder);
+  void NotifyDecodeComplete(NotNull<RasterImage*> aImage,
+                            NotNull<Decoder*> aDecoder);
 
-  virtual ~IDecodingTask() { }
+ private:
+  void EnsureHasEventTarget(NotNull<RasterImage*> aImage);
+
+  bool IsOnEventTarget() const;
+
+  nsCOMPtr<nsIEventTarget> mEventTarget;
 };
-
 
 /**
  * An IDecodingTask implementation for metadata decodes of images.
  */
-class MetadataDecodingTask final : public IDecodingTask
-{
-public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MetadataDecodingTask, override)
+class MetadataDecodingTask final : public IDecodingTask {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_RECORDED(MetadataDecodingTask, override)
 
   explicit MetadataDecodingTask(NotNull<Decoder*> aDecoder);
 
@@ -83,8 +82,8 @@ public:
   // page load.
   TaskPriority Priority() const override { return TaskPriority::eHigh; }
 
-private:
-  virtual ~MetadataDecodingTask() { }
+ private:
+  virtual ~MetadataDecodingTask() {}
 
   /// Mutex protecting access to mDecoder.
   Mutex mMutex;
@@ -92,35 +91,32 @@ private:
   NotNull<RefPtr<Decoder>> mDecoder;
 };
 
-
 /**
  * An IDecodingTask implementation for anonymous decoders - that is, decoders
  * with no associated Image object.
  */
-class AnonymousDecodingTask final : public IDecodingTask
-{
-public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AnonymousDecodingTask, override)
+class AnonymousDecodingTask final : public IDecodingTask {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_RECORDED(AnonymousDecodingTask,
+                                                 override)
 
-  explicit AnonymousDecodingTask(NotNull<Decoder*> aDecoder);
+  explicit AnonymousDecodingTask(NotNull<Decoder*> aDecoder, bool aResumable);
 
   void Run() override;
 
   bool ShouldPreferSyncRun() const override { return true; }
   TaskPriority Priority() const override { return TaskPriority::eLow; }
 
-  // Anonymous decoders normally get all their data at once. We have tests where
-  // they don't; in these situations, the test re-runs them manually. So no
-  // matter what, we don't want to resume by posting a task to the DecodePool.
-  void Resume() override { }
+  void Resume() override;
 
-private:
-  virtual ~AnonymousDecodingTask() { }
+ private:
+  virtual ~AnonymousDecodingTask() {}
 
   NotNull<RefPtr<Decoder>> mDecoder;
+  bool mResumable;
 };
 
-} // namespace image
-} // namespace mozilla
+}  // namespace image
+}  // namespace mozilla
 
-#endif // mozilla_image_IDecodingTask_h
+#endif  // mozilla_image_IDecodingTask_h

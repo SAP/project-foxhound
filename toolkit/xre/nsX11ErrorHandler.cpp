@@ -13,11 +13,10 @@
 #include "mozilla/X11Util.h"
 #include <X11/Xlib.h>
 
-#define BUFSIZE 2048 // What Xlib uses with XGetErrorDatabaseText
+#define BUFSIZE 2048  // What Xlib uses with XGetErrorDatabaseText
 
 extern "C" {
-int
-X11Error(Display *display, XErrorEvent *event) {
+int X11Error(Display* display, XErrorEvent* event) {
   // Get an indication of how long ago the request that caused the error was
   // made.
   unsigned long age = NextRequest(display) - event->serial;
@@ -36,7 +35,7 @@ X11Error(Display *display, XErrorEvent *event) {
     // temporary Display to request extension information.  This assumes on
     // the DISPLAY environment variable has been set and matches what was used
     // to open |display|.
-    Display *tmpDisplay = XOpenDisplay(nullptr);
+    Display* tmpDisplay = XOpenDisplay(nullptr);
     if (tmpDisplay) {
       int nExts;
       char** extNames = XListExtensions(tmpDisplay, &nExts);
@@ -44,9 +43,9 @@ X11Error(Display *display, XErrorEvent *event) {
       if (extNames) {
         for (int i = 0; i < nExts; ++i) {
           int major_opcode, first_event;
-          if (XQueryExtension(tmpDisplay, extNames[i],
-                              &major_opcode, &first_event, &first_error)
-              && major_opcode == event->request_code) {
+          if (XQueryExtension(tmpDisplay, extNames[i], &major_opcode,
+                              &first_event, &first_error) &&
+              major_opcode == event->request_code) {
             message.Append(extNames[i]);
             message.Append('.');
             message.AppendInt(event->minor_code);
@@ -57,17 +56,6 @@ X11Error(Display *display, XErrorEvent *event) {
         XFreeExtensionList(extNames);
       }
       XCloseDisplay(tmpDisplay);
-
-#if (MOZ_WIDGET_GTK == 2)
-      // GDK2 calls XCloseDevice the devices that it opened on startup, but
-      // the XI protocol no longer ensures that the devices will still exist.
-      // If they have been removed, then a BadDevice error results.  Ignore
-      // this error.
-      if (message.EqualsLiteral("XInputExtension.4") &&
-          event->error_code == first_error + 0) {
-        return 0;
-      }
-#endif
     }
   }
 
@@ -75,8 +63,8 @@ X11Error(Display *display, XErrorEvent *event) {
   if (message.IsEmpty()) {
     buffer[0] = '\0';
   } else {
-    XGetErrorDatabaseText(display, "XRequest", message.get(), "",
-                          buffer, sizeof(buffer));
+    XGetErrorDatabaseText(display, "XRequest", message.get(), "", buffer,
+                          sizeof(buffer));
   }
 
   nsAutoCString notes;
@@ -108,7 +96,7 @@ X11Error(Display *display, XErrorEvent *event) {
     // XSynchronize returns the previous "after function".  If a second
     // XSynchronize call returns the same function after an enable call then
     // synchronization must have already been enabled.
-    if (XSynchronize(display, True) == XSynchronize(display, False)) {
+    if (XSynchronize(display, X11True) == XSynchronize(display, X11False)) {
       notes.AppendLiteral("; sync");
     } else {
       notes.AppendLiteral("; ");
@@ -117,48 +105,42 @@ X11Error(Display *display, XErrorEvent *event) {
     }
   }
 
-#ifdef MOZ_CRASHREPORTER
   switch (XRE_GetProcessType()) {
-  case GeckoProcessType_Default:
-  case GeckoProcessType_Plugin:
-  case GeckoProcessType_Content:
-    CrashReporter::AppendAppNotesToCrashReport(notes);
-    break;
-  default: 
-    ; // crash report notes not supported.
+    case GeckoProcessType_Default:
+    case GeckoProcessType_Plugin:
+    case GeckoProcessType_Content:
+      CrashReporter::AppendAppNotesToCrashReport(notes);
+      break;
+    default:;  // crash report notes not supported.
   }
-#endif
 
 #ifdef DEBUG
   // The resource id is unlikely to be useful in a crash report without
   // context of other ids, but add it to the debug console output.
   notes.AppendLiteral("; id=0x");
   notes.AppendInt(uint32_t(event->resourceid), 16);
-#ifdef MOZ_X11
+#  ifdef MOZ_X11
   // Actually, for requests where Xlib gets the reply synchronously,
   // MOZ_X_SYNC=1 will not be necessary, but we don't have a table to tell us
   // which requests get a synchronous reply.
   if (!PR_GetEnv("MOZ_X_SYNC")) {
-    notes.AppendLiteral("\nRe-running with MOZ_X_SYNC=1 in the environment may give a more helpful backtrace.");
+    notes.AppendLiteral(
+        "\nRe-running with MOZ_X_SYNC=1 in the environment may give a more "
+        "helpful backtrace.");
   }
-#endif
+#  endif
 #endif
 
-  NS_RUNTIMEABORT(notes.get());
-  return 0; // not reached
+  MOZ_CRASH_UNSAFE(notes.get());
 }
 }
 
-#if (MOZ_WIDGET_GTK != 3)
-void
-InstallX11ErrorHandler()
-{
+void InstallX11ErrorHandler() {
   XSetErrorHandler(X11Error);
 
-  Display *display = mozilla::DefaultXDisplay();
+  Display* display = mozilla::DefaultXDisplay();
   NS_ASSERTION(display, "No X display");
   if (PR_GetEnv("MOZ_X_SYNC")) {
-    XSynchronize(display, True);
+    XSynchronize(display, X11True);
   }
 }
-#endif

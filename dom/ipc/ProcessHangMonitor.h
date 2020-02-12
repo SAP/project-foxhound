@@ -7,29 +7,32 @@
 #ifndef mozilla_ProcessHangMonitor_h
 #define mozilla_ProcessHangMonitor_h
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Atomics.h"
+#include "nsCOMPtr.h"
 #include "nsIObserver.h"
+#include "nsIRemoteTab.h"
+#include "nsStringFwd.h"
 
-class nsITabChild;
-
-class MessageLoop;
-
-namespace base {
-class Thread;
-} // namespace base
+class nsIRunnable;
+class nsIBrowserChild;
+class nsIThread;
 
 namespace mozilla {
 
 namespace dom {
 class ContentParent;
-class TabParent;
-} // namespace dom
+class BrowserParent;
+struct CancelContentJSOptions;
+}  // namespace dom
+
+namespace layers {
+struct LayersObserverEpoch;
+}  // namespace layers
 
 class PProcessHangMonitorParent;
 
-class ProcessHangMonitor final
-  : public nsIObserver
-{
+class ProcessHangMonitor final : public nsIObserver {
  private:
   ProcessHangMonitor();
   virtual ~ProcessHangMonitor();
@@ -41,23 +44,33 @@ class ProcessHangMonitor final
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  static void AddProcess(dom::ContentParent* aContentParent);
+  static PProcessHangMonitorParent* AddProcess(
+      dom::ContentParent* aContentParent);
   static void RemoveProcess(PProcessHangMonitorParent* aParent);
 
   static void ClearHang();
 
-  static void ForcePaint(PProcessHangMonitorParent* aParent,
-                         dom::TabParent* aTab,
-                         uint64_t aLayerObserverEpoch);
+  static void PaintWhileInterruptingJS(
+      PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
+      const layers::LayersObserverEpoch& aEpoch);
+  static void ClearPaintWhileInterruptingJS(
+      const layers::LayersObserverEpoch& aEpoch);
+  static void MaybeStartPaintWhileInterruptingJS();
+
+  static void CancelContentJSExecutionIfRunning(
+      PProcessHangMonitorParent* aParent, dom::BrowserParent* aTab,
+      nsIRemoteTab::NavigationType aNavigationType,
+      const dom::CancelContentJSOptions& aCancelContentJSOptions);
 
   enum SlowScriptAction {
     Continue,
     Terminate,
-    StartDebugger
+    StartDebugger,
+    TerminateGlobal,
   };
-  SlowScriptAction NotifySlowScript(nsITabChild* aTabChild,
+  SlowScriptAction NotifySlowScript(nsIBrowserChild* aBrowserChild,
                                     const char* aFileName,
-                                    unsigned aLineNo);
+                                    const nsString& aAddonId);
 
   void NotifyPluginHang(uint32_t aPluginId);
 
@@ -66,16 +79,17 @@ class ProcessHangMonitor final
   void InitiateCPOWTimeout();
   bool ShouldTimeOutCPOWs();
 
-  MessageLoop* MonitorLoop();
+  void Dispatch(already_AddRefed<nsIRunnable> aRunnable);
+  bool IsOnThread();
 
  private:
   static ProcessHangMonitor* sInstance;
 
   Atomic<bool> mCPOWTimeout;
 
-  base::Thread* mThread;
+  nsCOMPtr<nsIThread> mThread;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_ProcessHangMonitor_h
+#endif  // mozilla_ProcessHangMonitor_h

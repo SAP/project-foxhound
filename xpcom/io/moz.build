@@ -16,10 +16,10 @@ XPIDL_SOURCES += [
     'nsIDirectoryService.idl',
     'nsIFile.idl',
     'nsIInputStream.idl',
+    'nsIInputStreamLength.idl',
     'nsIInputStreamTee.idl',
     'nsIIOUtil.idl',
     'nsILineInputStream.idl',
-    'nsILocalFile.idl',
     'nsILocalFileWin.idl',
     'nsIMultiplexInputStream.idl',
     'nsIObjectInputStream.idl',
@@ -33,6 +33,7 @@ XPIDL_SOURCES += [
     'nsIStorageStream.idl',
     'nsIStreamBufferAccess.idl',
     'nsIStringStream.idl',
+    'nsITellableStream.idl',
     'nsITaintawareInputStream.idl',
     'nsIUnicharInputStream.idl',
     'nsIUnicharLineInputStream.idl',
@@ -61,16 +62,21 @@ else:
 
 XPIDL_MODULE = 'xpcom_io'
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 EXPORTS += [
+    'FileDescriptorFile.h',
     'nsAnonymousTemporaryFile.h',
     'nsAppDirectoryServiceDefs.h',
     'nsDirectoryService.h',
-    'nsDirectoryServiceAtomList.h',
     'nsDirectoryServiceDefs.h',
     'nsDirectoryServiceUtils.h',
     'nsEscape.h',
     'nsLinebreakConverter.h',
     'nsLocalFile.h',
+    'nsLocalFileCommon.h',
     'nsMultiplexInputStream.h',
     'nsNativeCharsetUtils.h',
     'nsScriptableInputStream.h',
@@ -79,12 +85,16 @@ EXPORTS += [
     'nsStringStream.h',
     'nsUnicharInputStream.h',
     'nsWildCard.h',
-    'SlicedInputStream.h',
     'SpecialSystemDirectory.h',
 ]
 
 EXPORTS.mozilla += [
     'Base64.h',
+    'FilePreferences.h',
+    'InputStreamLengthHelper.h',
+    'InputStreamLengthWrapper.h',
+    'NonBlockingAsyncInputStream.h',
+    'SlicedInputStream.h',
     'SnappyCompressOutputStream.h',
     'SnappyFrameUtils.h',
     'SnappyUncompressInputStream.h',
@@ -93,6 +103,11 @@ EXPORTS.mozilla += [
 UNIFIED_SOURCES += [
     'Base64.cpp',
     'crc32c.c',
+    'FileDescriptorFile.cpp',
+    'FilePreferences.cpp',
+    'InputStreamLengthHelper.cpp',
+    'InputStreamLengthWrapper.cpp',
+    'NonBlockingAsyncInputStream.cpp',
     'nsAnonymousTemporaryFile.cpp',
     'nsAppFileLocationProvider.cpp',
     'nsBinaryStream.cpp',
@@ -132,10 +147,7 @@ FINAL_LIBRARY = 'xul'
 if CONFIG['OS_ARCH'] == 'Linux' and 'lib64' in CONFIG['libdir']:
     DEFINES['HAVE_USR_LIB64_DIR'] = True
 
-LOCAL_INCLUDES += ['!..']
-
-if CONFIG['_MSC_VER']:
-    # This is intended as a temporary hack to support building with VS2015.
-    # '_snwprintf' : format string '%s' requires an argument of type 'wchar_t *',
-    # but variadic argument 3 has type 'char16ptr_t'
-    CXXFLAGS += ['-wd4477']
+LOCAL_INCLUDES += [
+    '!..',
+    '../build',
+]

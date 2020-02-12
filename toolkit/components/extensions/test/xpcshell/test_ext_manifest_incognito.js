@@ -2,26 +2,47 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+add_task(async function test_manifest_incognito() {
+  Services.prefs.setBoolPref("extensions.allowPrivateBrowsingByDefault", false);
 
-add_task(function* test_manifest_incognito() {
-  let normalized = yield ExtensionTestUtils.normalizeManifest({
-    "incognito": "spanning",
+  let normalized = await ExtensionTestUtils.normalizeManifest({
+    incognito: "spanning",
   });
 
   equal(normalized.error, undefined, "Should not have an error");
   equal(normalized.errors.length, 0, "Should not have warnings");
-  equal(normalized.value.incognito,
-        "spanning",
-        "Should have the expected incognito string");
+  equal(
+    normalized.value.incognito,
+    "spanning",
+    "Should have the expected incognito string"
+  );
 
-  normalized = yield ExtensionTestUtils.normalizeManifest({
-    "incognito": "split",
+  normalized = await ExtensionTestUtils.normalizeManifest({
+    incognito: "not_allowed",
   });
 
   equal(normalized.error, undefined, "Should not have an error");
-  Assert.deepEqual(normalized.errors,
-                   ['Error processing incognito: Invalid enumeration value "split"'],
-                   "Should have the expected warning");
-  equal(normalized.value.incognito, null,
-        "Invalid incognito string should be omitted");
+  equal(normalized.errors.length, 0, "Should not have warnings");
+  equal(
+    normalized.value.incognito,
+    "not_allowed",
+    "Should have the expected incognito string"
+  );
+
+  normalized = await ExtensionTestUtils.normalizeManifest({
+    incognito: "split",
+  });
+
+  equal(
+    normalized.error,
+    'Error processing incognito: Invalid enumeration value "split"',
+    "Should have an error"
+  );
+  Assert.deepEqual(normalized.errors, [], "Should not have a warning");
+  equal(
+    normalized.value,
+    undefined,
+    "Invalid incognito string should be undefined"
+  );
+  Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
 });

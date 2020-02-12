@@ -39,6 +39,7 @@ enum AccType {
   eHTMLTableCellType,
   eHTMLTableRowType,
   eHTMLTextFieldType,
+  eHTMLTextPasswordFieldType,
   eHyperTextType,
   eImageType,
   eOuterDocType,
@@ -88,7 +89,7 @@ enum AccGenericType {
   eLastAccGenericType = eText
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
-#endif // mozilla_a11y_AccTypes_h
+#endif  // mozilla_a11y_AccTypes_h

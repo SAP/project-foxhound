@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=4 et sw=4 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/scache/StartupCache.h"
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
-#include "nsJSPrincipals.h"
-
-#include "mozilla/scache/StartupCache.h"
+#include "mozilla/BasePrincipal.h"
 
 using namespace JS;
 using namespace mozilla::scache;
@@ -19,80 +18,60 @@ using mozilla::UniquePtr;
 // We only serialize scripts with system principals. So we don't serialize the
 // principals when writing a script. Instead, when reading it back, we set the
 // principals to the system principals.
-nsresult
-ReadCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
-                 nsIPrincipal* systemPrincipal, MutableHandleScript scriptp)
-{
-    UniquePtr<char[]> buf;
-    uint32_t len;
-    nsresult rv = cache->GetBuffer(PromiseFlatCString(uri).get(), &buf, &len);
-    if (NS_FAILED(rv))
-        return rv; // don't warn since NOT_AVAILABLE is an ok error
-
-    scriptp.set(JS_DecodeScript(cx, buf.get(), len));
-    if (!scriptp)
-        return NS_ERROR_OUT_OF_MEMORY;
+nsresult ReadCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
+                          MutableHandleScript scriptp) {
+  const char* buf;
+  uint32_t len;
+  nsresult rv = cache->GetBuffer(PromiseFlatCString(uri).get(), &buf, &len);
+  if (NS_FAILED(rv)) {
+    return rv;  // don't warn since NOT_AVAILABLE is an ok error
+  }
+  void* copy = malloc(len);
+  if (!copy) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  memcpy(copy, buf, len);
+  JS::TranscodeBuffer buffer;
+  buffer.replaceRawBuffer(reinterpret_cast<uint8_t*>(copy), len);
+  JS::TranscodeResult code = JS::DecodeScript(cx, buffer, scriptp);
+  if (code == JS::TranscodeResult_Ok) {
     return NS_OK;
-}
+  }
 
-nsresult
-ReadCachedFunction(StartupCache* cache, nsACString& uri, JSContext* cx,
-                   nsIPrincipal* systemPrincipal, JSFunction** functionp)
-{
+  if ((code & JS::TranscodeResult_Failure) != 0) {
     return NS_ERROR_FAILURE;
-/*  This doesn't actually work ...
-    nsAutoArrayPtr<char> buf;
-    uint32_t len;
-    nsresult rv = cache->GetBuffer(PromiseFlatCString(uri).get(),
-                                   getter_Transfers(buf), &len);
-    if (NS_FAILED(rv))
-        return rv; // don't warn since NOT_AVAILABLE is an ok error
+  }
 
-    JSObject* obj = JS_DecodeInterpretedFunction(cx, buf, len, nsJSPrincipals::get(systemPrincipal), nullptr);
-    if (!obj)
-        return NS_ERROR_OUT_OF_MEMORY;
-    JSFunction* function = JS_ValueToFunction(cx, OBJECT_TO_JSVAL(obj));
-    *functionp = function;
-    return NS_OK;*/
+  MOZ_ASSERT((code & JS::TranscodeResult_Throw) != 0);
+  JS_ClearPendingException(cx);
+  return NS_ERROR_OUT_OF_MEMORY;
 }
 
-nsresult
-WriteCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
-                  nsIPrincipal* systemPrincipal, HandleScript script)
-{
-    MOZ_ASSERT(JS_GetScriptPrincipals(script) == nsJSPrincipals::get(systemPrincipal));
+nsresult WriteCachedScript(StartupCache* cache, nsACString& uri, JSContext* cx,
+                           HandleScript script) {
+  MOZ_ASSERT(
+      nsJSPrincipals::get(JS_GetScriptPrincipals(script))->IsSystemPrincipal());
 
-    uint32_t size;
-    void* data = JS_EncodeScript(cx, script, &size);
-    if (!data) {
-        // JS_EncodeScript may have set a pending exception.
-        JS_ClearPendingException(cx);
-        return NS_ERROR_FAILURE;
+  JS::TranscodeBuffer buffer;
+  JS::TranscodeResult code = JS::EncodeScript(cx, buffer, script);
+  if (code != JS::TranscodeResult_Ok) {
+    if ((code & JS::TranscodeResult_Failure) != 0) {
+      return NS_ERROR_FAILURE;
     }
+    MOZ_ASSERT((code & JS::TranscodeResult_Throw) != 0);
+    JS_ClearPendingException(cx);
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
 
-    MOZ_ASSERT(size);
-    nsresult rv = cache->PutBuffer(PromiseFlatCString(uri).get(), static_cast<char*>(data), size);
-    js_free(data);
-    return rv;
-}
-
-nsresult
-WriteCachedFunction(StartupCache* cache, nsACString& uri, JSContext* cx,
-                    nsIPrincipal* systemPrincipal, JSFunction* function)
-{
+  size_t size = buffer.length();
+  if (size > UINT32_MAX) {
     return NS_ERROR_FAILURE;
-/* This doesn't actually work ...
-    uint32_t size;
-    void* data =
-      JS_EncodeInterpretedFunction(cx, JS_GetFunctionObject(function), &size);
-    if (!data) {
-        // JS_EncodeInterpretedFunction may have set a pending exception.
-        JS_ClearPendingException(cx);
-        return NS_ERROR_FAILURE;
-    }
+  }
 
-    MOZ_ASSERT(size);
-    nsresult rv = cache->PutBuffer(PromiseFlatCString(uri).get(), static_cast<char*>(data), size);
-    js_free(data);
-    return rv;*/
+  // Move the vector buffer into a unique pointer buffer.
+  UniquePtr<char[]> buf(
+      reinterpret_cast<char*>(buffer.extractOrCopyRawBuffer()));
+  nsresult rv =
+      cache->PutBuffer(PromiseFlatCString(uri).get(), std::move(buf), size);
+  return rv;
 }

@@ -9,12 +9,11 @@ var requestHandled;
 const icon =
   '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
   '<svg xmlns="http://www.w3.org/2000/svg" ' +
-       'width="16" height="16" viewBox="0 0 16 16">' +
-   '<rect x="4" y="4" width="8px" height="8px" style="fill: blue"/>' +
-  '</svg>';
+  'width="16" height="16" viewBox="0 0 16 16">' +
+  '<rect x="4" y="4" width="8px" height="8px" style="fill: blue"/>' +
+  "</svg>";
 
 function run_test() {
-  updateAppInfo();
   useHttpServer(); // Unused, but required to call addTestEngines.
 
   requestHandled = new Promise(resolve => {
@@ -27,7 +26,7 @@ function run_test() {
       resolve();
     });
     srv.start(-1);
-    do_register_cleanup(() => srv.stop(() => {}));
+    registerCleanupFunction(() => srv.stop(() => {}));
 
     url = "http://localhost:" + srv.identity.primaryPort + "/icon.svg";
   });
@@ -35,18 +34,28 @@ function run_test() {
   run_next_test();
 }
 
-add_task(function* test_svg_icon() {
-  yield asyncInit();
+add_task(async function test_svg_icon() {
+  await AddonTestUtils.promiseStartupManager();
+  await Services.search.init();
 
-  let [engine] = yield addTestEngines([
-    { name: "SVGIcon", details: [url, "", "SVG icon", "GET",
-                                 "http://icon.svg/search?q={searchTerms}"] },
+  let [engine] = await addTestEngines([
+    {
+      name: "SVGIcon",
+      details: {
+        iconURL: url,
+        description: "SVG icon",
+        method: "GET",
+        template: "http://icon.svg/search?q={searchTerms}",
+      },
+    },
   ]);
 
-  yield requestHandled;
-  yield promiseAfterCache();
+  await requestHandled;
+  await promiseAfterCache();
 
   ok(engine.iconURI, "the engine has an icon");
-  ok(engine.iconURI.spec.startsWith("data:image/svg+xml"),
-     "the icon is saved as an SVG data url");
+  ok(
+    engine.iconURI.spec.startsWith("data:image/svg+xml"),
+    "the icon is saved as an SVG data url"
+  );
 });

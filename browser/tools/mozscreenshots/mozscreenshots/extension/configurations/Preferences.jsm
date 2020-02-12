@@ -4,56 +4,65 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["Preferences"];
+var EXPORTED_SYMBOLS = ["Preferences"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { TestUtils } = ChromeUtils.import(
+  "resource://testing-common/TestUtils.jsm"
+);
+const { ContentTask } = ChromeUtils.import(
+  "resource://testing-common/ContentTask.jsm"
+);
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://testing-common/TestUtils.jsm");
-Cu.import("resource://testing-common/ContentTask.jsm");
-
-this.Preferences = {
-
+var Preferences = {
   init(libDir) {
     let panes = [
-      ["paneGeneral", null],
-      ["paneSearch", null],
-      ["paneContent", null],
-      ["paneApplications", null],
-      ["panePrivacy", null],
-      ["panePrivacy", null, DNTDialog],
-      ["paneSecurity", null],
-      ["paneSync", null],
-      ["paneAdvanced", "generalTab"],
-      ["paneAdvanced", "dataChoicesTab"],
-      ["paneAdvanced", "networkTab"],
-      ["paneAdvanced", "networkTab", connectionDialog],
-      ["paneAdvanced", "updateTab"],
-      ["paneAdvanced", "encryptionTab"],
-      ["paneAdvanced", "encryptionTab", certManager],
-      ["paneAdvanced", "encryptionTab", deviceManager],
+      ["paneGeneral"],
+      ["paneGeneral", browsingGroup],
+      ["paneGeneral", connectionDialog],
+      ["paneSearch"],
+      ["panePrivacy"],
+      ["panePrivacy", cacheGroup],
+      ["panePrivacy", clearRecentHistoryDialog],
+      ["panePrivacy", certManager],
+      ["panePrivacy", deviceManager],
+      ["panePrivacy", DNTDialog],
+      ["paneSync"],
     ];
-    for (let [primary, advanced, customFn] of panes) {
-      let configName = primary.replace(/^pane/, "prefs") + (advanced ? "-" + advanced : "");
+
+    for (let [primary, customFn] of panes) {
+      let configName = primary.replace(/^pane/, "prefs");
       if (customFn) {
         configName += "-" + customFn.name;
       }
       this.configurations[configName] = {};
-      this.configurations[configName].applyConfig = prefHelper.bind(null, primary, advanced, customFn);
+      this.configurations[configName].selectors = ["#browser"];
+      if (primary == "panePrivacy" && customFn) {
+        this.configurations[configName].applyConfig = async () => {
+          return { todo: `${configName} times out on the try server` };
+        };
+      } else {
+        this.configurations[configName].applyConfig = prefHelper.bind(
+          null,
+          primary,
+          customFn
+        );
+      }
     }
   },
 
   configurations: {},
 };
 
-let prefHelper = Task.async(function*(primary, advanced = null, customFn = null) {
+let prefHelper = async function(primary, customFn = null) {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let selectedBrowser = browserWindow.gBrowser.selectedBrowser;
 
   // close any dialog that might still be open
-  yield ContentTask.spawn(selectedBrowser, null, function*() {
-    if (!content.window.gSubDialog) {
+  await ContentTask.spawn(selectedBrowser, null, async function() {
+    // Check that gSubDialog is defined on the content window
+    // and that there is an open dialog to close
+    if (!content.window.gSubDialog || !content.window.gSubDialog._topDialog) {
       return;
     }
     content.window.gSubDialog.close();
@@ -61,60 +70,89 @@ let prefHelper = Task.async(function*(primary, advanced = null, customFn = null)
 
   let readyPromise = null;
   if (selectedBrowser.currentURI.specIgnoringRef == "about:preferences") {
-    if (selectedBrowser.currentURI.spec == "about:preferences#" + primary.replace(/^pane/, "")) {
+    if (
+      selectedBrowser.currentURI.spec ==
+      "about:preferences#" + primary.replace(/^pane/, "")
+    ) {
       // We're already on the correct pane.
       readyPromise = Promise.resolve();
     } else {
       readyPromise = paintPromise(browserWindow);
     }
   } else {
-    readyPromise = TestUtils.topicObserved("advanced-pane-loaded");
+    readyPromise = TestUtils.topicObserved("sync-pane-loaded");
   }
 
-  if (primary == "paneAdvanced") {
-    browserWindow.openAdvancedPreferences(advanced);
-  } else {
-    browserWindow.openPreferences(primary);
-  }
+  browserWindow.openPreferences(primary);
 
-  yield readyPromise;
+  await readyPromise;
 
   if (customFn) {
     let customPaintPromise = paintPromise(browserWindow);
-    yield* customFn(selectedBrowser);
-    yield customPaintPromise;
+    let result = await customFn(selectedBrowser);
+    await customPaintPromise;
+    return result;
   }
-});
+  return undefined;
+};
 
 function paintPromise(browserWindow) {
-  return new Promise((resolve) => {
-    browserWindow.addEventListener("MozAfterPaint", function onPaint() {
-      browserWindow.removeEventListener("MozAfterPaint", onPaint);
-      resolve();
-    });
+  return new Promise(resolve => {
+    browserWindow.addEventListener(
+      "MozAfterPaint",
+      function() {
+        resolve();
+      },
+      { once: true }
+    );
   });
 }
 
-function* DNTDialog(aBrowser) {
-  yield ContentTask.spawn(aBrowser, null, function* () {
-    content.document.getElementById("doNotTrackSettings").click();
+async function browsingGroup(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
+    content.document.getElementById("browsingGroup").scrollIntoView();
   });
 }
 
-function* connectionDialog(aBrowser) {
-  yield ContentTask.spawn(aBrowser, null, function* () {
+async function cacheGroup(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
+    content.document.getElementById("cacheGroup").scrollIntoView();
+  });
+}
+
+async function DNTDialog(aBrowser) {
+  return ContentTask.spawn(aBrowser, null, async function() {
+    const button = content.document.getElementById("doNotTrackSettings");
+    if (!button) {
+      return {
+        todo: "The dialog may have exited before we could click the button",
+      };
+    }
+    button.click();
+    return undefined;
+  });
+}
+
+async function connectionDialog(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
     content.document.getElementById("connectionSettings").click();
   });
 }
 
-function* certManager(aBrowser) {
-  yield ContentTask.spawn(aBrowser, null, function* () {
+async function clearRecentHistoryDialog(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
+    content.document.getElementById("clearHistoryButton").click();
+  });
+}
+
+async function certManager(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
     content.document.getElementById("viewCertificatesButton").click();
   });
 }
 
-function* deviceManager(aBrowser) {
-  yield ContentTask.spawn(aBrowser, null, function* () {
+async function deviceManager(aBrowser) {
+  await ContentTask.spawn(aBrowser, null, async function() {
     content.document.getElementById("viewSecurityDevicesButton").click();
   });
 }

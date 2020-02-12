@@ -10,10 +10,10 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor,
- Exposed=Worker]
+[Exposed=(DedicatedWorker,SharedWorker)]
 interface FileReaderSync {
-
+  constructor();
+ 
   // Synchronously return strings
 
   [Throws]

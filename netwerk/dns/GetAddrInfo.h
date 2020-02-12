@@ -11,11 +11,9 @@
 #include "nscore.h"
 
 #if defined(XP_WIN)
-#define DNSQUERY_AVAILABLE 1
-#define TTL_AVAILABLE 1
+#  define DNSQUERY_AVAILABLE 1
 #else
-#define DNSQUERY_AVAILABLE 0
-#define TTL_AVAILABLE 0
+#  undef DNSQUERY_AVAILABLE
 #endif
 
 namespace mozilla {
@@ -35,12 +33,11 @@ class AddrInfo;
  *     hostname (PR_AI_NOCANONNAME will be ignored if the TTL is retrieved).
  * @param aAddrInfo[out] Will point to the results of the host lookup, or be
  *     null if the lookup failed.
- * @param aGetTtl[in] If true, and TTL_AVAILABLE is truthy, the TTL will be
- *     retrieved if DNS provides the answers..
+ * @param aGetTtl[in] If true, the TTL will be retrieved if DNS provides the
+ *     answers..
  */
-nsresult
-GetAddrInfo(const char* aHost, uint16_t aAddressFamily, uint16_t aFlags,
-            const char* aNetworkInterface, AddrInfo** aAddrInfo, bool aGetTtl);
+nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
+                     uint16_t aFlags, AddrInfo** aAddrInfo, bool aGetTtl);
 
 /**
  * Initialize the GetAddrInfo module.
@@ -48,8 +45,7 @@ GetAddrInfo(const char* aHost, uint16_t aAddressFamily, uint16_t aFlags,
  * GetAddrInfoShutdown() should be called for every time this function is
  * called.
  */
-nsresult
-GetAddrInfoInit();
+nsresult GetAddrInfoInit();
 
 /**
  * Shutdown the GetAddrInfo module.
@@ -58,10 +54,9 @@ GetAddrInfoInit();
  * An assertion may throw (but is not guarenteed) if this function is called
  * too many times.
  */
-nsresult
-GetAddrInfoShutdown();
+nsresult GetAddrInfoShutdown();
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // netwerk_dns_GetAddrInfo_h
+#endif  // netwerk_dns_GetAddrInfo_h

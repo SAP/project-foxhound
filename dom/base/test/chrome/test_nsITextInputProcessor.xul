@@ -5,12 +5,10 @@
 <window title="Testing nsITextInputProcessor behavior"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <body xmlns="http://www.w3.org/1999/xhtml">
 <p id="display">
-<input id="input" type="text"/><br/>
 </p>
 <div id="content" style="display: none">
   
@@ -23,9 +21,8 @@
 <![CDATA[
 
 SimpleTest.waitForExplicitFinish();
-window.open("window_nsITextInputProcessor.xul", "_blank", 
-            "chrome,width=600,height=600");
-document.getElementById("input").focus();
+window.openDialog("window_nsITextInputProcessor.xul", "_blank", 
+                  "chrome,width=600,height=600,noopener", window);
 
 ]]>
 </script>

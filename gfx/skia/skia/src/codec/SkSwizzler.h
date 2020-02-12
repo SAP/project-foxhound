@@ -16,85 +16,13 @@
 class SkSwizzler : public SkSampler {
 public:
     /**
-     *  Enum describing the config of the source data.
-     */
-    enum SrcConfig {
-        kUnknown,  // Invalid type.
-        kBit,      // A single bit to distinguish between white and black.
-        kGray,
-        kGrayAlpha,
-        kIndex1,
-        kIndex2,
-        kIndex4,
-        kIndex,
-        kRGB,
-        kBGR,
-        kBGRX,     // The alpha channel can be anything, but the image is opaque.
-        kRGBA,
-        kBGRA,
-        kCMYK,
-        kNoOp8,    // kNoOp modes are used exclusively for sampling, subsetting, and
-        kNoOp16,   // copying.  The pixels themselves do not need to be modified.
-        kNoOp32,
-    };
-
-    /*
-     *
-     * Returns bits per pixel for source config
-     *
-     */
-    static int BitsPerPixel(SrcConfig sc) {
-        switch (sc) {
-            case kBit:
-            case kIndex1:
-                return 1;
-            case kIndex2:
-                return 2;
-            case kIndex4:
-                return 4;
-            case kGray:
-            case kIndex:
-            case kNoOp8:
-                return 8;
-            case kGrayAlpha:
-            case kNoOp16:
-                return 16;
-            case kRGB:
-            case kBGR:
-                return 24;
-            case kRGBA:
-            case kBGRX:
-            case kBGRA:
-            case kCMYK:
-            case kNoOp32:
-                return 32;
-            default:
-                SkASSERT(false);
-                return 0;
-        }
-    }
-
-    /*
-     *
-     * Returns bytes per pixel for source config
-     * Raises an error if each pixel is not stored in an even number of bytes
-     *
-     */
-    static int BytesPerPixel(SrcConfig sc) {
-        SkASSERT(SkIsAlign8(BitsPerPixel(sc)));
-        return BitsPerPixel(sc) >> 3;
-    }
-
-    /**
      *  Create a new SkSwizzler.
-     *  @param SrcConfig Description of the format of the source.
+     *  @param encodedInfo Description of the format of the encoded data.
      *  @param ctable Unowned pointer to an array of up to 256 colors for an
      *                index source.
      *  @param dstInfo Describes the destination.
-     *  @param options Indicates if dst is zero-initialized. The
-     *                         implementation may choose to skip writing zeroes
-     *                         if set to kYes_ZeroInitialized.
-     *                 Contains partial scanline information.
+     *  @param options Contains partial scanline information and whether the dst is zero-
+     *                 initialized.
      *  @param frame   Is non-NULL if the source pixels are part of an image
      *                 frame that is a subset of the full image.
      *
@@ -104,9 +32,22 @@ public:
      *
      *  @return A new SkSwizzler or nullptr on failure.
      */
-    static SkSwizzler* CreateSwizzler(SrcConfig, const SkPMColor* ctable,
-                                      const SkImageInfo& dstInfo, const SkCodec::Options&,
-                                      const SkIRect* frame = nullptr);
+    static std::unique_ptr<SkSwizzler> Make(const SkEncodedInfo& encodedInfo,
+            const SkPMColor* ctable, const SkImageInfo& dstInfo, const SkCodec::Options&,
+            const SkIRect* frame = nullptr);
+
+    /**
+     *  Create a simplified swizzler that does not need to do format conversion. The swizzler
+     *  only needs to sample and/or subset.
+     *
+     *  @param srcBPP Bytes per pixel of the source.
+     *  @param dstInfo Describes the destination.
+     *  @param options Contains partial scanline information and whether the dst is zero-
+     *                 initialized.
+     *  @return A new SkSwizzler or nullptr on failure.
+     */
+    static std::unique_ptr<SkSwizzler> MakeSimple(int srcBPP, const SkImageInfo& dstInfo,
+                                                  const SkCodec::Options&);
 
     /**
      *  Swizzle a line. Generally this will be called height times, once
@@ -120,13 +61,8 @@ public:
      */
     void swizzle(void* dst, const uint8_t* SK_RESTRICT src);
 
-    /**
-     * Implement fill using a custom width.
-     */
-    void fill(const SkImageInfo& info, void* dst, size_t rowBytes, uint32_t colorOrIndex,
-            SkCodec::ZeroInitialized zeroInit) override {
-        const SkImageInfo fillInfo = info.makeWH(fAllocatedWidth, info.height());
-        SkSampler::Fill(fillInfo, dst, rowBytes, colorOrIndex, zeroInit);
+    int fillWidth() const override {
+        return fAllocatedWidth;
     }
 
     /**
@@ -138,6 +74,18 @@ public:
      *  this allows us to apply a transparency mask to pixels after swizzling.
      */
     int sampleX() const { return fSampleX; }
+
+    /**
+     *  Returns the actual number of pixels written to destination memory, taking
+     *  scaling, subsetting, and partial frames into account.
+     */
+    int swizzleWidth() const { return fSwizzleWidth; }
+
+    /**
+     *  Returns the byte offset at which we write to destination memory, taking
+     *  scaling, subsetting, and partial frames into account.
+     */
+    size_t swizzleOffsetBytes() const { return fDstOffsetBytes; }
 
 private:
 
@@ -264,6 +212,9 @@ private:
 
     SkSwizzler(RowProc fastProc, RowProc proc, const SkPMColor* ctable, int srcOffset,
             int srcWidth, int dstOffset, int dstWidth, int srcBPP, int dstBPP);
+    static std::unique_ptr<SkSwizzler> Make(const SkImageInfo& dstInfo, RowProc fastProc,
+            RowProc proc, const SkPMColor* ctable, int srcBPP, int dstBPP,
+            const SkCodec::Options& options, const SkIRect* frame);
 
     int onSetSampleX(int) override;
 

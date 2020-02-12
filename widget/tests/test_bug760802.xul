@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/css" href="chrome://global/skin"?>
-<?xml-stylesheet type="text/css" href="/tests/SimpleTest/test.css"?>
+<?xml-stylesheet type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=760802
 -->
 <window title="Mozilla Bug 760802"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -22,23 +22,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=760802
   <script type="application/javascript"><![CDATA[
 SimpleTest.waitForExplicitFinish();
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-
 function getBaseWindowInterface(win) {
-  return win.QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIDocShellTreeItem)
+  return win.docShell
     .treeOwner
-    .QueryInterface(Ci.nsIInterfaceRequestor)
     .nsIBaseWindow;
 }
 
 function getBaseWindowInterfaceFromDocShell(win) {
-  return win.QueryInterface(Ci.nsIInterfaceRequestor)
-    .getInterface(Ci.nsIWebNavigation)
-    .QueryInterface(Ci.nsIDocShell)
-    .QueryInterface(Ci.nsIBaseWindow);
+  return win.docShell.QueryInterface(Ci.nsIBaseWindow);
 }
 
 function shouldThrowException(fun, exception) {
@@ -61,11 +52,11 @@ $("display").innerHTML = "found nativeHandle for this window: "+nativeHandle;
 
 var wm = Cc["@mozilla.org/appshell/window-mediator;1"].getService(Ci.nsIWindowMediator);
 var win = wm.getMostRecentWindow("navigator:browser");
-var docShell = getBaseWindowInterfaceFromDocShell(win);
+let docShell = getBaseWindowInterfaceFromDocShell(win);
 
 ok(
   shouldThrowException(function(){docShell.nativeHandle;},
-              Components.results.NS_ERROR_NOT_IMPLEMENTED),
+              Cr.NS_ERROR_NOT_IMPLEMENTED),
   "nativeHandle should not be implemented for nsDocShell"
 );
 

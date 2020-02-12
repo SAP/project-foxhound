@@ -1,5 +1,4 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpServer = null;
 var path = "/bug699001";
@@ -9,7 +8,7 @@ XPCOMUtils.defineLazyGetter(this, "URI", function() {
 });
 
 function make_channel(url) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
 var fetched;
@@ -23,54 +22,52 @@ var fetched;
 // from the server
 
 var tests = [
-{
-  prepare: function() { },
-  test: function(response) {
-    do_check_true(fetched);
-  }
-},
-{
-  prepare: function() { },
-  test: function(response) {
-    do_check_false(fetched);
-  }
-},
-{
-  prepare: function() {
-    setUA("A different User Agent");
+  {
+    prepare() {},
+    test(response) {
+      Assert.ok(fetched);
+    },
   },
-  test: function(response) {
-    do_check_true(fetched);
-  }
-},
-{
-  prepare: function() { },
-  test: function(response) {
-    do_check_false(fetched);
-  }
-},
-{
-  prepare: function() {
-    setUA("And another User Agent");
+  {
+    prepare() {},
+    test(response) {
+      Assert.ok(!fetched);
+    },
   },
-  test: function(response) {
-    do_check_true(fetched);
-  }
-},
-{
-  prepare: function() { },
-  test: function(response) {
-    do_check_false(fetched);
-  }
-}
+  {
+    prepare() {
+      setUA("A different User Agent");
+    },
+    test(response) {
+      Assert.ok(fetched);
+    },
+  },
+  {
+    prepare() {},
+    test(response) {
+      Assert.ok(!fetched);
+    },
+  },
+  {
+    prepare() {
+      setUA("And another User Agent");
+    },
+    test(response) {
+      Assert.ok(fetched);
+    },
+  },
+  {
+    prepare() {},
+    test(response) {
+      Assert.ok(!fetched);
+    },
+  },
 ];
 
-function handler(metadata, response)
-{
+function handler(metadata, response) {
   if (metadata.hasHeader("If-None-Match")) {
     response.setStatusLine(metadata.httpVersion, 304, "Not modified");
-  }
-  else {
+  } else {
     response.setStatusLine(metadata.httpVersion, 200, "OK");
     response.setHeader("Content-Type", "text/plain");
 
@@ -86,8 +83,7 @@ function handler(metadata, response)
   response.setHeader("ETag", "1234");
 }
 
-function run_test()
-{
+function run_test() {
   httpServer = new HttpServer();
   httpServer.registerPathHandler(path, handler);
   httpServer.start(-1);
@@ -97,8 +93,7 @@ function run_test()
   nextTest();
 }
 
-function nextTest()
-{
+function nextTest() {
   fetched = false;
   tests[0].prepare();
 
@@ -107,13 +102,12 @@ function nextTest()
 
   // Give the old channel a chance to close the cache entry first.
   // XXX This is actually a race condition that might be considered a bug...
-  do_execute_soon(function() {
-    chan.asyncOpen2(new ChannelListener(checkAndShiftTest, null));
+  executeSoon(function() {
+    chan.asyncOpen(new ChannelListener(checkAndShiftTest, null));
   });
 }
 
-function checkAndShiftTest(request, response)
-{
+function checkAndShiftTest(request, response) {
   tests[0].test(response);
 
   tests.shift();
@@ -125,36 +119,59 @@ function checkAndShiftTest(request, response)
   nextTest();
 }
 
-function tearDown()
-{
+function tearDown() {
   setUA("");
   do_test_finished();
 }
 
 // Helpers
 
-function getUA()
-{
-  var httphandler = Cc["@mozilla.org/network/protocol;1?name=http"].
-                 getService(Ci.nsIHttpProtocolHandler);
+function getUA() {
+  var httphandler = Cc["@mozilla.org/network/protocol;1?name=http"].getService(
+    Ci.nsIHttpProtocolHandler
+  );
   return httphandler.userAgent;
 }
 
-function setUA(value)
-{
-  var prefs = Cc["@mozilla.org/preferences-service;1"].
-                 getService(Ci.nsIPrefBranch);
+function setUA(value) {
+  var prefs = Cc["@mozilla.org/preferences-service;1"].getService(
+    Ci.nsIPrefBranch
+  );
   prefs.setCharPref("general.useragent.override", value);
 }
 
 function getDateString(yearDelta) {
-  var months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
-          'Sep', 'Oct', 'Nov', 'Dec' ];
-  var days = [ 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat' ];
+  var months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   var d = new Date();
-  return days[d.getUTCDay()] + ", " + d.getUTCDate() + " "
-          + months[d.getUTCMonth()] + " " + (d.getUTCFullYear() + yearDelta)
-          + " " + d.getUTCHours() + ":" + d.getUTCMinutes() + ":"
-          + d.getUTCSeconds() + " UTC";
+  return (
+    days[d.getUTCDay()] +
+    ", " +
+    d.getUTCDate() +
+    " " +
+    months[d.getUTCMonth()] +
+    " " +
+    (d.getUTCFullYear() + yearDelta) +
+    " " +
+    d.getUTCHours() +
+    ":" +
+    d.getUTCMinutes() +
+    ":" +
+    d.getUTCSeconds() +
+    " UTC"
+  );
 }

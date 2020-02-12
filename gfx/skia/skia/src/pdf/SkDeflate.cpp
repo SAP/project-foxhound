@@ -5,16 +5,15 @@
  * found in the LICENSE file.
  */
 
+#include "SkDeflate.h"
 
 #include "SkData.h"
-#include "SkDeflate.h"
-#include "SkStream.h"
+#include "SkMakeUnique.h"
+#include "SkMalloc.h"
+#include "SkTo.h"
+#include "SkTraceEvent.h"
 
-#ifdef ZLIB_INCLUDE
-    #include ZLIB_INCLUDE
-#else
-    #include "zlib.h"
-#endif
+#include "zlib.h"
 
 namespace {
 
@@ -67,7 +66,7 @@ struct SkDeflateWStream::Impl {
 SkDeflateWStream::SkDeflateWStream(SkWStream* out,
                                    int compressionLevel,
                                    bool gzip)
-    : fImpl(new SkDeflateWStream::Impl) {
+    : fImpl(skstd::make_unique<SkDeflateWStream::Impl>()) {
     fImpl->fOut = out;
     fImpl->fInBufferIndex = 0;
     if (!fImpl->fOut) {
@@ -87,6 +86,7 @@ SkDeflateWStream::SkDeflateWStream(SkWStream* out,
 SkDeflateWStream::~SkDeflateWStream() { this->finalize(); }
 
 void SkDeflateWStream::finalize() {
+    TRACE_EVENT0("skia", TRACE_FUNC);
     if (!fImpl->fOut) {
         return;
     }
@@ -97,6 +97,7 @@ void SkDeflateWStream::finalize() {
 }
 
 bool SkDeflateWStream::write(const void* void_buffer, size_t len) {
+    TRACE_EVENT0("skia", TRACE_FUNC);
     if (!fImpl->fOut) {
         return false;
     }

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,31 +11,40 @@
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "mozilla/widget/nsWindow.h"
+#endif  // defined(MOZ_WIDGET_ANDROID)
+
 namespace mozilla {
 namespace layers {
 
 using namespace gfx;
 using namespace widget;
 
-
-CompositorSession::CompositorSession(CompositorWidgetDelegate* aDelegate,
+CompositorSession::CompositorSession(nsBaseWidget* aWidget,
+                                     CompositorWidgetDelegate* aDelegate,
                                      CompositorBridgeChild* aChild,
-                                     const uint64_t& aRootLayerTreeId)
- : mCompositorWidgetDelegate(aDelegate),
-   mCompositorBridgeChild(aChild),
-   mRootLayerTreeId(aRootLayerTreeId)
-{
-}
+                                     const LayersId& aRootLayerTreeId)
+    : mWidget(aWidget),
+      mCompositorWidgetDelegate(aDelegate),
+      mCompositorBridgeChild(aChild),
+      mRootLayerTreeId(aRootLayerTreeId) {}
 
-CompositorSession::~CompositorSession()
-{
-}
+CompositorSession::~CompositorSession() {}
 
-CompositorBridgeChild*
-CompositorSession::GetCompositorBridgeChild()
-{
+CompositorBridgeChild* CompositorSession::GetCompositorBridgeChild() {
   return mCompositorBridgeChild;
 }
 
-} // namespace layers
-} // namespace mozilla
+#if defined(MOZ_WIDGET_ANDROID)
+void CompositorSession::NotifyDisablingWebRender() {
+  if (!mWidget) {
+    return;
+  }
+  nsWindow* window = static_cast<nsWindow*>(mWidget);
+  window->NotifyDisablingWebRender();
+}
+#endif  // defined(MOZ_WIDGET_ANDROID)
+
+}  // namespace layers
+}  // namespace mozilla

@@ -1,0 +1,56 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+from __future__ import absolute_import
+from __future__ import unicode_literals
+
+import re
+
+
+class EntityPos(int):
+    pass
+
+
+mochibake = re.compile('\ufffd')
+
+
+class Checker(object):
+    '''Abstract class to implement checks per file type.
+    '''
+    pattern = None
+    # if a check uses all reference entities, set this to True
+    needs_reference = False
+
+    @classmethod
+    def use(cls, file):
+        return cls.pattern.match(file.file)
+
+    def __init__(self, extra_tests, locale=None):
+        self.extra_tests = extra_tests
+        self.locale = locale
+        self.reference = None
+
+    def check(self, refEnt, l10nEnt):
+        '''Given the reference and localized Entities, performs checks.
+
+        This is a generator yielding tuples of
+        - "warning" or "error", depending on what should be reported,
+        - tuple of line, column info for the error within the string
+        - description string to be shown in the report
+
+        By default, check for possible encoding errors.
+        '''
+        for m in mochibake.finditer(l10nEnt.all):
+            yield (
+                "warning",
+                EntityPos(m.start()),
+                "\ufffd in: {}".format(l10nEnt.key),
+                "encodings"
+            )
+
+    def set_reference(self, reference):
+        '''Set the reference entities.
+        Only do this if self.needs_reference is True.
+        '''
+        self.reference = reference

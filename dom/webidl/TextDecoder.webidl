@@ -10,19 +10,25 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-[Constructor(optional DOMString label = "utf-8", optional TextDecoderOptions options),
- Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface TextDecoder {
+  [Throws]
+  constructor(optional DOMString label = "utf-8",
+              optional TextDecoderOptions options = {});
+
   [Constant]
   readonly attribute DOMString encoding;
   [Constant]
   readonly attribute boolean fatal;
+  [Constant]
+  readonly attribute boolean ignoreBOM;
   [Throws]
-  USVString decode(optional BufferSource input, optional TextDecodeOptions options);
+  USVString decode(optional BufferSource input, optional TextDecodeOptions options = {});
 };
 
 dictionary TextDecoderOptions {
   boolean fatal = false;
+  boolean ignoreBOM = false;
 };
 
 dictionary TextDecodeOptions {

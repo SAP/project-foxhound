@@ -4,9 +4,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef MOZ_X11
-#include <X11/Xlib.h>
-#if (MOZ_WIDGET_GTK != 3)
+#  include <X11/Xlib.h>
+#  include "X11UndefineNone.h"  // Unset some macros defined by X.h included by Xlib.h
+
+/**
+ * InstallX11ErrorHandler is not suitable for processes running with GTK3 as
+ * GDK3 will replace the handler.  This is still used for the plugin process,
+ * which runs with GTK2.
+ **/
 void InstallX11ErrorHandler();
-#endif
-extern "C" int X11Error(Display *display, XErrorEvent *event);
+
+extern "C" int X11Error(Display* display, XErrorEvent* event);
 #endif

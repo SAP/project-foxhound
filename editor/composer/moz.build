@@ -15,14 +15,24 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'composer'
 
 UNIFIED_SOURCES += [
-    'nsComposerCommands.cpp',
-    'nsComposerCommandsUpdater.cpp',
-    'nsComposerController.cpp',
-    'nsComposerDocumentCommands.cpp',
-    'nsComposerRegistration.cpp',
-    'nsComposeTxtSrvFilter.cpp',
+    'ComposerCommandsUpdater.cpp',
     'nsEditingSession.cpp',
-    'nsEditorSpellCheck.cpp',
+]
+
+EXPORTS += [
+    'nsEditingSession.h',
+]
+
+EXPORTS.mozilla += [
+    'ComposerCommandsUpdater.h',
+]
+
+# Needed because we include HTMLEditor.h which indirectly includes Document.h
+LOCAL_INCLUDES += [
+    '/dom/base',
+    '/dom/html',  # For nsHTMLDocument
+    '/editor/spellchecker', # nsComposeTxtSrvFilter.h
+    '/layout/style', # For things nsHTMLDocument includes.
 ]
 
 FINAL_LIBRARY = 'xul'
@@ -49,5 +59,5 @@ RESOURCE_FILES += [
     'res/table-remove-row.gif',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

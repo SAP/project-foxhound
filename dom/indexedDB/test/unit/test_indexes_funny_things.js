@@ -5,12 +5,11 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   // Blob constructor is not implemented outside of windows yet (Bug 827723).
   if (!this.window) {
     finishTest();
-    yield undefined;
+    return;
   }
 
   const name = this.window ? window.location.pathname : "Splendid Test";
@@ -25,27 +24,27 @@ function testSteps()
   const arr = [1, 2, 3, 4, 5];
 
   const objectStoreData = [
-    { key: "1", value: blob1},
-    { key: "2", value: blob2},
-    { key: "3", value: blob3},
-    { key: "4", value: str},
-    { key: "5", value: arr},
+    { key: "1", value: blob1 },
+    { key: "2", value: blob2 },
+    { key: "3", value: blob3 },
+    { key: "4", value: str },
+    { key: "5", value: arr },
   ];
 
   const indexData = [
-    { name: "type", keyPath: "type", options: { } },
-    { name: "length", keyPath: "length", options: { unique: true } }
+    { name: "type", keyPath: "type", options: {} },
+    { name: "length", keyPath: "length", options: { unique: true } },
   ];
 
   const objectStoreDataTypeSort = [
-    { key: "3", value: blob3},
-    { key: "1", value: blob1},
-    { key: "2", value: blob2},
+    { key: "3", value: blob3 },
+    { key: "1", value: blob1 },
+    { key: "2", value: blob2 },
   ];
 
   const objectStoreDataLengthSort = [
-    { key: "5", value: arr},
-    { key: "4", value: str},
+    { key: "5", value: arr },
+    { key: "4", value: str },
   ];
 
   let request = indexedDB.open(name, 1);
@@ -60,25 +59,26 @@ function testSteps()
   // First, add all our data to the object store.
   let addedData = 0;
   for (let i in objectStoreData) {
-    request = objectStore.add(objectStoreData[i].value,
-                              objectStoreData[i].key);
+    request = objectStore.add(objectStoreData[i].value, objectStoreData[i].key);
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       if (++addedData == objectStoreData.length) {
-        testGenerator.send(event);
+        testGenerator.next(event);
       }
-    }
+    };
   }
   event = yield undefined;
   // Now create the indexes.
   for (let i in indexData) {
-    objectStore.createIndex(indexData[i].name, indexData[i].keyPath,
-                            indexData[i].options);
+    objectStore.createIndex(
+      indexData[i].name,
+      indexData[i].keyPath,
+      indexData[i].options
+    );
   }
   is(objectStore.indexNames.length, indexData.length, "Good index count");
   yield undefined;
-  objectStore = db.transaction(objectStoreName)
-                  .objectStore(objectStoreName);
+  objectStore = db.transaction(objectStoreName).objectStore(objectStoreName);
 
   // Check global properties to make sure they are correct.
   is(objectStore.indexNames.length, indexData.length, "Good index count");
@@ -95,8 +95,7 @@ function testSteps()
     is(index.name, indexData[i].name, "Correct name");
     is(index.objectStore.name, objectStore.name, "Correct store name");
     is(index.keyPath, indexData[i].keyPath, "Correct keyPath");
-    is(index.unique, indexData[i].options.unique ? true : false,
-       "Correct unique value");
+    is(index.unique, !!indexData[i].options.unique, "Correct unique value");
   }
 
   ok(true, "Test group 1");
@@ -105,29 +104,40 @@ function testSteps()
 
   request = objectStore.index("type").openKeyCursor();
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
-      is(cursor.key, objectStoreDataTypeSort[keyIndex].value.type,
-         "Correct key");
-      is(cursor.primaryKey, objectStoreDataTypeSort[keyIndex].key,
-         "Correct primary key");
+      is(
+        cursor.key,
+        objectStoreDataTypeSort[keyIndex].value.type,
+        "Correct key"
+      );
+      is(
+        cursor.primaryKey,
+        objectStoreDataTypeSort[keyIndex].key,
+        "Correct primary key"
+      );
       ok(!("value" in cursor), "No value");
 
       cursor.continue();
 
-      is(cursor.key, objectStoreDataTypeSort[keyIndex].value.type,
-         "Correct key");
-      is(cursor.primaryKey, objectStoreDataTypeSort[keyIndex].key,
-         "Correct value");
+      is(
+        cursor.key,
+        objectStoreDataTypeSort[keyIndex].value.type,
+        "Correct key"
+      );
+      is(
+        cursor.primaryKey,
+        objectStoreDataTypeSort[keyIndex].key,
+        "Correct value"
+      );
       ok(!("value" in cursor), "No value");
 
       keyIndex++;
-    }
-    else {
+    } else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataTypeSort.length, "Saw all the expected keys");
@@ -138,31 +148,41 @@ function testSteps()
 
   request = objectStore.index("length").openKeyCursor(null, "next");
   request.onerror = errorHandler;
-  request.onsuccess = function (event) {
+  request.onsuccess = function(event) {
     let cursor = event.target.result;
     if (cursor) {
-      is(cursor.key, objectStoreDataLengthSort[keyIndex].value.length,
-         "Correct key");
-      is(cursor.primaryKey, objectStoreDataLengthSort[keyIndex].key,
-         "Correct value");
+      is(
+        cursor.key,
+        objectStoreDataLengthSort[keyIndex].value.length,
+        "Correct key"
+      );
+      is(
+        cursor.primaryKey,
+        objectStoreDataLengthSort[keyIndex].key,
+        "Correct value"
+      );
 
       cursor.continue();
 
-      is(cursor.key, objectStoreDataLengthSort[keyIndex].value.length,
-         "Correct key");
-      is(cursor.primaryKey, objectStoreDataLengthSort[keyIndex].key,
-         "Correct value");
+      is(
+        cursor.key,
+        objectStoreDataLengthSort[keyIndex].value.length,
+        "Correct key"
+      );
+      is(
+        cursor.primaryKey,
+        objectStoreDataLengthSort[keyIndex].key,
+        "Correct value"
+      );
 
       keyIndex++;
-    }
-    else {
+    } else {
       testGenerator.next();
     }
-  }
+  };
   yield undefined;
 
   is(keyIndex, objectStoreDataLengthSort.length, "Saw all the expected keys");
 
   finishTest();
-  yield undefined;
 }

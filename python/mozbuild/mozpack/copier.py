@@ -2,20 +2,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
+import six
 import stat
 import sys
 
 from mozpack.errors import errors
 from mozpack.files import (
     BaseFile,
+    DeflatedFile,
     Dest,
+    ManifestFile,
 )
 import mozpack.path as mozpath
 import errno
 from collections import (
+    defaultdict,
     Counter,
     OrderedDict,
 )
@@ -100,7 +104,7 @@ class FileRegistry(object):
         items = self.match(pattern)
         if not items:
             return errors.error("Can't remove %s: %s" % (pattern,
-                                "not matching anything previously added"))
+                                                         "not matching anything previously added"))
         for i in items:
             del self._files[i]
             self._required_directories.subtract(self._partial_paths(i))
@@ -142,7 +146,7 @@ class FileRegistry(object):
             for path, file in registry:
                 (...)
         '''
-        return self._files.iteritems()
+        return six.iteritems(self._files)
 
     def required_directories(self):
         '''
@@ -152,6 +156,34 @@ class FileRegistry(object):
         directory).
         '''
         return set(k for k, v in self._required_directories.items() if v > 0)
+
+    def output_to_inputs_tree(self):
+        '''
+        Return a dictionary mapping each output path to the set of its
+        required input paths.
+
+        All paths are normalized.
+        '''
+        tree = {}
+        for output, file in self:
+            output = mozpath.normpath(output)
+            tree[output] = set(mozpath.normpath(f) for f in file.inputs())
+        return tree
+
+    def input_to_outputs_tree(self):
+        '''
+        Return a dictionary mapping each input path to the set of
+        impacted output paths.
+
+        All paths are normalized.
+        '''
+        tree = defaultdict(set)
+        for output, file in self:
+            output = mozpath.normpath(output)
+            for input in file.inputs():
+                input = mozpath.normpath(input)
+                tree[input].add(output)
+        return dict(tree)
 
 
 class FileRegistrySubtree(object):
@@ -231,6 +263,7 @@ class FileCopier(FileRegistry):
     FileRegistry with the ability to copy the registered files to a separate
     directory.
     '''
+
     def copy(self, destination, skip_if_older=True,
              remove_unaccounted=True,
              remove_all_directory_symlinks=True,
@@ -263,7 +296,7 @@ class FileCopier(FileRegistry):
 
         Returns a FileCopyResult that details what changed.
         '''
-        assert isinstance(destination, basestring)
+        assert isinstance(destination, six.string_types)
         assert not os.path.exists(destination) or os.path.isdir(destination)
 
         result = FileCopyResult()
@@ -288,7 +321,7 @@ class FileCopier(FileRegistry):
 
         required_dirs = set([destination])
         required_dirs |= set(os.path.normpath(os.path.join(destination, d))
-            for d in self.required_directories())
+                             for d in self.required_directories())
 
         # Ensure destination directories are in place and proper.
         #
@@ -333,7 +366,7 @@ class FileCopier(FileRegistry):
                                  for p in remove_unaccounted.paths())
             existing_dirs = set(os.path.normpath(os.path.join(destination, p))
                                 for p in remove_unaccounted
-                                         .required_directories())
+                                .required_directories())
             existing_dirs |= {os.path.normpath(destination)}
         else:
             # While we have remove_unaccounted, it doesn't apply to empty
@@ -392,7 +425,7 @@ class FileCopier(FileRegistry):
                     destfile = os.path.normpath(os.path.join(destination, p))
                     fs.append((destfile, e.submit(f.copy, destfile, skip_if_older)))
 
-            copy_results = [(destfile, f.result) for destfile, f in fs]
+            copy_results = [(path, f.result) for path, f in fs]
         else:
             for p, f in self:
                 destfile = os.path.normpath(os.path.join(destination, p))
@@ -476,13 +509,13 @@ class Jarrer(FileRegistry, BaseFile):
     FileRegistry with the ability to copy and pack the registered files as a
     jar file. Also acts as a BaseFile instance, to be copied with a FileCopier.
     '''
-    def __init__(self, compress=True, optimize=True):
+
+    def __init__(self, compress=True):
         '''
         Create a Jarrer instance. See mozpack.mozjar.JarWriter documentation
-        for details on the compress and optimize arguments.
+        for details on the compress argument.
         '''
         self.compress = compress
-        self.optimize = optimize
         self._preload = []
         self._compress_options = {}  # Map path to compress boolean option.
         FileRegistry.__init__(self)
@@ -510,6 +543,7 @@ class Jarrer(FileRegistry, BaseFile):
                 dest.write(data) # Creates a Deflater and write data there
                 dest.read()      # Re-opens the Deflater and reads from it
             '''
+
             def __init__(self, orig=None, compress=True):
                 self.mode = None
                 self.deflater = orig
@@ -531,11 +565,11 @@ class Jarrer(FileRegistry, BaseFile):
             def exists(self):
                 return self.deflater is not None
 
-        if isinstance(dest, basestring):
+        if isinstance(dest, six.string_types):
             dest = Dest(dest)
         assert isinstance(dest, Dest)
 
-        from mozpack.mozjar import JarWriter, JarReader
+        from mozpack.mozjar import JarWriter, JarReader, JAR_BROTLI
         try:
             old_jar = JarReader(fileobj=dest)
         except Exception:
@@ -543,12 +577,28 @@ class Jarrer(FileRegistry, BaseFile):
 
         old_contents = dict([(f.filename, f) for f in old_jar])
 
-        with JarWriter(fileobj=dest, compress=self.compress,
-                       optimize=self.optimize) as jar:
+        with JarWriter(fileobj=dest, compress=self.compress) as jar:
             for path, file in self:
                 compress = self._compress_options.get(path, self.compress)
+                # Temporary: Because l10n repacks can't handle brotli just yet,
+                # but need to be able to decompress those files, per
+                # UnpackFinder and formatters, we force deflate on them.
+                if compress == JAR_BROTLI and (
+                        isinstance(file, ManifestFile) or
+                        mozpath.basename(path) == 'install.rdf'):
+                    compress = True
 
-                if path in old_contents:
+                # If the added content already comes from a jar file, we just add
+                # the raw data from the original jar file to the new one.
+                if isinstance(file, DeflatedFile):
+                    jar.add(path, file.file, mode=file.mode,
+                            compress=file.file.compress)
+                    continue
+                # If the file is already in the old contents for this jar,
+                # we avoid compressing when the contents match, which requires
+                # decompressing the old content. But for e.g. l10n repacks,
+                # which can't decompress brotli, we skip this.
+                elif path in old_contents and old_contents[path].compress != JAR_BROTLI:
                     deflater = DeflaterDest(old_contents[path], compress)
                 else:
                     deflater = DeflaterDest(compress=compress)

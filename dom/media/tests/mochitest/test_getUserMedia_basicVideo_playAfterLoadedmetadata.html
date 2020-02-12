@@ -19,7 +19,7 @@
     var constraints = {video: true};
 
     return getUserMedia(constraints).then(stream => {
-      var playback = new LocalMediaStreamPlayback(testVideo, stream);
+      var playback = new MediaStreamPlayback(testVideo, stream);
       var video = playback.mediaElement;
 
       video.srcObject = stream;
@@ -31,7 +31,8 @@
           ok(video.videoHeight > 0, "Expected nonzero video width");
           resolve();
         });
-      });
+      })
+      .then(() => stream.getTracks().forEach(t => t.stop()));
     });
   });
 

@@ -8,16 +8,19 @@
 #include "GrProcessorUnitTest.h"
 #include "GrFragmentProcessor.h"
 
-const GrFragmentProcessor* GrProcessorUnitTest::CreateChildFP(GrProcessorTestData* data) {
+#if GR_TEST_UTILS
+
+std::unique_ptr<GrFragmentProcessor> GrProcessorUnitTest::MakeChildFP(GrProcessorTestData* data) {
 #if SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
-    SkAutoTUnref<const GrFragmentProcessor> fp;
+    std::unique_ptr<GrFragmentProcessor> fp;
     do {
-        fp.reset(GrProcessorTestFactory<GrFragmentProcessor>::Create(data));
+        fp = GrFragmentProcessorTestFactory::Make(data);
         SkASSERT(fp);
     } while (fp->numChildProcessors() != 0);
-    return SkRef(fp.get());
+    return fp;
 #else
-    SkFAIL("Should not be called if !SK_ALLOW_STATIC_GLOBAL_INITIALIZERS");
+    SK_ABORT("Should not be called if !SK_ALLOW_STATIC_GLOBAL_INITIALIZERS");
     return nullptr;
 #endif
 }
+#endif

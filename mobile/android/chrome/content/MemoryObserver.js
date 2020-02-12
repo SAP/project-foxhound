@@ -3,7 +3,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const MAX_CONTENT_VIEWERS_PREF = "browser.sessionhistory.max_total_viewers";
+
 var MemoryObserver = {
+  // When we turn off the bfcache by overwriting the old default value, we want
+  // to be able to restore it later on if memory pressure decreases again.
+  _defaultMaxContentViewers: -1,
+
   observe: function mo_observe(aSubject, aTopic, aData) {
     if (aTopic == "memory-pressure") {
       if (aData != "heap-minimize") {
@@ -13,6 +19,8 @@ var MemoryObserver = {
       // disabled that in favor of this method (bug 669346), we should gc here.
       // See bug 784040 for when this code was ported from XUL to native Fennec.
       this.gc();
+    } else if (aTopic == "memory-pressure-stop") {
+      this.handleEnoughMemory();
     } else if (aTopic == "Memory:Dump") {
       this.dumpMemoryStats(aData);
     }
@@ -20,12 +28,14 @@ var MemoryObserver = {
 
   handleLowMemory: function() {
     // do things to reduce memory usage here
-    if (!Services.prefs.getBoolPref("browser.tabs.disableBackgroundZombification")) {
+    if (
+      !Services.prefs.getBoolPref("browser.tabs.disableBackgroundZombification")
+    ) {
       let tabs = BrowserApp.tabs;
       let selected = BrowserApp.selectedTab;
       for (let i = 0; i < tabs.length; i++) {
         if (tabs[i] != selected && !tabs[i].playingAudio) {
-          this.zombify(tabs[i]);
+          tabs[i].zombify();
         }
       }
     }
@@ -33,56 +43,47 @@ var MemoryObserver = {
     // Change some preferences temporarily for only this session
     let defaults = Services.prefs.getDefaultBranch(null);
 
-    // Reduce the amount of decoded image data we keep around
-    defaults.setIntPref("image.mem.max_decoded_image_kb", 0);
-
     // Stop using the bfcache
-    if (!Services.prefs.getBoolPref("browser.sessionhistory.bfcacheIgnoreMemoryPressure")) {
-      defaults.setIntPref("browser.sessionhistory.max_total_viewers", 0);
+    if (
+      !Services.prefs.getBoolPref(
+        "browser.sessionhistory.bfcacheIgnoreMemoryPressure"
+      )
+    ) {
+      this._defaultMaxContentViewers = defaults.getIntPref(
+        MAX_CONTENT_VIEWERS_PREF
+      );
+      defaults.setIntPref(MAX_CONTENT_VIEWERS_PREF, 0);
     }
   },
 
-  zombify: function(tab) {
-    let browser = tab.browser;
-    let data = browser.__SS_data;
-    let extra = browser.__SS_extdata;
-
-    // Notify any interested parties (e.g. the session store)
-    // that the original tab object is going to be destroyed
-    let evt = document.createEvent("UIEvents");
-    evt.initUIEvent("TabPreZombify", true, false, window, null);
-    browser.dispatchEvent(evt);
-
-    // We need this data to correctly create and position the new browser
-    // If this browser is already a zombie, fallback to the session data
-    let currentURL = browser.__SS_restore ? data.entries[0].url : browser.currentURI.spec;
-    let sibling = browser.nextSibling;
-    let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(browser);
-
-    tab.destroy();
-    tab.create(currentURL, { sibling: sibling, zombifying: true, delayLoad: true, isPrivate: isPrivate });
-
-    // Reattach session store data and flag this browser so it is restored on select
-    browser = tab.browser;
-    browser.__SS_data = data;
-    browser.__SS_extdata = extra;
-    browser.__SS_restore = true;
-    browser.setAttribute("pending", "true");
-
-    // Notify the session store to reattach its listeners to the new tab object
-    evt = document.createEvent("UIEvents");
-    evt.initUIEvent("TabPostZombify", true, false, window, null);
-    browser.dispatchEvent(evt);
+  handleEnoughMemory: function() {
+    // Re-enable the bfcache
+    let defaults = Services.prefs.getDefaultBranch(null);
+    if (
+      !Services.prefs.getBoolPref(
+        "browser.sessionhistory.bfcacheIgnoreMemoryPressure"
+      )
+    ) {
+      defaults.setIntPref(
+        MAX_CONTENT_VIEWERS_PREF,
+        this._defaultMaxContentViewers
+      );
+    }
   },
 
   gc: function() {
-    window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).garbageCollect();
+    window.windowUtils.garbageCollect();
     Cu.forceGC();
   },
 
   dumpMemoryStats: function(aLabel) {
-    let memDumper = Cc["@mozilla.org/memory-info-dumper;1"].getService(Ci.nsIMemoryInfoDumper);
-    memDumper.dumpMemoryInfoToTempDir(aLabel, /* anonymize = */ false,
-                                      /* minimize = */ false);
+    let memDumper = Cc["@mozilla.org/memory-info-dumper;1"].getService(
+      Ci.nsIMemoryInfoDumper
+    );
+    memDumper.dumpMemoryInfoToTempDir(
+      aLabel,
+      /* anonymize = */ false,
+      /* minimize = */ false
+    );
   },
 };

@@ -6,16 +6,14 @@
         onload="runTest()"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <script>
 SimpleTest.waitForExplicitFinish();
 function runTest()
 {
-  window.open("window_panel.xul", "_blank", "chrome,left=200,top=200,width=200,height=200");
+  window.openDialog("window_panel.xul", "_blank", "chrome,left=200,top=200,width=200,height=200,noopener", window);
 }
 </script>
 

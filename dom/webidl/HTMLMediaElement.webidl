@@ -11,24 +11,25 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLMediaElement : HTMLElement {
 
   // error state
   readonly attribute MediaError? error;
 
   // network state
-  [SetterThrows]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString src;
   readonly attribute DOMString currentSrc;
 
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute DOMString? crossOrigin;
   const unsigned short NETWORK_EMPTY = 0;
   const unsigned short NETWORK_IDLE = 1;
   const unsigned short NETWORK_LOADING = 2;
   const unsigned short NETWORK_NO_SOURCE = 3;
   readonly attribute unsigned short networkState;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute DOMString preload;
   [NewObject]
   readonly attribute TimeRanges buffered;
@@ -63,12 +64,12 @@ interface HTMLMediaElement : HTMLElement {
   [NewObject]
   readonly attribute TimeRanges seekable;
   readonly attribute boolean ended;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute boolean autoplay;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute boolean loop;
   [Throws]
-  void play();
+  Promise<void> play();
   [Throws]
   void pause();
 
@@ -78,12 +79,12 @@ interface HTMLMediaElement : HTMLElement {
   //         attribute MediaController? controller;
 
   // controls
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute boolean controls;
   [SetterThrows]
            attribute double volume;
            attribute boolean muted;
-  [SetterThrows]
+  [CEReactions, SetterThrows]
            attribute boolean defaultMuted;
 
   // TODO: Bug 847379
@@ -100,29 +101,28 @@ interface HTMLMediaElement : HTMLElement {
 
 // Mozilla extensions:
 partial interface HTMLMediaElement {
-  [ChromeOnly]
+  [Func="HasDebuggerOrTabsPrivilege"]
   readonly attribute MediaSource? mozMediaSourceObject;
-  [ChromeOnly]
-  readonly attribute DOMString mozDebugReaderData;
 
-  [Pref="media.test.dumpDebugInfo"]
-  void mozDumpDebugInfo();
+  [Func="HasDebuggerOrTabsPrivilege", NewObject]
+  Promise<HTMLMediaElementDebugInfo> mozRequestDebugInfo();
+
+  [Func="HasDebuggerOrTabsPrivilege", NewObject]
+  static void mozEnableDebugLog();
+  [Func="HasDebuggerOrTabsPrivilege", NewObject]
+  Promise<DOMString> mozRequestDebugLog();
 
   attribute MediaStream? srcObject;
-  // TODO: remove prefixed version soon (1183495).
-  attribute MediaStream? mozSrcObject;
-
   attribute boolean mozPreservesPitch;
-  readonly attribute boolean mozAutoplayEnabled;
 
   // NB: for internal use with the video controls:
-  [Func="IsChromeOrXBL"] attribute boolean mozAllowCasting;
-  [Func="IsChromeOrXBL"] attribute boolean mozIsCasting;
+  [Func="IsChromeOrXBLOrUAWidget"] attribute boolean mozAllowCasting;
+  [Func="IsChromeOrXBLOrUAWidget"] attribute boolean mozIsCasting;
 
   // Mozilla extension: stream capture
-  [Throws, UnsafeInPrerendering]
+  [Throws]
   MediaStream mozCaptureStream();
-  [Throws, UnsafeInPrerendering]
+  [Throws]
   MediaStream mozCaptureStreamUntilEnded();
   readonly attribute boolean mozAudioCaptured;
 
@@ -137,33 +137,21 @@ partial interface HTMLMediaElement {
   // it is equal to the media duration.
   readonly attribute double mozFragmentEnd;
 
-  // Mozilla extension: an audio channel type for media elements.
-  // Read AudioChannel.webidl for more information about this attribute.
-  [SetterThrows, Pref="media.useAudioChannelAPI"]
-  attribute AudioChannel mozAudioChannelType;
-
-  // In addition the media element has this new events:
-  // * onmozinterruptbegin - called when the media element is interrupted
-  //   because of the audiochannel manager.
-  // * onmozinterruptend - called when the interruption is concluded
-  [Pref="media.useAudioChannelAPI"]
-  attribute EventHandler onmozinterruptbegin;
-
-  [Pref="media.useAudioChannelAPI"]
-  attribute EventHandler onmozinterruptend;
+  [ChromeOnly]
+  void reportCanPlayTelemetry();
 };
 
 // Encrypted Media Extensions
 partial interface HTMLMediaElement {
-  [Pref="media.eme.apiVisible"]
   readonly attribute MediaKeys? mediaKeys;
 
   // void, not any: https://www.w3.org/Bugs/Public/show_bug.cgi?id=26457
-  [Pref="media.eme.apiVisible", NewObject]
+  [NewObject]
   Promise<void> setMediaKeys(MediaKeys? mediaKeys);
 
-  [Pref="media.eme.apiVisible"]
   attribute EventHandler onencrypted;
+
+  attribute EventHandler onwaitingforkey;
 };
 
 // This is just for testing
@@ -212,10 +200,44 @@ partial interface HTMLMediaElement {
 };
 
 /*
- * This is an API for simulating visibility changes to help debug and write
+ * These APIs are testing only, they are used to simulate visibility changes to help debug and write
  * tests about suspend-video-decoding.
+ *
+ * - SetVisible() is for simulating visibility changes.
+ * - HasSuspendTaint() is for querying that the element's decoder cannot suspend
+ *   video decoding because it has been tainted by an operation, such as
+ *   drawImage().
+ * - isVisible is a boolean value which indicate whether media element is visible.
+ * - isVideoDecodingSuspended() is used to know whether video decoding has suspended.
  */
 partial interface HTMLMediaElement {
-  [Pref="media.test.setVisible"]
+  [Pref="media.test.video-suspend"]
   void setVisible(boolean aVisible);
+
+  [Pref="media.test.video-suspend"]
+  boolean hasSuspendTaint();
+
+  [ChromeOnly]
+  readonly attribute boolean isVisible;
+
+  [ChromeOnly]
+  readonly attribute boolean isVideoDecodingSuspended;
+};
+
+/* Audio Output Devices API */
+partial interface HTMLMediaElement {
+  [Pref="media.setsinkid.enabled"]
+  readonly attribute DOMString sinkId;
+  [Throws, Pref="media.setsinkid.enabled"]
+  Promise<void> setSinkId(DOMString sinkId);
+};
+
+/*
+ * API that exposes whether a call to HTMLMediaElement.play() would be
+ * blocked by autoplay policies; whether the promise returned by play()
+ * would be rejected with NotAllowedError.
+ */
+partial interface HTMLMediaElement {
+  [Pref="media.allowed-to-play.enabled"]
+  readonly attribute boolean allowedToPlay;
 };

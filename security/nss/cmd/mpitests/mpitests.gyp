@@ -14,7 +14,16 @@
         'mpi-test.c',
       ],
       'dependencies': [
-        '<(DEPTH)/lib/freebl/freebl.gyp:<(freebl_name)',
+        '<(DEPTH)/exports.gyp:nss_exports',
+        '<(DEPTH)/lib/util/util.gyp:nssutil3',
+        '<(DEPTH)/lib/nss/nss.gyp:nss_static',
+        '<(DEPTH)/lib/pk11wrap/pk11wrap.gyp:pk11wrap_static',
+        '<(DEPTH)/lib/cryptohi/cryptohi.gyp:cryptohi',
+        '<(DEPTH)/lib/certhigh/certhigh.gyp:certhi',
+        '<(DEPTH)/lib/certdb/certdb.gyp:certdb',
+        '<(DEPTH)/lib/base/base.gyp:nssb',
+        '<(DEPTH)/lib/dev/dev.gyp:nssdev',
+        '<(DEPTH)/lib/pki/pki.gyp:nsspki',
       ]
     }
   ],
@@ -22,7 +31,18 @@
     'include_dirs': [
       '<(DEPTH)/lib/freebl/mpi',
       '<(DEPTH)/lib/util',
-    ]
+    ],
+    # This uses test builds and has to set defines for MPI.
+    'conditions': [
+      [ 'target_arch=="ia32"', {
+        'defines': [
+          'MP_USE_UINT_DIGIT',
+          'MP_ASSEMBLY_MULTIPLY',
+          'MP_ASSEMBLY_SQUARE',
+          'MP_ASSEMBLY_DIV_2DX1D',
+        ],
+      }],
+    ],
   },
   'variables': {
     'module': 'nss'

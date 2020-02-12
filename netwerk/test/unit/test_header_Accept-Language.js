@@ -1,13 +1,19 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 //
 //  HTTP Accept-Language header test
 //
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
+"use strict";
 
 var testpath = "/bug672448";
 
 function run_test() {
-  let intlPrefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefService).getBranch("intl.");
+  let intlPrefs = Cc["@mozilla.org/preferences-service;1"]
+    .getService(Ci.nsIPrefService)
+    .getBranch("intl.");
 
   // Save old value of preference for later.
   let oldPref = intlPrefs.getCharPref("accept_languages");
@@ -45,45 +51,49 @@ function test_accepted_languages() {
   let acceptedLanguagesLength = acceptedLanguages.length;
 
   for (let i = 0; i < acceptedLanguagesLength; i++) {
-    let acceptedLanguage, qualityValue;
+    let acceptedLanguage, qualityValue, unused;
 
     try {
       // The q-value must conform to the definition in HTTP/1.1 Section 3.9.
-      [_, acceptedLanguage, qualityValue] = acceptedLanguages[i].trim().match(/^([a-z0-9_-]*?)(?:;q=(1(?:\.0{0,3})?|0(?:\.[0-9]{0,3})))?$/i);
-    } catch(e) {
+      [unused, acceptedLanguage, qualityValue] = acceptedLanguages[i]
+        .trim()
+        .match(/^([a-z0-9_-]*?)(?:;q=(1(?:\.0{0,3})?|0(?:\.[0-9]{0,3})))?$/i);
+    } catch (e) {
       do_throw("Invalid language tag or quality value: " + e);
     }
 
     if (i == 0) {
       // The first language shouldn't have a quality value.
-      do_check_eq(qualityValue, undefined);
+      Assert.equal(qualityValue, undefined);
     } else {
       let decimalPlaces;
 
       // When the number of languages is small, we keep the quality value to only one decimal place.
       // Otherwise, it can be up to two decimal places.
       if (acceptedLanguagesLength < 10) {
-        do_check_true(qualityValue.length == 3);
+        Assert.ok(qualityValue.length == 3);
 
         decimalPlaces = 1;
       } else {
-        do_check_true(qualityValue.length >= 3);
-        do_check_true(qualityValue.length <= 4);
+        Assert.ok(qualityValue.length >= 3);
+        Assert.ok(qualityValue.length <= 4);
 
         decimalPlaces = 2;
       }
 
       // All the other languages should have an evenly-spaced quality value.
-      do_check_eq(parseFloat(qualityValue).toFixed(decimalPlaces), (1.0 - ((1 / acceptedLanguagesLength) * i)).toFixed(decimalPlaces));
+      Assert.equal(
+        parseFloat(qualityValue).toFixed(decimalPlaces),
+        (1.0 - (1 / acceptedLanguagesLength) * i).toFixed(decimalPlaces)
+      );
     }
   }
 }
 
 function setupChannel(path) {
-
-  let chan = NetUtil.newChannel ({
+  let chan = NetUtil.newChannel({
     uri: "http://localhost:4444" + path,
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
 
   chan.QueryInterface(Ci.nsIHttpChannel);

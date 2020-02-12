@@ -5,14 +5,12 @@
 
 package org.mozilla.gecko;
 
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.SparseArray;
 
 import org.mozilla.gecko.annotation.WrapForJNI;
-
-import java.lang.Thread;
-import java.util.Set;
 
 public class GeckoJavaSampler {
     private static final String LOGTAG = "JavaSampler";
@@ -29,9 +27,9 @@ public class GeckoJavaSampler {
         public Frame[] mFrames;
         public double mTime;
         public long mJavaTime; // non-zero if Android system time is used
-        public Sample(StackTraceElement[] aStack) {
+        public Sample(final StackTraceElement[] aStack) {
             mFrames = new Frame[aStack.length];
-            if (GeckoThread.isStateAtLeast(GeckoThread.State.LIBS_READY)) {
+            if (GeckoThread.isStateAtLeast(GeckoThread.State.JNI_READY)) {
                 mTime = getProfilerTime();
             }
             if (mTime == 0.0d) {
@@ -78,14 +76,7 @@ public class GeckoJavaSampler {
                 mSamplePos = 0;
 
                 // Find the main thread
-                Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
-                for (Thread t : threadSet) {
-                    if (t.getName().compareToIgnoreCase("main") == 0) {
-                        sMainThread = t;
-                        break;
-                    }
-                }
-
+                sMainThread = Looper.getMainLooper().getThread();
                 if (sMainThread == null) {
                     Log.e(LOGTAG, "Main thread not found");
                     return;
@@ -111,7 +102,7 @@ public class GeckoJavaSampler {
             }
         }
 
-        private Sample getSample(int aThreadId, int aSampleId) {
+        private Sample getSample(final int aThreadId, final int aSampleId) {
             if (aThreadId < mSamples.size() && aSampleId < mSamples.get(aThreadId).length &&
                 mSamples.get(aThreadId)[aSampleId] != null) {
                 int startPos = 0;
@@ -127,33 +118,32 @@ public class GeckoJavaSampler {
 
 
     @WrapForJNI
-    public synchronized static String getThreadName(int aThreadId) {
+    public synchronized static String getThreadName(final int aThreadId) {
         if (aThreadId == 0 && sMainThread != null) {
             return sMainThread.getName();
         }
         return null;
     }
 
-    private synchronized static Sample getSample(int aThreadId, int aSampleId) {
+    private synchronized static Sample getSample(final int aThreadId, final int aSampleId) {
         return sSamplingRunnable.getSample(aThreadId, aSampleId);
     }
 
     @WrapForJNI
-    public synchronized static double getSampleTime(int aThreadId, int aSampleId) {
+    public synchronized static double getSampleTime(final int aThreadId, final int aSampleId) {
         Sample sample = getSample(aThreadId, aSampleId);
         if (sample != null) {
             if (sample.mJavaTime != 0) {
                 return (sample.mJavaTime -
                     SystemClock.elapsedRealtime()) + getProfilerTime();
             }
-            System.out.println("Sample: " + sample.mTime);
             return sample.mTime;
         }
         return 0;
     }
 
     @WrapForJNI
-    public synchronized static String getFrameName(int aThreadId, int aSampleId, int aFrameId) {
+    public synchronized static String getFrameName(final int aThreadId, final int aSampleId, final int aFrameId) {
         Sample sample = getSample(aThreadId, aSampleId);
         if (sample != null && aFrameId < sample.mFrames.length) {
             Frame frame = sample.mFrames[aFrameId];
@@ -166,7 +156,7 @@ public class GeckoJavaSampler {
     }
 
     @WrapForJNI
-    public static void start(int aInterval, int aSamples) {
+    public static void start(final int aInterval, final int aSamples) {
         synchronized (GeckoJavaSampler.class) {
             if (sSamplingRunnable != null) {
                 return;
@@ -193,19 +183,27 @@ public class GeckoJavaSampler {
 
     @WrapForJNI
     public static void stop() {
+        Thread samplingThread;
+
         synchronized (GeckoJavaSampler.class) {
             if (sSamplingThread == null) {
                 return;
             }
 
             sSamplingRunnable.mStopSampler = true;
+            samplingThread = sSamplingThread;
+            sSamplingThread = null;
+            sSamplingRunnable = null;
+        }
+
+        boolean retry = true;
+        while (retry) {
             try {
-                sSamplingThread.join();
+                samplingThread.join();
+                retry = false;
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            sSamplingThread = null;
-            sSamplingRunnable = null;
         }
     }
 }

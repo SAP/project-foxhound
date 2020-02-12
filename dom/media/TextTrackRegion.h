@@ -12,6 +12,7 @@
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/TextTrack.h"
+#include "mozilla/dom/VTTRegionBinding.h"
 #include "mozilla/Preferences.h"
 
 namespace mozilla {
@@ -20,153 +21,120 @@ namespace dom {
 class GlobalObject;
 class TextTrack;
 
-class TextTrackRegion final : public nsISupports,
-                              public nsWrapperCache
-{
-public:
-
+class TextTrackRegion final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TextTrackRegion)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
   explicit TextTrackRegion(nsISupports* aGlobal);
 
   /** WebIDL Methods. */
 
-  static already_AddRefed<TextTrackRegion>
-  Constructor(const GlobalObject& aGlobal, ErrorResult& aRv);
+  static already_AddRefed<TextTrackRegion> Constructor(
+      const GlobalObject& aGlobal, ErrorResult& aRv);
 
-  double Lines() const
-  {
-    return mLines;
+  double Lines() const { return mLines; }
+
+  void SetLines(double aLines, ErrorResult& aRv) {
+    if (aLines < 0) {
+      aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    } else {
+      mLines = aLines;
+    }
   }
 
-  void SetLines(double aLines)
-  {
-    mLines = aLines;
-  }
+  double Width() const { return mWidth; }
 
-  double Width() const
-  {
-    return mWidth;
-  }
-
-  void SetWidth(double aWidth, ErrorResult& aRv)
-  {
+  void SetWidth(double aWidth, ErrorResult& aRv) {
     if (!InvalidValue(aWidth, aRv)) {
       mWidth = aWidth;
     }
   }
 
-  double RegionAnchorX() const
-  {
-    return mRegionAnchorX;
-  }
+  double RegionAnchorX() const { return mRegionAnchorX; }
 
-  void SetRegionAnchorX(double aVal, ErrorResult& aRv)
-  {
+  void SetRegionAnchorX(double aVal, ErrorResult& aRv) {
     if (!InvalidValue(aVal, aRv)) {
       mRegionAnchorX = aVal;
     }
   }
 
-  double RegionAnchorY() const
-  {
-    return mRegionAnchorY;
-  }
+  double RegionAnchorY() const { return mRegionAnchorY; }
 
-  void SetRegionAnchorY(double aVal, ErrorResult& aRv)
-  {
+  void SetRegionAnchorY(double aVal, ErrorResult& aRv) {
     if (!InvalidValue(aVal, aRv)) {
       mRegionAnchorY = aVal;
     }
   }
 
-  double ViewportAnchorX() const
-  {
-    return mViewportAnchorX;
-  }
+  double ViewportAnchorX() const { return mViewportAnchorX; }
 
-  void SetViewportAnchorX(double aVal, ErrorResult& aRv)
-  {
+  void SetViewportAnchorX(double aVal, ErrorResult& aRv) {
     if (!InvalidValue(aVal, aRv)) {
       mViewportAnchorX = aVal;
     }
   }
 
-  double ViewportAnchorY() const
-  {
-    return mViewportAnchorY;
-  }
+  double ViewportAnchorY() const { return mViewportAnchorY; }
 
-  void SetViewportAnchorY(double aVal, ErrorResult& aRv)
-  {
+  void SetViewportAnchorY(double aVal, ErrorResult& aRv) {
     if (!InvalidValue(aVal, aRv)) {
       mViewportAnchorY = aVal;
     }
   }
 
-  void GetScroll(nsAString& aScroll) const
-  {
-    aScroll = mScroll;
-  }
+  ScrollSetting Scroll() const { return mScroll; }
 
-  void SetScroll(const nsAString& aScroll, ErrorResult& aRv)
-  {
-    if (!aScroll.EqualsLiteral("") && !aScroll.EqualsLiteral("up")) {
-      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-      return;
+  void SetScroll(const ScrollSetting& aScroll) {
+    if (aScroll == ScrollSetting::_empty || aScroll == ScrollSetting::Up) {
+      mScroll = aScroll;
     }
-
-    mScroll = aScroll;
   }
+
+  void GetId(nsAString& aId) const { aId = mId; }
+
+  void SetId(const nsAString& aId) { mId = aId; }
 
   /** end WebIDL Methods. */
-
 
   // Helper to aid copying of a given TextTrackRegion's width, lines,
   // anchor, viewport and scroll values.
   void CopyValues(TextTrackRegion& aRegion);
 
   // -----helpers-------
-  const nsAString& Scroll() const
-  {
-    return mScroll;
-  }
+  const nsAString& Id() const { return mId; }
 
-private:
+ private:
   ~TextTrackRegion() {}
 
   nsCOMPtr<nsISupports> mParent;
+  nsString mId;
   double mWidth;
   long mLines;
   double mRegionAnchorX;
   double mRegionAnchorY;
   double mViewportAnchorX;
   double mViewportAnchorY;
-  nsString mScroll;
+  ScrollSetting mScroll;
 
   // Helper to ensure new value is in the range: 0.0% - 100.0%; throws
   // an IndexSizeError otherwise.
-  inline bool InvalidValue(double aValue, ErrorResult& aRv)
-  {
-    if(aValue < 0.0  || aValue > 100.0) {
+  inline bool InvalidValue(double aValue, ErrorResult& aRv) {
+    if (aValue < 0.0 || aValue > 100.0) {
       aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
       return true;
     }
 
     return false;
   }
-
 };
 
-} //namespace dom
-} //namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif //mozilla_dom_TextTrackRegion_h
+#endif  // mozilla_dom_TextTrackRegion_h

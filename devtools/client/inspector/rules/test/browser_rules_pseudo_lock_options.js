@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -6,6 +5,7 @@
 
 // Tests that the rule view pseudo lock options work properly.
 
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const TEST_URI = `
   <style type='text/css'>
     div {
@@ -20,112 +20,129 @@ const TEST_URI = `
     div:focus {
       color: green;
     }
+    div:focus-within {
+      color: papayawhip;
+    }
+    div:visited {
+      color: orange;
+    }
   </style>
   <div>test div</div>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("div", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("div", inspector);
 
-  yield assertPseudoPanelClosed(view);
+  await assertPseudoPanelClosed(view);
 
   info("Toggle the pseudo class panel open");
   view.pseudoClassToggle.click();
-  yield assertPseudoPanelOpened(view);
+  await assertPseudoPanelOpened(view);
 
   info("Toggle each pseudo lock and check that the pseudo lock is added");
-  yield togglePseudoClass(inspector, view.hoverCheckbox);
-  yield assertPseudoAdded(inspector, view, ":hover", 3, 1);
-  yield togglePseudoClass(inspector, view.hoverCheckbox);
-  yield assertPseudoRemoved(inspector, view, 2);
-
-  yield togglePseudoClass(inspector, view.activeCheckbox);
-  yield assertPseudoAdded(inspector, view, ":active", 3, 1);
-  yield togglePseudoClass(inspector, view.activeCheckbox);
-  yield assertPseudoRemoved(inspector, view, 2);
-
-  yield togglePseudoClass(inspector, view.focusCheckbox);
-  yield assertPseudoAdded(inspector, view, ":focus", 3, 1);
-  yield togglePseudoClass(inspector, view.focusCheckbox);
-  yield assertPseudoRemoved(inspector, view, 2);
+  for (const pseudo of PSEUDO_CLASSES) {
+    await togglePseudoClass(inspector, view, pseudo);
+    await assertPseudoAdded(inspector, view, pseudo, 3, 1);
+    await togglePseudoClass(inspector, view, pseudo);
+    await assertPseudoRemoved(inspector, view, 2);
+  }
 
   info("Toggle all pseudo lock and check that the pseudo lock is added");
-  yield togglePseudoClass(inspector, view.hoverCheckbox);
-  yield togglePseudoClass(inspector, view.activeCheckbox);
-  yield togglePseudoClass(inspector, view.focusCheckbox);
-  yield assertPseudoAdded(inspector, view, ":focus", 5, 1);
-  yield assertPseudoAdded(inspector, view, ":active", 5, 2);
-  yield assertPseudoAdded(inspector, view, ":hover", 5, 3);
-  yield togglePseudoClass(inspector, view.hoverCheckbox);
-  yield togglePseudoClass(inspector, view.activeCheckbox);
-  yield togglePseudoClass(inspector, view.focusCheckbox);
-  yield assertPseudoRemoved(inspector, view, 2);
+  await togglePseudoClass(inspector, view, ":hover");
+  await togglePseudoClass(inspector, view, ":active");
+  await togglePseudoClass(inspector, view, ":focus");
+  await assertPseudoAdded(inspector, view, ":focus", 5, 1);
+  await assertPseudoAdded(inspector, view, ":active", 5, 2);
+  await assertPseudoAdded(inspector, view, ":hover", 5, 3);
+  await togglePseudoClass(inspector, view, ":hover");
+  await togglePseudoClass(inspector, view, ":active");
+  await togglePseudoClass(inspector, view, ":focus");
+  await assertPseudoRemoved(inspector, view, 2);
 
   info("Select a null element");
-  yield view.selectElement(null);
-  ok(!view.hoverCheckbox.checked && view.hoverCheckbox.disabled,
-    ":hover checkbox is unchecked and disabled");
-  ok(!view.activeCheckbox.checked && view.activeCheckbox.disabled,
-    ":active checkbox is unchecked and disabled");
-  ok(!view.focusCheckbox.checked && view.focusCheckbox.disabled,
-    ":focus checkbox is unchecked and disabled");
+  await view.selectElement(null);
+
+  info("Check that all pseudo locks are unchecked and disabled");
+  for (const pseudo of PSEUDO_CLASSES) {
+    const checkbox = getPseudoClassCheckbox(view, pseudo);
+    ok(
+      !checkbox.checked && checkbox.disabled,
+      `${pseudo} checkbox is unchecked and disabled`
+    );
+  }
 
   info("Toggle the pseudo class panel close");
   view.pseudoClassToggle.click();
-  yield assertPseudoPanelClosed(view);
+  await assertPseudoPanelClosed(view);
 });
 
-function* togglePseudoClass(inspector, pseudoClassOption) {
+async function togglePseudoClass(inspector, view, pseudoClass) {
   info("Toggle the pseudoclass, wait for it to be applied");
-  let onRefresh = inspector.once("rule-view-refreshed");
-  pseudoClassOption.click();
-  yield onRefresh;
+  const onRefresh = inspector.once("rule-view-refreshed");
+  const checkbox = getPseudoClassCheckbox(view, pseudoClass);
+  if (checkbox) {
+    checkbox.click();
+  }
+  await onRefresh;
 }
 
-function* assertPseudoAdded(inspector, view, pseudoClass, numRules,
-    childIndex) {
+function assertPseudoAdded(inspector, view, pseudoClass, numRules, childIndex) {
   info("Check that the ruleview contains the pseudo-class rule");
-  is(view.element.children.length, numRules,
-    "Should have " + numRules + " rules.");
-  is(getRuleViewRuleEditor(view, childIndex).rule.selectorText,
-    "div" + pseudoClass, "rule view is showing " + pseudoClass + " rule");
+  is(
+    view.element.children.length,
+    numRules,
+    "Should have " + numRules + " rules."
+  );
+  is(
+    getRuleViewRuleEditor(view, childIndex).rule.selectorText,
+    "div" + pseudoClass,
+    "rule view is showing " + pseudoClass + " rule"
+  );
 }
 
-function* assertPseudoRemoved(inspector, view, numRules) {
+function assertPseudoRemoved(inspector, view, numRules) {
   info("Check that the ruleview no longer contains the pseudo-class rule");
-  is(view.element.children.length, numRules,
-    "Should have " + numRules + " rules.");
-  is(getRuleViewRuleEditor(view, 1).rule.selectorText, "div",
-    "Second rule is div");
+  is(
+    view.element.children.length,
+    numRules,
+    "Should have " + numRules + " rules."
+  );
+  is(
+    getRuleViewRuleEditor(view, 1).rule.selectorText,
+    "div",
+    "Second rule is div"
+  );
 }
 
-function* assertPseudoPanelOpened(view) {
+function assertPseudoPanelOpened(view) {
   info("Check the opened state of the pseudo class panel");
 
   ok(!view.pseudoClassPanel.hidden, "Pseudo Class Panel Opened");
-  ok(!view.hoverCheckbox.disabled, ":hover checkbox is not disabled");
-  ok(!view.activeCheckbox.disabled, ":active checkbox is not disabled");
-  ok(!view.focusCheckbox.disabled, ":focus checkbox is not disabled");
 
-  is(view.hoverCheckbox.getAttribute("tabindex"), "0",
-    ":hover checkbox has a tabindex of 0");
-  is(view.activeCheckbox.getAttribute("tabindex"), "0",
-    ":active checkbox has a tabindex of 0");
-  is(view.focusCheckbox.getAttribute("tabindex"), "0",
-    ":focus checkbox has a tabindex of 0");
+  for (const pseudo of PSEUDO_CLASSES) {
+    const checkbox = getPseudoClassCheckbox(view, pseudo);
+    ok(!checkbox.disabled, `${pseudo} checkbox is not disabled`);
+    is(
+      checkbox.getAttribute("tabindex"),
+      "0",
+      `${pseudo} checkbox has a tabindex of 0`
+    );
+  }
 }
 
-function* assertPseudoPanelClosed(view) {
+function assertPseudoPanelClosed(view) {
   info("Check the closed state of the pseudo clas panel");
 
   ok(view.pseudoClassPanel.hidden, "Pseudo Class Panel Hidden");
 
-  is(view.hoverCheckbox.getAttribute("tabindex"), "-1",
-    ":hover checkbox has a tabindex of -1");
-  is(view.activeCheckbox.getAttribute("tabindex"), "-1",
-    ":active checkbox has a tabindex of -1");
-  is(view.focusCheckbox.getAttribute("tabindex"), "-1",
-    ":focus checkbox has a tabindex of -1");
+  for (const pseudo of PSEUDO_CLASSES) {
+    const checkbox = getPseudoClassCheckbox(view, pseudo);
+    is(
+      checkbox.getAttribute("tabindex"),
+      "-1",
+      `${pseudo} checkbox has a tabindex of -1`
+    );
+  }
 }

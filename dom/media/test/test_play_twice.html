@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test playback of media files that should play OK</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -75,13 +75,13 @@ function startTest(test, token) {
     v.playingCount++;
   }}(test, v);
 
-  v.addEventListener("load", noLoad, false);
-  v.addEventListener("loadedmetadata", check, false);
-  v.addEventListener("playing", checkPlaying, false);
+  v.addEventListener("load", noLoad);
+  v.addEventListener("loadedmetadata", check);
+  v.addEventListener("playing", checkPlaying);
 
   // We should get "ended" and "suspend" events for every resource
-  v.addEventListener("ended", checkEnded, false);
-  v.addEventListener("suspend", checkSuspended, false);
+  v.addEventListener("ended", checkEnded);
+  v.addEventListener("suspend", checkSuspended);
 
   document.body.appendChild(v);
   v.play();

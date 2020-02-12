@@ -11,6 +11,13 @@ handle SIG32 noprint nostop pass
 handle SIG33 noprint nostop pass
 handle SIGPIPE noprint nostop pass
 
+# Don't stop for certain other signals where it's not useful,
+# such as the SIG64 signals triggered by the Linux
+# sandboxing code on older kernels.
+handle SIG38 noprint nostop pass
+handle SIG64 noprint nostop pass
+handle SIGSYS noprint nostop pass
+
 # Show the concrete types behind nsIFoo
 set print object on
 
@@ -79,7 +86,7 @@ def ps
   end
 end
 
-# Define a "pa" command to display the string value for an nsIAtom
+# Define a "pa" command to display the string value for an nsAtom
 def pa
   set $atom = $arg0
   if (sizeof(*((&*$atom)->mString)) == 2)
@@ -178,6 +185,10 @@ end
 
 def ft
   call $arg0->DumpFrameTree()
+end
+
+def ftl
+  call $arg0->DumpFrameTreeLimited()
 end
 
 source .gdbinit_python

@@ -6,15 +6,14 @@
   -->
 <window title="Search textbox test" width="500" height="600"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
   <hbox>
-    <textbox id="searchbox"
-             type="search"
-             oncommand="doSearch(this.value);"
-             placeholder="random placeholder"
-             timeout="1"/>
+    <search-textbox id="searchbox"
+                    oncommand="doSearch(this.value);"
+                    placeholder="random placeholder"
+                    timeout="1"/>
   </hbox>
 
   <!-- test results are displayed in the html:body -->
@@ -30,9 +29,9 @@ var gLastTest;
 
 function doTests() {
   var textbox = $("searchbox");
-  var icons = document.getAnonymousElementByAttribute(textbox, "anonid", "search-icons");
-  var searchIcon = document.getAnonymousElementByAttribute(textbox, "class", "textbox-search-icon");
-  var clearIcon = document.getAnonymousElementByAttribute(textbox, "class", "textbox-search-clear");
+  var icons = textbox.querySelector(".textbox-search-icons");
+  var searchIcon = icons.querySelector(".textbox-search-icon");
+  var clearIcon = icons.querySelector(".textbox-search-clear");
 
   ok(icons, "icon deck found");
   ok(searchIcon, "search icon found");
@@ -63,10 +62,10 @@ function doTests() {
   textbox.value = "foo";
   is(icons.selectedPanel, clearIcon, "clear icon is displayed when setting a value");
 
-  textbox.reset();
+  textbox.value = "";
   is(textbox.defaultValue, "", "defaultValue is empty");
   is(textbox.value, "", "reset method clears the textbox");
-  is(icons.selectedPanel, searchIcon, "search icon is displayed after textbox.reset()");
+  is(icons.selectedPanel, searchIcon, "search icon is displayed after clearing value");
 
   textbox.value = "foo";
   gExpectedValue = "";
@@ -76,7 +75,7 @@ function doTests() {
 
   textbox.value = "foo";
   gExpectedValue = "";
-  synthesizeKey("VK_ESCAPE", {});
+  synthesizeKey("KEY_Escape");
   is(textbox.value, "", "escape key clears the textbox");
   ok(gExpectedValue == null, "search triggered when clearing the textbox with the escape key");
 
@@ -86,7 +85,7 @@ function doTests() {
   ok(gExpectedValue == null, "search triggered with doCommand");
 
   gExpectedValue = "bar";
-  synthesizeKey("VK_RETURN", {});
+  synthesizeKey("KEY_Enter");
   ok(gExpectedValue == null, "search triggered with enter key");
 
   textbox.value = "";
@@ -102,7 +101,7 @@ function doTests() {
   ok(gExpectedValue == null, "search triggered when clicking the search icon in search button mode");
   is(icons.selectedPanel, clearIcon, "clear icon displayed in search button mode after submitting");
 
-  synthesizeKey("o", {});
+  sendString("o");
   is(icons.selectedPanel, searchIcon, "search icon displayed in search button mode when typing a key");
 
   gExpectedValue = "fooo";
@@ -112,16 +111,16 @@ function doTests() {
   is(icons.selectedPanel, searchIcon, "search icon displayed in search button mode when the value is changed");
 
   gExpectedValue = "foo";
-  synthesizeKey("VK_RETURN", {});
+  synthesizeKey("KEY_Enter");
   ok(gExpectedValue == null, "search triggered with enter key in search button mode");
   is(icons.selectedPanel, clearIcon, "clear icon displayed in search button mode after submitting with enter key");
 
   textbox.value = "x";
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   is(icons.selectedPanel, searchIcon, "search icon displayed in search button mode when deleting the value with the backspace key");
 
   gExpectedValue = "";
-  synthesizeKey("VK_RETURN", {});
+  synthesizeKey("KEY_Enter");
   ok(gExpectedValue == null, "search triggered with enter key in search button mode");
   is(icons.selectedPanel, searchIcon, "search icon displayed in search button mode after submitting an empty string");
 
@@ -152,8 +151,7 @@ function doTests() {
   gLastTest = true;
   gExpectedValue = "123";
   textbox.value = "1";
-  synthesizeKey("2", {});
-  synthesizeKey("3", {});
+  sendString("23");
 }
 
 function doSearch(aValue) {

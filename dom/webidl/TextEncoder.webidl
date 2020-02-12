@@ -10,11 +10,37 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-[Constructor,
- Exposed=(Window,Worker,System)]
+dictionary TextEncoderEncodeIntoResult {
+  unsigned long long read;
+  unsigned long long written;
+};
+
+[Exposed=(Window,Worker)]
 interface TextEncoder {
+  constructor();
+
+  /*
+   * This is DOMString in the spec, but the value is always ASCII
+   * and short. By declaring this as ByteString, we get the same
+   * end result (storage as inline Latin1 string in SpiderMonkey)
+   * with fewer conversions.
+   */
   [Constant]
-  readonly attribute DOMString encoding;
+  readonly attribute ByteString encoding;
+
+  /*
+   * This is spec-wise USVString but marking it as
+   * JSString as an optimization. (The SpiderMonkey-provided
+   * conversion to UTF-8 takes care of replacing lone
+   * surrogates with the REPLACEMENT CHARACTER, so the
+   * observable behavior of USVString is matched.)
+   */
   [NewObject]
-  Uint8Array encode(optional USVString input = "");
+  Uint8Array encode(optional JSString input = "");
+
+  /*
+   * The same comment about USVString as above applies here.
+   */
+  [CanOOM]
+  TextEncoderEncodeIntoResult encodeInto(JSString source, Uint8Array destination);
 };

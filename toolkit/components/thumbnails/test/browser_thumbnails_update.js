@@ -12,19 +12,20 @@ function* runTests() {
     capIfStaleErrorResponseUpdateTest,
     capIfStaleGoodResponseUpdateTest,
     regularCapErrorResponseUpdateTest,
-    regularCapGoodResponseUpdateTest
+    regularCapGoodResponseUpdateTest,
   ];
   for (let test of tests) {
     info("Running subtest " + test.name);
-    for (let iterator of test())
+    for (let iterator of test()) {
       yield iterator;
+    }
   }
 }
 
 function ensureThumbnailStale(url) {
   // We go behind the back of the thumbnail service and change the
   // mtime of the file to be in the past.
-  let fname = PageThumbsStorage.getFilePathForURL(url);
+  let fname = PageThumbsStorageService.getFilePathForURL(url);
   let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
   file.initWithPath(fname);
   ok(file.exists(), fname + " should exist");
@@ -33,7 +34,7 @@ function ensureThumbnailStale(url) {
 }
 
 function getThumbnailModifiedTime(url) {
-  let fname = PageThumbsStorage.getFilePathForURL(url);
+  let fname = PageThumbsStorageService.getFilePathForURL(url);
   let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
   file.initWithPath(fname);
   return file.lastModifiedTime;
@@ -43,7 +44,8 @@ function getThumbnailModifiedTime(url) {
 /* Check functionality of a normal captureAndStoreIfStale request */
 function* simpleCaptureTest() {
   let numNotifications = 0;
-  const URL = "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?simple";
+  const URL =
+    "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?simple";
 
   function observe(subject, topic, data) {
     is(topic, "page-thumbnail:create", "got expected topic");
@@ -56,19 +58,23 @@ function* simpleCaptureTest() {
     }
   }
 
-  Services.obs.addObserver(observe, "page-thumbnail:create", false);
+  Services.obs.addObserver(observe, "page-thumbnail:create");
   // Create a tab - we don't care what the content is.
   yield addTab(URL);
   let browser = gBrowser.selectedBrowser;
 
   // Capture the screenshot.
-  PageThumbs.captureAndStore(browser, function () {
+  PageThumbs.captureAndStore(browser, function() {
     // We've got a capture so should have seen the observer.
     is(numNotifications, 1, "got notification of item being created.");
     // The capture is now "fresh" - so requesting the URL should not cause
     // a new capture.
     PageThumbs.captureAndStoreIfStale(browser, function() {
-      is(numNotifications, 1, "still only 1 notification of item being created.");
+      is(
+        numNotifications,
+        1,
+        "still only 1 notification of item being created."
+      );
 
       ensureThumbnailStale(URL);
       // Ask for it to be updated.
@@ -77,14 +83,15 @@ function* simpleCaptureTest() {
       // the notification comes.
     });
   });
-  yield undefined // wait for callbacks to call 'next'...
+  yield undefined; // wait for callbacks to call 'next'...
 }
 
 /* Check functionality of captureAndStoreIfStale when there is an error response
    from the server.
  */
 function* capIfStaleErrorResponseUpdateTest() {
-  const URL = "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?fail";
+  const URL =
+    "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?fail";
   yield addTab(URL);
 
   yield captureAndCheckColor(0, 255, 0, "we have a green thumbnail");
@@ -97,10 +104,10 @@ function* capIfStaleErrorResponseUpdateTest() {
   // now() returns a higher-precision value than the modified time of a file.
   // As we set the thumbnail very stale, allowing 1 second of "slop" here
   // works around this while still keeping the test valid.
-  let now = Date.now() - 1000 ;
+  let now = Date.now() - 1000;
   PageThumbs.captureAndStoreIfStale(gBrowser.selectedBrowser, () => {
     ok(getThumbnailModifiedTime(URL) < now, "modified time should be < now");
-    retrieveImageDataForURL(URL, function ([r, g, b]) {
+    retrieveImageDataForURL(URL, function([r, g, b]) {
       is("" + [r, g, b], "" + [0, 255, 0], "thumbnail is still green");
       gBrowser.removeTab(gBrowser.selectedTab);
       next();
@@ -114,7 +121,8 @@ function* capIfStaleErrorResponseUpdateTest() {
    using a http:// URL instead of a data: url like most others.
  */
 function* capIfStaleGoodResponseUpdateTest() {
-  const URL = "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?ok";
+  const URL =
+    "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?ok";
   yield addTab(URL);
   let browser = gBrowser.selectedBrowser;
 
@@ -127,12 +135,12 @@ function* capIfStaleGoodResponseUpdateTest() {
   // now() returns a higher-precision value than the modified time of a file.
   // As we set the thumbnail very stale, allowing 1 second of "slop" here
   // works around this while still keeping the test valid.
-  let now = Date.now() - 1000 ;
+  let now = Date.now() - 1000;
   PageThumbs.captureAndStoreIfStale(browser, () => {
     ok(getThumbnailModifiedTime(URL) >= now, "modified time should be >= now");
     // the captureAndStoreIfStale request saw a 200 response with the red body,
     // so we expect to see the red version here.
-    retrieveImageDataForURL(URL, function ([r, g, b]) {
+    retrieveImageDataForURL(URL, function([r, g, b]) {
       is("" + [r, g, b], "" + [255, 0, 0], "thumbnail is now red");
       next();
     });
@@ -144,7 +152,8 @@ function* capIfStaleGoodResponseUpdateTest() {
    from the server.
  */
 function* regularCapErrorResponseUpdateTest() {
-  const URL = "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?fail";
+  const URL =
+    "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?fail";
   yield addTab(URL);
   yield captureAndCheckColor(0, 255, 0, "we have a green thumbnail");
   gBrowser.removeTab(gBrowser.selectedTab);
@@ -158,7 +167,8 @@ function* regularCapErrorResponseUpdateTest() {
    from the server.
  */
 function* regularCapGoodResponseUpdateTest() {
-  const URL = "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?ok";
+  const URL =
+    "http://mochi.test:8888/browser/toolkit/components/thumbnails/test/thumbnails_update.sjs?ok";
   yield addTab(URL);
   yield captureAndCheckColor(0, 255, 0, "we have a green thumbnail");
   gBrowser.removeTab(gBrowser.selectedTab);

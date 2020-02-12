@@ -12,11 +12,14 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-pre-element
+[Exposed=Window]
 interface HTMLPreElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLPreElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute long width;
 };

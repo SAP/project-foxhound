@@ -7,11 +7,11 @@
 #include "BroadcastChannelService.h"
 #include "BroadcastChannelParent.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/dom/ipc/BlobParent.h"
+#include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
 #ifdef XP_WIN
-#undef PostMessage
+#  undef PostMessage
 #endif
 
 namespace mozilla {
@@ -24,10 +24,9 @@ namespace {
 
 BroadcastChannelService* sInstance = nullptr;
 
-} // namespace
+}  // namespace
 
-BroadcastChannelService::BroadcastChannelService()
-{
+BroadcastChannelService::BroadcastChannelService() {
   AssertIsOnBackgroundThread();
 
   // sInstance is a raw BroadcastChannelService*.
@@ -35,8 +34,7 @@ BroadcastChannelService::BroadcastChannelService()
   sInstance = this;
 }
 
-BroadcastChannelService::~BroadcastChannelService()
-{
+BroadcastChannelService::~BroadcastChannelService() {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(sInstance == this);
   MOZ_ASSERT(mAgents.Count() == 0);
@@ -46,8 +44,7 @@ BroadcastChannelService::~BroadcastChannelService()
 
 // static
 already_AddRefed<BroadcastChannelService>
-BroadcastChannelService::GetOrCreate()
-{
+BroadcastChannelService::GetOrCreate() {
   AssertIsOnBackgroundThread();
 
   RefPtr<BroadcastChannelService> instance = sInstance;
@@ -57,46 +54,39 @@ BroadcastChannelService::GetOrCreate()
   return instance.forget();
 }
 
-void
-BroadcastChannelService::RegisterActor(BroadcastChannelParent* aParent,
-                                       const nsAString& aOriginChannelKey)
-{
+void BroadcastChannelService::RegisterActor(
+    BroadcastChannelParent* aParent, const nsAString& aOriginChannelKey) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
 
-  nsTArray<BroadcastChannelParent*>* parents;
-  if (!mAgents.Get(aOriginChannelKey, &parents)) {
-    parents = new nsTArray<BroadcastChannelParent*>();
-    mAgents.Put(aOriginChannelKey, parents);
-  }
+  nsTArray<BroadcastChannelParent*>* parents =
+      mAgents.LookupForAdd(aOriginChannelKey).OrInsert([]() {
+        return new nsTArray<BroadcastChannelParent*>();
+      });
 
   MOZ_ASSERT(!parents->Contains(aParent));
   parents->AppendElement(aParent);
 }
 
-void
-BroadcastChannelService::UnregisterActor(BroadcastChannelParent* aParent,
-                                         const nsAString& aOriginChannelKey)
-{
+void BroadcastChannelService::UnregisterActor(
+    BroadcastChannelParent* aParent, const nsAString& aOriginChannelKey) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
 
-  nsTArray<BroadcastChannelParent*>* parents;
-  if (!mAgents.Get(aOriginChannelKey, &parents)) {
+  if (auto entry = mAgents.Lookup(aOriginChannelKey)) {
+    entry.Data()->RemoveElement(aParent);
+    // remove the entry if the array is now empty
+    if (entry.Data()->IsEmpty()) {
+      entry.Remove();
+    }
+  } else {
     MOZ_CRASH("Invalid state");
-  }
-
-  parents->RemoveElement(aParent);
-  if (parents->IsEmpty()) {
-    mAgents.Remove(aOriginChannelKey);
   }
 }
 
-void
-BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
-                                     const ClonedMessageData& aData,
-                                     const nsAString& aOriginChannelKey)
-{
+void BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
+                                          const ClonedMessageData& aData,
+                                          const nsAString& aOriginChannelKey) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParent);
 
@@ -106,27 +96,45 @@ BroadcastChannelService::PostMessage(BroadcastChannelParent* aParent,
   }
 
   // We need to keep the array alive for the life-time of this operation.
-  nsTArray<RefPtr<BlobImpl>> blobs;
-  if (!aData.blobsParent().IsEmpty()) {
-    blobs.SetCapacity(aData.blobsParent().Length());
+  nsTArray<RefPtr<BlobImpl>> blobImpls;
+  if (!aData.blobs().IsEmpty()) {
+    blobImpls.SetCapacity(aData.blobs().Length());
 
-    for (uint32_t i = 0, len = aData.blobsParent().Length(); i < len; ++i) {
-      RefPtr<BlobImpl> impl =
-        static_cast<BlobParent*>(aData.blobsParent()[i])->GetBlobImpl();
-     MOZ_ASSERT(impl);
-     blobs.AppendElement(impl);
+    for (uint32_t i = 0, len = aData.blobs().Length(); i < len; ++i) {
+      RefPtr<BlobImpl> impl = IPCBlobUtils::Deserialize(aData.blobs()[i]);
+
+      MOZ_ASSERT(impl);
+      blobImpls.AppendElement(impl);
     }
   }
 
+  // For each parent actor, we notify the message.
   for (uint32_t i = 0; i < parents->Length(); ++i) {
     BroadcastChannelParent* parent = parents->ElementAt(i);
     MOZ_ASSERT(parent);
 
-    if (parent != aParent) {
-      parent->Deliver(aData);
+    if (parent == aParent) {
+      continue;
     }
+
+    // We need to have a copy of the data for this parent.
+    ClonedMessageData newData(aData);
+    MOZ_ASSERT(blobImpls.Length() == newData.blobs().Length());
+
+    if (!blobImpls.IsEmpty()) {
+      // Serialize Blob objects for this message.
+      for (uint32_t i = 0, len = blobImpls.Length(); i < len; ++i) {
+        nsresult rv = IPCBlobUtils::Serialize(blobImpls[i], parent->Manager(),
+                                              newData.blobs()[i]);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return;
+        }
+      }
+    }
+
+    Unused << parent->SendNotify(newData);
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -1,7 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsSVGImageFrame.h"
 
 // Keep in (case-insensitive) order:
 #include "gfxContext.h"
@@ -12,14 +15,15 @@
 #include "nsIImageLoadingContent.h"
 #include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
-#include "nsSVGEffects.h"
-#include "nsSVGPathGeometryFrame.h"
-#include "mozilla/dom/SVGSVGElement.h"
+#include "SVGGeometryProperty.h"
+#include "SVGObserverUtils.h"
 #include "nsSVGUtils.h"
 #include "SVGContentUtils.h"
+#include "SVGGeometryFrame.h"
 #include "SVGImageContext.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
-#include "nsContentUtils.h"
 #include "nsIReflowCallback.h"
 #include "mozilla/Unused.h"
 
@@ -27,196 +31,96 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
+namespace SVGT = SVGGeometryProperty::Tags;
 
-class nsSVGImageFrame;
+// ---------------------------------------------------------------------
+// nsQueryFrame methods
+NS_QUERYFRAME_HEAD(nsSVGImageFrame)
+  NS_QUERYFRAME_ENTRY(nsSVGImageFrame)
+NS_QUERYFRAME_TAIL_INHERITING(SVGGeometryFrame)
 
-class nsSVGImageListener final : public imgINotificationObserver
-{
-public:
-  explicit nsSVGImageListener(nsSVGImageFrame *aFrame);
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_IMGINOTIFICATIONOBSERVER
-
-  void SetFrame(nsSVGImageFrame *frame) { mFrame = frame; }
-
-private:
-  ~nsSVGImageListener() {}
-
-  nsSVGImageFrame *mFrame;
-};
-
-class nsSVGImageFrame : public nsSVGPathGeometryFrame
-                      , public nsIReflowCallback
-{
-  friend nsIFrame*
-  NS_NewSVGImageFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-
-protected:
-  explicit nsSVGImageFrame(nsStyleContext* aContext)
-    : nsSVGPathGeometryFrame(aContext)
-    , mReflowCallbackPosted(false)
-  {
-    EnableVisibilityTracking();
-  }
-
-  virtual ~nsSVGImageFrame();
-
-public:
-  NS_DECL_FRAMEARENA_HELPERS
-
-  // nsISVGChildFrame interface:
-  virtual DrawResult PaintSVG(gfxContext& aContext,
-                              const gfxMatrix& aTransform,
-                              const nsIntRect* aDirtyRect = nullptr) override;
-  virtual nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
-  virtual void ReflowSVG() override;
-
-  // nsSVGPathGeometryFrame methods:
-  virtual uint16_t GetHitTestFlags() override;
-
-  // nsIFrame interface:
-  virtual nsresult  AttributeChanged(int32_t         aNameSpaceID,
-                                     nsIAtom*        aAttribute,
-                                     int32_t         aModType) override;
-
-  void OnVisibilityChange(Visibility aNewVisibility,
-                          Maybe<OnNonvisible> aNonvisibleAction = Nothing()) override;
-
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
-
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::svgImageFrame
-   */
-  virtual nsIAtom* GetType() const override;
-
-#ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override
-  {
-    return MakeFrameName(NS_LITERAL_STRING("SVGImage"), aResult);
-  }
-#endif
-
-  // nsIReflowCallback
-  virtual bool ReflowFinished() override;
-  virtual void ReflowCallbackCanceled() override;
-
-private:
-  gfx::Matrix GetRasterImageTransform(int32_t aNativeWidth,
-                                      int32_t aNativeHeight);
-  gfx::Matrix GetVectorImageTransform();
-  bool TransformContextForPainting(gfxContext* aGfxContext,
-                                   const gfxMatrix& aTransform);
-
-  nsCOMPtr<imgINotificationObserver> mListener;
-
-  nsCOMPtr<imgIContainer> mImageContainer;
-
-  bool mReflowCallbackPosted;
-
-  friend class nsSVGImageListener;
-};
-
-//----------------------------------------------------------------------
-// Implementation
-
-nsIFrame*
-NS_NewSVGImageFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
-{
-  return new (aPresShell) nsSVGImageFrame(aContext);
+nsIFrame* NS_NewSVGImageFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
+  return new (aPresShell) nsSVGImageFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsSVGImageFrame)
 
-nsSVGImageFrame::~nsSVGImageFrame()
-{
+nsSVGImageFrame::~nsSVGImageFrame() {
   // set the frame to null so we don't send messages to a dead object.
   if (mListener) {
-    nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+    nsCOMPtr<nsIImageLoadingContent> imageLoader =
+        do_QueryInterface(GetContent());
     if (imageLoader) {
-      imageLoader->RemoveObserver(mListener);
+      imageLoader->RemoveNativeObserver(mListener);
     }
     reinterpret_cast<nsSVGImageListener*>(mListener.get())->SetFrame(nullptr);
   }
   mListener = nullptr;
 }
 
-void
-nsSVGImageFrame::Init(nsIContent*       aContent,
-                      nsContainerFrame* aParent,
-                      nsIFrame*         aPrevInFlow)
-{
+void nsSVGImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
+                           nsIFrame* aPrevInFlow) {
   NS_ASSERTION(aContent->IsSVGElement(nsGkAtoms::image),
                "Content is not an SVG image!");
 
-  nsSVGPathGeometryFrame::Init(aContent, aParent, aPrevInFlow);
+  SVGGeometryFrame::Init(aContent, aParent, aPrevInFlow);
 
   if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
     // Non-display frames are likely to be patterns, masks or the like.
     // Treat them as always visible.
+    // This call must happen before the FrameCreated. This is because the
+    // primary frame pointer on our content node isn't set until after this
+    // function ends, so there is no way for the resulting OnVisibilityChange
+    // notification to get a frame. FrameCreated has a workaround for this in
+    // that it passes our frame around so it can be accessed. OnVisibilityChange
+    // doesn't have that workaround.
     IncApproximateVisibleCount();
   }
 
   mListener = new nsSVGImageListener(this);
-  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+  nsCOMPtr<nsIImageLoadingContent> imageLoader =
+      do_QueryInterface(GetContent());
   if (!imageLoader) {
-    NS_RUNTIMEABORT("Why is this not an image loading content?");
+    MOZ_CRASH("Why is this not an image loading content?");
   }
 
   // We should have a PresContext now, so let's notify our image loader that
   // we need to register any image animations with the refresh driver.
   imageLoader->FrameCreated(this);
 
-  imageLoader->AddObserver(mListener);
+  imageLoader->AddNativeObserver(mListener);
 }
 
-/* virtual */ void
-nsSVGImageFrame::DestroyFrom(nsIFrame* aDestructRoot)
-{
+/* virtual */
+void nsSVGImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                                  PostDestroyData& aPostDestroyData) {
   if (GetStateBits() & NS_FRAME_IS_NONDISPLAY) {
     DecApproximateVisibleCount();
   }
 
   if (mReflowCallbackPosted) {
-    PresContext()->PresShell()->CancelReflowCallback(this);
+    PresShell()->CancelReflowCallback(this);
     mReflowCallbackPosted = false;
   }
 
   nsCOMPtr<nsIImageLoadingContent> imageLoader =
-    do_QueryInterface(nsFrame::mContent);
+      do_QueryInterface(nsFrame::mContent);
 
   if (imageLoader) {
     imageLoader->FrameDestroyed(this);
   }
 
-  nsFrame::DestroyFrom(aDestructRoot);
+  nsFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 //----------------------------------------------------------------------
 // nsIFrame methods:
 
-nsresult
-nsSVGImageFrame::AttributeChanged(int32_t         aNameSpaceID,
-                                  nsIAtom*        aAttribute,
-                                  int32_t         aModType)
-{
+nsresult nsSVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
+                                           nsAtom* aAttribute,
+                                           int32_t aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::x ||
-        aAttribute == nsGkAtoms::y ||
-        aAttribute == nsGkAtoms::width ||
-        aAttribute == nsGkAtoms::height) {
-      nsLayoutUtils::PostRestyleEvent(
-        mContent->AsElement(), nsRestyleHint(0),
-        nsChangeHint_InvalidateRenderingObservers);
-      nsSVGUtils::ScheduleReflowSVG(this);
-      return NS_OK;
-    }
-    else if (aAttribute == nsGkAtoms::preserveAspectRatio) {
+    if (aAttribute == nsGkAtoms::preserveAspectRatio) {
       // We don't paint the content of the image using display lists, therefore
       // we have to invalidate for this children-only transform changes since
       // there is no layer tree to notice that the transform changed and
@@ -225,14 +129,20 @@ nsSVGImageFrame::AttributeChanged(int32_t         aNameSpaceID,
       return NS_OK;
     }
   }
-  if ((aNameSpaceID == kNameSpaceID_XLink ||
-       aNameSpaceID == kNameSpaceID_None) &&
-      aAttribute == nsGkAtoms::href) {
-    SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
+
+  // Currently our SMIL implementation does not modify the DOM attributes. Once
+  // we implement the SVG 2 SMIL behaviour this can be removed
+  // SVGImageElement::AfterSetAttr's implementation will be sufficient.
+  if (aModType == MutationEvent_Binding::SMIL &&
+      aAttribute == nsGkAtoms::href &&
+      (aNameSpaceID == kNameSpaceID_XLink ||
+       aNameSpaceID == kNameSpaceID_None)) {
+    SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
 
     bool hrefIsSet =
-      element->mStringAttributes[SVGImageElement::HREF].IsExplicitlySet() ||
-      element->mStringAttributes[SVGImageElement::XLINK_HREF].IsExplicitlySet();
+        element->mStringAttributes[SVGImageElement::HREF].IsExplicitlySet() ||
+        element->mStringAttributes[SVGImageElement::XLINK_HREF]
+            .IsExplicitlySet();
     if (hrefIsSet) {
       element->LoadSVGImage(true, true);
     } else {
@@ -240,47 +150,41 @@ nsSVGImageFrame::AttributeChanged(int32_t         aNameSpaceID,
     }
   }
 
-  return nsSVGPathGeometryFrame::AttributeChanged(aNameSpaceID,
-                                                  aAttribute, aModType);
+  return SVGGeometryFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
 
-void
-nsSVGImageFrame::OnVisibilityChange(Visibility aNewVisibility,
-                                    Maybe<OnNonvisible> aNonvisibleAction)
-{
-  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+void nsSVGImageFrame::OnVisibilityChange(
+    Visibility aNewVisibility, const Maybe<OnNonvisible>& aNonvisibleAction) {
+  nsCOMPtr<nsIImageLoadingContent> imageLoader =
+      do_QueryInterface(GetContent());
   if (!imageLoader) {
-    nsSVGPathGeometryFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
+    SVGGeometryFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
     return;
   }
 
   imageLoader->OnVisibilityChange(aNewVisibility, aNonvisibleAction);
 
-  nsSVGPathGeometryFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
+  SVGGeometryFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
 }
 
-gfx::Matrix
-nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
-                                         int32_t aNativeHeight)
-{
+gfx::Matrix nsSVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
+                                                     int32_t aNativeHeight) {
   float x, y, width, height;
-  SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &x, &y, &width, &height);
 
-  Matrix viewBoxTM =
-    SVGContentUtils::GetViewBoxTransform(width, height,
-                                         0, 0, aNativeWidth, aNativeHeight,
-                                         element->mPreserveAspectRatio);
+  Matrix viewBoxTM = SVGContentUtils::GetViewBoxTransform(
+      width, height, 0, 0, aNativeWidth, aNativeHeight,
+      element->mPreserveAspectRatio);
 
   return viewBoxTM * gfx::Matrix::Translation(x, y);
 }
 
-gfx::Matrix
-nsSVGImageFrame::GetVectorImageTransform()
-{
-  float x, y, width, height;
-  SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+gfx::Matrix nsSVGImageFrame::GetVectorImageTransform() {
+  float x, y;
+  SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y>(element, &x, &y);
 
   // No viewBoxTM needed here -- our height/width overrides any concept of
   // "native size" that the SVG image has, and it will handle viewBox and
@@ -289,10 +193,33 @@ nsSVGImageFrame::GetVectorImageTransform()
   return gfx::Matrix::Translation(x, y);
 }
 
-bool
-nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
-                                             const gfxMatrix& aTransform)
-{
+bool nsSVGImageFrame::GetIntrinsicImageDimensions(
+    mozilla::gfx::Size& aSize, mozilla::AspectRatio& aAspectRatio) const {
+  if (!mImageContainer) {
+    return false;
+  }
+
+  int32_t width, height;
+  if (NS_FAILED(mImageContainer->GetWidth(&width))) {
+    aSize.width = -1;
+  } else {
+    aSize.width = width;
+  }
+
+  if (NS_FAILED(mImageContainer->GetHeight(&height))) {
+    aSize.height = -1;
+  } else {
+    aSize.height = height;
+  }
+
+  Maybe<AspectRatio> asp = mImageContainer->GetIntrinsicRatio();
+  aAspectRatio = asp.valueOr(AspectRatio{});
+
+  return true;
+}
+
+bool nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
+                                                  const gfxMatrix& aTransform) {
   gfx::Matrix imageTransform;
   if (mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
     imageTransform = GetVectorImageTransform() * ToMatrix(aTransform);
@@ -303,14 +230,14 @@ nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
         nativeWidth == 0 || nativeHeight == 0) {
       return false;
     }
-    imageTransform =
-      GetRasterImageTransform(nativeWidth, nativeHeight) * ToMatrix(aTransform);
+    imageTransform = GetRasterImageTransform(nativeWidth, nativeHeight) *
+                     ToMatrix(aTransform);
 
     // NOTE: We need to cancel out the effects of Full-Page-Zoom, or else
     // it'll get applied an extra time by DrawSingleUnscaledImage.
     nscoord appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
     gfxFloat pageZoomFactor =
-      nsPresContext::AppUnitsToFloatCSSPixels(appUnitsPerDevPx);
+        nsPresContext::AppUnitsToFloatCSSPixels(appUnitsPerDevPx);
     imageTransform.PreScale(pageZoomFactor, pageZoomFactor);
   }
 
@@ -323,24 +250,26 @@ nsSVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
 }
 
 //----------------------------------------------------------------------
-// nsISVGChildFrame methods:
-DrawResult
-nsSVGImageFrame::PaintSVG(gfxContext& aContext,
-                          const gfxMatrix& aTransform,
-                          const nsIntRect *aDirtyRect)
-{
-  if (!StyleVisibility()->IsVisible())
-    return DrawResult::SUCCESS;
+// nsSVGDisplayableFrame methods:
+void nsSVGImageFrame::PaintSVG(gfxContext& aContext,
+                               const gfxMatrix& aTransform,
+                               imgDrawingParams& aImgParams,
+                               const nsIntRect* aDirtyRect) {
+  if (!StyleVisibility()->IsVisible()) {
+    return;
+  }
 
   float x, y, width, height;
-  SVGImageElement *imgElem = static_cast<SVGImageElement*>(mContent);
-  imgElem->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGImageElement* imgElem = static_cast<SVGImageElement*>(GetContent());
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      imgElem, &x, &y, &width, &height);
   NS_ASSERTION(width > 0 && height > 0,
                "Should only be painting things with valid width/height");
 
   if (!mImageContainer) {
     nsCOMPtr<imgIRequest> currentRequest;
-    nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+    nsCOMPtr<nsIImageLoadingContent> imageLoader =
+        do_QueryInterface(GetContent());
     if (imageLoader)
       imageLoader->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
                               getter_AddRefs(currentRequest));
@@ -349,18 +278,17 @@ nsSVGImageFrame::PaintSVG(gfxContext& aContext,
       currentRequest->GetImage(getter_AddRefs(mImageContainer));
   }
 
-  DrawResult result = DrawResult::SUCCESS;
   if (mImageContainer) {
     gfxContextAutoSaveRestore autoRestorer(&aContext);
 
     if (StyleDisplay()->IsScrollableOverflow()) {
-      gfxRect clipRect = nsSVGUtils::GetClipRectForFrame(this, x, y,
-                                                         width, height);
+      gfxRect clipRect =
+          nsSVGUtils::GetClipRectForFrame(this, x, y, width, height);
       nsSVGUtils::SetClipRect(&aContext, aTransform, clipRect);
     }
 
     if (!TransformContextForPainting(&aContext, aTransform)) {
-      return DrawResult::SUCCESS;
+      return;
     }
 
     // fill-opacity doesn't affect <image>, so if we're allowed to
@@ -371,29 +299,49 @@ nsSVGImageFrame::PaintSVG(gfxContext& aContext,
       opacity = StyleEffects()->mOpacity;
     }
 
-    if (opacity != 1.0f || StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
+    if (opacity != 1.0f ||
+        StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
       aContext.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, opacity);
     }
 
     nscoord appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
-    nsRect dirtyRect; // only used if aDirtyRect is non-null
+    nsRect dirtyRect;  // only used if aDirtyRect is non-null
     if (aDirtyRect) {
       NS_ASSERTION(!NS_SVGDisplayListPaintingEnabled() ||
-                   (mState & NS_FRAME_IS_NONDISPLAY),
+                       (mState & NS_FRAME_IS_NONDISPLAY),
                    "Display lists handle dirty rect intersection test");
       dirtyRect = ToAppUnits(*aDirtyRect, appUnitsPerDevPx);
-      // Adjust dirtyRect to match our local coordinate system.
-      nsRect rootRect =
-        nsSVGUtils::TransformFrameRectToOuterSVG(mRect, aTransform,
-                                                 PresContext());
-      dirtyRect.MoveBy(-rootRect.TopLeft());
+
+      // dirtyRect is relative to the outer <svg>, we should transform it
+      // down to <image>.
+      Rect dir(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height);
+      dir.Scale(1.f / AppUnitsPerCSSPixel());
+
+      // FIXME: This isn't correct if there is an inner <svg> enclosing
+      // the <image>. But that seems to be a quite obscure usecase, we can
+      // add a dedicated utility for that purpose to replace the GetCTM
+      // here if necessary.
+      auto mat = SVGContentUtils::GetCTM(
+          static_cast<SVGImageElement*>(GetContent()), false);
+      if (mat.IsSingular()) {
+        return;
+      }
+
+      mat.Invert();
+      dir = mat.TransformRect(dir);
+
+      // x, y offset of <image> is not included in CTM.
+      dir.MoveBy(-x, -y);
+
+      dir.Scale(AppUnitsPerCSSPixel());
+      dir.Round();
+      dirtyRect = nsRect(dir.x, dir.y, dir.width, dir.height);
     }
 
-    // XXXbholley - I don't think huge images in SVGs are common enough to
-    // warrant worrying about the responsiveness impact of doing synchronous
-    // decodes. The extra code complexity of determinining when we want to
-    // force sync probably just isn't worth it, so always pass FLAG_SYNC_DECODE
-    uint32_t drawFlags = imgIContainer::FLAG_SYNC_DECODE;
+    uint32_t flags = aImgParams.imageFlags;
+    if (mForceSyncDecoding) {
+      flags |= imgIContainer::FLAG_SYNC_DECODE;
+    }
 
     if (mImageContainer->GetType() == imgIContainer::TYPE_VECTOR) {
       // Package up the attributes of this image element which can override the
@@ -402,60 +350,47 @@ nsSVGImageFrame::PaintSVG(gfxContext& aContext,
       // come from width/height *attributes* in SVG). They influence the region
       // of the SVG image's internal document that is visible, in combination
       // with preserveAspectRatio and viewBox.
-      SVGImageContext context(CSSIntSize::Truncate(width, height),
-                              Some(imgElem->mPreserveAspectRatio.GetAnimValue()),
-                              1.0, true);
+      const Maybe<SVGImageContext> context(Some(
+          SVGImageContext(Some(CSSIntSize::Truncate(width, height)),
+                          Some(imgElem->mPreserveAspectRatio.GetAnimValue()))));
 
       // For the actual draw operation to draw crisply (and at the right size),
       // our destination rect needs to be |width|x|height|, *in dev pixels*.
       LayoutDeviceSize devPxSize(width, height);
-      nsRect destRect(nsPoint(),
-                      LayoutDevicePixel::ToAppUnits(devPxSize,
-                                                    appUnitsPerDevPx));
+      nsRect destRect(nsPoint(), LayoutDevicePixel::ToAppUnits(
+                                     devPxSize, appUnitsPerDevPx));
 
       // Note: Can't use DrawSingleUnscaledImage for the TYPE_VECTOR case.
       // That method needs our image to have a fixed native width & height,
       // and that's not always true for TYPE_VECTOR images.
-      result = nsLayoutUtils::DrawSingleImage(
-        aContext,
-        PresContext(),
-        mImageContainer,
-        nsLayoutUtils::GetSamplingFilterForFrame(this),
-        destRect,
-        aDirtyRect ? dirtyRect : destRect,
-        &context,
-        drawFlags);
-    } else { // mImageContainer->GetType() == TYPE_RASTER
-      result = nsLayoutUtils::DrawSingleUnscaledImage(
-        aContext,
-        PresContext(),
-        mImageContainer,
-        nsLayoutUtils::GetSamplingFilterForFrame(this),
-        nsPoint(0, 0),
-        aDirtyRect ? &dirtyRect : nullptr,
-        drawFlags);
+      aImgParams.result &= nsLayoutUtils::DrawSingleImage(
+          aContext, PresContext(), mImageContainer,
+          nsLayoutUtils::GetSamplingFilterForFrame(this), destRect,
+          aDirtyRect ? dirtyRect : destRect, context, flags);
+    } else {  // mImageContainer->GetType() == TYPE_RASTER
+      aImgParams.result &= nsLayoutUtils::DrawSingleUnscaledImage(
+          aContext, PresContext(), mImageContainer,
+          nsLayoutUtils::GetSamplingFilterForFrame(this), nsPoint(0, 0),
+          aDirtyRect ? &dirtyRect : nullptr, Nothing(), flags);
     }
 
-    if (opacity != 1.0f || StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
+    if (opacity != 1.0f ||
+        StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
       aContext.PopGroupAndBlend();
     }
     // gfxContextAutoSaveRestore goes out of scope & cleans up our gfxContext
   }
-
-  return result;
 }
 
-nsIFrame*
-nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint)
-{
+nsIFrame* nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
   if (!(GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD) && !GetHitTestFlags()) {
     return nullptr;
   }
 
   Rect rect;
-  SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
-  element->GetAnimatedLengthValues(&rect.x, &rect.y,
-                                   &rect.width, &rect.height, nullptr);
+  SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &rect.x, &rect.y, &rect.width, &rect.height);
 
   if (!rect.Contains(ToPoint(aPoint))) {
     return nullptr;
@@ -477,12 +412,10 @@ nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint)
           nativeWidth == 0 || nativeHeight == 0) {
         return nullptr;
       }
-      Matrix viewBoxTM =
-        SVGContentUtils::GetViewBoxTransform(rect.width, rect.height,
-                                             0, 0, nativeWidth, nativeHeight,
-                                             element->mPreserveAspectRatio);
-      if (!nsSVGUtils::HitTestRect(viewBoxTM,
-                                   0, 0, nativeWidth, nativeHeight,
+      Matrix viewBoxTM = SVGContentUtils::GetViewBoxTransform(
+          rect.width, rect.height, 0, 0, nativeWidth, nativeHeight,
+          element->mPreserveAspectRatio);
+      if (!nsSVGUtils::HitTestRect(viewBoxTM, 0, 0, nativeWidth, nativeHeight,
                                    aPoint.x - rect.x, aPoint.y - rect.y)) {
         return nullptr;
       }
@@ -492,20 +425,13 @@ nsSVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint)
   return this;
 }
 
-nsIAtom *
-nsSVGImageFrame::GetType() const
-{
-  return nsGkAtoms::svgImageFrame;
-}
-
 //----------------------------------------------------------------------
-// nsSVGPathGeometryFrame methods:
+// SVGGeometryFrame methods:
 
-// Lie about our fill/stroke so that covered region and hit detection work properly
+// Lie about our fill/stroke so that covered region and hit detection work
+// properly
 
-void
-nsSVGImageFrame::ReflowSVG()
-{
+void nsSVGImageFrame::ReflowSVG() {
   NS_ASSERTION(nsSVGUtils::OuterSVGIsCallingReflowSVG(this),
                "This call is probably a wasteful mistake");
 
@@ -517,14 +443,14 @@ nsSVGImageFrame::ReflowSVG()
   }
 
   float x, y, width, height;
-  SVGImageElement *element = static_cast<SVGImageElement*>(mContent);
-  element->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
+  SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y, SVGT::Width, SVGT::Height>(
+      element, &x, &y, &width, &height);
 
   Rect extent(x, y, width, height);
 
   if (!extent.IsEmpty()) {
-    mRect = nsLayoutUtils::RoundGfxRectToAppRect(extent, 
-              PresContext()->AppUnitsPerCSSPixel());
+    mRect = nsLayoutUtils::RoundGfxRectToAppRect(extent, AppUnitsPerCSSPixel());
   } else {
     mRect.SetEmpty();
   }
@@ -533,21 +459,20 @@ nsSVGImageFrame::ReflowSVG()
     // Make sure we have our filter property (if any) before calling
     // FinishAndStoreOverflow (subsequent filter changes are handled off
     // nsChangeHint_UpdateEffects):
-    nsSVGEffects::UpdateEffects(this);
+    SVGObserverUtils::UpdateEffects(this);
 
     if (!mReflowCallbackPosted) {
-      nsIPresShell* shell = PresContext()->PresShell();
       mReflowCallbackPosted = true;
-      shell->PostReflowCallback(this);
+      PresShell()->PostReflowCallback(this);
     }
   }
 
-  nsRect overflow = nsRect(nsPoint(0,0), mRect.Size());
+  nsRect overflow = nsRect(nsPoint(0, 0), mRect.Size());
   nsOverflowAreas overflowAreas(overflow, overflow);
   FinishAndStoreOverflow(overflowAreas, mRect.Size());
 
-  mState &= ~(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
-              NS_FRAME_HAS_DIRTY_CHILDREN);
+  RemoveStateBits(NS_FRAME_FIRST_REFLOW | NS_FRAME_IS_DIRTY |
+                  NS_FRAME_HAS_DIRTY_CHILDREN);
 
   // Invalidate, but only if this is not our first reflow (since if it is our
   // first reflow then we haven't had our first paint yet).
@@ -556,9 +481,7 @@ nsSVGImageFrame::ReflowSVG()
   }
 }
 
-bool
-nsSVGImageFrame::ReflowFinished()
-{
+bool nsSVGImageFrame::ReflowFinished() {
   mReflowCallbackPosted = false;
 
   // XXX(seth): We don't need this. The purpose of updating visibility
@@ -575,18 +498,14 @@ nsSVGImageFrame::ReflowFinished()
   return false;
 }
 
-void
-nsSVGImageFrame::ReflowCallbackCanceled()
-{
+void nsSVGImageFrame::ReflowCallbackCanceled() {
   mReflowCallbackPosted = false;
 }
 
-uint16_t
-nsSVGImageFrame::GetHitTestFlags()
-{
+uint16_t nsSVGImageFrame::GetHitTestFlags() {
   uint16_t flags = 0;
 
-  switch (StyleUserInterface()->mPointerEvents) {
+  switch (StyleUI()->mPointerEvents) {
     case NS_STYLE_POINTER_EVENTS_NONE:
       break;
     case NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED:
@@ -625,43 +544,47 @@ nsSVGImageFrame::GetHitTestFlags()
 
 NS_IMPL_ISUPPORTS(nsSVGImageListener, imgINotificationObserver)
 
-nsSVGImageListener::nsSVGImageListener(nsSVGImageFrame *aFrame) :  mFrame(aFrame)
-{
-}
+nsSVGImageListener::nsSVGImageListener(nsSVGImageFrame* aFrame)
+    : mFrame(aFrame) {}
 
 NS_IMETHODIMP
-nsSVGImageListener::Notify(imgIRequest *aRequest, int32_t aType, const nsIntRect* aData)
-{
-  if (!mFrame)
+nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
+                           const nsIntRect* aData) {
+  if (!mFrame) {
     return NS_ERROR_FAILURE;
+  }
 
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
     mFrame->InvalidateFrame();
-    nsLayoutUtils::PostRestyleEvent(
-      mFrame->GetContent()->AsElement(), nsRestyleHint(0),
-      nsChangeHint_InvalidateRenderingObservers);
+    nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
+                                    RestyleHint{0},
+                                    nsChangeHint_InvalidateRenderingObservers);
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }
 
   if (aType == imgINotificationObserver::FRAME_UPDATE) {
     // No new dimensions, so we don't need to call
     // nsSVGUtils::InvalidateAndScheduleBoundsUpdate.
-    nsLayoutUtils::PostRestyleEvent(
-      mFrame->GetContent()->AsElement(), nsRestyleHint(0),
-      nsChangeHint_InvalidateRenderingObservers);
+    nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
+                                    RestyleHint{0},
+                                    nsChangeHint_InvalidateRenderingObservers);
     mFrame->InvalidateFrame();
   }
 
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     // Called once the resource's dimensions have been obtained.
-    aRequest->GetImage(getter_AddRefs(mFrame->mImageContainer));
+    nsCOMPtr<imgIContainer> image;
+    aRequest->GetImage(getter_AddRefs(image));
+    if (image) {
+      image->SetAnimationMode(mFrame->PresContext()->ImageAnimationMode());
+      mFrame->mImageContainer = image.forget();
+    }
     mFrame->InvalidateFrame();
-    nsLayoutUtils::PostRestyleEvent(
-      mFrame->GetContent()->AsElement(), nsRestyleHint(0),
-      nsChangeHint_InvalidateRenderingObservers);
+    nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),
+                                    RestyleHint{0},
+                                    nsChangeHint_InvalidateRenderingObservers);
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }
 
   return NS_OK;
 }
-

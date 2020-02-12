@@ -14,18 +14,18 @@ interface mozIStorageBindingParams;
 interface mozIStorageBindingParamsArray;
 
 /**
- * The base interface for both pure asynchronous storage statements 
+ * The base interface for both pure asynchronous storage statements
  * (mozIStorageAsyncStatement) and 'classic' storage statements
  * (mozIStorageStatement) that can be used for both synchronous and asynchronous
  * purposes.
  */
-[scriptable, uuid(16ca67aa-1325-43e2-aac7-859afd1590b2)]
+[scriptable, builtinclass, uuid(16ca67aa-1325-43e2-aac7-859afd1590b2)]
 interface mozIStorageBaseStatement : mozIStorageBindingParams {
   /**
    * Finalizes a statement so you can successfully close a database connection.
    * Once a statement has been finalized it can no longer be used for any
    * purpose.
-   * 
+   *
    * Statements are implicitly finalized when their reference counts hits zero.
    * If you are a native (C++) caller this is accomplished by setting all of
    * your nsCOMPtr instances to be NULL.  If you are operating from JavaScript
@@ -39,45 +39,6 @@ interface mozIStorageBaseStatement : mozIStorageBindingParams {
    * close on the connection if any statements have been used asynchronously.
    */
   void finalize();
-
-  /**
-   * Bind the given value at the given numeric index.
-   *
-   * @param aParamIndex
-   *        0-based index, 0 corresponding to the first numbered argument or
-   *        "?1".
-   * @param aValue
-   *        Argument value.
-   * @param aValueSize
-   *        Length of aValue in bytes.
-   * @{
-   */
-  [deprecated] void bindUTF8StringParameter(in unsigned long aParamIndex,
-                                            in AUTF8String aValue);
-  [deprecated] void bindStringParameter(in unsigned long aParamIndex,
-                                        in AString aValue);
-  [deprecated] void bindDoubleParameter(in unsigned long aParamIndex,
-                                        in double aValue);
-  [deprecated] void bindInt32Parameter(in unsigned long aParamIndex,
-                                       in long aValue);
-  [deprecated] void bindInt64Parameter(in unsigned long aParamIndex,
-                                       in long long aValue);
-  [deprecated] void bindNullParameter(in unsigned long aParamIndex);
-  [deprecated] void bindBlobParameter(
-    in unsigned long aParamIndex,
-    [array,const,size_is(aValueSize)] in octet aValue,
-    in unsigned long aValueSize);
-  [deprecated] void bindStringAsBlobParameter(
-    in unsigned long aParamIndex,
-    in AString aValue);
-  [deprecated] void bindUTF8StringAsBlobParameter(
-    in unsigned long aParamIndex,
-    in AUTF8String aValue);
-  [deprecated] void bindAdoptedBlobParameter(
-    in unsigned long aParamIndex,
-    [array,size_is(aValueSize)] in octet aValue,
-    in unsigned long aValueSize);
-  /**@}*/
 
   /**
    * Binds the array of parameters to the statement.  When executeAsync is
@@ -151,7 +112,7 @@ interface mozIStorageBaseStatement : mozIStorageBindingParams {
    *        The escape character.
    * @return an AString of an escaped version of aValue
    *         (%, _ and the escape char are escaped with the escape char)
-   *         For example, we will convert "foo/bar_baz%20cheese" 
+   *         For example, we will convert "foo/bar_baz%20cheese"
    *         into "foo//bar/_baz/%20cheese" (if the escape char is '/').
    */
   AString escapeStringForLIKE(in AString aValue, in wchar aEscapeChar);

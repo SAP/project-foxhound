@@ -4,35 +4,34 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["TabsInTitlebar"];
-
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var EXPORTED_SYMBOLS = ["TabsInTitlebar"];
 
 const PREF_TABS_IN_TITLEBAR = "browser.tabs.drawInTitlebar";
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-this.TabsInTitlebar = {
-
+var TabsInTitlebar = {
   init(libDir) {},
 
   configurations: {
     tabsInTitlebar: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#navigator-toolbox"],
+      async applyConfig() {
         if (Services.appinfo.OS == "Linux") {
-          return Promise.reject("TabsInTitlebar isn't supported on Linux");
+          return "TabsInTitlebar isn't supported on Linux";
         }
         Services.prefs.setBoolPref(PREF_TABS_IN_TITLEBAR, true);
         return undefined;
-      }),
+      },
     },
 
     tabsOutsideTitlebar: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#navigator-toolbox"].concat(
+        Services.appinfo.OS == "Linux" ? [] : ["#titlebar"]
+      ),
+      async applyConfig() {
         Services.prefs.setBoolPref(PREF_TABS_IN_TITLEBAR, false);
-      }),
+      },
     },
-
   },
 };

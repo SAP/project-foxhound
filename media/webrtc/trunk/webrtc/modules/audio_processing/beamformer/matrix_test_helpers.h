@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_
+#ifndef MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_
+#define MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/modules/audio_processing/beamformer/complex_matrix.h"
-#include "webrtc/modules/audio_processing/beamformer/matrix.h"
+#include "modules/audio_processing/beamformer/complex_matrix.h"
+#include "modules/audio_processing/beamformer/matrix.h"
+#include "test/gtest.h"
 
 namespace {
 const float kTolerance = 0.001f;
@@ -34,8 +34,8 @@ class MatrixTestHelpers {
 
     const T* const* expected_elements = expected.elements();
     const T* const* actual_elements = actual.elements();
-    for (int i = 0; i < expected.num_rows(); ++i) {
-      for (int j = 0; j < expected.num_columns(); ++j) {
+    for (size_t i = 0; i < expected.num_rows(); ++i) {
+      for (size_t j = 0; j < expected.num_columns(); ++j) {
         EXPECT_EQ(expected_elements[i][j], actual_elements[i][j]);
       }
     }
@@ -48,8 +48,8 @@ class MatrixTestHelpers {
 
     const float* const* expected_elements = expected.elements();
     const float* const* actual_elements = actual.elements();
-    for (int i = 0; i < expected.num_rows(); ++i) {
-      for (int j = 0; j < expected.num_columns(); ++j) {
+    for (size_t i = 0; i < expected.num_rows(); ++i) {
+      for (size_t j = 0; j < expected.num_columns(); ++j) {
         EXPECT_NEAR(expected_elements[i][j], actual_elements[i][j], kTolerance);
       }
     }
@@ -63,8 +63,8 @@ class MatrixTestHelpers {
 
     const complex<float>* const* expected_elements = expected.elements();
     const complex<float>* const* actual_elements = actual.elements();
-    for (int i = 0; i < expected.num_rows(); ++i) {
-      for (int j = 0; j < expected.num_columns(); ++j) {
+    for (size_t i = 0; i < expected.num_rows(); ++i) {
+      for (size_t j = 0; j < expected.num_columns(); ++j) {
         EXPECT_NEAR(expected_elements[i][j].real(),
                     actual_elements[i][j].real(),
                     kTolerance);
@@ -84,8 +84,8 @@ class MatrixTestHelpers {
 
     const complex<float>* const* expected_elements = expected.elements();
     const complex<float>* const* actual_elements = actual.elements();
-    for (int i = 0; i < expected.num_rows(); ++i) {
-      for (int j = 0; j < expected.num_columns(); ++j) {
+    for (size_t i = 0; i < expected.num_rows(); ++i) {
+      for (size_t j = 0; j < expected.num_columns(); ++j) {
         EXPECT_NEAR(expected_elements[i][j].real(),
                     actual_elements[i][j].real(),
                     tolerance);
@@ -99,4 +99,4 @@ class MatrixTestHelpers {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_
+#endif  // MODULES_AUDIO_PROCESSING_BEAMFORMER_MATRIX_TEST_HELPERS_H_

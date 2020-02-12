@@ -26,6 +26,7 @@
 
 #include "jit/arm64/vixl/Disasm-vixl.h"
 
+#include "mozilla/Sprintf.h"
 #include <cstdlib>
 
 namespace vixl {
@@ -1245,6 +1246,7 @@ void Disassembler::VisitFPIntegerConvert(const Instruction* instr) {
     case UCVTF_sx:
     case UCVTF_dw:
     case UCVTF_dx: mnemonic = "ucvtf"; form = form_fr; break;
+    case FJCVTZS: mnemonic = "fjcvtzs"; form = form_rf; break;
   }
   Format(instr, mnemonic, form);
 }
@@ -1318,6 +1320,11 @@ void Disassembler::VisitSystem(const Instruction* instr) {
     switch (instr->ImmHint()) {
       case NOP: {
         mnemonic = "nop";
+        form = NULL;
+        break;
+      }
+      case CSDB: {
+        mnemonic = "csdb";
         form = NULL;
         break;
       }
@@ -2610,7 +2617,7 @@ void Disassembler::VisitNEONTable(const Instruction* instr) {
 
   char re_form[sizeof(form_4v) + 6];
   int reg_num = instr->Rn();
-  snprintf(re_form, sizeof(re_form), form,
+  SprintfLiteral(re_form, form,
            (reg_num + 1) % kNumberOfVRegisters,
            (reg_num + 2) % kNumberOfVRegisters,
            (reg_num + 3) % kNumberOfVRegisters);
@@ -2751,10 +2758,14 @@ void Disassembler::Format(const Instruction* instr, const char* mnemonic,
                           const char* format) {
   VIXL_ASSERT(mnemonic != NULL);
   ResetOutput();
+  uint32_t pos = buffer_pos_;
   Substitute(instr, mnemonic);
   if (format != NULL) {
-    VIXL_ASSERT(buffer_pos_ < buffer_size_);
-    buffer_[buffer_pos_++] = ' ';
+    uint32_t spaces = buffer_pos_ - pos < 8 ? 8 - (buffer_pos_ - pos) : 1;
+    while (spaces--) {
+      VIXL_ASSERT(buffer_pos_ < buffer_size_);
+      buffer_[buffer_pos_++] = ' ';
+    }
     Substitute(instr, format);
   }
   VIXL_ASSERT(buffer_pos_ < buffer_size_);
@@ -3118,7 +3129,7 @@ int Disassembler::SubstituteImmediateField(const Instruction* instr,
             uint64_t imm8 = instr->ImmNEONabcdefgh();
             uint64_t imm = 0;
             for (int i = 0; i < 8; ++i) {
-              if (imm8 & (1 << i)) {
+              if (imm8 & (1ULL << i)) {
                 imm |= (UINT64_C(0xff) << (8 * i));
               }
             }
@@ -3483,6 +3494,22 @@ void PrintDisassembler::ProcessOutput(const Instruction* instr) {
           reinterpret_cast<uint64_t>(instr),
           instr->InstructionBits(),
           GetOutput());
+}
+
+void DisassembleInstruction(char* buffer, size_t bufsize, const Instruction* instr)
+{
+    vixl::Disassembler disasm(buffer, bufsize-1);
+    vixl::Decoder decoder;
+    decoder.AppendVisitor(&disasm);
+    decoder.Decode(instr);
+    buffer[bufsize-1] = 0;      // Just to be safe
+}
+
+char* GdbDisassembleInstruction(const Instruction* instr)
+{
+    static char buffer[1024];
+    DisassembleInstruction(buffer, sizeof(buffer), instr);
+    return buffer;
 }
 
 }  // namespace vixl

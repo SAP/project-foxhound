@@ -6,9 +6,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
 -->
 <window title="Mozilla Bug 987230"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-        onload="SimpleTest.waitForFocus(nextTest, window)">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+        onload="SimpleTest.waitForFocus(startTest, window)">
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 
   <!-- test results are displayed in the html:body -->
@@ -51,22 +51,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
 
   SimpleTest.requestCompleteLog();
 
-  const Ci = Components.interfaces;
-  const Cc = Components.classes;
-
   let platform = navigator.platform.toLowerCase();
   let isWindows = platform.startsWith("win");
   let mouseDown = isWindows ? 2 : 1;
   let mouseUp = isWindows ? 4 : 2;
   let mouseMove = isWindows ? 1 : 5;
-  let utils = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                    .getInterface(Ci.nsIDOMWindowUtils);
+  let utils = window.windowUtils;
   let scale = utils.screenPixelsPerCSSPixel;
 
 
   function synthesizeNativeMouseClick(aElement, aOffsetX, aOffsetY) {
     let rect = aElement.getBoundingClientRect();
-    let win = aElement.ownerDocument.defaultView;
+    let win = aElement.ownerGlobal;
     let x = aOffsetX + win.mozInnerScreenX + rect.left;
     let y = aOffsetY + win.mozInnerScreenY + rect.top;
 
@@ -112,9 +108,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=987230
     popup.openPopup(anchor, "bottomcenter topright");
   }
 
-  let popup = document.getElementById("mypopup");
-  let outerAnchor = document.getElementById("toolbarbutton-anchor");
-  let anchor = document.getAnonymousElementByAttribute(outerAnchor, "class", "toolbarbutton-icon");
+  let popup, outerAnchor, anchor;
+
+  function startTest() {
+    popup = document.getElementById("mypopup");
+    outerAnchor = document.getElementById("toolbarbutton-anchor");
+    anchor = outerAnchor.icon;
+    nextTest();
+  }
 
   function nextTest(e) {
     synthesizeMouse(outerAnchor, 5, 5, {});

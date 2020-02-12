@@ -6,56 +6,215 @@
 #ifndef MOZ_PROFILE_BUFFER_H
 #define MOZ_PROFILE_BUFFER_H
 
-#include "ProfileEntry.h"
-#include "platform.h"
-#include "ProfileJSONWriter.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/RefCounted.h"
+#include "GeckoProfiler.h"
+#include "ProfileBufferEntry.h"
 
-class ProfileBuffer : public mozilla::RefCounted<ProfileBuffer> {
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(ProfileBuffer)
+#include "mozilla/BlocksRingBuffer.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/PowerOfTwo.h"
 
-  explicit ProfileBuffer(int aEntrySize);
+// Class storing most profiling data in a BlocksRingBuffer.
+//
+// This class is used as a queue of entries which, after construction, never
+// allocates. This makes it safe to use in the profiler's "critical section".
+class ProfileBuffer final {
+ public:
+  // Opaque type containing a block index, which should not be modified outside
+  // of BlocksRingBuffer.
+  // TODO: Eventually, all uint64_t values should be replaced with BlockIndex,
+  // because external users should only store and compare them, but not do other
+  // arithmetic operations (that uint64_t supports).
+  using BlockIndex = mozilla::BlocksRingBuffer::BlockIndex;
 
-  virtual ~ProfileBuffer();
+  // ProfileBuffer constructor
+  // @param aBuffer The empty BlocksRingBuffer to use as buffer manager.
+  // @param aCapacity The capacity of the buffer.
+  ProfileBuffer(mozilla::BlocksRingBuffer& aBuffer,
+                mozilla::PowerOfTwo32 aCapacity);
 
-  void addTag(const ProfileEntry& aTag);
-  void StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId, double aSinceTime,
-                           JSContext* cx, UniqueStacks& aUniqueStacks);
-  void StreamMarkersToJSON(SpliceableJSONWriter& aWriter, int aThreadId, double aSinceTime,
-                           UniqueStacks& aUniqueStacks);
-  void DuplicateLastSample(int aThreadId);
+  // ProfileBuffer constructor
+  // @param aBuffer The pre-filled BlocksRingBuffer to use as buffer manager.
+  explicit ProfileBuffer(mozilla::BlocksRingBuffer& aBuffer);
 
-  void addStoredMarker(ProfilerMarker* aStoredMarker);
+  ~ProfileBuffer();
 
-  // The following two methods are not signal safe! They delete markers.
-  void deleteExpiredStoredMarkers();
-  void reset();
+  bool IsThreadSafe() const { return mEntries.IsThreadSafe(); }
 
-protected:
-  char* processDynamicTag(int readPos, int* tagsConsumed, char* tagBuff);
-  int FindLastSampleOfThread(int aThreadId);
+  // Add |aEntry| to the buffer, ignoring what kind of entry it is.
+  uint64_t AddEntry(const ProfileBufferEntry& aEntry);
 
-public:
-  // Circular buffer 'Keep One Slot Open' implementation for simplicity
-  mozilla::UniquePtr<ProfileEntry[]> mEntries;
+  // Add to the buffer a sample start (ThreadId) entry for aThreadId.
+  // Returns the position of the entry.
+  uint64_t AddThreadIdEntry(int aThreadId);
 
-  // Points to the next entry we will write to, which is also the one at which
-  // we need to stop reading.
-  int mWritePos;
+  void CollectCodeLocation(
+      const char* aLabel, const char* aStr, uint32_t aFrameFlags,
+      const mozilla::Maybe<uint32_t>& aLineNumber,
+      const mozilla::Maybe<uint32_t>& aColumnNumber,
+      const mozilla::Maybe<JS::ProfilingCategoryPair>& aCategoryPair);
 
-  // Points to the entry at which we can start reading.
-  int mReadPos;
+  // Maximum size of a frameKey string that we'll handle.
+  static const size_t kMaxFrameKeyLength = 512;
 
-  // The number of entries in our buffer.
-  int mEntrySize;
+  // Add JIT frame information to aJITFrameInfo for any JitReturnAddr entries
+  // that are currently in the buffer at or after aRangeStart, in samples
+  // for the given thread.
+  void AddJITInfoForRange(uint64_t aRangeStart, int aThreadId,
+                          JSContext* aContext,
+                          JITFrameInfo& aJITFrameInfo) const;
 
-  // How many times mWritePos has wrapped around.
-  uint32_t mGeneration;
+  // Stream JSON for samples in the buffer to aWriter, using the supplied
+  // UniqueStacks object.
+  // Only streams samples for the given thread ID and which were taken at or
+  // after aSinceTime.
+  // aUniqueStacks needs to contain information about any JIT frames that we
+  // might encounter in the buffer, before this method is called. In other
+  // words, you need to have called AddJITInfoForRange for every range that
+  // might contain JIT frame information before calling this method.
+  void StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
+                           double aSinceTime,
+                           UniqueStacks& aUniqueStacks) const;
 
-  // Markers that marker entries in the buffer might refer to.
-  ProfilerMarkerLinkedList mStoredMarkers;
+  void StreamMarkersToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
+                           const mozilla::TimeStamp& aProcessStartTime,
+                           double aSinceTime,
+                           UniqueStacks& aUniqueStacks) const;
+  void StreamPausedRangesToJSON(SpliceableJSONWriter& aWriter,
+                                double aSinceTime) const;
+  void StreamProfilerOverheadToJSON(SpliceableJSONWriter& aWriter,
+                                    const mozilla::TimeStamp& aProcessStartTime,
+                                    double aSinceTime) const;
+  void StreamCountersToJSON(SpliceableJSONWriter& aWriter,
+                            const mozilla::TimeStamp& aProcessStartTime,
+                            double aSinceTime) const;
+
+  // Find (via |aLastSample|) the most recent sample for the thread denoted by
+  // |aThreadId| and clone it, patching in the current time as appropriate.
+  // Mutate |aLastSample| to point to the newly inserted sample.
+  // Returns whether duplication was successful.
+  bool DuplicateLastSample(int aThreadId,
+                           const mozilla::TimeStamp& aProcessStartTime,
+                           mozilla::Maybe<uint64_t>& aLastSample);
+
+  void DiscardSamplesBeforeTime(double aTime);
+
+  // Read an entry in the buffer. Slow!
+  ProfileBufferEntry GetEntry(uint64_t aPosition) const {
+    ProfileBufferEntry entry;
+    mEntries.Read([&](mozilla::BlocksRingBuffer::Reader* aReader) {
+      // BlocksRingBuffer cannot be out-of-session when sampler is running.
+      MOZ_ASSERT(aReader);
+      for (mozilla::BlocksRingBuffer::EntryReader er : *aReader) {
+        if (er.CurrentBlockIndex().ConvertToU64() > aPosition) {
+          // Passed the block. (We need a precise position.)
+          return;
+        }
+        if (er.CurrentBlockIndex().ConvertToU64() == aPosition) {
+          MOZ_RELEASE_ASSERT(er.RemainingBytes() <= sizeof(entry));
+          er.Read(&entry, er.RemainingBytes());
+          return;
+        }
+      }
+    });
+    return entry;
+  }
+
+  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+  void CollectOverheadStats(mozilla::TimeDuration aSamplingTime,
+                            mozilla::TimeDuration aLocking,
+                            mozilla::TimeDuration aCleaning,
+                            mozilla::TimeDuration aCounters,
+                            mozilla::TimeDuration aThreads);
+
+  ProfilerBufferInfo GetProfilerBufferInfo() const;
+
+ private:
+  // Add |aEntry| to the provided BlocksRingBuffer.
+  // `static` because it may be used to add an entry to a `BlocksRingBuffer`
+  // that is not attached to a `ProfileBuffer`.
+  static BlockIndex AddEntry(mozilla::BlocksRingBuffer& aBlocksRingBuffer,
+                             const ProfileBufferEntry& aEntry);
+
+  // Add a sample start (ThreadId) entry for aThreadId to the provided
+  // BlocksRingBuffer. Returns the position of the entry.
+  // `static` because it may be used to add an entry to a `BlocksRingBuffer`
+  // that is not attached to a `ProfileBuffer`.
+  static BlockIndex AddThreadIdEntry(
+      mozilla::BlocksRingBuffer& aBlocksRingBuffer, int aThreadId);
+
+  // The circular-ring storage in which this ProfileBuffer stores its data.
+  mozilla::BlocksRingBuffer& mEntries;
+
+ public:
+  // `BufferRangeStart()` and `BufferRangeEnd()` return `uint64_t` values
+  // corresponding to the first entry and past the last entry stored in
+  // `mEntries`.
+  //
+  // The returned values are not guaranteed to be stable, because other threads
+  // may also be accessing the buffer concurrently. But they will always
+  // increase, and can therefore give an indication of how far these values have
+  // *at least* reached. In particular:
+  // - Entries whose index is strictly less that `BufferRangeStart()` have been
+  //   discarded by now, so any related data may also be safely discarded.
+  // - It is safe to try and read entries at any index strictly less than
+  //   `BufferRangeEnd()` -- but note that these reads may fail by the time you
+  //   request them, as old entries get overwritten by new ones.
+  uint64_t BufferRangeStart() const {
+    return mEntries.GetState().mRangeStart.ConvertToU64();
+  }
+  uint64_t BufferRangeEnd() const {
+    return mEntries.GetState().mRangeEnd.ConvertToU64();
+  }
+
+ private:
+  // Pre-allocated (to avoid spurious mallocs) temporary buffer used when:
+  // - Duplicating sleeping stacks.
+  // - Adding JIT info.
+  // - Streaming stacks to JSON.
+  mozilla::UniquePtr<mozilla::BlocksRingBuffer::Byte[]> mWorkerBuffer;
+
+  double mFirstSamplingTimeNs = 0.0;
+  double mLastSamplingTimeNs = 0.0;
+  ProfilerStats mIntervalsNs;
+  ProfilerStats mOverheadsNs;
+  ProfilerStats mLockingsNs;
+  ProfilerStats mCleaningsNs;
+  ProfilerStats mCountersNs;
+  ProfilerStats mThreadsNs;
+};
+
+/**
+ * Helper type used to implement ProfilerStackCollector. This type is used as
+ * the collector for MergeStacks by ProfileBuffer. It holds a reference to the
+ * buffer, as well as additional feature flags which are needed to control the
+ * data collection strategy
+ */
+class ProfileBufferCollector final : public ProfilerStackCollector {
+ public:
+  ProfileBufferCollector(ProfileBuffer& aBuf, uint32_t aFeatures,
+                         uint64_t aSamplePos)
+      : mBuf(aBuf), mSamplePositionInBuffer(aSamplePos), mFeatures(aFeatures) {}
+
+  mozilla::Maybe<uint64_t> SamplePositionInBuffer() override {
+    return mozilla::Some(mSamplePositionInBuffer);
+  }
+
+  mozilla::Maybe<uint64_t> BufferRangeStart() override {
+    return mozilla::Some(mBuf.BufferRangeStart());
+  }
+
+  virtual void CollectNativeLeafAddr(void* aAddr) override;
+  virtual void CollectJitReturnAddr(void* aAddr) override;
+  virtual void CollectWasmFrame(const char* aLabel) override;
+  virtual void CollectProfilingStackFrame(
+      const js::ProfilingStackFrame& aFrame) override;
+
+ private:
+  ProfileBuffer& mBuf;
+  uint64_t mSamplePositionInBuffer;
+  uint32_t mFeatures;
 };
 
 #endif

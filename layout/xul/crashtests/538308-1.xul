@@ -17,11 +17,11 @@
     <script type="text/javascript"><![CDATA[
     function run() {
         group = document.getElementById("group");
-        tc = document.createElement("treechildren");
+        tc = document.createXULElement("treechildren");
         group.appendChild(tc);
 
         v = document.getElementById("victim");
-        v.parentNode.removeChild(v);
+        v.remove();
         v = null;
 
         tree = document.getElementById("tr");

@@ -35,12 +35,6 @@
  * When switches have more than one value for a test run, we use the Cartesian
  * product of their values to generate all possible combinations of values.
  *
- * Second, we need to also test serialization of multiple nsINavHistoryQuery
- * objects at once.  To do this, we remember the previous NUM_MULTIPLE_QUERIES
- * queries we tested individually and then serialize them together.  We do this
- * each time we test an individual query.  Thus the set of queries we test
- * together loses one query and gains another each time.
- *
  * To summarize, here's how this test works:
  *
  * - For n = CHOOSE_HOW_MANY_SWITCHES_LO to CHOOSE_HOW_MANY_SWITCHES_HI:
@@ -53,18 +47,10 @@
  *       - Serialize the query.
  *       - De-serialize and ensure that the de-serialized query objects equal
  *         the originals.
- *       - For each of the previous NUM_MULTIPLE_QUERIES
- *         nsINavHistoryQueryOptions objects o we created:
- *         - Serialize the previous NUM_MULTIPLE_QUERIES nsINavHistoryQuery
- *           objects together with o.
- *         - De-serialize and ensure that the de-serialized query objects
- *           equal the originals.
  */
 
 const CHOOSE_HOW_MANY_SWITCHES_LO = 1;
 const CHOOSE_HOW_MANY_SWITCHES_HI = 2;
-
-const NUM_MULTIPLE_QUERIES        = 2;
 
 // The switches are represented by objects below, in arrays querySwitches and
 // queryOptionSwitches.  Use them to set up test runs.
@@ -95,194 +81,204 @@ const querySwitches = [
     // flag and subswitches are used by the flagSwitchMatches function.  Several
     // of the nsINavHistoryQuery switches (like this one) are really guard flags
     // that indicate if other "subswitches" are enabled.
-    flag:        "hasBeginTime",
+    flag: "hasBeginTime",
     subswitches: ["beginTime", "beginTimeReference", "absoluteBeginTime"],
-    desc:        "nsINavHistoryQuery.hasBeginTime",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasBeginTime",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.beginTime = Date.now() * 1000;
         aQuery.beginTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_EPOCH;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.beginTime = Date.now() * 1000;
         aQuery.beginTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_TODAY;
-      }
-    ]
+      },
+    ],
   },
   // hasEndTime
   {
-    flag:        "hasEndTime",
+    flag: "hasEndTime",
     subswitches: ["endTime", "endTimeReference", "absoluteEndTime"],
-    desc:        "nsINavHistoryQuery.hasEndTime",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasEndTime",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.endTime = Date.now() * 1000;
         aQuery.endTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_EPOCH;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.endTime = Date.now() * 1000;
         aQuery.endTimeReference = Ci.nsINavHistoryQuery.TIME_RELATIVE_TODAY;
-      }
-    ]
+      },
+    ],
   },
   // hasSearchTerms
   {
-    flag:        "hasSearchTerms",
+    flag: "hasSearchTerms",
     subswitches: ["searchTerms"],
-    desc:        "nsINavHistoryQuery.hasSearchTerms",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasSearchTerms",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.searchTerms = "shrimp and white wine";
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.searchTerms = "";
-      }
-    ]
+      },
+    ],
   },
   // hasDomain
   {
-    flag:        "hasDomain",
+    flag: "hasDomain",
     subswitches: ["domain", "domainIsHost"],
-    desc:        "nsINavHistoryQuery.hasDomain",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasDomain",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.domain = "mozilla.com";
         aQuery.domainIsHost = false;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.domain = "www.mozilla.com";
         aQuery.domainIsHost = true;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.domain = "";
-      }
-    ]
+      },
+    ],
   },
   // hasUri
   {
-    flag:        "hasUri",
+    flag: "hasUri",
     subswitches: ["uri"],
-    desc:        "nsINavHistoryQuery.hasUri",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasUri",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.uri = uri("http://mozilla.com");
       },
-    ]
+    ],
   },
   // hasAnnotation
   {
-    flag:        "hasAnnotation",
+    flag: "hasAnnotation",
     subswitches: ["annotation", "annotationIsNot"],
-    desc:        "nsINavHistoryQuery.hasAnnotation",
-    matches:     flagSwitchMatches,
-    runs:        [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.hasAnnotation",
+    matches: flagSwitchMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.annotation = "bookmarks/toolbarFolder";
         aQuery.annotationIsNot = false;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.annotation = "bookmarks/toolbarFolder";
         aQuery.annotationIsNot = true;
-      }
-    ]
+      },
+    ],
   },
   // minVisits
   {
     // property is used by function simplePropertyMatches.
     property: "minVisits",
-    desc:     "nsINavHistoryQuery.minVisits",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.minVisits",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.minVisits = 0x7fffffff; // 2^31 - 1
-      }
-    ]
+      },
+    ],
   },
   // maxVisits
   {
     property: "maxVisits",
-    desc:     "nsINavHistoryQuery.maxVisits",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.maxVisits",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.maxVisits = 0x7fffffff; // 2^31 - 1
-      }
-    ]
+      },
+    ],
   },
   // onlyBookmarked
   {
     property: "onlyBookmarked",
-    desc:     "nsINavHistoryQuery.onlyBookmarked",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQuery.onlyBookmarked",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQuery.onlyBookmarked = true;
-      }
-    ]
+      },
+    ],
   },
   // getFolders
   {
-    desc:    "nsINavHistoryQuery.getFolders",
-    matches: function (aQuery1, aQuery2) {
-      var q1Folders = aQuery1.getFolders();
-      var q2Folders = aQuery2.getFolders();
-      if (q1Folders.length !== q2Folders.length)
+    desc: "nsINavHistoryQuery.getParents",
+    matches(aQuery1, aQuery2) {
+      var q1Parents = aQuery1.getParents();
+      var q2Parents = aQuery2.getParents();
+      if (q1Parents.length !== q2Parents.length) {
         return false;
-      for (let i = 0; i < q1Folders.length; i++) {
-        if (q2Folders.indexOf(q1Folders[i]) < 0)
-          return false;
       }
-      for (let i = 0; i < q2Folders.length; i++) {
-        if (q1Folders.indexOf(q2Folders[i]) < 0)
+      for (let i = 0; i < q1Parents.length; i++) {
+        if (!q2Parents.includes(q1Parents[i])) {
           return false;
+        }
+      }
+      for (let i = 0; i < q2Parents.length; i++) {
+        if (!q1Parents.includes(q2Parents[i])) {
+          return false;
+        }
       }
       return true;
     },
     runs: [
-      function (aQuery, aQueryOptions) {
-        aQuery.setFolders([], 0);
+      function(aQuery, aQueryOptions) {
+        aQuery.setParents([]);
       },
-      function (aQuery, aQueryOptions) {
-        aQuery.setFolders([PlacesUtils.placesRootId], 1);
+      function(aQuery, aQueryOptions) {
+        aQuery.setParents([PlacesUtils.bookmarks.rootGuid]);
       },
-      function (aQuery, aQueryOptions) {
-        aQuery.setFolders([PlacesUtils.placesRootId, PlacesUtils.tagsFolderId], 2);
-      }
-    ]
+      function(aQuery, aQueryOptions) {
+        aQuery.setParents([
+          PlacesUtils.bookmarks.rootGuid,
+          PlacesUtils.bookmarks.tagsGuid,
+        ]);
+      },
+    ],
   },
   // tags
   {
-    desc:    "nsINavHistoryQuery.getTags",
-    matches: function (aQuery1, aQuery2) {
-      if (aQuery1.tagsAreNot !== aQuery2.tagsAreNot)
+    desc: "nsINavHistoryQuery.getTags",
+    matches(aQuery1, aQuery2) {
+      if (aQuery1.tagsAreNot !== aQuery2.tagsAreNot) {
         return false;
+      }
       var q1Tags = aQuery1.tags;
       var q2Tags = aQuery2.tags;
-      if (q1Tags.length !== q2Tags.length)
+      if (q1Tags.length !== q2Tags.length) {
         return false;
+      }
       for (let i = 0; i < q1Tags.length; i++) {
-        if (q2Tags.indexOf(q1Tags[i]) < 0)
+        if (!q2Tags.includes(q1Tags[i])) {
           return false;
+        }
       }
       for (let i = 0; i < q2Tags.length; i++) {
-        if (q1Tags.indexOf(q2Tags[i]) < 0)
+        if (!q1Tags.includes(q2Tags[i])) {
           return false;
+        }
       }
       return true;
     },
     runs: [
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.tags = [];
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.tags = [""];
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.tags = [
           "foo",
           "七難",
@@ -295,7 +291,7 @@ const querySwitches = [
           "あいうえお",
         ];
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQuery.tags = [
           "foo",
           "七難",
@@ -307,41 +303,45 @@ const querySwitches = [
           "アスキーでございません",
           "あいうえお",
         ];
-        aQuery.tagsAreNot =  true;
-      }
-    ]
+        aQuery.tagsAreNot = true;
+      },
+    ],
   },
   // transitions
   {
     desc: "tests nsINavHistoryQuery.getTransitions",
-    matches: function (aQuery1, aQuery2) {
+    matches(aQuery1, aQuery2) {
       var q1Trans = aQuery1.getTransitions();
       var q2Trans = aQuery2.getTransitions();
-      if (q1Trans.length !== q2Trans.length)
+      if (q1Trans.length !== q2Trans.length) {
         return false;
+      }
       for (let i = 0; i < q1Trans.length; i++) {
-        if (q2Trans.indexOf(q1Trans[i]) < 0)
+        if (!q2Trans.includes(q1Trans[i])) {
           return false;
+        }
       }
       for (let i = 0; i < q2Trans.length; i++) {
-        if (q1Trans.indexOf(q2Trans[i]) < 0)
+        if (!q1Trans.includes(q2Trans[i])) {
           return false;
+        }
       }
       return true;
     },
     runs: [
-      function (aQuery, aQueryOptions) {
-        aQuery.setTransitions([], 0);
+      function(aQuery, aQueryOptions) {
+        aQuery.setTransitions([]);
       },
-      function (aQuery, aQueryOptions) {
-        aQuery.setTransitions([Ci.nsINavHistoryService.TRANSITION_DOWNLOAD],
-                              1);
+      function(aQuery, aQueryOptions) {
+        aQuery.setTransitions([Ci.nsINavHistoryService.TRANSITION_DOWNLOAD]);
       },
-      function (aQuery, aQueryOptions) {
-        aQuery.setTransitions([Ci.nsINavHistoryService.TRANSITION_TYPED,
-                               Ci.nsINavHistoryService.TRANSITION_BOOKMARK], 2);
-      }
-    ]
+      function(aQuery, aQueryOptions) {
+        aQuery.setTransitions([
+          Ci.nsINavHistoryService.TRANSITION_TYPED,
+          Ci.nsINavHistoryService.TRANSITION_BOOKMARK,
+        ]);
+      },
+    ],
   },
 ];
 
@@ -349,116 +349,101 @@ const querySwitches = [
 const queryOptionSwitches = [
   // sortingMode
   {
-    desc:    "nsINavHistoryQueryOptions.sortingMode",
-    matches: function (aOptions1, aOptions2) {
+    desc: "nsINavHistoryQueryOptions.sortingMode",
+    matches(aOptions1, aOptions2) {
       if (aOptions1.sortingMode === aOptions2.sortingMode) {
-        switch (aOptions1.sortingMode) {
-          case aOptions1.SORT_BY_ANNOTATION_ASCENDING:
-          case aOptions1.SORT_BY_ANNOTATION_DESCENDING:
-            return aOptions1.sortingAnnotation === aOptions2.sortingAnnotation;
-            break;
-        }
         return true;
       }
       return false;
     },
     runs: [
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQueryOptions.sortingMode = aQueryOptions.SORT_BY_DATE_ASCENDING;
       },
-      function (aQuery, aQueryOptions) {
-        aQueryOptions.sortingMode = aQueryOptions.SORT_BY_ANNOTATION_ASCENDING;
-        aQueryOptions.sortingAnnotation = "bookmarks/toolbarFolder";
-      }
-    ]
+    ],
   },
   // resultType
   {
     // property is used by function simplePropertyMatches.
     property: "resultType",
-    desc:     "nsINavHistoryQueryOptions.resultType",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.resultType",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.resultType = aQueryOptions.RESULTS_AS_URI;
       },
-      function (aQuery, aQueryOptions) {
-        aQueryOptions.resultType = aQueryOptions.RESULTS_AS_FULL_VISIT;
-      }
-    ]
+    ],
   },
   // excludeItems
   {
     property: "excludeItems",
-    desc:     "nsINavHistoryQueryOptions.excludeItems",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.excludeItems",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.excludeItems = true;
-      }
-    ]
+      },
+    ],
   },
   // excludeQueries
   {
     property: "excludeQueries",
-    desc:     "nsINavHistoryQueryOptions.excludeQueries",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.excludeQueries",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.excludeQueries = true;
-      }
-    ]
+      },
+    ],
   },
   // expandQueries
   {
     property: "expandQueries",
-    desc:     "nsINavHistoryQueryOptions.expandQueries",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.expandQueries",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.expandQueries = true;
-      }
-    ]
+      },
+    ],
   },
   // includeHidden
   {
     property: "includeHidden",
-    desc:     "nsINavHistoryQueryOptions.includeHidden",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.includeHidden",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.includeHidden = true;
-      }
-    ]
+      },
+    ],
   },
   // maxResults
   {
     property: "maxResults",
-    desc:     "nsINavHistoryQueryOptions.maxResults",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.maxResults",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.maxResults = 0xffffffff; // 2^32 - 1
-      }
-    ]
+      },
+    ],
   },
   // queryType
   {
     property: "queryType",
-    desc:     "nsINavHistoryQueryOptions.queryType",
-    matches:  simplePropertyMatches,
-    runs:     [
-      function (aQuery, aQueryOptions) {
+    desc: "nsINavHistoryQueryOptions.queryType",
+    matches: simplePropertyMatches,
+    runs: [
+      function(aQuery, aQueryOptions) {
         aQueryOptions.queryType = aQueryOptions.QUERY_TYPE_HISTORY;
       },
-      function (aQuery, aQueryOptions) {
+      function(aQuery, aQueryOptions) {
         aQueryOptions.queryType = aQueryOptions.QUERY_TYPE_UNIFIED;
-      }
-    ]
+      },
+    ],
   },
 ];
-
-///////////////////////////////////////////////////////////////////////////////
 
 /**
  * Enumerates all the sequences of the cartesian product of the arrays contained
@@ -491,10 +476,10 @@ const queryOptionSwitches = [
  *         computed
  * @return the total number of sequences in the product
  */
-function cartProd(aSequences, aCallback)
-{
-  if (aSequences.length === 0)
+function cartProd(aSequences, aCallback) {
+  if (aSequences.length === 0) {
     return 0;
+  }
 
   // For each sequence in aSequences, we maintain a pointer (an array index,
   // really) to the element we're currently enumerating in that sequence
@@ -531,10 +516,12 @@ function cartProd(aSequences, aCallback)
         seqPtr--;
 
         // All element pointers are past the ends of their sequences.
-        if (seqPtr < 0)
+        if (seqPtr < 0) {
           done = true;
+        }
+      } else {
+        break;
       }
-      else break;
     }
   }
   return numProds;
@@ -557,8 +544,7 @@ function cartProd(aSequences, aCallback)
  *         the number of elements to choose, > 0 and <= aSet.length
  * @return the total number of sets chosen
  */
-function choose(aSet, aHowMany, aCallback)
-{
+function choose(aSet, aHowMany, aCallback) {
   // ptrs = indices of the elements in aSet we're currently choosing
   var ptrs = [];
   for (let i = 0; i < aHowMany; i++) {
@@ -592,9 +578,9 @@ function choose(aSet, aHowMany, aCallback)
       }
 
       // All pointers are adjacent and clustered all the way to the right.
-      if (pi < 0)
+      if (pi < 0) {
         done = true;
-      else {
+      } else {
         // pi = index of rightmost pointer with a gap between it and its
         // succeeding pointer.  Move it right and reset all succeeding pointers
         // so that they're adjacent to it.
@@ -618,22 +604,22 @@ function choose(aSet, aHowMany, aCallback)
  *         another nsINavHistoryQuery object
  * @return true if this switch is the same in both aQuery1 and aQuery2
  */
-function flagSwitchMatches(aQuery1, aQuery2)
-{
+function flagSwitchMatches(aQuery1, aQuery2) {
   if (aQuery1[this.flag] && aQuery2[this.flag]) {
     for (let p in this.subswitches) {
       if (p in aQuery1 && p in aQuery2) {
         if (aQuery1[p] instanceof Ci.nsIURI) {
-          if (!aQuery1[p].equals(aQuery2[p]))
+          if (!aQuery1[p].equals(aQuery2[p])) {
             return false;
-        }
-        else if (aQuery1[p] !== aQuery2[p])
+          }
+        } else if (aQuery1[p] !== aQuery2[p]) {
           return false;
+        }
       }
     }
-  }
-  else if (aQuery1[this.flag] || aQuery2[this.flag])
+  } else if (aQuery1[this.flag] || aQuery2[this.flag]) {
     return false;
+  }
 
   return true;
 }
@@ -653,11 +639,11 @@ function flagSwitchMatches(aQuery1, aQuery2)
  *         another nsINavHistoryQuery or nsINavHistoryQueryOptions object
  * @return true if aObj1 and aObj2 are equal
  */
-function queryObjsEqual(aSwitches, aObj1, aObj2)
-{
+function queryObjsEqual(aSwitches, aObj1, aObj2) {
   for (let i = 0; i < aSwitches.length; i++) {
-    if (!aSwitches[i].matches(aObj1, aObj2))
+    if (!aSwitches[i].matches(aObj1, aObj2)) {
       return false;
+    }
   }
   return true;
 }
@@ -670,11 +656,8 @@ function queryObjsEqual(aSwitches, aObj1, aObj2)
  * @param aHowManyHi
  *        the size of the switch subsets to end with (inclusive)
  */
-function runQuerySequences(aHowManyLo, aHowManyHi)
-{
+function runQuerySequences(aHowManyLo, aHowManyHi) {
   var allSwitches = querySwitches.concat(queryOptionSwitches);
-  var prevQueries = [];
-  var prevOpts = [];
 
   // Choose aHowManyLo switches up to aHowManyHi switches.
   for (let howMany = aHowManyLo; howMany <= aHowManyHi; howMany++) {
@@ -682,15 +665,16 @@ function runQuerySequences(aHowManyLo, aHowManyHi)
     print("CHOOSING " + howMany + " SWITCHES");
 
     // Choose all subsets of size howMany from allSwitches.
-    choose(allSwitches, howMany, function (chosenSwitches) {
+    choose(allSwitches, howMany, function(chosenSwitches) {
       print(numIters);
       numIters++;
 
       // Collect the runs.
       // runs = [ [runs from switch 1], ..., [runs from switch howMany] ]
-      var runs = chosenSwitches.map(function (s) {
-        if (s.desc)
+      var runs = chosenSwitches.map(function(s) {
+        if (s.desc) {
           print("  " + s.desc);
+        }
         return s.runs;
       });
 
@@ -703,28 +687,14 @@ function runQuerySequences(aHowManyLo, aHowManyHi)
       //   ...,
       //   [switch 1 run N, switch 2 run N, ..., switch howMany run N ],
       // ]
-      cartProd(runs, function (runSet) {
+      cartProd(runs, function(runSet) {
         // Create a new query, apply the switches in runSet, and test it.
         var query = PlacesUtils.history.getNewQuery();
         var opts = PlacesUtils.history.getNewQueryOptions();
         for (let i = 0; i < runSet.length; i++) {
           runSet[i](query, opts);
         }
-        serializeDeserialize([query], opts);
-
-        // Test the previous NUM_MULTIPLE_QUERIES queries together.
-        prevQueries.push(query);
-        prevOpts.push(opts);
-        if (prevQueries.length >= NUM_MULTIPLE_QUERIES) {
-          // We can serialize multiple nsINavHistoryQuery objects together but
-          // only one nsINavHistoryQueryOptions object with them.  So, test each
-          // of the previous NUM_MULTIPLE_QUERIES nsINavHistoryQueryOptions.
-          for (let i = 0; i < prevOpts.length; i++) {
-            serializeDeserialize(prevQueries, prevOpts[i]);
-          }
-          prevQueries.shift();
-          prevOpts.shift();
-        }
+        serializeDeserialize(query, opts);
       });
     });
   }
@@ -732,51 +702,29 @@ function runQuerySequences(aHowManyLo, aHowManyHi)
 }
 
 /**
- * Serializes the nsINavHistoryQuery objects in aQueryArr and the
+ * Serializes the nsINavHistoryQuery objects in aQuery and the
  * nsINavHistoryQueryOptions object aQueryOptions, de-serializes the
  * serialization, and ensures (using do_check_* functions) that the
  * de-serialized objects equal the originals.
  *
- * @param aQueryArr
- *        an array containing nsINavHistoryQuery objects
+ * @param aQuery
+ *        an nsINavHistoryQuery object
  * @param aQueryOptions
  *        an nsINavHistoryQueryOptions object
  */
-function serializeDeserialize(aQueryArr, aQueryOptions)
-{
-  var queryStr = PlacesUtils.history.queriesToQueryString(aQueryArr,
-                                                        aQueryArr.length,
-                                                        aQueryOptions);
+function serializeDeserialize(aQuery, aQueryOptions) {
+  let queryStr = PlacesUtils.history.queryToQueryString(aQuery, aQueryOptions);
   print("  " + queryStr);
-  var queryArr2 = {};
-  var opts2 = {};
-  PlacesUtils.history.queryStringToQueries(queryStr, queryArr2, {}, opts2);
-  queryArr2 = queryArr2.value;
+  let query2 = {},
+    opts2 = {};
+  PlacesUtils.history.queryStringToQuery(queryStr, query2, opts2);
+  query2 = query2.value;
   opts2 = opts2.value;
 
-  // The two sets of queries cannot be the same if their lengths differ.
-  do_check_eq(aQueryArr.length, queryArr2.length);
-
-  // Although the query serialization code as it is written now practically
-  // ensures that queries appear in the query string in the same order they
-  // appear in both the array to be serialized and the array resulting from
-  // de-serialization, the interface does not guarantee any ordering.  So, for
-  // each query in aQueryArr, find its equivalent in queryArr2 and delete it
-  // from queryArr2.  If queryArr2 is empty after looping through aQueryArr,
-  // the two sets of queries are equal.
-  for (let i = 0; i < aQueryArr.length; i++) {
-    let j = 0;
-    for (; j < queryArr2.length; j++) {
-      if (queryObjsEqual(querySwitches, aQueryArr[i], queryArr2[j]))
-        break;
-    }
-    if (j < queryArr2.length)
-      queryArr2.splice(j, 1);
-  }
-  do_check_eq(queryArr2.length, 0);
+  Assert.ok(queryObjsEqual(querySwitches, aQuery, query2));
 
   // Finally check the query options objects.
-  do_check_true(queryObjsEqual(queryOptionSwitches, aQueryOptions, opts2));
+  Assert.ok(queryObjsEqual(queryOptionSwitches, aQueryOptions, opts2));
 }
 
 /**
@@ -789,14 +737,10 @@ function serializeDeserialize(aQueryArr, aQueryOptions)
  *         another nsINavHistoryQuery or nsINavHistoryQueryOptions object
  * @return true if this switch is the same in both aObj1 and aObj2
  */
-function simplePropertyMatches(aObj1, aObj2)
-{
+function simplePropertyMatches(aObj1, aObj2) {
   return aObj1[this.property] === aObj2[this.property];
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-function run_test()
-{
+function run_test() {
   runQuerySequences(CHOOSE_HOW_MANY_SWITCHES_LO, CHOOSE_HOW_MANY_SWITCHES_HI);
 }

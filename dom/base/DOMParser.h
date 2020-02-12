@@ -8,119 +8,89 @@
 #define mozilla_dom_DOMParser_h_
 
 #include "nsCOMPtr.h"
-#include "nsIDocument.h"
-#include "nsIDOMParser.h"
-#include "nsWeakReference.h"
+#include "mozilla/dom/Document.h"
 #include "nsWrapperCache.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/Span.h"
 #include "mozilla/dom/DOMParserBinding.h"
 #include "mozilla/dom/TypedArray.h"
 
-class nsIDocument;
+class nsIGlobalObject;
 
 namespace mozilla {
 namespace dom {
 
-class DOMParser final : public nsIDOMParser,
-                        public nsSupportsWeakReference,
-                        public nsWrapperCache
-{
+class DOMParser final : public nsISupports, public nsWrapperCache {
   typedef mozilla::dom::GlobalObject GlobalObject;
 
   virtual ~DOMParser();
 
-public: 
-  DOMParser();
-
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(DOMParser,
-                                                         nsIDOMParser)
-
-  // nsIDOMParser
-  NS_DECL_NSIDOMPARSER
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMParser)
 
   // WebIDL API
-  static already_AddRefed<DOMParser>
-  Constructor(const GlobalObject& aOwner,
-              mozilla::ErrorResult& rv);
+  static already_AddRefed<DOMParser> Constructor(const GlobalObject& aOwner,
+                                                 mozilla::ErrorResult& rv);
 
-  static already_AddRefed<DOMParser>
-  Constructor(const GlobalObject& aOwner,
-              nsIPrincipal* aPrincipal, nsIURI* aDocumentURI, nsIURI* aBaseURI,
-              mozilla::ErrorResult& rv);
+  already_AddRefed<Document> ParseFromString(const nsAString& aStr,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromString(const nsAString& aStr, mozilla::dom::SupportedType aType,
-                  mozilla::ErrorResult& rv);
+  // ChromeOnly API
+  already_AddRefed<Document> ParseFromSafeString(const nsAString& aStr,
+                                                 SupportedType aType,
+                                                 ErrorResult& aRv);
+  // Sequence converts to Span, so we can use this overload for both
+  // the Sequence case and our internal uses.
+  already_AddRefed<Document> ParseFromBuffer(Span<const uint8_t> aBuf,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromBuffer(const mozilla::dom::Sequence<uint8_t>& aBuf,
-                  uint32_t aBufLen, mozilla::dom::SupportedType aType,
-                  mozilla::ErrorResult& rv);
+  already_AddRefed<Document> ParseFromBuffer(const Uint8Array& aBuf,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromBuffer(const mozilla::dom::Uint8Array& aBuf, uint32_t aBufLen,
-                  mozilla::dom::SupportedType aType,
-                  mozilla::ErrorResult& rv);
+  already_AddRefed<Document> ParseFromStream(nsIInputStream* aStream,
+                                             const nsAString& aCharset,
+                                             int32_t aContentLength,
+                                             SupportedType aType,
+                                             ErrorResult& aRv);
 
-  already_AddRefed<nsIDocument>
-  ParseFromStream(nsIInputStream* aStream, const nsAString& aCharset,
-                  int32_t aContentLength, mozilla::dom::SupportedType aType,
-                  mozilla::ErrorResult& rv);
-
-  void Init(nsIPrincipal* aPrincipal, nsIURI* aDocumentURI,
-            nsIURI* aBaseURI, mozilla::ErrorResult& rv);
-
-  nsISupports* GetParentObject() const
-  {
-    return mOwner;
+  void ForceEnableXULXBL() {
+    mForceEnableXULXBL = true;
+    ForceEnableDTD();
   }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override
-  {
-    return mozilla::dom::DOMParserBinding::Wrap(aCx, this, aGivenProto);
+  void ForceEnableDTD() { mForceEnableDTD = true; }
+
+  nsIGlobalObject* GetParentObject() const { return mOwner; }
+
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override {
+    return mozilla::dom::DOMParser_Binding::Wrap(aCx, this, aGivenProto);
   }
 
-private:
-  explicit DOMParser(nsISupports* aOwner) : mOwner(aOwner), mAttemptedInit(false)
-  {
-    MOZ_ASSERT(aOwner);
-  }
+  // A way to create a non-global-associated DOMParser from C++.
+  static already_AddRefed<DOMParser> CreateWithoutGlobal(ErrorResult& aRv);
 
-  nsresult InitInternal(nsISupports* aOwner, nsIPrincipal* prin,
-                        nsIURI* documentURI, nsIURI* baseURI);
+ private:
+  DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
+            nsIURI* aDocumentURI, nsIURI* aBaseURI);
 
-  nsresult SetUpDocument(DocumentFlavor aFlavor, nsIDOMDocument** aResult);
+  already_AddRefed<Document> SetUpDocument(DocumentFlavor aFlavor,
+                                           ErrorResult& aRv);
 
-  // Helper for ParseFromString
-  nsresult ParseFromString(const nsAString& str, const char *contentType,
-                           nsIDOMDocument **aResult);
-
-  class AttemptedInitMarker {
-  public:
-    explicit AttemptedInitMarker(bool* aAttemptedInit) :
-      mAttemptedInit(aAttemptedInit)
-    {}
-
-    ~AttemptedInitMarker() {
-      *mAttemptedInit = true;
-    }
-
-  private:
-    bool* mAttemptedInit;
-  };
-
-  nsCOMPtr<nsISupports> mOwner;
+  nsCOMPtr<nsIGlobalObject> mOwner;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  nsCOMPtr<nsIPrincipal> mOriginalPrincipal;
   nsCOMPtr<nsIURI> mDocumentURI;
   nsCOMPtr<nsIURI> mBaseURI;
-  nsWeakPtr mScriptHandlingObject;
-  
-  bool mAttemptedInit;
+
+  bool mForceEnableXULXBL;
+  bool mForceEnableDTD;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

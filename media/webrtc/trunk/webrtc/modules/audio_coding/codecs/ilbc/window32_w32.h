@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_WINDOW32_W32_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_WINDOW32_W32_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_WINDOW32_W32_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_WINDOW32_W32_H_
 
 #include "defines.h"
 
@@ -29,7 +29,7 @@ void WebRtcIlbcfix_Window32W32(
     int32_t *z,    /* Output */
     int32_t *x,    /* Input (same domain as Output)*/
     const int32_t  *y,  /* Q31 Window */
-    int16_t N     /* length to process */
+    size_t N     /* length to process */
                                );
 
 #endif

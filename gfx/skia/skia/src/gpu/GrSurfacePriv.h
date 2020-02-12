@@ -17,7 +17,7 @@
     implemented privately in GrSurface with a inline public method here). */
 class GrSurfacePriv {
 public:
-    /** Helpers used in read/write pixels implementations. The paramters are adjusted so that the
+    /** Helpers used in read/write pixels implementations. The parameters are adjusted so that the
         read/write respects the bounds of a surface. If the input *rowBytes is 0 it will be
         the tight row bytes (based on width and bpp) on output. */
     static bool AdjustReadPixelParams(int surfaceWidth,
@@ -32,21 +32,13 @@ public:
                                       int* left, int* top, int* width, int* height,
                                       const void** data,
                                       size_t* rowBytes);
-    /**
-     * Derive a SkImageInfo from the surface's descriptor. The caller must provide the alpha type as
-     * GrSurface has no equivalent.
-     */
-    SkImageInfo info(SkAlphaType alphaType) const { return fSurface->info(alphaType); }
-
-    /**
-     * Write the contents of the surface to a PNG. Returns true if successful.
-     * @param filename      Full path to desired file
-     */
-    bool savePixels(const char* filename) { return fSurface->savePixels(filename); }
 
     bool hasPendingRead() const { return fSurface->hasPendingRead(); }
     bool hasPendingWrite() const { return fSurface->hasPendingWrite(); }
     bool hasPendingIO() const { return fSurface->hasPendingIO(); }
+    bool hasUniqueRef() const { return fSurface->internalHasUniqueRef(); }
+
+    GrInternalSurfaceFlags flags() const { return fSurface->fSurfaceFlags; }
 
 private:
     explicit GrSurfacePriv(GrSurface* surface) : fSurface(surface) {}

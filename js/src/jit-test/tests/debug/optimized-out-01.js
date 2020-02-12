@@ -3,13 +3,16 @@
 // Unfortunately these tests are brittle. They depend on opaque JIT heuristics
 // kicking in.
 
+// Use gczeal 0 to keep CGC from invalidating Ion code and causing test failures.
+gczeal(0);
+
 load(libdir + "jitopts.js");
 
 if (!jitTogglesMatch(Opts_Ion2NoOffthreadCompilation))
   quit(0);
 
 withJitOptions(Opts_Ion2NoOffthreadCompilation, function () {
-  var g = newGlobal();
+  var g = newGlobal({newCompartment: true});
   var dbg = new Debugger;
 
   // Note that this *depends* on CCW scripted functions being opaque to Ion

@@ -5,12 +5,21 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+// helper function that ensures that ArrayBuffer instances are meaningfully
+// displayed (not just as 'object ArrayBuffer')
+// TODO better move to helpers.js?
+function showKey(key) {
+  if (key instanceof Array) {
+    return key.map(x => showKey(x)).toString();
+  }
+  if (key instanceof ArrayBuffer) {
+    return "ArrayBuffer([" + new Uint8Array(key).toString() + "])";
+  }
+  return key.toString();
+}
+
+function* testSteps() {
   const dbname = this.window ? window.location.pathname : "Splendid Test";
-  const RW = "readwrite"
-  let c1 = 1;
-  let c2 = 1;
 
   let openRequest = indexedDB.open(dbname, 1);
   openRequest.onerror = errorHandler;
@@ -18,14 +27,15 @@ function testSteps()
   openRequest.onsuccess = unexpectedSuccessHandler;
   let event = yield undefined;
   let db = event.target.result;
-  let trans = event.target.transaction;
 
   // Create test stores
   let store = db.createObjectStore("store");
+  let enc = new TextEncoder();
 
-    // Test simple inserts
+  // Test simple inserts
+  // Note: the keys must be in order
   var keys = [
-    -1/0,
+    -1 / 0,
     -1.7e308,
     -10000,
     -2,
@@ -40,7 +50,7 @@ function testSteps()
     2,
     10000,
     1.7e308,
-    1/0,
+    1 / 0,
     new Date("1750-01-02"),
     new Date("1800-12-31T12:34:56.001"),
     new Date(-1000),
@@ -110,10 +120,24 @@ function testSteps()
     "\uDFFF\uD800",
     "\uFFFE",
     "\uFFFF",
-     "\uFFFF\x00",
+    "\uFFFF\x00",
     "\uFFFFZZZ",
+    // Note: enc.encode returns an Uint8Array, which is a valid key, but when
+    // converting it back and forth, the result will be a plain ArrayBuffer,
+    // which is expected in comparisons below
+    // TODO is it ok that the information that the original key was an
+    // Uint8Array is lost?
+    new ArrayBuffer(0),
+    Uint8Array.from([0]).buffer,
+    Uint8Array.from([0, 0]).buffer,
+    Uint8Array.from([0, 1]).buffer,
+    Uint8Array.from([0, 1, 0]).buffer,
+    enc.encode("abc").buffer,
+    enc.encode("abcd").buffer,
+    enc.encode("xyz").buffer,
+    Uint8Array.from([0x80]).buffer,
     [],
-    [-1/0],
+    [-1 / 0],
     [-1],
     [0],
     [1],
@@ -141,9 +165,18 @@ function testSteps()
     ["abc\x00\x00def"],
     ["x", [[]]],
     ["x", [[[]]]],
+    // see comment on scalar ArrayBuffers above
+    [new ArrayBuffer(0)],
+    [new ArrayBuffer(0), "abc"],
+    [new ArrayBuffer(0), new ArrayBuffer(0)],
+    [new ArrayBuffer(0), enc.encode("abc").buffer],
+    [enc.encode("abc").buffer],
+    [enc.encode("abc").buffer, new ArrayBuffer(0)],
+    [enc.encode("abc").buffer, enc.encode("xyz").buffer],
+    [enc.encode("xyz").buffer],
     [[]],
-    [[],"foo"],
-    [[],[]],
+    [[], "foo"],
+    [[], []],
     [[[]]],
     [[[]], []],
     [[[]], [[]]],
@@ -151,27 +184,42 @@ function testSteps()
     [[[]], [[[]]]],
     [[[1]]],
     [[[[]], []]],
-    ];
+  ];
 
   for (var i = 0; i < keys.length; ++i) {
     let keyI = keys[i];
     is(indexedDB.cmp(keyI, keyI), 0, i + " compared to self");
 
     function doCompare(keyI) {
-      for (var j = i-1; j >= i-10 && j >= 0; --j) {
+      for (var j = i - 1; j >= i - 10 && j >= 0; --j) {
         is(indexedDB.cmp(keyI, keys[j]), 1, i + " compared to " + j);
         is(indexedDB.cmp(keys[j], keyI), -1, j + " compared to " + i);
       }
     }
-    
+
     doCompare(keyI);
     store.add(i, keyI).onsuccess = function(e) {
-      is(indexedDB.cmp(e.target.result, keyI), 0,
-         "Returned key should cmp as equal");
-      ok(compareKeys(e.target.result, keyI),
-         "Returned key should actually be equal");
+      is(
+        indexedDB.cmp(e.target.result, keyI),
+        0,
+        "Returned key should cmp as equal; index = " +
+          i +
+          ", input = " +
+          showKey(keyI) +
+          ", returned = " +
+          showKey(e.target.result)
+      );
+      ok(
+        compareKeys(e.target.result, keyI),
+        "Returned key should actually be equal; index = " +
+          i +
+          ", input = " +
+          showKey(keyI) +
+          ", returned = " +
+          showKey(e.target.result)
+      );
     };
-    
+
     // Test that -0 compares the same as 0
     if (keyI === 0) {
       doCompare(-0);
@@ -179,8 +227,7 @@ function testSteps()
       req.addEventListener("error", new ExpectError("ConstraintError", true));
       req.onsuccess = unexpectedSuccessHandler;
       yield undefined;
-    }
-    else if (Array.isArray(keyI) && keyI.length === 1 && keyI[0] === 0) {
+    } else if (Array.isArray(keyI) && keyI.length === 1 && keyI[0] === 0) {
       doCompare([-0]);
       let req = store.add(i, [-0]);
       req.addEventListener("error", new ExpectError("ConstraintError", true));
@@ -193,10 +240,25 @@ function testSteps()
   for (i = 0; i < keys.length; ++i) {
     event = yield undefined;
     let cursor = event.target.result;
-    is(indexedDB.cmp(cursor.key, keys[i]), 0,
-       "Read back key should cmp as equal");
-    ok(compareKeys(cursor.key, keys[i]),
-       "Read back key should actually be equal");
+    is(
+      indexedDB.cmp(cursor.key, keys[i]),
+      0,
+      "Read back key should cmp as equal; index = " +
+        i +
+        ", input = " +
+        showKey(keys[i]) +
+        ", readBack = " +
+        showKey(cursor.key)
+    );
+    ok(
+      compareKeys(cursor.key, keys[i]),
+      "Read back key should actually be equal; index = " +
+        i +
+        ", input = " +
+        showKey(keys[i]) +
+        ", readBack = " +
+        showKey(cursor.key)
+    );
     is(cursor.value, i, "Stored with right value");
 
     cursor.continue();
@@ -204,7 +266,7 @@ function testSteps()
   event = yield undefined;
   is(event.target.result, null, "no more results expected");
 
-  var nan = 0/0;
+  var nan = 0 / 0;
   var invalidKeys = [
     nan,
     undefined,
@@ -229,14 +291,13 @@ function testSteps()
     [1, [null]],
     [1, [/x/]],
     [1, [{}]],
-    ];
-  
+  ];
+
   for (i = 0; i < invalidKeys.length; ++i) {
     try {
       indexedDB.cmp(invalidKeys[i], 1);
       ok(false, "didn't throw");
-    }
-    catch(ex) {
+    } catch (ex) {
       ok(ex instanceof DOMException, "Threw DOMException");
       is(ex.name, "DataError", "Threw right DOMException");
       is(ex.code, 0, "Threw with right code");
@@ -244,8 +305,7 @@ function testSteps()
     try {
       indexedDB.cmp(1, invalidKeys[i]);
       ok(false, "didn't throw2");
-    }
-    catch(ex) {
+    } catch (ex) {
       ok(ex instanceof DOMException, "Threw DOMException2");
       is(ex.name, "DataError", "Threw right DOMException2");
       is(ex.code, 0, "Threw with right code2");
@@ -253,8 +313,7 @@ function testSteps()
     try {
       store.put(1, invalidKeys[i]);
       ok(false, "didn't throw3");
-    }
-    catch(ex) {
+    } catch (ex) {
       ok(ex instanceof DOMException, "Threw DOMException3");
       is(ex.name, "DataError", "Threw right DOMException3");
       is(ex.code, 0, "Threw with right code3");
@@ -265,5 +324,4 @@ function testSteps()
   yield undefined;
 
   finishTest();
-  yield undefined;
 }

@@ -1,7 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-
 const URL = "http://mochi.test:8888/browser/";
 const PREF = "browser.sessionstore.restore_on_demand";
 
@@ -9,18 +8,22 @@ function test() {
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref(PREF, true);
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref(PREF);
   });
 
-  preparePendingTab(function (aTab) {
+  preparePendingTab(function(aTab) {
     let win = gBrowser.replaceTabWithWindow(aTab);
 
-    whenDelayedStartupFinished(win, function () {
+    whenDelayedStartupFinished(win, function() {
       let [tab] = win.gBrowser.tabs;
 
-      whenLoaded(tab.linkedBrowser, function () {
-        is(tab.linkedBrowser.currentURI.spec, URL, "correct url should be loaded");
+      whenLoaded(tab.linkedBrowser, function() {
+        is(
+          tab.linkedBrowser.currentURI.spec,
+          URL,
+          "correct url should be loaded"
+        );
         ok(!tab.hasAttribute("pending"), "tab should not be pending");
 
         win.close();
@@ -31,14 +34,16 @@ function test() {
 }
 
 function preparePendingTab(aCallback) {
-  let tab = gBrowser.addTab(URL);
+  let tab = BrowserTestUtils.addTab(gBrowser, URL);
 
-  whenLoaded(tab.linkedBrowser, function () {
-    BrowserTestUtils.removeTab(tab).then(() => {
-      let [{state}] = JSON.parse(SessionStore.getClosedTabData(window));
+  whenLoaded(tab.linkedBrowser, function() {
+    let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
+    BrowserTestUtils.removeTab(tab);
+    sessionUpdatePromise.then(() => {
+      let [{ state }] = JSON.parse(SessionStore.getClosedTabData(window));
 
-      tab = gBrowser.addTab("about:blank");
-      whenLoaded(tab.linkedBrowser, function () {
+      tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+      whenLoaded(tab.linkedBrowser, function() {
         SessionStore.setTabState(tab, JSON.stringify(state));
         ok(tab.hasAttribute("pending"), "tab should be pending");
         aCallback(tab);
@@ -47,9 +52,8 @@ function preparePendingTab(aCallback) {
   });
 }
 
-function whenLoaded(aElement, aCallback) {
-  aElement.addEventListener("load", function onLoad() {
-    aElement.removeEventListener("load", onLoad, true);
+function whenLoaded(aBrowser, aCallback) {
+  BrowserTestUtils.browserLoaded(aBrowser).then(() => {
     executeSoon(aCallback);
-  }, true);
+  });
 }

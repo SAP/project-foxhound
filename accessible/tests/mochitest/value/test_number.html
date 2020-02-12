@@ -6,20 +6,17 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
   <script type="application/javascript"
           src="../value.js"></script>
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/chrome-harness.js"></script>
+  <script src="chrome://mochikit/content/chrome-harness.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
+    function doTest() {
       // HTML5 number element tests
       testValue("number", "", 0, 0, 0, 1);
       testValue("number_value", "1", 1, 0, 0, 1);

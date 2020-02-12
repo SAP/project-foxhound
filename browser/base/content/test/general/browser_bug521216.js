@@ -1,4 +1,9 @@
-var expected = ["TabOpen", "onStateChange", "onLocationChange", "onLinkIconAvailable"];
+var expected = [
+  "TabOpen",
+  "onStateChange",
+  "onLocationChange",
+  "onLinkIconAvailable",
+];
 var actual = [];
 var tabIndex = -1;
 this.__defineGetter__("tab", () => gBrowser.tabs[tabIndex]);
@@ -7,44 +12,57 @@ function test() {
   waitForExplicitFinish();
   tabIndex = gBrowser.tabs.length;
   gBrowser.addTabsProgressListener(progressListener);
-  gBrowser.tabContainer.addEventListener("TabOpen", TabOpen, false);
-  gBrowser.addTab("data:text/html,<html><head><link href='about:logo' rel='shortcut icon'>");
+  gBrowser.tabContainer.addEventListener("TabOpen", TabOpen);
+  BrowserTestUtils.addTab(
+    gBrowser,
+    "data:text/html,<html><head><link href='about:logo' rel='shortcut icon'>"
+  );
 }
 
-function record(aName) {
+function recordEvent(aName) {
   info("got " + aName);
-  if (actual.indexOf(aName) == -1)
+  if (!actual.includes(aName)) {
     actual.push(aName);
+  }
   if (actual.length == expected.length) {
-    is(actual.toString(), expected.toString(),
-       "got events and progress notifications in expected order");
+    is(
+      actual.toString(),
+      expected.toString(),
+      "got events and progress notifications in expected order"
+    );
 
-    executeSoon(function(tab) {
-      gBrowser.removeTab(tab);
-      gBrowser.removeTabsProgressListener(progressListener);
-      gBrowser.tabContainer.removeEventListener("TabOpen", TabOpen, false);
-      finish();
-    }.bind(null, tab));
+    executeSoon(
+      // eslint-disable-next-line no-shadow
+      function(tab) {
+        gBrowser.removeTab(tab);
+        gBrowser.removeTabsProgressListener(progressListener);
+        gBrowser.tabContainer.removeEventListener("TabOpen", TabOpen);
+        finish();
+      }.bind(null, tab)
+    );
   }
 }
 
 function TabOpen(aEvent) {
-  if (aEvent.target == tab)
-    record(arguments.callee.name);
+  if (aEvent.target == tab) {
+    recordEvent("TabOpen");
+  }
 }
 
 var progressListener = {
   onLocationChange: function onLocationChange(aBrowser) {
-    if (aBrowser == tab.linkedBrowser)
-      record(arguments.callee.name);
+    if (aBrowser == tab.linkedBrowser) {
+      recordEvent("onLocationChange");
+    }
   },
   onStateChange: function onStateChange(aBrowser) {
-    if (aBrowser == tab.linkedBrowser)
-      record(arguments.callee.name);
+    if (aBrowser == tab.linkedBrowser) {
+      recordEvent("onStateChange");
+    }
   },
-  onLinkIconAvailable: function onLinkIconAvailable(aBrowser, aIconURL) {
-    if (aBrowser == tab.linkedBrowser &&
-        aIconURL == "about:logo")
-      record(arguments.callee.name);
-  }
+  onLinkIconAvailable: function onLinkIconAvailable(aBrowser) {
+    if (aBrowser == tab.linkedBrowser) {
+      recordEvent("onLinkIconAvailable");
+    }
+  },
 };

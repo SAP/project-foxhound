@@ -14,43 +14,64 @@
 namespace mozilla {
 namespace dom {
 
-class HTMLBRElement final : public nsGenericHTMLElement
-{
-public:
-  explicit HTMLBRElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+#define BR_ELEMENT_FLAG_BIT(n_) \
+  NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
-  virtual bool ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
-  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+// BR element specific bits
+enum {
+  // NS_PADDING_FOR_EMPTY_EDITOR is set if the <br> element is created by
+  // editor for placing caret at proper position in empty editor.
+  NS_PADDING_FOR_EMPTY_EDITOR = BR_ELEMENT_FLAG_BIT(0),
 
-  bool Clear()
-  {
-    return GetBoolAttr(nsGkAtoms::clear);
-  }
-  void SetClear(const nsAString& aClear, ErrorResult& aError)
-  {
+  // NS_PADDING_FOR_EMPTY_LAST_LINE is set if the <br> element is created by
+  // editor for placing caret at proper position for making empty last line
+  // in a block or <textarea> element visible.
+  NS_PADDING_FOR_EMPTY_LAST_LINE = BR_ELEMENT_FLAG_BIT(1),
+};
+
+ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
+
+class HTMLBRElement final : public nsGenericHTMLElement {
+ public:
+  explicit HTMLBRElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+
+  NS_IMPL_FROMNODE_HTML_WITH_TAG(HTMLBRElement, br)
+
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                              const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
+                              nsAttrValue& aResult) override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction()
+      const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  bool Clear() { return GetBoolAttr(nsGkAtoms::clear); }
+  void SetClear(const nsAString& aClear, ErrorResult& aError) {
     return SetHTMLAttr(nsGkAtoms::clear, aClear, aError);
   }
-  void GetClear(DOMString& aClear) const
-  {
+  void GetClear(DOMString& aClear) const {
     return GetHTMLAttr(nsGkAtoms::clear, aClear);
   }
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-private:
+  bool IsPaddingForEmptyEditor() const {
+    return HasFlag(NS_PADDING_FOR_EMPTY_EDITOR);
+  }
+  bool IsPaddingForEmptyLastLine() const {
+    return HasFlag(NS_PADDING_FOR_EMPTY_LAST_LINE);
+  }
+
+ private:
   virtual ~HTMLBRElement();
 
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    nsRuleData* aData);
+                                    MappedDeclarations&);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

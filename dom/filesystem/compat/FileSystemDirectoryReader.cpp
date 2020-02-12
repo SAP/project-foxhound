@@ -8,40 +8,38 @@
 #include "CallbackRunnables.h"
 #include "FileSystemFileEntry.h"
 #include "mozilla/dom/FileBinding.h"
+#include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
-#include "nsIGlobalObject.h"
 
 namespace mozilla {
 namespace dom {
 
 namespace {
 
-class PromiseHandler final : public PromiseNativeHandler
-{
-public:
+class PromiseHandler final : public PromiseNativeHandler {
+ public:
   NS_DECL_ISUPPORTS
 
-  PromiseHandler(nsIGlobalObject* aGlobalObject,
+  PromiseHandler(FileSystemDirectoryEntry* aParentEntry,
                  FileSystem* aFileSystem,
                  FileSystemEntriesCallback* aSuccessCallback,
                  ErrorCallback* aErrorCallback)
-    : mGlobal(aGlobalObject)
-    , mFileSystem(aFileSystem)
-    , mSuccessCallback(aSuccessCallback)
-    , mErrorCallback(aErrorCallback)
-  {
-    MOZ_ASSERT(aGlobalObject);
+      : mParentEntry(aParentEntry),
+        mFileSystem(aFileSystem),
+        mSuccessCallback(aSuccessCallback),
+        mErrorCallback(aErrorCallback) {
+    MOZ_ASSERT(aParentEntry);
     MOZ_ASSERT(aFileSystem);
     MOZ_ASSERT(aSuccessCallback);
   }
 
-  virtual void
-  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
-  {
-    if(NS_WARN_IF(!aValue.isObject())) {
+  MOZ_CAN_RUN_SCRIPT
+  virtual void ResolvedCallback(JSContext* aCx,
+                                JS::Handle<JS::Value> aValue) override {
+    if (NS_WARN_IF(!aValue.isObject())) {
       return;
     }
 
@@ -63,7 +61,7 @@ public:
         return;
       }
 
-      if(NS_WARN_IF(!value.isObject())) {
+      if (NS_WARN_IF(!value.isObject())) {
         return;
       }
 
@@ -71,52 +69,53 @@ public:
 
       RefPtr<File> file;
       if (NS_SUCCEEDED(UNWRAP_OBJECT(File, valueObj, file))) {
-        RefPtr<FileSystemFileEntry> entry =
-          new FileSystemFileEntry(mGlobal, file, mFileSystem);
+        RefPtr<FileSystemFileEntry> entry = new FileSystemFileEntry(
+            mParentEntry->GetParentObject(), file, mParentEntry, mFileSystem);
         sequence[i] = entry;
         continue;
       }
 
       RefPtr<Directory> directory;
-      if (NS_WARN_IF(NS_FAILED(UNWRAP_OBJECT(Directory, valueObj,
-                                             directory)))) {
+      if (NS_WARN_IF(
+              NS_FAILED(UNWRAP_OBJECT(Directory, valueObj, directory)))) {
         return;
       }
 
       RefPtr<FileSystemDirectoryEntry> entry =
-        new FileSystemDirectoryEntry(mGlobal, directory, mFileSystem);
+          new FileSystemDirectoryEntry(mParentEntry->GetParentObject(),
+                                       directory, mParentEntry, mFileSystem);
       sequence[i] = entry;
     }
 
-    mSuccessCallback->HandleEvent(sequence);
+    mSuccessCallback->Call(sequence);
   }
 
-  virtual void
-  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override
-  {
+  virtual void RejectedCallback(JSContext* aCx,
+                                JS::Handle<JS::Value> aValue) override {
     if (mErrorCallback) {
-      RefPtr<ErrorCallbackRunnable> runnable =
-        new ErrorCallbackRunnable(mGlobal, mErrorCallback,
-                                  NS_ERROR_DOM_INVALID_STATE_ERR);
-      DebugOnly<nsresult> rv = NS_DispatchToMainThread(runnable);
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "NS_DispatchToMainThread failed");
+      RefPtr<ErrorCallbackRunnable> runnable = new ErrorCallbackRunnable(
+          mParentEntry->GetParentObject(), mErrorCallback,
+          NS_ERROR_DOM_INVALID_STATE_ERR);
+
+      FileSystemUtils::DispatchRunnable(mParentEntry->GetParentObject(),
+                                        runnable.forget());
     }
   }
 
-private:
+ private:
   ~PromiseHandler() {}
 
-  nsCOMPtr<nsIGlobalObject> mGlobal;
+  RefPtr<FileSystemDirectoryEntry> mParentEntry;
   RefPtr<FileSystem> mFileSystem;
-  RefPtr<FileSystemEntriesCallback> mSuccessCallback;
+  const RefPtr<FileSystemEntriesCallback> mSuccessCallback;
   RefPtr<ErrorCallback> mErrorCallback;
 };
 
 NS_IMPL_ISUPPORTS0(PromiseHandler);
 
-} // anonymous namespace
+}  // anonymous namespace
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FileSystemDirectoryReader, mParent,
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FileSystemDirectoryReader, mParentEntry,
                                       mDirectory, mFileSystem)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FileSystemDirectoryReader)
@@ -127,40 +126,35 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemDirectoryReader)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-FileSystemDirectoryReader::FileSystemDirectoryReader(nsIGlobalObject* aGlobal,
-                                                     FileSystem* aFileSystem,
-                                                     Directory* aDirectory)
-  : mParent(aGlobal)
-  , mFileSystem(aFileSystem)
-  , mDirectory(aDirectory)
-  , mAlreadyRead(false)
-{
-  MOZ_ASSERT(aGlobal);
+FileSystemDirectoryReader::FileSystemDirectoryReader(
+    FileSystemDirectoryEntry* aParentEntry, FileSystem* aFileSystem,
+    Directory* aDirectory)
+    : mParentEntry(aParentEntry),
+      mFileSystem(aFileSystem),
+      mDirectory(aDirectory),
+      mAlreadyRead(false) {
+  MOZ_ASSERT(aParentEntry);
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemDirectoryReader::~FileSystemDirectoryReader()
-{}
+FileSystemDirectoryReader::~FileSystemDirectoryReader() {}
 
-JSObject*
-FileSystemDirectoryReader::WrapObject(JSContext* aCx,
-                                      JS::Handle<JSObject*> aGivenProto)
-{
-  return FileSystemDirectoryReaderBinding::Wrap(aCx, this, aGivenProto);
+JSObject* FileSystemDirectoryReader::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return FileSystemDirectoryReader_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-FileSystemDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCallback,
-                                       const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
-                                       ErrorResult& aRv)
-{
+void FileSystemDirectoryReader::ReadEntries(
+    FileSystemEntriesCallback& aSuccessCallback,
+    const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
+    ErrorResult& aRv) {
   MOZ_ASSERT(mDirectory);
 
   if (mAlreadyRead) {
     RefPtr<EmptyEntriesCallbackRunnable> runnable =
-      new EmptyEntriesCallbackRunnable(&aSuccessCallback);
-    aRv = NS_DispatchToMainThread(runnable);
-    NS_WARNING_ASSERTION(!aRv.Failed(), "NS_DispatchToMainThread failed");
+        new EmptyEntriesCallbackRunnable(&aSuccessCallback);
+
+    FileSystemUtils::DispatchRunnable(GetParentObject(), runnable.forget());
     return;
   }
 
@@ -175,12 +169,11 @@ FileSystemDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCallba
     return;
   }
 
-  RefPtr<PromiseHandler> handler =
-    new PromiseHandler(GetParentObject(), mFileSystem, &aSuccessCallback,
-                       aErrorCallback.WasPassed()
-                         ? &aErrorCallback.Value() : nullptr);
+  RefPtr<PromiseHandler> handler = new PromiseHandler(
+      mParentEntry, mFileSystem, &aSuccessCallback,
+      aErrorCallback.WasPassed() ? &aErrorCallback.Value() : nullptr);
   promise->AppendNativeHandler(handler);
 }
 
-} // dom namespace
-} // mozilla namespace
+}  // namespace dom
+}  // namespace mozilla

@@ -1,7 +1,6 @@
-if (!('oomTest' in this) || helperThreadCount() === 0)
-    quit();
+// |jit-test| skip-if: !('oomTest' in this) || helperThreadCount() === 0
 
-enableSPSProfiling();
+enableGeckoProfiling();
 var s = newGlobal();
 s.offThreadCompileScript('oomTest(() => {});');
 s.runOffThreadScript();

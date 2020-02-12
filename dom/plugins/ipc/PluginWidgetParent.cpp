@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PluginWidgetParent.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "nsComponentManagerUtils.h"
 #include "nsWidgetsCID.h"
@@ -12,47 +12,39 @@
 #include "mozilla/DebugOnly.h"
 #include "nsDebug.h"
 
-#if defined(MOZ_WIDGET_GTK)
-#include "nsPluginNativeWindowGtk.h"
-#endif
-
 using namespace mozilla;
 using namespace mozilla::widget;
 
 #define PWLOG(...)
 //#define PWLOG(...) printf_stderr(__VA_ARGS__)
 
-#if defined(XP_WIN)
 namespace mozilla {
 namespace dom {
 // For nsWindow
 const wchar_t* kPluginWidgetContentParentProperty =
-  L"kPluginWidgetParentProperty";
-} }
-#endif
+    L"kPluginWidgetParentProperty";
+}  // namespace dom
+}  // namespace mozilla
 
 namespace mozilla {
 namespace plugins {
 
-static NS_DEFINE_CID(kWidgetCID, NS_CHILD_CID);
-
-// This macro returns true to prevent an abort in the child process when
+// This macro returns IPC_OK() to prevent an abort in the child process when
 // ipc message delivery fails.
-#define ENSURE_CHANNEL {                                      \
-  if (!mWidget) {                                             \
-    NS_WARNING("called on an invalid remote widget.");        \
-    return true;                                              \
-  }                                                           \
-}
+#define ENSURE_CHANNEL                                   \
+  {                                                      \
+    if (!mWidget) {                                      \
+      NS_WARNING("called on an invalid remote widget."); \
+      return IPC_OK();                                   \
+    }                                                    \
+  }
 
-PluginWidgetParent::PluginWidgetParent()
-{
+PluginWidgetParent::PluginWidgetParent() {
   PWLOG("PluginWidgetParent::PluginWidgetParent()\n");
   MOZ_COUNT_CTOR(PluginWidgetParent);
 }
 
-PluginWidgetParent::~PluginWidgetParent()
-{
+PluginWidgetParent::~PluginWidgetParent() {
   PWLOG("PluginWidgetParent::~PluginWidgetParent()\n");
   MOZ_COUNT_DTOR(PluginWidgetParent);
   // A destroy call can actually get skipped if a widget is associated
@@ -61,15 +53,11 @@ PluginWidgetParent::~PluginWidgetParent()
   KillWidget();
 }
 
-mozilla::dom::TabParent*
-PluginWidgetParent::GetTabParent()
-{
-  return static_cast<mozilla::dom::TabParent*>(Manager());
+mozilla::dom::BrowserParent* PluginWidgetParent::GetBrowserParent() {
+  return static_cast<mozilla::dom::BrowserParent*>(Manager());
 }
 
-void
-PluginWidgetParent::SetParent(nsIWidget* aParent)
-{
+void PluginWidgetParent::SetParent(nsIWidget* aParent) {
   // This will trigger sync send messages to the plugin process window
   // procedure and a cascade of events to that window related to focus
   // and activation.
@@ -83,38 +71,24 @@ PluginWidgetParent::SetParent(nsIWidget* aParent)
 // bypass this code on Window, and reuse a bit of it on Linux. Content still
 // makes use of some of the utility functions as well.
 
-bool
-PluginWidgetParent::RecvCreate(nsresult* aResult, uint64_t* aScrollCaptureId,
-                               uintptr_t* aPluginInstanceId)
-{
+mozilla::ipc::IPCResult PluginWidgetParent::RecvCreate(
+    nsresult* aResult, uint64_t* aScrollCaptureId,
+    uintptr_t* aPluginInstanceId) {
   PWLOG("PluginWidgetParent::RecvCreate()\n");
 
   *aScrollCaptureId = 0;
   *aPluginInstanceId = 0;
 
-  mWidget = do_CreateInstance(kWidgetCID, aResult);
-  NS_ASSERTION(NS_SUCCEEDED(*aResult), "widget create failure");
-
-#if defined(MOZ_WIDGET_GTK)
-  // We need this currently just for GTK in setting up a socket widget
-  // we can send over to content -> plugin.
-  PLUG_NewPluginNativeWindow((nsPluginNativeWindow**)&mWrapper);
-  if (!mWrapper) {
-    KillWidget();
-    return false;
-  }
-  // Give a copy of this to the widget, which handles some update
-  // work for us.
-  mWidget->SetNativeData(NS_NATIVE_PLUGIN_OBJECT_PTR, (uintptr_t)mWrapper.get());
-#endif
+  mWidget = nsIWidget::CreateChildWindow();
+  *aResult = mWidget ? NS_OK : NS_ERROR_FAILURE;
 
   // This returns the top level window widget
-  nsCOMPtr<nsIWidget> parentWidget = GetTabParent()->GetWidget();
+  nsCOMPtr<nsIWidget> parentWidget = GetBrowserParent()->GetWidget();
   // If this fails, bail.
   if (!parentWidget) {
     *aResult = NS_ERROR_NOT_AVAILABLE;
     KillWidget();
-    return true;
+    return IPC_OK();
   }
 
   nsWidgetInitData initData;
@@ -127,29 +101,10 @@ PluginWidgetParent::RecvCreate(nsresult* aResult, uint64_t* aScrollCaptureId,
   if (NS_FAILED(*aResult)) {
     KillWidget();
     // This should never fail, abort.
-    return false;
+    return IPC_FAIL_NO_REASON(this);
   }
 
   mWidget->EnableDragDrop(true);
-
-#if defined(MOZ_WIDGET_GTK)
-  // For setup, initially GTK code expects 'window' to hold the parent.
-  mWrapper->window = mWidget->GetNativeData(NS_NATIVE_PLUGIN_PORT);
-  DebugOnly<nsresult> drv = mWrapper->CreateXEmbedWindow(false);
-  NS_ASSERTION(NS_SUCCEEDED(drv), "widget call failure");
-  mWrapper->SetAllocation();
-  PWLOG("Plugin XID=%p\n", (void*)mWrapper->window);
-#elif defined(XP_WIN)
-  DebugOnly<DWORD> winres =
-    ::SetPropW((HWND)mWidget->GetNativeData(NS_NATIVE_WINDOW),
-               mozilla::dom::kPluginWidgetContentParentProperty,
-               GetTabParent()->Manager()->AsContentParent());
-  NS_ASSERTION(winres, "SetPropW call failure");
-
-  *aScrollCaptureId = mWidget->CreateScrollCaptureContainer();
-  *aPluginInstanceId =
-    reinterpret_cast<uintptr_t>(mWidget->GetNativeData(NS_NATIVE_PLUGIN_ID));
-#endif
 
   // This is a special call we make to nsBaseWidget to register this
   // window as a remote plugin window which is expected to receive
@@ -157,81 +112,56 @@ PluginWidgetParent::RecvCreate(nsresult* aResult, uint64_t* aScrollCaptureId,
   // over with corresponding layer updates.
   mWidget->RegisterPluginWindowForRemoteUpdates();
 
-  return true;
+  return IPC_OK();
 }
 
-void
-PluginWidgetParent::KillWidget()
-{
+void PluginWidgetParent::KillWidget() {
   PWLOG("PluginWidgetParent::KillWidget() widget=%p\n", (void*)mWidget.get());
   if (mWidget) {
     mWidget->UnregisterPluginWindowForRemoteUpdates();
     mWidget->Destroy();
-#if defined(MOZ_WIDGET_GTK)
-    mWidget->SetNativeData(NS_NATIVE_PLUGIN_OBJECT_PTR, (uintptr_t)0);
-    mWrapper = nullptr;
-#elif defined(XP_WIN)
     ::RemovePropW((HWND)mWidget->GetNativeData(NS_NATIVE_WINDOW),
                   mozilla::dom::kPluginWidgetContentParentProperty);
-#endif
     mWidget = nullptr;
   }
 }
 
-void
-PluginWidgetParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void PluginWidgetParent::ActorDestroy(ActorDestroyReason aWhy) {
   PWLOG("PluginWidgetParent::ActorDestroy(%d)\n", aWhy);
   KillWidget();
 }
 
-// Called by TabParent's Destroy() in response to an early tear down (Early
+// Called by BrowserParent's Destroy() in response to an early tear down (Early
 // in that this is happening before layout in the child has had a chance
 // to destroy the child widget.) when the tab is closing.
-void
-PluginWidgetParent::ParentDestroy()
-{
+void PluginWidgetParent::ParentDestroy() {
   PWLOG("PluginWidgetParent::ParentDestroy()\n");
 }
 
-bool
-PluginWidgetParent::RecvSetFocus(const bool& aRaise)
-{
+mozilla::ipc::IPCResult PluginWidgetParent::RecvSetFocus(const bool& aRaise) {
   ENSURE_CHANNEL;
   PWLOG("PluginWidgetParent::RecvSetFocus(%d)\n", aRaise);
-  mWidget->SetFocus(aRaise);
-  return true;
+  mWidget->SetFocus(aRaise ? nsIWidget::Raise::Yes : nsIWidget::Raise::No);
+  return IPC_OK();
 }
 
-bool
-PluginWidgetParent::RecvGetNativePluginPort(uintptr_t* value)
-{
+mozilla::ipc::IPCResult PluginWidgetParent::RecvGetNativePluginPort(
+    uintptr_t* value) {
   ENSURE_CHANNEL;
-#if defined(MOZ_WIDGET_GTK)
-  *value = (uintptr_t)mWrapper->window;
-  NS_ASSERTION(*value, "no xid??");
-#else
   *value = (uintptr_t)mWidget->GetNativeData(NS_NATIVE_PLUGIN_PORT);
   NS_ASSERTION(*value, "no native port??");
-#endif
   PWLOG("PluginWidgetParent::RecvGetNativeData() %p\n", (void*)*value);
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginWidgetParent::RecvSetNativeChildWindow(const uintptr_t& aChildWindow)
-{
-#if defined(XP_WIN)
+mozilla::ipc::IPCResult PluginWidgetParent::RecvSetNativeChildWindow(
+    const uintptr_t& aChildWindow) {
   ENSURE_CHANNEL;
   PWLOG("PluginWidgetParent::RecvSetNativeChildWindow(%p)\n",
         (void*)aChildWindow);
   mWidget->SetNativeData(NS_NATIVE_CHILD_WINDOW, aChildWindow);
-  return true;
-#else
-  NS_NOTREACHED("PluginWidgetParent::RecvSetNativeChildWindow not implemented!");
-  return false;
-#endif
+  return IPC_OK();
 }
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla

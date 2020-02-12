@@ -1,5 +1,5 @@
 
-g = newGlobal();
+g = newGlobal({newCompartment: true});
 g.parent = this;
 g.eval("(" + function() {
     Debugger(parent).onExceptionUnwind = function(frame) {
@@ -20,7 +20,7 @@ function check(expr, expected = expr) {
     for ([end, err] of[[".random_prop", " is undefined" ]]) 
          statement = "o = {};" + expr + end;
          cases = [
-            function() ieval("var undef;" + statement),
+            function() { return ieval("var undef;" + statement); },
             Function(statement)
         ]
         for (f of cases) 

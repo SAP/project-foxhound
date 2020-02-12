@@ -1,0 +1,15 @@
+dist: bionic
+language: cpp
+
+git:
+ depth: 3
+
+install:
+- cp taintfox_mozconfig_spidermonkey .mozconfig
+- ./mach bootstrap --application-choice=browser --no-interactive
+- sudo pip install six
+
+script:
+- ./mach build
+- obj-spider-release/dist/bin/js js/src/Y.js
+- js/src/tests/jstests.py obj-spider-release/dist/bin/js taint

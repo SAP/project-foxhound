@@ -42,12 +42,6 @@ interface nsIAutoCompleteSimpleResult : nsIAutoCompleteResult
   void setSearchResult(in unsigned short aSearchResult);
 
   /**
-   * A writer for the readonly attribute 'typeAheadResult', typically set
-   * because a result is only intended for type-ahead completion.
-   */
-  void setTypeAheadResult(in boolean aHidden);
-
-  /**
    * Inserts a match consisting of the given value, comment, image, style and
    * the value to use for defaultIndex completion at a given position.
    * @param aIndex
@@ -93,6 +87,13 @@ interface nsIAutoCompleteSimpleResult : nsIAutoCompleteResult
                    [optional] in AString aStyle,
                    [optional] in AString aFinalCompleteValue,
                    [optional] in AString aLabel);
+
+  /**
+   * Removes an existing match.
+   * @note this is different from removeValueAt, since it's not a consequence of
+   * a user action, and as such it won't notify onValueRemoved.
+   */
+  void removeMatchAt(in long aIndex);
 
   /**
    * Gets the listener for changes in the result.

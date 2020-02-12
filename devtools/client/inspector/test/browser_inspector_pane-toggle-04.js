@@ -1,65 +1,55 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
-   http://creativecommons.org/publicdomain/zero/1.0/ */
+ http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
-let { Toolbox } = require("devtools/client/framework/toolbox");
+// Tests that the 3 pane inspector toggle button can render the bottom-left and
+// bottom-right panels of equal sizes in the SIDE host.
 
-// Test that the dimensions of the collapsed inspector panel are not modified
-// when switching from horizontal to vertical layout, which is mandatory to make
-// sure the panel remains visually hidden (using negative margins).
+add_task(async function() {
+  info("Switch to 2 pane inspector to test the 3 pane toggle button behavior");
+  await pushPref("devtools.inspector.three-pane-enabled", false);
 
-add_task(function* () {
-  info("Set temporary preferences to ensure a small sidebar width.");
-  yield new Promise(resolve => {
-    let options = {"set": [
-      ["devtools.toolsidebar-width.inspector", 200]
-    ]};
-    SpecialPowers.pushPrefEnv(options, resolve);
-  });
+  const { inspector, toolbox } = await openInspectorForURL("about:blank");
+  const { panelDoc: doc } = inspector;
 
-  let { inspector, toolbox } = yield openInspectorForURL("about:blank");
-  let button = inspector.panelDoc.querySelector(".sidebar-toggle");
-  let panel = inspector.panelDoc.querySelector("#inspector-sidebar-container");
+  info("Switch the host to the right");
+  await toolbox.switchHost("right");
 
-  info("Changing toolbox host to a window.");
-  yield toolbox.switchHost(Toolbox.HostType.WINDOW);
+  // Switching hosts is not correctly waiting when DevTools run in content frame
+  // See Bug 1571421.
+  await wait(1000);
 
-  let hostWindow = toolbox._host._window;
-  let originalWidth = hostWindow.outerWidth;
-  let originalHeight = hostWindow.outerHeight;
+  const button = doc.querySelector(".sidebar-toggle");
+  const toolboxWidth = doc.getElementById("inspector-splitter-box").clientWidth;
 
-  info("Resizing window to switch to the horizontal layout.");
-  hostWindow.resizeTo(800, 300);
+  info("Click on the toggle button to toggle ON 3 pane inspector");
+  let onRuleViewAdded = inspector.once("ruleview-added");
+  EventUtils.synthesizeMouseAtCenter(
+    button,
+    {},
+    inspector.panelDoc.defaultView
+  );
+  await onRuleViewAdded;
 
-  // Check the sidebar is expanded when the test starts.
-  ok(!panel.classList.contains("pane-collapsed"), "The panel is in expanded state");
+  info("Checking the sizes of the 3 pane inspector");
+  const sidebarSplitBoxWidth = inspector.sidebarSplitBoxRef.current.state.width;
+  is(
+    sidebarSplitBoxWidth,
+    toolboxWidth / 2,
+    "Got correct sidebar split box width"
+  );
 
-  info("Collapse the inspector sidebar.");
-  let onTransitionEnd = once(panel, "transitionend");
-  EventUtils.synthesizeMouseAtCenter(button, {},
-    inspector.panelDoc.defaultView);
-  yield onTransitionEnd;
+  info("Click on the toggle button to toggle OFF the 3 pane inspector");
+  onRuleViewAdded = inspector.once("ruleview-added");
+  EventUtils.synthesizeMouseAtCenter(
+    button,
+    {},
+    inspector.panelDoc.defaultView
+  );
+  await onRuleViewAdded;
 
-  ok(panel.classList.contains("pane-collapsed"), "The panel is in collapsed state");
-  let currentPanelHeight = panel.getBoundingClientRect().height;
-  let currentPanelMarginBottom = panel.style.marginBottom;
-
-  info("Resizing window to switch to the vertical layout.");
-  hostWindow.resizeTo(300, 800);
-
-  // Check the panel is collapsed, and still has the same dimensions.
-  ok(panel.classList.contains("pane-collapsed"), "The panel is still collapsed");
-  is(panel.getBoundingClientRect().height, currentPanelHeight,
-    "The panel height has not been modified when changing the layout.");
-  is(panel.style.marginBottom, currentPanelMarginBottom,
-    "The panel margin-bottom has not been modified when changing the layout.");
-
-  info("Restoring window original size.");
-  hostWindow.resizeTo(originalWidth, originalHeight);
-});
-
-registerCleanupFunction(function () {
-  // Restore the host type for other tests.
-  Services.prefs.clearUserPref("devtools.toolbox.host");
+  info("Checking the sidebar size of the 2 pane inspector");
+  const sidebarWidth = inspector.splitBox.state.width;
+  is(sidebarWidth, toolboxWidth, "Got correct sidebar width");
 });

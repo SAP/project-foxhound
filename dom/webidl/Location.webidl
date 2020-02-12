@@ -11,42 +11,43 @@
  * and create derivative works of this document.
  */
 
-[Unforgeable, NonOrdinaryGetPrototypeOf]
+[Unforgeable,
+ Exposed=Window]
 interface Location {
   // Bug 824857: no support for stringifier attributes yet.
   //  stringifier attribute USVString href;
 
   // Bug 824857 should remove this.
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
   stringifier;
 
-  [Throws, CrossOriginWritable]
+  [Throws, CrossOriginWritable, NeedsSubjectPrincipal]
            attribute USVString href;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
   readonly attribute USVString origin;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString protocol;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString host;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString hostname;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString port;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString pathname;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString search;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
            attribute USVString hash;
 
-  [Throws, UnsafeInPrerendering]
+  [Throws, NeedsSubjectPrincipal]
   void assign(USVString url);
 
-  [Throws, CrossOriginCallable, UnsafeInPrerendering]
+  [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
   void replace(USVString url);
 
   // XXXbz there is no forceget argument in the spec!  See bug 1037721.
-  [Throws, UnsafeInPrerendering]
+  [Throws, NeedsSubjectPrincipal]
   void reload(optional boolean forceget = false);
 
   // Bug 1085214 [SameObject] readonly attribute USVString[] ancestorOrigins;

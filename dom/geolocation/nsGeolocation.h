@@ -15,20 +15,17 @@
 #include "nsTArray.h"
 #include "nsITimer.h"
 #include "nsIObserver.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsWrapperCache.h"
 
-#include "nsWeakPtr.h"
 #include "nsCycleCollectionParticipant.h"
 
 #include "nsGeoPosition.h"
-#include "nsIDOMEventListener.h"
-#include "nsIDOMGeoGeolocation.h"
 #include "nsIDOMGeoPosition.h"
-#include "nsIDOMGeoPositionError.h"
 #include "nsIDOMGeoPositionCallback.h"
 #include "nsIDOMGeoPositionErrorCallback.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/GeolocationBinding.h"
-#include "mozilla/dom/PositionErrorBinding.h"
 #include "mozilla/dom/CallbackObject.h"
 
 #include "nsIGeolocationProvider.h"
@@ -41,10 +38,13 @@ class nsGeolocationRequest;
 namespace mozilla {
 namespace dom {
 class Geolocation;
-typedef CallbackObjectHolder<PositionCallback, nsIDOMGeoPositionCallback> GeoPositionCallback;
-typedef CallbackObjectHolder<PositionErrorCallback, nsIDOMGeoPositionErrorCallback> GeoPositionErrorCallback;
-} // namespace dom
-} // namespace mozilla
+typedef CallbackObjectHolder<PositionCallback, nsIDOMGeoPositionCallback>
+    GeoPositionCallback;
+typedef CallbackObjectHolder<PositionErrorCallback,
+                             nsIDOMGeoPositionErrorCallback>
+    GeoPositionErrorCallback;
+}  // namespace dom
+}  // namespace mozilla
 
 struct CachedPositionAndAccuracy {
   nsCOMPtr<nsIDOMGeoPosition> position;
@@ -55,10 +55,8 @@ struct CachedPositionAndAccuracy {
  * Singleton that manages the geolocation provider
  */
 class nsGeolocationService final : public nsIGeolocationUpdate,
-                                   public nsIObserver
-{
-public:
-
+                                   public nsIObserver {
+ public:
   static already_AddRefed<nsGeolocationService> GetGeolocationService();
   static mozilla::StaticRefPtr<nsGeolocationService> sService;
 
@@ -66,14 +64,9 @@ public:
   NS_DECL_NSIGEOLOCATIONUPDATE
   NS_DECL_NSIOBSERVER
 
-  nsGeolocationService() {
-      mHigherAccuracy = false;
-  }
+  nsGeolocationService() { mHigherAccuracy = false; }
 
   nsresult Init();
-
-  void HandleMozsettingChanged(nsISupports* aSubject);
-  void HandleMozsettingValue(const bool aValue);
 
   // Management of the Geolocation objects
   void AddLocator(mozilla::dom::Geolocation* locator);
@@ -83,21 +76,20 @@ public:
   CachedPositionAndAccuracy GetCachedPosition();
 
   // Find and startup a geolocation device (gps, nmea, etc.)
+  MOZ_CAN_RUN_SCRIPT
   nsresult StartDevice(nsIPrincipal* aPrincipal);
 
   // Stop the started geolocation device (gps, nmea, etc.)
-  void     StopDevice();
+  void StopDevice();
 
   // create, or reinitalize the callback timer
-  void     SetDisconnectTimer();
-  void     StopDisconnectTimer();
+  void SetDisconnectTimer();
 
   // Update the accuracy and notify the provider if changed
-  void     UpdateAccuracy(bool aForceHigh = false);
-  bool     HighAccuracyRequested();
+  void UpdateAccuracy(bool aForceHigh = false);
+  bool HighAccuracyRequested();
 
-private:
-
+ private:
   ~nsGeolocationService();
 
   // Disconnect timer.  When this timer expires, it clears all pending callbacks
@@ -126,39 +118,43 @@ namespace dom {
 /**
  * Can return a geolocation info
  */
-class Geolocation final : public nsIDOMGeoGeolocation,
-                          public nsIGeolocationUpdate,
-                          public nsWrapperCache,
-                          public nsIDOMEventListener
-{
-public:
-
+class Geolocation final : public nsIGeolocationUpdate, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Geolocation, nsIDOMGeoGeolocation)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Geolocation)
 
   NS_DECL_NSIGEOLOCATIONUPDATE
-  NS_DECL_NSIDOMGEOGEOLOCATION
-
-  NS_DECL_NSIDOMEVENTLISTENER
 
   Geolocation();
 
   nsresult Init(nsPIDOMWindowInner* aContentDom = nullptr);
 
   nsPIDOMWindowInner* GetParentObject() const;
-  virtual JSObject* WrapObject(JSContext *aCtx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCtx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  int32_t WatchPosition(PositionCallback& aCallback, PositionErrorCallback* aErrorCallback, const PositionOptions& aOptions, ErrorResult& aRv);
-  void GetCurrentPosition(PositionCallback& aCallback, PositionErrorCallback* aErrorCallback, const PositionOptions& aOptions, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT
+  int32_t WatchPosition(PositionCallback& aCallback,
+                        PositionErrorCallback* aErrorCallback,
+                        const PositionOptions& aOptions, CallerType aCallerType,
+                        ErrorResult& aRv);
+  void GetCurrentPosition(PositionCallback& aCallback,
+                          PositionErrorCallback* aErrorCallback,
+                          const PositionOptions& aOptions,
+                          CallerType aCallerType, ErrorResult& aRv);
+  void ClearWatch(int32_t aWatchId);
+
+  // A WatchPosition for C++ use.  Returns -1 if we failed to actually watch.
+  MOZ_CAN_RUN_SCRIPT
+  int32_t WatchPosition(nsIDOMGeoPositionCallback* aCallback,
+                        nsIDOMGeoPositionErrorCallback* aErrorCallback,
+                        UniquePtr<PositionOptions>&& aOptions);
 
   // Returns true if any of the callbacks are repeating
   bool HasActiveCallbacks();
 
   // Register an allowed request
   void NotifyAllowedRequest(nsGeolocationRequest* aRequest);
-
-  // Check if callbacks arrays already contain this request
-  bool ContainsRequest(nsGeolocationRequest* aRequest);
 
   // Remove request from all callbacks arrays
   void RemoveRequest(nsGeolocationRequest* request);
@@ -182,28 +178,35 @@ public:
   // Check to see if any active request requires high accuracy
   bool HighAccuracyRequested();
 
-  // Notification from the service:
-  void ServiceReady();
+  // Get the singleton non-window Geolocation instance.  This never returns
+  // null.
+  static already_AddRefed<Geolocation> NonWindowSingleton();
 
-private:
-
+ private:
   ~Geolocation();
 
   nsresult GetCurrentPosition(GeoPositionCallback aCallback,
                               GeoPositionErrorCallback aErrorCallback,
-                              nsAutoPtr<PositionOptions>&& aOptions);
-  nsresult WatchPosition(GeoPositionCallback aCallback,
-                         GeoPositionErrorCallback aErrorCallback,
-                         nsAutoPtr<PositionOptions>&& aOptions, int32_t* aRv);
+                              UniquePtr<PositionOptions>&& aOptions,
+                              CallerType aCallerType);
+  MOZ_CAN_RUN_SCRIPT
+  int32_t WatchPosition(GeoPositionCallback aCallback,
+                        GeoPositionErrorCallback aErrorCallback,
+                        UniquePtr<PositionOptions>&& aOptions,
+                        CallerType aCallerType, ErrorResult& aRv);
 
   bool RegisterRequestWithPrompt(nsGeolocationRequest* request);
 
-  // Methods for the service when it's ready to process requests:
-  nsresult GetCurrentPositionReady(nsGeolocationRequest* aRequest);
-  nsresult WatchPositionReady(nsGeolocationRequest* aRequest);
-
   // Check if clearWatch is already called
   bool IsAlreadyCleared(nsGeolocationRequest* aRequest);
+
+  // Returns whether the Geolocation object should block requests
+  // within a context that is not secure.
+  bool ShouldBlockInsecureRequests() const;
+
+  // Return whather the Feature 'geolocation' is blocked by FeaturePolicy
+  // directive.
+  bool FeaturePolicyBlocked() const;
 
   // Two callback arrays.  The first |mPendingCallbacks| holds objects for only
   // one callback and then they are released/removed from the array.  The second
@@ -221,7 +224,7 @@ private:
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
   // the protocols we want to measure
-  enum class ProtocolType: uint8_t { OTHER, HTTP, HTTPS };
+  enum class ProtocolType : uint8_t { OTHER, HTTP, HTTPS };
 
   // the protocol used to load the content
   ProtocolType mProtocolType;
@@ -237,42 +240,12 @@ private:
 
   // Array containing already cleared watch IDs
   nsTArray<int32_t> mClearedWatchIDs;
+
+  // Our cached non-window singleton.
+  static mozilla::StaticRefPtr<Geolocation> sNonWindowSingleton;
 };
 
-class PositionError final : public nsIDOMGeoPositionError,
-                            public nsWrapperCache
-{
-public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PositionError)
-
-  NS_DECL_NSIDOMGEOPOSITIONERROR
-
-  PositionError(Geolocation* aParent, int16_t aCode);
-
-  Geolocation* GetParentObject() const;
-
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  int16_t Code() const {
-    return mCode;
-  }
-
-  void NotifyCallback(const GeoPositionErrorCallback& callback);
-private:
-  ~PositionError();
-  int16_t mCode;
-  RefPtr<Geolocation> mParent;
-};
-
-} // namespace dom
-
-inline nsISupports*
-ToSupports(dom::Geolocation* aGeolocation)
-{
-  return ToSupports(static_cast<nsIDOMGeoGeolocation*>(aGeolocation));
-}
-
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* nsGeoLocation_h */

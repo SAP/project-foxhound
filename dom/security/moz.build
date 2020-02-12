@@ -4,15 +4,24 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('*'):
+    BUG_COMPONENT = ('Core', 'DOM: Security')
+
 TEST_DIRS += ['test']
 
+DIRS += [ 'featurepolicy' ]
+
 EXPORTS.mozilla.dom += [
-    'ContentVerifier.h',
+    'CSPEvalChecker.h',
+    'FramingChecker.h',
     'nsContentSecurityManager.h',
+    'nsContentSecurityUtils.h',
     'nsCSPContext.h',
     'nsCSPService.h',
     'nsCSPUtils.h',
     'nsMixedContentBlocker.h',
+    'PolicyTokenizer.h',
+    'ReferrerInfo.h',
     'SRICheck.h',
     'SRILogHelper.h',
     'SRIMetadata.h',
@@ -20,17 +29,23 @@ EXPORTS.mozilla.dom += [
 
 EXPORTS += [
     'nsContentSecurityManager.h',
+    'nsContentSecurityUtils.h',
     'nsMixedContentBlocker.h',
+    'ReferrerInfo.h',
 ]
 
 UNIFIED_SOURCES += [
-    'ContentVerifier.cpp',
+    'CSPEvalChecker.cpp',
+    'FramingChecker.cpp',
     'nsContentSecurityManager.cpp',
+    'nsContentSecurityUtils.cpp',
     'nsCSPContext.cpp',
     'nsCSPParser.cpp',
     'nsCSPService.cpp',
     'nsCSPUtils.cpp',
     'nsMixedContentBlocker.cpp',
+    'PolicyTokenizer.cpp',
+    'ReferrerInfo.cpp',
     'SRICheck.cpp',
     'SRIMetadata.cpp',
 ]
@@ -40,9 +55,16 @@ include('/ipc/chromium/chromium-config.mozbuild')
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/caps',
+    '/docshell/base',  # for nsDocShell.h
     '/netwerk/base',
+    '/netwerk/protocol/data', # for nsDataHandler.h
+    '/netwerk/protocol/http', # for HttpBaseChannel.h
 ]
 
-if CONFIG['GNU_CC']:
-    CFLAGS += ['-Wformat-security']
-    CXXFLAGS += ['-Wformat-security']
+include('/tools/fuzzing/libfuzzer-config.mozbuild')
+
+if CONFIG['FUZZING_INTERFACES']:
+    TEST_DIRS += [
+        'fuzztest'
+    ]
+

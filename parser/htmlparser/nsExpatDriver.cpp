@@ -8,15 +8,12 @@
 #include "nsParserCIID.h"
 #include "CParserContext.h"
 #include "nsIExpatSink.h"
-#include "nsIExtendedExpatSink.h"
 #include "nsIContentSink.h"
 #include "nsParserMsgUtils.h"
 #include "nsIURL.h"
 #include "nsIUnicharInputStream.h"
 #include "nsIProtocolHandler.h"
 #include "nsNetUtil.h"
-#include "prprf.h"
-#include "prmem.h"
 #include "nsTextFormatter.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsCRT.h"
@@ -28,28 +25,28 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsUnicharInputStream.h"
 #include "nsContentUtils.h"
-#include "nsNullPrincipal.h"
+#include "mozilla/NullPrincipal.h"
 
 #include "mozilla/Logging.h"
 
 using mozilla::fallible;
 using mozilla::LogLevel;
+using mozilla::MakeStringSpan;
+using mozilla::dom::Document;
 
 #define kExpatSeparatorChar 0xFFFF
 
-static const char16_t kUTF16[] = { 'U', 'T', 'F', '-', '1', '6', '\0' };
+static const char16_t kUTF16[] = {'U', 'T', 'F', '-', '1', '6', '\0'};
 
 static mozilla::LazyLogModule gExpatDriverLog("expatdriver");
 
 /***************************** EXPAT CALL BACKS ******************************/
 // The callback handlers that get called from the expat parser.
 
-static void
-Driver_HandleXMLDeclaration(void *aUserData,
-                            const XML_Char *aVersion,
-                            const XML_Char *aEncoding,
-                            int aStandalone)
-{
+static void Driver_HandleXMLDeclaration(void* aUserData,
+                                        const XML_Char* aVersion,
+                                        const XML_Char* aEncoding,
+                                        int aStandalone) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     nsExpatDriver* driver = static_cast<nsExpatDriver*>(aUserData);
@@ -57,33 +54,8 @@ Driver_HandleXMLDeclaration(void *aUserData,
   }
 }
 
-static void
-Driver_HandleStartElement(void *aUserData,
-                          const XML_Char *aName,
-                          const XML_Char **aAtts)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->HandleStartElement(aName,
-                                                                  aAtts);
-  }
-}
-
-static void
-Driver_HandleEndElement(void *aUserData,
-                        const XML_Char *aName)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->HandleEndElement(aName);
-  }
-}
-
-static void
-Driver_HandleCharacterData(void *aUserData,
-                           const XML_Char *aData,
-                           int aLength)
-{
+static void Driver_HandleCharacterData(void* aUserData, const XML_Char* aData,
+                                       int aLength) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     nsExpatDriver* driver = static_cast<nsExpatDriver*>(aUserData);
@@ -91,21 +63,16 @@ Driver_HandleCharacterData(void *aUserData,
   }
 }
 
-static void
-Driver_HandleComment(void *aUserData,
-                     const XML_Char *aName)
-{
+static void Driver_HandleComment(void* aUserData, const XML_Char* aName) {
   NS_ASSERTION(aUserData, "expat driver should exist");
-  if(aUserData) {
+  if (aUserData) {
     static_cast<nsExpatDriver*>(aUserData)->HandleComment(aName);
   }
 }
 
-static void
-Driver_HandleProcessingInstruction(void *aUserData,
-                                   const XML_Char *aTarget,
-                                   const XML_Char *aData)
-{
+static void Driver_HandleProcessingInstruction(void* aUserData,
+                                               const XML_Char* aTarget,
+                                               const XML_Char* aData) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     nsExpatDriver* driver = static_cast<nsExpatDriver*>(aUserData);
@@ -113,11 +80,8 @@ Driver_HandleProcessingInstruction(void *aUserData,
   }
 }
 
-static void
-Driver_HandleDefault(void *aUserData,
-                     const XML_Char *aData,
-                     int aLength)
-{
+static void Driver_HandleDefault(void* aUserData, const XML_Char* aData,
+                                 int aLength) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     nsExpatDriver* driver = static_cast<nsExpatDriver*>(aUserData);
@@ -125,119 +89,55 @@ Driver_HandleDefault(void *aUserData,
   }
 }
 
-static void
-Driver_HandleStartCdataSection(void *aUserData)
-{
+static void Driver_HandleStartCdataSection(void* aUserData) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     static_cast<nsExpatDriver*>(aUserData)->HandleStartCdataSection();
   }
 }
 
-static void
-Driver_HandleEndCdataSection(void *aUserData)
-{
+static void Driver_HandleEndCdataSection(void* aUserData) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     static_cast<nsExpatDriver*>(aUserData)->HandleEndCdataSection();
   }
 }
 
-static void
-Driver_HandleStartDoctypeDecl(void *aUserData,
-                              const XML_Char *aDoctypeName,
-                              const XML_Char *aSysid,
-                              const XML_Char *aPubid,
-                              int aHasInternalSubset)
-{
+static void Driver_HandleStartDoctypeDecl(void* aUserData,
+                                          const XML_Char* aDoctypeName,
+                                          const XML_Char* aSysid,
+                                          const XML_Char* aPubid,
+                                          int aHasInternalSubset) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->
-      HandleStartDoctypeDecl(aDoctypeName, aSysid, aPubid, !!aHasInternalSubset);
+    static_cast<nsExpatDriver*>(aUserData)->HandleStartDoctypeDecl(
+        aDoctypeName, aSysid, aPubid, !!aHasInternalSubset);
   }
 }
 
-static void
-Driver_HandleEndDoctypeDecl(void *aUserData)
-{
+static void Driver_HandleEndDoctypeDecl(void* aUserData) {
   NS_ASSERTION(aUserData, "expat driver should exist");
   if (aUserData) {
     static_cast<nsExpatDriver*>(aUserData)->HandleEndDoctypeDecl();
   }
 }
 
-static int
-Driver_HandleExternalEntityRef(void *aExternalEntityRefHandler,
-                               const XML_Char *aOpenEntityNames,
-                               const XML_Char *aBase,
-                               const XML_Char *aSystemId,
-                               const XML_Char *aPublicId)
-{
+static int Driver_HandleExternalEntityRef(void* aExternalEntityRefHandler,
+                                          const XML_Char* aOpenEntityNames,
+                                          const XML_Char* aBase,
+                                          const XML_Char* aSystemId,
+                                          const XML_Char* aPublicId) {
   NS_ASSERTION(aExternalEntityRefHandler, "expat driver should exist");
   if (!aExternalEntityRefHandler) {
     return 1;
   }
 
-  nsExpatDriver* driver = static_cast<nsExpatDriver*>
-                                     (aExternalEntityRefHandler);
+  nsExpatDriver* driver =
+      static_cast<nsExpatDriver*>(aExternalEntityRefHandler);
 
   return driver->HandleExternalEntityRef(aOpenEntityNames, aBase, aSystemId,
                                          aPublicId);
 }
-
-static void
-Driver_HandleStartNamespaceDecl(void *aUserData,
-                                const XML_Char *aPrefix,
-                                const XML_Char *aUri)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->
-      HandleStartNamespaceDecl(aPrefix, aUri);
-  }
-}
-
-static void
-Driver_HandleEndNamespaceDecl(void *aUserData,
-                              const XML_Char *aPrefix)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->
-      HandleEndNamespaceDecl(aPrefix);
-  }
-}
-
-static void
-Driver_HandleNotationDecl(void *aUserData,
-                          const XML_Char *aNotationName,
-                          const XML_Char *aBase,
-                          const XML_Char *aSysid,
-                          const XML_Char *aPubid)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->
-      HandleNotationDecl(aNotationName, aBase, aSysid, aPubid);
-  }
-}
-
-static void
-Driver_HandleUnparsedEntityDecl(void *aUserData,
-                                const XML_Char *aEntityName,
-                                const XML_Char *aBase,
-                                const XML_Char *aSysid,
-                                const XML_Char *aPubid,
-                                const XML_Char *aNotationName)
-{
-  NS_ASSERTION(aUserData, "expat driver should exist");
-  if (aUserData) {
-    static_cast<nsExpatDriver*>(aUserData)->
-      HandleUnparsedEntityDecl(aEntityName, aBase, aSysid, aPubid,
-                               aNotationName);
-  }
-}
-
 
 /***************************** END CALL BACKS ********************************/
 
@@ -257,21 +157,19 @@ struct nsCatalogData {
 
 // The order of this table is guestimated to be in the optimum order
 static const nsCatalogData kCatalogTable[] = {
-  { "-//W3C//DTD XHTML 1.0 Transitional//EN",    "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML 1.1//EN",                 "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML 1.0 Strict//EN",          "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML 1.0 Frameset//EN",        "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML Basic 1.0//EN",           "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML 1.1 plus MathML 2.0//EN", "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD XHTML 1.1 plus MathML 2.0 plus SVG 1.1//EN", "htmlmathml-f.ent", nullptr },
-  { "-//W3C//DTD MathML 2.0//EN",                "htmlmathml-f.ent", nullptr },
-  { "-//WAPFORUM//DTD XHTML Mobile 1.0//EN",     "htmlmathml-f.ent", nullptr },
-  { nullptr, nullptr, nullptr }
-};
+    {"-//W3C//DTD XHTML 1.0 Transitional//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML 1.1//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML 1.0 Strict//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML 1.0 Frameset//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML Basic 1.0//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML 1.1 plus MathML 2.0//EN", "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD XHTML 1.1 plus MathML 2.0 plus SVG 1.1//EN",
+     "htmlmathml-f.ent", nullptr},
+    {"-//W3C//DTD MathML 2.0//EN", "htmlmathml-f.ent", nullptr},
+    {"-//WAPFORUM//DTD XHTML Mobile 1.0//EN", "htmlmathml-f.ent", nullptr},
+    {nullptr, nullptr, nullptr}};
 
-static const nsCatalogData*
-LookupCatalogData(const char16_t* aPublicID)
-{
+static const nsCatalogData* LookupCatalogData(const char16_t* aPublicID) {
   nsDependentString publicID(aPublicID);
 
   // linear search for now since the number of entries is going to
@@ -288,16 +186,14 @@ LookupCatalogData(const char16_t* aPublicID)
   return nullptr;
 }
 
-// This function provides a resource URI to a local DTD 
+// This function provides a resource URI to a local DTD
 // in resource://gre/res/dtd/ which may or may not exist.
 // If aCatalogData is provided, it is used to remap the
-// DTD instead of taking the filename from the URI.
-static void
-GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
-              nsIURI** aResult)
-{
-  NS_ASSERTION(aDTD, "Null parameter.");
-
+// DTD instead of taking the filename from the URI.  aDTD
+// may be null in some cases that are relying on
+// aCatalogData working for them.
+static void GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
+                           nsIURI** aResult) {
   nsAutoCString fileName;
   if (aCatalogData) {
     // remap the DTD to a known local DTD
@@ -311,6 +207,8 @@ GetLocalDTDURI(const nsCatalogData* aCatalogData, nsIURI* aDTD,
     // special DTD directory and it will be picked.
     nsCOMPtr<nsIURL> dtdURL = do_QueryInterface(aDTD);
     if (!dtdURL) {
+      // Not a URL with a filename, or maybe it was null.  Either way, nothing
+      // else we can do here.
       return;
     }
 
@@ -336,83 +234,120 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsExpatDriver)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsExpatDriver)
 
-NS_IMPL_CYCLE_COLLECTION(nsExpatDriver, mSink, mExtendedSink)
+NS_IMPL_CYCLE_COLLECTION(nsExpatDriver, mSink)
 
 nsExpatDriver::nsExpatDriver()
-  : mExpatParser(nullptr),
-    mInCData(false),
-    mInInternalSubset(false),
-    mInExternalDTD(false),
-    mMadeFinalCallToExpat(false),
-    mIsFinalChunk(false),
-    mInternalState(NS_OK),
-    mExpatBuffered(0),
-    mCatalogData(nullptr),
-    mInnerWindowID(0)
-{
-}
+    : mExpatParser(nullptr),
+      mInCData(false),
+      mInInternalSubset(false),
+      mInExternalDTD(false),
+      mMadeFinalCallToExpat(false),
+      mIsFinalChunk(false),
+      mInternalState(NS_OK),
+      mExpatBuffered(0),
+      mCatalogData(nullptr),
+      mInnerWindowID(0) {}
 
-nsExpatDriver::~nsExpatDriver()
-{
+nsExpatDriver::~nsExpatDriver() {
   if (mExpatParser) {
     XML_ParserFree(mExpatParser);
   }
 }
 
-nsresult
-nsExpatDriver::HandleStartElement(const char16_t *aValue,
-                                  const char16_t **aAtts)
-{
-  NS_ASSERTION(mSink, "content sink not found!");
+/* static */
+void nsExpatDriver::HandleStartElement(void* aUserData, const char16_t* aName,
+                                       const char16_t** aAtts) {
+  nsExpatDriver* self = static_cast<nsExpatDriver*>(aUserData);
+
+  NS_ASSERTION(self->mSink, "content sink not found!");
 
   // Calculate the total number of elements in aAtts.
   // XML_GetSpecifiedAttributeCount will only give us the number of specified
   // attrs (twice that number, actually), so we have to check for default attrs
   // ourselves.
   uint32_t attrArrayLength;
-  for (attrArrayLength = XML_GetSpecifiedAttributeCount(mExpatParser);
-       aAtts[attrArrayLength];
-       attrArrayLength += 2) {
+  for (attrArrayLength = XML_GetSpecifiedAttributeCount(self->mExpatParser);
+       aAtts[attrArrayLength]; attrArrayLength += 2) {
     // Just looping till we find out what the length is
   }
 
-  if (mSink) {
-    nsresult rv = mSink->
-      HandleStartElement(aValue, aAtts, attrArrayLength,
-                         XML_GetCurrentLineNumber(mExpatParser));
-    MaybeStopParser(rv);
+  if (self->mSink) {
+    nsresult rv = self->mSink->HandleStartElement(
+        aName, aAtts, attrArrayLength,
+        XML_GetCurrentLineNumber(self->mExpatParser),
+        XML_GetCurrentColumnNumber(self->mExpatParser));
+    self->MaybeStopParser(rv);
   }
-
-  return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleEndElement(const char16_t *aValue)
-{
-  NS_ASSERTION(mSink, "content sink not found!");
-  NS_ASSERTION(mInternalState != NS_ERROR_HTMLPARSER_BLOCK,
+/* static */
+void nsExpatDriver::HandleStartElementForSystemPrincipal(
+    void* aUserData, const char16_t* aName, const char16_t** aAtts) {
+  nsExpatDriver* self = static_cast<nsExpatDriver*>(aUserData);
+
+  if (!MOZ_XML_ProcessingEntityValue(self->mExpatParser)) {
+    HandleStartElement(aUserData, aName, aAtts);
+  } else {
+    nsCOMPtr<Document> doc =
+        do_QueryInterface(self->mOriginalSink->GetTarget());
+
+    // Adjust the column number so that it is one based rather than zero based.
+    uint32_t colNumber = XML_GetCurrentColumnNumber(self->mExpatParser) + 1;
+    uint32_t lineNumber = XML_GetCurrentLineNumber(self->mExpatParser);
+
+    int32_t nameSpaceID;
+    RefPtr<nsAtom> prefix, localName;
+    nsContentUtils::SplitExpatName(aName, getter_AddRefs(prefix),
+                                   getter_AddRefs(localName), &nameSpaceID);
+
+    nsAutoString error;
+    error.AppendLiteral("Ignoring element <");
+    if (prefix) {
+      error.Append(prefix->GetUTF16String());
+      error.Append(':');
+    }
+    error.Append(localName->GetUTF16String());
+    error.AppendLiteral("> created from entity value.");
+
+    nsContentUtils::ReportToConsoleNonLocalized(
+        error, nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XML Document"),
+        doc, nullptr, EmptyString(), lineNumber, colNumber);
+  }
+}
+
+/* static */
+void nsExpatDriver::HandleEndElement(void* aUserData, const char16_t* aName) {
+  nsExpatDriver* self = static_cast<nsExpatDriver*>(aUserData);
+
+  NS_ASSERTION(self->mSink, "content sink not found!");
+  NS_ASSERTION(self->mInternalState != NS_ERROR_HTMLPARSER_BLOCK,
                "Shouldn't block from HandleStartElement.");
 
-  if (mSink && mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
-    nsresult rv = mSink->HandleEndElement(aValue);
-    MaybeStopParser(rv);
+  if (self->mSink && self->mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
+    nsresult rv = self->mSink->HandleEndElement(aName);
+    self->MaybeStopParser(rv);
   }
-
-  return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleCharacterData(const char16_t *aValue,
-                                   const uint32_t aLength)
-{
+/* static */
+void nsExpatDriver::HandleEndElementForSystemPrincipal(void* aUserData,
+                                                       const char16_t* aName) {
+  nsExpatDriver* self = static_cast<nsExpatDriver*>(aUserData);
+
+  if (!MOZ_XML_ProcessingEntityValue(self->mExpatParser)) {
+    HandleEndElement(aUserData, aName);
+  }
+}
+
+nsresult nsExpatDriver::HandleCharacterData(const char16_t* aValue,
+                                            const uint32_t aLength) {
   NS_ASSERTION(mSink, "content sink not found!");
 
   if (mInCData) {
     if (!mCDataText.Append(aValue, aLength, fallible)) {
       MaybeStopParser(NS_ERROR_OUT_OF_MEMORY);
     }
-  }
-  else if (mSink) {
+  } else if (mSink) {
     nsresult rv = mSink->HandleCharacterData(aValue, aLength);
     MaybeStopParser(rv);
   }
@@ -420,9 +355,7 @@ nsExpatDriver::HandleCharacterData(const char16_t *aValue,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleComment(const char16_t *aValue)
-{
+nsresult nsExpatDriver::HandleComment(const char16_t* aValue) {
   NS_ASSERTION(mSink, "content sink not found!");
 
   if (mInExternalDTD) {
@@ -434,8 +367,7 @@ nsExpatDriver::HandleComment(const char16_t *aValue)
     mInternalSubset.AppendLiteral("<!--");
     mInternalSubset.Append(aValue);
     mInternalSubset.AppendLiteral("-->");
-  }
-  else if (mSink) {
+  } else if (mSink) {
     nsresult rv = mSink->HandleComment(aValue);
     MaybeStopParser(rv);
   }
@@ -443,10 +375,8 @@ nsExpatDriver::HandleComment(const char16_t *aValue)
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleProcessingInstruction(const char16_t *aTarget,
-                                           const char16_t *aData)
-{
+nsresult nsExpatDriver::HandleProcessingInstruction(const char16_t* aTarget,
+                                                    const char16_t* aData) {
   NS_ASSERTION(mSink, "content sink not found!");
 
   if (mInExternalDTD) {
@@ -461,8 +391,7 @@ nsExpatDriver::HandleProcessingInstruction(const char16_t *aTarget,
     mInternalSubset.Append(' ');
     mInternalSubset.Append(aData);
     mInternalSubset.AppendLiteral("?>");
-  }
-  else if (mSink) {
+  } else if (mSink) {
     nsresult rv = mSink->HandleProcessingInstruction(aTarget, aData);
     MaybeStopParser(rv);
   }
@@ -470,11 +399,9 @@ nsExpatDriver::HandleProcessingInstruction(const char16_t *aTarget,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleXMLDeclaration(const char16_t *aVersion,
-                                    const char16_t *aEncoding,
-                                    int32_t aStandalone)
-{
+nsresult nsExpatDriver::HandleXMLDeclaration(const char16_t* aVersion,
+                                             const char16_t* aEncoding,
+                                             int32_t aStandalone) {
   if (mSink) {
     nsresult rv = mSink->HandleXMLDeclaration(aVersion, aEncoding, aStandalone);
     MaybeStopParser(rv);
@@ -483,10 +410,8 @@ nsExpatDriver::HandleXMLDeclaration(const char16_t *aVersion,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleDefault(const char16_t *aValue,
-                             const uint32_t aLength)
-{
+nsresult nsExpatDriver::HandleDefault(const char16_t* aValue,
+                                      const uint32_t aLength) {
   NS_ASSERTION(mSink, "content sink not found!");
 
   if (mInExternalDTD) {
@@ -496,8 +421,7 @@ nsExpatDriver::HandleDefault(const char16_t *aValue,
 
   if (mInInternalSubset) {
     mInternalSubset.Append(aValue, aLength);
-  }
-  else if (mSink) {
+  } else if (mSink) {
     uint32_t i;
     nsresult rv = mInternalState;
     for (i = 0; i < aLength && NS_SUCCEEDED(rv); ++i) {
@@ -511,23 +435,19 @@ nsExpatDriver::HandleDefault(const char16_t *aValue,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleStartCdataSection()
-{
+nsresult nsExpatDriver::HandleStartCdataSection() {
   mInCData = true;
 
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleEndCdataSection()
-{
+nsresult nsExpatDriver::HandleEndCdataSection() {
   NS_ASSERTION(mSink, "content sink not found!");
 
   mInCData = false;
   if (mSink) {
-    nsresult rv = mSink->HandleCDataSection(mCDataText.get(),
-                                            mCDataText.Length());
+    nsresult rv =
+        mSink->HandleCDataSection(mCDataText.get(), mCDataText.Length());
     MaybeStopParser(rv);
   }
   mCDataText.Truncate();
@@ -535,72 +455,13 @@ nsExpatDriver::HandleEndCdataSection()
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleStartNamespaceDecl(const char16_t* aPrefix,
-                                        const char16_t* aUri)
-{
-  if (mExtendedSink) {
-    nsresult rv = mExtendedSink->HandleStartNamespaceDecl(aPrefix, aUri);
-    MaybeStopParser(rv);
-  }
-  return NS_OK;
-}
-
-nsresult
-nsExpatDriver::HandleEndNamespaceDecl(const char16_t* aPrefix)
-{
-  if (mExtendedSink && mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
-    nsresult rv = mExtendedSink->HandleEndNamespaceDecl(aPrefix);
-    MaybeStopParser(rv);
-  }
-  return NS_OK;
-}
-
-nsresult
-nsExpatDriver::HandleNotationDecl(const char16_t* aNotationName,
-                                  const char16_t* aBase,
-                                  const char16_t* aSysid,
-                                  const char16_t* aPubid)
-{
-  if (mExtendedSink) {
-    nsresult rv = mExtendedSink->HandleNotationDecl(aNotationName, aSysid,
-                                                    aPubid);
-    MaybeStopParser(rv);
-  }
-  return NS_OK;
-}
-
-nsresult
-nsExpatDriver::HandleUnparsedEntityDecl(const char16_t* aEntityName,
-                                        const char16_t* aBase,
-                                        const char16_t* aSysid,
-                                        const char16_t* aPubid,
-                                        const char16_t* aNotationName)
-{
-  if (mExtendedSink) {
-    nsresult rv = mExtendedSink->HandleUnparsedEntityDecl(aEntityName,
-                                                          aSysid,
-                                                          aPubid,
-                                                          aNotationName);
-    MaybeStopParser(rv);
-  }
-  return NS_OK;
-}
-
-nsresult
-nsExpatDriver::HandleStartDoctypeDecl(const char16_t* aDoctypeName,
-                                      const char16_t* aSysid,
-                                      const char16_t* aPubid,
-                                      bool aHasInternalSubset)
-{
+nsresult nsExpatDriver::HandleStartDoctypeDecl(const char16_t* aDoctypeName,
+                                               const char16_t* aSysid,
+                                               const char16_t* aPubid,
+                                               bool aHasInternalSubset) {
   mDoctypeName = aDoctypeName;
   mSystemID = aSysid;
   mPublicID = aPubid;
-
-  if (mExtendedSink) {
-    nsresult rv = mExtendedSink->HandleStartDTD(aDoctypeName, aSysid, aPubid);
-    MaybeStopParser(rv);
-  }
 
   if (aHasInternalSubset) {
     // Consuming a huge internal subset translates to numerous
@@ -616,9 +477,7 @@ nsExpatDriver::HandleStartDoctypeDecl(const char16_t* aDoctypeName,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleEndDoctypeDecl()
-{
+nsresult nsExpatDriver::HandleEndDoctypeDecl() {
   NS_ASSERTION(mSink, "content sink not found!");
 
   mInInternalSubset = false;
@@ -644,22 +503,19 @@ nsExpatDriver::HandleEndDoctypeDecl()
                                            mSystemID, mPublicID, data);
     MaybeStopParser(rv);
   }
-  
-  mInternalSubset.SetCapacity(0);
+
+  mInternalSubset.Truncate();
 
   return NS_OK;
 }
 
-static nsresult
-ExternalDTDStreamReaderFunc(nsIUnicharInputStream* aIn,
-                            void* aClosure,
-                            const char16_t* aFromSegment,
-                            uint32_t aToOffset,
-                            uint32_t aCount,
-                            uint32_t *aWriteCount)
-{
+static nsresult ExternalDTDStreamReaderFunc(nsIUnicharInputStream* aIn,
+                                            void* aClosure,
+                                            const char16_t* aFromSegment,
+                                            uint32_t aToOffset, uint32_t aCount,
+                                            uint32_t* aWriteCount) {
   // Pass the buffer to expat for parsing.
-  if (XML_Parse((XML_Parser)aClosure, (const char *)aFromSegment,
+  if (XML_Parse((XML_Parser)aClosure, (const char*)aFromSegment,
                 aCount * sizeof(char16_t), 0) == XML_STATUS_OK) {
     *aWriteCount = aCount;
 
@@ -671,12 +527,10 @@ ExternalDTDStreamReaderFunc(nsIUnicharInputStream* aIn,
   return NS_ERROR_FAILURE;
 }
 
-int
-nsExpatDriver::HandleExternalEntityRef(const char16_t *openEntityNames,
-                                       const char16_t *base,
-                                       const char16_t *systemId,
-                                       const char16_t *publicId)
-{
+int nsExpatDriver::HandleExternalEntityRef(const char16_t* openEntityNames,
+                                           const char16_t* base,
+                                           const char16_t* systemId,
+                                           const char16_t* publicId) {
   if (mInInternalSubset && !mInExternalDTD && openEntityNames) {
     mInternalSubset.Append(char16_t('%'));
     mInternalSubset.Append(nsDependentString(openEntityNames));
@@ -691,11 +545,11 @@ nsExpatDriver::HandleExternalEntityRef(const char16_t *openEntityNames,
   if (NS_FAILED(rv)) {
 #ifdef DEBUG
     nsCString message("Failed to open external DTD: publicId \"");
-    AppendUTF16toUTF8(publicId, message);
+    AppendUTF16toUTF8(MakeStringSpan(publicId), message);
     message += "\" systemId \"";
-    AppendUTF16toUTF8(systemId, message);
+    AppendUTF16toUTF8(MakeStringSpan(systemId), message);
     message += "\" base \"";
-    AppendUTF16toUTF8(base, message);
+    AppendUTF16toUTF8(MakeStringSpan(base), message);
     message += "\" URL \"";
     AppendUTF16toUTF8(absURL, message);
     message += "\"";
@@ -710,8 +564,8 @@ nsExpatDriver::HandleExternalEntityRef(const char16_t *openEntityNames,
 
   int result = 1;
   if (uniIn) {
-    XML_Parser entParser = XML_ExternalEntityParserCreate(mExpatParser, 0,
-                                                          kUTF16);
+    XML_Parser entParser =
+        XML_ExternalEntityParserCreate(mExpatParser, 0, kUTF16);
     if (entParser) {
       XML_SetBase(entParser, absURL.get());
 
@@ -734,28 +588,34 @@ nsExpatDriver::HandleExternalEntityRef(const char16_t *openEntityNames,
   return result;
 }
 
-nsresult
-nsExpatDriver::OpenInputStreamFromExternalDTD(const char16_t* aFPIStr,
-                                              const char16_t* aURLStr,
-                                              const char16_t* aBaseURL,
-                                              nsIInputStream** aStream,
-                                              nsAString& aAbsURL)
-{
+nsresult nsExpatDriver::OpenInputStreamFromExternalDTD(const char16_t* aFPIStr,
+                                                       const char16_t* aURLStr,
+                                                       const char16_t* aBaseURL,
+                                                       nsIInputStream** aStream,
+                                                       nsAString& aAbsURL) {
   nsCOMPtr<nsIURI> baseURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(baseURI),
-                          NS_ConvertUTF16toUTF8(aBaseURL));
+  nsresult rv =
+      NS_NewURI(getter_AddRefs(baseURI), NS_ConvertUTF16toUTF8(aBaseURL));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIURI> uri;
   rv = NS_NewURI(getter_AddRefs(uri), NS_ConvertUTF16toUTF8(aURLStr), nullptr,
                  baseURI);
-  NS_ENSURE_SUCCESS(rv, rv);
+  // Even if the URI is malformed (most likely because we have a
+  // non-hierarchical base URI and a relative DTD URI, with the latter
+  // being the normal XHTML DTD case), we can try to see whether we
+  // have catalog data for aFPIStr.
+  if (NS_WARN_IF(NS_FAILED(rv) && rv != NS_ERROR_MALFORMED_URI)) {
+    return rv;
+  }
 
-  // make sure the URI is allowed to be loaded in sync
+  // make sure the URI, if we have one, is allowed to be loaded in sync
   bool isUIResource = false;
-  rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_IS_UI_RESOURCE,
-                           &isUIResource);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (uri) {
+    rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_IS_UI_RESOURCE,
+                             &isUIResource);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   nsCOMPtr<nsIURI> localURI;
   if (!isUIResource) {
@@ -774,35 +634,41 @@ nsExpatDriver::OpenInputStreamFromExternalDTD(const char16_t* aFPIStr,
   nsCOMPtr<nsIChannel> channel;
   if (localURI) {
     localURI.swap(uri);
-    rv = NS_NewChannel(getter_AddRefs(channel),
-                       uri,
+    rv = NS_NewChannel(getter_AddRefs(channel), uri,
                        nsContentUtils::GetSystemPrincipal(),
                        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                        nsIContentPolicy::TYPE_DTD);
-  }
-  else {
-    NS_ASSERTION(mSink == nsCOMPtr<nsIExpatSink>(do_QueryInterface(mOriginalSink)),
-                 "In nsExpatDriver::OpenInputStreamFromExternalDTD: "
-                 "mOriginalSink not the same object as mSink?");
-    nsCOMPtr<nsIPrincipal> loadingPrincipal;
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else {
+    NS_ASSERTION(
+        mSink == nsCOMPtr<nsIExpatSink>(do_QueryInterface(mOriginalSink)),
+        "In nsExpatDriver::OpenInputStreamFromExternalDTD: "
+        "mOriginalSink not the same object as mSink?");
+    nsContentPolicyType policyType = nsIContentPolicy::TYPE_INTERNAL_DTD;
     if (mOriginalSink) {
-      nsCOMPtr<nsIDocument> doc;
+      nsCOMPtr<Document> doc;
       doc = do_QueryInterface(mOriginalSink->GetTarget());
       if (doc) {
-        loadingPrincipal = doc->NodePrincipal();
+        if (doc->SkipDTDSecurityChecks()) {
+          policyType = nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD;
+        }
+        rv = NS_NewChannel(getter_AddRefs(channel), uri, doc,
+                           nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
+                               nsILoadInfo::SEC_ALLOW_CHROME,
+                           policyType);
+        NS_ENSURE_SUCCESS(rv, rv);
       }
     }
-    if (!loadingPrincipal) {
-      loadingPrincipal = nsNullPrincipal::Create();
+    if (!channel) {
+      nsCOMPtr<nsIPrincipal> nullPrincipal =
+          mozilla::NullPrincipal::CreateWithoutOriginAttributes();
+      rv = NS_NewChannel(getter_AddRefs(channel), uri, nullPrincipal,
+                         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
+                             nsILoadInfo::SEC_ALLOW_CHROME,
+                         policyType);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
-    rv = NS_NewChannel(getter_AddRefs(channel),
-                       uri,
-                       loadingPrincipal,
-                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS |
-                       nsILoadInfo::SEC_ALLOW_CHROME,
-                       nsIContentPolicy::TYPE_DTD);
   }
-  NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString absURL;
   rv = uri->GetSpec(absURL);
@@ -810,43 +676,30 @@ nsExpatDriver::OpenInputStreamFromExternalDTD(const char16_t* aFPIStr,
   CopyUTF8toUTF16(absURL, aAbsURL);
 
   channel->SetContentType(NS_LITERAL_CSTRING("application/xml"));
-  return channel->Open2(aStream);
+  return channel->Open(aStream);
 }
 
-static nsresult
-CreateErrorText(const char16_t* aDescription,
-                const char16_t* aSourceURL,
-                const uint32_t aLineNumber,
-                const uint32_t aColNumber,
-                nsString& aErrorString)
-{
+static nsresult CreateErrorText(const char16_t* aDescription,
+                                const char16_t* aSourceURL,
+                                const uint32_t aLineNumber,
+                                const uint32_t aColNumber,
+                                nsString& aErrorString) {
   aErrorString.Truncate();
 
   nsAutoString msg;
-  nsresult rv =
-    nsParserMsgUtils::GetLocalizedStringByName(XMLPARSER_PROPERTIES,
-                                               "XMLParsingError", msg);
+  nsresult rv = nsParserMsgUtils::GetLocalizedStringByName(
+      XMLPARSER_PROPERTIES, "XMLParsingError", msg);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // XML Parsing Error: %1$S\nLocation: %2$S\nLine Number %3$u, Column %4$u:
-  char16_t *message = nsTextFormatter::smprintf(msg.get(), aDescription,
-                                                 aSourceURL, aLineNumber,
-                                                 aColNumber);
-  if (!message) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  aErrorString.Assign(message);
-  nsTextFormatter::smprintf_free(message);
-
+  nsTextFormatter::ssprintf(aErrorString, msg.get(), aDescription, aSourceURL,
+                            aLineNumber, aColNumber);
   return NS_OK;
 }
 
-static nsresult
-AppendErrorPointer(const int32_t aColNumber,
-                   const char16_t *aSourceLine,
-                   nsString& aSourceString)
-{
+static nsresult AppendErrorPointer(const int32_t aColNumber,
+                                   const char16_t* aSourceLine,
+                                   nsString& aSourceString) {
   aSourceString.Append(char16_t('\n'));
 
   // Last character will be '^'.
@@ -859,8 +712,7 @@ AppendErrorPointer(const int32_t aColNumber,
       uint32_t add = 8 - (minuses % 8);
       aSourceString.AppendASCII("--------", add);
       minuses += add;
-    }
-    else {
+    } else {
       aSourceString.Append(char16_t('-'));
       ++minuses;
     }
@@ -870,9 +722,7 @@ AppendErrorPointer(const int32_t aColNumber,
   return NS_OK;
 }
 
-nsresult
-nsExpatDriver::HandleError()
-{
+nsresult nsExpatDriver::HandleError() {
   int32_t code = XML_GetErrorCode(mExpatParser);
   NS_ASSERTION(code > XML_ERROR_NONE, "unexpected XML error code");
 
@@ -892,16 +742,15 @@ nsExpatDriver::HandleError()
      *  and we use 0xFFFF for the <separator>.
      *
      */
-    const char16_t *mismatch = MOZ_XML_GetMismatchedTag(mExpatParser);
-    const char16_t *uriEnd = nullptr;
-    const char16_t *nameEnd = nullptr;
-    const char16_t *pos;
+    const char16_t* mismatch = MOZ_XML_GetMismatchedTag(mExpatParser);
+    const char16_t* uriEnd = nullptr;
+    const char16_t* nameEnd = nullptr;
+    const char16_t* pos;
     for (pos = mismatch; *pos; ++pos) {
       if (*pos == kExpatSeparatorChar) {
         if (uriEnd) {
           nameEnd = pos;
-        }
-        else {
+        } else {
           uriEnd = pos;
         }
       }
@@ -913,22 +762,17 @@ nsExpatDriver::HandleError()
       tagName.Append(nameEnd + 1, pos - nameEnd - 1);
       tagName.Append(char16_t(':'));
     }
-    const char16_t *nameStart = uriEnd ? uriEnd + 1 : mismatch;
+    const char16_t* nameStart = uriEnd ? uriEnd + 1 : mismatch;
     tagName.Append(nameStart, (nameEnd ? nameEnd : pos) - nameStart);
-    
+
     nsAutoString msg;
-    nsParserMsgUtils::GetLocalizedStringByName(XMLPARSER_PROPERTIES,
-                                               "Expected", msg);
+    nsParserMsgUtils::GetLocalizedStringByName(XMLPARSER_PROPERTIES, "Expected",
+                                               msg);
 
     // . Expected: </%S>.
-    char16_t *message = nsTextFormatter::smprintf(msg.get(), tagName.get());
-    if (!message) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
+    nsAutoString message;
+    nsTextFormatter::ssprintf(message, msg.get(), tagName.get());
     description.Append(message);
-
-    nsTextFormatter::smprintf_free(message);
   }
 
   // Adjust the column number so that it is one based rather than zero based.
@@ -939,8 +783,6 @@ nsExpatDriver::HandleError()
   CreateErrorText(description.get(), XML_GetBase(mExpatParser), lineNumber,
                   colNumber, errorText);
 
-  NS_ASSERTION(mSink, "no sink?");
-
   nsAutoString sourceText(mLastLine);
   AppendErrorPointer(colNumber, mLastLine.get(), sourceText);
 
@@ -948,30 +790,33 @@ nsExpatDriver::HandleError()
   nsCOMPtr<nsIScriptError> serr(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
   nsresult rv = NS_ERROR_FAILURE;
   if (serr) {
-    rv = serr->InitWithWindowID(errorText,
-                                mURISpec,
-                                mLastLine,
-                                lineNumber, colNumber,
-                                nsIScriptError::errorFlag, "malformed-xml",
-                                mInnerWindowID);
+    rv = serr->InitWithWindowID(errorText, mURISpec, mLastLine, lineNumber,
+                                colNumber, nsIScriptError::errorFlag,
+                                "malformed-xml", mInnerWindowID);
   }
 
   // If it didn't initialize, we can't do any logging.
   bool shouldReportError = NS_SUCCEEDED(rv);
 
+  // mSink might be null here if our parser was terminated.
   if (mSink && shouldReportError) {
-    rv = mSink->ReportError(errorText.get(), 
-                            sourceText.get(), 
-                            serr, 
+    rv = mSink->ReportError(errorText.get(), sourceText.get(), serr,
                             &shouldReportError);
     if (NS_FAILED(rv)) {
       shouldReportError = true;
     }
   }
 
+  // mOriginalSink might be null here if our parser was terminated.
+  if (mOriginalSink) {
+    nsCOMPtr<Document> doc = do_QueryInterface(mOriginalSink->GetTarget());
+    if (doc && doc->SuppressParserErrorConsoleMessages()) {
+      shouldReportError = false;
+    }
+  }
+
   if (shouldReportError) {
-    nsCOMPtr<nsIConsoleService> cs
-      (do_GetService(NS_CONSOLESERVICE_CONTRACTID));  
+    nsCOMPtr<nsIConsoleService> cs(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
     if (cs) {
       cs->LogMessage(serr);
     }
@@ -980,19 +825,15 @@ nsExpatDriver::HandleError()
   return NS_ERROR_HTMLPARSER_STOPPARSING;
 }
 
-void
-nsExpatDriver::ParseBuffer(const char16_t *aBuffer,
-                           uint32_t aLength,
-                           bool aIsFinal,
-                           uint32_t *aConsumed)
-{
+void nsExpatDriver::ParseBuffer(const char16_t* aBuffer, uint32_t aLength,
+                                bool aIsFinal, uint32_t* aConsumed) {
   NS_ASSERTION((aBuffer && aLength != 0) || (!aBuffer && aLength == 0), "?");
   NS_ASSERTION(mInternalState != NS_OK || aIsFinal || aBuffer,
                "Useless call, we won't call Expat");
-  NS_PRECONDITION(!BlockedOrInterrupted() || !aBuffer,
-                  "Non-null buffer when resuming");
-  NS_PRECONDITION(XML_GetCurrentByteIndex(mExpatParser) % sizeof(char16_t) == 0,
-                  "Consumed part of a char16_t?");
+  MOZ_ASSERT(!BlockedOrInterrupted() || !aBuffer,
+             "Non-null buffer when resuming");
+  MOZ_ASSERT(XML_GetCurrentByteIndex(mExpatParser) % sizeof(char16_t) == 0,
+             "Consumed part of a char16_t?");
 
   if (mExpatParser && (mInternalState == NS_OK || BlockedOrInterrupted())) {
     int32_t parserBytesBefore = XML_GetCurrentByteIndex(mExpatParser);
@@ -1000,12 +841,10 @@ nsExpatDriver::ParseBuffer(const char16_t *aBuffer,
 
     XML_Status status;
     if (BlockedOrInterrupted()) {
-      mInternalState = NS_OK; // Resume in case we're blocked.
+      mInternalState = NS_OK;  // Resume in case we're blocked.
       status = XML_ResumeParser(mExpatParser);
-    }
-    else {
-      status = XML_Parse(mExpatParser,
-                         reinterpret_cast<const char*>(aBuffer),
+    } else {
+      status = XML_Parse(mExpatParser, reinterpret_cast<const char*>(aBuffer),
                          aLength * sizeof(char16_t), aIsFinal);
     }
 
@@ -1022,21 +861,19 @@ nsExpatDriver::ParseBuffer(const char16_t *aBuffer,
     NS_ASSERTION(*aConsumed <= aLength + mExpatBuffered,
                  "Too many bytes consumed?");
 
-    NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(), 
+    NS_ASSERTION(status != XML_STATUS_SUSPENDED || BlockedOrInterrupted(),
                  "Inconsistent expat suspension state.");
 
     if (status == XML_STATUS_ERROR) {
       mInternalState = NS_ERROR_HTMLPARSER_STOPPARSING;
     }
-  }
-  else {
+  } else {
     *aConsumed = 0;
   }
 }
 
 NS_IMETHODIMP
-nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
-{
+nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens) {
   // We keep the scanner pointing to the position where Expat will start
   // parsing.
   nsScannerIterator currentExpatPosition;
@@ -1052,8 +889,8 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
   aScanner.EndReading(end);
 
   MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-         ("Remaining in expat's buffer: %i, remaining in scanner: %i.",
-          mExpatBuffered, Distance(start, end)));
+          ("Remaining in expat's buffer: %i, remaining in scanner: %zu.",
+           mExpatBuffered, Distance(start, end)));
 
   // We want to call Expat if we have more buffers, or if we know there won't
   // be more buffers (and so we want to flush the remaining data), or if we're
@@ -1063,7 +900,7 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
     bool noMoreBuffers = start == end && mIsFinalChunk;
     bool blocked = BlockedOrInterrupted();
 
-    const char16_t *buffer;
+    const char16_t* buffer;
     uint32_t length;
     if (blocked || noMoreBuffers) {
       // If we're blocked we just resume Expat so we don't need a buffer, if
@@ -1072,33 +909,33 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
       length = 0;
 
       if (blocked) {
-        MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-               ("Resuming Expat, will parse data remaining in Expat's "
-                "buffer.\nContent of Expat's buffer:\n-----\n%s\n-----\n",
-                NS_ConvertUTF16toUTF8(currentExpatPosition.get(),
-                                      mExpatBuffered).get()));
-      }
-      else {
+        MOZ_LOG(
+            gExpatDriverLog, LogLevel::Debug,
+            ("Resuming Expat, will parse data remaining in Expat's "
+             "buffer.\nContent of Expat's buffer:\n-----\n%s\n-----\n",
+             NS_ConvertUTF16toUTF8(currentExpatPosition.get(), mExpatBuffered)
+                 .get()));
+      } else {
         NS_ASSERTION(mExpatBuffered == Distance(currentExpatPosition, end),
                      "Didn't pass all the data to Expat?");
-        MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-               ("Last call to Expat, will parse data remaining in Expat's "
-                "buffer.\nContent of Expat's buffer:\n-----\n%s\n-----\n",
-                NS_ConvertUTF16toUTF8(currentExpatPosition.get(),
-                                      mExpatBuffered).get()));
+        MOZ_LOG(
+            gExpatDriverLog, LogLevel::Debug,
+            ("Last call to Expat, will parse data remaining in Expat's "
+             "buffer.\nContent of Expat's buffer:\n-----\n%s\n-----\n",
+             NS_ConvertUTF16toUTF8(currentExpatPosition.get(), mExpatBuffered)
+                 .get()));
       }
-    }
-    else {
+    } else {
       buffer = start.get();
       length = uint32_t(start.size_forward());
 
       MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-             ("Calling Expat, will parse data remaining in Expat's buffer and "
-              "new data.\nContent of Expat's buffer:\n-----\n%s\n-----\nNew "
-              "data:\n-----\n%s\n-----\n",
-              NS_ConvertUTF16toUTF8(currentExpatPosition.get(),
-                                    mExpatBuffered).get(),
-              NS_ConvertUTF16toUTF8(start.get(), length).get()));
+              ("Calling Expat, will parse data remaining in Expat's buffer and "
+               "new data.\nContent of Expat's buffer:\n-----\n%s\n-----\nNew "
+               "data:\n-----\n%s\n-----\n",
+               NS_ConvertUTF16toUTF8(currentExpatPosition.get(), mExpatBuffered)
+                   .get(),
+               NS_ConvertUTF16toUTF8(start.get(), length).get()));
     }
 
     uint32_t consumed;
@@ -1123,12 +960,10 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
         if (!CopyUnicodeTo(startLastLine, currentExpatPosition, mLastLine)) {
           return (mInternalState = NS_ERROR_OUT_OF_MEMORY);
         }
-      }
-      else {
+      } else {
         // There was no line break in the consumed data, append the consumed
         // data.
-        if (!AppendUnicodeTo(oldExpatPosition,
-                             currentExpatPosition,
+        if (!AppendUnicodeTo(oldExpatPosition, currentExpatPosition,
                              mLastLine)) {
           return (mInternalState = NS_ERROR_OUT_OF_MEMORY);
         }
@@ -1139,8 +974,8 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
 
     if (BlockedOrInterrupted()) {
       MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-             ("Blocked or interrupted parser (probably for loading linked "
-              "stylesheets or scripts)."));
+              ("Blocked or interrupted parser (probably for loading linked "
+               "stylesheets or scripts)."));
 
       aScanner.SetPosition(currentExpatPosition, true);
       aScanner.Mark();
@@ -1162,7 +997,7 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
         while (lastLine != end) {
           length = uint32_t(lastLine.size_forward());
           uint32_t endOffset = 0;
-          const char16_t *buffer = lastLine.get();
+          const char16_t* buffer = lastLine.get();
           while (endOffset < length && buffer[endOffset] != '\n' &&
                  buffer[endOffset] != '\r') {
             ++endOffset;
@@ -1185,7 +1020,7 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
     // Either we have more buffers, or we were blocked (and we'll flush in the
     // next iteration), or we should have emptied Expat's buffer.
     NS_ASSERTION(!noMoreBuffers || blocked ||
-                 (mExpatBuffered == 0 && currentExpatPosition == end),
+                     (mExpatBuffered == 0 && currentExpatPosition == end),
                  "Unreachable data left in Expat's buffer");
 
     start.advance(length);
@@ -1200,17 +1035,15 @@ nsExpatDriver::ConsumeToken(nsScanner& aScanner, bool& aFlushTokens)
   aScanner.Mark();
 
   MOZ_LOG(gExpatDriverLog, LogLevel::Debug,
-         ("Remaining in expat's buffer: %i, remaining in scanner: %i.",
-          mExpatBuffered, Distance(currentExpatPosition, end)));
+          ("Remaining in expat's buffer: %i, remaining in scanner: %zu.",
+           mExpatBuffered, Distance(currentExpatPosition, end)));
 
-  return NS_SUCCEEDED(mInternalState) ? kEOF : NS_OK;
+  return NS_SUCCEEDED(mInternalState) ? NS_ERROR_HTMLPARSER_EOF : NS_OK;
 }
 
 NS_IMETHODIMP
 nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
-                              nsITokenizer* aTokenizer,
-                              nsIContentSink* aSink)
-{
+                              nsITokenizer* aTokenizer, nsIContentSink* aSink) {
   mSink = do_QueryInterface(aSink);
   if (!mSink) {
     NS_ERROR("nsExpatDriver didn't get an nsIExpatSink");
@@ -1221,14 +1054,9 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
 
   mOriginalSink = aSink;
 
-  static const XML_Memory_Handling_Suite memsuite =
-    {
-      (void *(*)(size_t))PR_Malloc,
-      (void *(*)(void *, size_t))PR_Realloc,
-      PR_Free
-    };
+  static const XML_Memory_Handling_Suite memsuite = {malloc, realloc, free};
 
-  static const char16_t kExpatSeparator[] = { kExpatSeparatorChar, '\0' };
+  static const char16_t kExpatSeparator[] = {kExpatSeparatorChar, '\0'};
 
   mExpatParser = XML_ParserCreate_MM(kUTF16, &memsuite, kExpatSeparator);
   NS_ENSURE_TRUE(mExpatParser, NS_ERROR_FAILURE);
@@ -1243,7 +1071,7 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
 
   XML_SetBase(mExpatParser, mURISpec.get());
 
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(mOriginalSink->GetTarget());
+  nsCOMPtr<Document> doc = do_QueryInterface(mOriginalSink->GetTarget());
   if (doc) {
     nsCOMPtr<nsPIDOMWindowOuter> win = doc->GetWindow();
     nsCOMPtr<nsPIDOMWindowInner> inner;
@@ -1251,8 +1079,8 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
       inner = win->GetCurrentInnerWindow();
     } else {
       bool aHasHadScriptHandlingObject;
-      nsIScriptGlobalObject *global =
-        doc->GetScriptHandlingObject(aHasHadScriptHandlingObject);
+      nsIScriptGlobalObject* global =
+          doc->GetScriptHandlingObject(aHasHadScriptHandlingObject);
       if (global) {
         inner = do_QueryInterface(global);
       }
@@ -1263,16 +1091,20 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
   }
 
   // Set up the callbacks
-  XML_SetXmlDeclHandler(mExpatParser, Driver_HandleXMLDeclaration); 
-  XML_SetElementHandler(mExpatParser, Driver_HandleStartElement,
-                        Driver_HandleEndElement);
+  XML_SetXmlDeclHandler(mExpatParser, Driver_HandleXMLDeclaration);
+  if (doc && doc->NodePrincipal()->IsSystemPrincipal()) {
+    XML_SetElementHandler(mExpatParser, HandleStartElementForSystemPrincipal,
+                          HandleEndElementForSystemPrincipal);
+  } else {
+    XML_SetElementHandler(mExpatParser, HandleStartElement, HandleEndElement);
+  }
   XML_SetCharacterDataHandler(mExpatParser, Driver_HandleCharacterData);
   XML_SetProcessingInstructionHandler(mExpatParser,
                                       Driver_HandleProcessingInstruction);
   XML_SetDefaultHandlerExpand(mExpatParser, Driver_HandleDefault);
-  XML_SetExternalEntityRefHandler(mExpatParser,
-                                  (XML_ExternalEntityRefHandler)
-                                          Driver_HandleExternalEntityRef);
+  XML_SetExternalEntityRefHandler(
+      mExpatParser,
+      (XML_ExternalEntityRefHandler)Driver_HandleExternalEntityRef);
   XML_SetExternalEntityRefHandlerArg(mExpatParser, this);
   XML_SetCommentHandler(mExpatParser, Driver_HandleComment);
   XML_SetCdataSectionHandler(mExpatParser, Driver_HandleStartCdataSection,
@@ -1283,53 +1115,32 @@ nsExpatDriver::WillBuildModel(const CParserContext& aParserContext,
   XML_SetDoctypeDeclHandler(mExpatParser, Driver_HandleStartDoctypeDecl,
                             Driver_HandleEndDoctypeDecl);
 
-  // If the sink is an nsIExtendedExpatSink,
-  // register some addtional handlers.
-  mExtendedSink = do_QueryInterface(mSink);
-  if (mExtendedSink) {
-    XML_SetNamespaceDeclHandler(mExpatParser,
-                                Driver_HandleStartNamespaceDecl,
-                                Driver_HandleEndNamespaceDecl);
-    XML_SetUnparsedEntityDeclHandler(mExpatParser,
-                                     Driver_HandleUnparsedEntityDecl);
-    XML_SetNotationDeclHandler(mExpatParser,
-                               Driver_HandleNotationDecl);
-  }
-
   // Set up the user data.
   XML_SetUserData(mExpatParser, this);
 
-  // XML must detect invalid character convertion
-  aParserContext.mScanner->OverrideReplacementCharacter(0xffff);
-
   return mInternalState;
 }
 
 NS_IMETHODIMP
-nsExpatDriver::BuildModel(nsITokenizer* aTokenizer, nsIContentSink* aSink)
-{
+nsExpatDriver::BuildModel(nsITokenizer* aTokenizer, nsIContentSink* aSink) {
   return mInternalState;
 }
 
 NS_IMETHODIMP
-nsExpatDriver::DidBuildModel(nsresult anErrorCode)
-{
+nsExpatDriver::DidBuildModel(nsresult anErrorCode) {
   mOriginalSink = nullptr;
   mSink = nullptr;
-  mExtendedSink = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsExpatDriver::WillTokenize(bool aIsFinalChunk)
-{
+nsExpatDriver::WillTokenize(bool aIsFinalChunk) {
   mIsFinalChunk = aIsFinalChunk;
   return NS_OK;
 }
 
 NS_IMETHODIMP_(void)
-nsExpatDriver::Terminate()
-{
+nsExpatDriver::Terminate() {
   // XXX - not sure what happens to the unparsed data.
   if (mExpatParser) {
     XML_StopParser(mExpatParser, XML_FALSE);
@@ -1338,34 +1149,22 @@ nsExpatDriver::Terminate()
 }
 
 NS_IMETHODIMP_(int32_t)
-nsExpatDriver::GetType()
-{
-  return NS_IPARSER_FLAG_XML;
-}
+nsExpatDriver::GetType() { return NS_IPARSER_FLAG_XML; }
 
 NS_IMETHODIMP_(nsDTDMode)
-nsExpatDriver::GetMode() const
-{
-  return eDTDMode_full_standards;
-}
+nsExpatDriver::GetMode() const { return eDTDMode_full_standards; }
 
 /*************************** Unused methods **********************************/
 
 NS_IMETHODIMP_(bool)
-nsExpatDriver::IsContainer(int32_t aTag) const
-{
-  return true;
-}
+nsExpatDriver::IsContainer(int32_t aTag) const { return true; }
 
 NS_IMETHODIMP_(bool)
-nsExpatDriver::CanContain(int32_t aParent,int32_t aChild) const
-{
+nsExpatDriver::CanContain(int32_t aParent, int32_t aChild) const {
   return true;
 }
 
-void
-nsExpatDriver::MaybeStopParser(nsresult aState)
-{
+void nsExpatDriver::MaybeStopParser(nsresult aState) {
   if (NS_FAILED(aState)) {
     // If we had a failure we want to override NS_ERROR_HTMLPARSER_INTERRUPTED
     // and we want to override NS_ERROR_HTMLPARSER_BLOCK but not with
@@ -1375,9 +1174,9 @@ nsExpatDriver::MaybeStopParser(nsresult aState)
         (mInternalState == NS_ERROR_HTMLPARSER_BLOCK &&
          aState != NS_ERROR_HTMLPARSER_INTERRUPTED)) {
       mInternalState = (aState == NS_ERROR_HTMLPARSER_INTERRUPTED ||
-                        aState == NS_ERROR_HTMLPARSER_BLOCK) ?
-                       aState :
-                       NS_ERROR_HTMLPARSER_STOPPARSING;
+                        aState == NS_ERROR_HTMLPARSER_BLOCK)
+                           ? aState
+                           : NS_ERROR_HTMLPARSER_STOPPARSING;
     }
 
     // If we get an error then we need to stop Expat (by calling XML_StopParser
@@ -1385,8 +1184,7 @@ nsExpatDriver::MaybeStopParser(nsresult aState)
     // interrupted we need to pause Expat (by calling XML_StopParser with
     // true as the last argument).
     XML_StopParser(mExpatParser, BlockedOrInterrupted());
-  }
-  else if (NS_SUCCEEDED(mInternalState)) {
+  } else if (NS_SUCCEEDED(mInternalState)) {
     // Only clobber mInternalState with the success code if we didn't block or
     // interrupt before.
     mInternalState = aState;

@@ -20,10 +20,15 @@ from mozbuild.configure import (
     ConfigureSandbox,
 )
 from mozbuild.util import exec_
+from mozbuild.shellutil import quote as shell_quote
 from mozpack import path as mozpath
 
 from buildconfig import topsrcdir
-from common import ConfigureTestSandbox, ensure_exe_extension
+from common import (
+    ConfigureTestSandbox,
+    ensure_exe_extension,
+    fake_short_path,
+)
 
 
 class TestChecksConfigure(unittest.TestCase):
@@ -179,8 +184,9 @@ class TestChecksConfigure(unittest.TestCase):
         config, out, status = self.get_result(
             'check_prog("FOO", ("unknown", "unknown-2", "known c"))')
         self.assertEqual(status, 0)
-        self.assertEqual(config, {'FOO': self.KNOWN_C})
-        self.assertEqual(out, "checking for foo... '%s'\n" % self.KNOWN_C)
+        self.assertEqual(config, {'FOO': fake_short_path(self.KNOWN_C)})
+        self.assertEqual(out, "checking for foo... %s\n"
+                              % shell_quote(fake_short_path(self.KNOWN_C)))
 
         config, out, status = self.get_result(
             'check_prog("FOO", ("unknown",))')
@@ -227,7 +233,6 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(config, {'FOO': self.KNOWN_A})
         self.assertEqual(out, 'checking for foo... %s\n' % self.KNOWN_A)
 
-
     def test_check_prog_with_args(self):
         config, out, status = self.get_result(
             'check_prog("FOO", ("unknown", "known-b", "known c"))',
@@ -259,8 +264,9 @@ class TestChecksConfigure(unittest.TestCase):
             'check_prog("FOO", ("unknown",))',
             ['FOO=known c'])
         self.assertEqual(status, 0)
-        self.assertEqual(config, {'FOO': self.KNOWN_C})
-        self.assertEqual(out, "checking for foo... '%s'\n" % self.KNOWN_C)
+        self.assertEqual(config, {'FOO': fake_short_path(self.KNOWN_C)})
+        self.assertEqual(out, "checking for foo... %s\n"
+                              % shell_quote(fake_short_path(self.KNOWN_C)))
 
         config, out, status = self.get_result(
             'check_prog("FOO", ("unknown", "unknown-2", "unknown 3"), '
@@ -405,7 +411,7 @@ class TestChecksConfigure(unittest.TestCase):
 
         with self.assertRaises(ConfigureError) as e:
             self.get_result(
-                'foo = depends("--help")(lambda h: ("a", "b"))\n'
+                'foo = depends(when=True)(lambda: ("a", "b"))\n'
                 'check_prog("FOO", ("known-a",), input=foo)'
             )
 
@@ -415,7 +421,7 @@ class TestChecksConfigure(unittest.TestCase):
 
         with self.assertRaises(ConfigureError) as e:
             self.get_result(
-                'foo = depends("--help")(lambda h: {"a": "b"})\n'
+                'foo = depends(when=True)(lambda: {"a": "b"})\n'
                 'check_prog("FOO", ("known-a",), input=foo)'
             )
 
@@ -424,7 +430,8 @@ class TestChecksConfigure(unittest.TestCase):
                          'single element, or a string')
 
     def test_check_prog_with_path(self):
-        config, out, status = self.get_result('check_prog("A", ("known-a",), paths=["/some/path"])')
+        config, out, status = self.get_result(
+            'check_prog("A", ("known-a",), paths=["/some/path"])')
         self.assertEqual(status, 1)
         self.assertEqual(config, {})
         self.assertEqual(out, textwrap.dedent('''\
@@ -467,75 +474,58 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertEqual(config, {})
         self.assertEqual(out, textwrap.dedent('''\
-            checking for a... 
+            checking for a... '''  # noqa  # trailing whitespace...
+                '''
             DEBUG: a: Trying known-a
             ERROR: Paths provided to find_program must be a list of strings, not %r
         ''' % mozpath.dirname(self.OTHER_A)))
 
     def test_java_tool_checks(self):
-        includes = ('util.configure', 'checks.configure', 'java.configure')
-
-        def mock_valid_javac(_, args):
-            if len(args) == 1 and args[0] == '-version':
-                return 0, '1.7', ''
-            self.fail("Unexpected arguments to mock_valid_javac: %s" % args)
-
         # A valid set of tools in a standard location.
         java = mozpath.abspath('/usr/bin/java')
-        javah = mozpath.abspath('/usr/bin/javah')
-        javac = mozpath.abspath('/usr/bin/javac')
-        jar = mozpath.abspath('/usr/bin/jar')
         jarsigner = mozpath.abspath('/usr/bin/jarsigner')
         keytool = mozpath.abspath('/usr/bin/keytool')
 
         paths = {
             java: None,
-            javah: None,
-            javac: mock_valid_javac,
-            jar: None,
             jarsigner: None,
             keytool: None,
         }
 
-        config, out, status = self.get_result(includes=includes, extra_paths=paths)
+        script = textwrap.dedent('''\
+                @depends('--help')
+                def host(_):
+                    return namespace(os='unknown')
+                include('%(topsrcdir)s/build/moz.configure/java.configure')
+            ''' % {'topsrcdir': topsrcdir})
+
+        config, out, status = self.get_result(command=script, extra_paths=paths)
         self.assertEqual(status, 0)
         self.assertEqual(config, {
             'JAVA': java,
-            'JAVAH': javah,
-            'JAVAC': javac,
-            'JAR': jar,
             'JARSIGNER': jarsigner,
             'KEYTOOL': keytool,
+            'MOZ_JAVA_CODE_COVERAGE': False,
         })
         self.assertEqual(out, textwrap.dedent('''\
              checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
              checking for jarsigner... %s
              checking for keytool... %s
-             checking for javac... %s
-             checking for javac version... 1.7
-        ''' % (java, javah, jar, jarsigner, keytool, javac)))
+        ''' % (java, jarsigner, keytool)))
 
         # An alternative valid set of tools referred to by JAVA_HOME.
         alt_java = mozpath.abspath('/usr/local/bin/java')
-        alt_javah = mozpath.abspath('/usr/local/bin/javah')
-        alt_javac = mozpath.abspath('/usr/local/bin/javac')
-        alt_jar = mozpath.abspath('/usr/local/bin/jar')
         alt_jarsigner = mozpath.abspath('/usr/local/bin/jarsigner')
         alt_keytool = mozpath.abspath('/usr/local/bin/keytool')
         alt_java_home = mozpath.dirname(mozpath.dirname(alt_java))
 
         paths.update({
             alt_java: None,
-            alt_javah: None,
-            alt_javac: mock_valid_javac,
-            alt_jar: None,
             alt_jarsigner: None,
             alt_keytool: None,
         })
 
-        config, out, status = self.get_result(includes=includes,
+        config, out, status = self.get_result(command=script,
                                               extra_paths=paths,
                                               environ={
                                                   'JAVA_HOME': alt_java_home,
@@ -544,28 +534,21 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(config, {
             'JAVA': alt_java,
-            'JAVAH': alt_javah,
-            'JAVAC': alt_javac,
-            'JAR': alt_jar,
             'JARSIGNER': alt_jarsigner,
             'KEYTOOL': alt_keytool,
+            'MOZ_JAVA_CODE_COVERAGE': False,
         })
         self.assertEqual(out, textwrap.dedent('''\
              checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
              checking for jarsigner... %s
              checking for keytool... %s
-             checking for javac... %s
-             checking for javac version... 1.7
-        ''' % (alt_java, alt_javah, alt_jar, alt_jarsigner,
-               alt_keytool, alt_javac)))
+        ''' % (alt_java, alt_jarsigner, alt_keytool)))
 
         # We can use --with-java-bin-path instead of JAVA_HOME to similar
         # effect.
         config, out, status = self.get_result(
+            command=script,
             args=['--with-java-bin-path=%s' % mozpath.dirname(alt_java)],
-            includes=includes,
             extra_paths=paths,
             environ={
                 'PATH': mozpath.dirname(java)
@@ -573,28 +556,21 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(config, {
             'JAVA': alt_java,
-            'JAVAH': alt_javah,
-            'JAVAC': alt_javac,
-            'JAR': alt_jar,
             'JARSIGNER': alt_jarsigner,
             'KEYTOOL': alt_keytool,
+            'MOZ_JAVA_CODE_COVERAGE': False,
         })
         self.assertEqual(out, textwrap.dedent('''\
              checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
              checking for jarsigner... %s
              checking for keytool... %s
-             checking for javac... %s
-             checking for javac version... 1.7
-        ''' % (alt_java, alt_javah, alt_jar, alt_jarsigner,
-               alt_keytool, alt_javac)))
+        ''' % (alt_java, alt_jarsigner, alt_keytool)))
 
         # If --with-java-bin-path and JAVA_HOME are both set,
         # --with-java-bin-path takes precedence.
         config, out, status = self.get_result(
+            command=script,
             args=['--with-java-bin-path=%s' % mozpath.dirname(alt_java)],
-            includes=includes,
             extra_paths=paths,
             environ={
                 'PATH': mozpath.dirname(java),
@@ -603,58 +579,36 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(config, {
             'JAVA': alt_java,
-            'JAVAH': alt_javah,
-            'JAVAC': alt_javac,
-            'JAR': alt_jar,
             'JARSIGNER': alt_jarsigner,
             'KEYTOOL': alt_keytool,
+            'MOZ_JAVA_CODE_COVERAGE': False,
         })
         self.assertEqual(out, textwrap.dedent('''\
              checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
              checking for jarsigner... %s
              checking for keytool... %s
-             checking for javac... %s
-             checking for javac version... 1.7
-        ''' % (alt_java, alt_javah, alt_jar, alt_jarsigner,
-               alt_keytool, alt_javac)))
+        ''' % (alt_java, alt_jarsigner, alt_keytool)))
 
-        def mock_old_javac(_, args):
-            if len(args) == 1 and args[0] == '-version':
-                return 0, '1.6.9', ''
-            self.fail("Unexpected arguments to mock_old_javac: %s" % args)
-
-        # An old javac is fatal.
-        paths[javac] = mock_old_javac
-        config, out, status = self.get_result(includes=includes,
-                                              extra_paths=paths,
-                                              environ={
-                                                  'PATH': mozpath.dirname(java)
-                                              })
-        self.assertEqual(status, 1)
+        # --enable-java-coverage should set MOZ_JAVA_CODE_COVERAGE.
+        config, out, status = self.get_result(
+            command=script,
+            args=['--enable-java-coverage'],
+            extra_paths=paths,
+            environ={
+                'PATH': mozpath.dirname(java),
+                'JAVA_HOME': mozpath.dirname(mozpath.dirname(java)),
+            })
+        self.assertEqual(status, 0)
         self.assertEqual(config, {
             'JAVA': java,
-            'JAVAH': javah,
-            'JAVAC': javac,
-            'JAR': jar,
             'JARSIGNER': jarsigner,
             'KEYTOOL': keytool,
+            'MOZ_JAVA_CODE_COVERAGE': True,
         })
-        self.assertEqual(out, textwrap.dedent('''\
-             checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
-             checking for jarsigner... %s
-             checking for keytool... %s
-             checking for javac... %s
-             checking for javac version... 
-             ERROR: javac 1.7 or higher is required (found 1.6.9)
-        ''' % (java, javah, jar, jarsigner, keytool, javac)))
 
         # Any missing tool is fatal when these checks run.
         del paths[jarsigner]
-        config, out, status = self.get_result(includes=includes,
+        config, out, status = self.get_result(command=script,
                                               extra_paths=paths,
                                               environ={
                                                   'PATH': mozpath.dirname(java)
@@ -662,24 +616,23 @@ class TestChecksConfigure(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertEqual(config, {
             'JAVA': java,
-            'JAVAH': javah,
-            'JAR': jar,
             'JARSIGNER': ':',
         })
         self.assertEqual(out, textwrap.dedent('''\
              checking for java... %s
-             checking for javah... %s
-             checking for jar... %s
              checking for jarsigner... not found
-             ERROR: The program jarsigner was not found.  Set $JAVA_HOME to your Java SDK directory or use '--with-java-bin-path={java-bin-dir}'
-        ''' % (java, javah, jar)))
+             ERROR: The program jarsigner was not found.  Set $JAVA_HOME to your \
+Java SDK directory or use '--with-java-bin-path={java-bin-dir}'
+        ''' % (java)
+            ),
+        )
 
     def test_pkg_check_modules(self):
         mock_pkg_config_version = '0.10.0'
         mock_pkg_config_path = mozpath.abspath('/usr/bin/pkg-config')
 
         def mock_pkg_config(_, args):
-            if args[0:2] == ['--errors-to-stdout', '--print-errors']:
+            if args[0:2] == ('--errors-to-stdout', '--print-errors'):
                 assert len(args) == 3
                 package = args[2]
                 if package == 'unknown':
@@ -699,15 +652,24 @@ class TestChecksConfigure(unittest.TestCase):
                 return 0, '-l%s' % args[1], ''
             if args[0] == '--version':
                 return 0, mock_pkg_config_version, ''
-            self.fail("Unexpected arguments to mock_pkg_config: %s" % args)
+            self.fail("Unexpected arguments to mock_pkg_config: %s" % (args,))
+
+        def get_result(cmd, args=[], extra_paths=None):
+            return self.get_result(textwrap.dedent('''\
+                option('--disable-compile-environment', help='compile env')
+                compile_environment = depends(when='--enable-compile-environment')(lambda: True)
+                toolchain_prefix = depends(when=True)(lambda: None)
+                include('%(topsrcdir)s/build/moz.configure/util.configure')
+                include('%(topsrcdir)s/build/moz.configure/checks.configure')
+                include('%(topsrcdir)s/build/moz.configure/pkg.configure')
+            ''' % {'topsrcdir': topsrcdir}) + cmd, args=args, extra_paths=extra_paths,
+                                                   includes=())
 
         extra_paths = {
             mock_pkg_config_path: mock_pkg_config,
         }
-        includes = ('util.configure', 'checks.configure', 'pkg.configure')
 
-        config, output, status = self.get_result("pkg_check_modules('MOZ_VALID', 'valid')",
-                                                 includes=includes)
+        config, output, status = get_result("pkg_check_modules('MOZ_VALID', 'valid')")
         self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... not found
@@ -716,10 +678,8 @@ class TestChecksConfigure(unittest.TestCase):
             *** to the full path to pkg-config.
         '''))
 
-
-        config, output, status = self.get_result("pkg_check_modules('MOZ_VALID', 'valid')",
-                                                 extra_paths=extra_paths,
-                                                 includes=includes)
+        config, output, status = get_result("pkg_check_modules('MOZ_VALID', 'valid')",
+                                            extra_paths=extra_paths)
         self.assertEqual(status, 0)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... %s
@@ -734,9 +694,8 @@ class TestChecksConfigure(unittest.TestCase):
             'MOZ_VALID_LIBS': ('-lvalid',),
         })
 
-        config, output, status = self.get_result("pkg_check_modules('MOZ_UKNOWN', 'unknown')",
-                                                 extra_paths=extra_paths,
-                                                 includes=includes)
+        config, output, status = get_result("pkg_check_modules('MOZ_UKNOWN', 'unknown')",
+                                            extra_paths=extra_paths)
         self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... %s
@@ -751,9 +710,8 @@ class TestChecksConfigure(unittest.TestCase):
             'PKG_CONFIG': mock_pkg_config_path,
         })
 
-        config, output, status = self.get_result("pkg_check_modules('MOZ_NEW', 'new > 1.1')",
-                                                 extra_paths=extra_paths,
-                                                 includes=includes)
+        config, output, status = get_result("pkg_check_modules('MOZ_NEW', 'new > 1.1')",
+                                            extra_paths=extra_paths)
         self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... %s
@@ -774,9 +732,7 @@ class TestChecksConfigure(unittest.TestCase):
                 log.info('Module not found.')
         ''')
 
-        config, output, status = self.get_result(cmd,
-                                                 extra_paths=extra_paths,
-                                                 includes=includes)
+        config, output, status = get_result(cmd, extra_paths=extra_paths)
         self.assertEqual(status, 0)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... %s
@@ -789,6 +745,13 @@ class TestChecksConfigure(unittest.TestCase):
             'PKG_CONFIG': mock_pkg_config_path,
         })
 
+        config, output, status = get_result(cmd,
+                                            args=['--disable-compile-environment'],
+                                            extra_paths=extra_paths)
+        self.assertEqual(status, 0)
+        self.assertEqual(output, 'Module not found.\n')
+        self.assertEqual(config, {})
+
         def mock_old_pkg_config(_, args):
             if args[0] == '--version':
                 return 0, '0.8.10', ''
@@ -798,9 +761,8 @@ class TestChecksConfigure(unittest.TestCase):
             mock_pkg_config_path: mock_old_pkg_config,
         }
 
-        config, output, status = self.get_result("pkg_check_modules('MOZ_VALID', 'valid')",
-                                                 extra_paths=extra_paths,
-                                                 includes=includes)
+        config, output, status = get_result("pkg_check_modules('MOZ_VALID', 'valid')",
+                                            extra_paths=extra_paths)
         self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for pkg_config... %s
@@ -825,18 +787,54 @@ class TestChecksConfigure(unittest.TestCase):
             "simple_keyfile('Mozilla API')",
             args=['--with-mozilla-api-keyfile=/foo/bar/does/not/exist'],
             includes=includes)
-        self.assertEqual(status, 0)
+        self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for the Mozilla API key... no
+            ERROR: '/foo/bar/does/not/exist': No such file or directory.
         '''))
-        self.assertEqual(config, {
-            'MOZ_MOZILLA_API_KEY': 'no-mozilla-api-key',
-        })
+        self.assertEqual(config, {})
+
+        with MockedOpen({'key': ''}):
+            config, output, status = self.get_result(
+                "simple_keyfile('Mozilla API')",
+                args=['--with-mozilla-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 1)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Mozilla API key... no
+                ERROR: 'key' is empty.
+            '''))
+            self.assertEqual(config, {})
 
         with MockedOpen({'key': 'fake-key\n'}):
             config, output, status = self.get_result(
                 "simple_keyfile('Mozilla API')",
                 args=['--with-mozilla-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Mozilla API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_MOZILLA_API_KEY': 'fake-key',
+            })
+
+        with MockedOpen({'default': 'default-key\n'}):
+            config, output, status = self.get_result(
+                "simple_keyfile('Mozilla API', default='default')",
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Mozilla API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_MOZILLA_API_KEY': 'default-key',
+            })
+
+        with MockedOpen({'default': 'default-key\n',
+                         'key': 'fake-key\n'}):
+            config, output, status = self.get_result(
+                "simple_keyfile('Mozilla API', default='key')",
                 includes=includes)
             self.assertEqual(status, 0)
             self.assertEqual(output, textwrap.dedent('''\
@@ -864,14 +862,24 @@ class TestChecksConfigure(unittest.TestCase):
             "id_and_secret_keyfile('Bing API')",
             args=['--with-bing-api-keyfile=/foo/bar/does/not/exist'],
             includes=includes)
-        self.assertEqual(status, 0)
+        self.assertEqual(status, 1)
         self.assertEqual(output, textwrap.dedent('''\
             checking for the Bing API key... no
+            ERROR: '/foo/bar/does/not/exist': No such file or directory.
         '''))
-        self.assertEqual(config, {
-            'MOZ_BING_API_CLIENTID': 'no-bing-api-clientid',
-            'MOZ_BING_API_KEY': 'no-bing-api-key',
-        })
+        self.assertEqual(config, {})
+
+        with MockedOpen({'key': ''}):
+            config, output, status = self.get_result(
+                "id_and_secret_keyfile('Bing API')",
+                args=['--with-bing-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 1)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Bing API key... no
+                ERROR: 'key' is empty.
+            '''))
+            self.assertEqual(config, {})
 
         with MockedOpen({'key': 'fake-id fake-key\n'}):
             config, output, status = self.get_result(
@@ -898,6 +906,34 @@ class TestChecksConfigure(unittest.TestCase):
                 ERROR: Bing API key file has an invalid format.
             '''))
             self.assertEqual(config, {})
+
+        with MockedOpen({'default-key': 'default-id default-key\n'}):
+            config, output, status = self.get_result(
+                "id_and_secret_keyfile('Bing API', default='default-key')",
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Bing API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_BING_API_CLIENTID': 'default-id',
+                'MOZ_BING_API_KEY': 'default-key',
+            })
+
+        with MockedOpen({'default-key': 'default-id default-key\n',
+                         'key': 'fake-id fake-key\n'}):
+            config, output, status = self.get_result(
+                "id_and_secret_keyfile('Bing API', default='default-key')",
+                args=['--with-bing-api-keyfile=key'],
+                includes=includes)
+            self.assertEqual(status, 0)
+            self.assertEqual(output, textwrap.dedent('''\
+                checking for the Bing API key... yes
+            '''))
+            self.assertEqual(config, {
+                'MOZ_BING_API_CLIENTID': 'fake-id',
+                'MOZ_BING_API_KEY': 'fake-key',
+            })
 
 
 if __name__ == '__main__':

@@ -28,7 +28,6 @@ var testCleanUp = null;
 // Contains mixed active content that needs to load to run the test
 var hasMixedActiveContent = false;
 
-
 // Internal variables
 var _windowCount = 0;
 
@@ -49,10 +48,11 @@ window.onload = function onLoad() {
       finish();
     }
   } else {
-    window.addEventListener("message", onMessageReceived, false);
+    window.addEventListener("message", onMessageReceived);
 
-    let secureTestLocation = loadAsInsecure ? "http://example.com"
-                                            : "https://example.com";
+    let secureTestLocation = loadAsInsecure
+      ? "http://example.com"
+      : "https://example.com";
     secureTestLocation += location.pathname;
     if (testPage != "") {
       let array = secureTestLocation.split("/");
@@ -64,8 +64,9 @@ window.onload = function onLoad() {
 
     if (hasMixedActiveContent) {
       SpecialPowers.pushPrefEnv(
-        {"set": [["security.mixed_content.block_active_content", false]]},
-        null);
+        { set: [["security.mixed_content.block_active_content", false]] },
+        null
+      );
     }
     if (openTwoWindows) {
       _windowCount = 2;
@@ -78,8 +79,7 @@ window.onload = function onLoad() {
   }
 };
 
-function onMessageReceived(event)
-{
+function onMessageReceived(event) {
   switch (event.data) {
     // Indication of all test parts finish (from any of the frames)
     case "done":
@@ -102,18 +102,18 @@ function onMessageReceived(event)
   }
 }
 
-function postMsg(message)
-{
+function postMsg(message) {
   opener.postMessage(message, "http://mochi.test:8888");
 }
 
-function finish()
-{
+function finish() {
   if (history.length == 1 && !bypassNavigationTest) {
     window.setTimeout(() => {
-      window.location.assign(navigateToInsecure ?
-        "http://example.com/tests/security/manager/ssl/tests/mochitest/mixedcontent/backward.html" :
-        "https://example.com/tests/security/manager/ssl/tests/mochitest/mixedcontent/backward.html");
+      window.location.assign(
+        navigateToInsecure
+          ? "http://example.com/tests/security/manager/ssl/tests/mochitest/mixedcontent/backward.html"
+          : "https://example.com/tests/security/manager/ssl/tests/mochitest/mixedcontent/backward.html"
+      );
     }, 0);
   } else {
     postMsg("done");
@@ -121,8 +121,7 @@ function finish()
   }
 }
 
-function ok(a, message)
-{
+function ok(a, message) {
   if (!a) {
     postMsg("FAILURE: " + message);
   } else {
@@ -130,8 +129,7 @@ function ok(a, message)
   }
 }
 
-function is(a, b, message)
-{
+function is(a, b, message) {
   if (a != b) {
     postMsg(`FAILURE: ${message}, expected ${b} got ${a}`);
   } else {
@@ -139,24 +137,21 @@ function is(a, b, message)
   }
 }
 
-function isSecurityState(expectedState, message, test)
-{
+function isSecurityState(expectedState, message, test) {
   if (!test) {
     test = ok;
   }
 
-  let ui = SpecialPowers.wrap(window)
-    .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-    .getInterface(SpecialPowers.Ci.nsIWebNavigation)
-    .QueryInterface(SpecialPowers.Ci.nsIDocShell)
-    .securityUI;
+  let ui = SpecialPowers.wrap(window).docShell.securityUI;
 
-  let isInsecure = !ui ||
-    (ui.state & SpecialPowers.Ci.nsIWebProgressListener.STATE_IS_INSECURE);
-  let isBroken = ui &&
-    (ui.state & SpecialPowers.Ci.nsIWebProgressListener.STATE_IS_BROKEN);
-  let isEV = ui &&
-    (ui.state & SpecialPowers.Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL);
+  let isInsecure =
+    !ui || ui.state & SpecialPowers.Ci.nsIWebProgressListener.STATE_IS_INSECURE;
+  let isBroken =
+    ui && ui.state & SpecialPowers.Ci.nsIWebProgressListener.STATE_IS_BROKEN;
+  let isEV =
+    ui &&
+    ui.state &
+      SpecialPowers.Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL;
 
   let gotState = "secure";
   if (isInsecure) {
@@ -167,28 +162,42 @@ function isSecurityState(expectedState, message, test)
     gotState = "EV";
   }
 
-  test(gotState == expectedState, (message || "") + ", " + "expected " + expectedState + " got " + gotState);
+  test(
+    gotState == expectedState,
+    (message || "") + ", expected " + expectedState + " got " + gotState
+  );
 
   switch (expectedState) {
     case "insecure":
-      test(isInsecure && !isBroken && !isEV, "for 'insecure' excpected flags [1,0,0], " + (message || ""));
+      test(
+        isInsecure && !isBroken && !isEV,
+        "for 'insecure' excpected flags [1,0,0], " + (message || "")
+      );
       break;
     case "broken":
-      test(ui && !isInsecure && isBroken && !isEV, "for 'broken' expected  flags [0,1,0], " + (message || ""));
+      test(
+        ui && !isInsecure && isBroken && !isEV,
+        "for 'broken' expected  flags [0,1,0], " + (message || "")
+      );
       break;
     case "secure":
-      test(ui && !isInsecure && !isBroken && !isEV, "for 'secure' expected flags [0,0,0], " + (message || ""));
+      test(
+        ui && !isInsecure && !isBroken && !isEV,
+        "for 'secure' expected flags [0,0,0], " + (message || "")
+      );
       break;
     case "EV":
-      test(ui && !isInsecure && !isBroken && isEV, "for 'EV' expected flags [0,0,1], " + (message || ""));
+      test(
+        ui && !isInsecure && !isBroken && isEV,
+        "for 'EV' expected flags [0,0,1], " + (message || "")
+      );
       break;
     default:
       throw new Error("Invalid isSecurityState state");
   }
 }
 
-function waitForSecurityState(expectedState, callback)
-{
+function waitForSecurityState(expectedState, callback) {
   let roundsLeft = 200; // Wait for 20 seconds (=200*100ms)
   let interval = window.setInterval(() => {
     isSecurityState(expectedState, "", isok => {

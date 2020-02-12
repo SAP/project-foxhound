@@ -2061,6 +2061,16 @@ EC_CopyParams(PLArenaPool *arena, ECParams *dstParams,
 }
 
 SECStatus
+ChaCha20_Xor(unsigned char *output, const unsigned char *block, unsigned int len,
+             const unsigned char *k, const unsigned char *nonce, PRUint32 ctr)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_ChaCha20_Xor)(output, block, len, k, nonce, ctr);
+}
+
+SECStatus
 ChaCha20Poly1305_InitContext(ChaCha20Poly1305Context *ctx,
                              const unsigned char *key, unsigned int keyLen,
                              unsigned int tagLen)
@@ -2115,4 +2125,174 @@ ChaCha20Poly1305_Open(const ChaCha20Poly1305Context *ctx,
     return (vector->p_ChaCha20Poly1305_Open)(
         ctx, output, outputLen, maxOutputLen, input, inputLen,
         nonce, nonceLen, ad, adLen);
+}
+
+int
+EC_GetPointSize(const ECParams *params)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return SECFailure;
+    return (vector->p_EC_GetPointSize)(params);
+}
+
+SECStatus
+BLAKE2B_Hash(unsigned char *dest, const char *src)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_Hash)(dest, src);
+}
+
+SECStatus
+BLAKE2B_HashBuf(unsigned char *output, const unsigned char *input, PRUint32 inlen)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_HashBuf)(output, input, inlen);
+}
+
+SECStatus
+BLAKE2B_MAC_HashBuf(unsigned char *output, const unsigned char *input,
+                    unsigned int inlen, const unsigned char *key,
+                    unsigned int keylen)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_MAC_HashBuf)(output, input, inlen, key, keylen);
+}
+
+BLAKE2BContext *
+BLAKE2B_NewContext(void)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return NULL;
+    }
+    return (vector->p_BLAKE2B_NewContext)();
+}
+
+void
+BLAKE2B_DestroyContext(BLAKE2BContext *ctx, PRBool freeit)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return;
+    }
+    (vector->p_BLAKE2B_DestroyContext)(ctx, freeit);
+}
+
+SECStatus
+BLAKE2B_Begin(BLAKE2BContext *ctx)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_Begin)(ctx);
+}
+
+SECStatus
+BLAKE2B_MAC_Begin(BLAKE2BContext *ctx, const PRUint8 *key, const size_t keylen)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_MAC_Begin)(ctx, key, keylen);
+}
+
+SECStatus
+BLAKE2B_Update(BLAKE2BContext *ctx, const unsigned char *in, unsigned int inlen)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_Update)(ctx, in, inlen);
+}
+
+SECStatus
+BLAKE2B_End(BLAKE2BContext *ctx, unsigned char *out,
+            unsigned int *digestLen, size_t maxDigestLen)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_End)(ctx, out, digestLen, maxDigestLen);
+}
+
+unsigned int
+BLAKE2B_FlattenSize(BLAKE2BContext *ctx)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return 0;
+    }
+    return (vector->p_BLAKE2B_FlattenSize)(ctx);
+}
+
+SECStatus
+BLAKE2B_Flatten(BLAKE2BContext *ctx, unsigned char *space)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return SECFailure;
+    }
+    return (vector->p_BLAKE2B_Flatten)(ctx, space);
+}
+
+BLAKE2BContext *
+BLAKE2B_Resurrect(unsigned char *space, void *arg)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce()) {
+        return NULL;
+    }
+    return (vector->p_BLAKE2B_Resurrect)(space, arg);
+}
+
+/* == New for CMAC == */
+SECStatus
+CMAC_Init(CMACContext *ctx, CMACCipher type, const unsigned char *key,
+          unsigned int key_len)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return SECFailure;
+    return (vector->p_CMAC_Init)(ctx, type, key, key_len);
+}
+
+CMACContext *
+CMAC_Create(CMACCipher type, const unsigned char *key, unsigned int key_len)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return NULL;
+    return (vector->p_CMAC_Create)(type, key, key_len);
+}
+
+SECStatus
+CMAC_Begin(CMACContext *ctx)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return SECFailure;
+    return (vector->p_CMAC_Begin)(ctx);
+}
+
+SECStatus
+CMAC_Update(CMACContext *ctx, const unsigned char *data, unsigned int data_len)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return SECFailure;
+    return (vector->p_CMAC_Update)(ctx, data, data_len);
+}
+
+SECStatus
+CMAC_Finish(CMACContext *ctx, unsigned char *result, unsigned int *result_len,
+            unsigned int max_result_len)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return SECFailure;
+    return (vector->p_CMAC_Finish)(ctx, result, result_len, max_result_len);
+}
+
+void
+CMAC_Destroy(CMACContext *ctx, PRBool free_it)
+{
+    if (!vector && PR_SUCCESS != freebl_RunLoaderOnce())
+        return;
+    (vector->p_CMAC_Destroy)(ctx, free_it);
 }

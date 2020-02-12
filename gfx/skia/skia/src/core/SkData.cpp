@@ -7,10 +7,11 @@
 
 #include "SkData.h"
 #include "SkOSFile.h"
-#include "SkOncePtr.h"
+#include "SkOnce.h"
 #include "SkReadBuffer.h"
 #include "SkStream.h"
 #include "SkWriteBuffer.h"
+#include <new>
 
 SkData::SkData(const void* ptr, size_t size, ReleaseProc proc, void* context) {
     fPtr = const_cast<void*>(ptr);
@@ -19,10 +20,9 @@ SkData::SkData(const void* ptr, size_t size, ReleaseProc proc, void* context) {
     fReleaseProcContext = context;
 }
 
-// This constructor means we are inline with our fPtr's contents. Thus we set fPtr
-// to point right after this. We also set our releaseproc to sk_inplace_sentinel_releaseproc,
-// since we need to handle "delete" ourselves. See internal_displose().
-//
+/** This constructor means we are inline with our fPtr's contents.
+ *  Thus we set fPtr to point right after this.
+ */
 SkData::SkData(size_t size) {
     fPtr = (char*)(this + 1);   // contents are immediately after this
     fSize = size;
@@ -59,31 +59,36 @@ size_t SkData::copyRange(size_t offset, size_t length, void* buffer) const {
     return length;
 }
 
+void SkData::operator delete(void* p) {
+    ::operator delete(p);
+}
+
 sk_sp<SkData> SkData::PrivateNewWithCopy(const void* srcOrNull, size_t length) {
     if (0 == length) {
         return SkData::MakeEmpty();
     }
 
     const size_t actualLength = length + sizeof(SkData);
-    if (actualLength < length) {
-        // we overflowed
-        sk_throw();
-    }
+    SkASSERT_RELEASE(length < actualLength);  // Check for overflow.
 
-    char* storage = (char*)sk_malloc_throw(actualLength);
-    SkData* data = new (storage) SkData(length);
+    void* storage = ::operator new (actualLength);
+    sk_sp<SkData> data(new (storage) SkData(length));
     if (srcOrNull) {
         memcpy(data->writable_data(), srcOrNull, length);
     }
-    return sk_sp<SkData>(data);
+    return data;
 }
+
+void SkData::DummyReleaseProc(const void*, void*) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SK_DECLARE_STATIC_ONCE_PTR(SkData, gEmpty);
 sk_sp<SkData> SkData::MakeEmpty() {
-    SkData* data = SkRef(gEmpty.get([]{return new SkData(nullptr, 0, nullptr, nullptr); }));
-    return sk_sp<SkData>(data);
+    static SkOnce once;
+    static SkData* empty;
+
+    once([]{ empty = new SkData(nullptr, 0, nullptr, nullptr); });
+    return sk_ref_sp(empty);
 }
 
 // assumes fPtr was allocated via sk_malloc
@@ -140,8 +145,7 @@ sk_sp<SkData> SkData::MakeFromFD(int fd) {
     if (nullptr == addr) {
         return nullptr;
     }
-
-    return SkData::MakeWithProc(addr, size, sk_mmap_releaseproc, nullptr);
+    return SkData::MakeWithProc(addr, size, sk_mmap_releaseproc, reinterpret_cast<void*>(size));
 }
 
 // assumes context is a SkData

@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import json
 import os
 import tempfile
@@ -58,21 +60,21 @@ class TestBuildDict(unittest.TestCase, Base):
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual('linux', d['os'])
         self.assertEqual('x86', d['processor'])
-        self.assertEqual('gtk2', d['toolkit'])
+        self.assertEqual('gtk', d['toolkit'])
         self.assertEqual(32, d['bits'])
 
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='x86_64',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual('linux', d['os'])
         self.assertEqual('x86_64', d['processor'])
-        self.assertEqual('gtk2', d['toolkit'])
+        self.assertEqual('gtk', d['toolkit'])
         self.assertEqual(64, d['bits'])
 
     def test_mac(self):
@@ -95,29 +97,6 @@ class TestBuildDict(unittest.TestCase, Base):
         self.assertEqual('x86_64', d['processor'])
         self.assertEqual('cocoa', d['toolkit'])
         self.assertEqual(64, d['bits'])
-
-    def test_mac_universal(self):
-        d = build_dict(self._config(dict(
-            OS_TARGET='Darwin',
-            TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='cocoa',
-            UNIVERSAL_BINARY='1',
-        )))
-        self.assertEqual('mac', d['os'])
-        self.assertEqual('universal-x86-x86_64', d['processor'])
-        self.assertEqual('cocoa', d['toolkit'])
-        self.assertFalse('bits' in d)
-
-        d = build_dict(self._config(dict(
-            OS_TARGET='Darwin',
-            TARGET_CPU='x86_64',
-            MOZ_WIDGET_TOOLKIT='cocoa',
-            UNIVERSAL_BINARY='1',
-        )))
-        self.assertEqual('mac', d['os'])
-        self.assertEqual('universal-x86-x86_64', d['processor'])
-        self.assertEqual('cocoa', d['toolkit'])
-        self.assertFalse('bits' in d)
 
     def test_android(self):
         d = build_dict(self._config(dict(
@@ -155,14 +134,14 @@ class TestBuildDict(unittest.TestCase, Base):
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='arm',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual('arm', d['processor'])
 
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='armv7',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual('arm', d['processor'])
 
@@ -188,14 +167,14 @@ class TestBuildDict(unittest.TestCase, Base):
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual(False, d['debug'])
 
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
             MOZ_DEBUG='1',
         )))
         self.assertEqual(True, d['debug'])
@@ -207,14 +186,14 @@ class TestBuildDict(unittest.TestCase, Base):
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
         )))
         self.assertEqual(False, d['crashreporter'])
 
         d = build_dict(self._config(dict(
             OS_TARGET='Linux',
             TARGET_CPU='i386',
-            MOZ_WIDGET_TOOLKIT='gtk2',
+            MOZ_WIDGET_TOOLKIT='gtk',
             MOZ_CRASHREPORTER='1',
         )))
         self.assertEqual(True, d['crashreporter'])
@@ -224,6 +203,7 @@ class TestWriteMozinfo(unittest.TestCase, Base):
     """
     Test the write_mozinfo function.
     """
+
     def setUp(self):
         fd, self.f = tempfile.mkstemp()
         os.close(fd)

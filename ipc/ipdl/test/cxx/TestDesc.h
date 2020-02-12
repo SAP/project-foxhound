@@ -18,111 +18,98 @@ namespace _ipdltest {
 //-----------------------------------------------------------------------------
 // Top-level
 //
-class TestDescParent :
-    public PTestDescParent
-{
-public:
-    TestDescParent() { }
-    virtual ~TestDescParent() { }
+class TestDescParent : public PTestDescParent {
+  friend class PTestDescParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestDescParent() {}
+  virtual ~TestDescParent() {}
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    virtual bool RecvOk(PTestDescSubsubParent* a) override;
+  void Main();
 
-protected:
-    virtual PTestDescSubParent* AllocPTestDescSubParent(PTestDescSubsubParent*) override;
-    virtual bool DeallocPTestDescSubParent(PTestDescSubParent* actor) override;
+  mozilla::ipc::IPCResult RecvOk(PTestDescSubsubParent* a);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        passed("ok");
-        QuitParent();
-    }
+ protected:
+  PTestDescSubParent* AllocPTestDescSubParent(PTestDescSubsubParent*);
+  bool DeallocPTestDescSubParent(PTestDescSubParent* actor);
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestDescChild : public PTestDescChild {
+  friend class PTestDescChild;
 
-class TestDescChild :
-    public PTestDescChild
-{
-public:
-    TestDescChild() { }
-    virtual ~TestDescChild() { }
+ public:
+  TestDescChild() {}
+  virtual ~TestDescChild() {}
 
-protected:
-    virtual PTestDescSubChild* AllocPTestDescSubChild(PTestDescSubsubChild*) override;
+ protected:
+  PTestDescSubChild* AllocPTestDescSubChild(PTestDescSubsubChild*);
 
-    virtual bool DeallocPTestDescSubChild(PTestDescSubChild* actor) override;
+  bool DeallocPTestDescSubChild(PTestDescSubChild* actor);
 
-    virtual bool RecvTest(PTestDescSubsubChild* a) override;
+  mozilla::ipc::IPCResult RecvTest(PTestDescSubsubChild* a);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
-
 
 //-----------------------------------------------------------------------------
 // First descendent
 //
-class TestDescSubParent :
-    public PTestDescSubParent
-{
-public:
-    TestDescSubParent() { }
-    virtual ~TestDescSubParent() { }
+class TestDescSubParent : public PTestDescSubParent {
+  friend class PTestDescSubParent;
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
-    virtual PTestDescSubsubParent* AllocPTestDescSubsubParent() override;
-    virtual bool DeallocPTestDescSubsubParent(PTestDescSubsubParent* actor) override;
+ public:
+  TestDescSubParent() {}
+  virtual ~TestDescSubParent() {}
+
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
+  PTestDescSubsubParent* AllocPTestDescSubsubParent();
+  bool DeallocPTestDescSubsubParent(PTestDescSubsubParent* actor);
 };
 
+class TestDescSubChild : public PTestDescSubChild {
+  friend class PTestDescSubChild;
 
-class TestDescSubChild :
-    public PTestDescSubChild
-{
-public:
-    TestDescSubChild() { }
-    virtual ~TestDescSubChild() { }
+ public:
+  TestDescSubChild() {}
+  virtual ~TestDescSubChild() {}
 
-protected:
-    virtual PTestDescSubsubChild* AllocPTestDescSubsubChild() override;
-    virtual bool DeallocPTestDescSubsubChild(PTestDescSubsubChild* actor) override;
+ protected:
+  PTestDescSubsubChild* AllocPTestDescSubsubChild();
+  bool DeallocPTestDescSubsubChild(PTestDescSubsubChild* actor);
 };
-
 
 //-----------------------------------------------------------------------------
 // Grand-descendent
 //
-class TestDescSubsubParent :
-    public PTestDescSubsubParent
-{
-public:
-    TestDescSubsubParent() { }
-    virtual ~TestDescSubsubParent() { }
+class TestDescSubsubParent : public PTestDescSubsubParent {
+ public:
+  TestDescSubsubParent() {}
+  virtual ~TestDescSubsubParent() {}
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
-class TestDescSubsubChild :
-    public PTestDescSubsubChild
-{
-public:
-    TestDescSubsubChild() { }
-    virtual ~TestDescSubsubChild() { }
+class TestDescSubsubChild : public PTestDescSubsubChild {
+ public:
+  TestDescSubsubChild() {}
+  virtual ~TestDescSubsubChild() {}
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-}
-}
-
-#endif // ifndef mozilla_ipdltest_TestDesc_h
+#endif  // ifndef mozilla_ipdltest_TestDesc_h

@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env commonjs, mozilla/chrome-worker */
+
 /**
  * A wrapper around `self` with extended capabilities designed
  * to simplify main thread-to-worker thread asynchronous function calls.
@@ -21,7 +23,9 @@ if (typeof Components != "undefined") {
   throw new Error("This module is meant to be used from the worker thread");
 }
 if (typeof require == "undefined" || typeof module == "undefined") {
-  throw new Error("this module is meant to be imported using the implementation of require() at resource://gre/modules/workers/require.js");
+  throw new Error(
+    "this module is meant to be imported using the implementation of require() at resource://gre/modules/workers/require.js"
+  );
 }
 
 importScripts("resource://gre/modules/workers/require.js");
@@ -91,13 +95,12 @@ function AbstractWorker(agent) {
 }
 AbstractWorker.prototype = {
   // Default logger: discard all messages
-  log: function() {
-  },
+  log() {},
 
   /**
    * Handle a message.
    */
-  handleMessage: function(msg) {
+  handleMessage(msg) {
     let data = msg.data;
     this.log("Received message", data);
     let id = data.id;
@@ -109,8 +112,12 @@ AbstractWorker.prototype = {
     }
     // If |outExecutionDuration| option was supplied, start measuring the
     // duration of the operation.
-    if (options && typeof options === "object" && "outExecutionDuration" in options) {
-       start = Date.now();
+    if (
+      options &&
+      typeof options === "object" &&
+      "outExecutionDuration" in options
+    ) {
+      start = Date.now();
     }
 
     let result;
@@ -123,7 +130,12 @@ AbstractWorker.prototype = {
       this.log("Method", method, "succeeded");
     } catch (ex) {
       exn = ex;
-      this.log("Error while calling agent method", method, exn, exn.moduleStack || exn.stack || "");
+      this.log(
+        "Error while calling agent method",
+        method,
+        exn,
+        exn.moduleStack || exn.stack || ""
+      );
     }
 
     if (start) {
@@ -141,17 +153,19 @@ AbstractWorker.prototype = {
       if (result instanceof Meta) {
         if ("transfers" in result.meta) {
           // Take advantage of zero-copy transfers
-          this.postMessage({ok: result.data, id: id, durationMs: durationMs},
-            result.meta.transfers);
+          this.postMessage(
+            { ok: result.data, id, durationMs },
+            result.meta.transfers
+          );
         } else {
-          this.postMessage({ok: result.data, id:id, durationMs: durationMs});
+          this.postMessage({ ok: result.data, id, durationMs });
         }
         if (result.meta.shutdown || false) {
           // Time to close the worker
           this.close();
         }
       } else {
-        this.postMessage({ok: result, id:id, durationMs: durationMs});
+        this.postMessage({ ok: result, id, durationMs });
       }
     } else if (exn.constructor.name in EXCEPTION_NAMES) {
       // Rather than letting the DOM mechanism [de]serialize built-in
@@ -164,33 +178,36 @@ AbstractWorker.prototype = {
         message: exn.message,
         fileName: exn.moduleName || exn.fileName,
         lineNumber: exn.lineNumber,
-        stack: exn.moduleStack
+        stack: exn.moduleStack,
       };
-      this.postMessage({fail: error, id: id, durationMs: durationMs});
-    } else if (exn == StopIteration) {
-      // StopIteration is a well-known singleton, and requires a
-      // slightly different treatment.
-      this.log("Sending back StopIteration, id is", id);
-      let error = {
-        exn: "StopIteration"
-      };
-      this.postMessage({fail: error, id: id, durationMs: durationMs});
+      this.postMessage({ fail: error, id, durationMs });
     } else if ("toMsg" in exn) {
       // Extension mechanism for exception [de]serialization. We
       // assume that any exception with a method `toMsg()` knows how
       // to serialize itself. The other side is expected to have
       // registered a deserializer using the `ExceptionHandlers`
       // object.
-      this.log("Sending back an error that knows how to serialize itself", exn, "id is", id);
+      this.log(
+        "Sending back an error that knows how to serialize itself",
+        exn,
+        "id is",
+        id
+      );
       let msg = exn.toMsg();
-      this.postMessage({fail: msg, id:id, durationMs: durationMs});
+      this.postMessage({ fail: msg, id, durationMs });
     } else {
       // If we encounter an exception for which we have no
       // serialization mechanism in place, we have no choice but to
       // let the DOM handle said [de]serialization. We can just
       // attempt to mitigate the data loss by injecting `moduleName` and
       // `moduleStack`.
-      this.log("Sending back regular error", exn, exn.moduleStack || exn.stack, "id is", id);
+      this.log(
+        "Sending back regular error",
+        exn,
+        exn.moduleStack || exn.stack,
+        "id is",
+        id
+      );
 
       try {
         // Attempt to introduce human-readable filename and stack
@@ -201,6 +218,6 @@ AbstractWorker.prototype = {
       }
       throw exn;
     }
-  }
+  },
 };
 exports.AbstractWorker = AbstractWorker;

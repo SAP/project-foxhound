@@ -24,13 +24,11 @@ namespace base {
 //     running other kinds of message loop, e.g. Jingle threads.
 class BASE_EXPORT SingleThreadTaskRunner : public SequencedTaskRunner {
  public:
-  // A more explicit alias to RunsTasksOnCurrentThread().
-  bool BelongsToCurrentThread() const {
-    return RunsTasksOnCurrentThread();
-  }
+  // A more explicit alias to RunsTasksInCurrentSequence().
+  bool BelongsToCurrentThread() const { return RunsTasksInCurrentSequence(); }
 
  protected:
-  ~SingleThreadTaskRunner() override {}
+  ~SingleThreadTaskRunner() override = default;
 };
 
 }  // namespace base

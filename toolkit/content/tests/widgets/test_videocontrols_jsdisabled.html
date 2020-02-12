@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Video controls test</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -34,7 +34,7 @@ function runTest(event) {
 
     default:
       ok(false, "unexpected test #" + testnum + " w/ event " + event.type);
-      throw "unexpected test #" + testnum + " w/ event " + event.type;
+      throw new Error(`unexpected test #${testnum} w/ event ${event.type}`);
   }
 
   testnum++;
@@ -46,20 +46,19 @@ var testnum = 1;
 
 var video;
 function loadevent(event) {
-  is(win["testExpando"], undefined, "expando shouldn't exist because js is disabled");
+  is(win.testExpando, undefined, "expando shouldn't exist because js is disabled");
   video = win.document.querySelector("video");
   // Other events expected by the test.
-  video.addEventListener("timeupdate", runTest, false);
-  video.addEventListener("pause", runTest, false);
+  video.addEventListener("timeupdate", runTest);
+  video.addEventListener("pause", runTest);
 }
 
 var win;
 function startTest() {
-  var videoURL = new URL("seek_with_sound.ogg", document.documentURI).href;
-  var url = "data:text/html,<video src=" + videoURL + " controls autoplay=true></video><script>window.testExpando = true;</scr" + "ipt>";
-
-  win = window.open(url);
-  win.addEventListener("load", loadevent, false);
+  const TEST_FILE = location.href.replace("test_videocontrols_jsdisabled.html",
+                                          "file_videocontrols_jsdisabled.html");
+  win = window.open(TEST_FILE);
+  win.addEventListener("load", loadevent);
 }
 
 SimpleTest.waitForExplicitFinish();

@@ -2,14 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PBlob;
 include ProtocolTypes;
+
+include protocol PChildToParentStream;
+include protocol PParentToChildStream;
 
 using struct mozilla::void_t
   from "ipc/IPCMessageUtils.h";
 
 namespace mozilla {
 namespace ipc {
+
+struct HeaderEntry
+{
+  nsCString name;
+  nsCString value;
+};
 
 struct StringInputStreamParams
 {
@@ -23,20 +31,6 @@ struct FileInputStreamParams
   int32_t ioFlags;
 };
 
-struct PartialFileInputStreamParams
-{
-  FileInputStreamParams fileStreamParams;
-  uint64_t begin;
-  uint64_t length;
-};
-
-struct TemporaryFileInputStreamParams
-{
-  uint32_t fileDescriptorIndex;
-  uint64_t startPos;
-  uint64_t endPos;
-};
-
 struct MultiplexInputStreamParams
 {
   InputStreamParams[] streams;
@@ -45,51 +39,72 @@ struct MultiplexInputStreamParams
   bool startedReadingCurrent;
 };
 
-struct RemoteInputStreamParams
+struct SlicedInputStreamParams
 {
-  nsID id;
+  InputStreamParams stream;
+  uint64_t start;
+  uint64_t length;
+  uint64_t curPos;
+  bool closed;
 };
 
-// XXX This may only be used for same-process inter-thread communication! The
-//     value should be reinterpret_cast'd to nsIInputStream. It carries a
-//     reference.
-struct SameProcessInputStreamParams
+struct IPCBlobInputStreamParams
 {
-  intptr_t addRefedInputStream;
+  nsID id;
+  uint64_t start;
+  uint64_t length;
+};
+
+union IPCRemoteStreamType
+{
+  PChildToParentStream;
+  PParentToChildStream;
+};
+
+struct IPCRemoteStreamParams
+{
+  // If this is true, the stream will send data only when the first operation
+  // is done on the destination side. The benefit of this is that we do not
+  // send data if not needed. On the other hand, it could have a performance
+  // issue.
+  bool delayedStart;
+
+  IPCRemoteStreamType stream;
+
+  int64_t length;
 };
 
 union InputStreamParams
 {
   StringInputStreamParams;
   FileInputStreamParams;
-  PartialFileInputStreamParams;
-  TemporaryFileInputStreamParams;
   BufferedInputStreamParams;
   MIMEInputStreamParams;
   MultiplexInputStreamParams;
-  RemoteInputStreamParams;
-  SameProcessInputStreamParams;
-};
-
-union OptionalInputStreamParams
-{
-  void_t;
-  InputStreamParams;
+  SlicedInputStreamParams;
+  IPCBlobInputStreamParams;
+  InputStreamLengthWrapperParams;
+  IPCRemoteStreamParams;
 };
 
 struct BufferedInputStreamParams
 {
-  OptionalInputStreamParams optionalStream;
+  InputStreamParams? optionalStream;
   uint32_t bufferSize;
 };
 
 struct MIMEInputStreamParams
 {
-  OptionalInputStreamParams optionalStream;
-  nsCString headers;
-  nsCString contentLength;
+  InputStreamParams? optionalStream;
+  HeaderEntry[] headers;
   bool startedReading;
-  bool addContentLength;
+};
+
+struct InputStreamLengthWrapperParams
+{
+  InputStreamParams stream;
+  int64_t length;
+  bool consumed;
 };
 
 } // namespace ipc

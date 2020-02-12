@@ -5,59 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceWorker.h"
-#include "WorkerPrivate.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 namespace dom {
 
-using namespace workers;
-
 PerformanceWorker::PerformanceWorker(WorkerPrivate* aWorkerPrivate)
-  : mWorkerPrivate(aWorkerPrivate)
-{
+    : Performance(aWorkerPrivate->UsesSystemPrincipal()),
+      mWorkerPrivate(aWorkerPrivate) {
   mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
-PerformanceWorker::~PerformanceWorker()
-{
+PerformanceWorker::~PerformanceWorker() {
   mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
-DOMHighResTimeStamp
-PerformanceWorker::Now() const
-{
-  TimeDuration duration =
-    TimeStamp::Now() - mWorkerPrivate->NowBaseTimeStamp();
-  return RoundTime(duration.ToMilliseconds());
-}
-
-// To be removed once bug 1124165 lands
-bool
-PerformanceWorker::IsPerformanceTimingAttribute(const nsAString& aName)
-{
-  // In workers we just support navigationStart.
-  return aName.EqualsASCII("navigationStart");
-}
-
-DOMHighResTimeStamp
-PerformanceWorker::GetPerformanceTimingFromString(const nsAString& aProperty)
-{
-  if (!IsPerformanceTimingAttribute(aProperty)) {
-    return 0;
-  }
-
-  if (aProperty.EqualsLiteral("navigationStart")) {
-    return mWorkerPrivate->NowBaseTime();
-  }
-
-  MOZ_CRASH("IsPerformanceTimingAttribute and GetPerformanceTimingFromString are out of sync");
-  return 0;
-}
-
-void
-PerformanceWorker::InsertUserEntry(PerformanceEntry* aEntry)
-{
-  if (mWorkerPrivate->PerformanceLoggingEnabled()) {
+void PerformanceWorker::InsertUserEntry(PerformanceEntry* aEntry) {
+  if (StaticPrefs::dom_performance_enable_user_timing_logging()) {
     nsAutoCString uri;
     nsCOMPtr<nsIURI> scriptURI = mWorkerPrivate->GetResolvedScriptURI();
     if (!scriptURI || NS_FAILED(scriptURI->GetHost(uri))) {
@@ -69,17 +34,17 @@ PerformanceWorker::InsertUserEntry(PerformanceEntry* aEntry)
   Performance::InsertUserEntry(aEntry);
 }
 
-TimeStamp
-PerformanceWorker::CreationTimeStamp() const
-{
-  return mWorkerPrivate->NowBaseTimeStamp();
+TimeStamp PerformanceWorker::CreationTimeStamp() const {
+  return mWorkerPrivate->CreationTimeStamp();
 }
 
-DOMHighResTimeStamp
-PerformanceWorker::CreationTime() const
-{
-  return mWorkerPrivate->NowBaseTime();
+DOMHighResTimeStamp PerformanceWorker::CreationTime() const {
+  return mWorkerPrivate->CreationTime();
 }
 
-} // dom namespace
-} // mozilla namespace
+uint64_t PerformanceWorker::GetRandomTimelineSeed() {
+  return mWorkerPrivate->GetRandomTimelineSeed();
+}
+
+}  // namespace dom
+}  // namespace mozilla

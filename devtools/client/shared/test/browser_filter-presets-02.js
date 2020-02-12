@@ -5,39 +5,43 @@
 
 // Tests loading presets
 
-const {CSSFilterEditorWidget} = require("devtools/client/shared/widgets/FilterWidget");
+const {
+  CSSFilterEditorWidget,
+} = require("devtools/client/shared/widgets/FilterWidget");
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   const container = doc.querySelector("#filter-container");
-  let widget = new CSSFilterEditorWidget(container, "none");
+  const widget = new CSSFilterEditorWidget(container, "none");
   // First render
-  yield widget.once("render");
+  await widget.once("render");
 
   const VALUE = "blur(2px) contrast(150%)";
   const NAME = "Test";
 
-  yield showFilterPopupPresetsAndCreatePreset(widget, NAME, VALUE);
+  await showFilterPopupPresetsAndCreatePreset(widget, NAME, VALUE);
 
   let onRender = widget.once("render");
   // reset value
   widget.setCssValue("saturate(100%) brightness(150%)");
-  yield onRender;
+  await onRender;
 
-  let preset = widget.el.querySelector(".preset");
+  const preset = widget.el.querySelector(".preset");
 
   onRender = widget.once("render");
   widget._presetClick({
-    target: preset
+    target: preset,
   });
 
-  yield onRender;
+  await onRender;
 
-  is(widget.getCssValue(), VALUE,
-     "Should set widget's value correctly");
-  is(widget.el.querySelector(".presets-list .footer input").value, NAME,
-     "Should set input's value to name");
+  is(widget.getCssValue(), VALUE, "Should set widget's value correctly");
+  is(
+    widget.el.querySelector(".presets-list .footer input").value,
+    NAME,
+    "Should set input's value to name"
+  );
 });

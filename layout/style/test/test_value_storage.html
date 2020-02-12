@@ -4,7 +4,7 @@
 -->
 <head>
   <title>Test for parsing, storage, and serialization of CSS values</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <style type="text/css" id="prereqsheet">
@@ -75,7 +75,7 @@ var gBadCompute = {
 function xfail_compute(property, value)
 {
   if (property in gBadCompute &&
-      gBadCompute[property].indexOf(value) != -1)
+      gBadCompute[property].includes(value))
     return true;
 
   return false;
@@ -86,14 +86,14 @@ var gPropertyShorthands = {};
 
 var gElement = document.getElementById("testnode");
 var gDeclaration = gElement.style;
-var gComputedStyle = window.getComputedStyle(gElement, "");
+var gComputedStyle = window.getComputedStyle(gElement);
 
 var gPrereqDeclaration =
   document.getElementById("prereqsheet").sheet.cssRules[0].style;
 
 // On Android, avoid most 'TEST-PASS' logging by overriding
 // SimpleTest.is/isnot, to improve performance
-if (navigator.appVersion.indexOf("Android") >= 0) {
+if (navigator.appVersion.includes("Android")) {
   is = function is(a, b, name)
   {
     var pass = Object.is(a, b);
@@ -130,11 +130,11 @@ function test_property(property)
   var info = gCSSProperties[property];
 
   // can all properties be removed from the style?
-  function test_remove_all_properties(property, value) {
+  function test_remove_all_properties(propName, value) {
     var i, p = [];
     for (i = 0; i < gDeclaration.length; i++) p.push(gDeclaration[i]);
     for (i = 0; i < p.length; i++) gDeclaration.removeProperty(p[i]);
-    var errstr = "when setting property " + property + " to " + value;
+    var errstr = "when setting property " + propName + " to " + value;
     is(gDeclaration.length, 0, "unremovable properties " + errstr);
     is(gDeclaration.cssText, "", "non-empty serialization after removing all properties " + errstr);
   }
@@ -154,7 +154,9 @@ function test_property(property)
 
   function test_value(value, resolved_value) {
     var value_has_variable_reference = resolved_value != null;
+    var is_system_font = property == "font" && value in gSystemFont;
 
+    var colon = value == "var(--a)" ? ":" : ": ";
     gDeclaration.setProperty(property, value, "");
 
     var idx;
@@ -174,11 +176,14 @@ function test_property(property)
         step1comps.push(gComputedStyle.getPropertyValue(info.subproperties[idx]));
 
     SimpleTest.isnot(step1val, "", "setting '" + value + "' on '" + property + "'");
-    if ("subproperties" in info)
+    if ("subproperties" in info &&
+        // System font doesn't produce meaningful value for subproperties.
+        !is_system_font)
       for (idx in info.subproperties) {
         var subprop = info.subproperties[idx];
         if (value_has_variable_reference &&
-            (!info.alias_for || info.type == CSS_TYPE_TRUE_SHORTHAND)) {
+            (!info.alias_for || info.type == CSS_TYPE_TRUE_SHORTHAND ||
+            info.type == CSS_TYPE_LEGACY_SHORTHAND)) {
           is(gDeclaration.getPropertyValue(subprop), "",
              "setting '" + value + "' on '" + property + "' (for '" + subprop + "')");
           test_other_shorthands_empty(value, subprop);
@@ -193,9 +198,15 @@ function test_property(property)
     var expected_serialization = "";
     if (step1val != "") {
       if ("alias_for" in info) {
-        expected_serialization = info.alias_for + ": " + step1val + ";";
+        let newValue = info.legacy_mapping && info.legacy_mapping[step1val]
+          ? info.legacy_mapping[step1val] : step1val;
+        // FIXME(emilio): This is a bit unfortunate:
+        // https://github.com/w3c/csswg-drafts/issues/3332
+        if (info.type == CSS_TYPE_LEGACY_SHORTHAND && value_has_variable_reference)
+          newValue = "";
+        expected_serialization = info.alias_for + colon + newValue + ";";
       } else {
-        expected_serialization = property + ": " + step1val + ";";
+        expected_serialization = property + colon + step1val + ";";
       }
     }
     is(step1ser, expected_serialization,
@@ -206,7 +217,7 @@ function test_property(property)
 
     is(gDeclaration.getPropertyValue(property), step1val,
        "parse+serialize should be idempotent for '" +
-         property + ": " + value + "'");
+         property + colon + value + "'");
     if (info.type != CSS_TYPE_TRUE_SHORTHAND) {
       is(gComputedStyle.getPropertyValue(property), step1comp,
          "serialize+parse should be identity transform for '" +
@@ -216,9 +227,7 @@ function test_property(property)
     if ("subproperties" in info &&
         // Using setProperty over subproperties is not sufficient for
         // system fonts, since the shorthand does more than its parts.
-        (property != "font" || !(value in gSystemFont)) &&
-        // Likewise for special compatibility values of transform
-        (property != "-moz-transform" || !value.match(/^matrix.*(px|em|%)/)) &&
+        !is_system_font &&
         !value_has_variable_reference) {
       gDeclaration.removeProperty(property);
       for (idx in info.subproperties) {
@@ -237,11 +246,12 @@ function test_property(property)
       }
       is(gDeclaration.getPropertyValue(property), step1val,
          "parse+split+serialize should be idempotent for '" +
-         property + ": " + value + "'");
+         property + colon + value + "'");
     }
 
+    // FIXME(emilio): Why is mask special?
     if (info.type != CSS_TYPE_TRUE_SHORTHAND &&
-          property != "mask") {
+        property != "mask") {
       gDeclaration.removeProperty(property);
       gDeclaration.setProperty(property, step1comp, "");
       var func = xfail_compute(property, value) ? todo_is : is;
@@ -249,7 +259,7 @@ function test_property(property)
            "parse+compute+serialize should be idempotent for '" +
            property + ": " + value + "'");
     }
-    if ("subproperties" in info) {
+    if ("subproperties" in info && !is_system_font) {
       gDeclaration.removeProperty(property);
       for (idx in info.subproperties) {
         var subprop = info.subproperties[idx];
@@ -314,7 +324,6 @@ function test_property(property)
 function runTest() {
   // To avoid triggering the slow script dialog, we have to test one
   // property at a time.
-  ok(SpecialPowers.getBoolPref("layout.css.variables.enabled"), "pref not set #1");
   var props = [];
   for (var prop in gCSSProperties) {
     var info = gCSSProperties[prop];
@@ -343,9 +352,7 @@ function runTest() {
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.requestLongerTimeout(7);
-
-SpecialPowers.pushPrefEnv({ set: [["layout.css.variables.enabled", true]] },
-                          runTest);
+runTest();
 </script>
 </pre>
 </body>

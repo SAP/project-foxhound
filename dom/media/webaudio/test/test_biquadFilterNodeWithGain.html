@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test BiquadFilterNode after a GainNode and tail - Bugs 924286 and 924288</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -15,7 +15,7 @@ const signalLength = 2048;
 var gTest = {
   length: signalLength,
   numberOfChannels: 1,
-  createGraph: function(context) {
+  createGraph(context) {
     // Two oscillators scheduled sequentially
     var signalDuration = signalLength / context.sampleRate;
     var osc1 = context.createOscillator();

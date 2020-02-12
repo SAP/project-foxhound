@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,38 +14,39 @@
 namespace mozilla {
 namespace dom {
 
-class PresentationBuilderParent final: public PPresentationBuilderParent
-                                     , public nsIPresentationDataChannelSessionTransportBuilder
-{
-public:
+class PresentationBuilderParent final
+    : public PPresentationBuilderParent,
+      public nsIPresentationDataChannelSessionTransportBuilder {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRESENTATIONSESSIONTRANSPORTBUILDER
   NS_DECL_NSIPRESENTATIONDATACHANNELSESSIONTRANSPORTBUILDER
 
   explicit PresentationBuilderParent(PresentationParent* aParent);
 
-  virtual bool RecvSendOffer(const nsString& aSDP) override;
+  mozilla::ipc::IPCResult RecvSendOffer(const nsString& aSDP);
 
-  virtual bool RecvSendAnswer(const nsString& aSDP) override;
+  mozilla::ipc::IPCResult RecvSendAnswer(const nsString& aSDP);
 
-  virtual bool RecvSendIceCandidate(const nsString& aCandidate) override;
+  mozilla::ipc::IPCResult RecvSendIceCandidate(const nsString& aCandidate);
 
-  virtual bool RecvClose(const nsresult& aReason) override;
+  mozilla::ipc::IPCResult RecvClose(const nsresult& aReason);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  virtual bool RecvOnSessionTransport() override;
+  mozilla::ipc::IPCResult RecvOnSessionTransport();
 
-  virtual bool RecvOnSessionTransportError(const nsresult& aReason) override;
+  mozilla::ipc::IPCResult RecvOnSessionTransportError(const nsresult& aReason);
 
-private:
+ private:
   virtual ~PresentationBuilderParent();
   bool mNeedDestroyActor = false;
   RefPtr<PresentationParent> mParent;
   nsCOMPtr<nsIPresentationSessionTransportBuilderListener> mBuilderListener;
+  nsCOMPtr<nsIPresentationSessionTransport> mIPCSessionTransport;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_PresentationBuilderParent_h__
+#endif  // mozilla_dom_PresentationBuilderParent_h__

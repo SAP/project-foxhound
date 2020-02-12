@@ -13,6 +13,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface Element : Node {
   [Constant]
   readonly attribute DOMString? namespaceURI;
@@ -25,12 +26,16 @@ interface Element : Node {
   [Pure]
   readonly attribute DOMString tagName;
 
-  [Pure]
+  [CEReactions, Pure]
            attribute DOMString id;
-  [Pure]
+  [CEReactions, Pure]
            attribute DOMString className;
   [Constant, PutForwards=value]
   readonly attribute DOMTokenList classList;
+
+  // https://drafts.csswg.org/css-shadow-parts/#idl
+  [SameObject, PutForwards=value, Pref="layout.css.shadow-parts.enabled"]
+  readonly attribute DOMTokenList part;
 
   [SameObject]
   readonly attribute NamedNodeMap attributes;
@@ -40,13 +45,15 @@ interface Element : Node {
   DOMString? getAttribute(DOMString name);
   [Pure]
   DOMString? getAttributeNS(DOMString? namespace, DOMString localName);
-  [Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
+  boolean toggleAttribute(DOMString name, optional boolean force);
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   void setAttribute(DOMString name, DOMString value);
-  [Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   void setAttributeNS(DOMString? namespace, DOMString name, DOMString value);
-  [Throws]
+  [CEReactions, Throws]
   void removeAttribute(DOMString name);
-  [Throws]
+  [CEReactions, Throws]
   void removeAttributeNS(DOMString? namespace, DOMString localName);
   [Pure]
   boolean hasAttribute(DOMString name);
@@ -69,8 +76,8 @@ interface Element : Node {
   HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
   [Pure]
   HTMLCollection getElementsByClassName(DOMString classNames);
-
-  [Throws, Pure]
+ 
+  [CEReactions, Throws, Pure]
   Element? insertAdjacentElement(DOMString where, Element element); // historical
 
   [Throws]
@@ -90,10 +97,6 @@ interface Element : Node {
   [ChromeOnly]
   readonly attribute float fontSizeInflation;
 
-  // Mozilla specific stuff
-  [Pure]
-           attribute EventHandler onwheel;
-
   // Selectors API
   /**
    * Returns whether this element would be selected by the given selector
@@ -105,7 +108,7 @@ interface Element : Node {
   boolean mozMatchesSelector(DOMString selector);
 
   // Pointer events methods.
-  [Throws, Pref="dom.w3c_pointer_events.enabled", UnsafeInPrerendering]
+  [Throws, Pref="dom.w3c_pointer_events.enabled"]
   void setPointerCapture(long pointerId);
 
   [Throws, Pref="dom.w3c_pointer_events.enabled"]
@@ -121,7 +124,7 @@ interface Element : Node {
    * called. If retargetToElement is true, then all events are targetted at
    * this element. If false, events can also fire at descendants of this
    * element.
-   * 
+   *
    */
   void setCapture(optional boolean retargetToElement = false);
 
@@ -131,40 +134,60 @@ interface Element : Node {
    */
   void releaseCapture();
 
+  /*
+   * Chrome-only version of setCapture that works outside of a mousedown event.
+   */
+  [ChromeOnly]
+  void setCaptureAlways(optional boolean retargetToElement = false);
+
   // Mozilla extensions
 
   // Obsolete methods.
   Attr? getAttributeNode(DOMString name);
-  [Throws]
+  [CEReactions, Throws]
   Attr? setAttributeNode(Attr newAttr);
-  [Throws]
+  [CEReactions, Throws]
   Attr? removeAttributeNode(Attr oldAttr);
   Attr? getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
-  [Throws]
+  [CEReactions, Throws]
   Attr? setAttributeNodeNS(Attr newAttr);
 
-  [ChromeOnly]
-  /**
-   * Scrolls the element by (dx, dy) CSS pixels without doing any
-   * layout flushing.
-   */
-  boolean scrollByNoFlush(long dx, long dy);
+  [Func="nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled"]
+  DOMMatrixReadOnly getTransformToAncestor(Element ancestor);
+  [Func="nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled"]
+  DOMMatrixReadOnly getTransformToParent();
+  [Func="nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled"]
+  DOMMatrixReadOnly getTransformToViewport();
+};
 
-  // Support reporting of Grid properties
+// https://html.spec.whatwg.org/#focus-management-apis
+dictionary FocusOptions {
+  boolean preventScroll = false;
+};
 
-  /**
-   * If this element has a display:grid or display:inline-grid style,
-   * this property returns an object with computed values for grid
-   * tracks and lines.
-   */
-  [ChromeOnly, Pure]
-  sequence<Grid> getGridFragments();
+interface mixin HTMLOrForeignElement {
+  [SameObject] readonly attribute DOMStringMap dataset;
+  // See bug 1389421
+  // attribute DOMString nonce; // intentionally no [CEReactions]
+
+  // See bug 1575154
+  // [CEReactions] attribute boolean autofocus;
+  [CEReactions, SetterThrows, Pure] attribute long tabIndex;
+  [Throws] void focus(optional FocusOptions options = {});
+  [Throws] void blur();
+};
+
+// https://drafts.csswg.org/cssom/#the-elementcssinlinestyle-mixin
+interface mixin ElementCSSInlineStyle {
+  [SameObject, PutForwards=cssText]
+  readonly attribute CSSStyleDeclaration style;
 };
 
 // http://dev.w3.org/csswg/cssom-view/
-enum ScrollLogicalPosition { "start", "end" };
+enum ScrollLogicalPosition { "start", "center", "end", "nearest" };
 dictionary ScrollIntoViewOptions : ScrollOptions {
   ScrollLogicalPosition block = "start";
+  ScrollLogicalPosition inline = "nearest";
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-element-interface
@@ -173,20 +196,19 @@ partial interface Element {
   DOMRect getBoundingClientRect();
 
   // scrolling
-  void scrollIntoView(boolean top);
-  void scrollIntoView(optional ScrollIntoViewOptions options);
+  void scrollIntoView(optional (boolean or ScrollIntoViewOptions) arg = {});
   // None of the CSSOM attributes are [Pure], because they flush
            attribute long scrollTop;   // scroll on setting
            attribute long scrollLeft;  // scroll on setting
   readonly attribute long scrollWidth;
   readonly attribute long scrollHeight;
-  
+
   void scroll(unrestricted double x, unrestricted double y);
-  void scroll(optional ScrollToOptions options);
+  void scroll(optional ScrollToOptions options = {});
   void scrollTo(unrestricted double x, unrestricted double y);
-  void scrollTo(optional ScrollToOptions options);
+  void scrollTo(optional ScrollToOptions options = {});
   void scrollBy(unrestricted double x, unrestricted double y);
-  void scrollBy(optional ScrollToOptions options);
+  void scrollBy(optional ScrollToOptions options = {});
   // mozScrollSnap is used by chrome to perform scroll snapping after the
   // user performs actions that may affect scroll position
   // mozScrollSnap is deprecated, to be replaced by a web accessible API, such
@@ -208,21 +230,13 @@ partial interface Element {
                readonly attribute long scrollLeftMax;
 };
 
-// http://dvcs.w3.org/hg/undomanager/raw-file/tip/undomanager.html
-partial interface Element {
-  [Pref="dom.undo_manager.enabled"]
-  readonly attribute UndoManager? undoManager;
-  [SetterThrows,Pref="dom.undo_manager.enabled"]
-  attribute boolean undoScope;
-};
-
 // http://domparsing.spec.whatwg.org/#extensions-to-the-element-interface
 partial interface Element {
-  [Pure,SetterThrows,TreatNullAs=EmptyString]
-  attribute DOMString innerHTML;
-  [Pure,SetterThrows,TreatNullAs=EmptyString]
-  attribute DOMString outerHTML;
-  [Throws]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, Pure, SetterThrows, GetterCanOOM]
+  attribute [TreatNullAs=EmptyString] DOMString innerHTML;
+  [CEReactions, Pure, SetterThrows]
+  attribute [TreatNullAs=EmptyString] DOMString outerHTML;
+  [CEReactions, Throws]
   void insertAdjacentHTML(DOMString position, DOMString text);
 };
 
@@ -234,34 +248,99 @@ partial interface Element {
   NodeList  querySelectorAll(DOMString selectors);
 };
 
-// http://w3c.github.io/webcomponents/spec/shadow/#extensions-to-element-interface
-partial interface Element {
-  [Throws,Func="nsDocument::IsWebComponentsEnabled"]
-  ShadowRoot createShadowRoot();
-  [Func="nsDocument::IsWebComponentsEnabled"]
-  NodeList getDestinationInsertionPoints();
-  [Func="nsDocument::IsWebComponentsEnabled"]
-  readonly attribute ShadowRoot? shadowRoot;
+// https://dom.spec.whatwg.org/#dictdef-shadowrootinit
+dictionary ShadowRootInit {
+  required ShadowRootMode mode;
 };
 
-Element implements ChildNode;
-Element implements NonDocumentTypeChildNode;
-Element implements ParentNode;
-Element implements Animatable;
-Element implements GeometryUtils;
+// https://dom.spec.whatwg.org/#element
+partial interface Element {
+  // Shadow DOM v1
+  [Throws, UseCounter]
+  ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
+  [BinaryName="shadowRootByMode"]
+  readonly attribute ShadowRoot? shadowRoot;
+
+  [Func="Document::IsCallerChromeOrAddon", BinaryName="shadowRoot"]
+  readonly attribute ShadowRoot? openOrClosedShadowRoot;
+
+  [BinaryName="assignedSlotByMode"]
+  readonly attribute HTMLSlotElement? assignedSlot;
+
+  [ChromeOnly, BinaryName="assignedSlot"]
+  readonly attribute HTMLSlotElement? openOrClosedAssignedSlot;
+
+  [CEReactions, Unscopable, SetterThrows]
+           attribute DOMString slot;
+};
+
+Element includes ChildNode;
+Element includes NonDocumentTypeChildNode;
+Element includes ParentNode;
+Element includes Animatable;
+Element includes GeometryUtils;
 
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
-  [Throws, UnsafeInPrerendering, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
-  void requestFullscreen();
-  [Throws, UnsafeInPrerendering, BinaryName="requestFullscreen"]
-  void mozRequestFullScreen();
+  [Throws, Func="Document::IsUnprefixedFullscreenEnabled", NeedsCallerType]
+  Promise<void> requestFullscreen();
+  [Throws, BinaryName="requestFullscreen", NeedsCallerType, Deprecated="MozRequestFullScreenDeprecatedPrefix"]
+  Promise<void> mozRequestFullScreen();
+
+  // Events handlers
+  [Func="Document::IsUnprefixedFullscreenEnabled"]
+  attribute EventHandler onfullscreenchange;
+  [Func="Document::IsUnprefixedFullscreenEnabled"]
+  attribute EventHandler onfullscreenerror;
 };
 
 // https://w3c.github.io/pointerlock/#extensions-to-the-element-interface
 partial interface Element {
-  [UnsafeInPrerendering]
+  [NeedsCallerType, Pref="dom.pointer-lock.enabled"]
   void requestPointerLock();
-  [UnsafeInPrerendering, BinaryName="requestPointerLock", Pref="pointer-lock-api.prefixed.enabled"]
-  void mozRequestPointerLock();
+};
+
+// Mozilla-specific additions to support devtools
+partial interface Element {
+  // Support reporting of Flexbox properties
+  /**
+   * If this element has a display:flex or display:inline-flex style,
+   * this property returns an object with computed values for flex
+   * properties, as well as a property that exposes the flex lines
+   * in this container.
+   */
+  [ChromeOnly, Pure]
+  Flex? getAsFlexContainer();
+
+  // Support reporting of Grid properties
+  /**
+   * If this element has a display:grid or display:inline-grid style,
+   * this property returns an object with computed values for grid
+   * tracks and lines.
+   */
+  [ChromeOnly, Pure]
+  sequence<Grid> getGridFragments();
+  
+  /**
+   * Returns a sequence of all the descendent elements of this element
+   * that have display:grid or display:inline-grid style and generate
+   * a frame.
+   */
+  [ChromeOnly, Pure]
+  sequence<Element> getElementsWithGrid();
+};
+
+// These variables are used in vtt.js, they are used for positioning vtt cues.
+partial interface Element {
+  // These two attributes are a double version of the clientHeight and the
+  // clientWidth.
+  [ChromeOnly]
+  readonly attribute double clientHeightDouble;
+  [ChromeOnly]
+  readonly attribute double clientWidthDouble;
+  // This attribute returns the block size of the first line box under the different
+  // writing directions. If the direction is horizontal, it represents box's
+  // height. If the direction is vertical, it represents box's width.
+  [ChromeOnly]
+  readonly attribute double firstLineBoxBSize;
 };

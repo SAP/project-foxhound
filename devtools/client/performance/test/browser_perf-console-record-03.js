@@ -8,49 +8,83 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInTab, initConsoleInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { waitForRecordingStoppedEvents } = require("devtools/client/performance/test/helpers/actions");
-const { waitUntil } = require("devtools/client/performance/test/helpers/wait-utils");
+const {
+  initPerformanceInTab,
+  initConsoleInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  waitForRecordingStoppedEvents,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  waitUntil,
+} = require("devtools/client/performance/test/helpers/wait-utils");
+const {
+  getSelectedRecording,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { target, console } = yield initConsoleInNewTab({
+add_task(async function() {
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  yield console.profile("rust");
-  yield console.profileEnd("rust");
-  yield console.profile("rust2");
+  await console.profile("rust");
+  await console.profileEnd("rust");
+  await console.profile("rust2");
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { PerformanceController, RecordingsView, WaterfallView } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
+  const { PerformanceController, WaterfallView } = panel.panelWin;
 
-  yield waitUntil(() => PerformanceController.getRecordings().length == 2);
-  yield waitUntil(() => WaterfallView.wasRenderedAtLeastOnce);
+  await waitUntil(() => PerformanceController.getRecordings().length == 2);
+  await waitUntil(() => WaterfallView.wasRenderedAtLeastOnce);
 
-  let recordings = PerformanceController.getRecordings();
+  const recordings = PerformanceController.getRecordings();
   is(recordings.length, 2, "Two recordings found in the performance panel.");
-  is(recordings[0].isConsole(), true, "Recording came from console.profile (1).");
-  is(recordings[0].getLabel(), "rust", "Correct label in the recording model (1).");
+  is(
+    recordings[0].isConsole(),
+    true,
+    "Recording came from console.profile (1)."
+  );
+  is(
+    recordings[0].getLabel(),
+    "rust",
+    "Correct label in the recording model (1)."
+  );
   is(recordings[0].isRecording(), false, "Recording is still recording (1).");
-  is(recordings[1].isConsole(), true, "Recording came from console.profile (2).");
-  is(recordings[1].getLabel(), "rust2", "Correct label in the recording model (2).");
+  is(
+    recordings[1].isConsole(),
+    true,
+    "Recording came from console.profile (2)."
+  );
+  is(
+    recordings[1].getLabel(),
+    "rust2",
+    "Correct label in the recording model (2)."
+  );
   is(recordings[1].isRecording(), true, "Recording is still recording (2).");
 
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should be selected.");
-  is(RecordingsView.selectedItem.attachment.getLabel(), "rust",
-    "The profile label for the first recording is correct.");
+  const selected = getSelectedRecording(panel);
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should be selected."
+  );
+  is(
+    selected.getLabel(),
+    "rust",
+    "The profile label for the first recording is correct."
+  );
 
-  let stopped = waitForRecordingStoppedEvents(panel, {
+  const stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
     skipWaitingForBackendReady: true,
     // only emitted when a finished recording is selected
     skipWaitingForOverview: true,
     skipWaitingForSubview: true,
   });
-  yield console.profileEnd("rust2");
-  yield stopped;
+  await console.profileEnd("rust2");
+  await stopped;
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

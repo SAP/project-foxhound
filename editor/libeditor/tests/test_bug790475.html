@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=790475
 -->
 <head>
   <title>Test for Bug 790475</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=790475">Mozilla Bug 790475</a>
@@ -28,12 +28,7 @@ addLoadEvent(runTest);
 var gMisspeltWords;
 
 function getEditor() {
-  const Ci = SpecialPowers.Ci;
-  var editingSession = SpecialPowers.wrap(window)
-                                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                                    .getInterface(Ci.nsIWebNavigation)
-                                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                                    .getInterface(Ci.nsIEditingSession);
+  var editingSession = SpecialPowers.wrap(window).docShell.editingSession;
   return editingSession.getEditorForWindow(window);
 }
 
@@ -57,7 +52,7 @@ function runTest() {
     var editor = getEditor();
     var sel = editor.selection;
     sel.collapse(newTextNode, newTextNode.textContent.length);
-    synthesizeKey("!", {});
+    sendString("!");
 
     edit.blur();
 
@@ -79,7 +74,7 @@ function isSpellingCheckOk() {
 
   for (var i = 0; i < numWords; i++) {
     var word = sel.getRangeAt(i);
-    is (word, gMisspeltWords[i], "Misspelling is what we think it is.");
+    is(word, gMisspeltWords[i], "Misspelling is what we think it is.");
     if (word != gMisspeltWords[i])
       return false;
   }

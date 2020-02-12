@@ -5,7 +5,7 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         width="600"
         height="600"
-        onload="setTimeout(nextTest,0);"
+        onload="setTimeout(nextTest, 0);"
         title="bug 662200 test">
 
   <script type="application/javascript"
@@ -28,7 +28,7 @@
     // Generator function for test steps for bug 662200:  
     // Description goes here.
     //
-    function testIterator()
+    function* testIterator()
     {
       // Load the first test page
       var navData = {
@@ -87,14 +87,8 @@
       doPageNavigation(navData);
       yield undefined;
 
-      var Ci = Components.interfaces;
-      var docshell = TestWindow.getWindow()
-                               .QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIWebNavigation)
-                               .QueryInterface(Ci.nsIDocShell);
-      var shistory = docshell.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsISHistory)
-                             .QueryInterface(Ci.nsIWebNavigation);
+      var docshell = TestWindow.getWindow().docShell;
+      var shistory = docshell.sessionHistory.legacySHistory;
 
       // Reload.
       navData = {
@@ -107,9 +101,10 @@
       };
       // Asking the docshell harness to reload for us will call reload on
       // nsDocShell which has different behavior than the reload on nsSHistory
-      // so we call reload explicitly here
+      // so we call reloadCurrentEntry() (which is equivalent to reload(0) and
+      // visible from JS) explicitly here.
       waitForPageEvents(navData);
-      shistory.reload(0);
+      shistory.reloadCurrentEntry();
       yield undefined;
 
       // After this sequence of events, we should be able to go back and forward
@@ -117,13 +112,11 @@
       is(TestWindow.getBrowser().canGoForward, true, "Should be able to go forward!");
       is(shistory.requestedIndex, -1, "Requested index should be cleared!");
 
-      // Tell the framework the test is finished.  Include the final 'yield' 
-      // statement to prevent a StopIteration exception from being thrown.
+      // Tell the framework the test is finished.
       finish();
-      yield undefined;
     }
     
   ]]></script>
 
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
 </window>

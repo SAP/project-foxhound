@@ -4,6 +4,13 @@ function substringTaintTest() {
     var c = randomString(10);
     var str = taint(a) + b + taint(c);
 
+    // Verify that taint ranges are computed correctly
+    var substr = str.substr(1, 3);
+    assertEq(substr.taint[0].begin, 0);
+    assertEq(substr.taint[0].end, 3);
+    assertLastTaintOperationEquals(substr, "substr");
+    assertNotHasTaintOperation(str, "substr");
+
     // Verify that inner substring is not tainted
     assertNotTainted(str.substring(a.length, a.length + b.length));
 
@@ -15,7 +22,8 @@ function substringTaintTest() {
     assertEq(tail.taint.length, 1);
     assertEq(tail.taint[0].begin, 0);
     assertEq(tail.taint[0].end, tail.length);
-    assertHasTaintOperation(tail, 'substring');
+    assertLastTaintOperationEquals(tail, "substring");
+    assertNotHasTaintOperation(str, "substring");
 
     // Verify that multi-tainted substrings are handled correctly
     var substring = str.substring(2, str.length - 2);
@@ -30,13 +38,15 @@ function substringTaintTest() {
 
     // Test substr()
     var substr = str.substr(2, str.length - 4);
-    assertHasTaintOperation(tail, 'substr');
+    assertLastTaintOperationEquals(substr, "substr");
     assertEqualTaint(substring, substr);
+    assertNotHasTaintOperation(str, "substr");
 
     // Test slice()
     var slice = str.slice(2, str.length - 2);
-    assertHasTaintOperation(tail, 'slice');
+    assertLastTaintOperationEquals(slice, "slice");
     assertEqualTaint(substring, slice);
+    assertNotHasTaintOperation(str, "slice");
 }
 
 runTaintTest(substringTaintTest);

@@ -5,15 +5,16 @@
 <script src="/resources/testharnessreport.js"></script>
 <div id="log"></div>
 <script>
+/* global test, assert_array_equals */
 test(function() {
   var props = Object.getOwnPropertyNames(Object.prototype);
   // If you change this list, make sure it continues to match the list in
   // Codegen.py's CGDictionary.getMemberDefinition method.
   var expected = [
       "constructor", "toSource", "toString", "toLocaleString", "valueOf",
-      "watch", "unwatch", "hasOwnProperty", "isPrototypeOf",
-      "propertyIsEnumerable", "__defineGetter__", "__defineSetter__",
-      "__lookupGetter__", "__lookupSetter__", "__proto__"
+      "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable",
+      "__defineGetter__", "__defineSetter__", "__lookupGetter__",
+      "__lookupSetter__", "__proto__",
     ];
   assert_array_equals(props.sort(), expected.sort());
 }, "Own properties of Object.prototype");

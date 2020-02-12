@@ -8,28 +8,34 @@ function test() {
 
   Services.prefs.setBoolPref("xpinstall.enabled", false);
 
-  var triggers = encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": TESTROOT + "amosigned.xpi"
-  }));
-  gBrowser.selectedTab = gBrowser.addTab();
+  var triggers = encodeURIComponent(
+    JSON.stringify({
+      "Unsigned XPI": TESTROOT + "amosigned.xpi",
+    })
+  );
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, TESTROOT);
 
-  ContentTask.spawn(gBrowser.selectedBrowser, TESTROOT + "installtrigger.html?" + triggers, url => {
-    return new Promise(resolve => {
-      function page_loaded() {
-        content.removeEventListener("PageLoaded", page_loaded, false);
-        resolve(content.document.getElementById("return").textContent);
-      }
+  ContentTask.spawn(
+    gBrowser.selectedBrowser,
+    TESTROOT + "installtrigger.html?" + triggers,
+    url => {
+      return new Promise(resolve => {
+        function page_loaded() {
+          content.removeEventListener("PageLoaded", page_loaded);
+          resolve(content.document.getElementById("return").textContent);
+        }
 
-      function load_listener() {
-        removeEventListener("load", load_listener, true);
-        content.addEventListener("InstallTriggered", page_loaded, false);
-      }
+        function load_listener() {
+          removeEventListener("load", load_listener, true);
+          content.addEventListener("InstallTriggered", page_loaded);
+        }
 
-      addEventListener("load", load_listener, true);
+        addEventListener("load", load_listener, true);
 
-      content.location.href = url;
-    });
-  }).then(text => {
+        content.location.href = url;
+      });
+    }
+  ).then(text => {
     is(text, "false", "installTrigger should have not been enabled");
     Services.prefs.clearUserPref("xpinstall.enabled");
     gBrowser.removeCurrentTab();
@@ -46,7 +52,7 @@ function allow_blocked(installInfo) {
   return false;
 }
 
-function confirm_install(window) {
+function confirm_install(panel) {
   ok(false, "Should never see an install confirmation dialog");
   return false;
 }

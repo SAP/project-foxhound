@@ -7,21 +7,27 @@
 add permissions to the profile
 """
 
+from __future__ import absolute_import
+
+import codecs
+import os
+import sqlite3
+
+from six import string_types
+from six.moves.urllib import parse
+import six
+
 __all__ = ['MissingPrimaryLocationError', 'MultiplePrimaryLocationsError',
            'DEFAULT_PORTS', 'DuplicateLocationError', 'BadPortLocationError',
            'LocationsSyntaxError', 'Location', 'ServerLocations',
            'Permissions']
 
-import codecs
-import os
-import sqlite3
-import urlparse
-
 # http://hg.mozilla.org/mozilla-central/file/b871dfb2186f/build/automation.py.in#l28
-DEFAULT_PORTS = { 'http': '8888',
-                  'https': '4443',
-                  'ws': '4443',
-                  'wss': '4443' }
+DEFAULT_PORTS = {'http': '8888',
+                 'https': '4443',
+                 'ws': '4443',
+                 'wss': '4443'}
+
 
 class LocationError(Exception):
     """Signifies an improperly formed location."""
@@ -93,7 +99,8 @@ class Location(object):
 
     def isEqual(self, location):
         """compare scheme://host:port, but ignore options"""
-        return len([i for i in self.attrs if getattr(self, i) == getattr(location, i)]) == len(self.attrs)
+        return len([i for i in self.attrs
+                    if getattr(self, i) == getattr(location, i)]) == len(self.attrs)
 
     __eq__ = isEqual
 
@@ -101,7 +108,7 @@ class Location(object):
         return '%s://%s:%s' % (self.scheme, self.host, self.port)
 
     def __str__(self):
-        return  '%s  %s' % (self.url(), ','.join(self.options))
+        return '%s  %s' % (self.url(), ','.join(self.options))
 
 
 class ServerLocations(object):
@@ -135,7 +142,7 @@ class ServerLocations(object):
             self.add_callback([location])
 
     def add_host(self, host, port='80', scheme='http', options='privileged'):
-        if isinstance(options, basestring):
+        if isinstance(options, string_types):
             options = options.split(',')
         self.add(Location(scheme, host, port, options))
 
@@ -144,9 +151,10 @@ class ServerLocations(object):
         Reads the file and adds all valid locations to the ``self._locations`` array.
 
         :param filename: in the format of server-locations.txt_
-        :param check_for_primary: if True, a ``MissingPrimaryLocationError`` exception is raised if no primary is found
+        :param check_for_primary: if True, a ``MissingPrimaryLocationError`` exception is raised
+          if no primary is found
 
-        .. _server-locations.txt: http://dxr.mozilla.org/mozilla-central/source/build/pgo/server-locations.txt
+        .. _server-locations.txt: http://dxr.mozilla.org/mozilla-central/source/build/pgo/server-locations.txt # noqa
 
         The only exception is that the port, if not defined, defaults to 80 or 443.
 
@@ -177,7 +185,7 @@ class ServerLocations(object):
             # parse the server url
             if '://' not in server:
                 server = 'http://' + server
-            scheme, netloc, path, query, fragment = urlparse.urlsplit(server)
+            scheme, netloc, path, query, fragment = parse.urlsplit(server)
             # get the host and port
             try:
                 host, port = netloc.rsplit(':', 1)
@@ -226,7 +234,7 @@ class Permissions(object):
 
         # Open database and create table
         permDB = sqlite3.connect(os.path.join(self._profileDir, "permissions.sqlite"))
-        cursor = permDB.cursor();
+        cursor = permDB.cursor()
 
         # SQL copied from
         # http://dxr.mozilla.org/mozilla-central/source/extensions/cookie/nsPermissionManager.cpp
@@ -263,17 +271,18 @@ class Permissions(object):
 
         for location in locations:
             # set the permissions
-            permissions = { 'allowXULXBL': 'noxul' not in location.options }
-            for perm, allow in permissions.iteritems():
+            permissions = {'allowXULXBL': 'noxul' not in location.options}
+            for perm, allow in six.iteritems(permissions):
                 if allow:
                     permission_type = 1
                 else:
                     permission_type = 2
 
                 if using_origin:
-                    # This is a crude approximation of the origin generation logic from
-                    # nsPrincipal and nsStandardURL. It should suffice for the permissions
-                    # which the test runners will want to insert into the system.
+                    # This is a crude approximation of the origin generation
+                    # logic from ContentPrincipal and nsStandardURL. It should
+                    # suffice for the permissions which the test runners will
+                    # want to insert into the system.
                     origin = location.scheme + "://" + location.host
                     if (location.scheme != 'http' or location.port != '80') and \
                        (location.scheme != 'https' or location.port != '443'):
@@ -401,10 +410,11 @@ function FindProxyForURL(url, host)
 
         # Open database and create table
         permDB = sqlite3.connect(sqlite_file)
-        cursor = permDB.cursor();
+        cursor = permDB.cursor()
 
-        # TODO: only delete values that we add, this would require sending in the full permissions object
-        cursor.execute("DROP TABLE IF EXISTS moz_hosts");
+        # TODO: only delete values that we add, this would require sending
+        # in the full permissions object
+        cursor.execute("DROP TABLE IF EXISTS moz_hosts")
 
         # Commit and close
         permDB.commit()

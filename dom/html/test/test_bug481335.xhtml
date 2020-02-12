@@ -4,12 +4,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=481335
 -->
 <head>
   <title>Test for Bug 481335</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style type="text/css">
     a { color:blue; }
     a:visited { color:red; }
   </style>
+  <base href="http://www.example.com/" />
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=481335">Mozilla Bug 481335</a>
@@ -17,10 +18,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=481335
   <a id="t">A link</a>
   <iframe id="i"></iframe>
 </p>
-<p id="newparent" xml:base="http://www.example.com/"></p>
+<p id="newparent"></p>
 <div id="content" style="display: none"></div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 <![CDATA[
 
 /** Test for Bug 481335 **/
@@ -33,11 +34,9 @@ is($("t").href, "",
    "Unexpected cached href before set");
 
 $("t").setAttribute("href", rand);
-is($("t").href,
-   window.location.href.replace(/test_bug481335.xhtml([\?].*)?/, rand),
+is($("t").href, "http://www.example.com/" + rand,
    "Unexpected href after set");
-is($("t").href,
-   window.location.href.replace(/test_bug481335.xhtml([\?].*)?/, rand),
+is($("t").href, "http://www.example.com/" + rand,
    "Unexpected cached href after set");
 const unvisitedColor = "rgb(0, 0, 255)";
 const visitedColor = "rgb(255, 0, 0)";
@@ -62,7 +61,7 @@ function checkLinkColor(aElmId, aExpectedColor, aMessage) {
   return true;
 }
 
-function testIterator() {
+function* testIterator() {
   // After first load
   $("newparent").appendChild($("t"));
   is($("t").href, "http://www.example.com/" + rand,
@@ -106,7 +105,6 @@ function testIterator() {
     yield undefined;
   }
   SimpleTest.finish();
-  yield undefined;
 }
 
 addLoadEvent(function() {

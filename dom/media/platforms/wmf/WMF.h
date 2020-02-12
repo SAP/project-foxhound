@@ -7,18 +7,6 @@
 #ifndef WMF_H_
 #define WMF_H_
 
-#if WINVER < _WIN32_WINNT_WIN7
-#error \
-You must include WMF.h before including mozilla headers, \
-otherwise mozconfig.h will be included \
-and that sets WINVER to WinXP, \
-which makes Windows Media Foundation unavailable.
-#endif
-
-#pragma push_macro("WINVER")
-#undef WINVER
-#define WINVER _WIN32_WINNT_WIN7
-
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -35,70 +23,66 @@ which makes Windows Media Foundation unavailable.
 #include <codecapi.h>
 
 // The Windows headers helpfully declare min and max macros, which don't
-// compile in the prescence of std::min and std::max and unified builds.
+// compile in the presence of std::min and std::max and unified builds.
 // So undef them here.
 #ifdef min
-#undef min
+#  undef min
 #endif
 #ifdef max
-#undef max
+#  undef max
 #endif
 
 // Some SDK versions don't define the AAC decoder CLSID.
 #ifndef CLSID_CMSAACDecMFT
 extern "C" const CLSID CLSID_CMSAACDecMFT;
-#define WMF_MUST_DEFINE_AAC_MFT_CLSID
+#  define WMF_MUST_DEFINE_AAC_MFT_CLSID
 #endif
 
 namespace mozilla {
 namespace wmf {
 
 // If successful, loads all required WMF DLLs and calls the WMF MFStartup()
-// function.
+// function. This delegates the WMF MFStartup() call to the MTA thread if
+// the current thread is not MTA. This is to ensure we always interact with
+// WMF from threads with the same COM compartment model.
 HRESULT MFStartup();
 
 // Calls the WMF MFShutdown() function. Call this once for every time
 // wmf::MFStartup() succeeds. Note: does not unload the WMF DLLs loaded by
 // MFStartup(); leaves them in memory to save I/O at next MFStartup() call.
+// This delegates the WMF MFShutdown() call to the MTA thread if the current
+// thread is not MTA. This is to ensure we always interact with
+// WMF from threads with the same COM compartment model.
 HRESULT MFShutdown();
 
 // All functions below are wrappers around the corresponding WMF function,
 // and automatically locate and call the corresponding function in the WMF DLLs.
 
-HRESULT MFCreateMediaType(IMFMediaType **aOutMFType);
+HRESULT MFCreateMediaType(IMFMediaType** aOutMFType);
 
-HRESULT MFGetStrideForBitmapInfoHeader(DWORD aFormat,
-                                       DWORD aWidth,
-                                       LONG *aOutStride);
+HRESULT MFGetStrideForBitmapInfoHeader(DWORD aFormat, DWORD aWidth,
+                                       LONG* aOutStride);
 
-HRESULT MFGetService(IUnknown *punkObject,
-                     REFGUID guidService,
-                     REFIID riid,
-                     LPVOID *ppvObject);
+HRESULT MFGetService(IUnknown* punkObject, REFGUID guidService, REFIID riid,
+                     LPVOID* ppvObject);
 
-HRESULT DXVA2CreateDirect3DDeviceManager9(UINT *pResetToken,
-                                          IDirect3DDeviceManager9 **ppDXVAManager);
+HRESULT DXVA2CreateDirect3DDeviceManager9(
+    UINT* pResetToken, IDirect3DDeviceManager9** ppDXVAManager);
 
+HRESULT MFCreateDXGIDeviceManager(UINT* pResetToken,
+                                  IMFDXGIDeviceManager** ppDXVAManager);
 
-HRESULT MFCreateDXGIDeviceManager(UINT *pResetToken, IMFDXGIDeviceManager **ppDXVAManager);
+HRESULT MFCreateSample(IMFSample** ppIMFSample);
 
-HRESULT MFCreateSample(IMFSample **ppIMFSample);
+HRESULT MFCreateAlignedMemoryBuffer(DWORD cbMaxLength, DWORD fAlignmentFlags,
+                                    IMFMediaBuffer** ppBuffer);
 
-HRESULT MFCreateAlignedMemoryBuffer(DWORD cbMaxLength,
-                                    DWORD fAlignmentFlags,
-                                    IMFMediaBuffer **ppBuffer);
-
-HRESULT MFCreateDXGISurfaceBuffer(REFIID riid,
-                                  IUnknown *punkSurface,
+HRESULT MFCreateDXGISurfaceBuffer(REFIID riid, IUnknown* punkSurface,
                                   UINT uSubresourceIndex,
                                   BOOL fButtomUpWhenLinear,
-                                  IMFMediaBuffer **ppBuffer);
+                                  IMFMediaBuffer** ppBuffer);
 
-} // end namespace wmf
-} // end namespace mozilla
-
-
-
-#pragma pop_macro("WINVER")
+}  // end namespace wmf
+}  // end namespace mozilla
 
 #endif

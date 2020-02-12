@@ -13,8 +13,7 @@
 
 BEGIN_QUOTA_NAMESPACE
 
-enum PersistenceType
-{
+enum PersistenceType {
   PERSISTENCE_TYPE_PERSISTENT = 0,
   PERSISTENCE_TYPE_TEMPORARY,
   PERSISTENCE_TYPE_DEFAULT,
@@ -23,15 +22,15 @@ enum PersistenceType
   PERSISTENCE_TYPE_INVALID
 };
 
-static const PersistenceType kAllPersistenceTypes[] = {
-  PERSISTENCE_TYPE_PERSISTENT,
-  PERSISTENCE_TYPE_TEMPORARY,
-  PERSISTENCE_TYPE_DEFAULT
-};
+static const PersistenceType kBestEffortPersistenceTypes[] = {
+    PERSISTENCE_TYPE_TEMPORARY, PERSISTENCE_TYPE_DEFAULT};
 
-inline void
-PersistenceTypeToText(PersistenceType aPersistenceType, nsACString& aText)
-{
+static const PersistenceType kAllPersistenceTypes[] = {
+    PERSISTENCE_TYPE_PERSISTENT, PERSISTENCE_TYPE_TEMPORARY,
+    PERSISTENCE_TYPE_DEFAULT};
+
+inline void PersistenceTypeToText(PersistenceType aPersistenceType,
+                                  nsACString& aText) {
   switch (aPersistenceType) {
     case PERSISTENCE_TYPE_PERSISTENT:
       aText.AssignLiteral("persistent");
@@ -49,9 +48,14 @@ PersistenceTypeToText(PersistenceType aPersistenceType, nsACString& aText)
   }
 }
 
-inline PersistenceType
-PersistenceTypeFromText(const nsACString& aText)
-{
+class PersistenceTypeString : public nsCString {
+ public:
+  explicit PersistenceTypeString(PersistenceType aPersistenceType) {
+    PersistenceTypeToText(aPersistenceType, *this);
+  }
+};
+
+inline PersistenceType PersistenceTypeFromText(const nsACString& aText) {
   if (aText.EqualsLiteral("persistent")) {
     return PERSISTENCE_TYPE_PERSISTENT;
   }
@@ -67,10 +71,23 @@ PersistenceTypeFromText(const nsACString& aText)
   MOZ_CRASH("Should never get here!");
 }
 
-inline nsresult
-NullablePersistenceTypeFromText(const nsACString& aText,
-                                Nullable<PersistenceType>* aPersistenceType)
-{
+inline nsresult PersistenceTypeFromInt32(int32_t aInt,
+                                         PersistenceType& aPersistenceType) {
+  static_assert(
+      PERSISTENCE_TYPE_PERSISTENT == 0 && PERSISTENCE_TYPE_TEMPORARY == 1 &&
+          PERSISTENCE_TYPE_DEFAULT == 2 && PERSISTENCE_TYPE_INVALID == 3,
+      "Incorrect enum values!");
+
+  if (aInt < PERSISTENCE_TYPE_PERSISTENT || aInt > PERSISTENCE_TYPE_DEFAULT) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aPersistenceType = static_cast<PersistenceType>(aInt);
+  return NS_OK;
+}
+
+inline nsresult NullablePersistenceTypeFromText(
+    const nsACString& aText, Nullable<PersistenceType>* aPersistenceType) {
   if (aText.IsVoid()) {
     *aPersistenceType = Nullable<PersistenceType>();
     return NS_OK;
@@ -94,15 +111,13 @@ NullablePersistenceTypeFromText(const nsACString& aText,
   return NS_ERROR_FAILURE;
 }
 
-inline mozilla::dom::StorageType
-PersistenceTypeToStorage(PersistenceType aPersistenceType)
-{
+inline mozilla::dom::StorageType PersistenceTypeToStorage(
+    PersistenceType aPersistenceType) {
   return mozilla::dom::StorageType(static_cast<int>(aPersistenceType));
 }
 
-inline PersistenceType
-PersistenceTypeFromStorage(const Optional<mozilla::dom::StorageType>& aStorage)
-{
+inline PersistenceType PersistenceTypeFromStorage(
+    const Optional<mozilla::dom::StorageType>& aStorage) {
   if (aStorage.WasPassed()) {
     return PersistenceType(static_cast<int>(aStorage.Value()));
   }
@@ -110,9 +125,8 @@ PersistenceTypeFromStorage(const Optional<mozilla::dom::StorageType>& aStorage)
   return PERSISTENCE_TYPE_DEFAULT;
 }
 
-inline PersistenceType
-ComplementaryPersistenceType(PersistenceType aPersistenceType)
-{
+inline PersistenceType ComplementaryPersistenceType(
+    PersistenceType aPersistenceType) {
   MOZ_ASSERT(aPersistenceType == PERSISTENCE_TYPE_DEFAULT ||
              aPersistenceType == PERSISTENCE_TYPE_TEMPORARY);
 
@@ -125,4 +139,4 @@ ComplementaryPersistenceType(PersistenceType aPersistenceType)
 
 END_QUOTA_NAMESPACE
 
-#endif // mozilla_dom_quota_persistencetype_h__
+#endif  // mozilla_dom_quota_persistencetype_h__

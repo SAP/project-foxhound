@@ -15,11 +15,9 @@ class CompositorVsyncDispatcher;
 
 namespace widget {
 
-class CompositorWidgetChild final
- : public PCompositorWidgetChild,
-   public CompositorWidgetDelegate
-{
-public:
+class CompositorWidgetChild final : public PCompositorWidgetChild,
+                                    public PlatformCompositorWidgetDelegate {
+ public:
   CompositorWidgetChild(RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
                         RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver);
   ~CompositorWidgetChild() override;
@@ -30,16 +28,22 @@ public:
   void UpdateTransparency(nsTransparencyMode aMode) override;
   void ClearTransparentWindow() override;
   HDC GetTransparentDC() const override;
+  void SetParentWnd(const HWND aParentWnd) override;
 
-  bool RecvObserveVsync() override;
-  bool RecvUnobserveVsync() override;
+  mozilla::ipc::IPCResult RecvObserveVsync() override;
+  mozilla::ipc::IPCResult RecvUnobserveVsync() override;
+  mozilla::ipc::IPCResult RecvUpdateCompositorWnd(
+      const WindowsHandle& aCompositorWnd, const WindowsHandle& aParentWnd,
+      UpdateCompositorWndResolver&& aResolve) override;
 
-private:
+ private:
   RefPtr<CompositorVsyncDispatcher> mVsyncDispatcher;
   RefPtr<CompositorWidgetVsyncObserver> mVsyncObserver;
+  HWND mCompositorWnd;
+  HWND mParentWnd;
 };
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla
 
-#endif // widget_windows_CompositorWidgetChild_h
+#endif  // widget_windows_CompositorWidgetChild_h

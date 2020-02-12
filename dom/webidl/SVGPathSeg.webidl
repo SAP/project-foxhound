@@ -10,6 +10,8 @@
  * liability, trademark and document use rules apply.
  */
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSeg {
 
   // Path Segment Types
@@ -40,9 +42,13 @@ interface SVGPathSeg {
   readonly attribute DOMString pathSegTypeAsLetter;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegClosePath : SVGPathSeg {
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegMovetoAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -50,6 +56,8 @@ interface SVGPathSegMovetoAbs : SVGPathSeg {
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegMovetoRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -57,6 +65,8 @@ interface SVGPathSegMovetoRel : SVGPathSeg {
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -64,6 +74,8 @@ interface SVGPathSegLinetoAbs : SVGPathSeg {
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -71,6 +83,8 @@ interface SVGPathSegLinetoRel : SVGPathSeg {
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoCubicAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -86,6 +100,8 @@ interface SVGPathSegCurvetoCubicAbs : SVGPathSeg {
   attribute float y2;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoCubicRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -101,6 +117,8 @@ interface SVGPathSegCurvetoCubicRel : SVGPathSeg {
   attribute float y2;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoQuadraticAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -112,6 +130,8 @@ interface SVGPathSegCurvetoQuadraticAbs : SVGPathSeg {
   attribute float y1;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoQuadraticRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -123,6 +143,8 @@ interface SVGPathSegCurvetoQuadraticRel : SVGPathSeg {
   attribute float y1;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegArcAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -140,6 +162,8 @@ interface SVGPathSegArcAbs : SVGPathSeg {
   attribute boolean sweepFlag;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegArcRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -157,26 +181,36 @@ interface SVGPathSegArcRel : SVGPathSeg {
   attribute boolean sweepFlag;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoHorizontalAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoHorizontalRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoVerticalAbs : SVGPathSeg {
   [SetterThrows]
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegLinetoVerticalRel : SVGPathSeg {
   [SetterThrows]
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoCubicSmoothAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -188,6 +222,8 @@ interface SVGPathSegCurvetoCubicSmoothAbs : SVGPathSeg {
   attribute float y2;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoCubicSmoothRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -199,6 +235,8 @@ interface SVGPathSegCurvetoCubicSmoothRel : SVGPathSeg {
   attribute float y2;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoQuadraticSmoothAbs : SVGPathSeg {
   [SetterThrows]
   attribute float x;
@@ -206,6 +244,8 @@ interface SVGPathSegCurvetoQuadraticSmoothAbs : SVGPathSeg {
   attribute float y;
 };
 
+[NoInterfaceObject,
+ Exposed=Window]
 interface SVGPathSegCurvetoQuadraticSmoothRel : SVGPathSeg {
   [SetterThrows]
   attribute float x;

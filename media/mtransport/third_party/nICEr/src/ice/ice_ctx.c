@@ -31,10 +31,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_ctx.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <csi_platform.h>
 #include <assert.h>
 #include <sys/types.h>
@@ -250,21 +246,6 @@ int nr_ice_ctx_set_interface_prioritizer(nr_ice_ctx *ctx, nr_interface_prioritiz
     return(_status);
   }
 
-int nr_ice_ctx_set_turn_tcp_socket_wrapper(nr_ice_ctx *ctx, nr_socket_wrapper_factory *wrapper)
-  {
-    int _status;
-
-    if (ctx->turn_tcp_socket_wrapper) {
-      ABORT(R_ALREADY);
-    }
-
-    ctx->turn_tcp_socket_wrapper = wrapper;
-
-    _status=0;
-   abort:
-    return(_status);
-  }
-
 void nr_ice_ctx_set_socket_factory(nr_ice_ctx *ctx, nr_socket_factory *factory)
   {
     nr_socket_factory_destroy(&ctx->socket_factory);
@@ -343,28 +324,6 @@ int nr_ice_fetch_turn_servers(int ct, nr_ice_turn_server **out)
 #define MAXADDRS 100 /* Ridiculously high */
 int nr_ice_ctx_create(char *label, UINT4 flags, nr_ice_ctx **ctxp)
   {
-    int r,_status;
-    char *ufrag = 0;
-    char *pwd = 0;
-
-    if (r=nr_ice_get_new_ice_ufrag(&ufrag))
-      ABORT(r);
-    if (r=nr_ice_get_new_ice_pwd(&pwd))
-      ABORT(r);
-
-    if (r=nr_ice_ctx_create_with_credentials(label, flags, ufrag, pwd, ctxp))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    RFREE(ufrag);
-    RFREE(pwd);
-
-    return(_status);
-  }
-
-int nr_ice_ctx_create_with_credentials(char *label, UINT4 flags, char *ufrag, char *pwd, nr_ice_ctx **ctxp)
-  {
     nr_ice_ctx *ctx=0;
     int r,_status;
 
@@ -378,11 +337,6 @@ int nr_ice_ctx_create_with_credentials(char *label, UINT4 flags, char *ufrag, ch
 
     if(!(ctx->label=r_strdup(label)))
       ABORT(R_NO_MEMORY);
-
-    if(!(ctx->ufrag=r_strdup(ufrag)))
-      ABORT(r);
-    if(!(ctx->pwd=r_strdup(pwd)))
-      ABORT(r);
 
     /* Get the STUN servers */
     if(r=NR_reg_get_child_count(NR_ICE_REG_STUN_SRV_PRFX,
@@ -451,6 +405,8 @@ int nr_ice_ctx_create_with_credentials(char *label, UINT4 flags, char *ufrag, ch
       }
     }
 
+    ctx->target_for_default_local_address_lookup=0;
+
     STAILQ_INIT(&ctx->streams);
     STAILQ_INIT(&ctx->sockets);
     STAILQ_INIT(&ctx->foundations);
@@ -486,6 +442,8 @@ static void nr_ice_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
 
     RFREE(ctx->local_addrs);
 
+    RFREE(ctx->target_for_default_local_address_lookup);
+
     for (i = 0; i < ctx->turn_server_ct; i++) {
         RFREE(ctx->turn_servers[i].username);
         r_data_destroy(&ctx->turn_servers[i].password);
@@ -498,8 +456,6 @@ static void nr_ice_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
       RFREE(f1);
       f1=f2;
     }
-    RFREE(ctx->pwd);
-    RFREE(ctx->ufrag);
 
     STAILQ_FOREACH_SAFE(id1, &ctx->ids, entry, id2){
       STAILQ_REMOVE(&ctx->ids,id1,nr_ice_stun_id_,entry);
@@ -508,7 +464,6 @@ static void nr_ice_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg)
 
     nr_resolver_destroy(&ctx->resolver);
     nr_interface_prioritizer_destroy(&ctx->interface_prioritizer);
-    nr_socket_wrapper_factory_destroy(&ctx->turn_tcp_socket_wrapper);
     nr_socket_factory_destroy(&ctx->socket_factory);
 
     RFREE(ctx);
@@ -544,15 +499,26 @@ void nr_ice_gather_finished_cb(NR_SOCKET s, int h, void *cb_arg)
     int r;
     nr_ice_candidate *cand=cb_arg;
     nr_ice_ctx *ctx;
+    nr_ice_media_stream *stream;
+    int component_id;
 
 
     assert(cb_arg);
     if (!cb_arg)
       return;
     ctx = cand->ctx;
+    stream = cand->stream;
+    component_id = cand->component_id;
 
     ctx->uninitialized_candidates--;
-    r_log(LOG_ICE,LOG_DEBUG,"ICE(%s)/CAND(%s): initialized, %d remaining",ctx->label,cand->codeword,ctx->uninitialized_candidates);
+    if (cand->state == NR_ICE_CAND_STATE_FAILED) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s)/CAND(%s): failed to initialize, %d remaining", ctx->label,
+            cand->label, ctx->uninitialized_candidates);
+    } else {
+      r_log(LOG_ICE, LOG_DEBUG, "ICE(%s)/CAND(%s): initialized, %d remaining",
+            ctx->label, cand->label, ctx->uninitialized_candidates);
+    }
 
     /* Avoid the need for yet another initialization function */
     if (cand->state == NR_ICE_CAND_STATE_INITIALIZING && cand->type == HOST)
@@ -566,9 +532,13 @@ void nr_ice_gather_finished_cb(NR_SOCKET s, int h, void *cb_arg)
           r_log(LOG_ICE, LOG_NOTICE, "ICE(%s): Problem pruning candidates",ctx->label);
       }
 
+      if (was_pruned) {
+        cand = NULL;
+      }
+
       /* If we are initialized, the candidate wasn't pruned,
          and we have a trickle ICE callback fire the callback */
-      if (ctx->trickle_cb && !was_pruned &&
+      if (ctx->trickle_cb && cand &&
           !nr_ice_ctx_hide_candidate(ctx, cand)) {
         ctx->trickle_cb(ctx->trickle_cb_arg, ctx, cand->stream, cand->component_id, cand);
 
@@ -577,15 +547,22 @@ void nr_ice_gather_finished_cb(NR_SOCKET s, int h, void *cb_arg)
           /* But continue */
         }
       }
+
+      if (nr_ice_media_stream_is_done_gathering(stream) &&
+          ctx->trickle_cb) {
+        ctx->trickle_cb(ctx->trickle_cb_arg, ctx, stream, component_id, NULL);
+      }
     }
 
     if(ctx->uninitialized_candidates==0){
-      r_log(LOG_ICE,LOG_DEBUG,"ICE(%s): All candidates initialized",ctx->label);
+      r_log(LOG_ICE, LOG_INFO, "ICE(%s): All candidates initialized",
+            ctx->label);
       if (ctx->done_cb) {
         ctx->done_cb(0,0,ctx->cb_arg);
       }
       else {
-        r_log(LOG_ICE,LOG_DEBUG,"ICE(%s): No done_cb. We were probably destroyed.",ctx->label);
+        r_log(LOG_ICE, LOG_INFO,
+              "ICE(%s): No done_cb. We were probably destroyed.", ctx->label);
       }
     }
     else {
@@ -614,34 +591,43 @@ static int nr_ice_ctx_pair_new_trickle_candidates(nr_ice_ctx *ctx, nr_ice_candid
     return(_status);
   }
 
-/* Get the default address by doing a connect to a known public IP address,
-   in this case Google public DNS:
+/* Get the default address by creating a UDP socket, binding it to a wildcard
+   address, and connecting it to the remote IP. Because this is UDP, no packets
+   are sent. This lets us query the local address assigned to the socket by the
+   kernel.
+
+   If the context's remote address is NULL, then the application wasn't loaded
+   over the network, and we can fall back on connecting to a known public
+   address (namely Google's):
 
    IPv4: 8.8.8.8
    IPv6: 2001:4860:4860::8888
-
-   Then we can do getsockname to get the address. No packets get sent
-   since this is UDP. It's just a way to get the address.
 */
 static int nr_ice_get_default_address(nr_ice_ctx *ctx, int ip_version, nr_transport_addr* addrp)
   {
     int r,_status;
-    nr_transport_addr addr;
-    nr_transport_addr remote_addr;
+    nr_transport_addr addr, known_remote_addr;
+    nr_transport_addr *remote_addr=ctx->target_for_default_local_address_lookup;
     nr_socket *sock=0;
 
     switch(ip_version) {
       case NR_IPV4:
         if ((r=nr_str_port_to_transport_addr("0.0.0.0", 0, IPPROTO_UDP, &addr)))
           ABORT(r);
-        if ((r=nr_str_port_to_transport_addr("8.8.8.8", 53, IPPROTO_UDP, &remote_addr)))
-          ABORT(r);
+        if (!remote_addr || nr_transport_addr_is_loopback(remote_addr)) {
+          if ((r=nr_str_port_to_transport_addr("8.8.8.8", 53, IPPROTO_UDP, &known_remote_addr)))
+            ABORT(r);
+          remote_addr=&known_remote_addr;
+        }
         break;
       case NR_IPV6:
         if ((r=nr_str_port_to_transport_addr("::0", 0, IPPROTO_UDP, &addr)))
           ABORT(r);
-        if ((r=nr_str_port_to_transport_addr("2001:4860:4860::8888", 53, IPPROTO_UDP, &remote_addr)))
-          ABORT(r);
+        if (!remote_addr || nr_transport_addr_is_loopback(remote_addr)) {
+          if ((r=nr_str_port_to_transport_addr("2001:4860:4860::8888", 53, IPPROTO_UDP, &known_remote_addr)))
+            ABORT(r);
+          remote_addr=&known_remote_addr;
+        }
         break;
       default:
         assert(0);
@@ -650,7 +636,7 @@ static int nr_ice_get_default_address(nr_ice_ctx *ctx, int ip_version, nr_transp
 
     if ((r=nr_socket_factory_create_socket(ctx->socket_factory, &addr, &sock)))
       ABORT(r);
-    if ((r=nr_socket_connect(sock, &remote_addr)))
+    if ((r=nr_socket_connect(sock, remote_addr)))
       ABORT(r);
     if ((r=nr_socket_getaddr(sock, addrp)))
       ABORT(r);
@@ -672,7 +658,10 @@ static int nr_ice_get_default_local_address(nr_ice_ctx *ctx, int ip_version, nr_
     if ((r=nr_ice_get_default_address(ctx, ip_version, &default_addr)))
         ABORT(r);
 
-    for(i=0; i<addr_ct; ++i) {
+    for (i=0; i < addr_ct; ++i) {
+      // if default addr is found in local addrs, copy the more fully
+      // complete local addr to the output arg.  Don't need to worry
+      // about comparing ports here.
       if (!nr_transport_addr_cmp(&default_addr, &addrs[i].addr,
                                  NR_TRANSPORT_ADDR_CMP_MODE_ADDR)) {
         if ((r=nr_local_addr_copy(addrp, &addrs[i])))
@@ -680,15 +669,22 @@ static int nr_ice_get_default_local_address(nr_ice_ctx *ctx, int ip_version, nr_
         break;
       }
     }
-    if (i==addr_ct)
-      ABORT(R_NOT_FOUND);
+
+    // if default addr is not in local addrs, just copy the transport addr
+    // to output arg.
+    if (i == addr_ct) {
+      if ((r=nr_transport_addr_copy(&addrp->addr, &default_addr)))
+        ABORT(r);
+      (void)strlcpy(addrp->addr.ifname, "default route", sizeof(addrp->addr.ifname));
+    }
 
     _status=0;
   abort:
     return(_status);
   }
 
-static int nr_ice_get_local_addresses(nr_ice_ctx *ctx)
+int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
+                               nr_local_addr* stun_addrs, int stun_addr_ct)
   {
     int r,_status;
     nr_local_addr local_addrs[MAXADDRS];
@@ -697,31 +693,58 @@ static int nr_ice_get_local_addresses(nr_ice_ctx *ctx)
     nr_local_addr default_addrs[2];
     int default_addr_ct = 0;
 
-    if (!ctx->local_addrs) {
-      /* First, gather all the local addresses we have */
-      if((r=nr_stun_find_local_addresses(local_addrs,MAXADDRS,&addr_ct))) {
-        r_log(LOG_ICE,LOG_ERR,"ICE(%s): unable to find local addresses",ctx->label);
+    if (ctx->local_addrs) {
+      r_log(LOG_ICE,LOG_WARNING,"ICE(%s): local addresses already set, no work to do",ctx->label);
+      ABORT(R_ALREADY);
+    }
+    if (!stun_addrs || !stun_addr_ct) {
+      r_log(LOG_ICE,LOG_ERR,"ICE(%s): no stun addrs provided",ctx->label);
+      ABORT(R_BAD_ARGS);
+    }
+
+    addr_ct = MIN(stun_addr_ct, MAXADDRS);
+    r_log(LOG_ICE, LOG_DEBUG, "ICE(%s): copy %d pre-fetched stun addrs", ctx->label, addr_ct);
+    for (i=0; i<addr_ct; ++i) {
+      if (r=nr_local_addr_copy(&local_addrs[i], &stun_addrs[i])) {
         ABORT(r);
       }
+    }
 
-      if (ctx->force_net_interface[0]) {
-        /* Limit us to only addresses on a single interface */
-        int force_addr_ct = 0;
-        for(i=0;i<addr_ct;i++){
-          if (!strcmp(local_addrs[i].addr.ifname, ctx->force_net_interface)) {
-            // copy it down in the array, if needed
-            if (i != force_addr_ct) {
-              if (r=nr_local_addr_copy(&local_addrs[force_addr_ct], &local_addrs[i])) {
-                ABORT(r);
-              }
+    // removes duplicates and, based on prefs, loopback and link_local addrs
+    if (r=nr_stun_filter_local_addresses(local_addrs, &addr_ct)) {
+      ABORT(r);
+    }
+
+    if (ctx->force_net_interface[0] && addr_ct) {
+      /* Limit us to only addresses on a single interface */
+      int force_addr_ct = 0;
+      for(i=0;i<addr_ct;i++){
+        if (!strcmp(local_addrs[i].addr.ifname, ctx->force_net_interface)) {
+          // copy it down in the array, if needed
+          if (i != force_addr_ct) {
+            if (r=nr_local_addr_copy(&local_addrs[force_addr_ct], &local_addrs[i])) {
+              ABORT(r);
             }
-            force_addr_ct++;
           }
+          force_addr_ct++;
         }
-        addr_ct = force_addr_ct;
       }
+      addr_ct = force_addr_ct;
+    }
 
-      if (ctx->flags & NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS) {
+    r_log(LOG_ICE, LOG_DEBUG,
+          "ICE(%s): use only default local addresses: %s\n",
+          ctx->label,
+          (char*)(ctx->flags & NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS?"yes":"no"));
+    if ((!addr_ct) || (ctx->flags & NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS)) {
+      if (ctx->target_for_default_local_address_lookup) {
+        /* Get just the default IPv4 or IPv6 addr */
+        if(!nr_ice_get_default_local_address(
+               ctx, ctx->target_for_default_local_address_lookup->ip_version,
+               local_addrs, addr_ct, &default_addrs[default_addr_ct])) {
+          ++default_addr_ct;
+        }
+      } else {
         /* Get just the default IPv4 and IPv6 addrs */
         if(!nr_ice_get_default_local_address(ctx, NR_IPV4, local_addrs, addr_ct,
                                              &default_addrs[default_addr_ct])) {
@@ -731,30 +754,57 @@ static int nr_ice_get_local_addresses(nr_ice_ctx *ctx)
                                              &default_addrs[default_addr_ct])) {
           ++default_addr_ct;
         }
-        addrs = default_addrs;
-        addr_ct = default_addr_ct;
       }
-      else {
-        addrs = local_addrs;
+      if (!default_addr_ct) {
+        r_log(LOG_ICE,LOG_ERR,"ICE(%s): failed to find default addresses",ctx->label);
+        ABORT(R_FAILED);
       }
+      addrs = default_addrs;
+      addr_ct = default_addr_ct;
+    }
+    else {
+      addrs = local_addrs;
+    }
 
-      /* Sort interfaces by preference */
-      if(ctx->interface_prioritizer) {
-        for(i=0;i<addr_ct;i++){
-          if(r=nr_interface_prioritizer_add_interface(ctx->interface_prioritizer,addrs+i)) {
-            r_log(LOG_ICE,LOG_ERR,"ICE(%s): unable to add interface ",ctx->label);
-            ABORT(r);
-          }
-        }
-        if(r=nr_interface_prioritizer_sort_preference(ctx->interface_prioritizer)) {
-          r_log(LOG_ICE,LOG_ERR,"ICE(%s): unable to sort interface by preference",ctx->label);
+    /* Sort interfaces by preference */
+    if(ctx->interface_prioritizer) {
+      for(i=0;i<addr_ct;i++){
+        if(r=nr_interface_prioritizer_add_interface(ctx->interface_prioritizer,addrs+i)) {
+          r_log(LOG_ICE,LOG_ERR,"ICE(%s): unable to add interface ",ctx->label);
           ABORT(r);
         }
       }
-
-      if (r=nr_ice_ctx_set_local_addrs(ctx,addrs,addr_ct)) {
+      if(r=nr_interface_prioritizer_sort_preference(ctx->interface_prioritizer)) {
+        r_log(LOG_ICE,LOG_ERR,"ICE(%s): unable to sort interface by preference",ctx->label);
         ABORT(r);
       }
+    }
+
+    if (r=nr_ice_ctx_set_local_addrs(ctx,addrs,addr_ct)) {
+      ABORT(r);
+    }
+
+    _status=0;
+  abort:
+    return(_status);
+  }
+
+int nr_ice_set_target_for_default_local_address_lookup(nr_ice_ctx *ctx, const char *target_ip, UINT2 target_port)
+  {
+    int r,_status;
+
+    if (ctx->target_for_default_local_address_lookup) {
+      RFREE(ctx->target_for_default_local_address_lookup);
+      ctx->target_for_default_local_address_lookup=0;
+    }
+
+    if (!(ctx->target_for_default_local_address_lookup=RCALLOC(sizeof(nr_transport_addr))))
+      ABORT(R_NO_MEMORY);
+
+    if ((r=nr_str_port_to_transport_addr(target_ip, target_port, IPPROTO_UDP, ctx->target_for_default_local_address_lookup))) {
+      RFREE(ctx->target_for_default_local_address_lookup);
+      ctx->target_for_default_local_address_lookup=0;
+      ABORT(r);
     }
 
     _status=0;
@@ -766,9 +816,17 @@ int nr_ice_gather(nr_ice_ctx *ctx, NR_async_cb done_cb, void *cb_arg)
   {
     int r,_status;
     nr_ice_media_stream *stream;
+    nr_local_addr stun_addrs[MAXADDRS];
+    int stun_addr_ct;
 
-    if ((r=nr_ice_get_local_addresses(ctx)))
-      ABORT(r);
+    if (!ctx->local_addrs) {
+      if((r=nr_stun_find_local_addresses(stun_addrs,MAXADDRS,&stun_addr_ct))) {
+        ABORT(r);
+      }
+      if((r=nr_ice_set_local_addresses(ctx,stun_addrs,stun_addr_ct))) {
+        ABORT(r);
+      }
+    }
 
     if(STAILQ_EMPTY(&ctx->streams)) {
       r_log(LOG_ICE,LOG_ERR,"ICE(%s): Missing streams to initialize",ctx->label);
@@ -782,8 +840,11 @@ int nr_ice_gather(nr_ice_ctx *ctx, NR_async_cb done_cb, void *cb_arg)
     /* Initialize all the media stream/component pairs */
     stream=STAILQ_FIRST(&ctx->streams);
     while(stream){
-      if(r=nr_ice_media_stream_initialize(ctx,stream))
-        ABORT(r);
+      if(!stream->obsolete) {
+        if(r=nr_ice_media_stream_initialize(ctx,stream)) {
+          ABORT(r);
+        }
+      }
 
       stream=STAILQ_NEXT(stream,entry);
     }
@@ -796,11 +857,11 @@ int nr_ice_gather(nr_ice_ctx *ctx, NR_async_cb done_cb, void *cb_arg)
     return(_status);
   }
 
-int nr_ice_add_media_stream(nr_ice_ctx *ctx,char *label,int components, nr_ice_media_stream **streamp)
+int nr_ice_add_media_stream(nr_ice_ctx *ctx,const char *label,const char *ufrag,const char *pwd,int components, nr_ice_media_stream **streamp)
   {
     int r,_status;
 
-    if(r=nr_ice_media_stream_create(ctx,label,components,streamp))
+    if(r=nr_ice_media_stream_create(ctx,label,ufrag,pwd,components,streamp))
       ABORT(r);
 
     STAILQ_INSERT_TAIL(&ctx->streams,*streamp,entry);
@@ -839,42 +900,15 @@ int nr_ice_remove_media_stream(nr_ice_ctx *ctx,nr_ice_media_stream **streamp)
 
 int nr_ice_get_global_attributes(nr_ice_ctx *ctx,char ***attrsp, int *attrctp)
   {
-    char **attrs=0;
-    int _status;
-    char *tmp=0;
-
-    if(!(attrs=RCALLOC(sizeof(char *)*2)))
-      ABORT(R_NO_MEMORY);
-
-    if(!(tmp=RMALLOC(100)))
-      ABORT(R_NO_MEMORY);
-    snprintf(tmp,100,"ice-ufrag:%s",ctx->ufrag);
-    attrs[0]=tmp;
-
-    if(!(tmp=RMALLOC(100)))
-      ABORT(R_NO_MEMORY);
-    snprintf(tmp,100,"ice-pwd:%s",ctx->pwd);
-    attrs[1]=tmp;
-
-    *attrctp=2;
-    *attrsp=attrs;
-
-    _status=0;
-  abort:
-    if (_status){
-      if (attrs){
-        RFREE(attrs[0]);
-        RFREE(attrs[1]);
-      }
-      RFREE(attrs);
-    }
-    return(_status);
+    *attrctp=0;
+    *attrsp=0;
+    return(0);
   }
 
 static int nr_ice_random_string(char *str, int len)
   {
     unsigned char bytes[100];
-    int needed;
+    size_t needed;
     int r,_status;
 
     if(len%2) ABORT(R_BAD_ARGS);
@@ -1047,4 +1081,3 @@ int nr_ice_get_new_ice_pwd(char** pwd)
     }
     return(_status);
   }
-

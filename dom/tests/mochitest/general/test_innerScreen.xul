@@ -6,7 +6,7 @@
   -->
 <window title="Test mozInnerScreenX/Y Properties"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test resuls are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml"
@@ -35,23 +35,21 @@ function doTests()
   catch(ex) { }
   ok(!readable, "window pixels per css pixel shouldn't be readable to content");
 
-  var domWindowUtils = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                           .getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var domWindowUtils = window.windowUtils;
   var devPxPerCSSPx = domWindowUtils.screenPixelsPerCSSPixel;
 
   is(window.devicePixelRatio, devPxPerCSSPx, "window.devicePixelRatio");
 
-  var windowBO = document.documentElement.boxObject;
-  isRounded(window.mozInnerScreenX*devPxPerCSSPx, windowBO.screenX,
+  var rootElement = document.documentElement;
+  isRounded(window.mozInnerScreenX*devPxPerCSSPx, rootElement.screenX,
             "window screen X");
-  isRounded(window.mozInnerScreenY*devPxPerCSSPx, windowBO.screenY,
+  isRounded(window.mozInnerScreenY*devPxPerCSSPx, rootElement.screenY,
             "window screen Y");
 
   var f = document.getElementById("f");
   var fBounds = f.getBoundingClientRect();
 
-  const CI = Components.interfaces;
-  var fshell = f.contentWindow.QueryInterface(CI.nsIInterfaceRequestor).getInterface(CI.nsIWebNavigation).QueryInterface(CI.nsIDocShell);
+  var fshell = f.contentWindow.docShell;
   var fmudv = fshell.contentViewer;
 
   isRounded(f.contentWindow.mozInnerScreenX,
@@ -62,8 +60,7 @@ function doTests()
             "frame screen Y");
 
   fmudv.fullZoom *= 2;
-  var frameDomWindowUtils = f.contentWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                              .getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var frameDomWindowUtils = f.contentWindow.windowUtils;
   is(frameDomWindowUtils.screenPixelsPerCSSPixel, 2*devPxPerCSSPx,
      "frame screen pixels per CSS pixel");
 

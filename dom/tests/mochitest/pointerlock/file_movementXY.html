@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=633602
 -->
   <head>
     <title>Bug 633602 - file_movementXY.html</title>
-    <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js">
+    <script src="/tests/SimpleTest/SimpleTest.js">
     </script>
-    <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js">
+    <script src="/tests/SimpleTest/EventUtils.js">
     </script>
     <script type="application/javascript" src="pointerlock_utils.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -61,8 +61,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=633602
           movementX = ("movementX" in e);
           movementY = ("movementY" in e);
 
-          div.removeEventListener("mousemove", moveMouse, false);
-          div.addEventListener("mousemove", moveMouseAgain, false);
+          div.removeEventListener("mousemove", moveMouse);
+          div.addEventListener("mousemove", moveMouseAgain);
 
           firstMove.screenX = e.screenX;
           firstMove.screenY = e.screenY;
@@ -82,7 +82,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=633602
           secondMove.movementX = e.movementX;
           secondMove.movementY = e.movementY;
 
-          div.removeEventListener("mousemove", moveMouseAgain, false);
+          div.removeEventListener("mousemove", moveMouseAgain);
           addFullscreenChangeContinuation("exit", function() {
             info("Got fullscreenchange for exiting");
             runTests();
@@ -95,7 +95,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=633602
           info("Requesting fullscreen on parent");
           addFullscreenChangeContinuation("enter", function() {
             info("Got fullscreenchange for entering");
-            div.addEventListener("mousemove", moveMouse, false);
+            div.addEventListener("mousemove", moveMouse);
             synthesizeMouseAtCenter(div, {type: "mousemove"}, window);
           });
           div.requestFullscreen();

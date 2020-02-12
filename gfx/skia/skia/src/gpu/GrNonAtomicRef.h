@@ -8,11 +8,12 @@
 #ifndef GrNonAtomicRef_DEFINED
 #define GrNonAtomicRef_DEFINED
 
+#include "SkNoncopyable.h"
 #include "SkRefCnt.h"
 #include "SkTArray.h"
 
 /**
- * A simple non-atomic ref used in the GrBackend when we don't want to pay for the overhead of a
+ * A simple non-atomic ref used in the GrBackendApi when we don't want to pay for the overhead of a
  * threadsafe ref counted object
  */
 template<typename TSubclass> class GrNonAtomicRef : public SkNoncopyable {
@@ -27,6 +28,8 @@ public:
         fRefCnt = -10;
     }
 #endif
+
+    bool unique() const { return 1 == fRefCnt; }
 
     void ref() const {
         // Once the ref cnt reaches zero it should never be ref'ed again.

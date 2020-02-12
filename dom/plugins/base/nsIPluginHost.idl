@@ -30,8 +30,7 @@ interface nsIPluginHost : nsISupports
    */
   void reloadPlugins();
 
-  void getPluginTags([optional] out unsigned long aPluginCount,
-    [retval, array, size_is(aPluginCount)] out nsIPluginTag aResults);
+  Array<nsIPluginTag> getPluginTags();
 
   /*
    * Flags for use with clearSiteData.
@@ -156,6 +155,14 @@ interface nsIPluginHost : nsISupports
    */
   [implicit_jscontext]
   nsIFakePluginTag registerFakePlugin(in jsval initDictionary);
+
+  /**
+   * Create a fake plugin tag without registering it.
+   *
+   * Only for use in tests.
+   */
+  [implicit_jscontext]
+  nsIFakePluginTag createFakePlugin(in jsval initDictionary);
 
   /**
    * Get a reference to an existing fake plugin tag for the given MIME type, if

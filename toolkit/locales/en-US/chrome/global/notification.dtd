@@ -4,8 +4,11 @@
 
 <!ENTITY closeNotification.tooltip "Close this message">
 
-<!ENTITY closeNotificationItem.label "Not Now">
-
 <!ENTITY checkForUpdates "Check for updates…">
 
-<!ENTITY learnMore "Learn more…">
+<!ENTITY learnMoreNoEllipsis "Learn more">
+
+<!ENTITY defaultButton.label "OK!">
+<!ENTITY defaultButton.accesskey "O">
+
+<!ENTITY moreActionsButton.accessibleLabel "More actions">

@@ -4,19 +4,19 @@
   <script type="application/javascript">
 
   function ok(what, msg) {
-    window.parent.postMessage({type: what ? 'OK' : 'KO', msg: msg }, '*');
+    window.parent.postMessage({type: what ? 'OK' : 'KO', msg }, '*');
   }
 
-  window.addEventListener('message', receiveMessage, false);
+  window.addEventListener('message', receiveMessage);
   function receiveMessage(evt) {
     if (evt.data.type == 'PORT') {
       var port = evt.data.port;
       var counter = 0;
-      port.onmessage = function(evt) {
+      port.onmessage = function(event) {
         if (counter++ == 0) {
-          ok(!(evt.data % 2), "The number " + evt.data + " has been received correctly by the iframe");
+          ok(!(event.data % 2), "The number " + event.data + " has been received correctly by the iframe");
 
-          window.parent.postMessage({ type: 'PORT', port: port }, '*', [port]);
+          window.parent.postMessage({ type: 'PORT', port }, '*', [port]);
         }
         else {
           ok(false, "Wrong message!");
@@ -30,4 +30,3 @@
   </script>
 </body>
 </html>
-

@@ -12,61 +12,67 @@
 #include "mozilla/StaticMutex.h"
 #include "FFmpegLibs.h"
 
-namespace mozilla
-{
+namespace mozilla {
 
 template <int V>
-class FFmpegDataDecoder : public MediaDataDecoder
-{
-};
+class FFmpegDataDecoder : public MediaDataDecoder {};
 
 template <>
-class FFmpegDataDecoder<LIBAV_VER> : public MediaDataDecoder
-{
-public:
+class FFmpegDataDecoder<LIBAV_VER>;
+DDLoggedTypeNameAndBase(FFmpegDataDecoder<LIBAV_VER>, MediaDataDecoder);
+
+template <>
+class FFmpegDataDecoder<LIBAV_VER>
+    : public MediaDataDecoder,
+      public DecoderDoctorLifeLogger<FFmpegDataDecoder<LIBAV_VER>> {
+ public:
   FFmpegDataDecoder(FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue,
-                    MediaDataDecoderCallback* aCallback,
                     AVCodecID aCodecID);
   virtual ~FFmpegDataDecoder();
 
   static bool Link();
 
   RefPtr<InitPromise> Init() override = 0;
-  void Input(MediaRawData* aSample) override;
-  void Flush() override;
-  void Drain() override;
-  void Shutdown() override;
+  RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
+  RefPtr<DecodePromise> Drain() override;
+  RefPtr<FlushPromise> Flush() override;
+  RefPtr<ShutdownPromise> Shutdown() override;
 
   static AVCodec* FindAVCodec(FFmpegLibWrapper* aLib, AVCodecID aCodec);
 
-protected:
+ protected:
   // Flush and Drain operation, always run
-  virtual void ProcessFlush();
+  virtual RefPtr<FlushPromise> ProcessFlush();
   virtual void ProcessShutdown();
   virtual void InitCodecContext() {}
-  AVFrame*        PrepareFrame();
-  nsresult        InitDecoder();
+  AVFrame* PrepareFrame();
+  MediaResult InitDecoder();
+  MediaResult DoDecode(MediaRawData* aSample, bool* aGotFrame,
+                       DecodedData& aOutResults);
 
   FFmpegLibWrapper* mLib;
-  MediaDataDecoderCallback* mCallback;
 
   AVCodecContext* mCodecContext;
-  AVFrame*        mFrame;
+  AVCodecParserContext* mCodecParser;
+  AVFrame* mFrame;
   RefPtr<MediaByteBuffer> mExtraData;
   AVCodecID mCodecID;
 
-private:
-  void ProcessDecode(MediaRawData* aSample);
-  virtual MediaResult DoDecode(MediaRawData* aSample) = 0;
-  virtual void ProcessDrain() = 0;
+ private:
+  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
+  RefPtr<DecodePromise> ProcessDrain();
+  virtual MediaResult DoDecode(MediaRawData* aSample, uint8_t* aData, int aSize,
+                               bool* aGotFrame,
+                               MediaDataDecoder::DecodedData& aOutResults) = 0;
+  virtual bool NeedParser() const { return false; }
+  virtual int ParserFlags() const { return PARSER_FLAG_COMPLETE_FRAMES; }
 
   static StaticMutex sMonitor;
   const RefPtr<TaskQueue> mTaskQueue;
-  // Set/cleared on reader thread calling Flush() to indicate that output is
-  // not required and so input samples on mTaskQueue need not be processed.
-  Atomic<bool> mIsFlushing;
+  MozPromiseHolder<DecodePromise> mPromise;
+  media::TimeUnit mLastInputDts;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // __FFmpegDataDecoder_h__
+#endif  // __FFmpegDataDecoder_h__

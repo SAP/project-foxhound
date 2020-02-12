@@ -18,16 +18,15 @@ struct PRFileDesc;
 [ptr] native PRFileDescPtr(PRFileDesc);
 [ptr] native nsASocketHandlerPtr(nsASocketHandler);
 
-[scriptable, uuid(ad56b25f-e6bb-4db3-9f7b-5b7db33fd2b1)]
-interface nsISocketTransportService : nsISupports 
+[builtinclass, scriptable, uuid(ad56b25f-e6bb-4db3-9f7b-5b7db33fd2b1)]
+interface nsISocketTransportService : nsISupports
 {
     /**
      * Creates a transport for a specified host and port.
      *
      * @param aSocketTypes
-     *        array of socket type strings.  null if using default socket type.
-     * @param aTypeCount
-     *        specifies length of aSocketTypes.
+     *        array of socket type strings.  Empty array if using default
+     *        socket type.
      * @param aHost
      *        specifies the target hostname or IP address literal of the peer
      *        for this socket.
@@ -43,9 +42,7 @@ interface nsISocketTransportService : nsISupports
      *
      * NOTE: this function can be called from any thread
      */
-    nsISocketTransport createTransport([array, size_is(aTypeCount)]
-                                       in string aSocketTypes,
-                                       in unsigned long aTypeCount,
+    nsISocketTransport createTransport(in Array<ACString> aSocketTypes,
                                        in AUTF8String aHost,
                                        in long aPort,
                                        in nsIProxyInfo aProxyInfo);
@@ -85,6 +82,20 @@ interface nsISocketTransportService : nsISupports
     nsISocketTransport createUnixDomainTransport(in nsIFile aPath);
 
     /**
+     * Create a transport built on a Unix domain socket that uses abstract
+     * address name.
+     *
+     * If abstract socket address isn't supported on System, this returns
+     * NS_ERROR_SOCKET_ADDRESS_NOT_SUPPORTED.
+     *
+     * @param aName
+     *        The name of abstract socket adress of the Unix domain socket to
+     *        which we should connect.
+     */
+    nsISocketTransport
+    createUnixDomainAbstractAddressTransport(in ACString aName);
+
+    /**
      * Adds a new socket to the list of controlled sockets.
      *
      * This will fail with the error code NS_ERROR_NOT_AVAILABLE if the maximum
@@ -119,14 +130,12 @@ interface nsISocketTransportService : nsISupports
     [noscript] void notifyWhenCanAttachSocket(in nsIRunnable aEvent);
 };
 
-[scriptable, uuid(c5204623-5b58-4a16-8b2e-67c34dd02e3f)]
+[builtinclass, scriptable, uuid(c5204623-5b58-4a16-8b2e-67c34dd02e3f)]
 interface nsIRoutedSocketTransportService : nsISocketTransportService
 {
     // use this instead of createTransport when you have a transport
     // that distinguishes between origin and route (aka connection)
-    nsISocketTransport createRoutedTransport([array, size_is(aTypeCount)]
-                                             in string aSocketTypes,
-                                             in unsigned long aTypeCount,
+    nsISocketTransport createRoutedTransport(in Array<ACString> aSocketTypes,
                                              in AUTF8String aHost, // origin
                                              in long aPort, // origin
                                              in AUTF8String aHostRoute,

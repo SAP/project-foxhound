@@ -13,6 +13,7 @@ EXPORTS.mozilla.a11y += [
     'AccTypes.h',
     'DocManager.h',
     'FocusManager.h',
+    'IDSet.h',
     'Platform.h',
     'RelationType.h',
     'Role.h',
@@ -46,6 +47,7 @@ UNIFIED_SOURCES += [
     'nsCoreUtils.cpp',
     'nsEventShell.cpp',
     'nsTextEquivUtils.cpp',
+    'Pivot.cpp',
     'SelectionManager.cpp',
     'StyleInfo.cpp',
     'TextAttrs.cpp',
@@ -63,6 +65,8 @@ LOCAL_INCLUDES += [
     '/accessible/generic',
     '/accessible/html',
     '/accessible/ipc',
+    '/dom/base',
+    '/dom/xul',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -78,7 +82,6 @@ LOCAL_INCLUDES += [
     '/accessible/xpcom',
     '/accessible/xul',
     '/dom/base',
-    '/dom/xbl',
     '/ipc/chromium/src',
     '/layout/generic',
     '/layout/style',
@@ -87,7 +90,7 @@ LOCAL_INCLUDES += [
     '/layout/xul/tree/',
 ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     LOCAL_INCLUDES += [
         '/accessible/atk',
     ]
@@ -101,6 +104,10 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     LOCAL_INCLUDES += [
         '/accessible/mac',
     ]
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    LOCAL_INCLUDES += [
+        '/accessible/android',
+    ]
 else:
     LOCAL_INCLUDES += [
         '/accessible/other',
@@ -110,5 +117,5 @@ FINAL_LIBRARY = 'xul'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

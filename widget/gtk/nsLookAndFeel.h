@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -8,84 +8,100 @@
 #ifndef __nsLookAndFeel
 #define __nsLookAndFeel
 
+#include "X11UndefineNone.h"
 #include "nsXPLookAndFeel.h"
 #include "nsCOMPtr.h"
 #include "gfxFont.h"
 
 struct _GtkStyle;
 
-class nsLookAndFeel: public nsXPLookAndFeel {
-public:
-    nsLookAndFeel();
-    virtual ~nsLookAndFeel();
+class nsLookAndFeel final : public nsXPLookAndFeel {
+ public:
+  nsLookAndFeel();
+  virtual ~nsLookAndFeel();
 
-    virtual nsresult NativeGetColor(ColorID aID, nscolor &aResult);
-    virtual nsresult GetIntImpl(IntID aID, int32_t &aResult);
-    virtual nsresult GetFloatImpl(FloatID aID, float &aResult);
-    virtual bool GetFontImpl(FontID aID, nsString& aFontName,
-                             gfxFontStyle& aFontStyle,
-                             float aDevPixPerCSSPixel);
+  void NativeInit() final;
+  virtual void RefreshImpl() override;
+  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
+  virtual nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
+  virtual nsresult GetFloatImpl(FloatID aID, float& aResult) override;
+  virtual bool GetFontImpl(FontID aID, nsString& aFontName,
+                           gfxFontStyle& aFontStyle) override;
 
-    virtual void RefreshImpl();
-    virtual char16_t GetPasswordCharacterImpl();
-    virtual bool GetEchoPasswordImpl();
+  virtual char16_t GetPasswordCharacterImpl() override;
+  virtual bool GetEchoPasswordImpl() override;
 
-protected:
-#if (MOZ_WIDGET_GTK == 2)
-    struct _GtkStyle *mStyle;
-#else
-    struct _GtkStyleContext *mBackgroundStyle;
-    struct _GtkStyleContext *mButtonStyle;
-#endif
+  bool IsCSDAvailable() const { return mCSDAvailable; }
 
-    // Cached fonts
-    bool mDefaultFontCached;
-    bool mButtonFontCached;
-    bool mFieldFontCached;
-    bool mMenuFontCached;
-    nsString mDefaultFontName;
-    nsString mButtonFontName;
-    nsString mFieldFontName;
-    nsString mMenuFontName;
-    gfxFontStyle mDefaultFontStyle;
-    gfxFontStyle mButtonFontStyle;
-    gfxFontStyle mFieldFontStyle;
-    gfxFontStyle mMenuFontStyle;
+  static const nscolor kBlack = NS_RGB(0, 0, 0);
+  static const nscolor kWhite = NS_RGB(255, 255, 255);
 
-    // Cached colors
-    nscolor sInfoBackground;
-    nscolor sInfoText;
-    nscolor sMenuBackground;
-    nscolor sMenuBarText;
-    nscolor sMenuBarHoverText;
-    nscolor sMenuText;
-    nscolor sMenuTextInactive;
-    nscolor sMenuHover;
-    nscolor sMenuHoverText;
-    nscolor sButtonText;
-    nscolor sButtonHoverText;
-    nscolor sButtonBackground;
-    nscolor sFrameOuterLightBorder;
-    nscolor sFrameInnerDarkBorder;
-    nscolor sOddCellBackground;
-    nscolor sNativeHyperLinkText;
-    nscolor sComboBoxText;
-    nscolor sComboBoxBackground;
-    nscolor sMozFieldText;
-    nscolor sMozFieldBackground;
-    nscolor sMozWindowText;
-    nscolor sMozWindowBackground;
-    nscolor sTextSelectedText;
-    nscolor sTextSelectedBackground;
-    nscolor sMozScrollbar;
-#if (MOZ_WIDGET_GTK == 3)
-    nscolor sInfoBarText;
-#endif
-    char16_t sInvisibleCharacter;
-    float   sCaretRatio;
-    bool    sMenuSupportsDrag;
+ protected:
+  // Cached fonts
+  bool mDefaultFontCached = false;
+  bool mButtonFontCached = false;
+  bool mFieldFontCached = false;
+  bool mMenuFontCached = false;
+  nsString mDefaultFontName;
+  nsString mButtonFontName;
+  nsString mFieldFontName;
+  nsString mMenuFontName;
+  gfxFontStyle mDefaultFontStyle;
+  gfxFontStyle mButtonFontStyle;
+  gfxFontStyle mFieldFontStyle;
+  gfxFontStyle mMenuFontStyle;
 
-    void Init();
+  // Cached colors
+  nscolor mInfoBackground = kWhite;
+  nscolor mInfoText = kBlack;
+  nscolor mMenuBackground = kWhite;
+  nscolor mMenuBarText = kBlack;
+  nscolor mMenuBarHoverText = kBlack;
+  nscolor mMenuText = kBlack;
+  nscolor mMenuTextInactive = kWhite;
+  nscolor mMenuHover = kWhite;
+  nscolor mMenuHoverText = kBlack;
+  nscolor mButtonDefault = kWhite;
+  nscolor mButtonText = kBlack;
+  nscolor mButtonHoverText = kBlack;
+  nscolor mButtonHoverFace = kWhite;
+  nscolor mButtonActiveText = kBlack;
+  nscolor mFrameOuterLightBorder = kBlack;
+  nscolor mFrameInnerDarkBorder = kBlack;
+  nscolor mOddCellBackground = kWhite;
+  nscolor mNativeHyperLinkText = kBlack;
+  nscolor mComboBoxText = kBlack;
+  nscolor mComboBoxBackground = kWhite;
+  nscolor mMozFieldText = kBlack;
+  nscolor mMozFieldBackground = kWhite;
+  nscolor mMozWindowText = kBlack;
+  nscolor mMozWindowBackground = kWhite;
+  nscolor mMozWindowActiveBorder = kBlack;
+  nscolor mMozWindowInactiveBorder = kBlack;
+  nscolor mMozWindowInactiveCaption = kWhite;
+  nscolor mMozCellHighlightBackground = kWhite;
+  nscolor mMozCellHighlightText = kBlack;
+  nscolor mTextSelectedText = kBlack;
+  nscolor mTextSelectedBackground = kWhite;
+  nscolor mMozScrollbar = kWhite;
+  nscolor mInfoBarText = kBlack;
+  char16_t mInvisibleCharacter = 0;
+  float mCaretRatio = 0.0f;
+  int32_t mCaretBlinkTime = 0;
+  bool mMenuSupportsDrag = false;
+  bool mCSDAvailable = false;
+  bool mCSDHideTitlebarByDefault = false;
+  bool mCSDMaximizeButton = false;
+  bool mCSDMinimizeButton = false;
+  bool mCSDCloseButton = false;
+  bool mCSDReversedPlacement = false;
+  bool mSystemUsesDarkTheme = false;
+  bool mInitialized = false;
+
+  void EnsureInit();
+
+ private:
+  nsresult InitCellHighlightColors();
 };
 
 #endif

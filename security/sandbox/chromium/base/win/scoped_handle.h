@@ -5,20 +5,21 @@
 #ifndef BASE_WIN_SCOPED_HANDLE_H_
 #define BASE_WIN_SCOPED_HANDLE_H_
 
-#include <windows.h>
+#include "base/win/windows_types.h"
 
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/move.h"
 
 // TODO(rvargas): remove this with the rest of the verifier.
 #if defined(COMPILER_MSVC)
 #include <intrin.h>
 #define BASE_WIN_GET_CALLER _ReturnAddress()
 #elif defined(COMPILER_GCC)
-#define BASE_WIN_GET_CALLER __builtin_extract_return_addr(\\
+#define BASE_WIN_GET_CALLER __builtin_extract_return_addr(\
     __builtin_return_address(0))
 #endif
 
@@ -36,8 +37,6 @@ namespace win {
 //     this explicitly is necessary because of bug 528394 and VC++ 2015.
 template <class Traits, class Verifier>
 class GenericScopedHandle {
-  MOVE_ONLY_TYPE_FOR_CPP_03(GenericScopedHandle)
-
  public:
   typedef typename Traits::Handle Handle;
 
@@ -75,7 +74,7 @@ class GenericScopedHandle {
       if (Traits::IsHandleValid(handle)) {
         handle_ = handle;
         Verifier::StartTracking(handle, this, BASE_WIN_GET_CALLER,
-                                tracked_objects::GetProgramCounter());
+                                GetProgramCounter());
       }
       ::SetLastError(last_error);
     }
@@ -86,12 +85,12 @@ class GenericScopedHandle {
   }
 
   // Transfers ownership away from this object.
-  Handle Take() {
+  Handle Take() WARN_UNUSED_RESULT {
     Handle temp = handle_;
     handle_ = Traits::NullHandle();
     if (Traits::IsHandleValid(temp)) {
       Verifier::StopTracking(temp, this, BASE_WIN_GET_CALLER,
-                             tracked_objects::GetProgramCounter());
+                             GetProgramCounter());
     }
     return temp;
   }
@@ -100,7 +99,7 @@ class GenericScopedHandle {
   void Close() {
     if (Traits::IsHandleValid(handle_)) {
       Verifier::StopTracking(handle_, this, BASE_WIN_GET_CALLER,
-                             tracked_objects::GetProgramCounter());
+                             GetProgramCounter());
 
       Traits::CloseHandle(handle_);
       handle_ = Traits::NullHandle();
@@ -108,7 +107,11 @@ class GenericScopedHandle {
   }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ScopedHandleTest, ActiveVerifierWrongOwner);
+  FRIEND_TEST_ALL_PREFIXES(ScopedHandleTest, ActiveVerifierUntrackedHandle);
   Handle handle_;
+
+  DISALLOW_COPY_AND_ASSIGN(GenericScopedHandle);
 };
 
 #undef BASE_WIN_GET_CALLER
@@ -168,14 +171,13 @@ typedef GenericScopedHandle<HandleTraits, VerifierTraits> ScopedHandle;
 // This function may be called by the embedder to disable the use of
 // VerifierTraits at runtime. It has no effect if DummyVerifierTraits is used
 // for ScopedHandle.
-void BASE_EXPORT DisableHandleVerifier();
+BASE_EXPORT void DisableHandleVerifier();
 
 // This should be called whenever the OS is closing a handle, if extended
 // verification of improper handle closing is desired. If |handle| is being
 // tracked by the handle verifier and ScopedHandle is not the one closing it,
 // a CHECK is generated.
-void BASE_EXPORT OnHandleBeingClosed(HANDLE handle);
-
+BASE_EXPORT void OnHandleBeingClosed(HANDLE handle);
 }  // namespace win
 }  // namespace base
 

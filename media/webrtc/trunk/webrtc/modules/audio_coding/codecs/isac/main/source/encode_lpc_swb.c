@@ -26,7 +26,7 @@
 #include "lpc_shape_swb12_tables.h"
 #include "lpc_shape_swb16_tables.h"
 #include "settings.h"
-#include "webrtc/typedefs.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 /******************************************************************************
  * WebRtcIsac_RemoveLarMean()
@@ -440,7 +440,7 @@ WebRtcIsac_CorrelateInterVec(
   int16_t rowCntr;
   int16_t colCntr;
   int16_t interVecDim;
-  double myVec[UB16_LPC_VEC_PER_FRAME];
+  double myVec[UB16_LPC_VEC_PER_FRAME] = {0.0};
   const double* interVecDecorrMat;
 
   switch(bandwidth)

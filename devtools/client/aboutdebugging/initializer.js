@@ -2,66 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env browser */
-/* globals DebuggerClient, DebuggerServer, Telemetry */
-
 "use strict";
 
-const { loader } = Components.utils.import(
-  "resource://devtools/shared/Loader.jsm", {});
-const { BrowserLoader } = Components.utils.import(
-  "resource://devtools/client/shared/browser-loader.js", {});
-
-loader.lazyRequireGetter(this, "DebuggerClient",
-  "devtools/shared/client/main", true);
-loader.lazyRequireGetter(this, "DebuggerServer",
-  "devtools/server/main", true);
-loader.lazyRequireGetter(this, "Telemetry",
-  "devtools/client/shared/telemetry");
-
+const { BrowserLoader } = ChromeUtils.import(
+  "resource://devtools/client/shared/browser-loader.js"
+);
 const { require } = BrowserLoader({
   baseURI: "resource://devtools/client/aboutdebugging/",
-  window
+  window,
 });
 
-const { createFactory, render, unmountComponentAtNode } =
-  require("devtools/client/shared/vendor/react");
-
-const AboutDebuggingApp = createFactory(require("./components/aboutdebugging"));
-
-var AboutDebugging = {
-  init() {
-    if (!DebuggerServer.initialized) {
-      DebuggerServer.init();
-      DebuggerServer.addBrowserActors();
-    }
-    DebuggerServer.allowChromeProcess = true;
-
-    this.client = new DebuggerClient(DebuggerServer.connectPipe());
-
-    this.client.connect().then(() => {
-      let client = this.client;
-      let telemetry = new Telemetry();
-
-      render(AboutDebuggingApp({ client, telemetry }),
-        document.querySelector("#body"));
-    });
-  },
-
-  destroy() {
-    unmountComponentAtNode(document.querySelector("#body"));
-
-    this.client.close();
-    this.client = null;
-  },
-};
-
-window.addEventListener("DOMContentLoaded", function load() {
-  window.removeEventListener("DOMContentLoaded", load);
-  AboutDebugging.init();
-});
-
-window.addEventListener("unload", function unload() {
-  window.removeEventListener("unload", unload);
-  AboutDebugging.destroy();
-});
+// The only purpose of this module is to load the real aboutdebugging module via the
+// BrowserLoader.
+// This cannot be done using an inline script tag in index.html because we are applying
+// CSP for about: pages in Bug 1492063.
+// And this module cannot be merged with aboutdebugging.js because modules loaded with
+// script tags are using Promises bound to the lifecycle of the document, while modules
+// loaded with a devtools loader use Promises that will still resolve if the document is
+// destroyed. This is particularly useful to ensure asynchronous destroy() calls succeed.
+require("./aboutdebugging");

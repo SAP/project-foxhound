@@ -15,86 +15,76 @@ namespace mozilla {
 namespace dom {
 
 class BlobImpl;
+class FileSystemGetDirectoryListingParams;
+class OwningFileOrDirectory;
 
-class GetDirectoryListingTaskChild final : public FileSystemTaskChildBase
-{
-public:
-  static already_AddRefed<GetDirectoryListingTaskChild>
-  Create(FileSystemBase* aFileSystem,
-         Directory* aDirectory,
-         nsIFile* aTargetPath,
-         const nsAString& aFilters,
-         ErrorResult& aRv);
+class GetDirectoryListingTaskChild final : public FileSystemTaskChildBase {
+ public:
+  static already_AddRefed<GetDirectoryListingTaskChild> Create(
+      FileSystemBase* aFileSystem, Directory* aDirectory, nsIFile* aTargetPath,
+      const nsAString& aFilters, ErrorResult& aRv);
 
-  virtual
-  ~GetDirectoryListingTaskChild();
+  virtual ~GetDirectoryListingTaskChild();
 
-  already_AddRefed<Promise>
-  GetPromise();
+  already_AddRefed<Promise> GetPromise();
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
-
-private:
+ private:
   // If aDirectoryOnly is set, we should ensure that the target is a directory.
-  GetDirectoryListingTaskChild(FileSystemBase* aFileSystem,
-                               Directory* aDirectory,
-                               nsIFile* aTargetPath,
+  GetDirectoryListingTaskChild(nsIGlobalObject* aGlobalObject,
+                               FileSystemBase* aFileSystem,
+                               Directory* aDirectory, nsIFile* aTargetPath,
                                const nsAString& aFilters);
 
-  virtual FileSystemParams
-  GetRequestParams(const nsString& aSerializedDOMPath,
-                   ErrorResult& aRv) const override;
+  virtual FileSystemParams GetRequestParams(const nsString& aSerializedDOMPath,
+                                            ErrorResult& aRv) const override;
 
-  virtual void
-  SetSuccessRequestResult(const FileSystemResponseValue& aValue,
-                          ErrorResult& aRv) override;
+  virtual void SetSuccessRequestResult(const FileSystemResponseValue& aValue,
+                                       ErrorResult& aRv) override;
 
-  virtual void
-  HandlerCallback() override;
+  virtual void HandlerCallback() override;
 
   RefPtr<Promise> mPromise;
   RefPtr<Directory> mDirectory;
   nsCOMPtr<nsIFile> mTargetPath;
   nsString mFilters;
 
-  // We cannot store File or Directory objects bacause this object is created
-  // on a different thread and File and Directory are not thread-safe.
-  FallibleTArray<Directory::FileOrDirectoryPath> mTargetData;
+  FallibleTArray<OwningFileOrDirectory> mTargetData;
 };
 
-class GetDirectoryListingTaskParent final : public FileSystemTaskParentBase
-{
-public:
-  static already_AddRefed<GetDirectoryListingTaskParent>
-  Create(FileSystemBase* aFileSystem,
-         const FileSystemGetDirectoryListingParams& aParam,
-         FileSystemRequestParent* aParent,
-         ErrorResult& aRv);
+class GetDirectoryListingTaskParent final : public FileSystemTaskParentBase {
+ public:
+  static already_AddRefed<GetDirectoryListingTaskParent> Create(
+      FileSystemBase* aFileSystem,
+      const FileSystemGetDirectoryListingParams& aParam,
+      FileSystemRequestParent* aParent, ErrorResult& aRv);
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
+  nsresult GetTargetPath(nsAString& aPath) const override;
 
-private:
-  GetDirectoryListingTaskParent(FileSystemBase* aFileSystem,
-                                const FileSystemGetDirectoryListingParams& aParam,
-                                FileSystemRequestParent* aParent);
+ private:
+  GetDirectoryListingTaskParent(
+      FileSystemBase* aFileSystem,
+      const FileSystemGetDirectoryListingParams& aParam,
+      FileSystemRequestParent* aParent);
 
-  virtual FileSystemResponseValue
-  GetSuccessRequestResult(ErrorResult& aRv) const override;
+  virtual FileSystemResponseValue GetSuccessRequestResult(
+      ErrorResult& aRv) const override;
 
-  virtual nsresult
-  IOWork() override;
+  virtual nsresult IOWork() override;
 
   nsCOMPtr<nsIFile> mTargetPath;
+  nsString mDOMPath;
   nsString mFilters;
 
-  // We cannot store File or Directory objects bacause this object is created
-  // on a different thread and File and Directory are not thread-safe.
-  FallibleTArray<Directory::FileOrDirectoryPath> mTargetData;
+  struct FileOrDirectoryPath {
+    nsString mPath;
+
+    enum { eFilePath, eDirectoryPath } mType;
+  };
+
+  FallibleTArray<FileOrDirectoryPath> mTargetData;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_GetDirectoryListing_h
+#endif  // mozilla_dom_GetDirectoryListing_h

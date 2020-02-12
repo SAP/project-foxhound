@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=617528
 -->
 <head>
   <title>Test for Bug 418756 and 617528</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -26,7 +26,7 @@ and
   </menu>
 </div>
 <pre id="test">
-<script class="testbody" type="text/javascript; version=1.7">
+<script class="testbody" type="text/javascript">
 
 /** Test for Bug 418756 and 617528 **/
 var group1;
@@ -48,7 +48,7 @@ var createdNodes = [];
 function cleanup() {
   for (let node of createdNodes) {
     if (node.parentNode) {
-      node.parentNode.removeChild(node);
+      node.remove();
     }
   }
 
@@ -257,7 +257,7 @@ for (let n of [1, 2, 3]) {
        "] checked wrong pass 9");
   }
 }
-group1[1].parentNode.removeChild(group1[1]);
+group1[1].remove();
 for (let n of [1, 2, 3]) {
   for (let g of window["group"+n]) {
     is(g.defaultChecked, n == 1 && (group1.indexOf(g) == 0 ||

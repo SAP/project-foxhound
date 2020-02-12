@@ -6,13 +6,17 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import unittest
 import os
+import mock
 
-from .. import create
-from ..graph import Graph
-from ..taskgraph import TaskGraph
-from .util import TestTask
+from taskgraph import create
+from taskgraph.config import GraphConfig
+from taskgraph.graph import Graph
+from taskgraph.taskgraph import TaskGraph
+from taskgraph.task import Task
 
 from mozunit import main
+
+GRAPH_CONFIG = GraphConfig({'trust-domain': 'domain'}, '/var/empty')
 
 
 class TestCreate(unittest.TestCase):
@@ -22,11 +26,11 @@ class TestCreate(unittest.TestCase):
         if 'TASK_ID' in os.environ:
             del os.environ['TASK_ID']
         self.created_tasks = {}
-        self.old_create_task = create._create_task
-        create._create_task = self.fake_create_task
+        self.old_create_task = create.create_task
+        create.create_task = self.fake_create_task
 
     def tearDown(self):
-        create._create_task = self.old_create_task
+        create.create_task = self.old_create_task
         if self.old_task_id:
             os.environ['TASK_ID'] = self.old_task_id
         elif 'TASK_ID' in os.environ:
@@ -37,20 +41,21 @@ class TestCreate(unittest.TestCase):
 
     def test_create_tasks(self):
         tasks = {
-            'tid-a': TestTask(label='a', task={'payload': 'hello world'}),
-            'tid-b': TestTask(label='b', task={'payload': 'hello world'}),
+            'tid-a': Task(kind='test', label='a', attributes={}, task={'payload': 'hello world'}),
+            'tid-b': Task(kind='test', label='b', attributes={}, task={'payload': 'hello world'}),
         }
         label_to_taskid = {'a': 'tid-a', 'b': 'tid-b'}
         graph = Graph(nodes={'tid-a', 'tid-b'}, edges={('tid-a', 'tid-b', 'edge')})
         taskgraph = TaskGraph(tasks, graph)
 
-        create.create_tasks(taskgraph, label_to_taskid)
+        create.create_tasks(GRAPH_CONFIG, taskgraph, label_to_taskid, {'level': '4'})
 
         for tid, task in self.created_tasks.iteritems():
             self.assertEqual(task['payload'], 'hello world')
+            self.assertEqual(task['schedulerId'], 'domain-level-4')
             # make sure the dependencies exist, at least
             for depid in task.get('dependencies', []):
-                if depid is 'decisiontask':
+                if depid == 'decisiontask':
                     # Don't look for decisiontask here
                     continue
                 self.assertIn(depid, self.created_tasks)
@@ -59,16 +64,35 @@ class TestCreate(unittest.TestCase):
         "a task with no dependencies depends on the decision task"
         os.environ['TASK_ID'] = 'decisiontask'
         tasks = {
-            'tid-a': TestTask(label='a', task={'payload': 'hello world'}),
+            'tid-a': Task(kind='test', label='a', attributes={}, task={'payload': 'hello world'}),
         }
         label_to_taskid = {'a': 'tid-a'}
         graph = Graph(nodes={'tid-a'}, edges=set())
         taskgraph = TaskGraph(tasks, graph)
 
-        create.create_tasks(taskgraph, label_to_taskid)
+        create.create_tasks(GRAPH_CONFIG, taskgraph, label_to_taskid, {'level': '4'})
 
         for tid, task in self.created_tasks.iteritems():
             self.assertEqual(task.get('dependencies'), [os.environ['TASK_ID']])
+
+    @mock.patch('taskgraph.create.create_task')
+    def test_create_tasks_fails_if_create_fails(self, create_task):
+        "creat_tasks fails if a single create_task call fails"
+        os.environ['TASK_ID'] = 'decisiontask'
+        tasks = {
+            'tid-a': Task(kind='test', label='a', attributes={}, task={'payload': 'hello world'}),
+        }
+        label_to_taskid = {'a': 'tid-a'}
+        graph = Graph(nodes={'tid-a'}, edges=set())
+        taskgraph = TaskGraph(tasks, graph)
+
+        def fail(*args):
+            print("UHOH")
+            raise RuntimeError('oh noes!')
+        create_task.side_effect = fail
+
+        with self.assertRaises(RuntimeError):
+            create.create_tasks(GRAPH_CONFIG, taskgraph, label_to_taskid, {'level': '4'})
 
 
 if __name__ == '__main__':

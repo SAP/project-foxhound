@@ -8,9 +8,8 @@ include('../templates.mozbuild')
 
 DIRS += [
     'aboutdebugging',
-    'animationinspector',
-    'canvasdebugger',
-    'commandline',
+    'accessibility',
+    'application',
     'debugger',
     'dom',
     'framework',
@@ -20,31 +19,17 @@ DIRS += [
     'memory',
     'netmonitor',
     'performance',
+    'performance-new',
     'preferences',
-    'projecteditor',
-    'promisedebugger',
-    'responsive.html',
-    'responsivedesign',
+    'responsive',
     'scratchpad',
-    'shadereditor',
     'shared',
-    'shims',
-    'sourceeditor',
     'storage',
     'styleeditor',
     'themes',
-    'webaudioeditor',
     'webconsole',
-    'webide',
-]
-
-# Shim old theme paths used by DevTools add-ons
-if CONFIG['MOZ_BUILD_APP'] == 'browser':
-    DIRS += ['themes/shims']
-
-EXTRA_COMPONENTS += [
-    'devtools-startup.js',
-    'devtools-startup.manifest',
+    'webreplay',
+    'whats-new',
 ]
 
 JAR_MANIFESTS += ['jar.mn']
@@ -53,3 +38,11 @@ DevToolsModules(
     'definitions.js',
     'menus.js',
 )
+
+if not CONFIG['MOZILLA_OFFICIAL']:
+    DevToolsModules(
+        'devtools-fission-prefs.js',
+    )
+
+with Files('**'):
+    BUG_COMPONENT = ('DevTools', 'General')

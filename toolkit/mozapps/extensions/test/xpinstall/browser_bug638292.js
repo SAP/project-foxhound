@@ -1,40 +1,44 @@
 // ----------------------------------------------------------------------------
 // Test whether an InstallTrigger.enabled is working
-add_task(function * ()
-{
-  let testtab = yield BrowserTestUtils.openNewForegroundTab(gBrowser, TESTROOT + "bug638292.html");
+add_task(async function() {
+  let testtab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    TESTROOT + "bug638292.html"
+  );
 
-  function* verify(link, button)
-  {
+  async function verify(link, button) {
     info("Clicking " + link);
 
-    let waitForNewTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+    let loadedPromise = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
 
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#" + link, { button: button },
-                                                   gBrowser.selectedBrowser);
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      "#" + link,
+      { button },
+      gBrowser.selectedBrowser
+    );
 
-    let newtab = yield waitForNewTabPromise;
+    let newtab = await loadedPromise;
 
-    yield BrowserTestUtils.browserLoaded(newtab.linkedBrowser);
-
-    let result = yield ContentTask.spawn(newtab.linkedBrowser, { }, function* () {
-      return (content.document.getElementById("enabled").textContent == "true");
-    });
+    let result = await ContentTask.spawn(
+      newtab.linkedBrowser,
+      {},
+      async function() {
+        return content.document.getElementById("enabled").textContent == "true";
+      }
+    );
 
     ok(result, "installTrigger for " + link + " should have been enabled");
 
     // Focus the old tab (link3 is opened in the background)
     if (link != "link3") {
-      yield BrowserTestUtils.switchTab(gBrowser, testtab);
+      await BrowserTestUtils.switchTab(gBrowser, testtab);
     }
     gBrowser.removeTab(newtab);
   }
 
-  yield* verify("link1", 0);
-  yield* verify("link2", 0);
-  yield* verify("link3", 1);
+  await verify("link1", 0);
+  await verify("link2", 0);
+  await verify("link3", 1);
 
   gBrowser.removeCurrentTab();
 });
-
-

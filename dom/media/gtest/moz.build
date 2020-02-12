@@ -4,22 +4,47 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+include('/media/webrtc/webrtc.mozbuild')
+
+
+LOCAL_INCLUDES += [
+    '/media/webrtc/signaling/src/common',
+    '/media/webrtc/trunk',
+    '/media/webrtc/trunk/webrtc'
+]
+
 UNIFIED_SOURCES += [
+    'AudioGenerator.cpp',
     'MockMediaResource.cpp',
+    'TestAudioBuffers.cpp',
+    'TestAudioCallbackDriver.cpp',
     'TestAudioCompactor.cpp',
-    'TestEME.cpp',
-    'TestGMPCrossOrigin.cpp',
-    'TestGMPRemoveAndDelete.cpp',
+    'TestAudioMixer.cpp',
+    'TestAudioPacketizer.cpp',
+    'TestAudioSegment.cpp',
+    'TestAudioTrackEncoder.cpp',
+    'TestBenchmarkStorage.cpp',
+    'TestBitWriter.cpp',
+    'TestBlankVideoDataCreator.cpp',
+    'TestBufferReader.cpp',
+    'TestDataMutex.cpp',
+    'TestDecoderBenchmark.cpp',
+    'TestDriftCompensation.cpp',
     'TestGMPUtils.cpp',
+    'TestGroupId.cpp',
     'TestIntervalSet.cpp',
+    'TestKeyValueStorage.cpp',
     'TestMediaDataDecoder.cpp',
+    'TestMediaDataEncoder.cpp',
     'TestMediaEventSource.cpp',
-    'TestMediaFormatReader.cpp',
-    'TestMozPromise.cpp',
+    'TestMediaMIMETypes.cpp',
+    'TestMediaSpan.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
-    # 'TestMP4Reader.cpp', disabled so we can turn check tests back on (bug 1175752)
-    'TestTrackEncoder.cpp',
+    'TestMuxer.cpp',
+    'TestOpusParser.cpp',
+    'TestRust.cpp',
+    'TestTimeUnit.cpp',
     'TestVideoSegment.cpp',
     'TestVideoUtils.cpp',
     'TestVPXDecoding.cpp',
@@ -30,11 +55,24 @@ if CONFIG['MOZ_WEBM_ENCODER']:
     UNIFIED_SOURCES += [
         'TestVideoTrackEncoder.cpp',
         'TestWebMWriter.cpp',
+        'YUVBufferGenerator.cpp',
+    ]
+    LOCAL_INCLUDES += [
+        '/gfx/2d/',
     ]
 
-if CONFIG['MOZ_RUST']:
-    UNIFIED_SOURCES += ['TestRust.cpp',]
+if CONFIG['OS_TARGET'] != 'Android':
+    UNIFIED_SOURCES += [
+        'TestCDMStorage.cpp',
+        'TestGMPCrossOrigin.cpp',
+        'TestGMPRemoveAndDelete.cpp',
+    ]
 
+if CONFIG['MOZ_WEBRTC'] and CONFIG['OS_TARGET'] != 'Android':
+    UNIFIED_SOURCES += [
+        'TestAudioDeviceEnumerator.cpp',
+        'TestVideoFrameConverter.cpp',
+    ]
 
 TEST_HARNESS_FILES.gtest += [
     '../test/gizmo-frag.mp4',
@@ -42,37 +80,41 @@ TEST_HARNESS_FILES.gtest += [
     '../test/vp9cake.webm',
     'dash_dashinit.mp4',
     'id3v2header.mp3',
-    'mediasource_test.mp4',
     'negative_duration.mp4',
     'noise.mp3',
     'noise_vbr.mp3',
     'short-zero-in-moov.mp4',
     'short-zero-inband.mov',
     'small-shot-false-positive.mp3',
+    'small-shot-partial-xing.mp3',
     'small-shot.mp3',
     'test.webm',
     'test_case_1224361.vp8.ivf',
     'test_case_1224363.vp8.ivf',
     'test_case_1224369.vp8.ivf',
+    'test_vbri.mp3',
+]
+
+TEST_DIRS += [
+    'mp4_demuxer',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
     '/dom/media',
-    '/dom/media/eme',
     '/dom/media/encoder',
-    '/dom/media/fmp4',
     '/dom/media/gmp',
+    '/dom/media/mp4',
+    '/dom/media/platforms',
+    '/dom/media/platforms/agnostic',
     '/security/certverifier',
-    '/security/pkix/include',
 ]
 
 FINAL_LIBRARY = 'xul-gtest'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
-USE_LIBS += [
-   'rlz',
-]
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
+    CXXFLAGS += ['-Wno-unused-private-field']

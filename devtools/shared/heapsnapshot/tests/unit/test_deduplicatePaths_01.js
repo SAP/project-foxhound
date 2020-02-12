@@ -28,7 +28,7 @@ function run_test() {
         pathEntry(d, "e4"),
         pathEntry(e, "e5"),
         pathEntry(f, "e6"),
-      ]
+      ],
     ],
     expectedNodes: [a, b, c, d, e, f, g],
     expectedEdges: [
@@ -38,44 +38,24 @@ function run_test() {
       edge(d, e, "e4"),
       edge(e, f, "e5"),
       edge(f, g, "e6"),
-    ]
+    ],
   });
 
   dumpn("Multiple edges from and to the same nodes");
   assertDeduplicatedPaths({
     target: a,
-    paths: [
-      [pathEntry(b, "x")],
-      [pathEntry(b, "y")],
-      [pathEntry(b, "z")],
-    ],
+    paths: [[pathEntry(b, "x")], [pathEntry(b, "y")], [pathEntry(b, "z")]],
     expectedNodes: [a, b],
-    expectedEdges: [
-      edge(b, a, "x"),
-      edge(b, a, "y"),
-      edge(b, a, "z"),
-    ]
+    expectedEdges: [edge(b, a, "x"), edge(b, a, "y"), edge(b, a, "z")],
   });
 
   dumpn("Multiple paths sharing some nodes and edges");
   assertDeduplicatedPaths({
     target: g,
     paths: [
-      [
-        pathEntry(a, "a->b"),
-        pathEntry(b, "b->c"),
-        pathEntry(c, "foo"),
-      ],
-      [
-        pathEntry(a, "a->b"),
-        pathEntry(b, "b->d"),
-        pathEntry(d, "bar"),
-      ],
-      [
-        pathEntry(a, "a->b"),
-        pathEntry(b, "b->e"),
-        pathEntry(e, "baz"),
-      ],
+      [pathEntry(a, "a->b"), pathEntry(b, "b->c"), pathEntry(c, "foo")],
+      [pathEntry(a, "a->b"), pathEntry(b, "b->d"), pathEntry(d, "bar")],
+      [pathEntry(a, "a->b"), pathEntry(b, "b->e"), pathEntry(e, "baz")],
     ],
     expectedNodes: [a, b, c, d, e, g],
     expectedEdges: [
@@ -86,17 +66,14 @@ function run_test() {
       edge(c, g, "foo"),
       edge(d, g, "bar"),
       edge(e, g, "baz"),
-    ]
+    ],
   });
 
   dumpn("Second shortest path contains target itself");
   assertDeduplicatedPaths({
     target: g,
     paths: [
-      [
-        pathEntry(a, "a->b"),
-        pathEntry(b, "b->g"),
-      ],
+      [pathEntry(a, "a->b"), pathEntry(b, "b->g")],
       [
         pathEntry(a, "a->b"),
         pathEntry(b, "b->g"),
@@ -105,9 +82,6 @@ function run_test() {
       ],
     ],
     expectedNodes: [a, b, g],
-    expectedEdges: [
-      edge(a, b, "a->b"),
-      edge(b, g, "b->g"),
-    ]
+    expectedEdges: [edge(a, b, "a->b"), edge(b, g, "b->g")],
   });
 }

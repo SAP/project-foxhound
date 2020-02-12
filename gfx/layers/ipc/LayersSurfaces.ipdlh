@@ -4,42 +4,21 @@
 
 using struct gfxPoint from "gfxPoint.h";
 using nsIntRegion from "nsRegion.h";
-using struct mozilla::layers::MagicGrallocBufferHandle from "gfxipc/ShadowLayerUtils.h";
-using struct mozilla::layers::GrallocBufferRef from "gfxipc/ShadowLayerUtils.h";
 using struct mozilla::layers::SurfaceDescriptorX11 from "gfxipc/ShadowLayerUtils.h";
 using mozilla::StereoMode from "ImageTypes.h";
 using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
 using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
+using mozilla::gfx::YUVColorSpace from "mozilla/gfx/Types.h";
+using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
+using mozilla::gfx::ColorRange from "mozilla/gfx/Types.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
+using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using gfxImageFormat from "gfxTypes.h";
-using struct mozilla::layers::GonkNativeHandle from "mozilla/layers/GonkNativeHandleUtils.h";
 
 namespace mozilla {
 namespace layers {
-
-union OverlayHandle {
-  int32_t;
-  GonkNativeHandle;
-  null_t;
-};
-
-struct OverlaySource {
-  OverlayHandle handle;
-  IntSize size;
-};
-
-union MaybeMagicGrallocBufferHandle {
-  MagicGrallocBufferHandle;
-  GrallocBufferRef;
-  null_t;
-};
-
-struct SurfaceDescriptorD3D9 {
-  // IDirect3DTexture9*
-  uintptr_t texture;
-};
 
 struct SurfaceDescriptorFileMapping {
   WindowsHandle handle;
@@ -56,6 +35,8 @@ struct SurfaceDescriptorD3D10 {
   WindowsHandle handle;
   SurfaceFormat format;
   IntSize size;
+  YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
 };
 
 struct SurfaceDescriptorDXGIYCbCr {
@@ -65,17 +46,34 @@ struct SurfaceDescriptorDXGIYCbCr {
   IntSize size;
   IntSize sizeY;
   IntSize sizeCbCr;
+  ColorDepth colorDepth;
+  YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
 };
 
 struct SurfaceDescriptorMacIOSurface {
   uint32_t surfaceId;
   double scaleFactor;
   bool isOpaque;
+  YUVColorSpace yUVColorSpace;
+};
+
+struct SurfaceDescriptorDMABuf {
+  uint32_t width;
+  uint32_t height;
+  uint32_t format;
+  uint32_t flags;
+  FileDescriptor fd;
+  uint32_t stride;
+  uint32_t offset;
 };
 
 struct SurfaceTextureDescriptor {
-  uintptr_t surfTex;
+  uint64_t handle;
   IntSize size;
+  SurfaceFormat format;
+  bool continuous;
+  bool ignoreTransform;
 };
 
 struct EGLImageDescriptor {
@@ -93,9 +91,16 @@ struct SurfaceDescriptorSharedGLTexture {
   bool hasAlpha;
 };
 
-struct SurfaceDescriptorGralloc {
-  MaybeMagicGrallocBufferHandle buffer;
-  bool isOpaque;
+
+union GPUVideoSubDescriptor {
+  SurfaceDescriptorD3D10;
+  SurfaceDescriptorDXGIYCbCr;
+  null_t;
+};
+
+struct SurfaceDescriptorGPUVideo {
+  uint64_t handle;
+  GPUVideoSubDescriptor subdesc;
 };
 
 struct RGBDescriptor {
@@ -106,11 +111,16 @@ struct RGBDescriptor {
 
 struct YCbCrDescriptor {
   IntSize ySize;
+  uint32_t yStride;
   IntSize cbCrSize;
+  uint32_t cbCrStride;
   uint32_t yOffset;
   uint32_t cbOffset;
   uint32_t crOffset;
   StereoMode stereoMode;
+  ColorDepth colorDepth;
+  YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
   bool hasIntermediateBuffer;
 };
 
@@ -129,19 +139,32 @@ struct SurfaceDescriptorBuffer {
   MemoryOrShmem data;
 };
 
+struct SurfaceDescriptorShared
+{
+  IntSize size;
+  int32_t stride;
+  SurfaceFormat format;
+  Handle handle;
+};
+
+struct SurfaceDescriptorRecorded {
+  uintptr_t drawTarget;
+};
+
 union SurfaceDescriptor {
   SurfaceDescriptorBuffer;
-  SurfaceDescriptorD3D9;
   SurfaceDescriptorDIB;
   SurfaceDescriptorD3D10;
   SurfaceDescriptorFileMapping;
   SurfaceDescriptorDXGIYCbCr;
   SurfaceDescriptorX11;
+  SurfaceDescriptorDMABuf;
   SurfaceTextureDescriptor;
   EGLImageDescriptor;
   SurfaceDescriptorMacIOSurface;
-  SurfaceDescriptorGralloc;
   SurfaceDescriptorSharedGLTexture;
+  SurfaceDescriptorGPUVideo;
+  SurfaceDescriptorRecorded;
   null_t;
 };
 

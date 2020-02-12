@@ -10,15 +10,12 @@
 
 #include "SkPathEffect.h"
 
-/** \class SkDashPathEffect
-
-    SkDashPathEffect is a subclass of SkPathEffect that implements dashing
-*/
-class SK_API SkDashPathEffect : public SkPathEffect {
+class SK_API SkDashPathEffect {
 public:
     /** intervals: array containing an even number of entries (>=2), with
          the even indices specifying the length of "on" intervals, and the odd
-         indices specifying the length of "off" intervals.
+         indices specifying the length of "off" intervals. This array will be
+         copied in Make, and can be disposed of freely after.
         count: number of elements in the intervals array
         phase: offset into the intervals array (mod the sum of all of the
          intervals).
@@ -37,45 +34,6 @@ public:
         Note: only affects stroked paths.
     */
     static sk_sp<SkPathEffect> Make(const SkScalar intervals[], int count, SkScalar phase);
-
-#ifdef SK_SUPPORT_LEGACY_PATHEFFECT_PTR
-    static SkPathEffect* Create(const SkScalar intervals[], int count, SkScalar phase) {
-        return Make(intervals, count, phase).release();
-    }
-#endif
-
-    virtual bool filterPath(SkPath* dst, const SkPath& src,
-                            SkStrokeRec*, const SkRect*) const override;
-
-    virtual bool asPoints(PointData* results, const SkPath& src,
-                          const SkStrokeRec&, const SkMatrix&,
-                          const SkRect*) const override;
-
-    DashType asADash(DashInfo* info) const override;
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDashPathEffect)
-
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    bool exposedInAndroidJavaAPI() const override { return true; }
-#endif
-
-protected:
-    virtual ~SkDashPathEffect();
-    SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase);
-    void flatten(SkWriteBuffer&) const override;
-
-private:
-    SkScalar*   fIntervals;
-    int32_t     fCount;
-    SkScalar    fPhase;
-    // computed from phase
-
-    SkScalar    fInitialDashLength;
-    int32_t     fInitialDashIndex;
-    SkScalar    fIntervalLength;
-
-    typedef SkPathEffect INHERITED;
 };
 
 #endif

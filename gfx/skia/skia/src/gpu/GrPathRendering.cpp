@@ -5,78 +5,63 @@
  * found in the LICENSE file.
  */
 
+#include "GrGpu.h"
 #include "GrPathRendering.h"
+#include "GrRenderTarget.h"
 #include "SkDescriptor.h"
+#include "SkScalerContext.h"
 #include "SkGlyph.h"
 #include "SkMatrix.h"
 #include "SkTypeface.h"
-#include "GrPathRange.h"
 
-class GlyphGenerator : public GrPathRange::PathGenerator {
-public:
-    GlyphGenerator(const SkTypeface& typeface, const SkDescriptor& desc)
-        : fScalerContext(typeface.createScalerContext(&desc))
-#ifdef SK_DEBUG
-        , fDesc(desc.copy())
-#endif
-    {}
-
-    virtual ~GlyphGenerator() {
-#ifdef SK_DEBUG
-        SkDescriptor::Free(fDesc);
-#endif
+const GrUserStencilSettings& GrPathRendering::GetStencilPassSettings(FillType fill) {
+    switch (fill) {
+        default:
+            SK_ABORT("Unexpected path fill.");
+        case GrPathRendering::kWinding_FillType: {
+            constexpr static GrUserStencilSettings kWindingStencilPass(
+                GrUserStencilSettings::StaticInit<
+                    0xffff,
+                    GrUserStencilTest::kAlwaysIfInClip,
+                    0xffff,
+                    GrUserStencilOp::kIncWrap,
+                    GrUserStencilOp::kIncWrap,
+                    0xffff>()
+            );
+            return kWindingStencilPass;
+        }
+        case GrPathRendering::kEvenOdd_FillType: {
+            constexpr static GrUserStencilSettings kEvenOddStencilPass(
+                GrUserStencilSettings::StaticInit<
+                    0xffff,
+                    GrUserStencilTest::kAlwaysIfInClip,
+                    0xffff,
+                    GrUserStencilOp::kInvert,
+                    GrUserStencilOp::kInvert,
+                    0xffff>()
+            );
+            return kEvenOddStencilPass;
+        }
     }
+}
 
-    int getNumPaths() override {
-        return fScalerContext->getGlyphCount();
+void GrPathRendering::stencilPath(const StencilPathArgs& args, const GrPath* path) {
+    fGpu->handleDirtyContext();
+    this->onStencilPath(args, path);
+}
+
+void GrPathRendering::drawPath(GrRenderTarget* renderTarget, GrSurfaceOrigin origin,
+                               const GrPrimitiveProcessor& primProc,
+                               const GrPipeline& pipeline,
+                               const GrPipeline::FixedDynamicState& fixedDynamicState,
+                               // Cover pass settings in pipeline.
+                               const GrStencilSettings& stencilPassSettings,
+                               const GrPath* path) {
+    fGpu->handleDirtyContext();
+    if (GrXferBarrierType barrierType = pipeline.xferBarrierType(renderTarget->asTexture(),
+                                                                 *fGpu->caps())) {
+        fGpu->xferBarrier(renderTarget, barrierType);
     }
-
-    void generatePath(int glyphID, SkPath* out) override {
-        SkGlyph skGlyph;
-        skGlyph.initWithGlyphID(glyphID);
-        fScalerContext->getMetrics(&skGlyph);
-
-        fScalerContext->getPath(skGlyph, out);
-    }
-#ifdef SK_DEBUG
-    bool isEqualTo(const SkDescriptor& desc) const override {
-        return fDesc->equals(desc);
-    }
-#endif
-private:
-    const SkAutoTDelete<SkScalerContext> fScalerContext;
-#ifdef SK_DEBUG
-    SkDescriptor* const fDesc;
-#endif
-};
-
-GrPathRange* GrPathRendering::createGlyphs(const SkTypeface* typeface,
-                                           const SkDescriptor* desc,
-                                           const GrStrokeInfo& stroke) {
-    if (nullptr == typeface) {
-        typeface = SkTypeface::GetDefaultTypeface();
-        SkASSERT(nullptr != typeface);
-    }
-
-    if (desc) {
-        SkAutoTUnref<GlyphGenerator> generator(new GlyphGenerator(*typeface, *desc));
-        return this->createPathRange(generator, stroke);
-    }
-
-    SkScalerContextRec rec;
-    memset(&rec, 0, sizeof(rec));
-    rec.fFontID = typeface->uniqueID();
-    rec.fTextSize = SkPaint::kCanonicalTextSizeForPaths;
-    rec.fPreScaleX = rec.fPost2x2[0][0] = rec.fPost2x2[1][1] = SK_Scalar1;
-    // Don't bake stroke information into the glyphs, we'll let the GPU do the stroking.
-
-    SkAutoDescriptor ad(sizeof(rec) + SkDescriptor::ComputeOverhead(1));
-    SkDescriptor*    genericDesc = ad.getDesc();
-
-    genericDesc->init();
-    genericDesc->addEntry(kRec_SkDescriptorTag, sizeof(rec), &rec);
-    genericDesc->computeChecksum();
-
-    SkAutoTUnref<GlyphGenerator> generator(new GlyphGenerator(*typeface, *genericDesc));
-    return this->createPathRange(generator, stroke);
+    this->onDrawPath(renderTarget, origin, primProc, pipeline, fixedDynamicState,
+                     stencilPassSettings, path);
 }

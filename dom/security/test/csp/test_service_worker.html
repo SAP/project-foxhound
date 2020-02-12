@@ -3,7 +3,7 @@
 <head>
   <title>Bug 1208559 - ServiceWorker registration not governed by CSP</title>
   <!-- Including SimpleTest.js so we can use waitForExplicitFinish !-->
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -27,7 +27,7 @@ var tests = [
 var counter = 0;
 var curTest;
 
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 function receiveMessage(event) {
   is(event.data.result, curTest.expected, "Should be (" + curTest.expected + ") in Test " + counter + "!");
   loadNextTest();

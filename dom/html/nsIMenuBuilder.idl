@@ -5,7 +5,7 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMHTMLMenuItemElement;
+webidl Element;
 
 /**
  * An interface used to construct native toolbar or context menus from <menu>
@@ -20,7 +20,7 @@ interface nsIMenuBuilder : nsISupports
    * a new context for this menu, so all subsequent methods will add new items
    * to this newly created menu.
    */
-  void openContainer(in DOMString aLabel);
+  void openContainer(in AString aLabel);
 
   /**
    * Add a new menu item. All menu item details can be obtained from
@@ -28,7 +28,7 @@ interface nsIMenuBuilder : nsISupports
    * with no or empty label. The icon should be loaded only if aCanLoadIcon
    * is true.
    */
-  void addItemFor(in nsIDOMHTMLMenuItemElement aElement,
+  void addItemFor(in Element aElement,
                   in boolean aCanLoadIcon);
 
   /**
@@ -72,5 +72,5 @@ interface nsIMenuBuilder : nsISupports
    *
    * @param aGeneratedItemId the menuitem id
    */
-  void click(in DOMString aGeneratedItemId);
+  void click(in AString aGeneratedItemId);
 };

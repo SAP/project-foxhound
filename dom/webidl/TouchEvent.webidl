@@ -10,9 +10,11 @@ dictionary TouchEventInit : EventModifierInit {
   sequence<Touch> changedTouches = [];
 };
 
-[Constructor(DOMString type, optional TouchEventInit eventInitDict),
- Func="mozilla::dom::TouchEvent::PrefEnabled"]
+[Func="mozilla::dom::TouchEvent::PrefEnabled",
+ Exposed=Window]
 interface TouchEvent : UIEvent {
+  constructor(DOMString type, optional TouchEventInit eventInitDict = {});
+
   readonly attribute TouchList touches;
   readonly attribute TouchList targetTouches;
   readonly attribute TouchList changedTouches;
@@ -23,15 +25,15 @@ interface TouchEvent : UIEvent {
   readonly attribute boolean shiftKey;
 
   void initTouchEvent(DOMString type,
-                      boolean canBubble,
-                      boolean cancelable,
-                      Window? view,
-                      long detail,
-                      boolean ctrlKey,
-                      boolean altKey,
-                      boolean shiftKey,
-                      boolean metaKey,
-                      TouchList? touches,
-                      TouchList? targetTouches,
-                      TouchList? changedTouches);
+                      optional boolean canBubble = false,
+                      optional boolean cancelable = false,
+                      optional Window? view = null,
+                      optional long detail = 0,
+                      optional boolean ctrlKey = false,
+                      optional boolean altKey = false,
+                      optional boolean shiftKey = false,
+                      optional boolean metaKey = false,
+                      optional TouchList? touches = null,
+                      optional TouchList? targetTouches = null,
+                      optional TouchList? changedTouches = null);
 };

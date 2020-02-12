@@ -20,7 +20,8 @@ dictionary InstallTriggerData {
  * The interface for the InstallTrigger object available to all websites.
  */
 [ChromeOnly,
- JSImplementation="@mozilla.org/addons/installtrigger;1"]
+ JSImplementation="@mozilla.org/addons/installtrigger;1",
+ Exposed=Window]
 interface InstallTriggerImpl {
   /**
    * Retained for backwards compatibility.
@@ -57,7 +58,7 @@ interface InstallTriggerImpl {
    *         A callback to call as each installation succeeds or fails
    * @return true if the installations were successfully started
    */
-  boolean install(MozMap<(DOMString or InstallTriggerData)> installs,
+  boolean install(record<DOMString, (DOMString or InstallTriggerData)> installs,
                   optional InstallTriggerCallback callback);
 
   /**

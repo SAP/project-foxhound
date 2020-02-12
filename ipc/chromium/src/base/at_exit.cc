@@ -15,12 +15,13 @@ namespace base {
 // thread-safe access, since it will only be modified in testing.
 static AtExitManager* g_top_manager = NULL;
 
-AtExitManager::AtExitManager() : next_manager_(NULL) {
+AtExitManager::AtExitManager() : lock_("AtExitManager"), next_manager_(NULL) {
   DCHECK(!g_top_manager);
   g_top_manager = this;
 }
 
-AtExitManager::AtExitManager(bool shadow) : next_manager_(g_top_manager) {
+AtExitManager::AtExitManager(bool shadow)
+    : lock_("AtExitManager"), next_manager_(g_top_manager) {
   DCHECK(shadow || !g_top_manager);
   g_top_manager = this;
 }
@@ -45,7 +46,7 @@ void AtExitManager::RegisterCallback(AtExitCallbackType func, void* param) {
 
   DCHECK(func);
 
-  AutoLock lock(g_top_manager->lock_);
+  mozilla::MutexAutoLock lock(g_top_manager->lock_);
   g_top_manager->stack_.push(CallbackAndParam(func, param));
 }
 
@@ -56,7 +57,7 @@ void AtExitManager::ProcessCallbacksNow() {
     return;
   }
 
-  AutoLock lock(g_top_manager->lock_);
+  mozilla::MutexAutoLock lock(g_top_manager->lock_);
 
   while (!g_top_manager->stack_.empty()) {
     CallbackAndParam callback_and_param = g_top_manager->stack_.top();
@@ -67,8 +68,6 @@ void AtExitManager::ProcessCallbacksNow() {
 }
 
 // static
-bool AtExitManager::AlreadyRegistered() {
-  return !!g_top_manager;
-}
+bool AtExitManager::AlreadyRegistered() { return !!g_top_manager; }
 
 }  // namespace base

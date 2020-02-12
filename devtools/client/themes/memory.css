@@ -9,6 +9,8 @@
   --focus-cell-border-color: rgba(255,255,255,0.5);
   --row-alt-background-color: rgba(86, 117, 185, 0.15);
   --row-hover-background-color: rgba(86, 117, 185, 0.25);
+  --link-color: var(--blue-40);
+  --link-color-active: var(--blue-30);
 }
 
 .theme-light {
@@ -17,6 +19,8 @@
   --focus-cell-border-color: rgba(0,0,0,0.3);
   --row-alt-background-color: rgba(76,158,217,0.1);
   --row-hover-background-color: rgba(76,158,217,0.2);
+  --link-color: var(--blue-60);
+  --link-color-active: var(--blue-70);
 }
 
 html, body, #app, #memory-tool {
@@ -34,7 +38,7 @@ html, body, #app, #memory-tool {
   --sidebar-width: 185px;
   /**
    * If --heap-tree-row-height changes, be sure to change HEAP_TREE_ROW_HEIGHT
-   * in `devtools/client/memory/components/heap.js`.
+   * in `devtools/client/memory/components/Heap.js`.
    */
   --heap-tree-row-height: 18px;
   --heap-tree-header-height: 18px;
@@ -50,7 +54,8 @@ html, body, #app, #memory-tool {
    * and aligned vertically in the middle of the container.
    */
   display: flex;
-  align-items: center;
+  line-height: initial;
+  align-items: stretch;
 }
 
 .devtools-toolbar > .toolbar-group:nth-of-type(1) {
@@ -87,19 +92,13 @@ html, body, #app, #memory-tool {
   margin-inline-end: 5px;
 }
 
-.devtools-toolbar > .toolbar-group > label.display-by > span {
-  margin-inline-end: 5px;
-}
-
-.devtools-toolbar > .toolbar-group > label.label-by > span {
-  margin-inline-end: 5px;
-}
-
 .devtools-toolbar > label {
   margin-inline-end: 5px;
+  display: flex;
+  align-items: center;
 }
 
-#select-view {
+.devtools-toolbar-select {
   margin-inline-start: 5px;
 }
 
@@ -130,8 +129,8 @@ html, body, #app, #memory-tool {
 }
 
 #filter {
-  align-self: stretch;
-  margin: 2px;
+  box-sizing: border-box;
+  height: 100%;
 }
 
 /**
@@ -207,18 +206,24 @@ html, body, #app, #memory-tool {
 
 .snapshot-list-item .delete {
   cursor: pointer;
+  background-color: transparent;
+  border: 0;
+  padding: 0;
   position: relative;
   min-height: 1em;
   min-width: 1.3em;
-}
-
-.snapshot-list-item.selected .delete::before {
-  filter: invert(1);
+  color: currentColor;
 }
 
 .snapshot-list-item .delete::before {
+  display: block;
+  width: 16px;
+  height: 16px;
+  content: "";
   background-image: url("chrome://devtools/skin/images/close.svg");
-  background-position: 0.2em 0;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .snapshot-list-item > .snapshot-title {
@@ -233,7 +238,7 @@ html, body, #app, #memory-tool {
 .snapshot-list-item > .snapshot-state,
 .snapshot-list-item > .snapshot-totals {
   font-size: 90%;
-  color: var(--theme-body-color-alt);
+  color: var(--theme-text-color-alt);
 }
 
 .snapshot-list-item.selected > .snapshot-state,
@@ -270,7 +275,7 @@ html, body, #app, #memory-tool {
   /**
    * Flex: contains a .heap-view-panel which needs to fill out all the
    * available space, horizontally and vertically.
-   */;
+   */
   display: flex;
   /**
    * Flexing to fill out remaining horizontal space. The preceeding sibling
@@ -392,7 +397,10 @@ html, body, #app, #memory-tool {
 }
 
 .children-pointer {
-  padding-inline-end: 5px;
+  display: inline-block;
+  /* We use transform to reverse the icon in RTL,
+   * so `padding-right` will get reversed as well. */
+  padding-right: 5px;
 }
 
 .children-pointer:dir(rtl) {
@@ -468,16 +476,17 @@ html, body, #app, #memory-tool {
 
 .heap-tree-item-name {
   /**
-   * Flex: contains an .arrow and some text, which need to be laid out
-   * horizontally, vertically aligned in the middle of the container.
-   */
-  display: flex;
-  align-items: center;
-  /**
    * Flexing to fill out remaining vertical space.
    * @see .header and .heap-tree-item */
   flex: 1;
   padding-inline-start: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heap-tree-item-name .arrow {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /**
@@ -493,7 +502,7 @@ html, body, #app, #memory-tool {
 .heap-tree-number {
   padding: 0 3px;
   flex: 1;
-  color: var(--theme-content-color3);
+  color: var(--theme-text-color-alt);
   /* Make sure number doesn't appear backwards on RTL locales */
   direction: ltr;
 }
@@ -518,19 +527,16 @@ html, body, #app, #memory-tool {
 }
 
 .heap-tree-item-individuals {
-  width: 38px;
-  min-width: 20px;
+  min-width: 38px;
   overflow: hidden;
   margin: 0;
 }
 
 .heap-tree-item-individuals > button {
-  height: 10px;
   width: 32px;
-
   /* Override default styles for toolbar buttons to fix entire row height. */
   margin: 0 auto !important;
-  padding: 0;
+  color: inherit;
 }
 
 /**
@@ -544,6 +550,19 @@ html, body, #app, #memory-tool {
   overflow: hidden;
 }
 
+.load-more-link {
+  cursor: pointer;
+  color: var(--link-color);
+}
+
+.load-more-link:hover {
+  text-decoration: underline;
+}
+
+.load-more-link:active {
+  color: var(--link-color-active);
+}
+
 /**
  * Heap tree errors.
  */
@@ -551,20 +570,16 @@ html, body, #app, #memory-tool {
 .error::before {
   content: "";
   display: inline-block;
+  vertical-align: -2px;
   width: 12px;
   height: 12px;
   max-height: 12px;
-  background-image: url(chrome://devtools/skin/images/webconsole.svg);
-  background-size: 72px 60px;
-  background-position: -24px -24px;
-  background-repeat: no-repeat;
-  margin: 0px;
-  margin-top: 2px;
   margin-inline-end: 5px;
-}
-
-.theme-light .error::before {
-  background-image: url(chrome://devtools/skin/images/webconsole.svg#light-icons);
+  background-image: url(chrome://devtools/skin/images/alert-small.svg);
+  background-repeat: no-repeat;
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: var(--yellow-60);
 }
 
 /**
@@ -595,45 +610,43 @@ html, body, #app, #memory-tool {
  * Dagre-D3 graphs
  */
 
+svg {
+  --arrow-color: var(--theme-splitter-color);
+  --text-color: var(--theme-body-color);
+}
+
+.theme-dark svg {
+  --arrow-color: var(--theme-text-color-alt);
+}
+
+svg #arrowhead {
+  /* !important is needed to override inline style */
+  fill: var(--arrow-color) !important;
+}
+
 .edgePath path {
   stroke-width: 1px;
   fill: none;
-}
-
-.theme-dark .edgePath path {
-  stroke: var(--theme-body-color-alt);
-}
-.theme-light .edgePath path {
-  stroke: var(--theme-splitter-color);
+  stroke: var(--arrow-color);
 }
 
 g.edgeLabel rect {
   fill: var(--theme-body-background);
 }
+
 g.edgeLabel tspan {
-  fill: var(--theme-body-color-alt);
+  fill: var(--text-color);
 }
 
 .nodes rect {
   stroke-width: 1px;
-}
-
-.nodes rect {
-  stroke: var(--theme-tab-toolbar-background);
-}
-.theme-light rect {
-  fill: var(--theme-tab-toolbar-background);
-}
-.theme-dark rect {
+  stroke: var(--theme-splitter-color);
   fill: var(--theme-toolbar-background);
 }
 
 text {
-  font-weight: 300;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serf;
-  font-size: 14px;
-}
-
-text {
-  fill: var(--theme-body-color-alt);
+  font-size: 1.25em;
+  fill: var(--text-color);
+  /* Make sure text stays inside its container in RTL locales */
+  direction: ltr;
 }

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for CSS Namespace rules</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="run()">
@@ -13,24 +13,23 @@
 SimpleTest.waitForExplicitFinish();
 
 var HTML_NS = "http://www.w3.org/1999/xhtml";
-var style_text;
 
 function run() {
-    var iframe = $("iframe");
-    var ifwin = iframe.contentWindow;
-    var ifdoc = iframe.contentDocument;
+    var wrappedFrame = SpecialPowers.wrap($("iframe"));
+    var ifwin = wrappedFrame.contentWindow;
+    var ifdoc = wrappedFrame.contentDocument;
     var ifbody = ifdoc.getElementsByTagName("body")[0];
 
     function setup_style_text() {
         var style_elem = ifdoc.createElement("style");
         style_elem.setAttribute("type", "text/css");
         ifdoc.getElementsByTagName("head")[0].appendChild(style_elem);
-        var style_text = ifdoc.createCDATASection("");
+        let style_text = ifdoc.createCDATASection("");
         style_elem.appendChild(style_text);
         return style_text;
     }
 
-    style_text = setup_style_text();
+    let style_text = setup_style_text();
     var gCounter = 0;
 
     /*
@@ -63,12 +62,12 @@ function run() {
 
         for (var i = 0; i < should_match.length; ++i) {
             var e = should_match[i];
-            is(ifwin.getComputedStyle(e, "").zIndex, String(zi),
+            is(ifwin.getComputedStyle(e).zIndex, String(zi),
                "element in " + body_contents + " matched " + selector);
         }
         for (var i = 0; i < should_not_match.length; ++i) {
             var e = should_not_match[i];
-            is(ifwin.getComputedStyle(e, "").zIndex, "auto",
+            is(ifwin.getComputedStyle(e).zIndex, "auto",
                "element in " + body_contents + " did not match " + selector);
         }
 
@@ -83,13 +82,13 @@ function run() {
           namespaceRules + " " + ser1 + "{ z-index: " + zi + " }";
         for (var i = 0; i < should_match.length; ++i) {
             var e = should_match[i];
-            is(ifwin.getComputedStyle(e, "").zIndex, String(zi),
+            is(ifwin.getComputedStyle(e).zIndex, String(zi),
                "element in " + body_contents + " matched " + ser1 +
                " which is the reserialization of " + selector);
         }
         for (var i = 0; i < should_not_match.length; ++i) {
             var e = should_not_match[i];
-            is(ifwin.getComputedStyle(e, "").zIndex, "auto",
+            is(ifwin.getComputedStyle(e).zIndex, "auto",
                "element in " + body_contents + " did not match " + ser1 +
                " which is the reserialization of " + selector);
         }
@@ -225,7 +224,7 @@ function run() {
       function (doc) { return doc.getElementsByTagName("test");},
       function (doc) { return []; }
     );
-    
+
     // 3 tests from http://tc.labs.opera.com/css/namespaces/syntax-003.xml
     test_selector_in_html(
       '@namespace url("test");',
@@ -323,7 +322,7 @@ function run() {
       '<test xmlns="test"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',
@@ -331,7 +330,7 @@ function run() {
       '<test xmlns="testing"/>',
       function (doc) { return doc.getElementsByTagName("test");},
       function (doc) { return []; }
-    );      
+    );
 
     test_selector_in_html(
       '@namespace x url("test");',
@@ -339,7 +338,7 @@ function run() {
       '<test xmlns="test"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace x url("test");',
@@ -347,7 +346,7 @@ function run() {
       '<test xmlns="testing"/>',
       function (doc) { return doc.getElementsByTagName("test");},
       function (doc) { return []; }
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',
@@ -355,7 +354,7 @@ function run() {
       '<test xmlns="testing"/>',
       function (doc) { return doc.getElementsByTagName("test");},
       function (doc) { return []; }
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',
@@ -363,7 +362,7 @@ function run() {
       '<test xmlns="test"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace x url("test");',
@@ -371,7 +370,7 @@ function run() {
       '<test xmlns="testing"/>',
       function (doc) { return doc.getElementsByTagName("test");},
       function (doc) { return []; }
-    );      
+    );
 
     test_selector_in_html(
       '@namespace x url("test");',
@@ -379,7 +378,7 @@ function run() {
       '<test xmlns="test"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',
@@ -387,7 +386,7 @@ function run() {
       '<test xmlns="testing" foo="bar"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',
@@ -395,7 +394,7 @@ function run() {
       '<test xmlns="test" foo="bar"/>',
       function (doc) { return []; },
       function (doc) { return doc.getElementsByTagName("test");}
-    );      
+    );
 
     test_selector_in_html(
       '@namespace url("test");',

@@ -6,8 +6,8 @@
         onload="setTimeout(nextTest, 0);"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <!--
   This test checks that popups in content areas don't extend past the content area.
@@ -60,8 +60,7 @@ function nextTest()
       step = "open near bottom";
       // request that the menu be opened with a target point near the bottom of the window,
       // so that the menu's top margin will push it completely outside the window.
-      var bo = document.documentElement.boxObject;
-      popup.setAttribute("top", bo.screenY + window.innerHeight - 5);
+      popup.setAttribute("top", document.documentElement.screenY + window.innerHeight - 5);
       synthesizeMouse(menu, 2, 2, { });
       break;
     case "open near bottom":
@@ -75,7 +74,7 @@ function nextTest()
     case "large menu":
       step = "shorter menu again";
       for (var i = 0; i < 80; i++)
-        menu.removeItemAt(menu.itemCount - 1);
+        popup.lastChild.remove();
       synthesizeMouse(menu, 2, 2, { });
       break;
     case "shorter menu again":
@@ -84,8 +83,15 @@ function nextTest()
   }
 }
 
-function popupShown()
+async function popupShown()
 {
+  // Popup may have wrong initial size in non e10s mode tests, because
+  // layout is not yet ready for popup content lazy population on
+  // popupshowing event.
+  await new Promise(r =>
+    requestAnimationFrame(() => requestAnimationFrame(r))
+  );
+
   var windowrect = document.documentElement.getBoundingClientRect();
   var popuprect = $("popup").getBoundingClientRect();
 

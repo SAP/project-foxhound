@@ -4,30 +4,36 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* jshint esnext: true, moz: true */
 
-'use strict';
+"use strict";
 
-this.EXPORTED_SYMBOLS = ['DNSPacket'];
+var EXPORTED_SYMBOLS = ["DNSPacket"];
 
-const { utils: Cu } = Components;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import('resource://gre/modules/Services.jsm');
-
-Cu.import('resource://gre/modules/DataReader.jsm');
-Cu.import('resource://gre/modules/DataWriter.jsm');
-Cu.import('resource://gre/modules/DNSRecord.jsm');
-Cu.import('resource://gre/modules/DNSResourceRecord.jsm');
+const { DataReader } = ChromeUtils.import(
+  "resource://gre/modules/DataReader.jsm"
+);
+const { DataWriter } = ChromeUtils.import(
+  "resource://gre/modules/DataWriter.jsm"
+);
+const { DNSRecord } = ChromeUtils.import(
+  "resource://gre/modules/DNSRecord.jsm"
+);
+const { DNSResourceRecord } = ChromeUtils.import(
+  "resource://gre/modules/DNSResourceRecord.jsm"
+);
 
 const DEBUG = true;
 
 function debug(msg) {
-  Services.console.logStringMessage('DNSPacket: ' + msg);
+  Services.console.logStringMessage("DNSPacket: " + msg);
 }
 
 let DNS_PACKET_SECTION_TYPES = [
-  'QD', // Question
-  'AN', // Answer
-  'NS', // Authority
-  'AR'  // Additional
+  "QD", // Question
+  "AN", // Answer
+  "NS", // Authority
+  "AR", // Additional
 ];
 
 /**
@@ -127,7 +133,7 @@ class DNSPacket {
     this._flags = _valueToFlags(0x0000);
     this._records = {};
 
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
       this._records[sectionType] = [];
     });
   }
@@ -135,7 +141,7 @@ class DNSPacket {
   static parse(data) {
     let reader = new DataReader(data);
     if (reader.getValue(2) !== 0x0000) {
-      throw new Error('Packet must start with 0x0000');
+      throw new Error("Packet must start with 0x0000");
     }
 
     let packet = new DNSPacket();
@@ -144,28 +150,30 @@ class DNSPacket {
     let recordCounts = {};
 
     // Parse the record counts.
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
       recordCounts[sectionType] = reader.getValue(2);
     });
 
     // Parse the actual records.
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
       let recordCount = recordCounts[sectionType];
       for (let i = 0; i < recordCount; i++) {
-        if (sectionType === 'QD') {
-          packet.addRecord(sectionType,
-              DNSRecord.parseFromPacketReader(reader));
-        }
-
-        else {
-          packet.addRecord(sectionType,
-              DNSResourceRecord.parseFromPacketReader(reader));
+        if (sectionType === "QD") {
+          packet.addRecord(
+            sectionType,
+            DNSRecord.parseFromPacketReader(reader)
+          );
+        } else {
+          packet.addRecord(
+            sectionType,
+            DNSResourceRecord.parseFromPacketReader(reader)
+          );
         }
       }
     });
 
     if (!reader.eof) {
-      DEBUG && debug('Did not complete parsing packet data');
+      DEBUG && debug("Did not complete parsing packet data");
     }
 
     return packet;
@@ -186,7 +194,7 @@ class DNSPacket {
   getRecords(sectionTypes, recordType) {
     let records = [];
 
-    sectionTypes.forEach((sectionType) => {
+    sectionTypes.forEach(sectionType => {
       records = records.concat(this._records[sectionType]);
     });
 
@@ -207,13 +215,13 @@ class DNSPacket {
     writer.putValue(_flagsToValue(this._flags), 2);
 
     // Write lengths of record sections (2 bytes each)
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
       writer.putValue(this._records[sectionType].length, 2);
     });
 
     // Write records
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
-      this._records[sectionType].forEach((record) => {
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
+      this._records[sectionType].forEach(record => {
         writer.putBytes(record.serialize());
       });
     });
@@ -226,12 +234,12 @@ class DNSPacket {
   }
 
   toJSONObject() {
-    let result = {flags: this._flags};
-    DNS_PACKET_SECTION_TYPES.forEach((sectionType) => {
+    let result = { flags: this._flags };
+    DNS_PACKET_SECTION_TYPES.forEach(sectionType => {
       result[sectionType] = [];
 
       let records = this._records[sectionType];
-      records.forEach((record) => {
+      records.forEach(record => {
         result[sectionType].push(record.toJSONObject());
       });
     });
@@ -248,13 +256,13 @@ function _valueToFlags(value) {
     QR: (value & 0x8000) >> 15,
     OP: (value & 0x7800) >> 11,
     AA: (value & 0x0400) >> 10,
-    TC: (value & 0x0200) >>  9,
-    RD: (value & 0x0100) >>  8,
-    RA: (value & 0x0080) >>  7,
-    UN: (value & 0x0040) >>  6,
-    AD: (value & 0x0020) >>  5,
-    CD: (value & 0x0010) >>  4,
-    RC: (value & 0x000f) >>  0
+    TC: (value & 0x0200) >> 9,
+    RD: (value & 0x0100) >> 8,
+    RA: (value & 0x0080) >> 7,
+    UN: (value & 0x0040) >> 6,
+    AD: (value & 0x0020) >> 5,
+    CD: (value & 0x0010) >> 4,
+    RC: (value & 0x000f) >> 0,
   };
 }
 

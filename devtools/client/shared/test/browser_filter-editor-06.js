@@ -5,19 +5,21 @@
 
 // Tests the Filter Editor Widget's add button
 
-const {CSSFilterEditorWidget} = require("devtools/client/shared/widgets/FilterWidget");
+const {
+  CSSFilterEditorWidget,
+} = require("devtools/client/shared/widgets/FilterWidget");
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/locale/filterwidget.properties";
+const STRINGS_URI = "devtools/client/locales/filterwidget.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   const container = doc.querySelector("#filter-container");
-  let widget = new CSSFilterEditorWidget(container, "none");
+  const widget = new CSSFilterEditorWidget(container, "none");
 
   const select = widget.el.querySelector("select"),
     add = widget.el.querySelector("#add-filter");
@@ -26,44 +28,50 @@ add_task(function* () {
     {
       name: "blur",
       unit: "px",
-      type: "length"
+      type: "length",
     },
     {
       name: "contrast",
       unit: "%",
-      type: "percentage"
+      type: "percentage",
     },
     {
       name: "hue-rotate",
       unit: "deg",
-      type: "angle"
+      type: "angle",
     },
     {
       name: "drop-shadow",
       placeholder: L10N.getStr("dropShadowPlaceholder"),
-      type: "string"
+      type: "string",
     },
     {
       name: "url",
       placeholder: "example.svg#c1",
-      type: "string"
-    }
+      type: "string",
+    },
   ];
 
   info("Test adding new filters with different units");
 
-  for (let [index, filter] of TEST_DATA.entries()) {
+  for (const [index, filter] of TEST_DATA.entries()) {
     select.value = filter.name;
     add.click();
 
     if (filter.unit) {
-      is(widget.getValueAt(index), `0${filter.unit}`,
-         `Should add ${filter.unit} to ${filter.type} filters`);
+      is(
+        widget.getValueAt(index),
+        `0${filter.unit}`,
+        `Should add ${filter.unit} to ${filter.type} filters`
+      );
     } else if (filter.placeholder) {
-      let i = index + 1;
+      const i = index + 1;
       const input = widget.el.querySelector(`.filter:nth-child(${i}) input`);
-      is(input.placeholder, filter.placeholder,
-         "Should set the appropriate placeholder for string-type filters");
+      is(
+        input.placeholder,
+        filter.placeholder,
+        "Should set the appropriate placeholder for string-type filters"
+      );
     }
   }
 });

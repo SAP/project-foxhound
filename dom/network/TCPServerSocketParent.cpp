@@ -10,9 +10,7 @@
 #include "nsJSUtils.h"
 #include "TCPSocketParent.h"
 #include "mozilla/Unused.h"
-#include "mozilla/AppProcessChecker.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 
 namespace mozilla {
 namespace dom {
@@ -25,17 +23,13 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TCPServerSocketParent)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-void
-TCPServerSocketParent::ReleaseIPDLReference()
-{
+void TCPServerSocketParent::ReleaseIPDLReference() {
   MOZ_ASSERT(mIPCOpen);
   mIPCOpen = false;
   this->Release();
 }
 
-void
-TCPServerSocketParent::AddIPDLReference()
-{
+void TCPServerSocketParent::AddIPDLReference() {
   MOZ_ASSERT(!mIPCOpen);
   mIPCOpen = true;
   this->AddRef();
@@ -45,52 +39,19 @@ TCPServerSocketParent::TCPServerSocketParent(PNeckoParent* neckoParent,
                                              uint16_t aLocalPort,
                                              uint16_t aBacklog,
                                              bool aUseArrayBuffers)
-: mNeckoParent(neckoParent)
-, mIPCOpen(false)
-{
-  mServerSocket = new TCPServerSocket(nullptr, aLocalPort, aUseArrayBuffers, aBacklog);
+    : mNeckoParent(neckoParent), mIPCOpen(false) {
+  mServerSocket =
+      new TCPServerSocket(nullptr, aLocalPort, aUseArrayBuffers, aBacklog);
   mServerSocket->SetServerBridgeParent(this);
 }
 
-TCPServerSocketParent::~TCPServerSocketParent()
-{
-}
+TCPServerSocketParent::~TCPServerSocketParent() {}
 
-void
-TCPServerSocketParent::Init()
-{
+void TCPServerSocketParent::Init() {
   NS_ENSURE_SUCCESS_VOID(mServerSocket->Init());
 }
 
-uint32_t
-TCPServerSocketParent::GetAppId()
-{
-  const PContentParent *content = Manager()->Manager();
-  if (PBrowserParent* browser = SingleManagedOrNull(content->ManagedPBrowserParent())) {
-    TabParent *tab = TabParent::GetFrom(browser);
-    return tab->OwnAppId();
-  } else {
-    return nsIScriptSecurityManager::UNKNOWN_APP_ID;
-  }
-}
-
-bool
-TCPServerSocketParent::GetInIsolatedMozBrowser()
-{
-  const PContentParent *content = Manager()->Manager();
-  if (PBrowserParent* browser = SingleManagedOrNull(content->ManagedPBrowserParent())) {
-    TabParent *tab = TabParent::GetFrom(browser);
-    return tab->IsIsolatedMozBrowserElement();
-  } else {
-    return false;
-  }
-}
-
-nsresult
-TCPServerSocketParent::SendCallbackAccept(TCPSocketParent *socket)
-{
-  socket->AddIPDLReference();
-
+nsresult TCPServerSocketParent::SendCallbackAccept(TCPSocketParent* socket) {
   nsresult rv;
 
   nsString host;
@@ -109,29 +70,27 @@ TCPServerSocketParent::SendCallbackAccept(TCPSocketParent *socket)
 
   if (mNeckoParent) {
     if (mNeckoParent->SendPTCPSocketConstructor(socket, host, port)) {
+      // Call |AddIPDLReference| after the consructor message is sent
+      // successfully, otherwise |socket| could be leaked.
+      socket->AddIPDLReference();
+
       mozilla::Unused << PTCPServerSocketParent::SendCallbackAccept(socket);
-    }
-    else {
+    } else {
       NS_ERROR("Sending data from PTCPSocketParent was failed.");
     }
-  }
-  else {
+  } else {
     NS_ERROR("The member value for NeckoParent is wrong.");
   }
   return NS_OK;
 }
 
-bool
-TCPServerSocketParent::RecvClose()
-{
-  NS_ENSURE_TRUE(mServerSocket, true);
+mozilla::ipc::IPCResult TCPServerSocketParent::RecvClose() {
+  NS_ENSURE_TRUE(mServerSocket, IPC_OK());
   mServerSocket->Close();
-  return true;
+  return IPC_OK();
 }
 
-void
-TCPServerSocketParent::ActorDestroy(ActorDestroyReason why)
-{
+void TCPServerSocketParent::ActorDestroy(ActorDestroyReason why) {
   if (mServerSocket) {
     mServerSocket->Close();
     mServerSocket = nullptr;
@@ -139,18 +98,13 @@ TCPServerSocketParent::ActorDestroy(ActorDestroyReason why)
   mNeckoParent = nullptr;
 }
 
-bool
-TCPServerSocketParent::RecvRequestDelete()
-{
+mozilla::ipc::IPCResult TCPServerSocketParent::RecvRequestDelete() {
   mozilla::Unused << Send__delete__(this);
-  return true;
+  return IPC_OK();
 }
 
-void
-TCPServerSocketParent::OnConnect(TCPServerSocketEvent* event)
-{
+void TCPServerSocketParent::OnConnect(TCPServerSocketEvent* event) {
   RefPtr<TCPSocket> socket = event->Socket();
-  socket->SetAppIdAndBrowser(GetAppId(), GetInIsolatedMozBrowser());
 
   RefPtr<TCPSocketParent> socketParent = new TCPSocketParent();
   socketParent->SetSocket(socket);
@@ -160,5 +114,5 @@ TCPServerSocketParent::OnConnect(TCPServerSocketEvent* event)
   SendCallbackAccept(socketParent);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

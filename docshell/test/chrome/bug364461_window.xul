@@ -14,7 +14,7 @@
         title="364461 test">
 
   <script type="application/javascript"><![CDATA[
-
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
     const LISTEN_EVENTS = ["load", "unload", "pageshow", "pagehide"];
 
     var gBrowser;
@@ -22,10 +22,10 @@
     var gExpected = [];
 
     function ok(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+      window.arguments[0].SimpleTest.ok(condition, message);
     }
     function is(a, b, message) {
-      window.opener.wrappedJSObject.SimpleTest.is(a, b, message);
+      window.arguments[0].SimpleTest.is(a, b, message);
     }
     function finish() {
       for (let eventType of LISTEN_EVENTS) {
@@ -33,7 +33,7 @@
       }
     
       window.close();
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
     }
 
     function onLoad() {
@@ -72,15 +72,10 @@
     }
 
     function nextTest() {
-      try {
-        gTestsIterator.next();
-      } catch (err if err instanceof StopIteration) {
-        finish();
-      }
+      gTestsIterator.next();
     }
 
-    function testsIterator() {
-
+    function* testsIterator() {
       // Tests 1 + 2:
       //  Back/forward between two simple documents. Bfcache will be used.
 
@@ -91,7 +86,7 @@
 
                    {type: "load", title: "test1"},
                    {type: "pageshow", title: "test1", persisted: false}];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       var test2Doc = "data:text/html,<html><head><title>test2</title></head>" +
@@ -100,7 +95,7 @@
       gExpected = [{type: "pagehide", title: "test1", persisted: true},
                    {type: "load", title: "test2"},
                    {type: "pageshow", title: "test2", persisted: false}];
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gExpected = [{type: "pagehide", title: "test2", persisted: true},
@@ -138,7 +133,7 @@
                    {type: "pageshow", title: "test3-nested1", persisted: false},
                    {type: "load", title: "test3"},
                    {type: "pageshow", title: "test3", persisted: false}];
-      gBrowser.loadURI(test3Doc);
+      BrowserTestUtils.loadURI(gBrowser, test3Doc);
       yield undefined;
 
       var test4Doc = "data:text/html,<html><head><title>test4</title></head>" +
@@ -149,7 +144,7 @@
                    {type: "pagehide", title: "test3-nested2", persisted: true},
                    {type: "load", title: "test4"},
                    {type: "pageshow", title: "test4", persisted: false}];
-      gBrowser.loadURI(test4Doc);
+      BrowserTestUtils.loadURI(gBrowser, test4Doc);
       yield undefined;
 
       gExpected = [{type: "pagehide", title: "test4", persisted: true},
@@ -179,7 +174,7 @@
       gExpected = [{type: "pagehide", title: "test4", persisted: true},
                    {type: "load", title: "test5"},
                    {type: "pageshow", title: "test5", persisted: false}];
-      gBrowser.loadURI(test5Doc);
+      BrowserTestUtils.loadURI(gBrowser, test5Doc);
       yield undefined;
 
       var test6Doc = "data:text/html,<html><head><title>test6</title></head>" +
@@ -189,7 +184,7 @@
                    {type: "unload", title: "test5"},
                    {type: "load", title: "test6"},
                    {type: "pageshow", title: "test6", persisted: false}];
-      gBrowser.loadURI(test6Doc);
+      BrowserTestUtils.loadURI(gBrowser, test6Doc);
       yield undefined;
 
       gExpected = [{type: "pagehide", title: "test6", persisted: true},
@@ -214,7 +209,7 @@
                       "<iframe src='data:text/html," +
                         "<html><head><title>test7-nested1</title></head>" +
                         "<body>test7-nested1<br/>" +
-                        "<a href=\"data:text/plain,aaa\" target=\"_main\">" +
+                        "<a href=\"data:text/plain,aaa\" target=\"_top\">" +
                           "Click me, hit back, click me again</a>" +
                         "</body></html>'>" +
                       "</iframe>" +
@@ -225,7 +220,7 @@
                    {type: "pageshow", title: "test7-nested1", persisted: false},
                    {type: "load", title: "test7"},
                    {type: "pageshow", title: "test7", persisted: false}];
-      gBrowser.loadURI(test7Doc);
+      BrowserTestUtils.loadURI(gBrowser, test7Doc);
       yield undefined;
 
       // Simulates a click on the link inside the iframe
@@ -266,12 +261,9 @@
       is(gBrowser.currentURI.spec, "data:text/plain,aaa",
          "Navigation is blocked when clicking link");
 
-      // nextTest has to be called from here, as no events are fired in this
-      // step
-      setTimeout(nextTest, 0);
-      yield undefined;
+      finish();
     }
   ]]></script>
 
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
 </window>

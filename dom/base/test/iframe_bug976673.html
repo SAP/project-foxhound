@@ -15,11 +15,12 @@
             input.blur();
             input.value = "";
             input.focus();
+          // fall through
           case "check":
             aEvent.source.postMessage("input-value: " + input.value, "*");
             break;
         }
-      }, false);
+      });
   </script>
 </body>
 </html>

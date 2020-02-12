@@ -1,5 +1,3 @@
-
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -7,73 +5,91 @@
 
 // Tests the integration between CubicBezierWidget and CubicBezierPresets
 
-const {CubicBezierWidget} =
-  require("devtools/client/shared/widgets/CubicBezierWidget");
-const {PRESETS} = require("devtools/client/shared/widgets/CubicBezierPresets");
+const {
+  CubicBezierWidget,
+} = require("devtools/client/shared/widgets/CubicBezierWidget");
+const {
+  PRESETS,
+} = require("devtools/client/shared/widgets/CubicBezierPresets");
 
-const TEST_URI = `data:text/html,<div id="cubic-bezier-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_cubic-bezier-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [host, win, doc] = await createHost("bottom", TEST_URI);
 
-  let container = doc.querySelector("#cubic-bezier-container");
-  let w = new CubicBezierWidget(container,
-              PRESETS["ease-in"]["ease-in-sine"]);
+  const container = doc.querySelector("#cubic-bezier-container");
+  const w = new CubicBezierWidget(
+    container,
+    PRESETS["ease-in"]["ease-in-sine"]
+  );
   w.presets.refreshMenu(PRESETS["ease-in"]["ease-in-sine"]);
 
-  let rect = w.curve.getBoundingClientRect();
+  const rect = w.curve.getBoundingClientRect();
   rect.graphTop = rect.height * w.bezierCanvas.padding[0];
 
-  yield adjustingBezierUpdatesPreset(w, win, doc, rect);
-  yield selectingPresetUpdatesBezier(w, win, doc, rect);
+  await adjustingBezierUpdatesPreset(w, win, doc, rect);
+  await selectingPresetUpdatesBezier(w, win, doc, rect);
 
   w.destroy();
   host.destroy();
 });
 
-function* adjustingBezierUpdatesPreset(widget, win, doc, rect) {
+function adjustingBezierUpdatesPreset(widget, win, doc, rect) {
   info("Checking that changing the bezier refreshes the preset menu");
 
-  is(widget.presets.activeCategory,
-     doc.querySelector("#ease-in"),
-     "The selected category is ease-in");
+  is(
+    widget.presets.activeCategory,
+    doc.querySelector("#ease-in"),
+    "The selected category is ease-in"
+  );
 
-  is(widget.presets._activePreset,
-     doc.querySelector("#ease-in-sine"),
-     "The selected preset is ease-in-sine");
+  is(
+    widget.presets._activePreset,
+    doc.querySelector("#ease-in-sine"),
+    "The selected preset is ease-in-sine"
+  );
 
   info("Generating custom bezier curve by dragging");
-  widget._onPointMouseDown({target: widget.p1});
-  doc.onmousemove({pageX: rect.left, pageY: rect.graphTop});
+  widget._onPointMouseDown({ target: widget.p1 });
+  doc.onmousemove({ pageX: rect.left, pageY: rect.graphTop });
   doc.onmouseup();
 
-  is(widget.presets.activeCategory,
-     doc.querySelector("#ease-in"),
-     "The selected category is still ease-in");
+  is(
+    widget.presets.activeCategory,
+    doc.querySelector("#ease-in"),
+    "The selected category is still ease-in"
+  );
 
-  is(widget.presets._activePreset, null,
-     "There is no active preset");
+  is(widget.presets._activePreset, null, "There is no active preset");
 }
 
-function* selectingPresetUpdatesBezier(widget, win, doc, rect) {
+async function selectingPresetUpdatesBezier(widget, win, doc, rect) {
   info("Checking that selecting a preset updates bezier curve");
 
   info("Listening for the new coordinates event");
-  let onNewCoordinates = widget.presets.once("new-coordinates");
-  let onUpdated = widget.once("updated");
+  const onNewCoordinates = widget.presets.once("new-coordinates");
+  const onUpdated = widget.once("updated");
 
   info("Click a preset");
-  let preset = doc.querySelector("#ease-in-sine");
-  widget.presets._onPresetClick({currentTarget: preset});
+  const preset = doc.querySelector("#ease-in-sine");
+  widget.presets._onPresetClick({ currentTarget: preset });
 
-  yield onNewCoordinates;
+  await onNewCoordinates;
   ok(true, "The preset widget fired the new-coordinates event");
 
-  let bezier = yield onUpdated;
+  const bezier = await onUpdated;
   ok(true, "The bezier canvas fired the updated event");
 
-  is(bezier.P1[0], preset.coordinates[0], "The new P1 time coordinate is correct");
-  is(bezier.P1[1], preset.coordinates[1], "The new P1 progress coordinate is correct");
+  is(
+    bezier.P1[0],
+    preset.coordinates[0],
+    "The new P1 time coordinate is correct"
+  );
+  is(
+    bezier.P1[1],
+    preset.coordinates[1],
+    "The new P1 progress coordinate is correct"
+  );
   is(bezier.P2[0], preset.coordinates[2], "P2 time coordinate is correct ");
   is(bezier.P2[1], preset.coordinates[3], "P2 progress coordinate is correct");
 }

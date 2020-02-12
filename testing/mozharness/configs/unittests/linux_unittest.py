@@ -3,7 +3,7 @@ import platform
 
 # OS Specifics
 ABS_WORK_DIR = os.path.join(os.getcwd(), "build")
-BINARY_PATH = os.path.join(ABS_WORK_DIR, "firefox", "firefox-bin")
+BINARY_PATH = os.path.join(ABS_WORK_DIR, "application", "firefox", "firefox-bin")
 INSTALLER_PATH = os.path.join(ABS_WORK_DIR, "installer.tar.bz2")
 XPCSHELL_NAME = "xpcshell"
 EXE_SUFFIX = ""
@@ -13,6 +13,10 @@ ADJUST_MOUSE_AND_SCREEN = False
 # Note: keep these Valgrind .sup file names consistent with those
 # in testing/mochitest/mochitest_options.py.
 VALGRIND_SUPP_DIR = os.path.join(os.getcwd(), "build/tests/mochitest")
+NODEJS_PATH = None
+if 'MOZ_FETCHES_DIR' in os.environ:
+    NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/bin/node")
+
 VALGRIND_SUPP_CROSS_ARCH = os.path.join(VALGRIND_SUPP_DIR,
                                         "cross-architecture.sup")
 VALGRIND_SUPP_ARCH = None
@@ -21,26 +25,16 @@ if platform.architecture()[0] == "64bit":
     TOOLTOOL_MANIFEST_PATH = "config/tooltool-manifests/linux64/releng.manifest"
     MINIDUMP_STACKWALK_PATH = "linux64-minidump_stackwalk"
     VALGRIND_SUPP_ARCH = os.path.join(VALGRIND_SUPP_DIR,
-                                      "x86_64-redhat-linux-gnu.sup")
+                                      "x86_64-pc-linux-gnu.sup")
 else:
     TOOLTOOL_MANIFEST_PATH = "config/tooltool-manifests/linux32/releng.manifest"
     MINIDUMP_STACKWALK_PATH = "linux32-minidump_stackwalk"
     VALGRIND_SUPP_ARCH = os.path.join(VALGRIND_SUPP_DIR,
-                                      "i386-redhat-linux-gnu.sup")
+                                      "i386-pc-linux-gnu.sup")
+    NODEJS_TOOLTOOL_MANIFEST_PATH = "config/tooltool-manifests/linux32/nodejs.manifest"
 
 #####
 config = {
-    "buildbot_json_path": "buildprops.json",
-    "exes": {
-        "python": "/tools/buildbot/bin/python",
-        "virtualenv": ["/tools/buildbot/bin/python", "/tools/misc-python/virtualenv.py"],
-        "tooltool.py": "/tools/tooltool.py",
-    },
-    "find_links": [
-        "http://pypi.pvt.build.mozilla.org/pub",
-        "http://pypi.pub.build.mozilla.org/pub",
-    ],
-    "pip_index": False,
     ###
     "installer_path": INSTALLER_PATH,
     "binary_path": BINARY_PATH,
@@ -53,7 +47,6 @@ config = {
         "cppunittest": "runcppunittests.py",
         "gtest": "rungtests.py",
         "jittest": "jit_test.py",
-        "mozbase": "test.py",
         "mozmill": "runtestlist.py",
     },
     "minimum_tests_zip_dirs": [
@@ -65,21 +58,14 @@ config = {
         "modules/*",
         "mozbase/*",
         "tools/*",
+        "mozpack/*",
+        "mozbuild/*",
     ],
-    "specific_tests_zip_dirs": {
-        "mochitest": ["mochitest/*"],
-        "reftest": ["reftest/*", "jsreftest/*"],
-        "xpcshell": ["xpcshell/*"],
-        "cppunittest": ["cppunittest/*"],
-        "gtest": ["gtest/*"],
-        "jittest": ["jit-test/*"],
-        "mozbase": ["mozbase/*"],
-        "mozmill": ["mozmill/*"],
-    },
     "suite_definitions": {
         "cppunittest": {
             "options": [
                 "--symbols-path=%(symbols_path)s",
+                "--utility-path=tests/bin",
                 "--xre-path=%(abs_app_dir)s"
             ],
             "run_filename": "runcppunittests.py",
@@ -98,27 +84,6 @@ config = {
             "testsdir": "jit-test/jit-test",
             "run_timeout": 1000 # Keep in sync with --timeout above.
         },
-        "luciddream-emulator": {
-            "options": [
-                "--startup-timeout=300",
-                "--log-raw=%(raw_log_file)s",
-                "--log-errorsummary=%(error_summary_file)s",
-                "--browser-path=%(browser_path)s",
-                "--b2gpath=%(emulator_path)s",
-                "%(test_manifest)s"
-            ],
-        },
-        "luciddream-b2gdt": {
-            "options": [
-                "--startup-timeout=300",
-                "--log-raw=%(raw_log_file)s",
-                "--log-errorsummary=%(error_summary_file)s",
-                "--browser-path=%(browser_path)s",
-                "--b2g-desktop-path=%(fxos_desktop_path)s",
-                "--gaia-profile=%(gaia_profile)s",
-                "%(test_manifest)s"
-            ],
-        },
         "mochitest": {
             "options": [
                 "--appname=%(binary_path)s",
@@ -133,22 +98,16 @@ config = {
                 "--use-test-media-devices",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
+                "--sandbox-read-whitelist=%(abs_work_dir)s",
             ],
             "run_filename": "runtests.py",
             "testsdir": "mochitest"
         },
-        "mozbase": {
-            "options": [
-                "-b",
-                "%(binary_path)s"
-            ],
-            "run_filename": "test.py",
-            "testsdir": "mozbase"
-        },
         "mozmill": {
             "options": [
                 "--binary=%(binary_path)s",
-                "--testing-modules-dir=test/modules",
+                "--testing-modules-dir=tests/modules",
                 "--plugins-path=%(test_plugin_path)s",
                 "--symbols-path=%(symbols_path)s"
             ],
@@ -164,6 +123,8 @@ config = {
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
+                "--sandbox-read-whitelist=%(abs_work_dir)s",
             ],
             "run_filename": "runreftest.py",
             "testsdir": "reftest"
@@ -192,76 +153,53 @@ config = {
     },
     # local mochi suites
     "all_mochitest_suites": {
-        "valgrind-plain": ["--valgrind=/usr/bin/valgrind",
+        "mochitest-valgrind-plain": ["--valgrind=/usr/bin/valgrind",
                            "--valgrind-supp-files=" + VALGRIND_SUPP_ARCH +
                                "," + VALGRIND_SUPP_CROSS_ARCH,
                            "--timeout=900", "--max-timeouts=50"],
-        "plain": [],
-        "plain-gpu": ["--subsuite=gpu"],
-        "plain-clipboard": ["--subsuite=clipboard"],
-        "plain-chunked": ["--chunk-by-dir=4"],
+        "mochitest-plain": [],
+        "mochitest-plain-gpu": ["--subsuite=gpu"],
+        "mochitest-plain-chunked": ["--chunk-by-dir=4"],
+        "mochitest-plain-chunked-coverage": ["--chunk-by-dir=4", "--timeout=1200"],
         "mochitest-media": ["--subsuite=media"],
-        "chrome": ["--flavor=chrome"],
-        "chrome-gpu": ["--flavor=chrome", "--subsuite=gpu"],
-        "chrome-clipboard": ["--flavor=chrome", "--subsuite=clipboard"],
-        "chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4"],
-        "browser-chrome": ["--flavor=browser"],
-        "browser-chrome-gpu": ["--flavor=browser", "--subsuite=gpu"],
-        "browser-chrome-clipboard": ["--flavor=browser", "--subsuite=clipboard"],
-        "browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
-        "browser-chrome-addons": ["--flavor=browser", "--chunk-by-runtime", "--tag=addons"],
-        "browser-chrome-coverage": ["--flavor=browser", "--chunk-by-runtime", "--timeout=1200"],
-        "browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
-        "mochitest-gl": ["--subsuite=webgl"],
+        "mochitest-chrome": ["--flavor=chrome", "--disable-e10s"],
+        "mochitest-chrome-gpu": ["--flavor=chrome", "--subsuite=gpu", "--disable-e10s"],
+        "mochitest-chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
+        "mochitest-browser-chrome": ["--flavor=browser"],
+        "mochitest-browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
+        "mochitest-browser-chrome-coverage": ["--flavor=browser", "--chunk-by-runtime", "--timeout=1200"],
+        "mochitest-browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
+        "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
+        "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
+        "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
+        "mochitest-webgl2-ext": ["--subsuite=webgl2-ext"],
+        "mochitest-webgl2-deqp": ["--subsuite=webgl2-deqp"],
         "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
-        "jetpack-package": ["--flavor=jetpack-package"],
-        "jetpack-package-clipboard": ["--flavor=jetpack-package", "--subsuite=clipboard"],
-        "jetpack-addon": ["--flavor=jetpack-addon"],
-        "a11y": ["--flavor=a11y"],
+        "mochitest-devtools-chrome-coverage": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime", "--timeout=1200"],
+        "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
+        "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
     },
     # local reftest suites
     "all_reftest_suites": {
-        "reftest": {
-            "options": ["--suite=reftest"],
-            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
-        },
         "crashtest": {
             "options": ["--suite=crashtest"],
             "tests": ["tests/reftest/tests/testing/crashtest/crashtests.list"]
         },
         "jsreftest": {
-            "options":["--extra-profile-file=tests/jsreftest/tests/user.js",
+            "options": ["--extra-profile-file=tests/jsreftest/tests/user.js",
                        "--suite=jstestbrowser"],
             "tests": ["tests/jsreftest/tests/jstests.list"]
         },
-        "reftest-ipc": {
-            "env": {
-                "MOZ_OMTC_ENABLED": "1",
-                "MOZ_DISABLE_CONTEXT_SHARING_GLX": "1"
-            },
+        "reftest": {
             "options": ["--suite=reftest",
-                        "--setpref=browser.tabs.remote=true",
-                        "--setpref=browser.tabs.remote.autostart=true",
-                        "--setpref=extensions.e10sBlocksEnabling=false",
-                        "--setpref=layers.async-pan-zoom.enabled=true"],
-            "tests": ["tests/reftest/tests/layout/reftests/reftest-sanity/reftest.list"]
+                        "--setpref=layers.acceleration.force-enabled=true"],
+            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
         "reftest-no-accel": {
             "options": ["--suite=reftest",
-                        "--setpref=layers.acceleration.force-enabled=disabled"],
-            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]},
-        "crashtest-ipc": {
-            "env": {
-                "MOZ_OMTC_ENABLED": "1",
-                "MOZ_DISABLE_CONTEXT_SHARING_GLX": "1"
-            },
-            "options": ["--suite=crashtest",
-                        "--setpref=browser.tabs.remote=true",
-                        "--setpref=browser.tabs.remote.autostart=true",
-                        "--setpref=extensions.e10sBlocksEnabling=false",
-                        "--setpref=layers.async-pan-zoom.enabled=true"],
-            "tests": ["tests/reftest/tests/testing/crashtest/crashtests.list"]
+                        "--setpref=layers.acceleration.disabled=true"],
+            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
     },
     "all_xpcshell_suites": {
@@ -270,15 +208,10 @@ config = {
                         "--manifest=tests/xpcshell/tests/xpcshell.ini"],
             "tests": []
         },
-        "xpcshell-addons": {
-            "options": ["--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                        "--tag=addons",
-                        "--manifest=tests/xpcshell/tests/xpcshell.ini"],
-            "tests": []
-        },
         "xpcshell-coverage": {
             "options": ["--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-                        "--manifest=tests/xpcshell/tests/xpcshell.ini"],
+                        "--manifest=tests/xpcshell/tests/xpcshell.ini",
+                        "--sequential"],
             "tests": []
         },
     },
@@ -293,9 +226,6 @@ config = {
         "jittest1": ["--total-chunks=2", "--this-chunk=1"],
         "jittest2": ["--total-chunks=2", "--this-chunk=2"],
         "jittest-chunked": [],
-    },
-    "all_mozbase_suites": {
-        "mozbase": []
     },
     "run_cmd_checks_enabled": True,
     "preflight_run_cmd_suites": [
@@ -322,14 +252,15 @@ config = {
     ],
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
-    "buildbot_max_log_size": 52428800,
-    "default_blob_upload_servers": [
-        "https://blobupload.elasticbeanstalk.com",
-    ],
-    "structured_suites": ["reftest"],
-    "blob_uploader_auth_file": os.path.join(os.getcwd(), "oauth.txt"),
-    "download_minidump_stackwalk": True,
+    "unstructured_flavors": {"xpcshell": [],
+                             "gtest": [],
+                             "mozmill": [],
+                             "cppunittest": [],
+                             "jittest": [],
+                             },
     "minidump_stackwalk_path": MINIDUMP_STACKWALK_PATH,
     "minidump_tooltool_manifest_path": TOOLTOOL_MANIFEST_PATH,
-    "tooltool_cache": "/builds/tooltool_cache",
+    "tooltool_cache": "/builds/worker/tooltool-cache",
+    "nodejs_path": NODEJS_PATH,
+    # "log_format": "%(levelname)8s - %(message)s",
 }

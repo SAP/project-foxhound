@@ -3,23 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-[Constructor,
- Constructor(DOMString str),
- Constructor(unsigned long num, boolean? boolArg),
- Constructor(TestInterface? iface),
- Constructor(long arg1, IndirectlyImplementedInterface iface),
- Constructor(Date arg1),
- Constructor(ArrayBuffer arrayBuf),
- Constructor(Uint8Array typedArr),
- // Constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3),
- NamedConstructor=Example,
+[NamedConstructor=Example,
  NamedConstructor=Example(DOMString str),
  NamedConstructor=Example2(DictForConstructor dict, any any1, object obj1,
                            object? obj2, sequence<Dict> seq, optional any any2,
                            optional object obj3, optional object? obj4),
- NamedConstructor=Example2((long or MozMap<any>) arg1)
+ NamedConstructor=Example2((long or record<DOMString, any>) arg1),
+ Exposed=Window,
  ]
 interface TestExampleInterface {
+  constructor();
+  constructor(DOMString str);
+  constructor(unsigned long num, boolean? boolArg);
+  constructor(TestInterface? iface);
+  constructor(unsigned long arg1, TestInterface iface);
+  constructor(Date arg1);
+  constructor(ArrayBuffer arrayBuf);
+  constructor(Uint8Array typedArr);
+  // constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3);
+
   // Integer types
   // XXXbz add tests for throwing versions of all the integer stuff
   readonly attribute byte readonlyByte;
@@ -170,20 +172,6 @@ interface TestExampleInterface {
   [NewObject]
   sequence<TestNonWrapperCacheInterface?>? receiveNullableNonWrapperCacheInterfaceNullableSequence();
 
-  // Non-castable interface types
-  IndirectlyImplementedInterface receiveOther();
-  IndirectlyImplementedInterface? receiveNullableOther();
-  IndirectlyImplementedInterface receiveWeakOther();
-  IndirectlyImplementedInterface? receiveWeakNullableOther();
-  void passOther(IndirectlyImplementedInterface arg);
-  void passNullableOther(IndirectlyImplementedInterface? arg);
-  attribute IndirectlyImplementedInterface nonNullOther;
-  attribute IndirectlyImplementedInterface? nullableOther;
-  // Optional arguments
-  void passOptionalOther(optional IndirectlyImplementedInterface? arg);
-  void passOptionalNonNullOther(optional IndirectlyImplementedInterface arg);
-  void passOptionalOtherWithDefault(optional IndirectlyImplementedInterface? arg = null);
-
   // External interface types
   TestExternalInterface receiveExternal();
   TestExternalInterface? receiveNullableExternal();
@@ -211,10 +199,6 @@ interface TestExampleInterface {
   void passOptionalCallbackInterface(optional TestCallbackInterface? arg);
   void passOptionalNonNullCallbackInterface(optional TestCallbackInterface arg);
   void passOptionalCallbackInterfaceWithDefault(optional TestCallbackInterface? arg = null);
-
-  // Miscellaneous interface tests
-  IndirectlyImplementedInterface receiveConsequentialInterface();
-  void passConsequentialInterface(IndirectlyImplementedInterface arg);
 
   // Sequence types
   [Cached, Pure]
@@ -278,32 +262,32 @@ interface TestExampleInterface {
   //XXXbz No support for sequence of sequence return values yet.
   //sequence<sequence<long>> receiveSequenceOfSequences();
 
-  // MozMap types
-  void passMozMap(MozMap<long> arg);
-  void passNullableMozMap(MozMap<long>? arg);
-  void passMozMapOfNullableInts(MozMap<long?> arg);
-  void passOptionalMozMapOfNullableInts(optional MozMap<long?> arg);
-  void passOptionalNullableMozMapOfNullableInts(optional MozMap<long?>? arg);
-  void passCastableObjectMozMap(MozMap<TestInterface> arg);
-  void passNullableCastableObjectMozMap(MozMap<TestInterface?> arg);
-  void passCastableObjectNullableMozMap(MozMap<TestInterface>? arg);
-  void passNullableCastableObjectNullableMozMap(MozMap<TestInterface?>? arg);
-  void passOptionalMozMap(optional MozMap<long> arg);
-  void passOptionalNullableMozMap(optional MozMap<long>? arg);
-  void passOptionalNullableMozMapWithDefaultValue(optional MozMap<long>? arg = null);
-  void passOptionalObjectMozMap(optional MozMap<TestInterface> arg);
-  void passExternalInterfaceMozMap(MozMap<TestExternalInterface> arg);
-  void passNullableExternalInterfaceMozMap(MozMap<TestExternalInterface?> arg);
-  void passStringMozMap(MozMap<DOMString> arg);
-  void passByteStringMozMap(MozMap<ByteString> arg);
-  void passMozMapOfMozMaps(MozMap<MozMap<long>> arg);
-  MozMap<long> receiveMozMap();
-  MozMap<long>? receiveNullableMozMap();
-  MozMap<long?> receiveMozMapOfNullableInts();
-  MozMap<long?>? receiveNullableMozMapOfNullableInts();
-  //XXXbz No support for MozMap of MozMaps return values yet.
-  //MozMap<MozMap<long>> receiveMozMapOfMozMaps();
-  MozMap<any> receiveAnyMozMap();
+  // record types
+  void passRecord(record<DOMString, long> arg);
+  void passNullableRecord(record<DOMString, long>? arg);
+  void passRecordOfNullableInts(record<DOMString, long?> arg);
+  void passOptionalRecordOfNullableInts(optional record<DOMString, long?> arg);
+  void passOptionalNullableRecordOfNullableInts(optional record<DOMString, long?>? arg);
+  void passCastableObjectRecord(record<DOMString, TestInterface> arg);
+  void passNullableCastableObjectRecord(record<DOMString, TestInterface?> arg);
+  void passCastableObjectNullableRecord(record<DOMString, TestInterface>? arg);
+  void passNullableCastableObjectNullableRecord(record<DOMString, TestInterface?>? arg);
+  void passOptionalRecord(optional record<DOMString, long> arg);
+  void passOptionalNullableRecord(optional record<DOMString, long>? arg);
+  void passOptionalNullableRecordWithDefaultValue(optional record<DOMString, long>? arg = null);
+  void passOptionalObjectRecord(optional record<DOMString, TestInterface> arg);
+  void passExternalInterfaceRecord(record<DOMString, TestExternalInterface> arg);
+  void passNullableExternalInterfaceRecord(record<DOMString, TestExternalInterface?> arg);
+  void passStringRecord(record<DOMString, DOMString> arg);
+  void passByteStringRecord(record<DOMString, ByteString> arg);
+  void passRecordOfRecords(record<DOMString, record<DOMString, long>> arg);
+  record<DOMString, long> receiveRecord();
+  record<DOMString, long>? receiveNullableRecord();
+  record<DOMString, long?> receiveRecordOfNullableInts();
+  record<DOMString, long?>? receiveNullableRecordOfNullableInts();
+  //XXXbz No support for record of records return values yet.
+  //record<DOMString, record<DOMString, long>> receiveRecordOfRecords();
+  record<DOMString, any> receiveAnyRecord();
 
   // Typed array types
   void passArrayBuffer(ArrayBuffer arg);
@@ -323,8 +307,8 @@ interface TestExampleInterface {
   void passFloat64Array(Float64Array arg);
   void passSequenceOfArrayBuffers(sequence<ArrayBuffer> arg);
   void passSequenceOfNullableArrayBuffers(sequence<ArrayBuffer?> arg);
-  void passMozMapOfArrayBuffers(MozMap<ArrayBuffer> arg);
-  void passMozMapOfNullableArrayBuffers(MozMap<ArrayBuffer?> arg);
+  void passRecordOfArrayBuffers(record<DOMString, ArrayBuffer> arg);
+  void passRecordOfNullableArrayBuffers(record<DOMString, ArrayBuffer?> arg);
   void passVariadicTypedArray(Float32Array... arg);
   void passVariadicNullableTypedArray(Float32Array?... arg);
   Uint8Array receiveUint8Array();
@@ -360,6 +344,24 @@ interface TestExampleInterface {
   void passOptionalNullableSVSWithDefaultValue(optional USVString? arg = null);
   void passVariadicSVS(USVString... arg);
   USVString receiveSVS();
+
+  // JSString types
+  void passJSString(JSString arg);
+  // void passNullableJSString(JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalJSString(optional JSString arg); // NOT SUPPORTED YET
+  void passOptionalJSStringWithDefaultValue(optional JSString arg = "abc");
+  // void passOptionalNullableJSString(optional JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalNullableJSStringWithDefaultValue(optional JSString? arg = null); // NOT SUPPORTED YET
+  // void passVariadicJSString(JSString... arg); // NOT SUPPORTED YET
+  // void passRecordOfJSString(record<DOMString, JSString> arg); // NOT SUPPORTED YET
+  // void passSequenceOfJSString(sequence<JSString> arg); // NOT SUPPORTED YET
+  // void passUnionJSString((JSString or long) arg); // NOT SUPPORTED YET
+  JSString receiveJSString();
+  // sequence<JSString> receiveJSStringSequence(); // NOT SUPPORTED YET
+  // (JSString or long) receiveJSStringUnion(); // NOT SUPPORTED YET
+  // record<DOMString, JSString> receiveJSStringRecord(); // NOT SUPPORTED YET
+  readonly attribute JSString readonlyJSStringAttr;
+  attribute JSString jsStringAttr;
 
   // Enumerated types
   void passEnum(TestEnum arg);
@@ -400,17 +402,17 @@ interface TestExampleInterface {
   void passSequenceOfNullableSequenceOfAny(sequence<sequence<any>?> arg);
   void passNullableSequenceOfNullableSequenceOfAny(sequence<sequence<any>?>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfAny(optional sequence<sequence<any>?>? arg);
-  void passMozMapOfAny(MozMap<any> arg);
-  void passNullableMozMapOfAny(MozMap<any>? arg);
-  void passOptionalMozMapOfAny(optional MozMap<any> arg);
-  void passOptionalNullableMozMapOfAny(optional MozMap<any>? arg);
-  void passOptionalMozMapOfAnyWithDefaultValue(optional MozMap<any>? arg = null);
-  void passMozMapOfMozMapOfAny(MozMap<MozMap<any>> arg);
-  void passMozMapOfNullableMozMapOfAny(MozMap<MozMap<any>?> arg);
-  void passNullableMozMapOfNullableMozMapOfAny(MozMap<MozMap<any>?>? arg);
-  void passOptionalNullableMozMapOfNullableMozMapOfAny(optional MozMap<MozMap<any>?>? arg);
-  void passOptionalNullableMozMapOfNullableSequenceOfAny(optional MozMap<sequence<any>?>? arg);
-  void passOptionalNullableSequenceOfNullableMozMapOfAny(optional sequence<MozMap<any>?>? arg);
+  void passRecordOfAny(record<DOMString, any> arg);
+  void passNullableRecordOfAny(record<DOMString, any>? arg);
+  void passOptionalRecordOfAny(optional record<DOMString, any> arg);
+  void passOptionalNullableRecordOfAny(optional record<DOMString, any>? arg);
+  void passOptionalRecordOfAnyWithDefaultValue(optional record<DOMString, any>? arg = null);
+  void passRecordOfRecordOfAny(record<DOMString, record<DOMString, any>> arg);
+  void passRecordOfNullableRecordOfAny(record<DOMString, record<DOMString, any>?> arg);
+  void passNullableRecordOfNullableRecordOfAny(record<DOMString, record<DOMString, any>?>? arg);
+  void passOptionalNullableRecordOfNullableRecordOfAny(optional record<DOMString, record<DOMString, any>?>? arg);
+  void passOptionalNullableRecordOfNullableSequenceOfAny(optional record<DOMString, sequence<any>?>? arg);
+  void passOptionalNullableSequenceOfNullableRecordOfAny(optional sequence<record<DOMString, any>?>? arg);
   any receiveAny();
 
   // object types
@@ -426,7 +428,7 @@ interface TestExampleInterface {
   void passNullableSequenceOfObject(sequence<object>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfObject(optional sequence<sequence<object>?>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfNullableObject(optional sequence<sequence<object?>?>? arg);
-  void passMozMapOfObject(MozMap<object> arg);
+  void passRecordOfObject(record<DOMString, object> arg);
   object receiveObject();
   object? receiveNullableObject();
 
@@ -434,6 +436,7 @@ interface TestExampleInterface {
   void passUnion((object or long) arg);
   // Some union tests are debug-only to avoid creating all those
   // unused union types in opt builds.
+
 #ifdef DEBUG
   void passUnion2((long or boolean) arg);
   void passUnion3((object or long or boolean) arg);
@@ -443,8 +446,8 @@ interface TestExampleInterface {
   void passUnion7((object or DOMString or long) arg);
   void passUnion8((object or DOMString or boolean) arg);
   void passUnion9((object or DOMString or long or boolean) arg);
-  void passUnion10(optional (EventInit or long) arg);
-  void passUnion11(optional (CustomEventInit or long) arg);
+  void passUnion10(optional (EventInit or long) arg = {});
+  void passUnion11(optional (CustomEventInit or long) arg = {});
   void passUnion12(optional (EventInit or long) arg = 5);
   void passUnion13(optional (object or long?) arg = null);
   void passUnion14(optional (object or long?) arg = 5);
@@ -454,19 +457,19 @@ interface TestExampleInterface {
   void passUnion18((sequence<object> or long) arg);
   void passUnion19(optional (sequence<object> or long) arg);
   void passUnion20(optional (sequence<object> or long) arg = []);
-  void passUnion21((MozMap<long> or long) arg);
-  void passUnion22((MozMap<object> or long) arg);
+  void passUnion21((record<DOMString, long> or long) arg);
+  void passUnion22((record<DOMString, object> or long) arg);
   void passUnion23((sequence<ImageData> or long) arg);
   void passUnion24((sequence<ImageData?> or long) arg);
   void passUnion25((sequence<sequence<ImageData>> or long) arg);
   void passUnion26((sequence<sequence<ImageData?>> or long) arg);
-  void passUnion27(optional (sequence<DOMString> or EventInit) arg);
-  void passUnion28(optional (EventInit or sequence<DOMString>) arg);
+  void passUnion27(optional (sequence<DOMString> or EventInit) arg = {});
+  void passUnion28(optional (EventInit or sequence<DOMString>) arg = {});
   void passUnionWithCallback((EventHandler or long) arg);
   void passUnionWithByteString((ByteString or long) arg);
-  void passUnionWithMozMap((MozMap<DOMString> or DOMString) arg);
-  void passUnionWithMozMapAndSequence((MozMap<DOMString> or sequence<DOMString>) arg);
-  void passUnionWithSequenceAndMozMap((sequence<DOMString> or MozMap<DOMString>) arg);
+  void passUnionWithRecord((record<DOMString, DOMString> or DOMString) arg);
+  void passUnionWithRecordAndSequence((record<DOMString, DOMString> or sequence<DOMString>) arg);
+  void passUnionWithSequenceAndRecord((sequence<DOMString> or record<DOMString, DOMString>) arg);
   void passUnionWithSVS((USVString or long) arg);
 #endif
   void passUnionWithNullable((object? or long) arg);
@@ -510,6 +513,9 @@ interface TestExampleInterface {
   void passUnionWithDefaultValue17(optional (double or SupportedType) arg = "text/html");
   void passUnionWithDefaultValue18(optional (double or SupportedType) arg = 1);
   void passUnionWithDefaultValue19(optional (double or SupportedType) arg = 1.5);
+  void passUnionWithDefaultValue20(optional (double or USVString) arg = "abc");
+  void passUnionWithDefaultValue21(optional (double or USVString) arg = 1);
+  void passUnionWithDefaultValue22(optional (double or USVString) arg = 1.5);
 
   void passNullableUnionWithDefaultValue1(optional (double or DOMString)? arg = "");
   void passNullableUnionWithDefaultValue2(optional (double or DOMString)? arg = 1);
@@ -531,6 +537,10 @@ interface TestExampleInterface {
   void passNullableUnionWithDefaultValue18(optional (double or SupportedType)? arg = 1);
   void passNullableUnionWithDefaultValue19(optional (double or SupportedType)? arg = 1.5);
   void passNullableUnionWithDefaultValue20(optional (double or SupportedType)? arg = null);
+  void passNullableUnionWithDefaultValue21(optional (double or USVString)? arg = "abc");
+  void passNullableUnionWithDefaultValue22(optional (double or USVString)? arg = 1);
+  void passNullableUnionWithDefaultValue23(optional (double or USVString)? arg = 1.5);
+  void passNullableUnionWithDefaultValue24(optional (double or USVString)? arg = null);
 
   void passSequenceOfUnions(sequence<(CanvasPattern or CanvasGradient)> arg);
   void passSequenceOfUnions2(sequence<(object or long)> arg);
@@ -538,9 +548,9 @@ interface TestExampleInterface {
 
   void passSequenceOfNullableUnions(sequence<(CanvasPattern or CanvasGradient)?> arg);
   void passVariadicNullableUnion((CanvasPattern or CanvasGradient)?... arg);
-  void passMozMapOfUnions(MozMap<(CanvasPattern or CanvasGradient)> arg);
+  void passRecordOfUnions(record<DOMString, (CanvasPattern or CanvasGradient)> arg);
   // XXXbz no move constructor on some unions
-  // void passMozMapOfUnions2(MozMap<(object or long)> arg);
+  // void passRecordOfUnions2(record<DOMString, (object or long)> arg);
 
   (CanvasPattern or CanvasGradient) receiveUnion();
   (object or long) receiveUnion2();
@@ -560,32 +570,28 @@ interface TestExampleInterface {
   void passOptionalNullableDateWithDefaultValue(optional Date? arg = null);
   void passDateSequence(sequence<Date> arg);
   void passNullableDateSequence(sequence<Date?> arg);
-  void passDateMozMap(MozMap<Date> arg);
+  void passDateRecord(record<DOMString, Date> arg);
   Date receiveDate();
   Date? receiveNullableDate();
 
   // Promise types
   void passPromise(Promise<any> arg);
-  void passNullablePromise(Promise<any>? arg);
   void passOptionalPromise(optional Promise<any> arg);
-  void passOptionalNullablePromise(optional Promise<any>? arg);
-  void passOptionalNullablePromiseWithDefaultValue(optional Promise<any>? arg = null);
   void passPromiseSequence(sequence<Promise<any>> arg);
-  void passNullablePromiseSequence(sequence<Promise<any>?> arg);
   Promise<any> receivePromise();
   Promise<any> receiveAddrefedPromise();
 
   // binaryNames tests
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom();
-  [BinaryName="otherMethodRenamedTo"]
-  void otherMethodRenamedFrom();
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom(byte argument);
+  [BinaryName="attributeGetterRenamedTo"]
   readonly attribute byte attributeGetterRenamedFrom;
+  [BinaryName="attributeRenamedTo"]
   attribute byte attributeRenamedFrom;
-  [BinaryName="otherAttributeRenamedTo"]
-  attribute byte otherAttributeRenamedFrom;
 
-  void passDictionary(optional Dict x);
+  void passDictionary(optional Dict x = {});
   void passDictionary2(Dict x);
   [Cached, Pure]
   readonly attribute Dict readonlyDictionary;
@@ -601,16 +607,16 @@ interface TestExampleInterface {
   attribute Dict writableFrozenDictionary;
   Dict receiveDictionary();
   Dict? receiveNullableDictionary();
-  void passOtherDictionary(optional GrandparentDict x);
+  void passOtherDictionary(optional GrandparentDict x = {});
   void passSequenceOfDictionaries(sequence<Dict> x);
-  void passMozMapOfDictionaries(MozMap<GrandparentDict> x);
+  void passRecordOfDictionaries(record<DOMString, GrandparentDict> x);
   // No support for nullable dictionaries inside a sequence (nor should there be)
   //  void passSequenceOfNullableDictionaries(sequence<Dict?> x);
-  void passDictionaryOrLong(optional Dict x);
+  void passDictionaryOrLong(optional Dict x = {});
   void passDictionaryOrLong(long x);
 
-  void passDictContainingDict(optional DictContainingDict arg);
-  void passDictContainingSequence(optional DictContainingSequence arg);
+  void passDictContainingDict(optional DictContainingDict arg = {});
+  void passDictContainingSequence(optional DictContainingSequence arg = {});
   DictContainingSequence receiveDictContainingSequence();
   void passVariadicDictionary(Dict... arg);
 
@@ -618,8 +624,8 @@ interface TestExampleInterface {
   void dontEnforceRangeOrClamp(byte arg);
   void doEnforceRange([EnforceRange] byte arg);
   void doClamp([Clamp] byte arg);
-  [EnforceRange] attribute byte enforcedByte;
-  [Clamp] attribute byte clampedByte;
+  attribute [EnforceRange] byte enforcedByte;
+  attribute [Clamp] byte clampedByte;
 
   // Typedefs
   const myLong myLongConstant = 5;
@@ -628,11 +634,11 @@ interface TestExampleInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   attribute boolean deprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   void deprecatedMethod(boolean arg);
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   void deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -641,11 +647,11 @@ interface TestExampleInterface {
   static void staticMethodWithContext(any arg);
 
   // Deprecated methods and attributes;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static attribute boolean staticDeprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethod(boolean arg);
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethodWithContext(any arg);
 
   // Overload resolution tests
@@ -653,7 +659,7 @@ interface TestExampleInterface {
   boolean overload1(TestInterface arg);
   TestInterface overload1(DOMString strs, TestInterface arg);
   void overload2(TestInterface arg);
-  void overload2(optional Dict arg);
+  void overload2(optional Dict arg = {});
   void overload2(boolean arg);
   void overload2(DOMString arg);
   void overload2(Date arg);
@@ -689,51 +695,51 @@ interface TestExampleInterface {
   void overload16(long arg);
   void overload16(optional TestInterface? arg);
   void overload17(sequence<long> arg);
-  void overload17(MozMap<long> arg);
-  void overload18(MozMap<DOMString> arg);
+  void overload17(record<DOMString, long> arg);
+  void overload18(record<DOMString, DOMString> arg);
   void overload18(sequence<DOMString> arg);
   void overload19(sequence<long> arg);
-  void overload19(optional Dict arg);
-  void overload20(optional Dict arg);
+  void overload19(optional Dict arg = {});
+  void overload20(optional Dict arg = {});
   void overload20(sequence<long> arg);
 
   // Variadic handling
   void passVariadicThirdArg(DOMString arg1, long arg2, TestInterface... arg3);
 
   // Conditionally exposed methods/attributes
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable1;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable2;
-  [Pref="ghi.jkl"]
+  [Pref="dom.webidl.test2"]
   readonly attribute boolean prefable3;
-  [Pref="ghi.jkl"]
+  [Pref="dom.webidl.test2"]
   readonly attribute boolean prefable4;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable5;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable6;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable7;
-  [Pref="ghi.jkl", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test2", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable8;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable9;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   void prefable10();
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable11();
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable12;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable13();
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable14;
   [Func="TestFuncControlledMember"]
   readonly attribute boolean prefable15;
   [Func="TestFuncControlledMember"]
   readonly attribute boolean prefable16;
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   void prefable17();
   [Func="TestFuncControlledMember"]
   void prefable18();
@@ -743,19 +749,19 @@ interface TestExampleInterface {
   // Conditionally exposed methods/attributes involving [SecureContext]
   [SecureContext]
   readonly attribute boolean conditionalOnSecureContext1;
-  [SecureContext, Pref="abc.def"]
+  [SecureContext, Pref="dom.webidl.test1"]
   readonly attribute boolean conditionalOnSecureContext2;
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean conditionalOnSecureContext3;
-  [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
+  [SecureContext, Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean conditionalOnSecureContext4;
   [SecureContext]
   void conditionalOnSecureContext5();
-  [SecureContext, Pref="abc.def"]
+  [SecureContext, Pref="dom.webidl.test1"]
   void conditionalOnSecureContext6();
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void conditionalOnSecureContext7();
-  [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
+  [SecureContext, Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   void conditionalOnSecureContext8();
 
   // Miscellania
@@ -773,28 +779,86 @@ interface TestExampleInterface {
   [Throws] attribute boolean throwingAttr;
   [GetterThrows] attribute boolean throwingGetterAttr;
   [SetterThrows] attribute boolean throwingSetterAttr;
+  [CanOOM] void canOOMMethod();
+  [CanOOM] attribute boolean canOOMAttr;
+  [GetterCanOOM] attribute boolean canOOMGetterAttr;
+  [SetterCanOOM] attribute boolean canOOMSetterAttr;
+  [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
+  [NeedsCallerType] void needsCallerTypeMethod();
+  [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [CEReactions] void ceReactionsMethod();
+  [CEReactions] void ceReactionsMethodOverload();
+  [CEReactions] void ceReactionsMethodOverload(DOMString bar);
+  [CEReactions] attribute boolean ceReactionsAttr;
   legacycaller short(unsigned long arg1, TestInterface arg2);
   void passArgsWithDefaults(optional long arg1,
                             optional TestInterface? arg2 = null,
-                            optional Dict arg3, optional double arg4 = 5.0,
+                            optional Dict arg3 = {}, optional double arg4 = 5.0,
                             optional float arg5);
-  attribute any jsonifierShouldSkipThis;
-  attribute TestParentInterface jsonifierShouldSkipThis2;
-  attribute TestCallbackInterface jsonifierShouldSkipThis3;
-  jsonifier;
+  attribute any toJSONShouldSkipThis;
+  attribute TestParentInterface toJSONShouldSkipThis2;
+  attribute TestCallbackInterface toJSONShouldSkipThis3;
+  [Default] object toJSON();
 
   attribute byte dashed-attribute;
   void dashed-method();
 
+  // [NonEnumerable] tests
+  [NonEnumerable]
+  attribute boolean nonEnumerableAttr;
+  [NonEnumerable]
+  const boolean nonEnumerableConst = true;
+  [NonEnumerable]
+  void nonEnumerableMethod();
+
+  // [NeedsWindowsUndef] test generation
+  [NeedsWindowsUndef]
+  const unsigned long NO_ERROR = 0xffffffff;
+
   // If you add things here, add them to TestCodeGen and TestJSImplGen as well
 };
 
+[Exposed=Window]
 interface TestExampleProxyInterface {
   getter long longIndexedGetter(unsigned long ix);
-  deleter void (unsigned long ix);
-  setter creator void longIndexedSetter(unsigned long y, long z);
+  setter void longIndexedSetter(unsigned long y, long z);
+  readonly attribute unsigned long length;
   stringifier DOMString myStringifier();
   getter short shortNameGetter(DOMString nom);
   deleter void (DOMString nomnom);
-  setter creator void shortNamedSetter(DOMString me, short value);
+  setter void shortNamedSetter(DOMString me, short value);
+};
+
+[Exposed=(Window,Worker)]
+interface TestExampleWorkerInterface {
+  [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
+  [NeedsCallerType] void needsCallerTypeMethod();
+  [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
+};
+
+[Exposed=Window]
+interface TestExampleThrowingConstructorInterface {
+  [Throws]
+  constructor();
+  [Throws]
+  constructor(DOMString str);
+  [Throws]
+  constructor(unsigned long num, boolean? boolArg);
+  [Throws]
+  constructor(TestInterface? iface);
+  [Throws]
+  constructor(unsigned long arg1, TestInterface iface);
+  [Throws]
+  constructor(Date arg1);
+  [Throws]
+  constructor(ArrayBuffer arrayBuf);
+  [Throws]
+  constructor(Uint8Array typedArr);
+  // [Throws] constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3);
 };

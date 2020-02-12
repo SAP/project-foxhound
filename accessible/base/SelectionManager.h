@@ -8,14 +8,16 @@
 
 #include "nsIFrame.h"
 #include "nsISelectionListener.h"
-
-class nsIPresShell;
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 
+class PresShell;
+
 namespace dom {
 class Element;
-}
+class Selection;
+}  // namespace dom
 
 namespace a11y {
 
@@ -41,9 +43,8 @@ class HyperTextAccessible;
 
 struct SelData;
 
-class SelectionManager : public nsISelectionListener
-{
-public:
+class SelectionManager : public nsISelectionListener {
+ public:
   // nsISupports
   // implemented by derived nsAccessibilityService
 
@@ -69,12 +70,12 @@ public:
   /**
    * Listen to selection events on the document.
    */
-  void AddDocSelectionListener(nsIPresShell* aPresShell);
+  void AddDocSelectionListener(PresShell* aPresShell);
 
   /**
    * Stop listening to selection events for a given document
    */
-  void RemoveDocSelectionListener(nsIPresShell* aShell);
+  void RemoveDocSelectionListener(PresShell* aPresShell);
 
   /**
    * Process delayed event, results in caret move and text selection change
@@ -87,10 +88,8 @@ public:
    * current pair, then returns -1 for the offset and a nullptr for the
    * accessible.
    */
-  inline HyperTextAccessible* AccessibleWithCaret(int32_t* aCaret)
-  {
-    if (aCaret)
-      *aCaret = mCaretOffset;
+  inline HyperTextAccessible* AccessibleWithCaret(int32_t* aCaret) {
+    if (aCaret) *aCaret = mCaretOffset;
 
     return mAccWithCaret;
   }
@@ -98,20 +97,17 @@ public:
   /**
    * Update caret offset when it doesn't go through a caret move event.
    */
-  inline void UpdateCaretOffset(HyperTextAccessible* aItem, int32_t aOffset)
-  {
+  inline void UpdateCaretOffset(HyperTextAccessible* aItem, int32_t aOffset) {
     mAccWithCaret = aItem;
     mCaretOffset = aOffset;
   }
 
-  inline void ResetCaretOffset()
-  {
+  inline void ResetCaretOffset() {
     mCaretOffset = -1;
     mAccWithCaret = nullptr;
   }
 
-protected:
-
+ protected:
   SelectionManager();
 
   /**
@@ -119,14 +115,15 @@ protected:
    */
   void ProcessSelectionChanged(SelData* aSelData);
 
-private:
+ private:
   // Currently focused control.
-  nsWeakFrame mCurrCtrlFrame;
   int32_t mCaretOffset;
   HyperTextAccessible* mAccWithCaret;
+  WeakPtr<dom::Selection> mCurrCtrlNormalSel;
+  WeakPtr<dom::Selection> mCurrCtrlSpellSel;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

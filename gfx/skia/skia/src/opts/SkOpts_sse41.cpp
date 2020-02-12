@@ -7,15 +7,24 @@
 
 #include "SkOpts.h"
 
-#define SK_OPTS_NS sk_sse41
-#include "SkBlurImageFilter_opts.h"
+#define SK_OPTS_NS sse41
+#include "SkRasterPipeline_opts.h"
 #include "SkBlitRow_opts.h"
 
 namespace SkOpts {
     void Init_sse41() {
-        box_blur_xx = sk_sse41::box_blur_xx;
-        box_blur_xy = sk_sse41::box_blur_xy;
-        box_blur_yx = sk_sse41::box_blur_yx;
-        blit_row_s32a_opaque = sk_sse41::blit_row_s32a_opaque;
+        blit_row_s32a_opaque = sse41::blit_row_s32a_opaque;
+
+    #define M(st) stages_highp[SkRasterPipeline::st] = (StageFn)SK_OPTS_NS::st;
+        SK_RASTER_PIPELINE_STAGES(M)
+        just_return_highp = (StageFn)SK_OPTS_NS::just_return;
+        start_pipeline_highp = SK_OPTS_NS::start_pipeline;
+    #undef M
+
+    #define M(st) stages_lowp[SkRasterPipeline::st] = (StageFn)SK_OPTS_NS::lowp::st;
+        SK_RASTER_PIPELINE_STAGES(M)
+        just_return_lowp = (StageFn)SK_OPTS_NS::lowp::just_return;
+        start_pipeline_lowp = SK_OPTS_NS::lowp::start_pipeline;
+    #undef M
     }
 }

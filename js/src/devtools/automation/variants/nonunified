@@ -1,9 +1,7 @@
 {
-    "configure-args": "--enable-debug",
+    "configure-args": "--enable-warnings-as-errors --enable-rust-simd",
+    "debug": true,
     "skip-tests": {
         "all": ["jstests", "jittest", "checks"]
-    },
-    "extra-tests": {
-        "all": ["check-style"]
     }
 }

@@ -2,108 +2,149 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Shared code for xpcshell and mochitests-chrome */
+/* Shared code for xpcshell, mochitests-chrome, and mochitest-browser-chrome. */
 
-Cu.import("resource://gre/modules/FileUtils.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+// Definitions needed to run eslint on this file.
+/* global AppConstants, DATA_URI_SPEC, LOG_FUNCTION */
+/* global Services, URL_HOST */
 
-const PREF_APP_UPDATE_AUTO                 = "app.update.auto";
-const PREF_APP_UPDATE_BACKGROUNDERRORS     = "app.update.backgroundErrors";
-const PREF_APP_UPDATE_BACKGROUNDMAXERRORS  = "app.update.backgroundMaxErrors";
-const PREF_APP_UPDATE_CERT_REQUIREBUILTIN  = "app.update.cert.requireBuiltIn";
-const PREF_APP_UPDATE_CHANNEL              = "app.update.channel";
-const PREF_APP_UPDATE_ENABLED              = "app.update.enabled";
-const PREF_APP_UPDATE_IDLETIME             = "app.update.idletime";
-const PREF_APP_UPDATE_LOG                  = "app.update.log";
-const PREF_APP_UPDATE_NOTIFIEDUNSUPPORTED  = "app.update.notifiedUnsupported";
-const PREF_APP_UPDATE_PROMPTWAITTIME       = "app.update.promptWaitTime";
-const PREF_APP_UPDATE_RETRYTIMEOUT         = "app.update.socket.retryTimeout";
-const PREF_APP_UPDATE_SERVICE_ENABLED      = "app.update.service.enabled";
-const PREF_APP_UPDATE_SILENT               = "app.update.silent";
-const PREF_APP_UPDATE_SOCKET_MAXERRORS     = "app.update.socket.maxErrors";
-const PREF_APP_UPDATE_STAGING_ENABLED      = "app.update.staging.enabled";
-const PREF_APP_UPDATE_URL                  = "app.update.url";
-const PREF_APP_UPDATE_URL_DETAILS          = "app.update.url.details";
-const PREF_APP_UPDATE_URL_OVERRIDE         = "app.update.url.override";
+const { FileUtils } = ChromeUtils.import(
+  "resource://gre/modules/FileUtils.jsm"
+);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { TelemetryTestUtils } = ChromeUtils.import(
+  "resource://testing-common/TelemetryTestUtils.jsm"
+);
 
-const PREFBRANCH_APP_UPDATE_NEVER = "app.update.never.";
+ChromeUtils.defineModuleGetter(
+  this,
+  "ctypes",
+  "resource://gre/modules/ctypes.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "UpdateUtils",
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
-const PREFBRANCH_APP_PARTNER         = "app.partner.";
-const PREF_DISTRIBUTION_ID           = "distribution.id";
-const PREF_DISTRIBUTION_VERSION      = "distribution.version";
-const PREF_TOOLKIT_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
+const PREF_APP_UPDATE_AUTO = "app.update.auto";
+const PREF_APP_UPDATE_BACKGROUNDERRORS = "app.update.backgroundErrors";
+const PREF_APP_UPDATE_BACKGROUNDMAXERRORS = "app.update.backgroundMaxErrors";
+const PREF_APP_UPDATE_BADGEWAITTIME = "app.update.badgeWaitTime";
+const PREF_APP_UPDATE_BITS_ENABLED = "app.update.BITS.enabled";
+const PREF_APP_UPDATE_CANCELATIONS = "app.update.cancelations";
+const PREF_APP_UPDATE_CHANNEL = "app.update.channel";
+const PREF_APP_UPDATE_DOWNLOAD_MAXATTEMPTS = "app.update.download.maxAttempts";
+const PREF_APP_UPDATE_DOWNLOAD_ATTEMPTS = "app.update.download.attempts";
+const PREF_APP_UPDATE_DISABLEDFORTESTING = "app.update.disabledForTesting";
+const PREF_APP_UPDATE_INTERVAL = "app.update.interval";
+const PREF_APP_UPDATE_LASTUPDATETIME =
+  "app.update.lastUpdateTime.background-update-timer";
+const PREF_APP_UPDATE_LOG = "app.update.log";
+const PREF_APP_UPDATE_PROMPTWAITTIME = "app.update.promptWaitTime";
+const PREF_APP_UPDATE_RETRYTIMEOUT = "app.update.socket.retryTimeout";
+const PREF_APP_UPDATE_SERVICE_ENABLED = "app.update.service.enabled";
+const PREF_APP_UPDATE_SOCKET_MAXERRORS = "app.update.socket.maxErrors";
+const PREF_APP_UPDATE_STAGING_ENABLED = "app.update.staging.enabled";
+const PREF_APP_UPDATE_UNSUPPORTED_URL = "app.update.unsupported.url";
+const PREF_APP_UPDATE_URL = "app.update.url";
+const PREF_APP_UPDATE_URL_DETAILS = "app.update.url.details";
+const PREF_APP_UPDATE_URL_MANUAL = "app.update.url.manual";
 
-const NS_APP_PROFILE_DIR_STARTUP   = "ProfDS";
-const NS_APP_USER_PROFILE_50_DIR   = "ProfD";
-const NS_GRE_DIR                   = "GreD";
-const NS_GRE_BIN_DIR               = "GreBinD";
+const PREFBRANCH_APP_PARTNER = "app.partner.";
+const PREF_DISTRIBUTION_ID = "distribution.id";
+const PREF_DISTRIBUTION_VERSION = "distribution.version";
+
+const CONFIG_APP_UPDATE_AUTO = "app.update.auto";
+
+const NS_APP_PROFILE_DIR_STARTUP = "ProfDS";
+const NS_APP_USER_PROFILE_50_DIR = "ProfD";
+const NS_GRE_BIN_DIR = "GreBinD";
+const NS_GRE_DIR = "GreD";
 const NS_XPCOM_CURRENT_PROCESS_DIR = "XCurProcD";
-const XRE_EXECUTABLE_FILE          = "XREExeF";
-const XRE_UPDATE_ROOT_DIR          = "UpdRootD";
+const XRE_EXECUTABLE_FILE = "XREExeF";
+const XRE_OLD_UPDATE_ROOT_DIR = "OldUpdRootD";
+const XRE_UPDATE_ROOT_DIR = "UpdRootD";
 
-const DIR_PATCH        = "0";
-const DIR_TOBEDELETED  = "tobedeleted";
-const DIR_UPDATES      = "updates";
-const DIR_UPDATED      = IS_MACOSX ? "Updated.app" : "updated";
+const DIR_PATCH = "0";
+const DIR_TOBEDELETED = "tobedeleted";
+const DIR_UPDATES = "updates";
+const DIR_UPDATED =
+  AppConstants.platform == "macosx" ? "Updated.app" : "updated";
 
-const FILE_ACTIVE_UPDATE_XML         = "active-update.xml";
-const FILE_APPLICATION_INI           = "application.ini";
-const FILE_BACKUP_UPDATE_LOG         = "backup-update.log";
-const FILE_LAST_UPDATE_LOG           = "last-update.log";
-const FILE_UPDATE_SETTINGS_INI       = "update-settings.ini";
-const FILE_UPDATE_SETTINGS_INI_BAK   = "update-settings.ini.bak";
-const FILE_UPDATER_INI               = "updater.ini";
-const FILE_UPDATES_XML               = "updates.xml";
-const FILE_UPDATE_LOG                = "update.log";
-const FILE_UPDATE_MAR                = "update.mar";
-const FILE_UPDATE_STATUS             = "update.status";
-const FILE_UPDATE_TEST               = "update.test";
-const FILE_UPDATE_VERSION            = "update.version";
+const FILE_ACTIVE_UPDATE_XML = "active-update.xml";
+const FILE_ACTIVE_UPDATE_XML_TMP = "active-update.xml.tmp";
+const FILE_APPLICATION_INI = "application.ini";
+const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
+const FILE_BT_RESULT = "bt.result";
+const FILE_LAST_UPDATE_LOG = "last-update.log";
+const FILE_PRECOMPLETE = "precomplete";
+const FILE_PRECOMPLETE_BAK = "precomplete.bak";
+const FILE_UPDATE_CONFIG_JSON = "update-config.json";
+const FILE_UPDATE_LOG = "update.log";
+const FILE_UPDATE_MAR = "update.mar";
+const FILE_UPDATE_SETTINGS_INI = "update-settings.ini";
+const FILE_UPDATE_SETTINGS_INI_BAK = "update-settings.ini.bak";
+const FILE_UPDATE_STATUS = "update.status";
+const FILE_UPDATE_TEST = "update.test";
+const FILE_UPDATE_VERSION = "update.version";
+const FILE_UPDATER_INI = "updater.ini";
+const FILE_UPDATES_XML = "updates.xml";
+const FILE_UPDATES_XML_TMP = "updates.xml.tmp";
 
-const UPDATE_SETTINGS_CONTENTS = "[Settings]\n" +
-                                 "ACCEPTED_MAR_CHANNEL_IDS=xpcshell-test\n"
+const UPDATE_SETTINGS_CONTENTS =
+  "[Settings]\nACCEPTED_MAR_CHANNEL_IDS=xpcshell-test\n";
+const PRECOMPLETE_CONTENTS = 'rmdir "nonexistent_dir/"\n';
 
-const PR_RDWR        = 0x04;
+const PR_RDWR = 0x04;
 const PR_CREATE_FILE = 0x08;
-const PR_TRUNCATE    = 0x20;
-
-const DEFAULT_UPDATE_VERSION = "999999.0";
+const PR_TRUNCATE = 0x20;
 
 var gChannel;
+var gDebugTest = false;
 
+/* import-globals-from sharedUpdateXML.js */
 Services.scriptloader.loadSubScript(DATA_URI_SPEC + "sharedUpdateXML.js", this);
 
-const PERMS_FILE      = FileUtils.PERMS_FILE;
+const PERMS_FILE = FileUtils.PERMS_FILE;
 const PERMS_DIRECTORY = FileUtils.PERMS_DIRECTORY;
 
-const MODE_WRONLY   = FileUtils.MODE_WRONLY;
-const MODE_CREATE   = FileUtils.MODE_CREATE;
-const MODE_APPEND   = FileUtils.MODE_APPEND;
+const MODE_WRONLY = FileUtils.MODE_WRONLY;
+const MODE_CREATE = FileUtils.MODE_CREATE;
+const MODE_APPEND = FileUtils.MODE_APPEND;
 const MODE_TRUNCATE = FileUtils.MODE_TRUNCATE;
 
-const URI_UPDATES_PROPERTIES = "chrome://mozapps/locale/update/updates.properties";
+const URI_UPDATES_PROPERTIES =
+  "chrome://mozapps/locale/update/updates.properties";
 const gUpdateBundle = Services.strings.createBundle(URI_UPDATES_PROPERTIES);
 
 XPCOMUtils.defineLazyGetter(this, "gAUS", function test_gAUS() {
-  return Cc["@mozilla.org/updates/update-service;1"].
-         getService(Ci.nsIApplicationUpdateService).
-         QueryInterface(Ci.nsITimerCallback).
-         QueryInterface(Ci.nsIObserver).
-         QueryInterface(Ci.nsIUpdateCheckListener);
+  return Cc["@mozilla.org/updates/update-service;1"]
+    .getService(Ci.nsIApplicationUpdateService)
+    .QueryInterface(Ci.nsITimerCallback)
+    .QueryInterface(Ci.nsIObserver)
+    .QueryInterface(Ci.nsIUpdateCheckListener);
 });
 
-XPCOMUtils.defineLazyServiceGetter(this, "gUpdateManager",
-                                   "@mozilla.org/updates/update-manager;1",
-                                   "nsIUpdateManager");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "gUpdateManager",
+  "@mozilla.org/updates/update-manager;1",
+  "nsIUpdateManager"
+);
 
 XPCOMUtils.defineLazyGetter(this, "gUpdateChecker", function test_gUC() {
-  return Cc["@mozilla.org/updates/update-checker;1"].
-         createInstance(Ci.nsIUpdateChecker);
+  return Cc["@mozilla.org/updates/update-checker;1"].createInstance(
+    Ci.nsIUpdateChecker
+  );
 });
 
 XPCOMUtils.defineLazyGetter(this, "gUP", function test_gUP() {
-  return Cc["@mozilla.org/updates/update-prompt;1"].
-         createInstance(Ci.nsIUpdatePrompt);
+  return Cc["@mozilla.org/updates/update-prompt;1"].createInstance(
+    Ci.nsIUpdatePrompt
+  );
 });
 
 XPCOMUtils.defineLazyGetter(this, "gDefaultPrefBranch", function test_gDPB() {
@@ -114,14 +155,38 @@ XPCOMUtils.defineLazyGetter(this, "gPrefRoot", function test_gPR() {
   return Services.prefs.getBranch(null);
 });
 
-XPCOMUtils.defineLazyServiceGetter(this, "gEnv",
-                                   "@mozilla.org/process/environment;1",
-                                   "nsIEnvironment");
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "gEnv",
+  "@mozilla.org/process/environment;1",
+  "nsIEnvironment"
+);
 
-XPCOMUtils.defineLazyGetter(this, "gZipW", function test_gZipW() {
-  return Cc["@mozilla.org/zipwriter;1"].
-         createInstance(Ci.nsIZipWriter);
-});
+/**
+ * Waits for the specified topic and (optionally) status.
+ *
+ * @param  topic
+ *         String representing the topic to wait for.
+ * @param  status (optional)
+ *         A string representing the status on said topic to wait for.
+ * @return A promise which will resolve the first time an event occurs on the
+ *         specified topic, and (optionally) with the specified status.
+ */
+function waitForEvent(topic, status = null) {
+  return new Promise(resolve =>
+    Services.obs.addObserver(
+      {
+        observe(subject, innerTopic, innerStatus) {
+          if (!status || status == innerStatus) {
+            Services.obs.removeObserver(this, topic);
+            resolve(innerStatus);
+          }
+        },
+      },
+      topic
+    )
+  );
+}
 
 /* Triggers post-update processing */
 function testPostUpdateProcessing() {
@@ -130,15 +195,38 @@ function testPostUpdateProcessing() {
 
 /* Initializes the update service stub */
 function initUpdateServiceStub() {
-  Cc["@mozilla.org/updates/update-service-stub;1"].
-  createInstance(Ci.nsISupports);
+  Cc["@mozilla.org/updates/update-service-stub;1"].createInstance(
+    Ci.nsISupports
+  );
 }
 
-/* Reloads the update metadata from disk */
-function reloadUpdateManagerData() {
-  gUpdateManager.QueryInterface(Ci.nsIObserver).
-  observe(null, "um-reload-update-data", "");
+/**
+ * Reloads the update xml files.
+ *
+ * @param  skipFiles (optional)
+ *         If true, the update xml files will not be read and the metadata will
+ *         be reset. If false (the default), the update xml files will be read
+ *         to populate the update metadata.
+ */
+function reloadUpdateManagerData(skipFiles = false) {
+  let observeData = skipFiles ? "skip-files" : "";
+  gUpdateManager
+    .QueryInterface(Ci.nsIObserver)
+    .observe(null, "um-reload-update-data", observeData);
 }
+
+const observer = {
+  observe(aSubject, aTopic, aData) {
+    if (aTopic == "nsPref:changed" && aData == PREF_APP_UPDATE_CHANNEL) {
+      let channel = gDefaultPrefBranch.getCharPref(PREF_APP_UPDATE_CHANNEL);
+      if (channel != gChannel) {
+        debugDump("Changing channel from " + channel + " to " + gChannel);
+        gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
+      }
+    }
+  },
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
+};
 
 /**
  * Sets the app.update.channel preference.
@@ -148,48 +236,24 @@ function reloadUpdateManagerData() {
  */
 function setUpdateChannel(aChannel) {
   gChannel = aChannel;
-  debugDump("setting default pref " + PREF_APP_UPDATE_CHANNEL + " to " + gChannel);
+  debugDump(
+    "setting default pref " + PREF_APP_UPDATE_CHANNEL + " to " + gChannel
+  );
   gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
-  gPrefRoot.addObserver(PREF_APP_UPDATE_CHANNEL, observer, false);
+  gPrefRoot.addObserver(PREF_APP_UPDATE_CHANNEL, observer);
 }
 
-const observer = {
-  observe: function(aSubject, aTopic, aData) {
-    if (aTopic == "nsPref:changed" && aData == PREF_APP_UPDATE_CHANNEL) {
-      let channel = gDefaultPrefBranch.getCharPref(PREF_APP_UPDATE_CHANNEL);
-      if (channel != gChannel) {
-        debugDump("Changing channel from " + channel + " to " + gChannel);
-        gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
-      }
-    }
-  },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver])
-};
-
 /**
- * Sets the app.update.url.override preference.
+ * Sets the app.update.url default preference.
  *
  * @param  aURL
  *         The update url. If not specified 'URL_HOST + "/update.xml"' will be
  *         used.
  */
-function setUpdateURLOverride(aURL) {
+function setUpdateURL(aURL) {
   let url = aURL ? aURL : URL_HOST + "/update.xml";
-  debugDump("setting " + PREF_APP_UPDATE_URL_OVERRIDE + " to " + url);
-  Services.prefs.setCharPref(PREF_APP_UPDATE_URL_OVERRIDE, url);
-}
-
-/**
- * Returns either the active or regular update database XML file.
- *
- * @param  isActiveUpdate
- *         If true this will return the active-update.xml otherwise it will
- *         return the updates.xml file.
- */
-function getUpdatesXMLFile(aIsActiveUpdate) {
-  let file = getUpdatesRootDir();
-  file.append(aIsActiveUpdate ? FILE_ACTIVE_UPDATE_XML : FILE_UPDATES_XML);
-  return file;
+  debugDump("setting " + PREF_APP_UPDATE_URL + " to " + url);
+  gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_URL, url);
 }
 
 /**
@@ -203,7 +267,10 @@ function getUpdatesXMLFile(aIsActiveUpdate) {
  *         write to the updates.xml file.
  */
 function writeUpdatesToXMLFile(aContent, aIsActiveUpdate) {
-  writeFile(getUpdatesXMLFile(aIsActiveUpdate), aContent);
+  let file = getUpdateDirFile(
+    aIsActiveUpdate ? FILE_ACTIVE_UPDATE_XML : FILE_UPDATES_XML
+  );
+  writeFile(file, aContent);
 }
 
 /**
@@ -215,8 +282,7 @@ function writeUpdatesToXMLFile(aContent, aIsActiveUpdate) {
  *         The status value to write.
  */
 function writeStatusFile(aStatus) {
-  let file = getUpdatesPatchDir();
-  file.append(FILE_UPDATE_STATUS);
+  let file = getUpdateDirFile(FILE_UPDATE_STATUS);
   writeFile(file, aStatus + "\n");
 }
 
@@ -228,40 +294,8 @@ function writeStatusFile(aStatus) {
  *         The version value to write.
  */
 function writeVersionFile(aVersion) {
-  let file = getUpdatesPatchDir();
-  file.append(FILE_UPDATE_VERSION);
+  let file = getUpdateDirFile(FILE_UPDATE_VERSION);
   writeFile(file, aVersion + "\n");
-}
-
-/**
- * Gets the root directory for the updates directory.
- *
- * @return nsIFile for the updates root directory.
- */
-function getUpdatesRootDir() {
-  return Services.dirsvc.get(XRE_UPDATE_ROOT_DIR, Ci.nsIFile);
-}
-
-/**
- * Gets the updates directory.
- *
- * @return nsIFile for the updates directory.
- */
-function getUpdatesDir() {
-  let dir = getUpdatesRootDir();
-  dir.append(DIR_UPDATES);
-  return dir;
-}
-
-/**
- * Gets the directory for update patches.
- *
- * @return nsIFile for the updates directory.
- */
-function getUpdatesPatchDir() {
-  let dir = getUpdatesDir();
-  dir.append(DIR_PATCH);
-  return dir;
 }
 
 /**
@@ -275,10 +309,11 @@ function getUpdatesPatchDir() {
  *         replaced.
  */
 function writeFile(aFile, aText) {
-  let fos = Cc["@mozilla.org/network/file-output-stream;1"].
-            createInstance(Ci.nsIFileOutputStream);
+  let fos = Cc["@mozilla.org/network/file-output-stream;1"].createInstance(
+    Ci.nsIFileOutputStream
+  );
   if (!aFile.exists()) {
-    aFile.create(Ci.nsILocalFile.NORMAL_FILE_TYPE, PERMS_FILE);
+    aFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
   }
   fos.init(aFile, MODE_WRONLY | MODE_CREATE | MODE_TRUNCATE, PERMS_FILE, 0);
   fos.write(aText, aText.length);
@@ -292,14 +327,11 @@ function writeFile(aFile, aText) {
  * @return The status value.
  */
 function readStatusFile() {
-  let file = getUpdatesPatchDir();
-  file.append(FILE_UPDATE_STATUS);
-
+  let file = getUpdateDirFile(FILE_UPDATE_STATUS);
   if (!file.exists()) {
     debugDump("update status file does not exists! Path: " + file.path);
     return STATE_NONE;
   }
-
   return readFile(file).split("\n")[0];
 }
 
@@ -324,6 +356,17 @@ function readStatusFailedCode() {
 }
 
 /**
+ * Returns whether or not applying the current update resulted in an error
+ * verifying binary transparency information.
+ *
+ * @return true if there was an error result and false otherwise
+ */
+function updateHasBinaryTransparencyErrorResult() {
+  let file = getUpdateDirFile(FILE_BT_RESULT);
+  return file.exists();
+}
+
+/**
  * Reads text from a file and returns the string.
  *
  * @param  aFile
@@ -331,52 +374,22 @@ function readStatusFailedCode() {
  * @return The string of text read from the file.
  */
 function readFile(aFile) {
-  let fis = Cc["@mozilla.org/network/file-input-stream;1"].
-            createInstance(Ci.nsIFileInputStream);
+  let fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
   if (!aFile.exists()) {
     return null;
   }
   // Specifying -1 for ioFlags will open the file with the default of PR_RDONLY.
   // Specifying -1 for perm will open the file with the default of 0.
   fis.init(aFile, -1, -1, Ci.nsIFileInputStream.CLOSE_ON_EOF);
-  let sis = Cc["@mozilla.org/scriptableinputstream;1"].
-            createInstance(Ci.nsIScriptableInputStream);
+  let sis = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+    Ci.nsIScriptableInputStream
+  );
   sis.init(fis);
   let text = sis.read(sis.available());
   sis.close();
   return text;
-}
-
-/**
- * Reads the binary contents of a file and returns it as a string.
- *
- * @param  aFile
- *         The file to read from.
- * @return The contents of the file as a string.
- */
-function readFileBytes(aFile) {
-  debugDump("attempting to read file, path: " + aFile.path);
-  let fis = Cc["@mozilla.org/network/file-input-stream;1"].
-            createInstance(Ci.nsIFileInputStream);
-  // Specifying -1 for ioFlags will open the file with the default of PR_RDONLY.
-  // Specifying -1 for perm will open the file with the default of 0.
-  fis.init(aFile, -1, -1, Ci.nsIFileInputStream.CLOSE_ON_EOF);
-  let bis = Cc["@mozilla.org/binaryinputstream;1"].
-            createInstance(Ci.nsIBinaryInputStream);
-  bis.setInputStream(fis);
-  let data = [];
-  let count = fis.available();
-  while (count > 0) {
-    let bytes = bis.readByteArray(Math.min(65535, count));
-    data.push(String.fromCharCode.apply(null, bytes));
-    count -= bytes.length;
-    if (bytes.length == 0) {
-      throw "Nothing read from input stream!";
-    }
-  }
-  data.join('');
-  fis.close();
-  return data.toString();
 }
 
 /* Returns human readable status text from the updates.properties bundle */
@@ -388,8 +401,7 @@ function getStatusText(aErrCode) {
 function getString(aName) {
   try {
     return gUpdateBundle.GetStringFromName(aName);
-  } catch (e) {
-  }
+  } catch (e) {}
   return null;
 }
 
@@ -401,92 +413,142 @@ function getString(aName) {
  * @return The file extension.
  */
 function getFileExtension(aFile) {
-  return Services.io.newFileURI(aFile).QueryInterface(Ci.nsIURL).
-         fileExtension;
+  return Services.io.newFileURI(aFile).QueryInterface(Ci.nsIURL).fileExtension;
 }
 
 /**
- * Removes the updates.xml file, active-update.xml file, and all files and
- * sub-directories in the updates directory except for the "0" sub-directory.
- * This prevents some tests from failing due to files being left behind when the
- * tests are interrupted.
- */
-function removeUpdateDirsAndFiles() {
-  let file = getUpdatesXMLFile(true);
-  try {
-    if (file.exists()) {
-      file.remove(false);
-    }
-  } catch (e) {
-    logTestInfo("Unable to remove file. Path: " + file.path +
-                ", Exception: " + e);
-  }
-
-  file = getUpdatesXMLFile(false);
-  try {
-    if (file.exists()) {
-      file.remove(false);
-    }
-  } catch (e) {
-    logTestInfo("Unable to remove file. Path: " + file.path +
-                ", Exception: " + e);
-  }
-
-  // This fails sporadically on Mac OS X so wrap it in a try catch
-  let updatesDir = getUpdatesDir();
-  try {
-    cleanUpdatesDir(updatesDir);
-  } catch (e) {
-    logTestInfo("Unable to remove files / directories from directory. Path: " +
-                updatesDir.path + ", Exception: " + e);
-  }
-}
-
-/**
- * Removes all files and sub-directories in the updates directory except for
- * the "0" sub-directory.
+ * Gets the specified update file or directory.
  *
- * @param  aDir
- *         nsIFile for the directory to be deleted.
+ * @param   aLogLeafName
+ *          The leafName of the file or directory to get.
+ * @return  nsIFile for the file or directory.
  */
-function cleanUpdatesDir(aDir) {
-  if (!aDir.exists()) {
-    return;
+function getUpdateDirFile(aLeafName) {
+  let file = Services.dirsvc.get(XRE_UPDATE_ROOT_DIR, Ci.nsIFile);
+  switch (aLeafName) {
+    case undefined:
+      return file;
+    case DIR_UPDATES:
+    case FILE_ACTIVE_UPDATE_XML:
+    case FILE_ACTIVE_UPDATE_XML_TMP:
+    case FILE_UPDATE_CONFIG_JSON:
+    case FILE_UPDATE_TEST:
+    case FILE_UPDATES_XML:
+    case FILE_UPDATES_XML_TMP:
+      file.append(aLeafName);
+      return file;
+    case DIR_PATCH:
+    case FILE_BACKUP_UPDATE_LOG:
+    case FILE_LAST_UPDATE_LOG:
+      file.append(DIR_UPDATES);
+      file.append(aLeafName);
+      return file;
+    case FILE_BT_RESULT:
+    case FILE_UPDATE_LOG:
+    case FILE_UPDATE_MAR:
+    case FILE_UPDATE_STATUS:
+    case FILE_UPDATE_VERSION:
+    case FILE_UPDATER_INI:
+      file.append(DIR_UPDATES);
+      file.append(DIR_PATCH);
+      file.append(aLeafName);
+      return file;
   }
 
-  let dirEntries = aDir.directoryEntries;
-  while (dirEntries.hasMoreElements()) {
-    let entry = dirEntries.getNext().QueryInterface(Ci.nsIFile);
+  throw new Error(
+    "The leafName specified is not handled by this function, " +
+      "leafName: " +
+      aLeafName
+  );
+}
 
-    if (entry.isDirectory()) {
-      if (entry.leafName == DIR_PATCH && entry.parent.leafName == DIR_UPDATES) {
-        cleanUpdatesDir(entry);
-        entry.permissions = PERMS_DIRECTORY;
-      } else {
-        try {
-          entry.remove(true);
-          return;
-        } catch (e) {
-        }
-        cleanUpdatesDir(entry);
-        entry.permissions = PERMS_DIRECTORY;
-        try {
-          entry.remove(true);
-        } catch (e) {
-          logTestInfo("cleanUpdatesDir: unable to remove directory. Path: " +
-                      entry.path + ", Exception: " + e);
-          throw (e);
-        }
+/**
+ * Helper function for getting the nsIFile for a file in the directory where the
+ * update will be staged.
+ *
+ * The files for the update are located two directories below the stage
+ * directory since Mac OS X sets the last modified time for the root directory
+ * to the current time and if the update changes any files in the root directory
+ * then it wouldn't be possible to test (bug 600098).
+ *
+ * @param   aRelPath (optional)
+ *          The relative path to the file or directory to get from the root of
+ *          the stage directory. If not specified the stage directory will be
+ *          returned.
+ * @return  The nsIFile for the file in the directory where the update will be
+ *          staged.
+ */
+function getStageDirFile(aRelPath) {
+  let file;
+  if (AppConstants.platform == "macosx") {
+    file = getUpdateDirFile(DIR_PATCH);
+  } else {
+    file = getGREBinDir();
+  }
+  file.append(DIR_UPDATED);
+  if (aRelPath) {
+    let pathParts = aRelPath.split("/");
+    for (let i = 0; i < pathParts.length; i++) {
+      if (pathParts[i]) {
+        file.append(pathParts[i]);
       }
-    } else {
-      entry.permissions = PERMS_FILE;
-      try {
-        entry.remove(false);
-      } catch (e) {
-       logTestInfo("cleanUpdatesDir: unable to remove file. Path: " +
-                   entry.path + ", Exception: " + e);
-        throw (e);
+    }
+  }
+  return file;
+}
+
+/**
+ * Removes the update files that typically need to be removed by tests without
+ * removing the directories since removing the directories has caused issues
+ * when running tests with --verify and recursively removes the stage directory.
+ *
+ * @param   aRemoveLogFiles
+ *          When true the update log files will also be removed. This allows
+ *          for the inspection of the log files while troubleshooting tests.
+ */
+function removeUpdateFiles(aRemoveLogFiles) {
+  let files = [
+    FILE_ACTIVE_UPDATE_XML,
+    FILE_UPDATES_XML,
+    FILE_BT_RESULT,
+    FILE_UPDATE_STATUS,
+    FILE_UPDATE_VERSION,
+    FILE_UPDATE_MAR,
+    FILE_UPDATER_INI,
+  ];
+
+  if (aRemoveLogFiles) {
+    files = files.concat([
+      FILE_BACKUP_UPDATE_LOG,
+      FILE_LAST_UPDATE_LOG,
+      FILE_UPDATE_LOG,
+    ]);
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    let file = getUpdateDirFile(files[i]);
+    try {
+      if (file.exists()) {
+        file.remove(false);
       }
+    } catch (e) {
+      logTestInfo(
+        "Unable to remove file. Path: " + file.path + ", Exception: " + e
+      );
+    }
+  }
+
+  let stageDir = getStageDirFile();
+  if (stageDir.exists()) {
+    try {
+      removeDirRecursive(stageDir);
+    } catch (e) {
+      logTestInfo(
+        "Unable to remove directory. Path: " +
+          stageDir.path +
+          ", Exception: " +
+          e
+      );
     }
   }
 }
@@ -504,6 +566,10 @@ function removeDirRecursive(aDir) {
     return;
   }
 
+  if (!aDir.isDirectory()) {
+    throw new Error("Only a directory can be passed to this funtion!");
+  }
+
   try {
     debugDump("attempting to remove directory. Path: " + aDir.path);
     aDir.remove(true);
@@ -514,7 +580,7 @@ function removeDirRecursive(aDir) {
 
   let dirEntries = aDir.directoryEntries;
   while (dirEntries.hasMoreElements()) {
-    let entry = dirEntries.getNext().QueryInterface(Ci.nsIFile);
+    let entry = dirEntries.nextFile;
 
     if (entry.isDirectory()) {
       removeDirRecursive(entry);
@@ -525,7 +591,7 @@ function removeDirRecursive(aDir) {
         entry.remove(false);
       } catch (e) {
         logTestInfo("error removing file. Exception: " + e);
-        throw (e);
+        throw e;
       }
     }
   }
@@ -536,7 +602,7 @@ function removeDirRecursive(aDir) {
     aDir.remove(true);
   } catch (e) {
     logTestInfo("error removing directory. Exception: " + e);
-    throw (e);
+    throw e;
   }
 }
 
@@ -549,15 +615,6 @@ function removeDirRecursive(aDir) {
  */
 function getCurrentProcessDir() {
   return Services.dirsvc.get(NS_XPCOM_CURRENT_PROCESS_DIR, Ci.nsIFile);
-}
-
-/**
- * Gets the application base directory.
- *
- * @return  nsIFile object for the application base directory.
- */
-function getAppBaseDir() {
-  return Services.dirsvc.get(XRE_EXECUTABLE_FILE, Ci.nsIFile).parent;
 }
 
 /**
@@ -585,6 +642,132 @@ function getGREBinDir() {
 }
 
 /**
+ * Gets the unique mutex name for the installation.
+ *
+ * @return Global mutex path.
+ * @throws If the function is called on a platform other than Windows.
+ */
+function getPerInstallationMutexName() {
+  if (AppConstants.platform != "win") {
+    throw new Error("Windows only function called by a different platform!");
+  }
+
+  let hasher = Cc["@mozilla.org/security/hash;1"].createInstance(
+    Ci.nsICryptoHash
+  );
+  hasher.init(hasher.SHA1);
+
+  let exeFile = Services.dirsvc.get(XRE_EXECUTABLE_FILE, Ci.nsIFile);
+  let converter = Cc[
+    "@mozilla.org/intl/scriptableunicodeconverter"
+  ].createInstance(Ci.nsIScriptableUnicodeConverter);
+  converter.charset = "UTF-8";
+  let data = converter.convertToByteArray(exeFile.path.toLowerCase());
+
+  hasher.update(data, data.length);
+  return "Global\\MozillaUpdateMutex-" + hasher.finish(true);
+}
+
+/**
+ * Closes a Win32 handle.
+ *
+ * @param  aHandle
+ *         The handle to close.
+ * @throws If the function is called on a platform other than Windows.
+ */
+function closeHandle(aHandle) {
+  if (AppConstants.platform != "win") {
+    throw new Error("Windows only function called by a different platform!");
+  }
+
+  let lib = ctypes.open("kernel32.dll");
+  let CloseHandle = lib.declare(
+    "CloseHandle",
+    ctypes.winapi_abi,
+    ctypes.int32_t /* success */,
+    ctypes.void_t.ptr
+  ); /* handle */
+  CloseHandle(aHandle);
+  lib.close();
+}
+
+/**
+ * Creates a mutex.
+ *
+ * @param  aName
+ *         The name for the mutex.
+ * @return The Win32 handle to the mutex.
+ * @throws If the function is called on a platform other than Windows.
+ */
+function createMutex(aName) {
+  if (AppConstants.platform != "win") {
+    throw new Error("Windows only function called by a different platform!");
+  }
+
+  const INITIAL_OWN = 1;
+  const ERROR_ALREADY_EXISTS = 0xb7;
+  let lib = ctypes.open("kernel32.dll");
+  let CreateMutexW = lib.declare(
+    "CreateMutexW",
+    ctypes.winapi_abi,
+    ctypes.void_t.ptr /* return handle */,
+    ctypes.void_t.ptr /* security attributes */,
+    ctypes.int32_t /* initial owner */,
+    ctypes.char16_t.ptr
+  ); /* name */
+
+  let handle = CreateMutexW(null, INITIAL_OWN, aName);
+  lib.close();
+  let alreadyExists = ctypes.winLastError == ERROR_ALREADY_EXISTS;
+  if (handle && !handle.isNull() && alreadyExists) {
+    closeHandle(handle);
+    handle = null;
+  }
+
+  if (handle && handle.isNull()) {
+    handle = null;
+  }
+
+  return handle;
+}
+
+/**
+ * Synchronously writes the value of the app.update.auto setting to the update
+ * configuration file on Windows or to a user preference on other platforms.
+ * When the value passed to this function is null or undefined it will remove
+ * the configuration file on Windows or the user preference on other platforms.
+ *
+ * @param  aEnabled
+ *         Possible values are true, false, null, and undefined. When true or
+ *         false this value will be written for app.update.auto in the update
+ *         configuration file on Windows or to the user preference on other
+ *         platforms. When null or undefined the update configuration file will
+ *         be removed on Windows or the user preference will be removed on other
+ *         platforms.
+ */
+function setAppUpdateAutoSync(aEnabled) {
+  if (AppConstants.platform == "win") {
+    let file = getUpdateDirFile(FILE_UPDATE_CONFIG_JSON);
+    if (aEnabled === undefined || aEnabled === null) {
+      if (file.exists()) {
+        file.remove(false);
+      }
+    } else {
+      writeFile(
+        file,
+        '{"' + CONFIG_APP_UPDATE_AUTO + '":' + aEnabled.toString() + "}"
+      );
+    }
+  } else if (aEnabled === undefined || aEnabled === null) {
+    if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_AUTO)) {
+      Services.prefs.clearUserPref(PREF_APP_UPDATE_AUTO);
+    }
+  } else {
+    Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, aEnabled);
+  }
+}
+
+/**
  * Logs TEST-INFO messages.
  *
  * @param  aText
@@ -595,27 +778,39 @@ function getGREBinDir() {
  */
 function logTestInfo(aText, aCaller) {
   let caller = aCaller ? aCaller : Components.stack.caller;
-  let now = new Date;
+  let now = new Date();
   let hh = now.getHours();
   let mm = now.getMinutes();
   let ss = now.getSeconds();
   let ms = now.getMilliseconds();
-  let time = (hh < 10 ? "0" + hh : hh) + ":" +
-             (mm < 10 ? "0" + mm : mm) + ":" +
-             (ss < 10 ? "0" + ss : ss) + ":";
+  let time =
+    (hh < 10 ? "0" + hh : hh) +
+    ":" +
+    (mm < 10 ? "0" + mm : mm) +
+    ":" +
+    (ss < 10 ? "0" + ss : ss) +
+    ":";
   if (ms < 10) {
     time += "00";
   } else if (ms < 100) {
     time += "0";
   }
   time += ms;
-  let msg = time + " | TEST-INFO | " + caller.filename + " | [" + caller.name +
-            " : " + caller.lineNumber + "] " + aText;
+  let msg =
+    time +
+    " | TEST-INFO | " +
+    caller.filename +
+    " | [" +
+    caller.name +
+    " : " +
+    caller.lineNumber +
+    "] " +
+    aText;
   LOG_FUNCTION(msg);
 }
 
 /**
- * Logs TEST-INFO messages when DEBUG_AUS_TEST evaluates to true.
+ * Logs TEST-INFO messages when gDebugTest evaluates to true.
  *
  * @param  aText
  *         The text to log.
@@ -624,7 +819,7 @@ function logTestInfo(aText, aCaller) {
  *         Components.stack.caller will be used.
  */
 function debugDump(aText, aCaller) {
-  if (DEBUG_AUS_TEST) {
+  if (gDebugTest) {
     let caller = aCaller ? aCaller : Components.stack.caller;
     logTestInfo(aText, caller);
   }

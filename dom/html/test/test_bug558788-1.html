@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=558788
 -->
 <head>
   <title>Test for Bug 558788</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
     input, textarea { background-color: rgb(0,0,0) !important; }
@@ -35,18 +35,18 @@ var gContent = document.getElementById('content');
 
 function checkValidApplies(elmt)
 {
-  is(window.getComputedStyle(elmt, null).getPropertyValue('background-color'),
+  is(window.getComputedStyle(elmt).getPropertyValue('background-color'),
      "rgb(0, 255, 0)", ":valid pseudo-class should apply");
 }
 
 function checkInvalidApplies(elmt, aTodo)
 {
   if (aTodo) {
-    todo_is(window.getComputedStyle(elmt, null).getPropertyValue('background-color'),
+    todo_is(window.getComputedStyle(elmt).getPropertyValue('background-color'),
             "rgb(255, 0, 0)", ":invalid pseudo-class should apply");
     return;
   }
-  is(window.getComputedStyle(elmt, null).getPropertyValue('background-color'),
+  is(window.getComputedStyle(elmt).getPropertyValue('background-color'),
      "rgb(255, 0, 0)", ":invalid pseudo-class should apply");
 }
 
@@ -59,10 +59,10 @@ function checkMissing(elementName)
 
   element.focus();
 
-  synthesizeKey("a", {});
+  sendString("a");
   checkValidApplies(element);
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   checkInvalidApplies(element);
 
   gContent.removeChild(element);
@@ -78,7 +78,7 @@ function checkTooLong(elementName)
 
   element.focus();
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   checkValidApplies(element);
   gContent.removeChild(element);
 }
@@ -118,13 +118,13 @@ function checkInputEmail()
 
   element.focus();
 
-  synthesizeKey("a", {});
+  sendString("a");
   checkInvalidApplies(element);
 
   sendString("@b.c");
   checkValidApplies(element);
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   for (var i=0; i<4; ++i) {
     if (i == 1) {
       // a@b is a valid value.
@@ -132,7 +132,7 @@ function checkInputEmail()
     } else {
       checkInvalidApplies(element);
     }
-    synthesizeKey("VK_BACK_SPACE", {});
+    synthesizeKey("KEY_Backspace");
   }
   checkValidApplies(element);
 
@@ -148,21 +148,22 @@ function checkInputURL()
 
   element.focus();
 
-  synthesizeKey("h", {});
+  sendString("h");
   checkInvalidApplies(element);
 
   sendString("ttp://mozilla.org");
   checkValidApplies(element);
 
-  for (var i=0; i<13; ++i) {
-    synthesizeKey("VK_BACK_SPACE", {});
+  for (var i=0; i<10; ++i) {
+    synthesizeKey("KEY_Backspace");
     checkValidApplies(element);
   }
 
-  synthesizeKey("VK_BACK_SPACE", {});
-  for (var i=0; i<4; ++i) {
+  synthesizeKey("KEY_Backspace");
+  // "http://" is now invalid
+  for (var i=0; i<7; ++i) {
     checkInvalidApplies(element);
-    synthesizeKey("VK_BACK_SPACE", {});
+    synthesizeKey("KEY_Backspace");
   }
   checkValidApplies(element);
 
@@ -178,16 +179,16 @@ function checkInputPattern()
 
   element.focus();
 
-  synthesizeKey("0", {});
+  sendString("0");
   checkValidApplies(element);
 
-  synthesizeKey("a", {});
+  sendString("a");
   checkInvalidApplies(element);
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   checkValidApplies(element);
 
-  synthesizeKey("VK_BACK_SPACE", {});
+  synthesizeKey("KEY_Backspace");
   checkValidApplies(element);
 
   gContent.removeChild(element);

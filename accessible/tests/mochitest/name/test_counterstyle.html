@@ -5,8 +5,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -78,10 +77,8 @@
 
   <script type="application/javascript">
 
-    function doTest()
-    {
-      function testRule(aRule, aNames, aTodo)
-      {
+    function doTest() {
+      function testRule(aRule, aNames, aTodo) {
         testName(aRule + "-1", aNames[0], null, aTodo);
         testName(aRule + "-7", aNames[1], null, aTodo);
         testName(aRule + "-29", aNames[2], null, aTodo);
@@ -140,7 +137,7 @@
       var rule = rules[i];
       for (var j = 0; j < values.length; j++) {
         var item = document.createElement("li");
-        item.id = rule.name + '-' + values[j];
+        item.id = rule.name + "-" + values[j];
         item.value = values[j];
         item.textContent = values[j];
         item.setAttribute("style", "list-style-type: " + rule.name);

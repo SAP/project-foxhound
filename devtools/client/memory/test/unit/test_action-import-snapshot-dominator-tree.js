@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -8,28 +9,33 @@
  * should be computed.
  */
 
-let { snapshotState, dominatorTreeState, viewState, treeMapState } =
-  require("devtools/client/memory/constants");
-let { importSnapshotAndCensus } = require("devtools/client/memory/actions/io");
-let { changeViewAndRefresh } = require("devtools/client/memory/actions/view");
+const {
+  snapshotState,
+  dominatorTreeState,
+  viewState,
+  treeMapState,
+} = require("devtools/client/memory/constants");
+const {
+  importSnapshotAndCensus,
+} = require("devtools/client/memory/actions/io");
+const { changeViewAndRefresh } = require("devtools/client/memory/actions/view");
 
-function run_test() {
-  run_next_test();
-}
-
-add_task(function* () {
-  let front = new StubbedMemoryFront();
-  let heapWorker = new HeapAnalysesClient();
-  yield front.attach();
-  let store = Store();
-  let { subscribe, dispatch, getState } = store;
+add_task(async function() {
+  const front = new StubbedMemoryFront();
+  const heapWorker = new HeapAnalysesClient();
+  await front.attach();
+  const store = Store();
+  const { subscribe, dispatch, getState } = store;
 
   dispatch(changeViewAndRefresh(viewState.DOMINATOR_TREE, heapWorker));
-  equal(getState().view.state, viewState.DOMINATOR_TREE,
-        "We should now be in the DOMINATOR_TREE view");
+  equal(
+    getState().view.state,
+    viewState.DOMINATOR_TREE,
+    "We should now be in the DOMINATOR_TREE view"
+  );
 
   let i = 0;
-  let expected = [
+  const expected = [
     "IMPORTING",
     "READING",
     "READ",
@@ -39,24 +45,31 @@ add_task(function* () {
     "dominatorTree:FETCHING",
     "dominatorTree:LOADED",
   ];
-  let expectStates = () => {
-    let snapshot = getState().snapshots[0];
+  const expectStates = () => {
+    const snapshot = getState().snapshots[0];
     if (snapshot && hasExpectedState(snapshot, expected[i])) {
       ok(true, `Found expected state ${expected[i]}`);
       i++;
     }
   };
 
-  let unsubscribe = subscribe(expectStates);
-  const snapshotPath = yield front.saveHeapSnapshot();
+  const unsubscribe = subscribe(expectStates);
+  const snapshotPath = await front.saveHeapSnapshot();
   dispatch(importSnapshotAndCensus(heapWorker, snapshotPath));
 
-  yield waitUntilState(store, () => i === expected.length);
+  await waitUntilState(store, () => i === expected.length);
   unsubscribe();
-  equal(i, expected.length, "importSnapshotAndCensus() produces the correct " +
-    "sequence of states in a snapshot");
-  equal(getState().snapshots[0].dominatorTree.state, dominatorTreeState.LOADED,
-    "imported snapshot's dominator tree is in LOADED state");
+  equal(
+    i,
+    expected.length,
+    "importSnapshotAndCensus() produces the correct " +
+      "sequence of states in a snapshot"
+  );
+  equal(
+    getState().snapshots[0].dominatorTree.state,
+    dominatorTreeState.LOADED,
+    "imported snapshot's dominator tree is in LOADED state"
+  );
   ok(getState().snapshots[0].selected, "imported snapshot is selected");
 });
 
@@ -67,18 +80,19 @@ add_task(function* () {
  * corresponding state from dominatorTreeState.
  */
 function hasExpectedState(snapshot, expectedState) {
-  let isDominatorState = expectedState.indexOf("dominatorTree:") === 0;
+  const isDominatorState = expectedState.indexOf("dominatorTree:") === 0;
   if (isDominatorState) {
-    let state = dominatorTreeState[expectedState.replace("dominatorTree:", "")];
+    const state =
+      dominatorTreeState[expectedState.replace("dominatorTree:", "")];
     return snapshot.dominatorTree && snapshot.dominatorTree.state === state;
   }
 
-  let isTreeMapState = expectedState.indexOf("treeMap:") === 0;
+  const isTreeMapState = expectedState.indexOf("treeMap:") === 0;
   if (isTreeMapState) {
-    let state = treeMapState[expectedState.replace("treeMap:", "")];
+    const state = treeMapState[expectedState.replace("treeMap:", "")];
     return snapshot.treeMap && snapshot.treeMap.state === state;
   }
 
-  let state = snapshotState[expectedState];
+  const state = snapshotState[expectedState];
   return snapshot.state === state;
 }

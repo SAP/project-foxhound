@@ -8,14 +8,11 @@
 
 function init(aTest)
 {
-  var docShell =
-    window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-          .getInterface(Components.interfaces.nsIWebNavigation)
-          .QueryInterface(Components.interfaces.nsIDocShell);
+  var docShell = window.docShell;
   var controller =
-    docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-            .getInterface(Components.interfaces.nsISelectionDisplay)
-            .QueryInterface(Components.interfaces.nsISelectionController);
+    docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+            .getInterface(Ci.nsISelectionDisplay)
+            .QueryInterface(Ci.nsISelectionController);
 
   var selections = [
     controller.SELECTION_SPELLCHECK,

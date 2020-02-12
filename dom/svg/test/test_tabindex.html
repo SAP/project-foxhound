@@ -4,8 +4,8 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" overflow="visible">
@@ -16,18 +16,28 @@
   </foreignObject>
   <rect id="r" x="0" y="70" width="100" height="100" fill="yellow" tabindex="1"/>
   <text id="t" x="0" y="200" tabindex="2">
-        This is SVG text
+    This is SVG text
   </text>
+  <a xlink:href="#" id="l1" tabindex="3">
+    <circle cx="10" cy="230" r="10"/>
+  </a>
+  <a id="l2" tabindex="4">
+    <circle cx="10" cy="260" r="10"/>
+  </a>
+  <rect id="r6" x="0" y="70" width="100" height="100" fill="yellow" tabindex="6"/>
+  <rect id="r7" x="0" y="70" width="100" height="100" fill="yellow" tabindex="7"/>
 </svg>
 <pre id="test">
 <script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
-function main()
-{
-  var f = document.getElementById('f');
-  var r = document.getElementById('r');
-  var t = document.getElementById('t');
+function main() {
+  var f = document.getElementById("f");
+  var r = document.getElementById("r");
+  var t = document.getElementById("t");
+  var l1 = document.getElementById("l1");
+  var l2 = document.getElementById("l2");
+  const isMac = ("nsILocalFileMac" in SpecialPowers.Ci);
 
   try {
     // Step 1: Checking by assigning tabIndex
@@ -43,25 +53,50 @@ function main()
     t.tabIndex = 3;
     is(t.tabIndex, 3, "text is set to 3");
 
+    is(l1.tabIndex, 3, "link initial tabIndex");
+    l1.tabIndex = 4;
+    is(l1.tabIndex, 4, "link is set to 4");
+
+    is(l2.tabIndex, 4, "non-link initial tabIndex");
+    l2.tabIndex = 5;
+    is(l2.tabIndex, 5, "non-link is set to 4");
+
     // Step 2: Checking by triggering TAB event
     is(document.activeElement.tabIndex, -1, "In the beginning, the active element tabindex is -1");
 
-    synthesizeKey("VK_TAB", {});
+    synthesizeKey("KEY_Tab");
     is(document.activeElement.tabIndex, 1, "The active element tabindex is 1");
 
-    synthesizeKey("VK_TAB", {});
+    synthesizeKey("KEY_Tab");
     is(document.activeElement.tabIndex, 2, "The active element tabindex is 2");
 
-    synthesizeKey("VK_TAB", {});
+    synthesizeKey("KEY_Tab");
     is(document.activeElement.tabIndex, 3, "The active element tabindex is 3");
-  } catch(e) {
+
+    synthesizeKey("KEY_Tab");
+    // On Mac, SVG link elements should not be focused.
+    if (isMac) {
+      is(document.activeElement.tabIndex, 6, "The active element tabindex is 6");
+    } else {
+      is(document.activeElement.tabIndex, 4, "The active element tabindex is 4");
+    }
+
+    synthesizeKey("KEY_Tab");
+    // On Mac, SVG link elements should not be focused.
+    if (isMac) {
+      is(document.activeElement.tabIndex, 7, "The active element tabindex is 7");
+    } else {
+      is(document.activeElement.tabIndex, 5, "The active element tabindex is 5");
+    }
+  } catch (e) {
     ok(false, "Got unexpected exception" + e);
   }
 
   SimpleTest.finish();
 }
 
-window.addEventListener("load", main, false);
+SimpleTest.waitForFocus(main);
+
 </script>
 </pre>
 </body>

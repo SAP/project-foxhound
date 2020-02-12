@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; fill-column: 80 -*- */
-/* vim:set ts=2 sw=2 sts=2 et tw=80:
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,26 +13,37 @@ const DETECT_INDENT = "devtools.editor.detectindentation";
 const DETECT_INDENT_MAX_LINES = 500;
 
 /**
- * Get the indentation to use in an editor, or return false if the user has
- * asked for the indentation to be guessed from some text.
+ * Get the number of indentation units to use to indent a "block"
+ * and a boolean indicating whether indentation must be done using tabs.
  *
- * @return {false | Object}
- *        Returns false if the "detect indentation" pref is set.
- *        an object of the form {indentUnit, indentWithTabs}.
+ * @return {Object} an object of the form {indentUnit, indentWithTabs}.
  *        |indentUnit| is the number of indentation units to use
  *        to indent a "block".
  *        |indentWithTabs| is a boolean which is true if indentation
  *        should be done using tabs.
  */
+function getTabPrefs() {
+  const indentWithTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
+  const indentUnit = Services.prefs.getIntPref(TAB_SIZE);
+  return { indentUnit, indentWithTabs };
+}
+
+/**
+ * Get the indentation to use in an editor, or return false if the user has
+ * asked for the indentation to be guessed from some text.
+ *
+ * @return {false | Object}
+ *        Returns false if the "detect indentation" pref is set.
+ *        If the pref is not set, returns an object of the same
+ *        form as returned by getTabPrefs.
+ */
 function getIndentationFromPrefs() {
-  let shouldDetect = Services.prefs.getBoolPref(DETECT_INDENT);
+  const shouldDetect = Services.prefs.getBoolPref(DETECT_INDENT);
   if (shouldDetect) {
     return false;
   }
 
-  let indentWithTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
-  let indentUnit = Services.prefs.getIntPref(TAB_SIZE);
-  return {indentUnit, indentWithTabs};
+  return getTabPrefs();
 }
 
 /**
@@ -54,17 +64,17 @@ function getIndentationFromPrefs() {
 function getIndentationFromIteration(iterFunc) {
   let indentWithTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
   let indentUnit = Services.prefs.getIntPref(TAB_SIZE);
-  let shouldDetect = Services.prefs.getBoolPref(DETECT_INDENT);
+  const shouldDetect = Services.prefs.getBoolPref(DETECT_INDENT);
 
   if (shouldDetect) {
-    let indent = detectIndentation(iterFunc);
+    const indent = detectIndentation(iterFunc);
     if (indent != null) {
       indentWithTabs = indent.tabs;
       indentUnit = indent.spaces ? indent.spaces : indentUnit;
     }
   }
 
-  return {indentUnit, indentWithTabs};
+  return { indentUnit, indentWithTabs };
 }
 
 /**
@@ -76,8 +86,8 @@ function getIndentationFromIteration(iterFunc) {
  *                  getIndentationFromIteration
  */
 function getIndentationFromString(string) {
-  let iteratorFn = function (start, end, callback) {
-    let split = string.split(/\r\n|\r|\n|\f/);
+  const iteratorFn = function(start, end, callback) {
+    const split = string.split(/\r\n|\r|\n|\f/);
     split.slice(start, end).forEach(callback);
   };
   return getIndentationFromIteration(iteratorFn);
@@ -90,7 +100,7 @@ function getIndentationFromString(string) {
  */
 function detectIndentation(textIteratorFn) {
   // # spaces indent -> # lines with that indent
-  let spaces = {};
+  const spaces = {};
   // indentation width of the last line we saw
   let last = 0;
   // # of lines that start with a tab
@@ -98,7 +108,7 @@ function detectIndentation(textIteratorFn) {
   // # of indented lines (non-zero indent)
   let total = 0;
 
-  textIteratorFn(0, DETECT_INDENT_MAX_LINES, (text) => {
+  textIteratorFn(0, DETECT_INDENT_MAX_LINES, text => {
     if (text.startsWith("\t")) {
       tabs++;
       total++;
@@ -118,7 +128,7 @@ function detectIndentation(textIteratorFn) {
     }
 
     // see how much this line is offset from the line above it
-    let indent = Math.abs(width - last);
+    const indent = Math.abs(width - last);
     if (indent > 1 && indent <= 8) {
       spaces[indent] = (spaces[indent] || 0) + 1;
     }
@@ -136,10 +146,11 @@ function detectIndentation(textIteratorFn) {
   }
 
   // find most frequent non-zero width difference between adjacent lines
-  let freqIndent = null, max = 1;
+  let freqIndent = null,
+    max = 1;
   for (let width in spaces) {
     width = parseInt(width, 10);
-    let tally = spaces[width];
+    const tally = spaces[width];
     if (tally > max) {
       max = tally;
       freqIndent = width;
@@ -155,6 +166,7 @@ function detectIndentation(textIteratorFn) {
 exports.EXPAND_TAB = EXPAND_TAB;
 exports.TAB_SIZE = TAB_SIZE;
 exports.DETECT_INDENT = DETECT_INDENT;
+exports.getTabPrefs = getTabPrefs;
 exports.getIndentationFromPrefs = getIndentationFromPrefs;
 exports.getIndentationFromIteration = getIndentationFromIteration;
 exports.getIndentationFromString = getIndentationFromString;

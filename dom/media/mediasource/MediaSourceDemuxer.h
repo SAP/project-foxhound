@@ -5,37 +5,38 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if !defined(MediaSourceDemuxer_h_)
-#define MediaSourceDemuxer_h_
+#  define MediaSourceDemuxer_h_
 
-#include "mozilla/Atomics.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Monitor.h"
-#include "AutoTaskQueue.h"
-
-#include "MediaDataDemuxer.h"
-#include "MediaDecoderReader.h"
-#include "MediaResource.h"
-#include "MediaSource.h"
-#include "TrackBuffersManager.h"
+#  include "MediaDataDemuxer.h"
+#  include "MediaResource.h"
+#  include "MediaSource.h"
+#  include "TrackBuffersManager.h"
+#  include "mozilla/Atomics.h"
+#  include "mozilla/Maybe.h"
+#  include "mozilla/Monitor.h"
+#  include "mozilla/TaskQueue.h"
+#  include "mozilla/dom/MediaDebugInfoBinding.h"
 
 namespace mozilla {
 
+class AbstractThread;
 class MediaResult;
 class MediaSourceTrackDemuxer;
 
-class MediaSourceDemuxer : public MediaDataDemuxer
-{
-public:
-  explicit MediaSourceDemuxer();
+DDLoggedTypeDeclNameAndBase(MediaSourceDemuxer, MediaDataDemuxer);
+DDLoggedTypeNameAndBase(MediaSourceTrackDemuxer, MediaTrackDemuxer);
+
+class MediaSourceDemuxer : public MediaDataDemuxer,
+                           public DecoderDoctorLifeLogger<MediaSourceDemuxer> {
+ public:
+  explicit MediaSourceDemuxer(AbstractThread* aAbstractMainThread);
 
   RefPtr<InitPromise> Init() override;
 
-  bool HasTrackType(TrackInfo::TrackType aType) const override;
-
   uint32_t GetNumberTracks(TrackInfo::TrackType aType) const override;
 
-  already_AddRefed<MediaTrackDemuxer> GetTrackDemuxer(TrackInfo::TrackType aType,
-                                                              uint32_t aTrackNumber) override;
+  already_AddRefed<MediaTrackDemuxer> GetTrackDemuxer(
+      TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
 
   bool IsSeekable() const override;
 
@@ -43,38 +44,38 @@ public:
 
   bool ShouldComputeStartTime() const override { return false; }
 
-  void NotifyDataArrived() override;
-
   /* interface for TrackBuffersManager */
-  void AttachSourceBuffer(TrackBuffersManager* aSourceBuffer);
-  void DetachSourceBuffer(TrackBuffersManager* aSourceBuffer);
-  AutoTaskQueue* GetTaskQueue() { return mTaskQueue; }
+  void AttachSourceBuffer(RefPtr<TrackBuffersManager>& aSourceBuffer);
+  void DetachSourceBuffer(RefPtr<TrackBuffersManager>& aSourceBuffer);
+  TaskQueue* GetTaskQueue() { return mTaskQueue; }
+  void NotifyInitDataArrived();
 
-  // Returns a string describing the state of the MediaSource internal
+  // Returns a structure describing the state of the MediaSource internal
   // buffered data. Used for debugging purposes.
-  void GetMozDebugReaderData(nsAString& aString);
+  void GetDebugInfo(dom::MediaSourceDemuxerDebugInfo& aInfo);
 
   void AddSizeOfResources(MediaSourceDecoder::ResourceSizes* aSizes);
 
   // Gap allowed between frames.
-  static const media::TimeUnit EOS_FUZZ;
+  // Due to inaccuracies in determining buffer end
+  // frames (Bug 1065207). This value is based on videos seen in the wild.
+  static constexpr media::TimeUnit EOS_FUZZ =
+      media::TimeUnit::FromMicroseconds(500000);
 
-private:
+ private:
   ~MediaSourceDemuxer();
   friend class MediaSourceTrackDemuxer;
   // Scan source buffers and update information.
   bool ScanSourceBuffersForContent();
-  RefPtr<InitPromise> AttemptInit();
-  TrackBuffersManager* GetManager(TrackInfo::TrackType aType);
+  RefPtr<TrackBuffersManager> GetManager(TrackInfo::TrackType aType);
   TrackInfo* GetTrackInfo(TrackInfo::TrackType);
-  void DoAttachSourceBuffer(TrackBuffersManager* aSourceBuffer);
-  void DoDetachSourceBuffer(TrackBuffersManager* aSourceBuffer);
-  bool OnTaskQueue()
-  {
+  void DoAttachSourceBuffer(RefPtr<TrackBuffersManager>&& aSourceBuffer);
+  void DoDetachSourceBuffer(RefPtr<TrackBuffersManager>&& aSourceBuffer);
+  bool OnTaskQueue() {
     return !GetTaskQueue() || GetTaskQueue()->IsCurrentThreadIn();
   }
 
-  RefPtr<AutoTaskQueue> mTaskQueue;
+  RefPtr<TaskQueue> mTaskQueue;
   nsTArray<RefPtr<MediaSourceTrackDemuxer>> mDemuxers;
 
   nsTArray<RefPtr<TrackBuffersManager>> mSourceBuffers;
@@ -88,16 +89,17 @@ private:
   MediaInfo mInfo;
 };
 
-class MediaSourceTrackDemuxer : public MediaTrackDemuxer
-{
-public:
+class MediaSourceTrackDemuxer
+    : public MediaTrackDemuxer,
+      public DecoderDoctorLifeLogger<MediaSourceTrackDemuxer> {
+ public:
   MediaSourceTrackDemuxer(MediaSourceDemuxer* aParent,
                           TrackInfo::TrackType aType,
                           TrackBuffersManager* aManager);
 
   UniquePtr<TrackInfo> GetInfo() const override;
 
-  RefPtr<SeekPromise> Seek(media::TimeUnit aTime) override;
+  RefPtr<SeekPromise> Seek(const media::TimeUnit& aTime) override;
 
   RefPtr<SamplesPromise> GetSamples(int32_t aNumSamples = 1) override;
 
@@ -105,31 +107,44 @@ public:
 
   nsresult GetNextRandomAccessPoint(media::TimeUnit* aTime) override;
 
-  RefPtr<SkipAccessPointPromise> SkipToNextRandomAccessPoint(media::TimeUnit aTimeThreshold) override;
+  RefPtr<SkipAccessPointPromise> SkipToNextRandomAccessPoint(
+      const media::TimeUnit& aTimeThreshold) override;
 
   media::TimeIntervals GetBuffered() override;
 
   void BreakCycles() override;
 
-  bool GetSamplesMayBlock() const override
-  {
-    return false;
+  bool GetSamplesMayBlock() const override { return false; }
+
+  bool HasManager(TrackBuffersManager* aManager) const;
+  void DetachManager();
+
+ private:
+  bool OnTaskQueue() const {
+    MOZ_ASSERT(mParent);
+    auto taskQueue = mParent->GetTaskQueue();
+    MOZ_ASSERT(taskQueue);
+    return taskQueue->IsCurrentThreadIn();
   }
 
-private:
-  RefPtr<SeekPromise> DoSeek(media::TimeUnit aTime);
+  RefPtr<SeekPromise> DoSeek(const media::TimeUnit& aTime);
   RefPtr<SamplesPromise> DoGetSamples(int32_t aNumSamples);
-  RefPtr<SkipAccessPointPromise> DoSkipToNextRandomAccessPoint(media::TimeUnit aTimeThreadshold);
+  RefPtr<SkipAccessPointPromise> DoSkipToNextRandomAccessPoint(
+      const media::TimeUnit& aTimeThreadshold);
   already_AddRefed<MediaRawData> GetSample(MediaResult& aError);
   // Return the timestamp of the next keyframe after mLastSampleIndex.
   media::TimeUnit GetNextRandomAccessPoint();
 
   RefPtr<MediaSourceDemuxer> mParent;
-  RefPtr<TrackBuffersManager> mManager;
   TrackInfo::TrackType mType;
   // Monitor protecting members below accessed from multiple threads.
   Monitor mMonitor;
   media::TimeUnit mNextRandomAccessPoint;
+  // Would be accessed in MFR's demuxer proxy task queue and TaskQueue, and
+  // only be set on the TaskQueue. It can be accessed while on TaskQueue without
+  // the need for the lock.
+  RefPtr<TrackBuffersManager> mManager;
+
   Maybe<RefPtr<MediaRawData>> mNextSample;
   // Set to true following a reset. Ensure that the next sample demuxed
   // is available at position 0.
@@ -140,6 +155,6 @@ private:
   const media::TimeUnit mPreRoll;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

@@ -1,5 +1,5 @@
 <html><head>
-<title>Testcase bug 350370 - Crash [@ nsStyleContext::FindChildWithRules] with ::first-line, appending rows and table-cells, etc</title>
+<title>Testcase bug 350370 - Crash [@ ComputedStyle::FindChildWithRules] with ::first-line, appending rows and table-cells, etc</title>
 <style>
 #b td::first-line { font-size:110%;}
 nobr::first-line { font-size:110%;}
@@ -12,7 +12,7 @@ nobr::after{ content:"anonymous text"; }
 </style>
 </head>
 <body>
-<table style="display: table-row;"></table><nobr style="display: list-item; -moz-column-count: 2;">
+<table style="display: table-row;"></table><nobr style="display: list-item; column-count: 2;">
 <table id="b" style="display: inline;"></table>
 </nobr>
 <br>

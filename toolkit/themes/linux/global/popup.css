@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
 
 /* ::::: menupopup ::::: */
 
@@ -32,66 +33,62 @@ panel[type="arrow"][side="right"] {
 }
 
 .panel-arrowcontent {
-  padding: var(--panel-arrowcontent-padding);
-  color: var(--panel-arrowcontent-color);
-  background: var(--panel-arrowcontent-background);
-  border: 1px solid var(--panel-arrowcontent-border-color);
+  padding: var(--arrowpanel-padding);
+  color: var(--arrowpanel-color);
+  background: var(--arrowpanel-background);
+  border: 1px solid var(--arrowpanel-border-color);
   box-shadow: 0 0 4px hsla(0,0%,0%,.2);
   margin: 4px;
 }
 
-.panel-arrow[side="top"],
-.panel-arrow[side="bottom"] {
-  list-style-image: var(--panel-arrow-image-vertical,
-                        url("chrome://global/skin/arrow/panelarrow-vertical-themed.svg"));
+.panel-arrowcontent > html|slot {
+  /* propagate border-radius from arrowcontent to slotted children */
+  border-radius: inherit;
+}
+
+panel[type="arrow"].panel-no-padding::part(arrowcontent) {
+  padding: 0;
+  overflow: hidden; /* Don't let panel content overflow the border */
+}
+
+:-moz-any(panel, menupopup)::part(arrow) {
+  -moz-context-properties: fill, stroke;
+  fill: var(--arrowpanel-background);
+  stroke: var(--arrowpanel-border-color);
+}
+
+:-moz-any(panel, menupopup)[side="top"]::part(arrow),
+:-moz-any(panel, menupopup)[side="bottom"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
   position: relative;
   margin-left: 10px;
   margin-right: 10px;
 }
 
-.panel-arrow[side="top"] {
+:-moz-any(panel, menupopup)[side="top"]::part(arrow) {
   margin-bottom: -5px;
 }
 
-.panel-arrow[side="bottom"] {
+:-moz-any(panel, menupopup)[side="bottom"]::part(arrow) {
   transform: scaleY(-1);
   margin-top: -5px;
 }
 
-.panel-arrow[side="left"],
-.panel-arrow[side="right"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal-themed.svg");
+:-moz-any(panel, menupopup)[side="left"]::part(arrow),
+:-moz-any(panel, menupopup)[side="right"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   position: relative;
   margin-top: 10px;
   margin-bottom: 10px;
 }
 
-.panel-arrow[side="left"] {
+:-moz-any(panel, menupopup)[side="left"]::part(arrow) {
   margin-right: -5px;
 }
 
-.panel-arrow[side="right"] {
+:-moz-any(panel, menupopup)[side="right"]::part(arrow) {
   transform: scaleX(-1);
   margin-left: -5px;
-}
-
-/* ::::: tooltip ::::: */
-
-tooltip {
-  -moz-appearance: tooltip;
-  margin-top: 21px;
-  /* GTK hardcodes this to 4px */
-  padding: 4px;
-  max-width: 40em;
-  color: InfoText;
-  font: message-box;
-}
-
-tooltip[titletip="true"] {
- /* See bug 32157 comment 128
-  * margin: -2px 0px 0px -3px;
-  */
-  max-width: none;
 }
 
 /* rules for popups associated with menulists */
@@ -101,3 +98,6 @@ menulist > menupopup {
   min-width: 0px;
 }
 
+menupopup[customoptionstyling="true"] {
+  -moz-appearance: none;
+}

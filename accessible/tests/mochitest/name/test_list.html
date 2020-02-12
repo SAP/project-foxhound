@@ -5,8 +5,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -19,45 +18,46 @@
     /**
      * Alter list item numbering and change list style type.
      */
-    function bulletUpdate()
-    {
+    function bulletUpdate() {
       this.eventSeq = [
-        new invokerChecker(EVENT_REORDER, getNode("list"))
+        new invokerChecker(EVENT_REORDER, getNode("list")),
       ];
 
-      this.invoke = function bulletUpdate_invoke()
-      {
+      this.invoke = function bulletUpdate_invoke() {
         testName("li_end", "1. list end");
 
         var li = document.createElement("li");
         li.setAttribute("id", "li_start");
         li.textContent = "list start";
         getNode("list").insertBefore(li, getNode("li_end"));
-      }
+      };
 
-      this.finalCheck = function bulletUpdate_finalCheck()
-      {
+      this.finalCheck = function bulletUpdate_finalCheck() {
         testName("li_start", "1. list start");
         testName("li_end", "2. list end");
 
         // change list style type
         var list = getNode("list");
         list.setAttribute("style", "list-style-type: disc;");
-        getComputedStyle(list, "").color; // make style processing sync
+
+        // Flush both the style change and the resulting layout change.
+        // Flushing style on its own is not sufficient, because that can
+        // leave frames marked with NS_FRAME_IS_DIRTY, which will cause
+        // nsTextFrame::GetRenderedText to report the text of a text
+        // frame is empty.
+        list.offsetWidth; // flush layout (which also flushes style)
 
         testName("li_start", kDiscBulletText + "list start");
         testName("li_end", kDiscBulletText + "list end");
-      }
+      };
 
-      this.getID = function bulletUpdate_getID()
-      {
+      this.getID = function bulletUpdate_getID() {
         return "Update bullet of list items";
-      }
+      };
     }
 
     var gQueue = null;
-    function doTest()
-    {
+    function doTest() {
       gQueue = new eventQueue();
       gQueue.push(new bulletUpdate());
       gQueue.invoke(); // SimpleTest.finish();

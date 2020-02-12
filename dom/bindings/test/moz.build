@@ -39,6 +39,8 @@ PREPROCESSED_TEST_WEBIDL_FILES += [
 WEBIDL_EXAMPLE_INTERFACES += [
     'TestExampleInterface',
     'TestExampleProxyInterface',
+    'TestExampleThrowingConstructorInterface',
+    'TestExampleWorkerInterface',
 ]
 
 # Bug 932082 tracks having bindings use namespaced includes.
@@ -53,5 +55,12 @@ LOCAL_INCLUDES += [
     '/js/xpconnect/wrappers',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['MOZ_DEBUG']:
+    XPIDL_SOURCES += [
+        'mozITestInterfaceJS.idl',
+    ]
+
+    XPIDL_MODULE = 'dom_bindings_test'

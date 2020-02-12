@@ -11,8 +11,8 @@
 
 #include "gtest/gtest.h"
 
-using mozilla::TimeStamp;
 using mozilla::TimeDuration;
+using mozilla::TimeStamp;
 
 TEST(TimeStamp, Main)
 {

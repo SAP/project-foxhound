@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <limits>
-#include "mozilla/Hal.h"
-#include "mozilla/dom/network/Connection.h"
-#include "nsIDOMClassInfo.h"
-#include "mozilla/Preferences.h"
+#include "Connection.h"
+#include "ConnectionMainThread.h"
+#include "ConnectionWorker.h"
 #include "Constants.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/dom/WorkerPrivate.h"
 
 /**
  * We have to use macros here because our leak analysis tool things we are
@@ -19,78 +19,73 @@
 
 namespace mozilla {
 namespace dom {
-namespace network {
 
-NS_IMPL_QUERY_INTERFACE_INHERITED(Connection, DOMEventTargetHelper,
-                                  nsINetworkProperties)
+namespace network {
 
 // Don't use |Connection| alone, since that confuses nsTraceRefcnt since
 // we're not the only class with that name.
-NS_IMPL_ADDREF_INHERITED(dom::network::Connection, DOMEventTargetHelper)
-NS_IMPL_RELEASE_INHERITED(dom::network::Connection, DOMEventTargetHelper)
+NS_IMPL_ISUPPORTS_INHERITED0(dom::network::Connection, DOMEventTargetHelper)
 
 Connection::Connection(nsPIDOMWindowInner* aWindow)
-  : DOMEventTargetHelper(aWindow)
-  , mType(static_cast<ConnectionType>(kDefaultType))
-  , mIsWifi(kDefaultIsWifi)
-  , mDHCPGateway(kDefaultDHCPGateway)
-{
-  hal::RegisterNetworkObserver(this);
-
-  hal::NetworkInformation networkInfo;
-  hal::GetCurrentNetworkInformation(&networkInfo);
-
-  UpdateFromNetworkInfo(networkInfo);
+    : DOMEventTargetHelper(aWindow),
+      mType(static_cast<ConnectionType>(kDefaultType)),
+      mIsWifi(kDefaultIsWifi),
+      mDHCPGateway(kDefaultDHCPGateway),
+      mBeenShutDown(false) {
+  Telemetry::Accumulate(Telemetry::NETWORK_CONNECTION_COUNT, 1);
 }
 
-void
-Connection::Shutdown()
-{
-  hal::UnregisterNetworkObserver(this);
+Connection::~Connection() {
+  NS_ASSERT_OWNINGTHREAD(Connection);
+  MOZ_ASSERT(mBeenShutDown);
 }
 
-NS_IMETHODIMP
-Connection::GetIsWifi(bool *aIsWifi)
-{
-  *aIsWifi = mIsWifi;
-  return NS_OK;
-}
+void Connection::Shutdown() {
+  NS_ASSERT_OWNINGTHREAD(Connection);
 
-NS_IMETHODIMP
-Connection::GetDhcpGateway(uint32_t *aGW)
-{
-  *aGW = mDHCPGateway;
-  return NS_OK;
-}
-
-void
-Connection::UpdateFromNetworkInfo(const hal::NetworkInformation& aNetworkInfo)
-{
-  mType = static_cast<ConnectionType>(aNetworkInfo.type());
-  mIsWifi = aNetworkInfo.isWifi();
-  mDHCPGateway = aNetworkInfo.dhcpGateway();
-}
-
-void
-Connection::Notify(const hal::NetworkInformation& aNetworkInfo)
-{
-  ConnectionType previousType = mType;
-
-  UpdateFromNetworkInfo(aNetworkInfo);
-
-  if (previousType == mType) {
+  if (mBeenShutDown) {
     return;
   }
 
-  DispatchTrustedEvent(CHANGE_EVENT_NAME);
+  mBeenShutDown = true;
+  ShutdownInternal();
 }
 
-JSObject*
-Connection::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return NetworkInformationBinding::Wrap(aCx, this, aGivenProto);
+JSObject* Connection::WrapObject(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
+  return NetworkInformation_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-} // namespace network
-} // namespace dom
-} // namespace mozilla
+void Connection::Update(ConnectionType aType, bool aIsWifi,
+                        uint32_t aDHCPGateway, bool aNotify) {
+  NS_ASSERT_OWNINGTHREAD(Connection);
+
+  ConnectionType previousType = mType;
+
+  mType = aType;
+  mIsWifi = aIsWifi;
+  mDHCPGateway = aDHCPGateway;
+
+  if (aNotify && previousType != aType &&
+      !nsContentUtils::ShouldResistFingerprinting()) {
+    DispatchTrustedEvent(CHANGE_EVENT_NAME);
+  }
+}
+
+/* static */
+Connection* Connection::CreateForWindow(nsPIDOMWindowInner* aWindow) {
+  MOZ_ASSERT(aWindow);
+  return new ConnectionMainThread(aWindow);
+}
+
+/* static */
+already_AddRefed<Connection> Connection::CreateForWorker(
+    WorkerPrivate* aWorkerPrivate, ErrorResult& aRv) {
+  MOZ_ASSERT(aWorkerPrivate);
+  aWorkerPrivate->AssertIsOnWorkerThread();
+  return ConnectionWorker::Create(aWorkerPrivate, aRv);
+}
+
+}  // namespace network
+}  // namespace dom
+}  // namespace mozilla

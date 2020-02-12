@@ -1,8 +1,9 @@
 // Nested compilation units (say, an eval with in an eval) should have the
 // correct sources attributed to them.
-let g = newGlobal();
+let g = newGlobal({newCompartment: true});
 let dbg = new Debugger(g);
 
+var text;
 var count = 0;
 dbg.onNewScript = function (script) {
     ++count;

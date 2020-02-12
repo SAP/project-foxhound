@@ -19,23 +19,23 @@
 namespace mozilla {
 namespace widget {
 
-static nsIWidget::DoCommandCallback gCurrentCallback;
-static void *gCurrentCallbackData;
-static bool gHandled;
+static nsTArray<CommandInt>* gCurrentCommands = nullptr;
+static bool gHandled = false;
+
+inline void AddCommand(Command aCommand) {
+  MOZ_ASSERT(gCurrentCommands);
+  gCurrentCommands->AppendElement(static_cast<CommandInt>(aCommand));
+}
 
 // Common GtkEntry and GtkTextView signals
-static void
-copy_clipboard_cb(GtkWidget *w, gpointer user_data)
-{
-  gCurrentCallback(CommandCopy, gCurrentCallbackData);
+static void copy_clipboard_cb(GtkWidget* w, gpointer user_data) {
+  AddCommand(Command::Copy);
   g_signal_stop_emission_by_name(w, "copy_clipboard");
   gHandled = true;
 }
 
-static void
-cut_clipboard_cb(GtkWidget *w, gpointer user_data)
-{
-  gCurrentCallback(CommandCut, gCurrentCallbackData);
+static void cut_clipboard_cb(GtkWidget* w, gpointer user_data) {
+  AddCommand(Command::Cut);
   g_signal_stop_emission_by_name(w, "cut_clipboard");
   gHandled = true;
 }
@@ -46,28 +46,38 @@ cut_clipboard_cb(GtkWidget *w, gpointer user_data)
 // lines, which are newline-terminated.
 
 static const Command sDeleteCommands[][2] = {
-  // backward, forward
-  { CommandDeleteCharBackward, CommandDeleteCharForward },    // CHARS
-  { CommandDeleteWordBackward, CommandDeleteWordForward },    // WORD_ENDS
-  { CommandDeleteWordBackward, CommandDeleteWordForward },    // WORDS
-  { CommandDeleteToBeginningOfLine, CommandDeleteToEndOfLine }, // LINES
-  { CommandDeleteToBeginningOfLine, CommandDeleteToEndOfLine }, // LINE_ENDS
-  { CommandDeleteToBeginningOfLine, CommandDeleteToEndOfLine }, // PARAGRAPH_ENDS
-  { CommandDeleteToBeginningOfLine, CommandDeleteToEndOfLine }, // PARAGRAPHS
-  // This deletes from the end of the previous word to the beginning of the
-  // next word, but only if the caret is not in a word.
-  // XXX need to implement in editor
-  { CommandDoNothing, CommandDoNothing } // WHITESPACE
+    // backward, forward
+    // CHARS
+    {Command::DeleteCharBackward, Command::DeleteCharForward},
+    // WORD_ENDS
+    {Command::DeleteWordBackward, Command::DeleteWordForward},
+    // WORDS
+    {Command::DeleteWordBackward, Command::DeleteWordForward},
+    // LINES
+    {Command::DeleteToBeginningOfLine, Command::DeleteToEndOfLine},
+    // LINE_ENDS
+    {Command::DeleteToBeginningOfLine, Command::DeleteToEndOfLine},
+    // PARAGRAPH_ENDS
+    {Command::DeleteToBeginningOfLine, Command::DeleteToEndOfLine},
+    // PARAGRAPHS
+    {Command::DeleteToBeginningOfLine, Command::DeleteToEndOfLine},
+    // This deletes from the end of the previous word to the beginning of the
+    // next word, but only if the caret is not in a word.
+    // XXX need to implement in editor
+    {Command::DoNothing, Command::DoNothing}  // WHITESPACE
 };
 
-static void
-delete_from_cursor_cb(GtkWidget *w, GtkDeleteType del_type,
-                      gint count, gpointer user_data)
-{
+static void delete_from_cursor_cb(GtkWidget* w, GtkDeleteType del_type,
+                                  gint count, gpointer user_data) {
   g_signal_stop_emission_by_name(w, "delete_from_cursor");
+  if (count == 0) {
+    // Nothing to do.
+    return;
+  }
+
   bool forward = count > 0;
 
-#if (MOZ_WIDGET_GTK == 3)
+#ifdef MOZ_WIDGET_GTK
   // Ignore GTK's Ctrl-K keybinding introduced in GTK 3.14 and removed in
   // 3.18 if the user has custom bindings set. See bug 1176929.
   if (del_type == GTK_DELETE_PARAGRAPH_ENDS && forward && GTK_IS_ENTRY(w) &&
@@ -77,8 +87,7 @@ delete_from_cursor_cb(GtkWidget *w, GtkDeleteType del_type,
 
     GPtrArray* array;
     gtk_style_context_get(context, flags, "gtk-key-bindings", &array, nullptr);
-    if (!array)
-      return;
+    if (!array) return;
     g_ptr_array_unref(array);
   }
 #endif
@@ -93,87 +102,78 @@ delete_from_cursor_cb(GtkWidget *w, GtkDeleteType del_type,
     // This works like word_ends, except we first move the caret to the
     // beginning/end of the current word.
     if (forward) {
-      gCurrentCallback(CommandWordNext, gCurrentCallbackData);
-      gCurrentCallback(CommandWordPrevious, gCurrentCallbackData);
+      AddCommand(Command::WordNext);
+      AddCommand(Command::WordPrevious);
     } else {
-      gCurrentCallback(CommandWordPrevious, gCurrentCallbackData);
-      gCurrentCallback(CommandWordNext, gCurrentCallbackData);
+      AddCommand(Command::WordPrevious);
+      AddCommand(Command::WordNext);
     }
   } else if (del_type == GTK_DELETE_DISPLAY_LINES ||
              del_type == GTK_DELETE_PARAGRAPHS) {
-
     // This works like display_line_ends, except we first move the caret to the
     // beginning/end of the current line.
     if (forward) {
-      gCurrentCallback(CommandBeginLine, gCurrentCallbackData);
+      AddCommand(Command::BeginLine);
     } else {
-      gCurrentCallback(CommandEndLine, gCurrentCallbackData);
+      AddCommand(Command::EndLine);
     }
   }
 
   Command command = sDeleteCommands[del_type][forward];
-  if (!command) {
-    return; // unsupported command
+  if (command == Command::DoNothing) {
+    return;
   }
 
   unsigned int absCount = Abs(count);
   for (unsigned int i = 0; i < absCount; ++i) {
-    gCurrentCallback(command, gCurrentCallbackData);
+    AddCommand(command);
   }
 }
 
 static const Command sMoveCommands[][2][2] = {
-  // non-extend { backward, forward }, extend { backward, forward }
-  // GTK differentiates between logical position, which is prev/next,
-  // and visual position, which is always left/right.
-  // We should fix this to work the same way for RTL text input.
-  { // LOGICAL_POSITIONS
-    { CommandCharPrevious, CommandCharNext },
-    { CommandSelectCharPrevious, CommandSelectCharNext }
-  },
-  { // VISUAL_POSITIONS
-    { CommandCharPrevious, CommandCharNext },
-    { CommandSelectCharPrevious, CommandSelectCharNext }
-  },
-  { // WORDS
-    { CommandWordPrevious, CommandWordNext },
-    { CommandSelectWordPrevious, CommandSelectWordNext }
-  },
-  { // DISPLAY_LINES
-    { CommandLinePrevious, CommandLineNext },
-    { CommandSelectLinePrevious, CommandSelectLineNext }
-  },
-  { // DISPLAY_LINE_ENDS
-    { CommandBeginLine, CommandEndLine },
-    { CommandSelectBeginLine, CommandSelectEndLine }
-  },
-  { // PARAGRAPHS
-    { CommandLinePrevious, CommandLineNext },
-    { CommandSelectLinePrevious, CommandSelectLineNext }
-  },
-  { // PARAGRAPH_ENDS
-    { CommandBeginLine, CommandEndLine },
-    { CommandSelectBeginLine, CommandSelectEndLine }
-  },
-  { // PAGES
-    { CommandMovePageUp, CommandMovePageDown },
-    { CommandSelectPageUp, CommandSelectPageDown }
-  },
-  { // BUFFER_ENDS
-    { CommandMoveTop, CommandMoveBottom },
-    { CommandSelectTop, CommandSelectBottom }
-  },
-  { // HORIZONTAL_PAGES (unsupported)
-    { CommandDoNothing, CommandDoNothing },
-    { CommandDoNothing, CommandDoNothing }
-  }
-};
+    // non-extend { backward, forward }, extend { backward, forward }
+    // GTK differentiates between logical position, which is prev/next,
+    // and visual position, which is always left/right.
+    // We should fix this to work the same way for RTL text input.
+    {// LOGICAL_POSITIONS
+     {Command::CharPrevious, Command::CharNext},
+     {Command::SelectCharPrevious, Command::SelectCharNext}},
+    {// VISUAL_POSITIONS
+     {Command::CharPrevious, Command::CharNext},
+     {Command::SelectCharPrevious, Command::SelectCharNext}},
+    {// WORDS
+     {Command::WordPrevious, Command::WordNext},
+     {Command::SelectWordPrevious, Command::SelectWordNext}},
+    {// DISPLAY_LINES
+     {Command::LinePrevious, Command::LineNext},
+     {Command::SelectLinePrevious, Command::SelectLineNext}},
+    {// DISPLAY_LINE_ENDS
+     {Command::BeginLine, Command::EndLine},
+     {Command::SelectBeginLine, Command::SelectEndLine}},
+    {// PARAGRAPHS
+     {Command::LinePrevious, Command::LineNext},
+     {Command::SelectLinePrevious, Command::SelectLineNext}},
+    {// PARAGRAPH_ENDS
+     {Command::BeginLine, Command::EndLine},
+     {Command::SelectBeginLine, Command::SelectEndLine}},
+    {// PAGES
+     {Command::MovePageUp, Command::MovePageDown},
+     {Command::SelectPageUp, Command::SelectPageDown}},
+    {// BUFFER_ENDS
+     {Command::MoveTop, Command::MoveBottom},
+     {Command::SelectTop, Command::SelectBottom}},
+    {// HORIZONTAL_PAGES (unsupported)
+     {Command::DoNothing, Command::DoNothing},
+     {Command::DoNothing, Command::DoNothing}}};
 
-static void
-move_cursor_cb(GtkWidget *w, GtkMovementStep step, gint count,
-               gboolean extend_selection, gpointer user_data)
-{
+static void move_cursor_cb(GtkWidget* w, GtkMovementStep step, gint count,
+                           gboolean extend_selection, gpointer user_data) {
   g_signal_stop_emission_by_name(w, "move_cursor");
+  if (count == 0) {
+    // Nothing to do.
+    return;
+  }
+
   gHandled = true;
   bool forward = count > 0;
   if (uint32_t(step) >= ArrayLength(sMoveCommands)) {
@@ -182,29 +182,25 @@ move_cursor_cb(GtkWidget *w, GtkMovementStep step, gint count,
   }
 
   Command command = sMoveCommands[step][extend_selection][forward];
-  if (!command) {
-    return; // unsupported command
+  if (command == Command::DoNothing) {
+    return;
   }
 
   unsigned int absCount = Abs(count);
   for (unsigned int i = 0; i < absCount; ++i) {
-    gCurrentCallback(command, gCurrentCallbackData);
+    AddCommand(command);
   }
 }
 
-static void
-paste_clipboard_cb(GtkWidget *w, gpointer user_data)
-{
-  gCurrentCallback(CommandPaste, gCurrentCallbackData);
+static void paste_clipboard_cb(GtkWidget* w, gpointer user_data) {
+  AddCommand(Command::Paste);
   g_signal_stop_emission_by_name(w, "paste_clipboard");
   gHandled = true;
 }
 
 // GtkTextView-only signals
-static void
-select_all_cb(GtkWidget *w, gboolean select, gpointer user_data)
-{
-  gCurrentCallback(CommandSelectAll, gCurrentCallbackData);
+static void select_all_cb(GtkWidget* w, gboolean select, gpointer user_data) {
+  AddCommand(Command::SelectAll);
   g_signal_stop_emission_by_name(w, "select_all");
   gHandled = true;
 }
@@ -213,9 +209,7 @@ NativeKeyBindings* NativeKeyBindings::sInstanceForSingleLineEditor = nullptr;
 NativeKeyBindings* NativeKeyBindings::sInstanceForMultiLineEditor = nullptr;
 
 // static
-NativeKeyBindings*
-NativeKeyBindings::GetInstance(NativeKeyBindingsType aType)
-{
+NativeKeyBindings* NativeKeyBindings::GetInstance(NativeKeyBindingsType aType) {
   switch (aType) {
     case nsIWidget::NativeKeyBindingsForSingleLineEditor:
       if (!sInstanceForSingleLineEditor) {
@@ -238,67 +232,59 @@ NativeKeyBindings::GetInstance(NativeKeyBindingsType aType)
 }
 
 // static
-void
-NativeKeyBindings::Shutdown()
-{
+void NativeKeyBindings::Shutdown() {
   delete sInstanceForSingleLineEditor;
   sInstanceForSingleLineEditor = nullptr;
   delete sInstanceForMultiLineEditor;
   sInstanceForMultiLineEditor = nullptr;
 }
 
-void
-NativeKeyBindings::Init(NativeKeyBindingsType  aType)
-{
+void NativeKeyBindings::Init(NativeKeyBindingsType aType) {
   switch (aType) {
-  case nsIWidget::NativeKeyBindingsForSingleLineEditor:
-    mNativeTarget = gtk_entry_new();
-    break;
-  default:
-    mNativeTarget = gtk_text_view_new();
-    if (gtk_major_version > 2 ||
-        (gtk_major_version == 2 && (gtk_minor_version > 2 ||
-                                    (gtk_minor_version == 2 &&
-                                     gtk_micro_version >= 2)))) {
-      // select_all only exists in gtk >= 2.2.2.  Prior to that,
-      // ctrl+a is bound to (move to beginning, select to end).
-      g_signal_connect(mNativeTarget, "select_all",
-                       G_CALLBACK(select_all_cb), this);
-    }
-    break;
+    case nsIWidget::NativeKeyBindingsForSingleLineEditor:
+      mNativeTarget = gtk_entry_new();
+      break;
+    default:
+      mNativeTarget = gtk_text_view_new();
+      if (gtk_major_version > 2 ||
+          (gtk_major_version == 2 &&
+           (gtk_minor_version > 2 ||
+            (gtk_minor_version == 2 && gtk_micro_version >= 2)))) {
+        // select_all only exists in gtk >= 2.2.2.  Prior to that,
+        // ctrl+a is bound to (move to beginning, select to end).
+        g_signal_connect(mNativeTarget, "select_all", G_CALLBACK(select_all_cb),
+                         this);
+      }
+      break;
   }
 
   g_object_ref_sink(mNativeTarget);
 
   g_signal_connect(mNativeTarget, "copy_clipboard",
                    G_CALLBACK(copy_clipboard_cb), this);
-  g_signal_connect(mNativeTarget, "cut_clipboard",
-                   G_CALLBACK(cut_clipboard_cb), this);
+  g_signal_connect(mNativeTarget, "cut_clipboard", G_CALLBACK(cut_clipboard_cb),
+                   this);
   g_signal_connect(mNativeTarget, "delete_from_cursor",
                    G_CALLBACK(delete_from_cursor_cb), this);
-  g_signal_connect(mNativeTarget, "move_cursor",
-                   G_CALLBACK(move_cursor_cb), this);
+  g_signal_connect(mNativeTarget, "move_cursor", G_CALLBACK(move_cursor_cb),
+                   this);
   g_signal_connect(mNativeTarget, "paste_clipboard",
                    G_CALLBACK(paste_clipboard_cb), this);
 }
 
-NativeKeyBindings::~NativeKeyBindings()
-{
+NativeKeyBindings::~NativeKeyBindings() {
   gtk_widget_destroy(mNativeTarget);
   g_object_unref(mNativeTarget);
 }
 
-bool
-NativeKeyBindings::Execute(const WidgetKeyboardEvent& aEvent,
-                           DoCommandCallback aCallback,
-                           void* aCallbackData)
-{
+void NativeKeyBindings::GetEditCommands(const WidgetKeyboardEvent& aEvent,
+                                        nsTArray<CommandInt>& aCommands) {
   // If the native key event is set, it must be synthesized for tests.
   // We just ignore such events because this behavior depends on system
   // settings.
   if (!aEvent.mNativeKeyEvent) {
     // It must be synthesized event or dispatched DOM event from chrome.
-    return false;
+    return;
   }
 
   guint keyval;
@@ -306,69 +292,57 @@ NativeKeyBindings::Execute(const WidgetKeyboardEvent& aEvent,
   if (aEvent.mCharCode) {
     keyval = gdk_unicode_to_keyval(aEvent.mCharCode);
   } else {
-    keyval =
-      static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent)->keyval;
+    keyval = static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent)->keyval;
   }
 
-  if (ExecuteInternal(aEvent, aCallback, aCallbackData, keyval)) {
-    return true;
+  if (GetEditCommandsInternal(aEvent, aCommands, keyval)) {
+    return;
   }
 
   for (uint32_t i = 0; i < aEvent.mAlternativeCharCodes.Length(); ++i) {
-    uint32_t ch = aEvent.IsShift() ?
-      aEvent.mAlternativeCharCodes[i].mShiftedCharCode :
-      aEvent.mAlternativeCharCodes[i].mUnshiftedCharCode;
+    uint32_t ch = aEvent.IsShift()
+                      ? aEvent.mAlternativeCharCodes[i].mShiftedCharCode
+                      : aEvent.mAlternativeCharCodes[i].mUnshiftedCharCode;
     if (ch && ch != aEvent.mCharCode) {
       keyval = gdk_unicode_to_keyval(ch);
-      if (ExecuteInternal(aEvent, aCallback, aCallbackData, keyval)) {
-        return true;
+      if (GetEditCommandsInternal(aEvent, aCommands, keyval)) {
+        return;
       }
     }
   }
 
-/*
-gtk_bindings_activate_event is preferable, but it has unresolved bug:
-http://bugzilla.gnome.org/show_bug.cgi?id=162726
-The bug was already marked as FIXED.  However, somebody reports that the
-bug still exists.
-Also gtk_bindings_activate may work with some non-shortcuts operations
-(todo: check it). See bug 411005 and bug 406407.
+  /*
+  gtk_bindings_activate_event is preferable, but it has unresolved bug:
+  http://bugzilla.gnome.org/show_bug.cgi?id=162726
+  The bug was already marked as FIXED.  However, somebody reports that the
+  bug still exists.
+  Also gtk_bindings_activate may work with some non-shortcuts operations
+  (todo: check it). See bug 411005 and bug 406407.
 
-Code, which should be used after fixing GNOME bug 162726:
+  Code, which should be used after fixing GNOME bug 162726:
 
-  gtk_bindings_activate_event(GTK_OBJECT(mNativeTarget),
-    static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent));
-*/
-
-  return false;
+    gtk_bindings_activate_event(GTK_OBJECT(mNativeTarget),
+      static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent));
+  */
 }
 
-bool
-NativeKeyBindings::ExecuteInternal(const WidgetKeyboardEvent& aEvent,
-                                   DoCommandCallback aCallback,
-                                   void* aCallbackData,
-                                   guint aKeyval)
-{
-  guint modifiers =
-    static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent)->state;
+bool NativeKeyBindings::GetEditCommandsInternal(
+    const WidgetKeyboardEvent& aEvent, nsTArray<CommandInt>& aCommands,
+    guint aKeyval) {
+  guint modifiers = static_cast<GdkEventKey*>(aEvent.mNativeKeyEvent)->state;
 
-  gCurrentCallback = aCallback;
-  gCurrentCallbackData = aCallbackData;
+  gCurrentCommands = &aCommands;
 
   gHandled = false;
-#if (MOZ_WIDGET_GTK == 2)
-  gtk_bindings_activate(GTK_OBJECT(mNativeTarget),
-                        aKeyval, GdkModifierType(modifiers));
-#else
-  gtk_bindings_activate(G_OBJECT(mNativeTarget),
-                        aKeyval, GdkModifierType(modifiers));
-#endif
+  gtk_bindings_activate(G_OBJECT(mNativeTarget), aKeyval,
+                        GdkModifierType(modifiers));
 
-  gCurrentCallback = nullptr;
-  gCurrentCallbackData = nullptr;
+  gCurrentCommands = nullptr;
+
+  MOZ_ASSERT(!gHandled || !aCommands.IsEmpty());
 
   return gHandled;
 }
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=732413
 -->
 <head>
   <title>Test for Bug 732413</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -28,13 +28,11 @@ var secMan = SpecialPowers.Cc["@mozilla.org/scriptsecuritymanager;1"]
 var sysPrincipal = secMan.getSystemPrincipal();
 isnot(sysPrincipal, undefined, "Should have a principal");
 isnot(sysPrincipal, null, "Should have a non-null principal");
-is(secMan.isSystemPrincipal(sysPrincipal), true,
+is(sysPrincipal.isSystemPrincipal, true,
    "Should have system principal here");
 
 
-var ioService = SpecialPowers.Cc["@mozilla.org/network/io-service;1"].
-                getService(SpecialPowers.Ci.nsIIOService);
-var inheritingURI = ioService.newURI("javascript:1+1", null, null);
+var inheritingURI = SpecialPowers.Services.io.newURI("javascript:1+1");
 
 // First try a normal call to checkLoadURIWithPrincipal
 try {

@@ -13,6 +13,7 @@
 interface Principal;
 interface URI;
 
+[Exposed=Window]
 interface Node : EventTarget {
   const unsigned short ELEMENT_NODE = 1;
   const unsigned short ATTRIBUTE_NODE = 2; // historical
@@ -31,15 +32,15 @@ interface Node : EventTarget {
   [Pure]
   readonly attribute DOMString nodeName;
 
-  [Pure, Throws]
+  [Pure, Throws, NeedsCallerType, BinaryName="baseURIFromJS"]
   readonly attribute DOMString? baseURI;
 
-  [Pure, BinaryName=getComposedDoc]
+  [Pure, BinaryName=isInComposedDoc]
   readonly attribute boolean isConnected;
   [Pure]
   readonly attribute Document? ownerDocument;
-  [Pure, Pref="dom.node.rootNode.enabled"]
-  readonly attribute Node rootNode;
+  [Pure]
+  Node getRootNode(optional GetRootNodeOptions options = {});
   [Pure]
   readonly attribute Node? parentNode;
   [Pure]
@@ -57,21 +58,26 @@ interface Node : EventTarget {
   [Pure]
   readonly attribute Node? nextSibling;
 
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString? nodeValue;
-  [Throws, Pure]
+  [CEReactions, SetterThrows, GetterCanOOM,
+   SetterNeedsSubjectPrincipal=NonSystem, Pure]
            attribute DOMString? textContent;
-  [Throws]
+  // These DOM methods cannot be accessed by UA Widget scripts
+  // because the DOM element reflectors will be in the content scope,
+  // instead of the desired UA Widget scope.
+  [CEReactions, Throws, Func="IsNotUAWidget"]
   Node insertBefore(Node node, Node? child);
-  [Throws]
+  [CEReactions, Throws, Func="IsNotUAWidget"]
   Node appendChild(Node node);
-  [Throws]
+  [CEReactions, Throws, Func="IsNotUAWidget"]
   Node replaceChild(Node node, Node child);
-  [Throws]
+  [CEReactions, Throws]
   Node removeChild(Node child);
+  [CEReactions]
   void normalize();
 
-  [Throws]
+  [CEReactions, Throws, Func="IsNotUAWidget"]
   Node cloneNode(optional boolean deep = false);
   [Pure]
   boolean isSameNode(Node? node);
@@ -97,19 +103,31 @@ interface Node : EventTarget {
   boolean isDefaultNamespace(DOMString? namespace);
 
   // Mozilla-specific stuff
-  [Throws, Func="IsChromeOrXBL"]
-  any setUserData(DOMString key, any data);
-  [Throws, Func="IsChromeOrXBL"]
-  any getUserData(DOMString key);
   [ChromeOnly]
   readonly attribute Principal nodePrincipal;
   [ChromeOnly]
   readonly attribute URI? baseURIObject;
   [ChromeOnly]
-  sequence<MutationObserver> getBoundMutationObservers();
+  DOMString generateXPath();
+  [ChromeOnly, Pure, BinaryName="flattenedTreeParentNodeNonInline"]
+  readonly attribute Node? flattenedTreeParentNode;
+
+  // Mozilla devtools-specific stuff
+  /**
+   * If this element is a flex item (or has one or more anonymous box ancestors
+   * that chain up to an anonymous flex item), then this method returns the
+   * flex container that the flex item participates in. Otherwise, this method
+   * returns null.
+   */
+  [ChromeOnly]
+  readonly attribute Element? parentFlexElement;
 
 #ifdef ACCESSIBILITY
-  [Pref="accessibility.AOM.enabled"]
+  [Func="mozilla::dom::AccessibleNode::IsAOMEnabled", SameObject]
   readonly attribute AccessibleNode? accessibleNode;
 #endif
+};
+
+dictionary GetRootNodeOptions {
+  boolean composed = false;
 };

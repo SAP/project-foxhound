@@ -1,6 +1,9 @@
+from __future__ import absolute_import
+
 import argparse
 
 from mozlog import commandline
+
 
 def add_common_arguments(parser):
     parser.add_argument("--app-path",
@@ -12,6 +15,9 @@ def add_common_arguments(parser):
     parser.add_argument("--verbose",
                         action="store_true", dest="verbose", default=False,
                         help="always print stdout and stderr from tests")
+    parser.add_argument('--verbose-if-fails',
+                        action='store_true', dest="verboseIfFails", default=False,
+                        help='Output the log if a test fails, even when run in parallel')
     parser.add_argument("--keep-going",
                         action="store_true", dest="keepGoing", default=False,
                         help="continue running tests after test killed with control-C (SIGINT)")
@@ -37,8 +43,10 @@ def add_common_arguments(parser):
                         help="Directory where testing modules are located.")
     parser.add_argument("--test-plugin-path",
                         type=str, dest="pluginsPath", default=None,
-                        help="Path to the location of a plugins directory containing the test plugin or plugins required for tests. "
-                        "By default xpcshell's dir svc provider returns gre/plugins. Use test-plugin-path to add a directory "
+                        help="Path to the location of a plugins directory containing the "
+                             "test plugin or plugins required for tests. "
+                             "By default xpcshell's dir svc provider returns gre/plugins. "
+                             "Use test-plugin-path to add a directory "
                         "to return for NS_APP_PLUGINS_DIR_LIST when queried.")
     parser.add_argument("--total-chunks",
                         type=int, dest="totalChunks", default=1,
@@ -51,7 +59,9 @@ def add_common_arguments(parser):
                         help="name of application profile being tested")
     parser.add_argument("--build-info-json",
                         type=str, dest="mozInfo", default=None,
-                        help="path to a mozinfo.json including information about the build configuration. defaults to looking for mozinfo.json next to the script.")
+                        help="path to a mozinfo.json including information about the build "
+                             "configuration. defaults to looking for mozinfo.json next to "
+                             "the script.")
     parser.add_argument("--shuffle",
                         action="store_true", dest="shuffle", default=False,
                         help="Execute tests in random order")
@@ -63,7 +73,8 @@ def add_common_arguments(parser):
     parser.add_argument("--symbols-path",
                         action="store", type=str, dest="symbolsPath",
                         default=None,
-                        help="absolute path to directory containing breakpad symbols, or the URL of a zip file containing symbols")
+                        help="absolute path to directory containing breakpad symbols, "
+                             "or the URL of a zip file containing symbols")
     parser.add_argument("--jscov-dir-prefix",
                         action="store", type=str, dest="jscovdir",
                         default=argparse.SUPPRESS,
@@ -111,79 +122,57 @@ def add_common_arguments(parser):
                         action="store",
                         help="Path to a manifest file from which to rerun failures "
                         "(with --rerun-failure) or in which to record failed tests")
+    parser.add_argument("--threads",
+                        type=int, dest="threadCount", default=0,
+                        help="override the number of jobs (threads) when running tests "
+                             "in parallel, the default is CPU x 1.5 when running via mach "
+                             "and CPU x 4 when running in automation")
+    parser.add_argument("--setpref",
+                        action="append", dest="extraPrefs", metavar="PREF=VALUE",
+                        help="Defines an extra user preference (can be passed multiple times.")
     parser.add_argument("testPaths", nargs="*", default=None,
                         help="Paths of tests to run.")
+    parser.add_argument("--verify",
+                        action="store_true", default=False,
+                        help="Run tests in verification mode: Run many times in different "
+                             "ways, to see if there are intermittent failures.")
+    parser.add_argument("--verify-max-time",
+                        dest="verifyMaxTime",
+                        type=int, default=3600,
+                        help="Maximum time, in seconds, to run in --verify mode.")
+    parser.add_argument("--enable-webrender",
+                        action="store_true", default=False,
+                        dest="enable_webrender",
+                        help="Enable the WebRender compositor in Gecko.")
+
 
 def add_remote_arguments(parser):
-    parser.add_argument("--deviceIP", action="store", type=str, dest="deviceIP",
-                        help="ip address of remote device to test")
-
-    parser.add_argument("--devicePort", action="store", type=str, dest="devicePort",
-                        default=20701, help="port of remote device to test")
-
-    parser.add_argument("--dm_trans", action="store", type=str, dest="dm_trans",
-                        choices=["adb", "sut"], default="adb",
-                        help="the transport to use to communicate with device: [adb|sut]; default=adb")
-
     parser.add_argument("--objdir", action="store", type=str, dest="objdir",
-                        help="local objdir, containing xpcshell binaries")
-
+                        help="Local objdir, containing xpcshell binaries.")
 
     parser.add_argument("--apk", action="store", type=str, dest="localAPK",
-                        help="local path to Fennec APK")
+                        help="Local path to Firefox for Android APK.")
 
+    parser.add_argument("--deviceSerial", action="store", type=str, dest="deviceSerial",
+                        help="adb serial number of remote device. This is required "
+                             "when more than one device is connected to the host. "
+                             "Use 'adb devices' to see connected devices.")
+
+    parser.add_argument("--adbPath", action="store", type=str, dest="adbPath",
+                        default=None,
+                        help="Path to adb binary.")
 
     parser.add_argument("--noSetup", action="store_false", dest="setup", default=True,
-                        help="do not copy any files to device (to be used only if device is already setup)")
-
-    parser.add_argument("--local-lib-dir", action="store", type=str, dest="localLib",
-                        help="local path to library directory")
+                        help="Do not copy any files to device (to be used only if "
+                             "device is already setup).")
 
     parser.add_argument("--local-bin-dir", action="store", type=str, dest="localBin",
-                        help="local path to bin directory")
+                        help="Local path to bin directory.")
 
     parser.add_argument("--remoteTestRoot", action="store", type=str, dest="remoteTestRoot",
-                        help="remote directory to use as test root (eg. /mnt/sdcard/tests or /data/local/tests)")
+                        help="Remote directory to use as test root "
+                             "(eg. /mnt/sdcard/tests or /data/local/tests).")
 
-def add_b2g_arguments(parser):
-    parser.add_argument('--b2gpath', action='store', type=str, dest='b2g_path',
-                        help="Path to B2G repo or qemu dir")
-
-    parser.add_argument('--emupath', action='store', type=str, dest='emu_path',
-                        help="Path to emulator folder (if different "
-                        "from b2gpath")
-
-    parser.add_argument('--no-clean', action='store_false', dest='clean', default=True,
-                        help="Do not clean TESTROOT. Saves [lots of] time")
-
-    parser.add_argument('--emulator', action='store', type=str, dest='emulator',
-                        default="arm", choices=["x86", "arm"],
-                        help="Architecture of emulator to use: x86 or arm")
-
-    parser.add_argument('--no-window', action='store_true', dest='no_window', default=False,
-                        help="Pass --no-window to the emulator")
-
-    parser.add_argument('--adbpath', action='store', type=str, dest='adb_path',
-                        default="adb", help="Path to adb")
-
-    parser.add_argument('--address', action='store', type=str, dest='address',
-                        help="host:port of running Gecko instance to connect to")
-
-    parser.add_argument('--use-device-libs', action='store_true', dest='use_device_libs',
-                        default=None, help="Don't push .so's")
-
-    parser.add_argument("--gecko-path", action="store", type=str, dest="geckoPath",
-                        help="the path to a gecko distribution that should "
-                        "be installed on the emulator prior to test")
-
-    parser.add_argument("--logdir", action="store", type=str, dest="logdir",
-                        help="directory to store log files")
-
-    parser.add_argument('--busybox', action='store', type=str, dest='busybox',
-                        help="Path to busybox binary to install on device")
-
-    parser.set_defaults(remoteTestRoot="/data/local/tests",
-                        dm_trans="adb")
 
 def parser_desktop():
     parser = argparse.ArgumentParser()
@@ -192,24 +181,13 @@ def parser_desktop():
 
     return parser
 
+
 def parser_remote():
     parser = argparse.ArgumentParser()
     common = parser.add_argument_group("Common Options")
     add_common_arguments(common)
     remote = parser.add_argument_group("Remote Options")
     add_remote_arguments(remote)
-    commandline.add_logging_group(parser)
-
-    return parser
-
-def parser_b2g():
-    parser = argparse.ArgumentParser()
-    common = parser.add_argument_group("Common Options")
-    add_common_arguments(common)
-    remote = parser.add_argument_group("Remote Options")
-    add_remote_arguments(remote)
-    b2g = parser.add_argument_group("B2G Options")
-    add_b2g_arguments(b2g)
     commandline.add_logging_group(parser)
 
     return parser

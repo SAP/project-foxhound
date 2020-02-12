@@ -15,10 +15,9 @@ function run_test() {
 /**
  * Test for addPath usage with null arguments.
  */
-add_task(function* test_null_args_addPath() {
-
+add_task(async function test_null_args_addPath() {
   let watcher = makeWatcher();
-  let testPath = 'someInvalidPath';
+  let testPath = "someInvalidPath";
 
   // Define a dummy callback function. In this test no callback is
   // expected to be called.
@@ -30,28 +29,29 @@ add_task(function* test_null_args_addPath() {
   try {
     watcher.addPath(testPath, null, dummyFunc);
   } catch (ex) {
-    if (ex.result != Cr.NS_ERROR_NULL_POINTER)
+    if (ex.result != Cr.NS_ERROR_NULL_POINTER) {
       throw ex;
-    do_print("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
+    }
+    info("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
   }
 
   // Check for error when passing both null arguments
   try {
     watcher.addPath(testPath, null, null);
   } catch (ex) {
-    if (ex.result != Cr.NS_ERROR_NULL_POINTER)
+    if (ex.result != Cr.NS_ERROR_NULL_POINTER) {
       throw ex;
-    do_print("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
+    }
+    info("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
   }
 });
 
 /**
  * Test for removePath usage with null arguments.
  */
-add_task(function* test_null_args_removePath() {
-
+add_task(async function test_null_args_removePath() {
   let watcher = makeWatcher();
-  let testPath = 'someInvalidPath';
+  let testPath = "someInvalidPath";
 
   // Define a dummy callback function. In this test no callback is
   // expected to be called.
@@ -63,17 +63,19 @@ add_task(function* test_null_args_removePath() {
   try {
     watcher.removePath(testPath, null, dummyFunc);
   } catch (ex) {
-    if (ex.result != Cr.NS_ERROR_NULL_POINTER)
+    if (ex.result != Cr.NS_ERROR_NULL_POINTER) {
       throw ex;
-    do_print("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
+    }
+    info("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
   }
 
   // Check for error when passing both null arguments
   try {
     watcher.removePath(testPath, null, null);
   } catch (ex) {
-    if (ex.result != Cr.NS_ERROR_NULL_POINTER)
+    if (ex.result != Cr.NS_ERROR_NULL_POINTER) {
       throw ex;
-    do_print("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
+    }
+    info("Initialisation thrown NS_ERROR_NULL_POINTER as expected.");
   }
 });

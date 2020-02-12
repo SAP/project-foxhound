@@ -15,19 +15,23 @@
     <p>Content type test</p>
 
     <script type="text/javascript">
-      function get(aAddress, aCallback) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", aAddress, true);
+      /* exported performRequests */
+      "use strict";
+
+      function get(address, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", address, true);
 
         xhr.onreadystatechange = function() {
           if (this.readyState == this.DONE) {
-            aCallback();
+            callback();
           }
         };
         xhr.send(null);
       }
 
       function performRequests() {
+        /* eslint-disable max-nested-callbacks */
         get("sjs_content-type-test-server.sjs?fmt=xml", function() {
           get("sjs_content-type-test-server.sjs?fmt=css", function() {
             get("sjs_content-type-test-server.sjs?fmt=js", function() {
@@ -35,7 +39,9 @@
                 get("sjs_content-type-test-server.sjs?fmt=bogus", function() {
                   get("test-image.png?v=" + Math.random(), function() {
                     get("sjs_content-type-test-server.sjs?fmt=gzip", function() {
-                      // Done.
+                      get("sjs_content-type-test-server.sjs?fmt=br", function() {
+                        // Done.
+                      });
                     });
                   });
                 });
@@ -43,6 +49,7 @@
             });
           });
         });
+        /* eslint-enable max-nested-callbacks */
       }
     </script>
   </body>

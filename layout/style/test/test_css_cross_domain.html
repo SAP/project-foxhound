@@ -3,8 +3,7 @@
 <!-- https://bugzilla.mozilla.org/show_bug.cgi?id=524223 -->
 <head>
   <title>Test cross-domain CSS loading</title>
-  <script type="application/javascript"
-	  src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css"
         href="/tests/SimpleTest/test.css"/>
   <style type="text/css">
@@ -81,7 +80,7 @@ function check_iframe(ifr) {
     var doc = ifr.contentDocument;
     var cases = doc.getElementsByTagName("p");
     for (var i = 0; i < cases.length; i++) {
-	var color = doc.defaultView.getComputedStyle(cases[i], "")
+	var color = doc.defaultView.getComputedStyle(cases[i])
 	    .getPropertyValue("background-color");
 
 	is(color, "rgb(0, 255, 0)", ifr.id + " " + cases[i].id);

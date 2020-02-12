@@ -7,16 +7,18 @@ Support for running hazard jobs via dedicated scripts
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import time
-from voluptuous import Schema, Required, Optional, Any
+from taskgraph.util.schema import Schema
+from voluptuous import Required, Optional, Any
 
-from taskgraph.transforms.job import run_job_using
+from taskgraph.transforms.job import (
+    run_job_using,
+    configure_taskdesc_for_run,
+)
 from taskgraph.transforms.job.common import (
     docker_worker_add_workspace_cache,
-    docker_worker_setup_secrets,
-    docker_worker_add_tc_vcs_cache,
-    docker_worker_add_gecko_vcs_env_vars,
-    docker_worker_add_public_artifacts
+    setup_secrets,
+    docker_worker_add_artifacts,
+    add_tooltool,
 )
 
 haz_run_schema = Schema({
@@ -24,9 +26,6 @@ haz_run_schema = Schema({
 
     # The command to run within the task image (passed through to the worker)
     Required('command'): basestring,
-
-    # The tooltool manifest to use; default in the script is used if omitted
-    Optional('tooltool-manifest'): basestring,
 
     # The mozconfig to use; default in the script is used if omitted
     Optional('mozconfig'): basestring,
@@ -37,6 +36,9 @@ haz_run_schema = Schema({
     # appropriately.  `true` here means ['*'], all secrets.  Not supported on
     # Windows
     Required('secrets', default=False): Any(bool, [basestring]),
+
+    # Base work directory used to set up the task.
+    Required('workdir'): basestring,
 })
 
 
@@ -44,40 +46,24 @@ haz_run_schema = Schema({
 def docker_worker_hazard(config, job, taskdesc):
     run = job['run']
 
-    worker = taskdesc['worker']
+    worker = taskdesc['worker'] = job['worker']
     worker['artifacts'] = []
-    worker['caches'] = []
 
-    docker_worker_add_tc_vcs_cache(config, job, taskdesc)
-    docker_worker_add_public_artifacts(config, job, taskdesc)
+    docker_worker_add_artifacts(config, job, taskdesc)
     docker_worker_add_workspace_cache(config, job, taskdesc)
-    docker_worker_setup_secrets(config, job, taskdesc)
-    docker_worker_add_gecko_vcs_env_vars(config, job, taskdesc)
+    add_tooltool(config, job, taskdesc)
+    setup_secrets(config, job, taskdesc)
 
     env = worker['env']
     env.update({
-        'MOZ_BUILD_DATE': time.strftime("%Y%m%d%H%M%S", time.gmtime(config.params['pushdate'])),
+        'MOZ_BUILD_DATE': config.params['moz_build_date'],
         'MOZ_SCM_LEVEL': config.params['level'],
     })
 
     # script parameters
-    if run.get('tooltool-manifest'):
-        env['TOOLTOOL_MANIFEST'] = run['tooltool-manifest']
     if run.get('mozconfig'):
-        env['MOZCONFIG'] = run['mozconfig']
+        env['MOZCONFIG'] = run.pop('mozconfig')
 
-    # tooltool downloads
-    worker['caches'].append({
-        'type': 'persistent',
-        'name': 'tooltool-cache',
-        'mount-point': '/home/worker/tooltool-cache',
-    })
-    worker['relengapi-proxy'] = True
-    taskdesc['scopes'].extend([
-        'docker-worker:relengapi-proxy:tooltool.download.public',
-    ])
-    env['TOOLTOOL_CACHE'] = '/home/worker/tooltool-cache'
-    env['TOOLTOOL_REPO'] = 'https://github.com/mozilla/build-tooltool'
-    env['TOOLTOOL_REV'] = 'master'
-
-    worker['command'] = ["/bin/bash", "-c", run['command']]
+    run['using'] = 'run-task'
+    run['cwd'] = run['workdir']
+    configure_taskdesc_for_run(config, job, taskdesc, worker['implementation'])

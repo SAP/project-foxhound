@@ -2,35 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-const {
-  classes: Cc,
-  interfaces: Ci,
-  utils: Cu,
-  results: Cr
-} = Components;
-
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import('resource://gre/modules/NetUtil.jsm');
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 /** This little class ensures that redirects maintain an https:// origin */
 function RedirectHttpsOnly() {}
 
 RedirectHttpsOnly.prototype = {
-  asyncOnChannelRedirect: function(oldChannel, newChannel, flags, callback) {
-    if (newChannel.URI.scheme !== 'https') {
+  asyncOnChannelRedirect(oldChannel, newChannel, flags, callback) {
+    if (newChannel.URI.scheme !== "https") {
       callback.onRedirectVerifyCallback(Cr.NS_ERROR_ABORT);
     } else {
       callback.onRedirectVerifyCallback(Cr.NS_OK);
     }
   },
 
-  getInterface: function(iid) {
+  getInterface(iid) {
     return this.QueryInterface(iid);
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIChannelEventSink])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIChannelEventSink]),
 };
 
 /** This class loads a resource into a single string. ResourceLoader.load() is
@@ -38,7 +30,7 @@ RedirectHttpsOnly.prototype = {
 function ResourceLoader(res, rej) {
   this.resolve = res;
   this.reject = rej;
-  this.data = '';
+  this.data = "";
 }
 
 /** Loads the identified https:// URL. */
@@ -46,45 +38,46 @@ ResourceLoader.load = function(uri, doc) {
   return new Promise((resolve, reject) => {
     let listener = new ResourceLoader(resolve, reject);
     let ioChannel = NetUtil.newChannel({
-      uri: uri,
+      uri,
       loadingNode: doc,
       securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-      contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_SCRIPT
+      contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_SCRIPT,
     });
 
     ioChannel.loadGroup = doc.documentLoadGroup.QueryInterface(Ci.nsILoadGroup);
     ioChannel.notificationCallbacks = new RedirectHttpsOnly();
-    ioChannel.asyncOpen2(listener);
+    ioChannel.asyncOpen(listener);
   });
 };
 
 ResourceLoader.prototype = {
-  onDataAvailable: function(request, context, input, offset, count) {
-    let stream = Cc['@mozilla.org/scriptableinputstream;1']
-      .createInstance(Ci.nsIScriptableInputStream);
+  onDataAvailable(request, input, offset, count) {
+    let stream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+      Ci.nsIScriptableInputStream
+    );
     stream.init(input);
     this.data += stream.read(count);
   },
 
-  onStartRequest: function (request, context) {},
+  onStartRequest(request) {},
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest(request, status) {
     if (Components.isSuccessCode(status)) {
       var statusCode = request.QueryInterface(Ci.nsIHttpChannel).responseStatus;
       if (statusCode === 200) {
-        this.resolve({ request: request, data: this.data });
+        this.resolve({ request, data: this.data });
       } else {
-        this.reject(new Error('Non-200 response from server: ' + statusCode));
+        this.reject(new Error("Non-200 response from server: " + statusCode));
       }
     } else {
-      this.reject(new Error('Load failed: ' + status));
+      this.reject(new Error("Load failed: " + status));
     }
   },
 
-  getInterface: function(iid) {
+  getInterface(iid) {
     return this.QueryInterface(iid);
   },
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIStreamListener])
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIStreamListener]),
 };
 
 /**
@@ -93,18 +86,17 @@ ResourceLoader.prototype = {
 function createLocationFromURI(uri) {
   return {
     href: uri.spec,
-    protocol: uri.scheme + ':',
-    host: uri.host + ((uri.port >= 0) ?
-                      (':' + uri.port) : ''),
+    protocol: uri.scheme + ":",
+    host: uri.host + (uri.port >= 0 ? ":" + uri.port : ""),
     port: uri.port,
     hostname: uri.host,
-    pathname: uri.path.replace(/[#\?].*/, ''),
-    search: uri.path.replace(/^[^\?]*/, '').replace(/#.*/, ''),
-    hash: uri.hasRef ? ('#' + uri.ref) : '',
+    pathname: uri.pathQueryRef.replace(/[#\?].*/, ""),
+    search: uri.pathQueryRef.replace(/^[^\?]*/, "").replace(/#.*/, ""),
+    hash: uri.hasRef ? "#" + uri.ref : "",
     origin: uri.prePath,
-    toString: function() {
+    toString() {
       return uri.spec;
-    }
+    },
   };
 }
 
@@ -124,9 +116,11 @@ function IdpSandbox(domain, protocol, win) {
 }
 
 IdpSandbox.checkDomain = function(domain) {
-  if (!domain || typeof domain !== 'string') {
-    throw new Error('Invalid domain for identity provider: ' +
-                    'must be a non-zero length string');
+  if (!domain || typeof domain !== "string") {
+    throw new Error(
+      "Invalid domain for identity provider: " +
+        "must be a non-zero length string"
+    );
   }
 };
 
@@ -136,9 +130,9 @@ IdpSandbox.checkDomain = function(domain) {
  * to move outside of /.well-known/ and into space that they control.
  */
 IdpSandbox.checkProtocol = function(protocol) {
-  let message = 'Invalid protocol for identity provider: ';
-  if (!protocol || typeof protocol !== 'string') {
-    throw new Error(message + 'must be a non-zero length string');
+  let message = "Invalid protocol for identity provider: ";
+  if (!protocol || typeof protocol !== "string") {
+    throw new Error(message + "must be a non-zero length string");
   }
   if (decodeURIComponent(protocol).match(/[\/\\]/)) {
     throw new Error(message + "must not include '/' or '\\'");
@@ -153,36 +147,40 @@ IdpSandbox.createIdpUri = function(domain, protocol) {
   IdpSandbox.checkDomain(domain);
   IdpSandbox.checkProtocol(protocol);
 
-  let message = 'Invalid IdP parameters: ';
+  let message = "Invalid IdP parameters: ";
   try {
-    let wkIdp = 'https://' + domain + '/.well-known/idp-proxy/' + protocol;
-    let ioService = Components.classes['@mozilla.org/network/io-service;1']
-                    .getService(Ci.nsIIOService);
-    let uri = ioService.newURI(wkIdp, null, null);
+    let wkIdp = "https://" + domain + "/.well-known/idp-proxy/" + protocol;
+    let uri = Services.io.newURI(wkIdp);
 
     if (uri.hostPort !== domain) {
-      throw new Error(message + 'domain is invalid');
+      throw new Error(message + "domain is invalid");
     }
-    if (uri.path.indexOf('/.well-known/idp-proxy/') !== 0) {
-      throw new Error(message + 'must produce a /.well-known/idp-proxy/ URI');
+    if (uri.pathQueryRef.indexOf("/.well-known/idp-proxy/") !== 0) {
+      throw new Error(message + "must produce a /.well-known/idp-proxy/ URI");
     }
 
     return uri;
-  } catch (e if (typeof e.result !== 'undefined' &&
-                 e.result === Cr.NS_ERROR_MALFORMED_URI)) {
-    throw new Error(message + 'must produce a valid URI');
+  } catch (e) {
+    if (
+      typeof e.result !== "undefined" &&
+      e.result === Cr.NS_ERROR_MALFORMED_URI
+    ) {
+      throw new Error(message + "must produce a valid URI");
+    }
+    throw e;
   }
 };
 
 IdpSandbox.prototype = {
-  isSame: function(domain, protocol) {
+  isSame(domain, protocol) {
     return this.source.spec === IdpSandbox.createIdpUri(domain, protocol).spec;
   },
 
-  start: function() {
+  start() {
     if (!this.active) {
-      this.active = ResourceLoader.load(this.source, this.window.document)
-        .then(result => this._createSandbox(result));
+      this.active = ResourceLoader.load(this.source, this.window.document).then(
+        result => this._createSandbox(result)
+      );
     }
     return this.active;
   },
@@ -190,49 +188,66 @@ IdpSandbox.prototype = {
   // Provides the sandbox with some useful facilities.  Initially, this is only
   // a minimal set; it is far easier to add more as the need arises, than to
   // take them back if we discover a mistake.
-  _populateSandbox: function(uri) {
-    this.sandbox.location = Cu.cloneInto(createLocationFromURI(uri),
-                                         this.sandbox,
-                                         { cloneFunctions: true });
+  _populateSandbox(uri) {
+    this.sandbox.location = Cu.cloneInto(
+      createLocationFromURI(uri),
+      this.sandbox,
+      { cloneFunctions: true }
+    );
   },
 
-  _createSandbox: function(result) {
-    let principal = Services.scriptSecurityManager
-      .getChannelResultPrincipal(result.request);
+  _createSandbox(result) {
+    let principal = Services.scriptSecurityManager.getChannelResultPrincipal(
+      result.request
+    );
 
     this.sandbox = Cu.Sandbox(principal, {
-      sandboxName: 'IdP-' + this.source.host,
+      sandboxName: "IdP-" + this.source.host,
       wantComponents: false,
       wantExportHelpers: false,
       wantGlobalProperties: [
-        'indexedDB', 'XMLHttpRequest', 'TextEncoder', 'TextDecoder',
-        'URL', 'URLSearchParams', 'atob', 'btoa', 'Blob', 'crypto',
-        'rtcIdentityProvider', 'fetch'
-      ]
+        "indexedDB",
+        "XMLHttpRequest",
+        "TextEncoder",
+        "TextDecoder",
+        "URL",
+        "URLSearchParams",
+        "atob",
+        "btoa",
+        "Blob",
+        "crypto",
+        "rtcIdentityProvider",
+        "fetch",
+      ],
     });
     let registrar = this.sandbox.rtcIdentityProvider;
     if (!Cu.isXrayWrapper(registrar)) {
-      throw new Error('IdP setup failed');
+      throw new Error("IdP setup failed");
     }
 
     // have to use the ultimate URI, not the starting one to avoid
     // that origin stealing from the one that redirected to it
     this._populateSandbox(result.request.URI);
     try {
-      Cu.evalInSandbox(result.data, this.sandbox,
-                       'latest', result.request.URI.spec, 1);
+      Cu.evalInSandbox(
+        result.data,
+        this.sandbox,
+        "latest",
+        result.request.URI.spec,
+        1
+      );
     } catch (e) {
       // These can be passed straight on, because they are explicitly labelled
       // as being IdP errors by the IdP and we drop line numbers as a result.
-      if (e.name === 'IdpError' || e.name === 'IdpLoginError') {
+      if (e.name === "IdpError" || e.name === "IdpLoginError") {
         throw e;
       }
       this._logError(e);
-      throw new Error('Error in IdP, check console for details');
+      throw new Error("Error in IdP, check console for details");
     }
 
     if (!registrar.hasIdp) {
-      throw new Error('IdP failed to call rtcIdentityProvider.register()');
+      throw new Error("IdP failed to call rtcIdentityProvider.register()");
     }
     return registrar;
   },
@@ -240,21 +255,25 @@ IdpSandbox.prototype = {
   // Capture all the details from the error and log them to the console.  This
   // can't rethrow anything else because that could leak information about the
   // internal workings of the IdP across origins.
-  _logError: function(e) {
-    let winID = this.window.QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
-    let scriptError = Cc["@mozilla.org/scripterror;1"]
-        .createInstance(Ci.nsIScriptError);
-    scriptError.initWithWindowID(e.message, e.fileName, null,
-                                 e.lineNumber, e.columnNumber,
-                                 Ci.nsIScriptError.errorFlag,
-                                 "content javascript", winID);
-    let consoleService = Cc['@mozilla.org/consoleservice;1']
-        .getService(Ci.nsIConsoleService);
-    consoleService.logMessage(scriptError);
+  _logError(e) {
+    let winID = this.window.windowUtils.currentInnerWindowID;
+    let scriptError = Cc["@mozilla.org/scripterror;1"].createInstance(
+      Ci.nsIScriptError
+    );
+    scriptError.initWithWindowID(
+      e.message,
+      e.fileName,
+      null,
+      e.lineNumber,
+      e.columnNumber,
+      Ci.nsIScriptError.errorFlag,
+      "content javascript",
+      winID
+    );
+    Services.console.logMessage(scriptError);
   },
 
-  stop: function() {
+  stop() {
     if (this.sandbox) {
       Cu.nukeSandbox(this.sandbox);
     }
@@ -262,10 +281,9 @@ IdpSandbox.prototype = {
     this.active = null;
   },
 
-  toString: function() {
+  toString() {
     return this.source.spec;
-  }
+  },
 };
 
-this.EXPORTED_SYMBOLS = ['IdpSandbox'];
-this.IdpSandbox = IdpSandbox;
+var EXPORTED_SYMBOLS = ["IdpSandbox"];

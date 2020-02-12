@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_DO_PLC_H_
 
 #include "defines.h"
 
@@ -33,7 +33,7 @@ void WebRtcIlbcfix_DoThePlc(
                                                            0 - no PL, 1 = PL */
     int16_t *decresidual,  /* (i) decoded residual */
     int16_t *lpc,    /* (i) decoded LPC (only used for no PL) */
-    int16_t inlag,    /* (i) pitch lag */
+    size_t inlag,    /* (i) pitch lag */
     IlbcDecoder *iLBCdec_inst
     /* (i/o) decoder instance */
                             );

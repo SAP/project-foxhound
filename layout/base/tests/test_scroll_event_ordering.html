@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=785588
 -->
 <head>
   <title>Test for Bug 785588 --- ordering of scroll-related events</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -29,15 +29,15 @@ var inner = document.getElementById("inner");
 var state = "initial";
 
 function onFrame() {
-  is(state, "initial", "Must be in initial state");
-  ok(d.scrollTop > 0, "Must have scrolled by some amount (got " + d.scrollTop + ")");
+  is(state, "didOnScroll", "Must have got scroll event already");
   state = "didOnFrame";
+  SimpleTest.finish();
 }
 
 function onScroll() {
-  is(state, "didOnFrame", "Must have got requestAnimationFrame callback already");
+  is(state, "initial", "Must be in initial state");
   ok(d.scrollTop > 0, "Must have scrolled by some amount (got " + d.scrollTop + ")");
-  SimpleTest.finish();
+  state = "didOnScroll";
 }
 
 function doTest() {

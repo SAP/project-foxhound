@@ -5,10 +5,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DevToolsModules(
+    'debounce.js',
     'history.js',
     'log.js',
     'promise.js',
     'task.js',
+    'thunk-with-options.js',
     'thunk.js',
     'wait-service.js',
 )

@@ -1,3 +1,5 @@
+// |jit-test| --ion-osr=off
+
 // Eval-in-frame with different type on non-youngest Ion frame.
 
 load(libdir + "jitopts.js");
@@ -7,7 +9,7 @@ if (!jitTogglesMatch(Opts_Ion2NoOffthreadCompilation))
 
 withJitOptions(Opts_Ion2NoOffthreadCompilation, function () {
   function test(shadow) {
-    var g = newGlobal();
+    var g = newGlobal({newCompartment: true});
     var dbg = new Debugger;
 
     // Note that we depend on CCW scripted functions being opaque to Ion

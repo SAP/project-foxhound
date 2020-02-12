@@ -10,13 +10,15 @@ function Linkifier() {
 }
 
 Linkifier.prototype = {
-  _buildAnchor : function(aDoc, aNumberText) {
+  _buildAnchor: function(aDoc, aNumberText) {
     let anchorNode = aDoc.createElement("a");
     let cleanedText = "";
     for (let i = 0; i < aNumberText.length; i++) {
       let c = aNumberText.charAt(i);
-      if ((c >= '0' && c <= '9') || c == '+')  //assuming there is only the leading '+'.
+      if ((c >= "0" && c <= "9") || c == "+") {
+        // assuming there is only the leading '+'.
         cleanedText += c;
+      }
     }
     anchorNode.setAttribute("href", "tel:" + cleanedText);
     let nodeText = aDoc.createTextNode(aNumberText);
@@ -24,7 +26,7 @@ Linkifier.prototype = {
     return anchorNode;
   },
 
-  _linkifyNodeNumbers : function(aNodeToProcess, aDoc) {
+  _linkifyNodeNumbers: function(aNodeToProcess, aDoc) {
     let parent = aNodeToProcess.parentNode;
     let nodeText = aNodeToProcess.nodeValue;
 
@@ -35,26 +37,36 @@ Linkifier.prototype = {
     let m = null;
     let startIndex = 0;
     let prevNode = null;
-    while (m = this._phoneRegex.exec(nodeText)) {
-      anchorNode = this._buildAnchor(aDoc, nodeText.substr(m.index, m[0].length));
+    while ((m = this._phoneRegex.exec(nodeText))) {
+      anchorNode = this._buildAnchor(
+        aDoc,
+        nodeText.substr(m.index, m[0].length)
+      );
 
-      let textExistsBeforeNumber = (m.index > startIndex);
+      let textExistsBeforeNumber = m.index > startIndex;
       let nodeToAdd = null;
-      if (textExistsBeforeNumber)
-        nodeToAdd = aDoc.createTextNode(nodeText.substr(startIndex, m.index - startIndex));
-      else
+      if (textExistsBeforeNumber) {
+        nodeToAdd = aDoc.createTextNode(
+          nodeText.substr(startIndex, m.index - startIndex)
+        );
+      } else {
         nodeToAdd = anchorNode;
+      }
 
-      if (!prevNode) // first time, need to replace the whole node with the first new one.
+      if (!prevNode) {
+        // first time, need to replace the whole node with the first new one.
         parent.replaceChild(nodeToAdd, aNodeToProcess);
-      else
-        parent.insertBefore(nodeToAdd, prevNode.nextSibling); //inserts after.
+      } else {
+        parent.insertBefore(nodeToAdd, prevNode.nextSibling);
+      } // inserts after.
 
-      if (textExistsBeforeNumber) // if we added the text node before the anchor, we still need to add the anchor node.
+      if (textExistsBeforeNumber) {
+        // if we added the text node before the anchor, we still need to add the anchor node.
         parent.insertBefore(anchorNode, nodeToAdd.nextSibling);
+      }
 
       // next nodes need to be appended to this node.
-      prevNode = anchorNode; 
+      prevNode = anchorNode;
       startIndex = m.index + m[0].length;
     }
 
@@ -74,20 +86,27 @@ Linkifier.prototype = {
       this._linkifyTimer = null;
     }
 
-    let filterNode = function (node) {
-      if (node.parentNode.tagName != 'A' &&
-         node.parentNode.tagName != 'SCRIPT' &&
-         node.parentNode.tagName != 'NOSCRIPT' &&
-         node.parentNode.tagName != 'STYLE' &&
-         node.parentNode.tagName != 'APPLET' &&
-         node.parentNode.tagName != 'TEXTAREA')
+    let filterNode = function(node) {
+      if (
+        node.parentNode.tagName != "A" &&
+        node.parentNode.tagName != "SCRIPT" &&
+        node.parentNode.tagName != "NOSCRIPT" &&
+        node.parentNode.tagName != "STYLE" &&
+        node.parentNode.tagName != "APPLET" &&
+        node.parentNode.tagName != "TEXTAREA"
+      ) {
         return NodeFilter.FILTER_ACCEPT;
-      else
-        return NodeFilter.FILTER_REJECT;
-    }
+      }
+      return NodeFilter.FILTER_REJECT;
+    };
 
-    let nodeWalker = aDoc.createTreeWalker(aDoc.body, NodeFilter.SHOW_TEXT, filterNode, false);
-    let parseNode = function() {
+    let nodeWalker = aDoc.createTreeWalker(
+      aDoc.body,
+      NodeFilter.SHOW_TEXT,
+      filterNode,
+      false
+    );
+    let parseNode = () => {
       let node = nodeWalker.nextNode();
       if (!node) {
         this._linkifyTimer = null;
@@ -101,8 +120,8 @@ Linkifier.prototype = {
       } else {
         this._linkifyTimer = setTimeout(parseNode, LINKIFY_TIMEOUT);
       }
-    }.bind(this);
+    };
 
-    this._linkifyTimer = setTimeout(parseNode, LINKIFY_TIMEOUT); 
-  }
+    this._linkifyTimer = setTimeout(parseNode, LINKIFY_TIMEOUT);
+  },
 };

@@ -6,8 +6,7 @@ namespace _ipdltest {
 protocol PTestSyncHang {
 
 child:
-    async __delete__();
-
+    async UnusedMessage();
 };
 
 

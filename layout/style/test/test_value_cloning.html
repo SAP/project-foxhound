@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=375363
 -->
 <head>
   <title>Test for cloning of CSS property values (including 'inherit', 'initial' and 'unset')</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -15,34 +15,31 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=375363
 <script class="testbody" type="text/javascript">
 
 /** Test for cloning of CSS property values (including 'inherit', 'initial' and 'unset') **/
-var gTestUnset = SpecialPowers.getBoolPref("layout.css.unset-value.enabled");
 var test_queue = [];
 var iframe = document.getElementById("iframe");
 
 SimpleTest.waitForExplicitFinish();
 
 for (var prop in gCSSProperties) {
-  var info = gCSSProperties[prop];
+  let info = gCSSProperties[prop];
 
   test_queue.push({ prop: prop, value: "inherit",
                     inherited_value: info.initial_values[0] });
   test_queue.push({ prop: prop, value: "inherit",
                     inherited_value: info.other_values[0] });
   test_queue.push({ prop: prop, value: "initial" });
-  if (gTestUnset) {
-    if (info.inherited) {
-      test_queue.push({ prop: prop, value: "unset",
-                        inherited_value: info.initial_values[0] });
-      test_queue.push({ prop: prop, value: "unset",
-                        inherited_value: info.other_values[0] });
-    } else {
-      test_queue.push({ prop: prop, value: "unset" });
-    }
+  if (info.inherited) {
+    test_queue.push({ prop: prop, value: "unset",
+                      inherited_value: info.initial_values[0] });
+    test_queue.push({ prop: prop, value: "unset",
+                      inherited_value: info.other_values[0] });
+  } else {
+    test_queue.push({ prop: prop, value: "unset" });
   }
-  for (var idx in info.initial_values) {
+  for (let idx in info.initial_values) {
     test_queue.push({ prop: prop, value: info.initial_values[idx] });
   }
-  for (var idx in info.other_values) {
+  for (let idx in info.other_values) {
     test_queue.push({ prop: prop, value: info.other_values[idx] });
   }
 }
@@ -55,10 +52,10 @@ function doTest()
 {
   var sheet_data = "";
 
-  for (var idx = 0; idx < test_queue.length; ++idx) {
+  for (let idx = 0; idx < test_queue.length; ++idx) {
     var current_item = test_queue[idx];
 
-    var info = gCSSProperties[current_item.prop];
+    let info = gCSSProperties[current_item.prop];
 
     sheet_data += "#parent"+idx+", #test"+idx+" { ";
     for (var prereq in info.prereqs) {
@@ -86,7 +83,7 @@ function doTest()
     "<body>\n";
 
 
-  for (var idx = 0; idx < test_queue.length; ++idx) {
+  for (let idx = 0; idx < test_queue.length; ++idx) {
     var current_item = test_queue[idx];
 
     if ("inherited_value" in current_item) {
@@ -111,14 +108,16 @@ function iframe_loaded(event)
   var start_ser = [];
   var start_compute = [];
   var test_cs = [];
-  var ifdoc = iframe.contentDocument;
+  var wrappedFrame = SpecialPowers.wrap(iframe);
+  var ifdoc = wrappedFrame.contentDocument;
+  var ifwin = wrappedFrame.contentWindow;
 
-  for (var idx = 0; idx < test_queue.length; ++idx) {
+  for (let idx = 0; idx < test_queue.length; ++idx) {
     var current_item = test_queue[idx];
     var info = gCSSProperties[current_item.prop];
 
     var test = ifdoc.getElementById("test" + idx);
-    var cur_cs = iframe.contentWindow.getComputedStyle(test, "");
+    var cur_cs = ifwin.getComputedStyle(test);
     test_cs.push(cur_cs);
     var cur_ser = ifdoc.styleSheets[0].cssRules[3*idx+2].style.getPropertyValue(current_item.prop);
     if (cur_ser == "") {
@@ -142,14 +141,14 @@ function iframe_loaded(event)
   // remove the first.
   ifdoc.styleSheets[1].insertRule("#nonexistent { color: red }", 0);
   var firstlink = ifdoc.getElementsByTagName("link")[0];
-  firstlink.parentNode.removeChild(firstlink);
+  firstlink.remove();
 
   // Force a flush
   ifdoc.body.style.display="none";
   var ow = ifdoc.body.offsetWidth;
   ifdoc.body.style.display="";
 
-  for (var idx = 0; idx < test_queue.length; ++idx) {
+  for (let idx = 0; idx < test_queue.length; ++idx) {
     var current_item = test_queue[idx];
     var info = gCSSProperties[current_item.prop];
 

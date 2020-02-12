@@ -6,17 +6,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=912103
 <head>
   <meta charset="utf-8">
   <title>Test for Bug </title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
   SimpleTest.waitForExplicitFinish();
 
   function runTest() {
-    const Cc = Components.classes;
-    const Ci = Components.interfaces;
-
-    var dashboard = Cc['@mozilla.org/network/dashboard;1']
+    var dashboard = Cc["@mozilla.org/network/dashboard;1"]
                       .getService(Ci.nsIDashboard);
     dashboard.enableLogging = true;
 
@@ -39,10 +36,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=912103
     });
   }
 
-  window.addEventListener("DOMContentLoaded", function run() {
-    window.removeEventListener("DOMContentLoaded", run);
+  window.addEventListener("DOMContentLoaded", function() {
     runTest();
-  });
+  }, {once: true});
 
   </script>
 </head>

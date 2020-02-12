@@ -8,26 +8,25 @@
 #define SVGTRANSFORMLISTSMILTYPE_H_
 
 #include "mozilla/Attributes.h"
-#include "nsISMILType.h"
+#include "mozilla/SMILType.h"
 #include "nsTArray.h"
-
-class nsSMILValue;
 
 namespace mozilla {
 
-class nsSVGTransform;
+class SMILValue;
+class SVGTransform;
 class SVGTransformList;
 class SVGTransformSMILData;
 
 ////////////////////////////////////////////////////////////////////////
 // SVGTransformListSMILType
 //
-// Operations for animating an nsSVGTransformList.
+// Operations for animating an SVGTransformList.
 //
 // This class is confused somewhat by the fact that:
 // (i)  An <animateTransform> element animates an SVGTransformList
 // (ii) BUT <animateTransform> only allows the user to specify animation values
-//      for an nsSVGTransform
+//      for an SVGTransform
 //
 // This may be rectified in a future edition of SVG but for now it means that
 // the underlying value of an animation may be something of the form:
@@ -78,54 +77,48 @@ class SVGTransformSMILData;
 // we have seen above can contain 0..n elements) whilst the end-value comes from
 // the <animateTransform> and so can only hold 1 transform.
 //
-class SVGTransformListSMILType : public nsISMILType
-{
-public:
-  // Singleton for nsSMILValue objects to hold onto.
-  static SVGTransformListSMILType*
-  Singleton()
-  {
+class SVGTransformListSMILType : public SMILType {
+ public:
+  // Singleton for SMILValue objects to hold onto.
+  static SVGTransformListSMILType* Singleton() {
     static SVGTransformListSMILType sSingleton;
     return &sSingleton;
   }
 
-protected:
-  // nsISMILType Methods
+ protected:
+  // SMILType Methods
   // -------------------
-  virtual void     Init(nsSMILValue& aValue) const override;
-  virtual void     Destroy(nsSMILValue& aValue) const override;
-  virtual nsresult Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const override;
-  virtual bool     IsEqual(const nsSMILValue& aLeft,
-                           const nsSMILValue& aRight) const override;
-  virtual nsresult Add(nsSMILValue& aDest,
-                       const nsSMILValue& aValueToAdd,
+  virtual void Init(SMILValue& aValue) const override;
+  virtual void Destroy(SMILValue& aValue) const override;
+  virtual nsresult Assign(SMILValue& aDest,
+                          const SMILValue& aSrc) const override;
+  virtual bool IsEqual(const SMILValue& aLeft,
+                       const SMILValue& aRight) const override;
+  virtual nsresult Add(SMILValue& aDest, const SMILValue& aValueToAdd,
                        uint32_t aCount) const override;
-  virtual nsresult SandwichAdd(nsSMILValue& aDest,
-                               const nsSMILValue& aValueToAdd) const override;
-  virtual nsresult ComputeDistance(const nsSMILValue& aFrom,
-                                   const nsSMILValue& aTo,
+  virtual nsresult SandwichAdd(SMILValue& aDest,
+                               const SMILValue& aValueToAdd) const override;
+  virtual nsresult ComputeDistance(const SMILValue& aFrom, const SMILValue& aTo,
                                    double& aDistance) const override;
-  virtual nsresult Interpolate(const nsSMILValue& aStartVal,
-                               const nsSMILValue& aEndVal,
-                               double aUnitDistance,
-                               nsSMILValue& aResult) const override;
+  virtual nsresult Interpolate(const SMILValue& aStartVal,
+                               const SMILValue& aEndVal, double aUnitDistance,
+                               SMILValue& aResult) const override;
 
-public:
+ public:
   // Transform array accessors
   // -------------------------
   static nsresult AppendTransform(const SVGTransformSMILData& aTransform,
-                                  nsSMILValue& aValue);
+                                  SMILValue& aValue);
   static bool AppendTransforms(const SVGTransformList& aList,
-                                 nsSMILValue& aValue);
-  static bool GetTransforms(const nsSMILValue& aValue,
-                              FallibleTArray<nsSVGTransform>& aTransforms);
+                               SMILValue& aValue);
+  static bool GetTransforms(const SMILValue& aValue,
+                            FallibleTArray<SVGTransform>& aTransforms);
 
-
-private:
+ private:
   // Private constructor: prevent instances beyond my singleton.
-  constexpr SVGTransformListSMILType() {}
+  constexpr SVGTransformListSMILType() = default;
 };
 
-} // end namespace mozilla
+}  // end namespace mozilla
 
-#endif // SVGLISTTRANSFORMSMILTYPE_H_
+#endif  // SVGLISTTRANSFORMSMILTYPE_H_

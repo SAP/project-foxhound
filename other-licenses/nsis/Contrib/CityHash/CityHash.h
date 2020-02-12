@@ -19,15 +19,13 @@
 #define _WIN32_IE 0x0700
 #endif
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 #ifdef CITYHASH_EXPORTS
 #define CITYHASH_API __declspec(dllexport)
 #else
 #define CITYHASH_API __declspec(dllimport)
-#endif
-
-#ifndef ssize_t
-typedef int ssize_t;
 #endif

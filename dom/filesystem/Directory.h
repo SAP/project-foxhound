@@ -14,102 +14,46 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-// Resolve the name collision of Microsoft's API name with macros defined in
-// Windows header files. Undefine the macro of CreateDirectory to avoid
-// Directory#CreateDirectory being replaced by Directory#CreateDirectoryW.
-#ifdef CreateDirectory
-#undef CreateDirectory
-#endif
-// Undefine the macro of CreateFile to avoid Directory#CreateFile being replaced
-// by Directory#CreateFileW.
-#ifdef CreateFile
-#undef CreateFile
-#endif
-
 namespace mozilla {
 namespace dom {
 
-struct CreateFileOptions;
 class FileSystemBase;
 class Promise;
 class StringOrFileOrDirectory;
 
-class Directory final
-  : public nsISupports
-  , public nsWrapperCache
-{
-public:
-  struct FileOrDirectoryPath
-  {
-    nsString mPath;
-
-    enum {
-      eFilePath,
-      eDirectoryPath
-    } mType;
-  };
-
+class Directory final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Directory)
 
-  static bool
-  DeviceStorageEnabled(JSContext* aCx, JSObject* aObj);
+  static already_AddRefed<Directory> Constructor(const GlobalObject& aGlobal,
+                                                 const nsAString& aRealPath,
+                                                 ErrorResult& aRv);
 
-  static bool
-  WebkitBlinkDirectoryPickerEnabled(JSContext* aCx, JSObject* aObj);
-
-  static already_AddRefed<Promise>
-  GetRoot(FileSystemBase* aFileSystem, ErrorResult& aRv);
-
-  static already_AddRefed<Directory>
-  Constructor(const GlobalObject& aGlobal,
-              const nsAString& aRealPath,
-              ErrorResult& aRv);
-
-  static already_AddRefed<Directory>
-  Create(nsISupports* aParent, nsIFile* aDirectory,
-         FileSystemBase* aFileSystem = 0);
+  static already_AddRefed<Directory> Create(nsIGlobalObject* aGlobal,
+                                            nsIFile* aDirectory,
+                                            FileSystemBase* aFileSystem = 0);
 
   // ========= Begin WebIDL bindings. ===========
 
-  nsISupports*
-  GetParentObject() const;
+  nsIGlobalObject* GetParentObject() const;
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  void
-  GetName(nsAString& aRetval, ErrorResult& aRv);
+  void GetName(nsAString& aRetval, ErrorResult& aRv);
 
-  already_AddRefed<Promise>
-  CreateFile(const nsAString& aPath, const CreateFileOptions& aOptions,
-             ErrorResult& aRv);
+  // From
+  // https://microsoftedge.github.io/directory-upload/proposal.html#directory-interface
+  // :
 
-  already_AddRefed<Promise>
-  CreateDirectory(const nsAString& aPath, ErrorResult& aRv);
+  void GetPath(nsAString& aRetval, ErrorResult& aRv);
 
-  already_AddRefed<Promise>
-  Get(const nsAString& aPath, ErrorResult& aRv);
+  nsresult GetFullRealPath(nsAString& aPath);
 
-  already_AddRefed<Promise>
-  Remove(const StringOrFileOrDirectory& aPath, ErrorResult& aRv);
+  already_AddRefed<Promise> GetFilesAndDirectories(ErrorResult& aRv);
 
-  already_AddRefed<Promise>
-  RemoveDeep(const StringOrFileOrDirectory& aPath, ErrorResult& aRv);
-
-  // From https://microsoftedge.github.io/directory-upload/proposal.html#directory-interface :
-
-  void
-  GetPath(nsAString& aRetval, ErrorResult& aRv);
-
-  nsresult
-  GetFullRealPath(nsAString& aPath);
-
-  already_AddRefed<Promise>
-  GetFilesAndDirectories(ErrorResult& aRv);
-
-  already_AddRefed<Promise>
-  GetFiles(bool aRecursiveFlag, ErrorResult& aRv);
+  already_AddRefed<Promise> GetFiles(bool aRecursiveFlag, ErrorResult& aRv);
 
   // =========== End WebIDL bindings.============
 
@@ -135,32 +79,23 @@ public:
    * <input type=file directory accept="..."> to the results of a directory
    * picker operation.
    */
-  void
-  SetContentFilters(const nsAString& aFilters);
+  void SetContentFilters(const nsAString& aFilters);
 
-  FileSystemBase*
-  GetFileSystem(ErrorResult& aRv);
+  FileSystemBase* GetFileSystem(ErrorResult& aRv);
 
-  bool
-  ClonableToDifferentThreadOrProcess() const;
+  nsIFile* GetInternalNsIFile() const { return mFile; }
 
-private:
-  Directory(nsISupports* aParent,
-            nsIFile* aFile,
+ private:
+  Directory(nsIGlobalObject* aGlobal, nsIFile* aFile,
             FileSystemBase* aFileSystem = nullptr);
   ~Directory();
 
   /*
    * Convert relative DOM path to the absolute real path.
    */
-  nsresult
-  DOMPathToRealPath(const nsAString& aPath, nsIFile** aFile) const;
+  nsresult DOMPathToRealPath(const nsAString& aPath, nsIFile** aFile) const;
 
-  already_AddRefed<Promise>
-  RemoveInternal(const StringOrFileOrDirectory& aPath, bool aRecursive,
-                 ErrorResult& aRv);
-
-  nsCOMPtr<nsISupports> mParent;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   RefPtr<FileSystemBase> mFileSystem;
   nsCOMPtr<nsIFile> mFile;
 
@@ -168,7 +103,7 @@ private:
   nsString mPath;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_Directory_h
+#endif  // mozilla_dom_Directory_h

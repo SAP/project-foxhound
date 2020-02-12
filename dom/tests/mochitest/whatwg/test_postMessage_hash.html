@@ -2,8 +2,7 @@
 <html>
 <head>
   <title>postMessage's interaction with hash URIs</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
-  <script type="text/javascript" src="browserFu.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <base href="http://example.com/" />
 </head>
@@ -31,14 +30,14 @@ function receiveMessage(evt)
   SimpleTest.finish();
 }
 
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 
 function run()
 {
   window.frames.kid.postMessage("from-parent", "http://mochi.test:8888");
 }
 
-window.addEventListener("load", run, false);
+window.addEventListener("load", run);
 </script>
 </pre>
 </body>

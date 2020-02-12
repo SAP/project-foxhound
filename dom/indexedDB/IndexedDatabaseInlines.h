@@ -8,7 +8,7 @@
 #define IndexedDatabaseInlines_h
 
 #ifndef mozilla_dom_indexeddatabase_h__
-#error Must include IndexedDatabase.h first
+#  error Must include IndexedDatabase.h first
 #endif
 
 #include "FileInfo.h"
@@ -21,41 +21,34 @@ namespace mozilla {
 namespace dom {
 namespace indexedDB {
 
-inline
-StructuredCloneFile::StructuredCloneFile()
-  : mMutable(false)
-{
+inline StructuredCloneFile::StructuredCloneFile() : mType(eBlob) {
   MOZ_COUNT_CTOR(StructuredCloneFile);
 }
 
-inline
-StructuredCloneFile::~StructuredCloneFile()
-{
+inline StructuredCloneFile::~StructuredCloneFile() {
   MOZ_COUNT_DTOR(StructuredCloneFile);
 }
 
-inline
-bool
-StructuredCloneFile::operator==(const StructuredCloneFile& aOther) const
-{
+inline bool StructuredCloneFile::operator==(
+    const StructuredCloneFile& aOther) const {
   return this->mBlob == aOther.mBlob &&
          this->mMutableFile == aOther.mMutableFile &&
-         this->mFileInfo == aOther.mFileInfo &&
-         this->mMutable == aOther.mMutable;
+         this->mFileInfo == aOther.mFileInfo && this->mType == aOther.mType;
 }
 
-inline
-StructuredCloneReadInfo::StructuredCloneReadInfo()
-  : mDatabase(nullptr)
-{
+inline StructuredCloneReadInfo::StructuredCloneReadInfo(
+    JS::StructuredCloneScope aScope)
+    : mData(aScope), mDatabase(nullptr), mHasPreprocessInfo(false) {
   MOZ_COUNT_CTOR(StructuredCloneReadInfo);
 }
 
-inline
-StructuredCloneReadInfo::StructuredCloneReadInfo(
-                             StructuredCloneReadInfo&& aCloneReadInfo)
-  : mData(Move(aCloneReadInfo.mData))
-{
+inline StructuredCloneReadInfo::StructuredCloneReadInfo()
+    : StructuredCloneReadInfo(
+          JS::StructuredCloneScope::DifferentProcessForIndexedDB) {}
+
+inline StructuredCloneReadInfo::StructuredCloneReadInfo(
+    StructuredCloneReadInfo&& aCloneReadInfo)
+    : mData(std::move(aCloneReadInfo.mData)) {
   MOZ_ASSERT(&aCloneReadInfo != this);
   MOZ_COUNT_CTOR(StructuredCloneReadInfo);
 
@@ -63,38 +56,50 @@ StructuredCloneReadInfo::StructuredCloneReadInfo(
   mFiles.SwapElements(aCloneReadInfo.mFiles);
   mDatabase = aCloneReadInfo.mDatabase;
   aCloneReadInfo.mDatabase = nullptr;
+  mHasPreprocessInfo = aCloneReadInfo.mHasPreprocessInfo;
+  aCloneReadInfo.mHasPreprocessInfo = false;
 }
 
-inline
-StructuredCloneReadInfo::StructuredCloneReadInfo(
-                             SerializedStructuredCloneReadInfo&& aCloneReadInfo)
-  : mData(Move(aCloneReadInfo.data().data))
-  , mDatabase(nullptr)
-{
+inline StructuredCloneReadInfo::StructuredCloneReadInfo(
+    SerializedStructuredCloneReadInfo&& aCloneReadInfo)
+    : mData(std::move(aCloneReadInfo.data().data)),
+      mDatabase(nullptr),
+      mHasPreprocessInfo(aCloneReadInfo.hasPreprocessInfo()) {
   MOZ_COUNT_CTOR(StructuredCloneReadInfo);
 }
 
-inline
-StructuredCloneReadInfo::~StructuredCloneReadInfo()
-{
+inline StructuredCloneReadInfo::~StructuredCloneReadInfo() {
   MOZ_COUNT_DTOR(StructuredCloneReadInfo);
 }
 
-inline StructuredCloneReadInfo&
-StructuredCloneReadInfo::operator=(StructuredCloneReadInfo&& aCloneReadInfo)
-{
+inline StructuredCloneReadInfo& StructuredCloneReadInfo::operator=(
+    StructuredCloneReadInfo&& aCloneReadInfo) {
   MOZ_ASSERT(&aCloneReadInfo != this);
 
-  mData = Move(aCloneReadInfo.mData);
+  mData = std::move(aCloneReadInfo.mData);
   mFiles.Clear();
   mFiles.SwapElements(aCloneReadInfo.mFiles);
   mDatabase = aCloneReadInfo.mDatabase;
   aCloneReadInfo.mDatabase = nullptr;
+  mHasPreprocessInfo = aCloneReadInfo.mHasPreprocessInfo;
+  aCloneReadInfo.mHasPreprocessInfo = false;
   return *this;
 }
 
-} // namespace indexedDB
-} // namespace dom
-} // namespace mozilla
+inline size_t StructuredCloneReadInfo::Size() const {
+  size_t size = mData.Size();
 
-#endif // IndexedDatabaseInlines_h
+  for (uint32_t i = 0, count = mFiles.Length(); i < count; ++i) {
+    // We don't want to calculate the size of files and so on, because are
+    // mainly file descriptors.
+    size += sizeof(uint64_t);
+  }
+
+  return size;
+}
+
+}  // namespace indexedDB
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // IndexedDatabaseInlines_h

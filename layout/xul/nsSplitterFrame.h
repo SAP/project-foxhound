@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,21 +11,25 @@
 #ifndef nsSplitterFrame_h__
 #define nsSplitterFrame_h__
 
-
 #include "mozilla/Attributes.h"
 #include "nsBoxFrame.h"
 
 class nsSplitterFrameInner;
 
-nsIFrame* NS_NewSplitterFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
 
-class nsSplitterFrame : public nsBoxFrame
-{
-public:
-  NS_DECL_FRAMEARENA_HELPERS
+nsIFrame* NS_NewSplitterFrame(mozilla::PresShell* aPresShell,
+                              mozilla::ComputedStyle* aStyle);
 
-  explicit nsSplitterFrame(nsStyleContext* aContext);
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+class nsSplitterFrame final : public nsBoxFrame {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsSplitterFrame)
+
+  explicit nsSplitterFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
+  virtual void DestroyFrom(nsIFrame* aDestructRoot,
+                           PostDestroyData& aPostDestroyData) override;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
@@ -33,16 +38,11 @@ public:
 #endif
 
   // nsIFrame overrides
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID,
-                                    nsIAtom* aAttribute,
+  virtual nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
                                     int32_t aModType) override;
 
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
-
-  virtual nsresult GetCursor(const nsPoint&    aPoint,
-                             nsIFrame::Cursor& aCursor) override;
+  virtual void Init(nsIContent* aContent, nsContainerFrame* aParent,
+                    nsIFrame* aPrevInFlow) override;
 
   NS_IMETHOD DoXULLayout(nsBoxLayoutState& aBoxLayoutState) override;
 
@@ -55,6 +55,7 @@ public:
                                  nsEventStatus* aEventStatus,
                                  bool aControlHeld) override;
 
+  MOZ_CAN_RUN_SCRIPT
   NS_IMETHOD HandleDrag(nsPresContext* aPresContext,
                         mozilla::WidgetGUIEvent* aEvent,
                         nsEventStatus* aEventStatus) override;
@@ -67,17 +68,15 @@ public:
                                mozilla::WidgetGUIEvent* aEvent,
                                nsEventStatus* aEventStatus) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
+  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
 
-  virtual void GetInitialOrientation(bool& aIsHorizontal) override; 
+  virtual void GetInitialOrientation(bool& aIsHorizontal) override;
 
-private:
-
+ private:
   friend class nsSplitterFrameInner;
   nsSplitterFrameInner* mInner;
 
-}; // class nsSplitterFrame
+};  // class nsSplitterFrame
 
 #endif

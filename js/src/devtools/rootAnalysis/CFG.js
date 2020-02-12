@@ -1,10 +1,17 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* -*- indent-tabs-mode: nil; js-indent-level: 4 -*- */
+
+// Utility code for traversing the JSON data structures produced by sixgill.
 
 "use strict";
 
-var functionBodies;
-
-function findAllPoints(bodies, blockId)
+// Find all points (positions within the code) of the body given by the list of
+// bodies and the blockId to match (which will specify an outer function or a
+// loop within it), recursing into loops if needed.
+function findAllPoints(bodies, blockId, limits)
 {
     var points = [];
     var body;
@@ -20,14 +27,16 @@ function findAllPoints(bodies, blockId)
     if (!("PEdge" in body))
         return;
     for (var edge of body.PEdge) {
-        points.push([body, edge.Index[0]]);
+        points.push([body, edge.Index[0], limits]);
         if (edge.Kind == "Loop")
-            Array.prototype.push.apply(points, findAllPoints(bodies, edge.BlockId));
+            points.push(...findAllPoints(bodies, edge.BlockId, limits));
     }
 
     return points;
 }
 
+// Given the CFG for the constructor call of some RAII, return whether the
+// given edge is the matching destructor call.
 function isMatchingDestructor(constructor, edge)
 {
     if (edge.Kind != "Call")
@@ -38,6 +47,14 @@ function isMatchingDestructor(constructor, edge)
     var variable = callee.Variable;
     assert(variable.Kind == "Func");
     if (variable.Name[1].charAt(0) != '~')
+        return false;
+
+    // Note that in some situations, a regular function can begin with '~', so
+    // we don't necessarily have a destructor in hand. This is probably a
+    // sixgill artifact, but in js::wasm::ModuleGenerator::~ModuleGenerator, a
+    // templatized static inline EraseIf is invoked, and it gets named ~EraseIf
+    // for some reason.
+    if (!("PEdgeCallInstance" in edge))
         return false;
 
     var constructExp = constructor.PEdgeCallInstance.Exp;
@@ -55,7 +72,7 @@ function isMatchingDestructor(constructor, edge)
 // treat each instance separately, such as when different regions of a function
 // body were guarded by these constructors and you needed to do something
 // different with each.)
-function allRAIIGuardedCallPoints(bodies, body, isConstructor)
+function allRAIIGuardedCallPoints(typeInfo, bodies, body, isConstructor)
 {
     if (!("PEdge" in body))
         return [];
@@ -70,21 +87,22 @@ function allRAIIGuardedCallPoints(bodies, body, isConstructor)
             continue;
         var variable = callee.Variable;
         assert(variable.Kind == "Func");
-        if (!isConstructor(edge.Type, variable.Name))
+        const limits = isConstructor(typeInfo, edge.Type, variable.Name);
+        if (!limits)
             continue;
         if (!("PEdgeCallInstance" in edge))
             continue;
         if (edge.PEdgeCallInstance.Exp.Kind != "Var")
             continue;
 
-        Array.prototype.push.apply(points, pointsInRAIIScope(bodies, body, edge));
+        points.push(...pointsInRAIIScope(bodies, body, edge, limits));
     }
 
     return points;
 }
 
 // Test whether the given edge is the constructor corresponding to the given
-// destructor edge
+// destructor edge.
 function isMatchingConstructor(destructor, edge)
 {
     if (edge.Kind != "Call")
@@ -107,7 +125,8 @@ function isMatchingConstructor(destructor, edge)
         return false;
 
     var destructExp = destructor.PEdgeCallInstance.Exp;
-    assert(destructExp.Kind == "Var");
+    if (destructExp.Kind != "Var")
+        return false;
 
     var constructExp = edge.PEdgeCallInstance.Exp;
     if (constructExp.Kind != "Var")
@@ -116,7 +135,7 @@ function isMatchingConstructor(destructor, edge)
     return sameVariable(constructExp.Variable, destructExp.Variable);
 }
 
-function findMatchingConstructor(destructorEdge, body)
+function findMatchingConstructor(destructorEdge, body, warnIfNotFound=true)
 {
     var worklist = [destructorEdge];
     var predecessors = getPredecessors(body);
@@ -129,11 +148,12 @@ function findMatchingConstructor(destructorEdge, body)
                 worklist.push(e);
         }
     }
-    printErr("Could not find matching constructor!");
-    debugger;
+    if (warnIfNotFound)
+        printErr("Could not find matching constructor!");
+    return undefined;
 }
 
-function pointsInRAIIScope(bodies, body, constructorEdge) {
+function pointsInRAIIScope(bodies, body, constructorEdge, limits) {
     var seen = {};
     var worklist = [constructorEdge.Index[1]];
     var points = [];
@@ -142,7 +162,7 @@ function pointsInRAIIScope(bodies, body, constructorEdge) {
         if (point in seen)
             continue;
         seen[point] = true;
-        points.push([body, point]);
+        points.push([body, point, limits]);
         var successors = getSuccessors(body);
         if (!(point in successors))
             continue;
@@ -150,7 +170,7 @@ function pointsInRAIIScope(bodies, body, constructorEdge) {
             if (isMatchingDestructor(constructorEdge, nedge))
                 continue;
             if (nedge.Kind == "Loop")
-                Array.prototype.push.apply(points, findAllPoints(bodies, nedge.BlockId));
+                points.push(...findAllPoints(bodies, nedge.BlockId, limits));
             worklist.push(nedge.Index[1]);
         }
     }

@@ -20,8 +20,8 @@ interface nsITaskbarPreviewButton;
  *
  * By default, Windows takes care of drawing the thumbnail and preview for the
  * application however if enableCustomDrawing is set to true, then the
- * controller will start to receive drawPreview and drawThumbnail calls as well
- * as reads on the thumbnailAspectRatio, width and height properties.
+ * controller will start to receive requestPreview and requestThumbnail calls
+ * as well as reads on the thumbnailAspectRatio, width and height properties.
  *
  * By default, nsITaskbarWindowPreviews are visible. When made invisible, the
  * window disappears from the list of windows in the taskbar for the
@@ -36,7 +36,7 @@ interface nsITaskbarPreviewButton;
  * nsITaskbarWindowPreview will never invoke the controller's onClose or
  * onActivate methods since handling them may conflict with other internal
  * Gecko state and there is existing infrastructure in place to allow clients
- * to handle those events 
+ * to handle those events
  *
  * Window previews may have a toolbar with up to 7 buttons. See
  * nsITaskbarPreviewButton for more information about button properties.

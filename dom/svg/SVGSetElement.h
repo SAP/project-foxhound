@@ -9,35 +9,36 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGAnimationElement.h"
-#include "nsSMILSetAnimationFunction.h"
+#include "mozilla/SMILSetAnimationFunction.h"
 
-nsresult NS_NewSVGSetElement(nsIContent **aResult,
-                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGSetElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
-class SVGSetElement final : public SVGAnimationElement
-{
-protected:
-  explicit SVGSetElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+class SVGSetElement final : public SVGAnimationElement {
+ protected:
+  explicit SVGSetElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-  nsSMILSetAnimationFunction mAnimationFunction;
+  SMILSetAnimationFunction mAnimationFunction;
 
-  friend nsresult (::NS_NewSVGSetElement(nsIContent **aResult,
-                                         already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  friend nsresult(::NS_NewSVGSetElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
-  // nsIDOMNode
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+ public:
+  // nsINode
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // SVGAnimationElement
-  virtual nsSMILAnimationFunction& AnimationFunction() override;
+  virtual SMILAnimationFunction& AnimationFunction() override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGSetElement_h
+#endif  // mozilla_dom_SVGSetElement_h

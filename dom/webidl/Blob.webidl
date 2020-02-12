@@ -4,34 +4,36 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://dev.w3.org/2006/webapi/FileAPI/#blob
+ * https://w3c.github.io/FileAPI/#blob
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
  */
 
-typedef (ArrayBuffer or ArrayBufferView or Blob or USVString) BlobPart;
+typedef (BufferSource or Blob or USVString) BlobPart;
 
-[Constructor(optional sequence<BlobPart> blobParts,
-             optional BlobPropertyBag options),
- Exposed=(Window,Worker)]
+[Exposed=(Window,Worker)]
 interface Blob {
+  [Throws]
+  constructor(optional sequence<BlobPart> blobParts,
+              optional BlobPropertyBag options = {});
 
   [GetterThrows]
   readonly attribute unsigned long long size;
 
   readonly attribute DOMString type;
 
-  // readonly attribute boolean isClosed; TODO bug 1048321
-
   //slice Blob into byte-ranged chunks
 
   [Throws]
-  Blob slice([Clamp] optional long long start,
-             [Clamp] optional long long end,
-             optional DOMString contentType = "");
+  Blob slice(optional [Clamp] long long start,
+             optional [Clamp] long long end,
+             optional DOMString contentType);
 
-  // void close(); TODO bug 1048325
+  // read from the Blob.
+  [NewObject, Throws] ReadableStream stream();
+  [NewObject] Promise<USVString> text();
+  [NewObject] Promise<ArrayBuffer> arrayBuffer();
 };
 
 enum EndingTypes { "transparent", "native" };
@@ -40,3 +42,10 @@ dictionary BlobPropertyBag {
   DOMString type = "";
   EndingTypes endings = "transparent";
 };
+
+partial interface Blob {
+  // This returns the type of BlobImpl used for this Blob.
+  [ChromeOnly]
+  readonly attribute DOMString blobImplType;
+};
+

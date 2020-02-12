@@ -4,6 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import json
 import mock
 import os
@@ -13,7 +15,18 @@ import tempfile
 import unittest
 import mozinfo
 
+import mozunit
+
+PY3 = sys.version_info[0] == 3
+
+if PY3:
+    # reload() has been moved to importlib in Python 3
+    # see https://docs.python.org/3.5/library/importlib.html#importlib.reload
+    from importlib import reload
+
+
 class TestMozinfo(unittest.TestCase):
+
     def setUp(self):
         reload(mozinfo)
         self.tempdir = os.path.abspath(tempfile.mkdtemp())
@@ -48,10 +61,10 @@ class TestMozinfo(unittest.TestCase):
 
     def test_update_file_invalid_json(self):
         """Test that mozinfo.update handles invalid JSON correctly"""
-        j = os.path.join(self.tempdir,'test.json')
+        j = os.path.join(self.tempdir, 'test.json')
         with open(j, 'w') as f:
             f.write('invalid{"json":')
-        self.assertRaises(ValueError,mozinfo.update,[j])
+        self.assertRaises(ValueError, mozinfo.update, [j])
 
     def test_find_and_update_file(self):
         """Test that mozinfo.find_and_update_from_json can
@@ -62,6 +75,12 @@ class TestMozinfo(unittest.TestCase):
         self.assertEqual(mozinfo.find_and_update_from_json(self.tempdir), j)
         self.assertEqual(mozinfo.info["foo"], "abcdefg")
 
+    def test_find_and_update_file_no_argument(self):
+        """Test that mozinfo.find_and_update_from_json no-ops on not being
+        given any arguments.
+        """
+        self.assertEqual(mozinfo.find_and_update_from_json(), None)
+
     def test_find_and_update_file_invalid_json(self):
         """Test that mozinfo.find_and_update_from_json can
         handle invalid JSON"""
@@ -70,6 +89,20 @@ class TestMozinfo(unittest.TestCase):
             f.write('invalid{"json":')
         self.assertRaises(ValueError, mozinfo.find_and_update_from_json, self.tempdir)
 
+    def test_find_and_update_file_raise_exception(self):
+        """Test that mozinfo.find_and_update_from_json raises
+        an IOError when exceptions are unsuppressed.
+        """
+        with self.assertRaises(IOError):
+            mozinfo.find_and_update_from_json(raise_exception=True)
+
+    def test_find_and_update_file_suppress_exception(self):
+        """Test that mozinfo.find_and_update_from_json suppresses
+        an IOError exception if a False boolean value is
+        provided as the only argument.
+        """
+        self.assertEqual(mozinfo.find_and_update_from_json(
+            raise_exception=False), None)
 
     def test_find_and_update_file_mozbuild(self):
         """Test that mozinfo.find_and_update_from_json can
@@ -80,7 +113,13 @@ class TestMozinfo(unittest.TestCase):
         m = mock.MagicMock()
         # Mock the value of MozbuildObject.from_environment().topobjdir.
         m.MozbuildObject.from_environment.return_value.topobjdir = self.tempdir
-        with mock.patch.dict(sys.modules, {"mozbuild": m, "mozbuild.base": m}):
+
+        mocked_modules = {
+            "mozbuild": m,
+            "mozbuild.base": m,
+            "mozbuild.mozconfig": m,
+        }
+        with mock.patch.dict(sys.modules, mocked_modules):
             self.assertEqual(mozinfo.find_and_update_from_json(), j)
         self.assertEqual(mozinfo.info["foo"], "123456")
 
@@ -92,6 +131,7 @@ class TestMozinfo(unittest.TestCase):
 
 
 class TestStringVersion(unittest.TestCase):
+
     def test_os_version_is_a_StringVersion(self):
         self.assertIsInstance(mozinfo.os_version, mozinfo.StringVersion)
 
@@ -116,4 +156,4 @@ class TestStringVersion(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    mozunit.main()

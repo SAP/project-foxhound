@@ -1,6 +1,37 @@
 Version history
 ===============
 
+### 3.3.8 (2018-02-15) ###
+* Fix an issue with HTTP trailers and END_STREAM.
+
+### 3.3.7 (2017-09-21) ###
+* Mark as incompatible with node >= 9.0.0 (to encourage using the built-in http2 module available by default in node >= 9.0.0).
+
+### 3.3.6 (2016-09-16) ###
+* We were not appropriately sending HPACK context updates when receiving SETTINGS_HEADER_TABLE_SIZE. This release fixes that bug.
+
+### 3.3.5 (2016-09-06) ###
+* Fix issues with large DATA frames (https://github.com/molnarg/node-http2/issues/207)
+
+### 3.3.4 (2016-04-22) ###
+* More PR bugfixes (https://github.com/molnarg/node-http2/issues?q=milestone%3Av3.3.4)
+
+### 3.3.3 (2016-04-21) ###
+
+* Bugfixes from pull requests (https://github.com/molnarg/node-http2/search?q=milestone%3Av3.3.3&type=Issues&utf8=%E2%9C%93)
+
+### 3.3.2 (2016-01-11) ###
+
+* Fix an incompatibility with Firefox (issue 167)
+
+### 3.3.1 (2016-01-11) ###
+
+* Fix some DoS bugs (issues 145, 146, 147, and 148)
+
+### 3.3.0 (2016-01-10) ###
+
+* Bugfix updates from pull requests
+
 ### 3.2.0 (2015-02-19) ###
 
 * Update ALPN token to final RFC version (h2).

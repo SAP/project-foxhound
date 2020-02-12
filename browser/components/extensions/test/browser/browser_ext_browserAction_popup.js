@@ -2,39 +2,108 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>${url}</body></html>`;
+const { GlobalManager } = ChromeUtils.import(
+  "resource://gre/modules/Extension.jsm",
+  null
+);
 
-function* testInArea(area) {
+function getBrowserAction(extension) {
+  const {
+    global: { browserActionFor },
+  } = Management;
+
+  let ext = GlobalManager.extensionMap.get(extension.id);
+  return browserActionFor(ext);
+}
+
+async function assertViewCount(extension, count, waitForPromise) {
+  let ext = GlobalManager.extensionMap.get(extension.id);
+
+  if (waitForPromise) {
+    await waitForPromise;
+  }
+
+  is(
+    ext.views.size,
+    count,
+    "Should have the expected number of extension views"
+  );
+}
+
+function promiseExtensionPageClosed(extension, viewType) {
+  return new Promise(resolve => {
+    const policy = WebExtensionPolicy.getByID(extension.id);
+
+    const listener = (evtType, context) => {
+      if (context.viewType === viewType) {
+        policy.extension.off("extension-proxy-context-load", listener);
+
+        context.callOnClose({
+          close: resolve,
+        });
+      }
+    };
+    policy.extension.on("extension-proxy-context-load", listener);
+  });
+}
+
+let scriptPage = url =>
+  `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>${url}</body></html>`;
+
+async function testInArea(area) {
   let extension = ExtensionTestUtils.loadExtension({
+    background() {
+      browser.browserAction.onClicked.addListener(() => {
+        browser.test.sendMessage("browserAction-onClicked");
+      });
+
+      browser.test.onMessage.addListener(async msg => {
+        if (msg.type === "setBrowserActionPopup") {
+          let opts = { popup: msg.popup };
+          if (msg.onCurrentWindowId) {
+            let { id } = await browser.windows.getCurrent();
+            opts = { ...opts, windowId: id };
+          } else if (msg.onActiveTabId) {
+            let [{ id }] = await browser.tabs.query({
+              active: true,
+              currentWindow: true,
+            });
+            opts = { ...opts, tabId: id };
+          }
+          await browser.browserAction.setPopup(opts);
+          browser.test.sendMessage("setBrowserActionPopup:done");
+        }
+      });
+
+      browser.test.sendMessage("background-page-ready");
+    },
     manifest: {
-      "background": {
-        "page": "data/background.html",
-      },
-      "browser_action": {
-        "default_popup": "popup-a.html",
-        "browser_style": true,
+      browser_action: {
+        default_popup: "popup-a.html",
+        browser_style: true,
       },
     },
 
     files: {
       "popup-a.html": scriptPage("popup-a.js"),
       "popup-a.js": function() {
-        window.onload = () => {
-          let color = window.getComputedStyle(document.body).color;
-          browser.test.assertEq("rgb(34, 36, 38)", color);
-          browser.runtime.sendMessage("from-popup-a");
-        };
-        browser.runtime.onMessage.addListener(msg => {
-          if (msg == "close-popup") {
+        browser.test.onMessage.addListener(msg => {
+          if (msg == "close-popup-using-window.close") {
             window.close();
           }
         });
+
+        window.onload = () => {
+          let color = window.getComputedStyle(document.body).color;
+          browser.test.assertEq("rgb(34, 36, 38)", color);
+          browser.test.sendMessage("from-popup", "popup-a");
+        };
       },
 
       "data/popup-b.html": scriptPage("popup-b.js"),
       "data/popup-b.js": function() {
         window.onload = () => {
-          browser.runtime.sendMessage("from-popup-b");
+          browser.test.sendMessage("from-popup", "popup-b");
         };
       },
 
@@ -42,340 +111,225 @@ function* testInArea(area) {
       "data/popup-c.js": function() {
         // Close the popup before the document is fully-loaded to make sure that
         // we handle this case sanely.
-        browser.runtime.sendMessage("from-popup-c");
+        browser.test.sendMessage("from-popup", "popup-c");
         window.close();
-      },
-
-      "data/background.html": scriptPage("background.js"),
-
-      "data/background.js": function() {
-        let sendClick;
-        let tests = [
-          () => {
-            browser.test.log("Open popup a");
-            sendClick({expectEvent: false, expectPopup: "a"});
-          },
-          () => {
-            browser.test.log("Open popup a again");
-            sendClick({expectEvent: false, expectPopup: "a"});
-          },
-          () => {
-            browser.test.log("Open popup c");
-            browser.browserAction.setPopup({popup: "popup-c.html"});
-            sendClick({expectEvent: false, expectPopup: "c", closePopup: false});
-          },
-          () => {
-            browser.test.log("Open popup b");
-            browser.browserAction.setPopup({popup: "popup-b.html"});
-            sendClick({expectEvent: false, expectPopup: "b"});
-          },
-          () => {
-            browser.test.log("Open popup b again");
-            sendClick({expectEvent: false, expectPopup: "b"});
-          },
-          () => {
-            browser.browserAction.setPopup({popup: ""});
-            sendClick({expectEvent: true, expectPopup: null});
-          },
-          () => {
-            sendClick({expectEvent: true, expectPopup: null});
-          },
-          () => {
-            browser.browserAction.setPopup({popup: "/popup-a.html"});
-            sendClick({expectEvent: false, expectPopup: "a", runNextTest: true});
-          },
-          () => {
-            browser.test.sendMessage("next-test", {expectClosed: true});
-          },
-        ];
-
-        let expect = {};
-        sendClick = ({expectEvent, expectPopup, runNextTest, closePopup}) => {
-          if (closePopup == undefined) {
-            closePopup = true;
-          }
-
-          expect = {event: expectEvent, popup: expectPopup, runNextTest, closePopup};
-          browser.test.sendMessage("send-click");
-        };
-
-        browser.runtime.onMessage.addListener(msg => {
-          if (msg == "close-popup") {
-            return;
-          } else if (expect.popup) {
-            browser.test.assertEq(msg, `from-popup-${expect.popup}`,
-                                  "expected popup opened");
-          } else {
-            browser.test.fail(`unexpected popup: ${msg}`);
-          }
-
-          expect.popup = null;
-          if (expect.runNextTest) {
-            expect.runNextTest = false;
-            tests.shift()();
-          } else {
-            browser.test.sendMessage("next-test", {closePopup: expect.closePopup});
-          }
-        });
-
-        browser.browserAction.onClicked.addListener(() => {
-          if (expect.event) {
-            browser.test.succeed("expected click event received");
-          } else {
-            browser.test.fail("unexpected click event");
-          }
-
-          expect.event = false;
-          browser.test.sendMessage("next-test");
-        });
-
-        browser.test.onMessage.addListener((msg) => {
-          if (msg == "close-popup") {
-            browser.runtime.sendMessage("close-popup");
-            return;
-          }
-
-          if (msg != "next-test") {
-            browser.test.fail("Expecting 'next-test' message");
-          }
-
-          if (tests.length) {
-            let test = tests.shift();
-            test();
-          } else {
-            browser.test.notifyPass("browseraction-tests-done");
-          }
-        });
-
-        browser.test.sendMessage("next-test");
       },
     },
   });
 
-  extension.onMessage("send-click", () => {
-    clickBrowserAction(extension);
-  });
+  await Promise.all([
+    extension.startup(),
+    extension.awaitMessage("background-page-ready"),
+  ]);
 
-  let widget;
-  extension.onMessage("next-test", Task.async(function* (expecting = {}) {
-    if (!widget) {
-      widget = getBrowserActionWidget(extension);
-      CustomizableUI.addWidgetToArea(widget.id, area);
+  let widget = getBrowserActionWidget(extension);
+
+  // Move the browserAction widget to the area targeted by this test.
+  CustomizableUI.addWidgetToArea(widget.id, area);
+
+  async function setBrowserActionPopup(opts) {
+    extension.sendMessage({ type: "setBrowserActionPopup", ...opts });
+    await extension.awaitMessage("setBrowserActionPopup:done");
+  }
+
+  async function runTest({
+    actionType,
+    waitForPopupLoaded,
+    expectPopup,
+    expectOnClicked,
+    closePopup,
+  }) {
+    const oncePopupPageClosed = promiseExtensionPageClosed(extension, "popup");
+    const oncePopupLoaded = waitForPopupLoaded
+      ? awaitExtensionPanel(extension)
+      : undefined;
+
+    if (actionType === "click") {
+      clickBrowserAction(extension);
+    } else if (actionType === "trigger") {
+      getBrowserAction(extension).triggerAction(window);
     }
-    if (expecting.expectClosed) {
-      let panel = getBrowserActionPopup(extension);
-      ok(panel, "Expect panel to exist");
-      yield promisePopupShown(panel);
 
-      extension.sendMessage("close-popup");
-
-      yield promisePopupHidden(panel);
-      ok(true, "Panel is closed");
-    } else if (expecting.closePopup) {
-      yield closeBrowserAction(extension);
+    if (expectPopup) {
+      info(`Waiting for popup: ${expectPopup}`);
+      is(
+        await extension.awaitMessage("from-popup"),
+        expectPopup,
+        "expected popup opened"
+      );
+    } else if (expectOnClicked) {
+      await extension.awaitMessage("browserAction-onClicked");
     }
 
-    extension.sendMessage("next-test");
-  }));
+    await oncePopupLoaded;
 
-  yield Promise.all([extension.startup(), extension.awaitFinish("browseraction-tests-done")]);
+    if (closePopup) {
+      info("Closing popup");
+      await closeBrowserAction(extension);
+      await assertViewCount(extension, 1, oncePopupPageClosed);
+    }
 
-  yield extension.unload();
+    return { oncePopupPageClosed };
+  }
+
+  // Run the sequence of test cases.
+  const tests = [
+    async () => {
+      info(`Click browser action, expect popup "a".`);
+
+      await runTest({
+        actionType: "click",
+        expectPopup: "popup-a",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Click browser action again, expect popup "a".`);
+
+      await runTest({
+        actionType: "click",
+        expectPopup: "popup-a",
+        waitForPopupLoaded: true,
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Call triggerAction, expect popup "a" again. Leave popup open.`);
+
+      const { oncePopupPageClosed } = await runTest({
+        actionType: "trigger",
+        expectPopup: "popup-a",
+        waitForPopupLoaded: true,
+      });
+
+      await assertViewCount(extension, 2);
+
+      info(`Call triggerAction again. Expect remaining popup closed.`);
+      getBrowserAction(extension).triggerAction(window);
+
+      await assertViewCount(extension, 1, oncePopupPageClosed);
+    },
+    async () => {
+      info(`Call triggerAction again. Expect popup "a" again.`);
+
+      await runTest({
+        actionType: "trigger",
+        expectPopup: "popup-a",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Set popup to "c" and click browser action. Expect popup "c".`);
+
+      await setBrowserActionPopup({ popup: "data/popup-c.html" });
+
+      const { oncePopupPageClosed } = await runTest({
+        actionType: "click",
+        expectPopup: "popup-c",
+      });
+
+      await assertViewCount(extension, 1, oncePopupPageClosed);
+    },
+    async () => {
+      info(`Set popup to "b" and click browser action. Expect popup "b".`);
+
+      await setBrowserActionPopup({ popup: "data/popup-b.html" });
+
+      await runTest({
+        actionType: "click",
+        expectPopup: "popup-b",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Click browser action again, expect popup "b".`);
+
+      await runTest({
+        actionType: "click",
+        expectPopup: "popup-b",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(`Clear popup URL. Click browser action. Expect click event.`);
+
+      await setBrowserActionPopup({ popup: "" });
+
+      await runTest({
+        actionType: "click",
+        expectOnClicked: true,
+      });
+    },
+    async () => {
+      info(`Click browser action again. Expect another click event.`);
+
+      await runTest({
+        actionType: "click",
+        expectOnClicked: true,
+      });
+    },
+    async () => {
+      info(`Call triggerAction. Expect click event.`);
+
+      await runTest({
+        actionType: "trigger",
+        expectOnClicked: true,
+      });
+    },
+    async () => {
+      info(
+        `Set window-specific popup to "b" and click browser action. Expect popup "b".`
+      );
+
+      await setBrowserActionPopup({
+        popup: "data/popup-b.html",
+        onCurrentWindowId: true,
+      });
+
+      await runTest({
+        actionType: "click",
+        expectPopup: "popup-b",
+        closePopup: true,
+      });
+    },
+    async () => {
+      info(
+        `Set tab-specific popup to "a" and click browser action. Expect popup "a", and leave open.`
+      );
+
+      await setBrowserActionPopup({
+        popup: "/popup-a.html",
+        onActiveTabId: true,
+      });
+
+      const { oncePopupPageClosed } = await runTest({
+        actionType: "click",
+        expectPopup: "popup-a",
+      });
+      assertViewCount(extension, 2);
+
+      info(`Tell popup "a" to call window.close(). Expect popup closed.`);
+      extension.sendMessage("close-popup-using-window.close");
+
+      await assertViewCount(extension, 1, oncePopupPageClosed);
+    },
+  ];
+
+  for (let test of tests) {
+    await test();
+  }
+
+  // Unload the extension and verify that the browserAction widget is gone.
+  await extension.unload();
 
   let view = document.getElementById(widget.viewId);
   is(view, null, "browserAction view removed from document");
 }
 
-add_task(function* testBrowserActionInToolbar() {
-  yield testInArea(CustomizableUI.AREA_NAVBAR);
+add_task(async function testBrowserActionInToolbar() {
+  await testInArea(CustomizableUI.AREA_NAVBAR);
 });
 
-add_task(function* testBrowserActionInPanel() {
-  yield testInArea(CustomizableUI.AREA_PANEL);
-});
-
-add_task(function* testBrowserActionClickCanceled() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
-      },
-      "permissions": ["activeTab"],
-    },
-
-    files: {
-      "popup.html": `<!DOCTYPE html><html><head><meta charset="utf-8"></head></html>`,
-    },
-  });
-
-  yield extension.startup();
-
-  const {GlobalManager, Management: {global: {browserActionFor}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
-
-  let ext = GlobalManager.extensionMap.get(extension.id);
-  let browserAction = browserActionFor(ext);
-
-  let widget = getBrowserActionWidget(extension).forWindow(window);
-  let tab = window.gBrowser.selectedTab;
-
-  // Test canceled click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  isnot(browserAction.pendingPopup, null, "Have pending popup");
-  is(browserAction.pendingPopup.window, window, "Have pending popup for the correct window");
-
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  is(browserAction.tabToRevokeDuringClearPopup, tab, "Tab to revoke was saved");
-  is(browserAction.tabManager.hasActiveTabPermission(tab), true, "Active tab was granted permission");
-
-  EventUtils.synthesizeMouseAtCenter(document.documentElement, {type: "mouseup", button: 0}, window);
-
-  is(browserAction.pendingPopup, null, "Pending popup was cleared");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  is(browserAction.tabToRevokeDuringClearPopup, null, "Tab to revoke was removed");
-  is(browserAction.tabManager.hasActiveTabPermission(tab), false, "Permission was revoked from tab");
-
-  // Test completed click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  isnot(browserAction.pendingPopup, null, "Have pending popup");
-  is(browserAction.pendingPopup.window, window, "Have pending popup for the correct window");
-
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  // We need to do these tests during the mouseup event cycle, since the click
-  // and command events will be dispatched immediately after mouseup, and void
-  // the results.
-  let mouseUpPromise = BrowserTestUtils.waitForEvent(widget.node, "mouseup", false, event => {
-    isnot(browserAction.pendingPopup, null, "Pending popup was not cleared");
-    isnot(browserAction.pendingPopupTimeout, null, "Have a pending popup timeout");
-    return true;
-  });
-
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
-
-  yield mouseUpPromise;
-
-  is(browserAction.pendingPopup, null, "Pending popup was cleared");
-  is(browserAction.pendingPopupTimeout, null, "Pending popup timeout was cleared");
-
-  yield promisePopupShown(getBrowserActionPopup(extension));
-  yield closeBrowserAction(extension);
-
-  yield extension.unload();
-});
-
-add_task(function* testBrowserActionDisabled() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
-      },
-    },
-
-    background() {
-      browser.browserAction.disable();
-    },
-
-    files: {
-      "popup.html": `<!DOCTYPE html><html><head><meta charset="utf-8"><script src="popup.js"></script></head></html>`,
-      "popup.js"() {
-        browser.test.fail("Should not get here");
-      },
-    },
-  });
-
-  yield extension.startup();
-
-  const {GlobalManager, Management: {global: {browserActionFor}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
-
-  let ext = GlobalManager.extensionMap.get(extension.id);
-  let browserAction = browserActionFor(ext);
-
-  let widget = getBrowserActionWidget(extension).forWindow(window);
-
-  // Test canceled click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  is(browserAction.pendingPopup, null, "Have no pending popup");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  EventUtils.synthesizeMouseAtCenter(document.documentElement, {type: "mouseup", button: 0}, window);
-
-  is(browserAction.pendingPopup, null, "Have no pending popup");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-
-  // Test completed click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  is(browserAction.pendingPopup, null, "Have no pending popup");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  // We need to do these tests during the mouseup event cycle, since the click
-  // and command events will be dispatched immediately after mouseup, and void
-  // the results.
-  let mouseUpPromise = BrowserTestUtils.waitForEvent(widget.node, "mouseup", false, event => {
-    is(browserAction.pendingPopup, null, "Have no pending popup");
-    is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-    return true;
-  });
-
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
-
-  yield mouseUpPromise;
-
-  is(browserAction.pendingPopup, null, "Have no pending popup");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  // Give the popup a chance to load and trigger a failure, if it was
-  // erroneously opened.
-  yield new Promise(resolve => setTimeout(resolve, 250));
-
-  yield extension.unload();
-});
-
-add_task(function* testBrowserActionTabPopulation() {
-  // Note: This test relates to https://bugzilla.mozilla.org/show_bug.cgi?id=1310019
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
-      },
-      "permissions": ["activeTab"],
-    },
-
-    files: {
-      "popup.html": scriptPage("popup.js"),
-      "popup.js": function() {
-        browser.tabs.query({active: true, currentWindow: true}).then(tabs => {
-          browser.test.assertEq("mochitest index /",
-                                tabs[0].title,
-                                "Tab has the expected title on first click");
-          browser.test.sendMessage("tabTitle");
-        });
-      },
-    },
-  });
-
-  let win = yield BrowserTestUtils.openNewBrowserWindow();
-  yield BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "http://example.com/");
-  yield BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
-
-  yield extension.startup();
-
-  let widget = getBrowserActionWidget(extension).forWindow(win);
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, win);
-
-  yield extension.awaitMessage("tabTitle");
-
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, win);
-
-  yield extension.unload();
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testBrowserActionInPanel() {
+  await testInArea(getCustomizableUIPanelID());
 });

@@ -11,9 +11,11 @@
 #include "GrSurface.h"
 #include "SkRect.h"
 
-class GrDrawTarget;
-class GrStencilAttachment;
+class GrCaps;
+class GrRenderTargetOpList;
 class GrRenderTargetPriv;
+class GrStencilAttachment;
+class GrBackendRenderTarget;
 
 /**
  * GrRenderTarget represents a 2D buffer of pixels that can be rendered to.
@@ -24,70 +26,34 @@ class GrRenderTargetPriv;
  */
 class GrRenderTarget : virtual public GrSurface {
 public:
+    virtual bool alwaysClearStencil() const { return false; }
+
     // GrSurface overrides
     GrRenderTarget* asRenderTarget() override { return this; }
     const GrRenderTarget* asRenderTarget() const  override { return this; }
 
     // GrRenderTarget
-    /**
-     * On some hardware it is possible for a render target to have multisampling
-     * only in certain buffers.
-     * Enforce only two legal sample configs.
-     * kUnified_SampleConfig signifies multisampling in both color and stencil
-     * buffers and is available across all hardware.
-     * kStencil_SampleConfig means multisampling is present in stencil buffer
-     * only; this config requires hardware support of
-     * NV_framebuffer_mixed_samples.
-    */
-    enum SampleConfig {
-        kUnified_SampleConfig = 0,
-        kStencil_SampleConfig = 1
-    };
+    bool isStencilBufferMultisampled() const { return fSampleCnt > 1; }
 
-    /**
-     * @return true if the surface is multisampled in all buffers,
-     *         false otherwise
-     */
-    bool isUnifiedMultisampled() const {
-        if (fSampleConfig != kUnified_SampleConfig) {
-            return false;
+    GrFSAAType fsaaType() const {
+        SkASSERT(fSampleCnt >= 1);
+        if (fSampleCnt <= 1) {
+            SkASSERT(!this->hasMixedSamples());
+            return GrFSAAType::kNone;
         }
-        return 0 != fDesc.fSampleCnt;
+        return this->hasMixedSamples() ? GrFSAAType::kMixedSamples : GrFSAAType::kUnifiedMSAA;
     }
 
     /**
-     * @return true if the surface is multisampled in the stencil buffer,
-     *         false otherwise
+     * Returns the number of samples/pixel in the stencil buffer (One if non-MSAA).
      */
-    bool isStencilBufferMultisampled() const {
-        return 0 != fDesc.fSampleCnt;
-    }
+    int numStencilSamples() const { return fSampleCnt; }
 
     /**
-     * @return the number of color samples-per-pixel, or zero if non-MSAA or
-     *         multisampled in the stencil buffer only.
+     * Returns the number of samples/pixel in the color buffer (One if non-MSAA or mixed sampled).
      */
     int numColorSamples() const {
-        if (fSampleConfig == kUnified_SampleConfig) {
-            return fDesc.fSampleCnt;
-        }
-        return 0;
-    }
-
-    /**
-     * @return the number of stencil samples-per-pixel, or zero if non-MSAA.
-     */
-    int numStencilSamples() const {
-        return fDesc.fSampleCnt;
-    }
-
-    /**
-     * @return true if the surface is mixed sampled, false otherwise.
-     */
-    bool hasMixedSamples() const {
-        SkASSERT(kStencil_SampleConfig != fSampleConfig ||
-                 this->isStencilBufferMultisampled());
-        return kStencil_SampleConfig == fSampleConfig;
+        return GrFSAAType::kMixedSamples == this->fsaaType() ? 1 : fSampleCnt;
     }
 
     /**
@@ -100,7 +66,7 @@ public:
      * @param rect  a rect bounding the area needing resolve. NULL indicates
      *              the whole RT needs resolving.
      */
-    void flagAsNeedingResolve(const SkIRect* rect = NULL);
+    void flagAsNeedingResolve(const SkIRect* rect = nullptr);
 
     /**
      * Call to override the region that needs to be resolved.
@@ -111,7 +77,7 @@ public:
      * Call to indicate that GrRenderTarget was externally resolved. This may
      * allow Gr to skip a redundant resolve step.
      */
-    void flagAsResolved() { fResolveRect.setLargestInverted(); }
+    void flagAsResolved();
 
     /**
      * @return true if the GrRenderTarget requires MSAA resolving
@@ -123,12 +89,6 @@ public:
      */
     const SkIRect& getResolveRect() const { return fResolveRect; }
 
-    /**
-     * Provide a performance hint that the render target's contents are allowed
-     * to become undefined.
-     */
-    void discard();
-
     // a MSAA RT may require explicit resolving , it may auto-resolve (e.g. FBO
     // 0 in GL), or be unresolvable because the client didn't give us the
     // resolve destination.
@@ -139,11 +99,7 @@ public:
     };
     virtual ResolveType getResolveType() const = 0;
 
-    /**
-     *  Return the native ID or handle to the rendertarget, depending on the
-     *  platform. e.g. on OpenGL, return the FBO ID.
-     */
-    virtual GrBackendObject getRenderTargetHandle() const = 0;
+    virtual GrBackendRenderTarget getBackendRenderTarget() const = 0;
 
     // Checked when this object is asked to attach a stencil buffer.
     virtual bool canAttemptStencilAttachment() const = 0;
@@ -152,19 +108,8 @@ public:
     GrRenderTargetPriv renderTargetPriv();
     const GrRenderTargetPriv renderTargetPriv() const;
 
-    void setLastDrawTarget(GrDrawTarget* dt);
-    GrDrawTarget* getLastDrawTarget() { return fLastDrawTarget; }
-
 protected:
-    GrRenderTarget(GrGpu* gpu, LifeCycle lifeCycle, const GrSurfaceDesc& desc,
-                   SampleConfig sampleConfig, GrStencilAttachment* stencil = nullptr)
-        : INHERITED(gpu, lifeCycle, desc)
-        , fStencilAttachment(stencil)
-        , fSampleConfig(sampleConfig)
-        , fLastDrawTarget(nullptr) {
-        fResolveRect.setLargestInverted();
-    }
-
+    GrRenderTarget(GrGpu*, const GrSurfaceDesc&, GrStencilAttachment* = nullptr);
     ~GrRenderTarget() override;
 
     // override of GrResource
@@ -180,21 +125,12 @@ private:
 
     friend class GrRenderTargetPriv;
 
-    GrStencilAttachment*  fStencilAttachment;
-    SampleConfig          fSampleConfig;
+    int                  fSampleCnt;
+    sk_sp<GrStencilAttachment> fStencilAttachment;
 
-    SkIRect               fResolveRect;
-
-    // The last drawTarget that wrote to or is currently going to write to this renderTarget
-    // The drawTarget can be closed (e.g., no draw context is currently bound
-    // to this renderTarget).
-    // This back-pointer is required so that we can add a dependancy between
-    // the drawTarget used to create the current contents of this renderTarget
-    // and the drawTarget of a destination renderTarget to which this one is being drawn.
-    GrDrawTarget* fLastDrawTarget;
+    SkIRect              fResolveRect;
 
     typedef GrSurface INHERITED;
 };
-
 
 #endif

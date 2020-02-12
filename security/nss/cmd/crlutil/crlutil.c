@@ -66,8 +66,11 @@ FindCRL(CERTCertDBHandle *certHandle, char *name, int type)
             return ((CERTSignedCrl *)NULL);
         }
     } else {
-        SECITEM_CopyItem(NULL, &derName, &cert->derSubject);
+        SECStatus rv = SECITEM_CopyItem(NULL, &derName, &cert->derSubject);
         CERT_DestroyCertificate(cert);
+        if (rv != SECSuccess) {
+            return ((CERTSignedCrl *)NULL);
+        }
     }
 
     crl = SEC_FindCrlByName(certHandle, &derName, type);
@@ -229,10 +232,6 @@ ImportCRL(CERTCertDBHandle *certHandle, char *url, int type,
     SECItem crlDER;
     PK11SlotInfo *slot = NULL;
     int rv;
-#if defined(DEBUG_jp96085)
-    PRIntervalTime starttime, endtime, elapsed;
-    PRUint32 mins, secs, msecs;
-#endif
 
     crlDER.data = NULL;
 
@@ -253,19 +252,9 @@ ImportCRL(CERTCertDBHandle *certHandle, char *url, int type,
             goto loser;
     }
 
-#if defined(DEBUG_jp96085)
-    starttime = PR_IntervalNow();
-#endif
     crl = PK11_ImportCRL(slot, &crlDER, url, type,
                          NULL, importOptions, NULL, decodeOptions);
-#if defined(DEBUG_jp96085)
-    endtime = PR_IntervalNow();
-    elapsed = endtime - starttime;
-    mins = PR_IntervalToSeconds(elapsed) / 60;
-    secs = PR_IntervalToSeconds(elapsed) % 60;
-    msecs = PR_IntervalToMilliseconds(elapsed) % 1000;
-    printf("Elapsed : %2d:%2d.%3d\n", mins, secs, msecs);
-#endif
+
     if (!crl) {
         const char *errString;
 
@@ -767,7 +756,7 @@ loser:
 }
 
 static void
-Usage(char *progName)
+Usage()
 {
     fprintf(stderr,
             "Usage:  %s -L [-n nickname] [-d keydir] [-P dbprefix] [-t crlType]\n"
@@ -905,7 +894,7 @@ main(int argc, char **argv)
     while ((status = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
         switch (optstate->option) {
             case '?':
-                Usage(progName);
+                Usage();
                 break;
 
             case 'T':
@@ -1035,17 +1024,17 @@ main(int argc, char **argv)
     }
 
     if (deleteCRL && !nickName)
-        Usage(progName);
+        Usage();
     if (importCRL && !inFile)
-        Usage(progName);
+        Usage();
     if (showFileCRL && !inFile)
-        Usage(progName);
+        Usage();
     if ((generateCRL && !nickName) ||
         (modifyCRL && !inFile && !nickName))
-        Usage(progName);
+        Usage();
     if (!(listCRL || deleteCRL || importCRL || showFileCRL || generateCRL ||
           modifyCRL || test || erase))
-        Usage(progName);
+        Usage();
 
     if (listCRL || showFileCRL) {
         readonly = PR_TRUE;

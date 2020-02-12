@@ -1,11 +1,11 @@
 == 723669.html 723669-ref.html
 
-skip-if((B2G&&browserIsRemote)||Mulet) == basic.xul basic-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-random-if(Android) skip-if((B2G&&browserIsRemote)||Mulet) == basic-negcoord.xul basic-negcoord-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) != blur.xul blur-notref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) == color-inherit.xul color-inherit-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) == multiple-noblur.xul multiple-noblur-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-HTTP(..) == blur-opacity.html blur-opacity-ref.html
+== chrome://reftest/content/text-shadow/basic.xul chrome://reftest/content/text-shadow/basic-ref.xul
+random-if(Android) == chrome://reftest/content/text-shadow/basic-negcoord.xul chrome://reftest/content/text-shadow/basic-negcoord-ref.xul
+!= chrome://reftest/content/text-shadow/blur.xul chrome://reftest/content/text-shadow/blur-notref.xul
+== chrome://reftest/content/text-shadow/color-inherit.xul chrome://reftest/content/text-shadow/color-inherit-ref.xul
+== chrome://reftest/content/text-shadow/multiple-noblur.xul chrome://reftest/content/text-shadow/multiple-noblur-ref.xul
+== blur-opacity.html blur-opacity-ref.html
 
 == basic.html basic-ref.html
 == basic-negcoord.html basic-negcoord-ref.html
@@ -24,14 +24,15 @@ HTTP(..) == blur-opacity.html blur-opacity-ref.html
 == overflow-not-scrollable-1.html overflow-not-scrollable-1-ref.html
 == overflow-not-scrollable-1.html overflow-not-scrollable-1-ref2.html
 == overflow-not-scrollable-2.html overflow-not-scrollable-2-ref.html
+fuzzy-if(cocoaWidget,0-27,0-2) fuzzy-if(winWidget,0-47,0-2) == overflow-clip.html overflow-clip-ref.html
 
 needs-focus != text-shadow-selected-1.html text-shadow-selected-1-notref.html
-fails-if(Android||B2G) fuzzy-if(skiaContent&&!Android,1,1000) needs-focus == text-shadow-selected-1.html text-shadow-selected-1-ref.html # different foreground selection color on Android/B2G
+fails-if(Android) fuzzy-if(skiaContent&&!Android,0-1,0-1000) needs-focus == text-shadow-selected-1.html text-shadow-selected-1-ref.html # different foreground selection color on Android
 needs-focus != text-shadow-selected-2.html text-shadow-selected-2-notref.html
-fails-if(Android||B2G) fuzzy-if(skiaContent&&!Android,1,1400) needs-focus == text-shadow-selected-2.html text-shadow-selected-2-ref.html # different foreground selection color on Android/B2G
+fails-if(Android) fuzzy-if(skiaContent&&!Android,0-1,0-1400) needs-focus == text-shadow-selected-2.html text-shadow-selected-2-ref.html # different foreground selection color on Android
 
 # bug 692744
-== text-shadow-on-space-1.html text-shadow-on-space-1-ref.html
+fuzzy-if(webrender,0-19,0-2872) == text-shadow-on-space-1.html text-shadow-on-space-1-ref.html
 
 # bug 721750
 needs-focus == text-shadow-on-selection-1.html text-shadow-on-selection-1-ref.html

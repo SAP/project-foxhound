@@ -3,22 +3,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-class nsApplicationCache : public nsIApplicationCache
-                         , public nsSupportsWeakReference
-{
-public:
+#include "nsIApplicationCache.h"
+#include "nsWeakReference.h"
+#include "mozilla/RefPtr.h"
+#include "nsString.h"
+
+class nsOfflineCacheDevice;
+
+class nsApplicationCache : public nsIApplicationCache,
+                           public nsSupportsWeakReference {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIAPPLICATIONCACHE
 
-  nsApplicationCache(nsOfflineCacheDevice *device,
-                     const nsACString &group,
-                     const nsACString &clientID);
+  nsApplicationCache(nsOfflineCacheDevice* device, const nsACString& group,
+                     const nsACString& clientID);
 
   nsApplicationCache();
 
   void MarkInvalid();
 
-private:
+ private:
   virtual ~nsApplicationCache();
 
   RefPtr<nsOfflineCacheDevice> mDevice;
@@ -26,4 +31,3 @@ private:
   nsCString mClientID;
   bool mValid;
 };
-

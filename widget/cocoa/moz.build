@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Widget: Cocoa")
+
 XPIDL_SOURCES += [
     'nsPIWidgetCocoa.idl',
 ]
@@ -11,6 +14,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'widget_cocoa'
 
 EXPORTS += [
+    'CFTypeRefPtr.h',
     'mozView.h',
     'nsBidiKeyboard.h',
     'nsChangeObserver.h',
@@ -32,10 +36,13 @@ UNIFIED_SOURCES += [
     'nsCursorManager.mm',
     'nsDeviceContextSpecX.mm',
     'nsFilePicker.mm',
+    'nsIconLoaderService.mm',
     'nsIdleServiceX.mm',
     'nsLookAndFeel.mm',
     'nsMacCursor.mm',
     'nsMacDockSupport.mm',
+    'nsMacFinderProgress.mm',
+    'nsMacSharingService.mm',
     'nsMacWebAppUtils.mm',
     'nsMenuBarX.mm',
     'nsMenuGroupOwnerX.mm',
@@ -44,18 +51,21 @@ UNIFIED_SOURCES += [
     'nsMenuUtilsX.mm',
     'nsMenuX.mm',
     'nsPrintDialogX.mm',
-    'nsPrintOptionsX.mm',
+    'nsPrintSettingsServiceX.mm',
     'nsPrintSettingsX.mm',
-    'nsScreenCocoa.mm',
-    'nsScreenManagerCocoa.mm',
     'nsSound.mm',
     'nsStandaloneNativeMenu.mm',
     'nsSystemStatusBarCocoa.mm',
     'nsToolkit.mm',
+    'nsTouchBar.mm',
+    'nsTouchBarInputIcon.mm',
+    'nsTouchBarUpdater.mm',
     'nsWidgetFactory.mm',
     'nsWindowMap.mm',
     'OSXNotificationCenter.mm',
+    'ProcInfo.mm',
     'RectTextureImage.mm',
+    'ScreenHelperCocoa.mm',
     'SwipeTracker.mm',
     'TextInputHandler.mm',
     'VibrancyManager.mm',
@@ -72,24 +82,29 @@ SOURCES += [
     'nsNativeThemeCocoa.mm',
 ]
 
-if not CONFIG['RELEASE_BUILD'] or CONFIG['MOZ_DEBUG']:
+if not CONFIG['RELEASE_OR_BETA'] or CONFIG['MOZ_DEBUG']:
     SOURCES += [
         'nsSandboxViolationSink.mm',
     ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-# XXX: We should fix these warnings.
-ALLOW_COMPILER_WARNINGS = True
-
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
+    '/dom/media/platforms/apple',
+    '/layout/base',
     '/layout/forms',
     '/layout/generic',
     '/layout/style',
     '/layout/xul',
     '/widget',
+    '/widget/headless',
 ]
+
+if CONFIG['MOZ_ENABLE_SKIA_PDF']:
+    # Skia includes because widget code includes PrintTargetSkPDF.h, and that
+    # includes skia headers.
+    LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
 RESOURCE_FILES.cursors += [
     'cursors/arrowN.png',
@@ -139,3 +154,7 @@ RESOURCE_FILES.__setattr__('MainMenu.nib', [
 ])
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
+
+OS_LIBS += [
+    '-framework IOSurface',
+]

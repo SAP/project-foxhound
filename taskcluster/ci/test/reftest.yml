@@ -1,0 +1,169 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+job-defaults:
+    suite:
+        category: reftest
+    target:
+        by-test-platform:
+            android-em-7.*: geckoview-androidTest.apk
+            android-hw-.*: geckoview-androidTest.apk
+            default: null
+    variants:
+        by-test-platform:
+            linux64/debug: ['fission', 'serviceworker']
+            default: ['fission']
+    run-on-projects:
+        by-test-platform:
+            android-hw-.*-qr/debug: ['try', 'mozilla-central']
+            android-hw-.*-qr/opt: ['try', 'mozilla-central', 'mozilla-inbound', 'autoland']
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            default: built-projects
+    mozharness:
+        script:
+            by-test-platform:
+                android-em.*: android_emulator_unittest.py
+                android-hw.*: android_hardware_unittest.py
+                default: desktop_unittest.py
+        config:
+            by-test-platform:
+                android-em-7.*:
+                    - android/android_common.py
+                    - android/androidx86_7_0.py
+                android-hw.*:
+                    - android/android_common.py
+                    - android/android_hw.py
+                linux.*:
+                    - unittests/linux_unittest.py
+                    - remove_executables.py
+                macosx.*:
+                    - unittests/mac_unittest.py
+                windows.*:
+                    - unittests/win_unittest.py
+
+crashtest:
+    description: "Crashtest run"
+    treeherder-symbol: R(C)
+    chunks:
+        by-test-platform:
+            android-em-7.*: 1
+            default: 1
+    e10s: true
+    max-run-time: 3600
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            android-hw-.*-qr/.*: 2
+            default: default
+
+jsreftest:
+    description: "JS Reftest run"
+    schedules-component: jsreftest
+    treeherder-symbol: R(J)
+    instance-size: default
+    chunks:
+        by-test-platform:
+            android-hw.*\/debug: 12
+            android-hw.*/(opt|pgo)?: 6
+            windows.*\/opt: 2
+            windows10-64-asan/opt: 3
+            windows10-64-ccov/debug: 5
+            linux64-ccov/.*: 5
+            linux64-qr/opt: 4
+            linux64-qr/debug: 5
+            linux64/debug: 5
+            macosx.*-64-ccov/debug: 5
+            macosx.*-64(-shippable)?/opt: 2
+            default: 3
+    max-run-time:
+        by-test-platform:
+            windows10-64-ccov/debug: 7200
+            macosx.*64-ccov/debug: 7200
+            linux.*64-ccov/debug: 7200
+            default: 3600
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
+    run-on-projects:
+        by-test-platform:
+            windows10-aarch64/opt: ['try', 'mozilla-central']
+            android-hw-.*-api-16/debug: ['try', 'mozilla-central']
+            default: built-projects
+
+reftest:
+    description: "Reftest run"
+    treeherder-symbol: R(R)
+    virtualization: virtual-with-gpu
+    chunks:
+        by-test-platform:
+            android-em-7.*: 2
+            linux64(-shippable|-devedition|-qr)?/opt: 5
+            macosx101.*-64-shippable(-qr)?/opt: 3
+            macosx101.*-64/debug: 4
+            macosx101.*-64(-ccov|-qr)/debug: 6
+            windows.*/opt: 2
+            windows.*/debug: 4
+            windows10-64-asan/opt: 3
+            windows10-64-ccov/debug: 9
+            default: 8
+    e10s: true
+    max-run-time:
+        by-test-platform:
+            windows7-32-mingwclang/debug: 5400
+            windows10-64-ccov/debug: 5400
+            windows10-64-asan/opt: 5400
+            macosx.*64-ccov/debug: 5400
+            default: 3600
+    mozharness:
+        chunked:
+            by-test-platform:
+                android-em.*: false
+                macosx.*64/opt: false
+                windows10-64.*/opt: false
+                default: true
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            android-hw-.*-qr/.*: 2
+            default: default
+
+reftest-gpu:
+    description: "Reftest GPU run"
+    treeherder-symbol: R(Rg)
+    chunks:
+        by-test-platform:
+            windows.*/opt: 2
+            default: 4
+    run-on-projects:
+        by-test-platform:
+            windows10.*: []
+            default: built-projects
+    instance-size: default
+    virtualization: virtual-with-gpu
+    max-run-time: 3600
+    mozharness:
+        chunked: true
+    tier: default
+
+reftest-no-accel:
+    description: "Reftest not accelerated run"
+    treeherder-symbol: R(Ru)
+    virtualization: virtual-with-gpu
+    run-on-projects:
+        by-test-platform:
+            windows10.*: []
+            default: built-projects
+    chunks:
+        by-test-platform:
+            macosx.*: 1
+            windows.*: 4
+            linux64(-shippable|-devedition)?/opt: 4
+            default: 8
+    mozharness:
+        chunked:
+            by-test-platform:
+                windows10-64.*/opt: false
+                macosx.*: false
+                default: true

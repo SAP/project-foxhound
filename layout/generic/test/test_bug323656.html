@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=323656
 -->
 <head>
   <title>Test for Bug 323656</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
     <style>
       /**
@@ -40,7 +40,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=323656
 <script class="testbody" type="text/javascript">
 
 /** Test for Bug 323656 **/
-var s = document.defaultView.getComputedStyle($("testOption"), "");
+var s = document.defaultView.getComputedStyle($("testOption"));
 is(s.borderRightColor, "rgb(0, 128, 0)", "Inheritance broken");
 
 

@@ -13,16 +13,23 @@
  * http://www.openwebfoundation.org/legal/the-owf-1-0-agreements/owfa-1-0.
  */
 
-[Constructor(optional USVString init = ""),
- Constructor(URLSearchParams init),
- Exposed=(Window,Worker,WorkerDebugger,System)]
+[Exposed=(Window,Worker,WorkerDebugger),
+ Serializable]
 interface URLSearchParams {
+  [Throws]
+  constructor(optional (sequence<sequence<USVString>> or
+                        record<USVString, USVString> or USVString) init = "");
+
   void append(USVString name, USVString value);
   void delete(USVString name);
   USVString? get(USVString name);
   sequence<USVString> getAll(USVString name);
   boolean has(USVString name);
   void set(USVString name, USVString value);
+
+  [Throws]
+  void sort();
+
   iterable<USVString, USVString>;
   stringifier;
 };

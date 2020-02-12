@@ -7,30 +7,41 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording, reload } = require("devtools/client/performance/test/helpers/actions");
-const { waitUntil } = require("devtools/client/performance/test/helpers/wait-utils");
+const {
+  initPerformanceInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+  reload,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  waitUntil,
+} = require("devtools/client/performance/test/helpers/wait-utils");
 
-add_task(function* () {
-  let { panel, target } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel, target } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { PerformanceController } = panel.panelWin;
+  const { PerformanceController } = panel.panelWin;
 
-  yield startRecording(panel);
-  yield reload(target);
+  await startRecording(panel);
+  await reload(target);
 
-  let recording = PerformanceController.getCurrentRecording();
-  let markersLength = recording.getAllData().markers.length;
+  const recording = PerformanceController.getCurrentRecording();
+  const markersLength = recording.getAllData().markers.length;
 
-  ok(recording.isRecording(),
-    "RecordingModel should still be recording after reload");
+  ok(
+    recording.isRecording(),
+    "RecordingModel should still be recording after reload"
+  );
 
-  yield waitUntil(() => recording.getMarkers().length > markersLength);
+  await waitUntil(() => recording.getMarkers().length > markersLength);
   ok("Markers continue after reload.");
 
-  yield stopRecording(panel);
-  yield teardownToolboxAndRemoveTab(panel);
+  await stopRecording(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

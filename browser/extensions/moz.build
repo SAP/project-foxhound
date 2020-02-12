@@ -5,16 +5,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
-    'aushelper',
-    'e10srollout',
+    'formautofill',
     'pdfjs',
-    'pocket',
+    'screenshots',
     'webcompat',
+    'report-site-issue'
 ]
-
-# Only include the following system add-ons if building Aurora or Nightly
-if 'a' in CONFIG['GRE_MILESTONE']:
-    DIRS += [
-        'flyweb',
-        'formautofill',
-    ]

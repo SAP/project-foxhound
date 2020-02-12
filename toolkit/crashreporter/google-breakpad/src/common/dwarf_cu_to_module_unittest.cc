@@ -31,6 +31,8 @@
 
 // dwarf_cu_to_module.cc: Unit tests for google_breakpad::DwarfCUToModule.
 
+#include <stdint.h>
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,7 +67,7 @@ using ::testing::ValuesIn;
 class MockLineToModuleHandler: public DwarfCUToModule::LineToModuleHandler {
  public:
   MOCK_METHOD1(StartCompilationUnit, void(const string& compilation_dir));
-  MOCK_METHOD4(ReadProgram, void(const char* program, uint64 length,
+  MOCK_METHOD4(ReadProgram, void(const uint8_t *program, uint64 length,
                                  Module *module, vector<Module::Line> *lines));
 };
 
@@ -81,7 +83,7 @@ class MockWarningReporter: public DwarfCUToModule::WarningReporter {
   MOCK_METHOD1(UncoveredFunction, void(const Module::Function &function));
   MOCK_METHOD1(UncoveredLine, void(const Module::Line &line));
   MOCK_METHOD1(UnnamedFunction, void(uint64 offset));
-  MOCK_METHOD2(DemangleError, void(const string &input, int error));
+  MOCK_METHOD1(DemangleError, void(const string &input));
   MOCK_METHOD2(UnhandledInterCUReference, void(uint64 offset, uint64 target));
 };
 
@@ -111,7 +113,7 @@ class CUFixtureBase {
    public:
     explicit AppendLinesFunctor(
         const vector<Module::Line> *lines) : lines_(lines) { }
-    void operator()(const char *program, uint64 length,
+    void operator()(const uint8_t *program, uint64 length,
                     Module *module, vector<Module::Line> *lines) {
       lines->insert(lines->end(), lines_->begin(), lines_->end());
     }
@@ -126,7 +128,8 @@ class CUFixtureBase {
         language_signed_(false),
         appender_(&lines_),
         reporter_("dwarf-filename", 0xcf8f9bb6443d29b5LL),
-        root_handler_(&file_context_, &line_reader_, &reporter_),
+        root_handler_(&file_context_, &line_reader_,
+                      /* ranges_reader */ nullptr, &reporter_),
         functions_filled_(false) {
     // By default, expect no warnings to be reported, and expect the
     // compilation unit's name to be provided. The test can override
@@ -285,7 +288,7 @@ class CUFixtureBase {
   // Mock line program reader.
   MockLineToModuleHandler line_reader_;
   AppendLinesFunctor appender_;
-  static const char dummy_line_program_[];
+  static const uint8_t dummy_line_program_[];
   static const size_t dummy_line_size_;
 
   MockWarningReporter reporter_;
@@ -302,7 +305,7 @@ class CUFixtureBase {
   bool functions_filled_;
 };
 
-const char CUFixtureBase::dummy_line_program_[] = "lots of fun data";
+const uint8_t CUFixtureBase::dummy_line_program_[] = "lots of fun data";
 const size_t CUFixtureBase::dummy_line_size_ =
     sizeof(CUFixtureBase::dummy_line_program_);
 
@@ -375,7 +378,7 @@ void CUFixtureBase::ProcessStrangeAttributes(
   handler->ProcessAttributeReference((DwarfAttribute) 0xf7f7480f,
                                      (DwarfForm) 0x829e038a,
                                      0x50fddef44734fdecULL);
-  static const char buffer[10] = "frobynode";
+  static const uint8_t buffer[10] = "frobynode";
   handler->ProcessAttributeBuffer((DwarfAttribute) 0xa55ffb51,
                                   (DwarfForm) 0x2f43b041,
                                   buffer, sizeof(buffer));
@@ -595,7 +598,7 @@ void CUFixtureBase::TestFunction(int i, const string &name,
   Module::Function *function = functions_[i];
   EXPECT_EQ(name,    function->name);
   EXPECT_EQ(address, function->address);
-  EXPECT_EQ(size,    function->size);
+  EXPECT_EQ(size,    function->ranges[0].size);
   EXPECT_EQ(0U,      function->parameter_size);
 }
 
@@ -1203,6 +1206,7 @@ TEST_F(Specifications, Function) {
 }
 
 TEST_F(Specifications, MangledName) {
+  // Language defaults to C++, so no need to set it here.
   PushLine(0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL, "line-file", 54883661);
 
   StartCU();
@@ -1216,6 +1220,53 @@ TEST_F(Specifications, MangledName) {
 
   TestFunctionCount(1);
   TestFunction(0, "C::f(int)",
+               0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL);
+}
+
+TEST_F(Specifications, MangledNameSwift) {
+  // Swift mangled names should pass through untouched.
+  SetLanguage(dwarf2reader::DW_LANG_Swift);
+  PushLine(0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL, "line-file", 54883661);
+  StartCU();
+  const string kName = "_TFC9swifttest5Shape17simpleDescriptionfS0_FT_Si";
+  DeclarationDIE(&root_handler_, 0xcd3c51b946fb1eeeLL,
+                 dwarf2reader::DW_TAG_subprogram, "declaration-name",
+                 kName);
+  DefinitionDIE(&root_handler_, dwarf2reader::DW_TAG_subprogram,
+                0xcd3c51b946fb1eeeLL, "",
+                0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL);
+  root_handler_.Finish();
+
+  TestFunctionCount(1);
+  TestFunction(0, kName,
+               0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL);
+}
+
+TEST_F(Specifications, MangledNameRust) {
+  SetLanguage(dwarf2reader::DW_LANG_Rust);
+  PushLine(0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL, "line-file", 54883661);
+
+  StartCU();
+  const string kName = "_ZN14rustc_demangle8demangle17h373defa94bffacdeE";
+  DeclarationDIE(&root_handler_, 0xcd3c51b946fb1eeeLL,
+                 dwarf2reader::DW_TAG_subprogram, "declaration-name",
+                 kName);
+  DefinitionDIE(&root_handler_, dwarf2reader::DW_TAG_subprogram,
+                0xcd3c51b946fb1eeeLL, "",
+                0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL);
+  root_handler_.Finish();
+
+  TestFunctionCount(1);
+  TestFunction(0,
+#ifndef HAVE_RUST_DEMANGLE
+               // Rust mangled names should pass through untouched if not
+               // using rust-demangle.
+               kName,
+#else
+               // If rust-demangle is available this should be properly
+               // demangled.
+               "rustc_demangle::demangle",
+#endif
                0x93cd3dfc1aa10097ULL, 0x0397d47a0b4ca0d4ULL);
 }
 
@@ -1465,7 +1516,7 @@ TEST_F(Specifications, InterCU) {
 
   // First CU.  Declares class_A.
   {
-    DwarfCUToModule root1_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root1_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root1_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root1_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1478,7 +1529,7 @@ TEST_F(Specifications, InterCU) {
 
   // Second CU.  Defines class_A, declares member_func_B.
   {
-    DwarfCUToModule root2_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root2_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root2_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root2_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1495,7 +1546,7 @@ TEST_F(Specifications, InterCU) {
 
   // Third CU.  Defines member_func_B.
   {
-    DwarfCUToModule root3_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root3_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root3_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root3_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1524,7 +1575,7 @@ TEST_F(Specifications, UnhandledInterCU) {
 
   // First CU.  Declares class_A.
   {
-    DwarfCUToModule root1_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root1_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root1_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root1_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1537,7 +1588,7 @@ TEST_F(Specifications, UnhandledInterCU) {
 
   // Second CU.  Defines class_A, declares member_func_B.
   {
-    DwarfCUToModule root2_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root2_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root2_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root2_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1555,7 +1606,7 @@ TEST_F(Specifications, UnhandledInterCU) {
 
   // Third CU.  Defines member_func_B.
   {
-    DwarfCUToModule root3_handler(&fc, &lr, &reporter_);
+    DwarfCUToModule root3_handler(&fc, &lr, nullptr, &reporter_);
     ASSERT_TRUE(root3_handler.StartCompilationUnit(0, 1, 2, 3, 3));
     ASSERT_TRUE(root3_handler.StartRootDIE(1,
                                            dwarf2reader::DW_TAG_compile_unit));
@@ -1741,7 +1792,8 @@ struct Reporter: public Test {
         file("source file name") {
     reporter.SetCUName("compilation-unit-name");
 
-    function.size = 0x89808a5bdfa0a6a3ULL;
+    Module::Range range(0x19c45c30770c1eb0ULL, 0x89808a5bdfa0a6a3ULL);
+    function.ranges.push_back(range);
     function.parameter_size = 0x6a329f18683dcd51ULL;
 
     line.address = 0x3606ac6267aebeccULL;

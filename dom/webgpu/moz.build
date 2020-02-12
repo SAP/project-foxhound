@@ -1,0 +1,54 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Graphics: WebGPU')
+
+MOCHITEST_MANIFESTS += [
+    'mochitest/mochitest-no-pref.ini',
+    'mochitest/mochitest.ini',
+]
+
+DIRS += [
+    'thread',
+]
+
+h_and_cpp = [
+    'Adapter',
+    'BindGroup',
+    'BindGroupLayout',
+    'Buffer',
+    'CanvasContext',
+    'CommandBuffer',
+    'CommandEncoder',
+    'ComputePassEncoder',
+    'ComputePipeline',
+    'Device',
+    'DeviceLostInfo',
+    'Fence',
+    'Instance',
+    'InstanceProvider',
+    'ObjectModel',
+    'OutOfMemoryError',
+    'PipelineLayout',
+    'ProgrammablePassEncoder',
+    'Queue',
+    'RenderBundle',
+    'RenderBundleEncoder',
+    'RenderEncoderBase',
+    'RenderPassEncoder',
+    'RenderPipeline',
+    'Sampler',
+    'ShaderModule',
+    'SwapChain',
+    'Texture',
+    'TextureView',
+    'ValidationError',
+]
+EXPORTS.mozilla.webgpu += [x + '.h' for x in h_and_cpp]
+UNIFIED_SOURCES += [x + '.cpp' for x in h_and_cpp]
+
+FINAL_LIBRARY = 'xul'

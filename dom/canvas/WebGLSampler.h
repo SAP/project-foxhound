@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,47 +10,41 @@
 #include "nsWrapperCache.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "WebGLTexture.h"
 
 namespace mozilla {
 
-class WebGLSampler final
-    : public nsWrapperCache
-    , public WebGLRefCountedObject<WebGLSampler>
-    , public LinkedListElement<WebGLSampler>
-{
-    friend class WebGLContext2;
-    friend class WebGLTexture;
+class WebGLSampler final : public nsWrapperCache,
+                           public WebGLRefCountedObject<WebGLSampler>,
+                           public LinkedListElement<WebGLSampler>,
+                           public CacheInvalidator {
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSampler)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLSampler)
 
-public:
-    WebGLSampler(WebGLContext* webgl, GLuint sampler);
+ public:
+  const GLuint mGLName;
 
-    const GLuint mGLName;
+ private:
+  webgl::SamplingState mState;
 
-    void Delete();
-    WebGLContext* GetParentObject() const;
+ public:
+  explicit WebGLSampler(WebGLContext* webgl);
 
-    virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
+ private:
+  ~WebGLSampler();
 
-    void SamplerParameter(const char* funcName, GLenum pname, const FloatOrInt& param);
+ public:
+  void Delete();
+  WebGLContext* GetParentObject() const;
 
-private:
-    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSampler)
-    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLSampler)
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> givenProto) override;
 
-    TexMinFilter mMinFilter;
-    TexMagFilter mMagFilter;
-    TexWrap mWrapS;
-    TexWrap mWrapT;
-    TexWrap mWrapR;
-    GLfloat mMinLod;
-    GLfloat mMaxLod;
-    TexCompareMode mCompareMode;
-    TexCompareFunc mCompareFunc;
+  void SamplerParameter(GLenum pname, const FloatOrInt& param);
 
-private:
-    ~WebGLSampler();
+  const auto& State() const { return mState; }
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WEBGL_SAMPLER_H_
+#endif  // WEBGL_SAMPLER_H_

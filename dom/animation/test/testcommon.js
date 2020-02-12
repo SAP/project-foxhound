@@ -17,7 +17,7 @@ const MS_PER_SEC = 1000;
 
 /* The recommended minimum precision to use for time values[1].
  *
- * [1] https://w3c.github.io/web-animations/#precision-of-time-values
+ * [1] https://drafts.csswg.org/web-animations/#precision-of-time-values
  */
 var TIME_PRECISION = 0.0005; // ms
 
@@ -26,7 +26,117 @@ var TIME_PRECISION = 0.0005; // ms
  * times based on their precision requirements.
  */
 function assert_times_equal(actual, expected, description) {
+  assert_approx_equals(actual, expected, TIME_PRECISION * 2, description);
+}
+
+/*
+ * Compare a time value based on its precision requirements with a fixed value.
+ */
+function assert_time_equals_literal(actual, expected, description) {
   assert_approx_equals(actual, expected, TIME_PRECISION, description);
+}
+
+/*
+ * Compare matrix string like 'matrix(1, 0, 0, 1, 100, 0)'.
+ * This function allows error, 0.01, because on Android when we are scaling down
+ * the document, it results in some errors.
+ */
+function assert_matrix_equals(actual, expected, description) {
+  var matrixRegExp = /^matrix\((.+),(.+),(.+),(.+),(.+),(.+)\)/;
+  assert_regexp_match(actual, matrixRegExp, "Actual value should be a matrix");
+  assert_regexp_match(
+    expected,
+    matrixRegExp,
+    "Expected value should be a matrix"
+  );
+
+  var actualMatrixArray = actual
+    .match(matrixRegExp)
+    .slice(1)
+    .map(Number);
+  var expectedMatrixArray = expected
+    .match(matrixRegExp)
+    .slice(1)
+    .map(Number);
+
+  assert_equals(
+    actualMatrixArray.length,
+    expectedMatrixArray.length,
+    "Array lengths should be equal (got '" +
+      expected +
+      "' and '" +
+      actual +
+      "'): " +
+      description
+  );
+  for (var i = 0; i < actualMatrixArray.length; i++) {
+    assert_approx_equals(
+      actualMatrixArray[i],
+      expectedMatrixArray[i],
+      0.01,
+      "Matrix array should be equal (got '" +
+        expected +
+        "' and '" +
+        actual +
+        "'): " +
+        description
+    );
+  }
+}
+
+/**
+ * Compare given values which are same format of
+ * KeyframeEffectReadonly::GetProperties.
+ */
+function assert_properties_equal(actual, expected) {
+  assert_equals(actual.length, expected.length);
+
+  const compareProperties = (a, b) =>
+    a.property == b.property ? 0 : a.property < b.property ? -1 : 1;
+
+  const sortedActual = actual.sort(compareProperties);
+  const sortedExpected = expected.sort(compareProperties);
+
+  const serializeValues = values =>
+    values
+      .map(
+        value =>
+          "{ " +
+          ["offset", "value", "easing", "composite"]
+            .map(member => `${member}: ${value[member]}`)
+            .join(", ") +
+          " }"
+      )
+      .join(", ");
+
+  for (let i = 0; i < sortedActual.length; i++) {
+    assert_equals(
+      sortedActual[i].property,
+      sortedExpected[i].property,
+      "CSS property name should match"
+    );
+    assert_equals(
+      serializeValues(sortedActual[i].values),
+      serializeValues(sortedExpected[i].values),
+      `Values arrays do not match for ` + `${sortedActual[i].property} property`
+    );
+  }
+}
+
+/**
+ * Construct a object which is same to a value of
+ * KeyframeEffectReadonly::GetProperties().
+ * The method returns undefined as a value in case of missing keyframe.
+ * Therefor, we can use undefined for |value| and |easing| parameter.
+ * @param offset - keyframe offset. e.g. 0.1
+ * @param value - any keyframe value. e.g. undefined '1px', 'center', 0.5
+ * @param composite - 'replace', 'add', 'accumulate'
+ * @param easing - e.g. undefined, 'linear', 'ease' and so on
+ * @return Object -
+ *   e.g. { offset: 0.1, value: '1px', composite: 'replace', easing: 'ease'}
+ */
+function valueFormat(offset, value, composite, easing) {
+  return { offset, value, easing, composite };
 }
 
 /**
@@ -46,12 +156,14 @@ function assert_times_equal(actual, expected, description) {
  * @param options  The options passed to Element.animate().
  */
 function addDivAndAnimate(t, attrs, frames, options) {
-  let animDur = (typeof options === 'object') ?
-    options.duration : options;
-  assert_greater_than_equal(animDur, 100 * MS_PER_SEC,
-      'Clients of this addDivAndAnimate API must request a duration ' +
-      'of at least 100s, to avoid intermittent failures from e.g.' +
-      'the main thread being busy for an extended period');
+  let animDur = typeof options === "object" ? options.duration : options;
+  assert_greater_than_equal(
+    animDur,
+    100 * MS_PER_SEC,
+    "Clients of this addDivAndAnimate API must request a duration " +
+      "of at least 100s, to avoid intermittent failures from e.g." +
+      "the main thread being busy for an extended period"
+  );
 
   return addDiv(t, attrs).animate(frames, options);
 }
@@ -67,17 +179,17 @@ function addDivAndAnimate(t, attrs, frames, options) {
  *               the div.
  */
 function addDiv(t, attrs) {
-  var div = document.createElement('div');
+  var div = document.createElement("div");
   if (attrs) {
     for (var attrName in attrs) {
       div.setAttribute(attrName, attrs[attrName]);
     }
   }
   document.body.appendChild(div);
-  if (t && typeof t.add_cleanup === 'function') {
+  if (t && typeof t.add_cleanup === "function") {
     t.add_cleanup(function() {
       if (div.parentNode) {
-        div.parentNode.removeChild(div);
+        div.remove();
       }
     });
   }
@@ -95,21 +207,39 @@ function addDiv(t, attrs) {
  *               the style sheet.
  */
 function addStyle(t, rules) {
-  var extraStyle = document.createElement('style');
+  var extraStyle = document.createElement("style");
   document.head.appendChild(extraStyle);
   if (rules) {
     var sheet = extraStyle.sheet;
     for (var selector in rules) {
-      sheet.insertRule(selector + '{' + rules[selector] + '}',
-                       sheet.cssRules.length);
+      sheet.insertRule(
+        selector + "{" + rules[selector] + "}",
+        sheet.cssRules.length
+      );
     }
   }
 
-  if (t && typeof t.add_cleanup === 'function') {
+  if (t && typeof t.add_cleanup === "function") {
     t.add_cleanup(function() {
       extraStyle.remove();
     });
   }
+}
+
+/**
+ * Takes a CSS property (e.g. margin-left) and returns the equivalent IDL
+ * name (e.g. marginLeft).
+ */
+function propertyToIDL(property) {
+  var prefixMatch = property.match(/^-(\w+)-/);
+  if (prefixMatch) {
+    var prefix = prefixMatch[1] === "moz" ? "Moz" : prefixMatch[1];
+    property = prefix + property.substring(prefixMatch[0].length - 1);
+  }
+  // https://drafts.csswg.org/cssom/#css-property-to-idl-attribute
+  return property.replace(/-([a-z])/gi, function(str, group) {
+    return group.toUpperCase();
+  });
 }
 
 /**
@@ -122,25 +252,58 @@ function waitForFrame() {
 }
 
 /**
+ * Waits for a requestAnimationFrame callback in the next refresh driver tick.
+ * Note that the 'dom.animations-api.core.enabled' and
+ * 'dom.animations-api.timelines.enabled' prefs should be true to use this
+ * function.
+ */
+function waitForNextFrame(aWindow = window) {
+  const timeAtStart = aWindow.document.timeline.currentTime;
+  return new Promise(resolve => {
+    aWindow.requestAnimationFrame(() => {
+      if (timeAtStart === aWindow.document.timeline.currentTime) {
+        aWindow.requestAnimationFrame(resolve);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+/**
  * Returns a Promise that is resolved after the given number of consecutive
  * animation frames have occured (using requestAnimationFrame callbacks).
  *
- * @param frameCount  The number of animation frames.
- * @param onFrame  An optional function to be processed in each animation frame.
+ * @param aFrameCount  The number of animation frames.
+ * @param aOnFrame  An optional function to be processed in each animation frame.
+ * @param aWindow  An optional window object to be used for requestAnimationFrame.
  */
-function waitForAnimationFrames(frameCount, onFrame) {
+function waitForAnimationFrames(aFrameCount, aOnFrame, aWindow = window) {
+  const timeAtStart = aWindow.document.timeline.currentTime;
   return new Promise(function(resolve, reject) {
     function handleFrame() {
-      if (onFrame && typeof onFrame === 'function') {
-        onFrame();
+      if (aOnFrame && typeof aOnFrame === "function") {
+        aOnFrame();
       }
-      if (--frameCount <= 0) {
+      if (
+        timeAtStart != aWindow.document.timeline.currentTime &&
+        --aFrameCount <= 0
+      ) {
         resolve();
       } else {
-        window.requestAnimationFrame(handleFrame); // wait another frame
+        aWindow.requestAnimationFrame(handleFrame); // wait another frame
       }
     }
-    window.requestAnimationFrame(handleFrame);
+    aWindow.requestAnimationFrame(handleFrame);
+  });
+}
+
+/**
+ * Promise wrapper for requestIdleCallback.
+ */
+function waitForIdle() {
+  return new Promise(resolve => {
+    requestIdleCallback(resolve);
   });
 }
 
@@ -150,9 +313,11 @@ function waitForAnimationFrames(frameCount, onFrame) {
  *   Promise.all([animations[0].ready, animations[1].ready, ... animations[N-1].ready]);
  */
 function waitForAllAnimations(animations) {
-  return Promise.all(animations.map(function(animation) {
-    return animation.ready;
-  }));
+  return Promise.all(
+    animations.map(function(animation) {
+      return animation.ready;
+    })
+  );
 }
 
 /**
@@ -162,19 +327,32 @@ function waitForAllAnimations(animations) {
  * we actually get a transition instead of that being the initial value.
  */
 function flushComputedStyle(elem) {
-  var cs = window.getComputedStyle(elem);
+  var cs = getComputedStyle(elem);
   cs.marginLeft;
 }
 
 if (opener) {
-  for (var funcName of ["async_test", "assert_not_equals", "assert_equals",
-                        "assert_approx_equals", "assert_less_than",
-                        "assert_less_than_equal", "assert_greater_than",
-                        "assert_between_inclusive",
-                        "assert_true", "assert_false",
-                        "assert_class_string", "assert_throws",
-                        "assert_unreached", "promise_test", "test"]) {
-    window[funcName] = opener[funcName].bind(opener);
+  for (var funcName of [
+    "async_test",
+    "assert_not_equals",
+    "assert_equals",
+    "assert_approx_equals",
+    "assert_less_than",
+    "assert_less_than_equal",
+    "assert_greater_than",
+    "assert_between_inclusive",
+    "assert_true",
+    "assert_false",
+    "assert_class_string",
+    "assert_throws",
+    "assert_unreached",
+    "assert_regexp_match",
+    "promise_test",
+    "test",
+  ]) {
+    if (opener[funcName]) {
+      window[funcName] = opener[funcName].bind(opener);
+    }
   }
 
   window.EventWatcher = opener.EventWatcher;
@@ -187,22 +365,166 @@ if (opener) {
   }
 }
 
-/**
- * Return a new MutaionObserver which started observing |target| element
- * with { animations: true, subtree: |subtree| } option.
- * NOTE: This observer should be used only with takeRecords(). If any of
- * MutationRecords are observed in the callback of the MutationObserver,
- * it will raise an assertion.
+/*
+ * Returns a promise that is resolved when the document has finished loading.
  */
-function setupSynchronousObserver(t, target, subtree) {
-   var observer = new MutationObserver(records => {
-     assert_unreached("Any MutationRecords should not be observed in this " +
-                      "callback");
-   });
-  t.add_cleanup(() => {
-    observer.disconnect();
+function waitForDocumentLoad() {
+  return new Promise(function(resolve, reject) {
+    if (document.readyState === "complete") {
+      resolve();
+    } else {
+      window.addEventListener("load", resolve);
+    }
   });
-  observer.observe(target, { animations: true, subtree: subtree });
-  return observer;
 }
 
+/*
+ * Enters test refresh mode, and restores the mode when |t| finishes.
+ */
+function useTestRefreshMode(t) {
+  function ensureNoSuppressedPaints() {
+    return new Promise(resolve => {
+      function checkSuppressedPaints() {
+        if (!SpecialPowers.DOMWindowUtils.paintingSuppressed) {
+          resolve();
+        } else {
+          window.requestAnimationFrame(checkSuppressedPaints);
+        }
+      }
+      checkSuppressedPaints();
+    });
+  }
+
+  return ensureNoSuppressedPaints().then(() => {
+    SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(0);
+    t.add_cleanup(() => {
+      SpecialPowers.DOMWindowUtils.restoreNormalRefresh();
+    });
+  });
+}
+
+/**
+ * Returns true if off-main-thread animations.
+ */
+function isOMTAEnabled() {
+  const OMTAPrefKey = "layers.offmainthreadcomposition.async-animations";
+  return (
+    SpecialPowers.DOMWindowUtils.layerManagerRemote &&
+    SpecialPowers.getBoolPref(OMTAPrefKey)
+  );
+}
+
+/**
+ * Append an SVG element to the target element.
+ *
+ * @param target The element which want to append.
+ * @param attrs  A array object with attribute name and values to set on
+ *               the SVG element.
+ * @return An SVG outer element.
+ */
+function addSVGElement(target, tag, attrs) {
+  if (!target) {
+    return null;
+  }
+  var element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  if (attrs) {
+    for (var attrName in attrs) {
+      element.setAttributeNS(null, attrName, attrs[attrName]);
+    }
+  }
+  target.appendChild(element);
+  return element;
+}
+
+/*
+ * Get Animation distance between two specified values for a specific property.
+ *
+ * @param target The target element.
+ * @param prop The CSS property.
+ * @param v1 The first property value.
+ * @param v2 The Second property value.
+ *
+ * @return The distance between |v1| and |v2| for |prop| on |target|.
+ */
+function getDistance(target, prop, v1, v2) {
+  if (!target) {
+    return 0.0;
+  }
+  return SpecialPowers.DOMWindowUtils.computeAnimationDistance(
+    target,
+    prop,
+    v1,
+    v2
+  );
+}
+
+/*
+ * A promise wrapper for waiting MozAfterPaint.
+ */
+function waitForPaints() {
+  // FIXME: Bug 1415065. Instead waiting for two requestAnimationFrames, we
+  // should wait for MozAfterPaint once after MozAfterPaint is fired properly
+  // (bug 1341294).
+  return waitForAnimationFrames(2);
+}
+
+// Returns true if |aAnimation| begins at the current timeline time.  We
+// sometimes need to detect this case because if we started an animation
+// asynchronously (e.g. using play()) and then ended up running the next frame
+// at precisely the time the animation started (due to aligning with vsync
+// refresh rate) then we won't end up restyling in that frame.
+function animationStartsRightNow(aAnimation) {
+  return (
+    aAnimation.startTime === aAnimation.timeline.currentTime &&
+    aAnimation.currentTime === 0
+  );
+}
+
+// Waits for a given animation being ready to restyle.
+async function waitForAnimationReadyToRestyle(aAnimation) {
+  await aAnimation.ready;
+  // If |aAnimation| begins at the current timeline time, we will not process
+  // restyling in the initial frame because of aligning with the refresh driver,
+  // the animation frame in which the ready promise is resolved happens to
+  // coincide perfectly with the start time of the animation.  In this case no
+  // restyling is needed in the frame so we have to wait one more frame.
+  if (animationStartsRightNow(aAnimation)) {
+    await waitForNextFrame(aAnimation.ownerGlobal);
+  }
+}
+
+function getDocShellForObservingRestylesForWindow(aWindow) {
+  const docShell = SpecialPowers.wrap(aWindow).docShell;
+
+  docShell.recordProfileTimelineMarkers = true;
+  docShell.popProfileTimelineMarkers();
+
+  return docShell;
+}
+
+// Returns the animation restyle markers observed during |frameCount| refresh
+// driver ticks in this `window`.  This function is typically used to count the
+// number of restyles that take place as part of the style update that happens
+// on each refresh driver tick, as opposed to synchronous restyles triggered by
+// script.
+//
+// For the latter observeAnimSyncStyling (below) should be used.
+function observeStyling(frameCount, onFrame) {
+  return observeStylingInTargetWindow(window, frameCount, onFrame);
+}
+
+// As with observeStyling but applied to target window |aWindow|.
+function observeStylingInTargetWindow(aWindow, aFrameCount, aOnFrame) {
+  const docShell = getDocShellForObservingRestylesForWindow(aWindow);
+
+  return new Promise(resolve => {
+    return waitForAnimationFrames(aFrameCount, aOnFrame, aWindow).then(() => {
+      const markers = docShell.popProfileTimelineMarkers();
+      docShell.recordProfileTimelineMarkers = false;
+      const stylingMarkers = markers.filter((marker, index) => {
+        return marker.name == "Styles" && marker.isAnimationOnly;
+      });
+      resolve(stylingMarkers);
+    });
+  });
+}

@@ -2,25 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Ci = Components.interfaces;
-const Cc = Components.classes;
-const Cr = Components.results;
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-    "resource://gre/modules/Promise.jsm");
-
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 do_get_profile();
-var dirSvc = Cc["@mozilla.org/file/directory_service;1"].
-             getService(Ci.nsIProperties);
-
 var gDBConn = null;
 
-function getTestDB()
-{
-  var db = dirSvc.get("ProfD", Ci.nsIFile);
+function getTestDB() {
+  var db = Services.dirsvc.get("ProfD", Ci.nsIFile);
   db.append("test_storage.sqlite");
   return db;
 }
@@ -28,32 +22,33 @@ function getTestDB()
 /**
  * Obtains a corrupt database to test against.
  */
-function getCorruptDB()
-{
+function getCorruptDB() {
   return do_get_file("corruptDB.sqlite");
 }
 
 /**
  * Obtains a fake (non-SQLite format) database to test against.
  */
-function getFakeDB()
-{
+function getFakeDB() {
   return do_get_file("fakeDB.sqlite");
 }
 
 /**
  * Delete the test database file.
  */
-function deleteTestDB()
-{
+function deleteTestDB() {
   print("*** Storage Tests: Trying to remove file!");
   var dbFile = getTestDB();
-  if (dbFile.exists())
-    try { dbFile.remove(false); } catch (e) { /* stupid windows box */ }
+  if (dbFile.exists()) {
+    try {
+      dbFile.remove(false);
+    } catch (e) {
+      /* stupid windows box */
+    }
+  }
 }
 
-function cleanup()
-{
+function cleanup() {
   // close the connection
   print("*** Storage Tests: Trying to close!");
   getOpenedDatabase().close();
@@ -70,18 +65,17 @@ function cleanup()
  * Use asyncClose to cleanup a connection.  Synchronous by means of internally
  * spinning an event loop.
  */
-function asyncCleanup()
-{
+function asyncCleanup() {
   let closed = false;
 
   // close the connection
   print("*** Storage Tests: Trying to asyncClose!");
-  getOpenedDatabase().asyncClose(function () { closed = true; });
+  getOpenedDatabase().asyncClose(function() {
+    closed = true;
+  });
 
-  let curThread = Components.classes["@mozilla.org/thread-manager;1"]
-                            .getService().currentThread;
-  while (!closed)
-    curThread.processNextEvent(true);
+  let tm = Cc["@mozilla.org/thread-manager;1"].getService();
+  tm.spinEventLoopUntil(() => closed);
 
   // we need to null out the database variable to get a new connection the next
   // time getOpenedDatabase is called
@@ -91,11 +85,6 @@ function asyncCleanup()
   deleteTestDB();
 }
 
-function getService()
-{
-  return Cc["@mozilla.org/storage/service;1"].getService(Ci.mozIStorageService);
-}
-
 /**
  * Get a connection to the test database.  Creates and caches the connection
  * if necessary, otherwise reuses the existing cached connection. This
@@ -103,10 +92,9 @@ function getService()
  *
  * @returns the mozIStorageConnection for the file.
  */
-function getOpenedDatabase()
-{
+function getOpenedDatabase() {
   if (!gDBConn) {
-    gDBConn = getService().openDatabase(getTestDB());
+    gDBConn = Services.storage.openDatabase(getTestDB());
   }
   return gDBConn;
 }
@@ -118,10 +106,9 @@ function getOpenedDatabase()
  *
  * @returns the mozIStorageConnection for the file.
  */
-function getOpenedUnsharedDatabase()
-{
+function getOpenedUnsharedDatabase() {
   if (!gDBConn) {
-    gDBConn = getService().openUnsharedDatabase(getTestDB());
+    gDBConn = Services.storage.openUnsharedDatabase(getTestDB());
   }
   return gDBConn;
 }
@@ -133,13 +120,11 @@ function getOpenedUnsharedDatabase()
  *        The nsIFile representing the db file to open.
  * @returns the mozIStorageConnection for the file.
  */
-function getDatabase(aFile)
-{
-  return getService().openDatabase(aFile);
+function getDatabase(aFile) {
+  return Services.storage.openDatabase(aFile);
 }
 
-function createStatement(aSQL)
-{
+function createStatement(aSQL) {
   return getOpenedDatabase().createStatement(aSQL);
 }
 
@@ -150,8 +135,7 @@ function createStatement(aSQL)
  *        The SQL to parse into a statement.
  * @returns a mozIStorageAsyncStatement from aSQL.
  */
-function createAsyncStatement(aSQL)
-{
+function createAsyncStatement(aSQL) {
   return getOpenedDatabase().createAsyncStatement(aSQL);
 }
 
@@ -168,21 +152,25 @@ function createAsyncStatement(aSQL)
  * @param aFunction
  *        The function to invoke and expect an XPCOM-style error from.
  */
-function expectError(aErrorCode, aFunction)
-{
+function expectError(aErrorCode, aFunction) {
   let exceptionCaught = false;
   try {
     aFunction();
-  }
-  catch (e) {
+  } catch (e) {
     if (e.result != aErrorCode) {
-      do_throw("Got an exception, but the result code was not the expected " +
-               "one.  Expected " + aErrorCode + ", got " + e.result);
+      do_throw(
+        "Got an exception, but the result code was not the expected " +
+          "one.  Expected " +
+          aErrorCode +
+          ", got " +
+          e.result
+      );
     }
     exceptionCaught = true;
   }
-  if (!exceptionCaught)
+  if (!exceptionCaught) {
     do_throw(aFunction + " should have thrown an exception but did not!");
+  }
 }
 
 /**
@@ -196,49 +184,52 @@ function expectError(aErrorCode, aFunction)
  *        A list of the expected values returned in the sole result row.
  *        Express blobs as lists.
  */
-function verifyQuery(aSQLString, aBind, aResults)
-{
+function verifyQuery(aSQLString, aBind, aResults) {
   let stmt = getOpenedDatabase().createStatement(aSQLString);
   stmt.bindByIndex(0, aBind);
   try {
-    do_check_true(stmt.executeStep());
+    Assert.ok(stmt.executeStep());
     let nCols = stmt.numEntries;
-    if (aResults.length != nCols)
-      do_throw("Expected " + aResults.length + " columns in result but " +
-               "there are only " + aResults.length + "!");
+    if (aResults.length != nCols) {
+      do_throw(
+        "Expected " +
+          aResults.length +
+          " columns in result but " +
+          "there are only " +
+          aResults.length +
+          "!"
+      );
+    }
     for (let iCol = 0; iCol < nCols; iCol++) {
       let expectedVal = aResults[iCol];
       let valType = stmt.getTypeOfIndex(iCol);
       if (expectedVal === null) {
-        do_check_eq(stmt.VALUE_TYPE_NULL, valType);
-        do_check_true(stmt.getIsNull(iCol));
-      }
-      else if (typeof expectedVal == "number") {
+        Assert.equal(stmt.VALUE_TYPE_NULL, valType);
+        Assert.ok(stmt.getIsNull(iCol));
+      } else if (typeof expectedVal == "number") {
         if (Math.floor(expectedVal) == expectedVal) {
-          do_check_eq(stmt.VALUE_TYPE_INTEGER, valType);
-          do_check_eq(expectedVal, stmt.getInt32(iCol));
+          Assert.equal(stmt.VALUE_TYPE_INTEGER, valType);
+          Assert.equal(expectedVal, stmt.getInt32(iCol));
+        } else {
+          Assert.equal(stmt.VALUE_TYPE_FLOAT, valType);
+          Assert.equal(expectedVal, stmt.getDouble(iCol));
         }
-        else {
-          do_check_eq(stmt.VALUE_TYPE_FLOAT, valType);
-          do_check_eq(expectedVal, stmt.getDouble(iCol));
-        }
-      }
-      else if (typeof expectedVal == "string") {
-        do_check_eq(stmt.VALUE_TYPE_TEXT, valType);
-        do_check_eq(expectedVal, stmt.getUTF8String(iCol));
-      }
-      else { // blob
-        do_check_eq(stmt.VALUE_TYPE_BLOB, valType);
-        let count = { value: 0 }, blob = { value: null };
+      } else if (typeof expectedVal == "string") {
+        Assert.equal(stmt.VALUE_TYPE_TEXT, valType);
+        Assert.equal(expectedVal, stmt.getUTF8String(iCol));
+      } else {
+        // blob
+        Assert.equal(stmt.VALUE_TYPE_BLOB, valType);
+        let count = { value: 0 },
+          blob = { value: null };
         stmt.getBlob(iCol, count, blob);
-        do_check_eq(count.value, expectedVal.length);
+        Assert.equal(count.value, expectedVal.length);
         for (let i = 0; i < count.value; i++) {
-          do_check_eq(expectedVal[i], blob.value[i]);
+          Assert.equal(expectedVal[i], blob.value[i]);
         }
       }
     }
-  }
-  finally {
+  } finally {
     stmt.finalize();
   }
 }
@@ -251,123 +242,121 @@ function verifyQuery(aSQLString, aBind, aResults)
  *        The name of the table.
  * @return The number of rows.
  */
-function getTableRowCount(aTableName)
-{
+function getTableRowCount(aTableName) {
   var currentRows = 0;
   var countStmt = getOpenedDatabase().createStatement(
     "SELECT COUNT(1) AS count FROM " + aTableName
   );
   try {
-    do_check_true(countStmt.executeStep());
+    Assert.ok(countStmt.executeStep());
     currentRows = countStmt.row.count;
-  }
-  finally {
+  } finally {
     countStmt.finalize();
   }
   return currentRows;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Promise-Returning Functions
+// Promise-Returning Functions
 
 function asyncClone(db, readOnly) {
-  let deferred = Promise.defer();
-  db.asyncClone(readOnly, function (status, db2) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve(db2);
-    } else {
-      deferred.reject(status);
-    }
+  return new Promise((resolve, reject) => {
+    db.asyncClone(readOnly, function(status, db2) {
+      if (Components.isSuccessCode(status)) {
+        resolve(db2);
+      } else {
+        reject(status);
+      }
+    });
   });
-  return deferred.promise;
 }
 
 function asyncClose(db) {
-  let deferred = Promise.defer();
-  db.asyncClose(function (status) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve();
-    } else {
-      deferred.reject(status);
-    }
+  return new Promise((resolve, reject) => {
+    db.asyncClose(function(status) {
+      if (Components.isSuccessCode(status)) {
+        resolve();
+      } else {
+        reject(status);
+      }
+    });
   });
-  return deferred.promise;
 }
 
 function openAsyncDatabase(file, options) {
-  let deferred = Promise.defer();
-  let properties;
-  if (options) {
-    properties = Cc["@mozilla.org/hash-property-bag;1"].
-        createInstance(Ci.nsIWritablePropertyBag);
-    for (let k in options) {
-      properties.setProperty(k, options[k]);
+  return new Promise((resolve, reject) => {
+    let properties;
+    if (options) {
+      properties = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+        Ci.nsIWritablePropertyBag
+      );
+      for (let k in options) {
+        properties.setProperty(k, options[k]);
+      }
     }
-  }
-  getService().openAsyncDatabase(file, properties, function (status, db) {
-    if (Components.isSuccessCode(status)) {
-      deferred.resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
-    } else {
-      deferred.reject(status);
-    }
+    Services.storage.openAsyncDatabase(file, properties, function(status, db) {
+      if (Components.isSuccessCode(status)) {
+        resolve(db.QueryInterface(Ci.mozIStorageAsyncConnection));
+      } else {
+        reject(status);
+      }
+    });
   });
-  return deferred.promise;
 }
 
 function executeAsync(statement, onResult) {
-  let deferred = Promise.defer();
-  statement.executeAsync({
-    handleError: function (error) {
-      deferred.reject(error);
-    },
-    handleResult: function (result) {
-      if (onResult) {
-        onResult(result);
-      }
-    },
-    handleCompletion: function (result) {
-      deferred.resolve(result);
-    }
+  return new Promise((resolve, reject) => {
+    statement.executeAsync({
+      handleError(error) {
+        reject(error);
+      },
+      handleResult(result) {
+        if (onResult) {
+          onResult(result);
+        }
+      },
+      handleCompletion(result) {
+        resolve(result);
+      },
+    });
   });
-  return deferred.promise;
 }
 
 function executeMultipleStatementsAsync(db, statements, onResult) {
-  let deferred = Promise.defer();
-  db.executeAsync(statements, statements.length, {
-    handleError: function (error) {
-      deferred.reject(error);
-    },
-    handleResult: function (result) {
-      if (onResult) {
-        onResult(result);
-      }
-    },
-    handleCompletion: function (result) {
-      deferred.resolve(result);
-    }
+  return new Promise((resolve, reject) => {
+    db.executeAsync(statements, {
+      handleError(error) {
+        reject(error);
+      },
+      handleResult(result) {
+        if (onResult) {
+          onResult(result);
+        }
+      },
+      handleCompletion(result) {
+        resolve(result);
+      },
+    });
   });
-  return deferred.promise;
 }
 
 function executeSimpleSQLAsync(db, query, onResult) {
-  let deferred = Promise.defer();
-  db.executeSimpleSQLAsync(query, {
-    handleError(error) {
-      deferred.reject(error);
-    },
-    handleResult(result) {
-      if (onResult) {
-        onResult(result);
-      } else {
-        do_throw("No results were expected");
-      }
-    },
-    handleCompletion(result) {
-      deferred.resolve(result);
-    }
+  return new Promise((resolve, reject) => {
+    db.executeSimpleSQLAsync(query, {
+      handleError(error) {
+        reject(error);
+      },
+      handleResult(result) {
+        if (onResult) {
+          onResult(result);
+        } else {
+          do_throw("No results were expected");
+        }
+      },
+      handleCompletion(result) {
+        resolve(result);
+      },
+    });
   });
-  return deferred.promise;
 }
 
 cleanup();

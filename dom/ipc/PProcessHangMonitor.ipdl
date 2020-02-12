@@ -5,8 +5,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// ParamTraits stuff for nsIRemoteTab::NavigationType
+include "mozilla/dom/TabMessageUtils.h";
+using nsIRemoteTab::NavigationType from "nsIRemoteTab.h";
+
 using base::ProcessId from "base/process.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
+using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 
 namespace mozilla {
 
@@ -14,7 +19,7 @@ struct SlowScriptData
 {
   TabId tabId;
   nsCString filename;
-  uint32_t lineno;
+  nsString addonId;
 };
 
 struct PluginHangData
@@ -36,12 +41,16 @@ parent:
   async ClearHang();
 
 child:
-  async TerminateScript();
+  async TerminateScript(bool aTerminateGlobal);
 
   async BeginStartingDebugger();
   async EndStartingDebugger();
 
-  async ForcePaint(TabId tabId, uint64_t aLayerObserverEpoch);
+  async PaintWhileInterruptingJS(TabId tabId, LayersObserverEpoch aEpoch);
+
+  async CancelContentJSExecutionIfRunning(
+      TabId tabId, NavigationType aNavigationType,
+      int32_t aNavigationIndex, nsCString? aNavigationURI, int32_t aEpoch);
 };
 
 } // namespace mozilla

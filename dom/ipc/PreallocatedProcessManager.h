@@ -8,13 +8,12 @@
 #define mozilla_PreallocatedProcessManager_h
 
 #include "base/basictypes.h"
-#include "nsCOMPtr.h"
-#include "nsIObserver.h"
+#include "mozilla/AlreadyAddRefed.h"
 
 namespace mozilla {
 namespace dom {
 class ContentParent;
-} // namespace dom
+}  // namespace dom
 
 /**
  * This class manages a ContentParent that it starts up ahead of any particular
@@ -28,42 +27,18 @@ class ContentParent;
  *
  * We don't expect this pref to flip between true and false in production, but
  * flipping the pref is important for tests.
- *
- * The static methods here are implemented by forwarding calls on to a
- * PreallocatedProcessManagerImpl singleton class, so if you add a new static
- * method here, you'll need to write a corresponding public method on the
- * singleton.
  */
-class PreallocatedProcessManager final
-{
+class PreallocatedProcessManager final {
   typedef mozilla::dom::ContentParent ContentParent;
 
-public:
+ public:
   /**
-   * Create a process after a delay.  We wait for a period of time (specified
-   * by the dom.ipc.processPrelaunch.delayMs pref), then wait for this process
-   * to go idle, then allocate the new process.
-   *
-   * If the dom.ipc.processPrelaunch.enabled pref is false, or if we already
-   * have a preallocated process, this function does nothing.
+   * Before first paint we don't want to allocate any processes in the
+   * background. To avoid that, the PreallocatedProcessManager won't start up
+   * any processes while there is a blocker active.
    */
-  static void AllocateAfterDelay();
-
-  /**
-   * Create a process once this process goes idle.
-   *
-   * If the dom.ipc.processPrelaunch.enabled pref is false, or if we already
-   * have a preallocated process, this function does nothing.
-   */
-  static void AllocateOnIdle();
-
-  /**
-   * Create a process right now.
-   *
-   * If the dom.ipc.processPrelaunch.enabled pref is false, or if we already
-   * have a preallocated process, this function does nothing.
-   */
-  static void AllocateNow();
+  static void AddBlocker(ContentParent* aParent);
+  static void RemoveBlocker(ContentParent* aParent);
 
   /**
    * Take the preallocated process, if we have one.  If we don't have one, this
@@ -78,11 +53,13 @@ public:
    */
   static already_AddRefed<ContentParent> Take();
 
-private:
+  static bool Provide(ContentParent* aParent);
+
+ private:
   PreallocatedProcessManager();
   DISALLOW_EVIL_CONSTRUCTORS(PreallocatedProcessManager);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // defined mozilla_PreallocatedProcessManager_h
+#endif  // defined mozilla_PreallocatedProcessManager_h

@@ -10,51 +10,37 @@
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "nsIUnicodeEncoder.h"
+#include "mozilla/Encoding.h"
 
 namespace mozilla {
 class ErrorResult;
 
 namespace dom {
 
-class TextEncoder final : public NonRefcountedDOMObject
-{
-public:
+class TextEncoder final : public NonRefcountedDOMObject {
+ public:
   // The WebIDL constructor.
 
-  static TextEncoder*
-  Constructor(const GlobalObject& aGlobal,
-              ErrorResult& aRv)
-  {
-    nsAutoPtr<TextEncoder> txtEncoder(new TextEncoder());
-    txtEncoder->Init();
-    return txtEncoder.forget();
+  static TextEncoder* Constructor(const GlobalObject& aGlobal) {
+    return new TextEncoder();
   }
 
-  TextEncoder()
-  {
+  TextEncoder() {}
+
+  virtual ~TextEncoder() {}
+
+  bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
+                  JS::MutableHandle<JSObject*> aReflector) {
+    return TextEncoder_Binding::Wrap(aCx, this, aGivenProto, aReflector);
   }
 
-  virtual
-  ~TextEncoder()
-  {}
-
-  bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto, JS::MutableHandle<JSObject*> aReflector)
-  {
-    return TextEncoderBinding::Wrap(aCx, this, aGivenProto, aReflector);
-  }
-
-protected:
-
-  void Init();
-
-public:
+ public:
   /**
    * Return the encoding name.
    *
    * @param aEncoding, current encoding.
    */
-  void GetEncoding(nsAString& aEncoding);
+  void GetEncoding(nsACString& aEncoding);
 
   /**
    * Encodes incoming utf-16 code units/ DOM string to utf-8.
@@ -65,16 +51,16 @@ public:
    * @return JSObject* The Uint8Array wrapped in a JS object.  Returned via
    *                   the aRetval out param.
    */
-  void Encode(JSContext* aCx,
-              JS::Handle<JSObject*> aObj,
-              const nsAString& aString,
-              JS::MutableHandle<JSObject*> aRetval,
-              ErrorResult& aRv);
-private:
-  nsCOMPtr<nsIUnicodeEncoder> mEncoder;
+  void Encode(JSContext* aCx, JS::Handle<JSObject*> aObj,
+              JS::Handle<JSString*> aString,
+              JS::MutableHandle<JSObject*> aRetval, OOMReporter& aRv);
+
+  void EncodeInto(JSContext* aCx, JS::Handle<JSString*> aSrc,
+                  const Uint8Array& aDst, TextEncoderEncodeIntoResult& aResult,
+                  OOMReporter& aError);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_textencoder_h_
+#endif  // mozilla_dom_textencoder_h_

@@ -16,110 +16,119 @@
 
 const testCases = [
   {
-    location: ["cookies", "sectest1.example.org"],
-    sidebarHidden: true
+    location: ["cookies", "https://sectest1.example.org"],
+    sidebarHidden: true,
   },
   {
-    location: "cs2",
-    sidebarHidden: false
+    location: getCookieId("cs2", ".example.org", "/"),
+    sidebarHidden: false,
   },
   {
-    sendEscape: true
+    sendEscape: true,
   },
   {
-    location: "cs2",
-    sidebarHidden: false
+    location: getCookieId("cs2", ".example.org", "/"),
+    sidebarHidden: true,
   },
   {
-    location: "uc1",
-    sidebarHidden: false
+    location: getCookieId("uc1", ".example.org", "/"),
+    sidebarHidden: true,
   },
   {
-    location: "uc1",
-    sidebarHidden: false
+    location: getCookieId("uc1", ".example.org", "/"),
+    sidebarHidden: true,
   },
 
   {
     location: ["localStorage", "http://sectest1.example.org"],
-    sidebarHidden: true
+    sidebarHidden: true,
   },
   {
     location: "iframe-u-ls1",
-    sidebarHidden: false
+    sidebarHidden: false,
   },
   {
     location: "iframe-u-ls1",
-    sidebarHidden: false
+    sidebarHidden: false,
   },
   {
-    sendEscape: true
+    sendEscape: true,
   },
 
   {
     location: ["sessionStorage", "http://test1.example.org"],
-    sidebarHidden: true
+    sidebarHidden: true,
   },
   {
     location: "ss1",
-    sidebarHidden: false
+    sidebarHidden: false,
   },
   {
-    sendEscape: true
+    sendEscape: true,
   },
 
   {
     location: ["indexedDB", "http://test1.example.org"],
-    sidebarHidden: true
+    sidebarHidden: true,
   },
   {
-    location: "idb2",
-    sidebarHidden: false
-  },
-
-  {
-    location: ["indexedDB", "http://test1.example.org", "idb2", "obj3"],
-    sidebarHidden: true
+    location: "idb2 (default)",
+    sidebarHidden: false,
   },
 
   {
-    location: ["indexedDB", "https://sectest1.example.org", "idb-s2"],
-    sidebarHidden: true
+    location: [
+      "indexedDB",
+      "http://test1.example.org",
+      "idb2 (default)",
+      "obj3",
+    ],
+    sidebarHidden: true,
+  },
+
+  {
+    location: ["indexedDB", "https://sectest1.example.org", "idb-s2 (default)"],
+    sidebarHidden: true,
   },
   {
     location: "obj-s2",
-    sidebarHidden: false
+    sidebarHidden: false,
   },
   {
-    sendEscape: true
-  }, {
+    sendEscape: true,
+  },
+  {
     location: "obj-s2",
-    sidebarHidden: false
-  }
+    sidebarHidden: true,
+  },
 ];
 
-add_task(function* () {
-  yield openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
+add_task(async function() {
+  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-listings.html");
 
-  for (let test of testCases) {
-    let { location, sidebarHidden, sendEscape } = test;
+  for (const test of testCases) {
+    const { location, sidebarHidden, sendEscape } = test;
 
     info("running " + JSON.stringify(test));
 
     if (Array.isArray(location)) {
-      yield selectTreeItem(location);
+      await selectTreeItem(location);
     } else if (location) {
-      yield selectTableItem(location);
+      await selectTableItem(location);
     }
 
     if (sendEscape) {
       EventUtils.sendKey("ESCAPE", gPanelWindow);
     } else {
-      is(gUI.sidebar.hidden, sidebarHidden,
-        "correct visibility state of sidebar.");
+      is(
+        gUI.sidebar.hidden,
+        sidebarHidden,
+        "correct visibility state of sidebar."
+      );
     }
 
     info("-".repeat(80));
   }
 
-  yield finishTests();
+  await finishTests();
 });

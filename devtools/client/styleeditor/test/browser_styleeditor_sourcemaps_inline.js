@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -6,7 +5,7 @@
 
 // https rather than chrome to improve coverage
 const TESTCASE_URI = TEST_BASE_HTTPS + "sourcemaps-inline.html";
-const PREF = "devtools.styleeditor.source-maps-enabled";
+const PREF = "devtools.source-map.client-service.enabled";
 
 const sassContent = `body {
   background-color: black;
@@ -16,53 +15,57 @@ const sassContent = `body {
 }
 `;
 
-const cssContent = `body {
+const cssContent =
+  `body {
   background-color: black;
 }
 body > h1 {
   color: white;
 }
 ` +
-"/*# sourceMappingURL=data:application/json;base64,ewoidmVyc2lvbiI6IDMsCiJtY" +
-"XBwaW5ncyI6ICJBQUFBLElBQUs7RUFDSCxnQkFBZ0IsRUFBRSxLQUFLO0VBQ3ZCLFNBQU87SUFD" +
-"TCxLQUFLLEVBQUUsS0FBSyIsCiJzb3VyY2VzIjogWyJ0ZXN0LnNjc3MiXSwKInNvdXJjZXNDb25" +
-"0ZW50IjogWyJib2R5IHtcbiAgYmFja2dyb3VuZC1jb2xvcjogYmxhY2s7XG4gICYgPiBoMSB7XG" +
-"4gICAgY29sb3I6IHdoaXRlO1xuICB9XG59XG4iXSwKIm5hbWVzIjogW10sCiJmaWxlIjogInRlc" +
-"3QuY3NzIgp9Cg== */";
+  "/*# sourceMappingURL=data:application/json;base64,ewoidmVyc2lvbiI6IDMsCiJtY" +
+  "XBwaW5ncyI6ICJBQUFBLElBQUs7RUFDSCxnQkFBZ0IsRUFBRSxLQUFLO0VBQ3ZCLFNBQU87SUFD" +
+  "TCxLQUFLLEVBQUUsS0FBSyIsCiJzb3VyY2VzIjogWyJ0ZXN0LnNjc3MiXSwKInNvdXJjZXNDb25" +
+  "0ZW50IjogWyJib2R5IHtcbiAgYmFja2dyb3VuZC1jb2xvcjogYmxhY2s7XG4gICYgPiBoMSB7XG" +
+  "4gICAgY29sb3I6IHdoaXRlO1xuICB9XG59XG4iXSwKIm5hbWVzIjogW10sCiJmaWxlIjogInRlc" +
+  "3QuY3NzIgp9Cg== */";
 
-add_task(function* () {
-  let {ui} = yield openStyleEditorForURL(TESTCASE_URI);
+add_task(async function() {
+  const { ui } = await openStyleEditorForURL(TESTCASE_URI);
 
-  is(ui.editors.length, 1,
-    "correct number of editors with source maps enabled");
+  is(
+    ui.editors.length,
+    1,
+    "correct number of editors with source maps enabled"
+  );
 
-  yield testEditor(ui.editors[0], "test.scss", sassContent);
+  await testEditor(ui.editors[0], "test.scss", sassContent);
 
   // Test disabling original sources
-  yield togglePref(ui);
+  await togglePref(ui);
 
   is(ui.editors.length, 1, "correct number of editors after pref toggled");
 
   // Test CSS editors
-  yield testEditor(ui.editors[0], "<inline style sheet #1>", cssContent);
+  await testEditor(ui.editors[0], "<inline style sheet #1>", cssContent);
 
   Services.prefs.clearUserPref(PREF);
 });
 
-function* testEditor(editor, expectedName, expectedText) {
-  let name = getStylesheetNameFor(editor);
+async function testEditor(editor, expectedName, expectedText) {
+  const name = getStylesheetNameFor(editor);
   is(expectedName, name, name + " editor name is correct");
 
-  yield openEditor(editor);
-  let text = editor.sourceEditor.getText();
+  await openEditor(editor);
+  const text = editor.sourceEditor.getText();
   is(text, expectedText, name + " editor contains expected text");
 }
 
 /* Helpers */
 
 function togglePref(UI) {
-  let editorsPromise = UI.once("stylesheets-reset");
-  let selectedPromise = UI.once("editor-selected");
+  const editorsPromise = UI.once("stylesheets-reset");
+  const selectedPromise = UI.once("editor-selected");
 
   Services.prefs.setBoolPref(PREF, false);
 
@@ -80,6 +83,7 @@ function getLinkFor(editor) {
 }
 
 function getStylesheetNameFor(editor) {
-  return editor.summary.querySelector(".stylesheet-name > label")
+  return editor.summary
+    .querySelector(".stylesheet-name > label")
     .getAttribute("value");
 }

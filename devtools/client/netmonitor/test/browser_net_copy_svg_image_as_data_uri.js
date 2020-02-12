@@ -9,29 +9,38 @@
 
 const SVG_URL = EXAMPLE_URL + "dropmarker.svg";
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CURL_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CURL_URL);
   info("Starting test... ");
 
-  let { NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document } = monitor.panelWin;
 
-  RequestsMenu.lazyUpdate = false;
-
-  let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, SVG_URL, function* (url) {
+  const wait = waitForNetworkEvents(monitor, 1);
+  await ContentTask.spawn(tab.linkedBrowser, SVG_URL, async function(url) {
     content.wrappedJSObject.performRequest(url);
   });
-  yield wait;
+  await wait;
 
-  let requestItem = RequestsMenu.getItemAtIndex(0);
-  RequestsMenu.selectedItem = requestItem;
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
+  EventUtils.sendMouseEvent(
+    { type: "contextmenu" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
 
-  yield waitForClipboardPromise(function setup() {
-    RequestsMenu.copyImageAsDataUri();
-  }, function check(text) {
-    return text.startsWith("data:") && !/undefined/.test(text);
-  });
+  await waitForClipboardPromise(
+    function setup() {
+      getContextMenuItem(
+        monitor,
+        "request-list-context-copy-image-as-data-uri"
+      ).click();
+    },
+    function check(text) {
+      return text.startsWith("data:") && !/undefined/.test(text);
+    }
+  );
 
-  yield teardown(monitor);
+  await teardown(monitor);
 });

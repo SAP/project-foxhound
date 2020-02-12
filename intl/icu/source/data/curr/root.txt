@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/root.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 /**
  * ICU <specials> source: <path>/common/main/root.xml
  */
@@ -91,6 +85,10 @@ root{
             "CFPF",
             "XPF",
         }
+        XXX{
+            "¤",
+            "XXX",
+        }
     }
     Currencies%narrow{
         AOA{"Kz"}
@@ -105,7 +103,7 @@ root{
         BRL{"R$"}
         BSD{"$"}
         BWP{"P"}
-        BYR{"р."}
+        BYN{"р."}
         BZD{"$"}
         CAD{"$"}
         CLP{"$"}
@@ -123,6 +121,7 @@ root{
         FJD{"$"}
         FKP{"£"}
         GBP{"£"}
+        GEL{"₾"}
         GIP{"£"}
         GNF{"FG"}
         GTQ{"Q"}
@@ -165,6 +164,7 @@ root{
         PKR{"Rs"}
         PLN{"zł"}
         PYG{"₲"}
+        RON{"lei"}
         RUB{"₽"}
         RUR{"р."}
         RWF{"RF"}
@@ -174,7 +174,7 @@ root{
         SHP{"£"}
         SRD{"$"}
         SSP{"£"}
-        STD{"Db"}
+        STN{"Db"}
         SYP{"£"}
         THB{"฿"}
         TOP{"T$"}
@@ -191,13 +191,12 @@ root{
         ZMW{"ZK"}
     }
     Currencies%variant{
-        GEL{"₾"}
         TRY{"TL"}
     }
     CurrencyUnitPatterns{
         other{"{0} {1}"}
     }
-    Version{"2.1.19.19"}
+    Version{"2.1.49.82"}
     currencySpacing{
         afterCurrency{
             currencyMatch{"[:^S:]"}

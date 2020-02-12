@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import datetime
 import json
 import socket
@@ -9,9 +11,12 @@ import threading
 import time
 import unittest
 
-import mozfile
+import mozunit
 
+import mozfile
 import mozlog.unstructured as mozlog
+import six
+
 
 class ListHandler(mozlog.Handler):
     """Mock handler appends messages to a list for later inspection."""
@@ -22,6 +27,7 @@ class ListHandler(mozlog.Handler):
 
     def emit(self, record):
         self.messages.append(self.format(record))
+
 
 class TestLogging(unittest.TestCase):
     """Tests behavior of basic mozlog api."""
@@ -60,6 +66,7 @@ class TestLogging(unittest.TestCase):
         datetime.datetime.strptime(handler.messages[-1][:23],
                                    '%Y-%m-%d %H:%M:%S,%f')
 
+
 class TestStructuredLogging(unittest.TestCase):
     """Tests structured output in mozlog."""
 
@@ -77,7 +84,7 @@ class TestStructuredLogging(unittest.TestCase):
         The actual message should contain no fields other than the timestamp
         field and those present in expected."""
 
-        self.assertTrue(isinstance(actual['_time'], (int, long)))
+        self.assertTrue(isinstance(actual['_time'], six.integer_types))
 
         for k, v in expected.items():
             self.assertEqual(v, actual[k])
@@ -190,8 +197,8 @@ class TestStructuredLogging(unittest.TestCase):
                                            '_level': 'DEBUG'})
 
         message_string = message_string_one + '\n' + \
-                         message_string_two + '\n' + \
-                         message_string_three + '\n'
+            message_string_two + '\n' + \
+            message_string_three + '\n'
 
         server_thread = threading.Thread(target=self.log_server.handle_request)
         server_thread.start()
@@ -203,21 +210,23 @@ class TestStructuredLogging(unittest.TestCase):
 
         # Sleeps prevent listener from receiving entire message in a single call
         # to recv in order to test reconstruction of partial messages.
-        sock.sendall(message_string[:8])
+        sock.sendall(message_string[:8].encode())
         time.sleep(.01)
-        sock.sendall(message_string[8:32])
+        sock.sendall(message_string[8:32].encode())
         time.sleep(.01)
-        sock.sendall(message_string[32:64])
+        sock.sendall(message_string[32:64].encode())
         time.sleep(.01)
-        sock.sendall(message_string[64:128])
+        sock.sendall(message_string[64:128].encode())
         time.sleep(.01)
-        sock.sendall(message_string[128:])
+        sock.sendall(message_string[128:].encode())
 
         server_thread.join()
+
 
 class Loggable(mozlog.LoggingMixin):
     """Trivial class inheriting from LoggingMixin"""
     pass
+
 
 class TestLoggingMixin(unittest.TestCase):
     """Tests basic use of LoggingMixin"""
@@ -244,7 +253,7 @@ class TestLoggingMixin(unittest.TestCase):
         loggable.info('message for "info" method')
         loggable.error('message for "error" method')
         loggable.log_structured('test_message',
-                                params={'_message': 'message for ' + \
+                                params={'_message': 'message for ' +
                                         '"log_structured" method'})
 
         expected_messages = ['message for "log" method',
@@ -255,5 +264,6 @@ class TestLoggingMixin(unittest.TestCase):
         actual_messages = loggable._logger.handlers[0].messages
         self.assertEqual(expected_messages, actual_messages)
 
+
 if __name__ == '__main__':
-    unittest.main()
+    mozunit.main()

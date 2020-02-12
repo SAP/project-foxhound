@@ -1,12 +1,10 @@
-
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["MockRegistry"];
+var EXPORTED_SYMBOLS = ["MockRegistry"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://testing-common/MockRegistrar.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { MockRegistrar } = ChromeUtils.import(
+  "resource://testing-common/MockRegistrar.jsm"
+);
 
 class MockRegistry {
   constructor() {
@@ -30,15 +28,15 @@ class MockRegistry {
      * subset of the interface used in tests.  In particular, only values
      * of type string are supported.
      */
-    function MockWindowsRegKey() { }
+    function MockWindowsRegKey() {}
     MockWindowsRegKey.prototype = {
       values: null,
 
       // --- Overridden nsISupports interface functions ---
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIWindowsRegKey]),
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIWindowsRegKey]),
 
       // --- Overridden nsIWindowsRegKey interface functions ---
-      open: function(root, path, mode) {
+      open(root, path, mode) {
         let rootKey = registry.getRoot(root);
         if (!rootKey.has(path)) {
           rootKey.set(path, new Map());
@@ -46,43 +44,48 @@ class MockRegistry {
         this.values = rootKey.get(path);
       },
 
-      close: function() {
+      close() {
         this.values = null;
       },
 
       get valueCount() {
-        if (!this.values)
-          throw Components.results.NS_ERROR_FAILURE;
+        if (!this.values) {
+          throw Cr.NS_ERROR_FAILURE;
+        }
         return this.values.size;
       },
 
-      hasValue: function(name) {
+      hasValue(name) {
         if (!this.values) {
           return false;
         }
         return this.values.has(name);
       },
 
-      getValueType: function(name) {
+      getValueType(name) {
         return Ci.nsIWindowsRegKey.TYPE_STRING;
       },
 
-      getValueName: function(index) {
-        if (!this.values || index >= this.values.size)
-          throw Components.results.NS_ERROR_FAILURE;
-	let names = Array.from(this.values.keys());
+      getValueName(index) {
+        if (!this.values || index >= this.values.size) {
+          throw Cr.NS_ERROR_FAILURE;
+        }
+        let names = Array.from(this.values.keys());
         return names[index];
       },
 
-      readStringValue: function(name) {
+      readStringValue(name) {
         if (!this.values) {
           throw new Error("invalid registry path");
         }
         return this.values.get(name);
-      }
+      },
     };
 
-    this.cid = MockRegistrar.register("@mozilla.org/windows-registry-key;1", MockWindowsRegKey);
+    this.cid = MockRegistrar.register(
+      "@mozilla.org/windows-registry-key;1",
+      MockWindowsRegKey
+    );
   }
 
   shutdown() {
@@ -111,5 +114,4 @@ class MockRegistry {
       pathmap.set(name, value);
     }
   }
-};
-
+}

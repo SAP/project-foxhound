@@ -2,7 +2,6 @@
 <html>
   <head>
     <meta charset=utf-8>
-    <meta name="timeout" content="long">
     <title>Encrypted Media Extensions: Retrieve stored persistent-usage-record</title>
     <link rel="help" href="https://w3c.github.io/encrypted-media/">
 
@@ -56,7 +55,7 @@
 
                     assertions.push( { actual: false, expected: true, message: error } );
 
-                    window.opener.postMessage(assertions, '*');
+                    window.opener.postMessage({ testResult: assertions }, '*');
                 });
             });
         }
@@ -72,7 +71,7 @@
             mediaKeySession.addEventListener( 'message', onMessage );
             mediaKeySession.closed.then( function() {
 
-                window.opener.postMessage(assertions, '*');
+                window.opener.postMessage({ testResult: assertions }, '*');
 
             });
 
@@ -82,7 +81,7 @@
 
             assertions.push( { actual: false, expected: true, message: error.toString() } );
 
-            window.opener.postMessage(assertions, '*');
+            window.opener.postMessage({ testResult: assertions }, '*');
 
         });
 

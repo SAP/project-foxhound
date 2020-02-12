@@ -15,7 +15,8 @@ enum SourceBufferAppendMode {
     "sequence"
 };
 
-[Func="mozilla::dom::MediaSource::Enabled"]
+[Pref="media.mediasource.enabled",
+ Exposed=Window]
 interface SourceBuffer : EventTarget {
   [SetterThrows]
   attribute SourceBufferAppendMode mode;
@@ -40,10 +41,24 @@ interface SourceBuffer : EventTarget {
   void appendBuffer(ArrayBuffer data);
   [Throws]
   void appendBuffer(ArrayBufferView data);
+  // Experimental function as proposed in:
+  // https://github.com/w3c/media-source/issues/100 for promise proposal.
+  [Throws, Pref="media.mediasource.experimental.enabled"]
+  Promise<void> appendBufferAsync(ArrayBuffer data);
+  [Throws, Pref="media.mediasource.experimental.enabled"]
+  Promise<void> appendBufferAsync(ArrayBufferView data);
   //[Throws]
   //void appendStream(Stream stream, [EnforceRange] optional unsigned long long maxSize);
   [Throws]
   void abort();
   [Throws]
   void remove(double start, unrestricted double end);
+  // Experimental function as proposed in:
+  // https://github.com/w3c/media-source/issues/100 for promise proposal.
+  [Throws, Pref="media.mediasource.experimental.enabled"]
+  Promise<void> removeAsync(double start, unrestricted double end);
+  // Experimental function as proposed in:
+  // https://github.com/w3c/media-source/issues/155
+  [Throws]
+  void changeType(DOMString type);
 };

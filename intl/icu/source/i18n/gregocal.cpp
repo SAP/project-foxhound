@@ -1,6 +1,8 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
-* Copyright (C) 1997-2015, International Business Machines Corporation and
+* Copyright (C) 1997-2016, International Business Machines Corporation and
 * others. All Rights Reserved.
 *******************************************************************************
 *
@@ -539,8 +541,8 @@ int32_t GregorianCalendar::handleComputeMonthStart(int32_t eyear, int32_t month,
     }
 
     UBool isLeap = eyear%4 == 0;
-    int32_t y = eyear-1;
-    int32_t julianDay = 365*y + ClockMath::floorDivide(y, 4) + (kJan1_1JulianDay - 3);
+    int64_t y = (int64_t)eyear-1;
+    int64_t julianDay = 365*y + ClockMath::floorDivide(y, (int64_t)4) + (kJan1_1JulianDay - 3);
 
     nonConstThis->fIsGregorian = (eyear >= fGregorianCutoverYear);
 #if defined (U_DEBUG_CAL)
@@ -570,7 +572,7 @@ int32_t GregorianCalendar::handleComputeMonthStart(int32_t eyear, int32_t month,
         julianDay += isLeap?kLeapNumDays[month]:kNumDays[month];
     }
 
-    return julianDay;
+    return static_cast<int32_t>(julianDay);
 }
 
 int32_t GregorianCalendar::handleGetMonthLength(int32_t extendedYear, int32_t month)  const
@@ -850,6 +852,7 @@ GregorianCalendar::roll(UCalendarDateFields field, int32_t amount, UErrorCode& s
                         inCutoverMonth = TRUE;
                     }
             }
+            break;
         default:
             ;
         }

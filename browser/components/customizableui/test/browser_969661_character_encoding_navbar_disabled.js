@@ -4,18 +4,20 @@
 
 "use strict";
 
-
 // Adding the character encoding menu to the panel, exiting customize mode,
 // and moving it to the nav-bar should have it enabled, not disabled.
-add_task(function*() {
-  yield startCustomizing();
-  CustomizableUI.addWidgetToArea("characterencoding-button", "PanelUI-contents");
-  yield endCustomizing();
-  yield PanelUI.show();
-  let panelHiddenPromise = promisePanelHidden(window);
-  PanelUI.hide();
-  yield panelHiddenPromise;
-  CustomizableUI.addWidgetToArea("characterencoding-button", 'nav-bar');
+add_task(async function() {
+  await startCustomizing();
+  CustomizableUI.addWidgetToArea(
+    "characterencoding-button",
+    CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+  );
+  await endCustomizing();
+  await document.getElementById("nav-bar").overflowable.show();
+  let panelHiddenPromise = promiseOverflowHidden(window);
+  PanelUI.overflowPanel.hidePopup();
+  await panelHiddenPromise;
+  CustomizableUI.addWidgetToArea("characterencoding-button", "nav-bar");
   let button = document.getElementById("characterencoding-button");
   ok(!button.hasAttribute("disabled"), "Button shouldn't be disabled");
 });
@@ -23,4 +25,3 @@ add_task(function*() {
 add_task(function asyncCleanup() {
   resetCustomization();
 });
-

@@ -4,144 +4,135 @@
 
 "use strict";
 
-var openUILinkInCalled = false;
-var expectOpenUILinkInCall = false;
-this.originalOpenUILinkIn = openUILinkIn;
-openUILinkIn = (aUrl, aWhichTab) => {
-  is(aUrl, "about:home", "about:home should be requested to open.");
-  is(aWhichTab, "current", "Should use the current tab for the search page.");
-  openUILinkInCalled = true;
-  if (!expectOpenUILinkInCall) {
-    ok(false, "OpenUILinkIn was called when it shouldn't have been.");
-  }
-};
 logActiveElement();
 
-function* waitForSearchBarFocus()
-{
+async function waitForSearchBarFocus() {
   let searchbar = document.getElementById("searchbar");
-  yield waitForCondition(function () {
+  await TestUtils.waitForCondition(function() {
     logActiveElement();
-    return document.activeElement === searchbar.textbox.inputField;
+    return document.activeElement === searchbar.textbox;
   });
 }
 
 // Ctrl+K should open the menu panel and focus the search bar if the search bar is in the panel.
-add_task(function*() {
-  let searchbar = document.getElementById("searchbar");
-  gCustomizeMode.addToPanel(searchbar);
-  let placement = CustomizableUI.getPlacementOfWidget("search-container");
-  is(placement.area, CustomizableUI.AREA_PANEL, "Should be in panel");
+add_task(async function check_shortcut_when_in_closed_overflow_panel_closed() {
+  CustomizableUI.addWidgetToArea(
+    "search-container",
+    CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+  );
 
-  let shownPanelPromise = promisePanelShown(window);
+  let shownPanelPromise = promiseOverflowShown(window);
   sendWebSearchKeyCommand();
-  yield shownPanelPromise;
+  await shownPanelPromise;
 
-  yield waitForSearchBarFocus();
+  await waitForSearchBarFocus();
 
-  let hiddenPanelPromise = promisePanelHidden(window);
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield hiddenPanelPromise;
+  let hiddenPanelPromise = promiseOverflowHidden(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+  await hiddenPanelPromise;
   CustomizableUI.reset();
 });
 
 // Ctrl+K should give focus to the searchbar when the searchbar is in the menupanel and the panel is already opened.
-add_task(function*() {
-  let searchbar = document.getElementById("searchbar");
-  gCustomizeMode.addToPanel(searchbar);
-  let placement = CustomizableUI.getPlacementOfWidget("search-container");
-  is(placement.area, CustomizableUI.AREA_PANEL, "Should be in panel");
+add_task(async function check_shortcut_when_in_opened_overflow_panel() {
+  CustomizableUI.addWidgetToArea(
+    "search-container",
+    CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+  );
 
-  let shownPanelPromise = promisePanelShown(window);
-  PanelUI.toggle({type: "command"});
-  yield shownPanelPromise;
+  await document.getElementById("nav-bar").overflowable.show();
 
   sendWebSearchKeyCommand();
 
-  yield waitForSearchBarFocus();
+  await waitForSearchBarFocus();
 
-  let hiddenPanelPromise = promisePanelHidden(window);
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield hiddenPanelPromise;
+  let hiddenPanelPromise = promiseOverflowHidden(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+  await hiddenPanelPromise;
   CustomizableUI.reset();
 });
 
 // Ctrl+K should open the overflow panel and focus the search bar if the search bar is overflowed.
-add_task(function*() {
+add_task(async function check_shortcut_when_in_overflow() {
   this.originalWindowWidth = window.outerWidth;
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
-  ok(!navbar.hasAttribute("overflowing"), "Should start with a non-overflowing toolbar.");
+  ok(
+    !navbar.hasAttribute("overflowing"),
+    "Should start with a non-overflowing toolbar."
+  );
   ok(CustomizableUI.inDefaultState, "Should start in default state.");
 
-  window.resizeTo(360, window.outerHeight);
-  yield waitForCondition(() => navbar.getAttribute("overflowing") == "true");
-  ok(!navbar.querySelector("#search-container"), "Search container should be overflowing");
+  Services.prefs.setBoolPref("browser.search.widget.inNavBar", true);
+
+  window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+  await TestUtils.waitForCondition(() => {
+    return (
+      navbar.getAttribute("overflowing") == "true" &&
+      !navbar.querySelector("#search-container")
+    );
+  });
+  ok(
+    !navbar.querySelector("#search-container"),
+    "Search container should be overflowing"
+  );
 
   let shownPanelPromise = promiseOverflowShown(window);
   sendWebSearchKeyCommand();
-  yield shownPanelPromise;
+  await shownPanelPromise;
 
   let chevron = document.getElementById("nav-bar-overflow-button");
-  yield waitForCondition(() => chevron.open);
+  await TestUtils.waitForCondition(() => chevron.open);
 
-  yield waitForSearchBarFocus();
+  await waitForSearchBarFocus();
 
   let hiddenPanelPromise = promiseOverflowHidden(window);
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-  yield hiddenPanelPromise;
+  EventUtils.synthesizeKey("KEY_Escape");
+  await hiddenPanelPromise;
+
+  Services.prefs.setBoolPref("browser.search.widget.inNavBar", false);
+
   navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
   window.resizeTo(this.originalWindowWidth, window.outerHeight);
-  yield waitForCondition(() => !navbar.hasAttribute("overflowing"));
-  ok(!navbar.hasAttribute("overflowing"), "Should not have an overflowing toolbar.");
+  await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
+  ok(
+    !navbar.hasAttribute("overflowing"),
+    "Should not have an overflowing toolbar."
+  );
 });
 
 // Ctrl+K should focus the search bar if it is in the navbar and not overflowing.
-add_task(function*() {
+add_task(async function check_shortcut_when_not_in_overflow() {
+  Services.prefs.setBoolPref("browser.search.widget.inNavBar", true);
   let placement = CustomizableUI.getPlacementOfWidget("search-container");
   is(placement.area, CustomizableUI.AREA_NAVBAR, "Should be in nav-bar");
 
   sendWebSearchKeyCommand();
 
-  yield waitForSearchBarFocus();
-});
+  // This fails if the screen resolution is small and the search bar overflows
+  // from the nav bar even with the original window width.
+  await waitForSearchBarFocus();
 
-// Ctrl+K should open the search page if the search bar has been customized out.
-add_task(function*() {
-  try {
-    expectOpenUILinkInCall = true;
-    CustomizableUI.removeWidgetFromArea("search-container");
-    let placement = CustomizableUI.getPlacementOfWidget("search-container");
-    is(placement, null, "Search container should be in palette");
-
-    openUILinkInCalled = false;
-
-    sendWebSearchKeyCommand();
-    yield waitForCondition(() => openUILinkInCalled);
-    ok(openUILinkInCalled, "The search page should have been opened.")
-    expectOpenUILinkInCall = false;
-  } catch (e) {
-    ok(false, e);
-  }
-  CustomizableUI.reset();
-});
-
-registerCleanupFunction(function() {
-  openUILinkIn = this.originalOpenUILinkIn;
-  delete this.originalOpenUILinkIn;
+  Services.prefs.setBoolPref("browser.search.widget.inNavBar", false);
 });
 
 function sendWebSearchKeyCommand() {
-  if (Services.appinfo.OS === "Darwin")
-    EventUtils.synthesizeKey("k", { accelKey: true });
-  else
-    EventUtils.synthesizeKey("k", { ctrlKey: true });
+  document.documentElement.focus();
+  EventUtils.synthesizeKey("k", { accelKey: true });
 }
 
 function logActiveElement() {
   let element = document.activeElement;
   let str = "";
   while (element && element.parentNode) {
-    str = " (" + element.localName + "#" + element.id + "." + [...element.classList].join(".") + ") >" + str;
+    str =
+      " (" +
+      element.localName +
+      "#" +
+      element.id +
+      "." +
+      [...element.classList].join(".") +
+      ") >" +
+      str;
     element = element.parentNode;
   }
   info("Active element: " + element ? str : "null");

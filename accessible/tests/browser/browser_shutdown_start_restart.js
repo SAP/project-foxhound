@@ -2,40 +2,50 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-add_task(function* () {
-  info('Creating a service');
+add_task(async function() {
+  info("Creating a service");
   // Create a11y service.
-  let a11yInit = initPromise();
-  let accService = Cc['@mozilla.org/accessibilityService;1'].getService(
-    Ci.nsIAccessibilityService);
-  yield a11yInit;
-  ok(accService, 'Service initialized');
+  let [a11yInitObserver, a11yInit] = initAccService();
+  await a11yInitObserver;
 
-  info('Removing a service');
+  let accService = Cc["@mozilla.org/accessibilityService;1"].getService(
+    Ci.nsIAccessibilityService
+  );
+  await a11yInit;
+  ok(accService, "Service initialized");
+
+  info("Removing a service");
   // Remove the only reference to an a11y service.
-  let a11yShutdown = shutdownPromise();
+  let [a11yShutdownObserver, a11yShutdown] = shutdownAccService();
+  await a11yShutdownObserver;
+
   accService = null;
-  ok(!accService, 'Service is removed');
+  ok(!accService, "Service is removed");
   // Force garbage collection that should trigger shutdown.
   forceGC();
-  yield a11yShutdown;
+  await a11yShutdown;
 
-  info('Recreating a service');
+  info("Recreating a service");
   // Re-create a11y service.
-  a11yInit = initPromise();
-  accService = Cc['@mozilla.org/accessibilityService;1'].getService(
-    Ci.nsIAccessibilityService);
-  yield a11yInit;
-  ok(accService, 'Service initialized again');
+  [a11yInitObserver, a11yInit] = initAccService();
+  await a11yInitObserver;
 
-  info('Removing a service again');
+  accService = Cc["@mozilla.org/accessibilityService;1"].getService(
+    Ci.nsIAccessibilityService
+  );
+  await a11yInit;
+  ok(accService, "Service initialized again");
+
+  info("Removing a service again");
   // Remove the only reference to an a11y service again.
-  a11yShutdown = shutdownPromise();
+  [a11yShutdownObserver, a11yShutdown] = shutdownAccService();
+  await a11yShutdownObserver;
+
   accService = null;
-  ok(!accService, 'Service is removed again');
+  ok(!accService, "Service is removed again");
   // Force garbage collection that should trigger shutdown.
   forceGC();
-  yield a11yShutdown;
+  await a11yShutdown;
 });

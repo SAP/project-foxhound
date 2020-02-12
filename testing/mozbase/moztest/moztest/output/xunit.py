@@ -2,8 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 
 import xml.dom.minidom as dom
+
+from six import string_types
 
 from base import Output, count
 from moztest.results import TestResult
@@ -16,7 +19,7 @@ class XUnitOutput(Output):
         """ Writes the xUnit formatted results to the given file object """
 
         def _extract_xml(test_result, text='', result='Pass'):
-            if not isinstance(text, basestring):
+            if not isinstance(text, string_types):
                 text = '\n'.join(text)
 
             cls_name = test_result.test_class
@@ -54,7 +57,7 @@ class XUnitOutput(Output):
         doc = dom.Document()
 
         failed = sum([count(results_collection.tests_with_result(t))
-                     for t in TestResult.FAIL_RESULTS])
+                      for t in TestResult.FAIL_RESULTS])
         passed = count(results_collection.tests_with_result('PASS'))
         skipped = count(results_collection.tests_with_result('SKIPPED'))
 

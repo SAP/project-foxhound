@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -21,24 +20,31 @@ const TEST_URI = `
   <h1 id="testid" class="testclass testclass1">Styled Node</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
-  yield testAddTextInFilter(inspector, view);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
+  await testAddTextInFilter(inspector, view);
 });
 
-function* testAddTextInFilter(inspector, view) {
-  yield setSearchFilter(view, SEARCH);
+async function testAddTextInFilter(inspector, view) {
+  await setSearchFilter(view, SEARCH);
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
-  is(getRuleViewRuleEditor(view, 0).rule.selectorText, "element",
-    "First rule is inline element.");
+  is(
+    getRuleViewRuleEditor(view, 0).rule.selectorText,
+    "element",
+    "First rule is inline element."
+  );
 
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
 
   is(ruleEditor.rule.selectorText, ".testclass", "Second rule is .testclass.");
-  ok(ruleEditor.selectorText.children[0].classList
-    .contains("ruleview-highlight"), ".testclass selector is highlighted.");
+  ok(
+    ruleEditor.selectorText.children[0].classList.contains(
+      "ruleview-highlight"
+    ),
+    ".testclass selector is highlighted."
+  );
 }

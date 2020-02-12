@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Test for adding and removing animations from a time container</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -41,7 +41,7 @@ function main() {
 
   // Unbind from tree -- the syncbase instance time(s) should become unresolved
   // but the offset time should remain
-  anim.parentNode.removeChild(anim);
+  anim.remove();
   is(anim.getStartTime(), 6);
 
   // Rebind and check everything is re-resolved
@@ -55,7 +55,7 @@ function main() {
   is(anim.getStartTime(), 2);
 
   // Unbind
-  anim.parentNode.removeChild(anim);
+  anim.remove();
   is(anim.getStartTime(), 6);
 
   // Rebind
@@ -93,7 +93,7 @@ function noStart(elem) {
   return exceptionCaught;
 }
 
-window.addEventListener("load", main, false);
+window.addEventListener("load", main);
 ]]>
 </script>
 </pre>

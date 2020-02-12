@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (c) 2001-2015, International Business Machines
@@ -39,7 +41,7 @@ template class U_COMMON_API MaybeStackArray<char, 40>;
 class U_COMMON_API CharString : public UMemory {
 public:
     CharString() : len(0) { buffer[0]=0; }
-    CharString(const StringPiece &s, UErrorCode &errorCode) : len(0) {
+    CharString(StringPiece s, UErrorCode &errorCode) : len(0) {
         buffer[0]=0;
         append(s, errorCode);
     }
@@ -52,6 +54,18 @@ public:
         append(s, sLength, errorCode);
     }
     ~CharString() {}
+
+    /**
+     * Move constructor; might leave src in an undefined state.
+     * This string will have the same contents and state that the source string had.
+     */
+    CharString(CharString &&src) U_NOEXCEPT;
+    /**
+     * Move assignment operator; might leave src in an undefined state.
+     * This string will have the same contents and state that the source string had.
+     * The behavior is undefined if *this and src are the same object.
+     */
+    CharString &operator=(CharString &&src) U_NOEXCEPT;
 
     /**
      * Replaces this string's contents with the other string's contents.
@@ -76,7 +90,7 @@ public:
     CharString &truncate(int32_t newLength);
 
     CharString &append(char c, UErrorCode &errorCode);
-    CharString &append(const StringPiece &s, UErrorCode &errorCode) {
+    CharString &append(StringPiece s, UErrorCode &errorCode) {
         return append(s.data(), s.length(), errorCode);
     }
     CharString &append(const CharString &s, UErrorCode &errorCode) {
@@ -109,13 +123,14 @@ public:
                           UErrorCode &errorCode);
 
     CharString &appendInvariantChars(const UnicodeString &s, UErrorCode &errorCode);
+    CharString &appendInvariantChars(const UChar* uchars, int32_t ucharsLen, UErrorCode& errorCode);
 
     /**
      * Appends a filename/path part, e.g., a directory name.
      * First appends a U_FILE_SEP_CHAR if necessary.
      * Does nothing if s is empty.
      */
-    CharString &appendPathPart(const StringPiece &s, UErrorCode &errorCode);
+    CharString &appendPathPart(StringPiece s, UErrorCode &errorCode);
 
     /**
      * Appends a U_FILE_SEP_CHAR if this string is not empty

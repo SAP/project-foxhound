@@ -16,11 +16,11 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 
+#include "nsCharTraits.h"
 #include "nsString.h"
+#include "nsStringBuffer.h"
 #include "nsReadableUtils.h"
 #include "nsISupportsImpl.h"
-
-class nsString;
 
 // XXX should this normalize the code to keep a \u0000 at the end?
 
@@ -40,7 +40,7 @@ class nsString;
  * propagation.
  */
 class nsTextFragment final : public TaintableString {
-public:
+ public:
   static nsresult Init();
   static void Shutdown();
 
@@ -49,7 +49,6 @@ public:
    */
   nsTextFragment()
     : m1b(nullptr), mAllBits(0)
-
   {
     MOZ_COUNT_CTOR(nsTextFragment);
     NS_ASSERTION(sizeof(FragmentBits) == 4, "Bad field packing!");
@@ -66,50 +65,38 @@ public:
   /**
    * Return true if this fragment is represented by char16_t data
    */
-  bool Is2b() const
-  {
-    return mState.mIs2b;
-  }
+  bool Is2b() const { return mState.mIs2b; }
 
   /**
    * Return true if this fragment contains Bidi text
    * For performance reasons this flag is only set if explicitely requested (by
    * setting the aUpdateBidi argument on SetTo or Append to true).
    */
-  bool IsBidi() const
-  {
-    return mState.mIsBidi;
-  }
+  bool IsBidi() const { return mState.mIsBidi; }
 
   /**
    * Get a pointer to constant char16_t data.
    */
-  const char16_t *Get2b() const
-  {
-    NS_ASSERTION(Is2b(), "not 2b text");
-    return m2b;
+  const char16_t* Get2b() const {
+    MOZ_ASSERT(Is2b(), "not 2b text");
+    return static_cast<char16_t*>(m2b->Data());
   }
 
   /**
    * Get a pointer to constant char data.
    */
-  const char *Get1b() const
-  {
+  const char* Get1b() const {
     NS_ASSERTION(!Is2b(), "not 1b text");
-    return (const char *)m1b;
+    return (const char*)m1b;
   }
 
   /**
    * Get the length of the fragment. The length is the number of logical
    * characters, not the number of bytes to store the characters.
    */
-  uint32_t GetLength() const
-  {
-    return mState.mLength;
-  }
+  uint32_t GetLength() const { return mState.mLength; }
 
-  bool CanGrowBy(size_t n) const
-  {
+  bool CanGrowBy(size_t n) const {
     return n < (1 << 29) && mState.mLength + n < (1 << 29);
   }
 
@@ -117,15 +104,39 @@ public:
    * Change the contents of this fragment to be a copy of the given
    * buffer. If aUpdateBidi is true, contents of the fragment will be scanned,
    * and mState.mIsBidi will be turned on if it includes any Bidi characters.
+   * If aForce2b is true, aBuffer will be stored as char16_t as is.  Then,
+   * you can access the value faster but may waste memory if all characters
+   * are less than U+0100.
    */
-  bool SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi, const StringTaint& aTaint);
+  bool SetTo(const char16_t* aBuffer, int32_t aLength, bool aUpdateBidi,
+             const StringTaint& aTaint, bool aForce2b);
+
+  bool SetTo(const nsString& aString, bool aUpdateBidi, bool aForce2b) {
+    ReleaseText();
+    if (aForce2b && !aUpdateBidi) {
+      nsStringBuffer* buffer = nsStringBuffer::FromString(aString);
+      if (buffer) {
+        NS_ADDREF(m2b = buffer);
+        mState.mInHeap = true;
+        mState.mIs2b = true;
+        mState.mLength = aString.Length();
+        return true;
+      }
+    }
+
+    return SetTo(aString.get(), aString.Length(), aUpdateBidi, aString.Taint(), aForce2b);
+  }
 
   /**
    * Append aData to the end of this fragment. If aUpdateBidi is true, contents
    * of the fragment will be scanned, and mState.mIsBidi will be turned on if
    * it includes any Bidi characters.
+   * If aForce2b is true, the string will be stored as char16_t as is.  Then,
+   * you can access the value faster but may waste memory if all characters
+   * are less than U+0100.
    */
-  bool Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi, const StringTaint& aTaint);
+  bool Append(const char16_t* aBuffer, uint32_t aLength, bool aUpdateBidi,
+              const StringTaint& aTaint, bool aForce2b);
 
   /**
    * Append the contents of this string fragment to aString
@@ -147,16 +158,19 @@ public:
     aString.AppendTaint(Taint());
 
     if (mState.mIs2b) {
-      bool ok = aString.Append(m2b, mState.mLength, aFallible);
+      if (aString.IsEmpty()) {
+        m2b->ToString(mState.mLength, aString);
+        return true;
+      }
+      bool ok = aString.Append(Get2b(), mState.mLength, aFallible);
       if (!ok) {
         return false;
       }
 
       return true;
     } else {
-      nsDependentCSubstring sub = Substring(m1b, mState.mLength);
-
-      return AppendASCIItoUTF16(sub, aString, aFallible);
+      return AppendASCIItoUTF16(Substring(m1b, mState.mLength), aString,
+                                aFallible);
     }
   }
 
@@ -180,21 +194,20 @@ public:
    */
   MOZ_MUST_USE
   bool AppendTo(nsAString& aString, int32_t aOffset, int32_t aLength,
-                const mozilla::fallible_t& aFallible) const
-  {
+                const mozilla::fallible_t& aFallible) const {
     // TaintFox: propagate taint when accessing text fragments.
     aString.AppendTaint(Taint().subtaint(aOffset, aOffset + aLength));
-
+    
     if (mState.mIs2b) {
-      bool ok = aString.Append(m2b + aOffset, aLength, aFallible);
+      bool ok = aString.Append(Get2b() + aOffset, aLength, aFallible);
       if (!ok) {
         return false;
       }
 
       return true;
     } else {
-      auto substr = Substring(m1b + aOffset, aLength);
-      return AppendASCIItoUTF16(substr, aString, aFallible);
+      return AppendASCIItoUTF16(Substring(m1b + aOffset, aLength), aString,
+                                aFallible);
     }
   }
 
@@ -204,17 +217,72 @@ public:
    * lie within the fragments data. The fragments data is converted if
    * necessary.
    */
-  void CopyTo(char16_t *aDest, int32_t aOffset, int32_t aCount);
+  void CopyTo(char16_t* aDest, int32_t aOffset, int32_t aCount);
 
   /**
    * Return the character in the text-fragment at the given
    * index. This always returns a char16_t.
    */
-  char16_t CharAt(int32_t aIndex) const
-  {
-    NS_ASSERTION(uint32_t(aIndex) < mState.mLength, "bad index");
-    return mState.mIs2b ? m2b[aIndex] : static_cast<unsigned char>(m1b[aIndex]);
+  char16_t CharAt(int32_t aIndex) const {
+    MOZ_ASSERT(uint32_t(aIndex) < mState.mLength, "bad index");
+    return mState.mIs2b ? Get2b()[aIndex]
+                        : static_cast<unsigned char>(m1b[aIndex]);
   }
+
+  /**
+   * IsHighSurrogateFollowedByLowSurrogateAt() returns true if character at
+   * aIndex is high surrogate and it's followed by low surrogate.
+   */
+  inline bool IsHighSurrogateFollowedByLowSurrogateAt(int32_t aIndex) const {
+    MOZ_ASSERT(aIndex >= 0);
+    MOZ_ASSERT(aIndex < mState.mLength);
+    if (!mState.mIs2b || aIndex + 1 >= mState.mLength) {
+      return false;
+    }
+    return NS_IS_HIGH_SURROGATE(Get2b()[aIndex]) &&
+           NS_IS_LOW_SURROGATE(Get2b()[aIndex + 1]);
+  }
+
+  /**
+   * IsLowSurrogateFollowingHighSurrogateAt() returns true if character at
+   * aIndex is low surrogate and it follows high surrogate.
+   */
+  inline bool IsLowSurrogateFollowingHighSurrogateAt(int32_t aIndex) const {
+    MOZ_ASSERT(aIndex >= 0);
+    MOZ_ASSERT(aIndex < mState.mLength);
+    if (!mState.mIs2b || aIndex <= 0) {
+      return false;
+    }
+    return NS_IS_LOW_SURROGATE(Get2b()[aIndex]) &&
+           NS_IS_HIGH_SURROGATE(Get2b()[aIndex - 1]);
+  }
+
+  /**
+   * ScalarValueAt() returns a Unicode scalar value at aIndex.  If the character
+   * at aIndex is a high surrogate followed by low surrogate, returns character
+   * code for the pair.  If the index is low surrogate, or a high surrogate but
+   * not in a pair, returns 0.
+   */
+  inline char32_t ScalarValueAt(int32_t aIndex) const {
+    MOZ_ASSERT(aIndex >= 0);
+    MOZ_ASSERT(aIndex < mState.mLength);
+    if (!mState.mIs2b) {
+      return static_cast<unsigned char>(m1b[aIndex]);
+    }
+    char16_t ch = Get2b()[aIndex];
+    if (!IS_SURROGATE(ch)) {
+      return ch;
+    }
+    if (aIndex + 1 < mState.mLength && NS_IS_HIGH_SURROGATE(ch)) {
+      char16_t nextCh = Get2b()[aIndex + 1];
+      if (NS_IS_LOW_SURROGATE(nextCh)) {
+        return SURROGATE_TO_UCS4(ch, nextCh);
+      }
+    }
+    return 0;
+  }
+
+  void SetBidi(bool aBidi) { mState.mIsBidi = aBidi; }
 
   struct FragmentBits {
     // uint32_t to ensure that the values are unsigned, because we
@@ -225,12 +293,22 @@ public:
     uint32_t mInHeap : 1;
     uint32_t mIs2b : 1;
     uint32_t mIsBidi : 1;
+    // Note that when you change the bits of mLength, you also need to change
+    // NS_MAX_TEXT_FRAGMENT_LENGTH.
     uint32_t mLength : 29;
   };
 
+#define NS_MAX_TEXT_FRAGMENT_LENGTH (static_cast<uint32_t>(0x1FFFFFFF))
+
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-private:
+  /**
+   * Check whether the text in this fragment is the same as the text in the
+   * other fragment.
+   */
+  MOZ_MUST_USE bool TextEquals(const nsTextFragment& aOther) const;
+
+ private:
   void ReleaseText();
 
   /**
@@ -240,8 +318,8 @@ private:
   void UpdateBidiFlag(const char16_t* aBuffer, uint32_t aLength);
 
   union {
-    char16_t *m2b;
-    const char *m1b; // This is const since it can point to shared data
+    nsStringBuffer* m2b;
+    const char* m1b;  // This is const since it can point to shared data
   };
 
   union {
@@ -251,4 +329,3 @@ private:
 };
 
 #endif /* nsTextFragment_h___ */
-

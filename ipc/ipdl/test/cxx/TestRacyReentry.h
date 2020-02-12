@@ -9,59 +9,51 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestRacyReentryParent : public PTestRacyReentryParent {
+  friend class PTestRacyReentryParent;
 
-class TestRacyReentryParent :
-    public PTestRacyReentryParent
-{
-public:
-    TestRacyReentryParent();
-    virtual ~TestRacyReentryParent();
+ public:
+  TestRacyReentryParent();
+  virtual ~TestRacyReentryParent();
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    void Main();
+  void Main();
 
-protected:
-    virtual bool AnswerE() override;
+ protected:
+  mozilla::ipc::IPCResult AnswerE();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 
-    bool mRecvdE;
+  bool mRecvdE;
 };
 
+class TestRacyReentryChild : public PTestRacyReentryChild {
+  friend class PTestRacyReentryChild;
 
-class TestRacyReentryChild :
-    public PTestRacyReentryChild
-{
-public:
-    TestRacyReentryChild();
-    virtual ~TestRacyReentryChild();
+ public:
+  TestRacyReentryChild();
+  virtual ~TestRacyReentryChild();
 
-protected:
-    virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool RecvN() override;
+  mozilla::ipc::IPCResult RecvN();
 
-    virtual bool AnswerH() override;
+  mozilla::ipc::IPCResult AnswerH();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestRacyReentry_h
+#endif  // ifndef mozilla__ipdltest_TestRacyReentry_h

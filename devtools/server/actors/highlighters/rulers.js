@@ -4,12 +4,16 @@
 
 "use strict";
 
-const events = require("sdk/event/core");
-const { getCurrentZoom,
-  setIgnoreLayoutChanges } = require("devtools/shared/layout/utils");
+const EventEmitter = require("devtools/shared/event-emitter");
+const {
+  getCurrentZoom,
+  setIgnoreLayoutChanges,
+} = require("devtools/shared/layout/utils");
 const {
   CanvasFrameAnonymousContentHelper,
-  createSVGNode, createNode } = require("./utils/markup");
+  createSVGNode,
+  createNode,
+} = require("./utils/markup");
 
 // Maximum size, in pixel, for the horizontal ruler and vertical ruler
 // used by RulersHighlighter
@@ -28,10 +32,12 @@ const RULERS_TEXT_STEP = 100;
  */
 function RulersHighlighter(highlighterEnv) {
   this.env = highlighterEnv;
-  this.markup = new CanvasFrameAnonymousContentHelper(highlighterEnv,
-    this._buildMarkup.bind(this));
+  this.markup = new CanvasFrameAnonymousContentHelper(
+    highlighterEnv,
+    this._buildMarkup.bind(this)
+  );
 
-  let { pageListenerTarget } = highlighterEnv;
+  const { pageListenerTarget } = highlighterEnv;
   pageListenerTarget.addEventListener("scroll", this);
   pageListenerTarget.addEventListener("pagehide", this);
 }
@@ -41,9 +47,9 @@ RulersHighlighter.prototype = {
 
   ID_CLASS_PREFIX: "rulers-highlighter-",
 
-  _buildMarkup: function () {
-    let { window } = this.env;
-    let prefix = this.ID_CLASS_PREFIX;
+  _buildMarkup: function() {
+    const { window } = this.env;
+    const prefix = this.ID_CLASS_PREFIX;
 
     function createRuler(axis, size) {
       let width, height;
@@ -58,16 +64,17 @@ RulersHighlighter.prototype = {
         isHorizontal = false;
       } else {
         throw new Error(
-          `Invalid type of axis given; expected "x" or "y" but got "${axis}"`);
+          `Invalid type of axis given; expected "x" or "y" but got "${axis}"`
+        );
       }
 
-      let g = createSVGNode(window, {
+      const g = createSVGNode(window, {
         nodeType: "g",
         attributes: {
-          id: `${axis}-axis`
+          id: `${axis}-axis`,
         },
         parent: svg,
-        prefix
+        prefix,
       });
 
       createSVGNode(window, {
@@ -75,50 +82,50 @@ RulersHighlighter.prototype = {
         attributes: {
           y: isHorizontal ? 0 : 16,
           width,
-          height
-        },
-        parent: g
-      });
-
-      let gRule = createSVGNode(window, {
-        nodeType: "g",
-        attributes: {
-          id: `${axis}-axis-ruler`
+          height,
         },
         parent: g,
-        prefix
       });
 
-      let pathGraduations = createSVGNode(window, {
+      const gRule = createSVGNode(window, {
+        nodeType: "g",
+        attributes: {
+          id: `${axis}-axis-ruler`,
+        },
+        parent: g,
+        prefix,
+      });
+
+      const pathGraduations = createSVGNode(window, {
         nodeType: "path",
         attributes: {
-          "class": "ruler-graduations",
+          class: "ruler-graduations",
           width,
-          height
+          height,
         },
         parent: gRule,
-        prefix
+        prefix,
       });
 
-      let pathMarkers = createSVGNode(window, {
+      const pathMarkers = createSVGNode(window, {
         nodeType: "path",
         attributes: {
-          "class": "ruler-markers",
+          class: "ruler-markers",
           width,
-          height
+          height,
         },
         parent: gRule,
-        prefix
+        prefix,
       });
 
-      let gText = createSVGNode(window, {
+      const gText = createSVGNode(window, {
         nodeType: "g",
         attributes: {
           id: `${axis}-axis-text`,
-          "class": (isHorizontal ? "horizontal" : "vertical") + "-labels"
+          class: (isHorizontal ? "horizontal" : "vertical") + "-labels",
         },
         parent: g,
-        prefix
+        prefix,
       });
 
       let dGraduations = "";
@@ -130,7 +137,7 @@ RulersHighlighter.prototype = {
           continue;
         }
 
-        graduationLength = (i % 2 === 0) ? 6 : 4;
+        graduationLength = i % 2 === 0 ? 6 : 4;
 
         if (i % RULERS_TEXT_STEP === 0) {
           graduationLength = 8;
@@ -139,8 +146,8 @@ RulersHighlighter.prototype = {
             parent: gText,
             attributes: {
               x: isHorizontal ? 2 + i : -i - 1,
-              y: 5
-            }
+              y: 5,
+            },
           }).textContent = i;
         }
 
@@ -150,12 +157,10 @@ RulersHighlighter.prototype = {
           } else {
             dGraduations += `M${i} 0 L${i} ${graduationLength} `;
           }
+        } else if (i % 50 === 0) {
+          dMarkers += `M0 ${i} L${graduationLength} ${i}`;
         } else {
-          if (i % 50 === 0) {
-            dMarkers += `M0 ${i} L${graduationLength} ${i}`;
-          } else {
-            dGraduations += `M0 ${i} L${graduationLength} ${i}`;
-          }
+          dGraduations += `M0 ${i} L${graduationLength} ${i}`;
         }
       }
 
@@ -165,130 +170,167 @@ RulersHighlighter.prototype = {
       return g;
     }
 
-    let container = createNode(window, {
-      attributes: {"class": "highlighter-container"}
+    const container = createNode(window, {
+      attributes: { class: "highlighter-container" },
     });
 
-    let root = createNode(window, {
+    const root = createNode(window, {
       parent: container,
       attributes: {
-        "id": "root",
-        "class": "root"
+        id: "root",
+        class: "root",
       },
-      prefix
+      prefix,
     });
 
-    let svg = createSVGNode(window, {
+    const svg = createSVGNode(window, {
       nodeType: "svg",
       parent: root,
       attributes: {
         id: "elements",
-        "class": "elements",
+        class: "elements",
         width: "100%",
         height: "100%",
-        hidden: "true"
+        hidden: "true",
       },
-      prefix
+      prefix,
     });
 
     createRuler("x", RULERS_MAX_X_AXIS);
     createRuler("y", RULERS_MAX_Y_AXIS);
 
+    createNode(window, {
+      parent: container,
+      attributes: {
+        class: "viewport-infobar-container",
+        id: "viewport-infobar-container",
+        position: "top",
+      },
+      prefix,
+    });
+
     return container;
   },
 
-  handleEvent: function (event) {
+  handleEvent: function(event) {
     switch (event.type) {
       case "scroll":
         this._onScroll(event);
         break;
       case "pagehide":
-        this.destroy();
+        // If a page hide event is triggered for current window's highlighter, hide the
+        // highlighter.
+        if (event.target.defaultView === this.env.window) {
+          this.destroy();
+        }
         break;
     }
   },
 
-  _onScroll: function (event) {
-    let prefix = this.ID_CLASS_PREFIX;
-    let { scrollX, scrollY } = event.view;
+  _onScroll: function(event) {
+    const prefix = this.ID_CLASS_PREFIX;
+    const { scrollX, scrollY } = event.view;
 
-    this.markup.getElement(`${prefix}x-axis-ruler`)
-                        .setAttribute("transform", `translate(${-scrollX})`);
-    this.markup.getElement(`${prefix}x-axis-text`)
-                        .setAttribute("transform", `translate(${-scrollX})`);
-    this.markup.getElement(`${prefix}y-axis-ruler`)
-                        .setAttribute("transform", `translate(0, ${-scrollY})`);
-    this.markup.getElement(`${prefix}y-axis-text`)
-                        .setAttribute("transform", `translate(0, ${-scrollY})`);
+    this.markup
+      .getElement(`${prefix}x-axis-ruler`)
+      .setAttribute("transform", `translate(${-scrollX})`);
+    this.markup
+      .getElement(`${prefix}x-axis-text`)
+      .setAttribute("transform", `translate(${-scrollX})`);
+    this.markup
+      .getElement(`${prefix}y-axis-ruler`)
+      .setAttribute("transform", `translate(0, ${-scrollY})`);
+    this.markup
+      .getElement(`${prefix}y-axis-text`)
+      .setAttribute("transform", `translate(0, ${-scrollY})`);
   },
 
-  _update: function () {
-    let { window } = this.env;
+  _update: function() {
+    const { window } = this.env;
 
     setIgnoreLayoutChanges(true);
 
-    let zoom = getCurrentZoom(window);
-    let isZoomChanged = zoom !== this._zoom;
+    const zoom = getCurrentZoom(window);
+    const isZoomChanged = zoom !== this._zoom;
 
     if (isZoomChanged) {
       this._zoom = zoom;
       this.updateViewport();
     }
 
+    this.updateViewportInfobar();
+
     setIgnoreLayoutChanges(false, window.document.documentElement);
 
     this._rafID = window.requestAnimationFrame(() => this._update());
   },
 
-  _cancelUpdate: function () {
+  _cancelUpdate: function() {
     if (this._rafID) {
       this.env.window.cancelAnimationFrame(this._rafID);
       this._rafID = 0;
     }
   },
-  updateViewport: function () {
-    let { devicePixelRatio } = this.env.window;
+  updateViewport: function() {
+    const { devicePixelRatio } = this.env.window;
 
     // Because `devicePixelRatio` is affected by zoom (see bug 809788),
     // in order to get the "real" device pixel ratio, we need divide by `zoom`
-    let pixelRatio = devicePixelRatio / this._zoom;
+    const pixelRatio = devicePixelRatio / this._zoom;
 
     // The "real" device pixel ratio is used to calculate the max stroke
     // width we can actually assign: on retina, for instance, it would be 0.5,
     // where on non high dpi monitor would be 1.
-    let minWidth = 1 / pixelRatio;
-    let strokeWidth = Math.min(minWidth, minWidth / this._zoom);
+    const minWidth = 1 / pixelRatio;
+    const strokeWidth = Math.min(minWidth, minWidth / this._zoom);
 
-    this.markup.getElement(this.ID_CLASS_PREFIX + "root").setAttribute("style",
-      `stroke-width:${strokeWidth};`);
+    this.markup
+      .getElement(this.ID_CLASS_PREFIX + "root")
+      .setAttribute("style", `stroke-width:${strokeWidth};`);
   },
 
-  destroy: function () {
+  updateViewportInfobar: function() {
+    const { window } = this.env;
+    const { innerHeight, innerWidth } = window;
+    const infobarId = this.ID_CLASS_PREFIX + "viewport-infobar-container";
+    const textContent = innerWidth + "px \u00D7 " + innerHeight + "px";
+    this.markup.getElement(infobarId).setTextContent(textContent);
+  },
+
+  destroy: function() {
     this.hide();
 
-    let { pageListenerTarget } = this.env;
-    pageListenerTarget.removeEventListener("scroll", this);
-    pageListenerTarget.removeEventListener("pagehide", this);
+    const { pageListenerTarget } = this.env;
+
+    if (pageListenerTarget) {
+      pageListenerTarget.removeEventListener("scroll", this);
+      pageListenerTarget.removeEventListener("pagehide", this);
+    }
 
     this.markup.destroy();
 
-    events.emit(this, "destroy");
+    EventEmitter.emit(this, "destroy");
   },
 
-  show: function () {
-    this.markup.removeAttributeForElement(this.ID_CLASS_PREFIX + "elements",
-      "hidden");
+  show: function() {
+    this.markup.removeAttributeForElement(
+      this.ID_CLASS_PREFIX + "elements",
+      "hidden"
+    );
 
     this._update();
 
     return true;
   },
 
-  hide: function () {
-    this.markup.setAttributeForElement(this.ID_CLASS_PREFIX + "elements",
-      "hidden", "true");
+  hide: function() {
+    this.markup.setAttributeForElement(
+      this.ID_CLASS_PREFIX + "elements",
+      "hidden",
+      "true"
+    );
 
     this._cancelUpdate();
-  }
+  },
 };
 exports.RulersHighlighter = RulersHighlighter;

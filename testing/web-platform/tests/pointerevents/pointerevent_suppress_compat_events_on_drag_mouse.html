@@ -8,10 +8,14 @@
     <link rel="stylesheet" type="text/css" href="pointerevent_styles.css">
     <script src="/resources/testharness.js"></script>
     <script src="/resources/testharnessreport.js"></script>
+    <script src="/resources/testdriver.js"></script>
+    <script src="/resources/testdriver-actions.js"></script>
+    <script src="/resources/testdriver-vendor.js"></script>
     <script type="text/javascript" src="pointerevent_support.js"></script>
     <script type="text/javascript">
       var test_pointerEvent = async_test("Suppress compat mouse events on drag");
       add_completion_callback(end_of_test);
+      var actions_promise;
 
       var detected_pointertypes = {};
       var event_log = [];
@@ -34,14 +38,18 @@
                   "mousedown@target1, mousemove@target1, mouseup@target1");
           }, "Event log");
 
-          test_pointerEvent.done(); // complete test
+          // Make sure the test finishes after all the input actions are completed.
+          actions_promise.then( () => {
+              test_pointerEvent.done();
+          });
       }
 
       function run() {
-          on_event(document.getElementById("done"), "click", end_of_interaction);
+          var targetDone = document.getElementById('done');
+          on_event(targetDone, "click", end_of_interaction);
 
           var target_list = ["target0", "target1"];
-          var pointer_event_list = ["pointerdown"];
+          var pointer_event_list = ["pointerdown" , "pointermove", "pointerup"];
           var mouse_event_list = ["mousedown", "mouseup", "mousemove"];
 
           target_list.forEach(function(targetId) {
@@ -52,9 +60,11 @@
                       detected_pointertypes[event.pointerType] = true;
                       var label = event.type + "@" + targetId;
 
-                      test(function () {
-                          assert_true(event.isPrimary);
-                      }, "primary pointer " + label);
+                      if (event.type == "pointerdown") {
+                          test(function () {
+                              assert_true(event.isPrimary);
+                          }, "primary pointer " + label);
+                      }
 
                       if (label === "pointerdown@target0")
                           event.preventDefault();
@@ -72,6 +82,21 @@
                   });
               });
           });
+
+          // Inject mouse inputs.
+          actions_promise = new test_driver.Actions()
+              .pointerMove(0, 0, {origin: target0})
+              .pointerDown()
+              .pointerMove(10, 0, {origin: target0})
+              .pointerUp()
+              .pointerMove(0, 0, {origin: target1})
+              .pointerDown()
+              .pointerMove(10, 0, {origin: target1})
+              .pointerUp()
+              .pointerMove(0, 0, {origin: targetDone})
+              .pointerDown()
+              .pointerUp()
+              .send();
       }
     </script>
     <style>

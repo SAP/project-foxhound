@@ -7,31 +7,32 @@
 #define CertBlocklist_h
 
 #include "mozilla/Mutex.h"
-#include "nsClassHashtable.h"
 #include "nsCOMPtr.h"
+#include "nsClassHashtable.h"
 #include "nsICertBlocklist.h"
 #include "nsIOutputStream.h"
-#include "nsTHashtable.h"
 #include "nsIX509CertDB.h"
-#include "pkix/Input.h"
+#include "nsString.h"
+#include "nsTHashtable.h"
+#include "mozpkix/Input.h"
 
-#define NS_CERT_BLOCKLIST_CID \
-{0x11aefd53, 0x2fbb, 0x4c92, {0xa0, 0xc1, 0x05, 0x32, 0x12, 0xae, 0x42, 0xd0} }
+#define NS_CERT_BLOCKLIST_CID                        \
+  {                                                  \
+    0x11aefd53, 0x2fbb, 0x4c92, {                    \
+      0xa0, 0xc1, 0x05, 0x32, 0x12, 0xae, 0x42, 0xd0 \
+    }                                                \
+  }
 
 enum CertBlocklistItemMechanism {
   BlockByIssuerAndSerial,
   BlockBySubjectAndPubKey
 };
 
-enum CertBlocklistItemState {
-  CertNewFromBlocklist,
-  CertOldFromLocalCache
-};
+enum CertBlocklistItemState { CertNewFromBlocklist, CertOldFromLocalCache };
 
-class CertBlocklistItem
-{
-public:
-  CertBlocklistItem(const uint8_t*  DNData, size_t DNLength,
+class CertBlocklistItem {
+ public:
+  CertBlocklistItem(const uint8_t* DNData, size_t DNLength,
                     const uint8_t* otherData, size_t otherLength,
                     CertBlocklistItemMechanism itemMechanism);
   CertBlocklistItem(const CertBlocklistItem& aItem);
@@ -42,7 +43,7 @@ public:
   bool mIsCurrent;
   CertBlocklistItemMechanism mItemMechanism;
 
-private:
+ private:
   size_t mDNLength;
   uint8_t* mDNData;
   size_t mOtherLength;
@@ -54,15 +55,14 @@ typedef nsTHashtable<BlocklistItemKey> BlocklistTable;
 typedef nsTHashtable<nsCStringHashKey> BlocklistStringSet;
 typedef nsClassHashtable<nsCStringHashKey, BlocklistStringSet> IssuerTable;
 
-class CertBlocklist : public nsICertBlocklist
-{
-public:
+class CertBlocklist : public nsICertBlocklist {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICERTBLOCKLIST
   CertBlocklist();
   nsresult Init();
 
-private:
+ private:
   BlocklistTable mBlocklist;
   nsresult AddRevokedCertInternal(const nsACString& aEncodedDN,
                                   const nsACString& aEncodedOther,
@@ -77,8 +77,8 @@ private:
   nsresult EnsureBackingFileInitialized(mozilla::MutexAutoLock& lock);
   nsCOMPtr<nsIFile> mBackingFile;
 
-protected:
-  static void PreferenceChanged(const char* aPref, void* aClosure);
+ protected:
+  static void PreferenceChanged(const char* aPref, CertBlocklist* aBlocklist);
   static uint32_t sLastBlocklistUpdate;
   static uint32_t sLastKintoUpdate;
   static uint32_t sMaxStaleness;
@@ -86,4 +86,4 @@ protected:
   virtual ~CertBlocklist();
 };
 
-#endif // CertBlocklist_h
+#endif  // CertBlocklist_h

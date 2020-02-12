@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1268736
 -->
 <head>
   <title>Test for Bug 1268736</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1268736">Mozilla Bug 1268736</a>
@@ -37,11 +37,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1268736
 
 function getEditor() {
   const Ci = SpecialPowers.Ci;
-  var editingSession = SpecialPowers.wrap(window)
-                                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                                    .getInterface(Ci.nsIWebNavigation)
-                                    .QueryInterface(Ci.nsIInterfaceRequestor)
-                                    .getInterface(Ci.nsIEditingSession);
+  var editingSession = SpecialPowers.wrap(window).docShell.editingSession;
   return editingSession.getEditorForWindow(window).QueryInterface(Ci.nsITableEditor);
 }
 

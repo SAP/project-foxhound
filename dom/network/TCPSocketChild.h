@@ -12,14 +12,13 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 #include "js/TypeDecls.h"
+#include "nsICancelable.h"
 
 class nsITCPSocketCallback;
 
 namespace IPC {
-bool
-DeserializeArrayBuffer(JSContext* cx,
-                       const InfallibleTArray<uint8_t>& aBuffer,
-                       JS::MutableHandle<JS::Value> aVal);
+bool DeserializeArrayBuffer(JSContext* cx, const nsTArray<uint8_t>& aBuffer,
+                            JS::MutableHandle<JS::Value> aVal);
 }
 
 namespace mozilla {
@@ -28,14 +27,14 @@ namespace dom {
 class TCPSocket;
 
 class TCPSocketChildBase : public nsISupports {
-public:
+ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TCPSocketChildBase)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
 
-protected:
+ protected:
   TCPSocketChildBase();
   virtual ~TCPSocketChildBase();
 
@@ -43,48 +42,39 @@ protected:
   bool mIPCOpen;
 };
 
-class TCPSocketChild : public mozilla::net::PTCPSocketChild
-                     , public TCPSocketChildBase
-{
-public:
+class TCPSocketChild : public mozilla::net::PTCPSocketChild,
+                       public TCPSocketChildBase {
+ public:
   NS_IMETHOD_(MozExternalRefCountType) Release() override;
 
-  TCPSocketChild(const nsAString& aHost, const uint16_t& aPort);
+  TCPSocketChild(const nsAString& aHost, const uint16_t& aPort,
+                 nsIEventTarget* aTarget);
   ~TCPSocketChild();
 
-  void SendOpen(nsITCPSocketCallback* aSocket, bool aUseSSL, bool aUseArrayBuffers);
-  void SendWindowlessOpenBind(nsITCPSocketCallback* aSocket,
-                              const nsACString& aRemoteHost, uint16_t aRemotePort,
-                              const nsACString& aLocalHost, uint16_t aLocalPort,
-                              bool aUseSSL);
-  NS_IMETHOD SendSendArray(nsTArray<uint8_t>& aArray,
-                           uint32_t aTrackingNumber);
-  void SendSend(const nsACString& aData, uint32_t aTrackingNumber);
-  nsresult SendSend(const ArrayBuffer& aData,
-                    uint32_t aByteOffset,
-                    uint32_t aByteLength,
-                    uint32_t aTrackingNumber);
-  void SendSendArray(nsTArray<uint8_t>* arr,
-                     uint32_t trackingNumber);
+  void SendOpen(nsITCPSocketCallback* aSocket, bool aUseSSL,
+                bool aUseArrayBuffers);
+  void SendSend(const nsACString& aData);
+  nsresult SendSend(const ArrayBuffer& aData, uint32_t aByteOffset,
+                    uint32_t aByteLength);
   void SetSocket(TCPSocket* aSocket);
 
   void GetHost(nsAString& aHost);
   void GetPort(uint16_t* aPort);
 
-  virtual bool RecvCallback(const nsString& aType,
-                            const CallbackData& aData,
-                            const uint32_t& aReadyState) override;
-  virtual bool RecvRequestDelete() override;
-  virtual bool RecvUpdateBufferedAmount(const uint32_t& aBufferred,
-                                        const uint32_t& aTrackingNumber) override;
-  nsresult SetFilterName(const nsACString& aFilterName);
-private:
+  mozilla::ipc::IPCResult RecvCallback(const nsString& aType,
+                                       const CallbackData& aData,
+                                       const uint32_t& aReadyState);
+  mozilla::ipc::IPCResult RecvRequestDelete();
+  mozilla::ipc::IPCResult RecvUpdateBufferedAmount(
+      const uint32_t& aBufferred, const uint32_t& aTrackingNumber);
+
+ private:
   nsString mHost;
   uint16_t mPort;
-  nsCString mFilterName;
+  nsCOMPtr<nsIEventTarget> mIPCEventTarget;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

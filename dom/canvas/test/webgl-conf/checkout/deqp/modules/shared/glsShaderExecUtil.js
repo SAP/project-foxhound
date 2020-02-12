@@ -198,16 +198,12 @@ goog.scope(function() {
      * @return {string}
      */
     glsShaderExecUtil.generateEmptyFragmentSource = function() {
-        /** @type {boolean} */ var customOut = true;
         /** @type {string} */ var src;
 
         src = '#version 300 es\n';
-
-        // \todo [2013-08-05 pyry] Do we need one dummy output?
-
+        src += 'out lowp vec4 color;\n';
         src += 'void main (void)\n{\n';
-        if (!customOut)
-            src += ' gl.FragColor = vec4(0.0);\n';
+        src += ' color = vec4(0.0);\n';
         src += '}\n';
 
         return src;
@@ -480,7 +476,7 @@ goog.scope(function() {
 
         // Read back data.
         var result = new ArrayBuffer(outputBufferStride * numValues);
-        gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, result);
+        gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, new Uint8Array(result));
         /** @type {number} */ var curOffset = 0; // Offset in buffer in bytes.
 
         for (var outputNdx = 0; outputNdx < this.m_outputs.length; outputNdx++) {

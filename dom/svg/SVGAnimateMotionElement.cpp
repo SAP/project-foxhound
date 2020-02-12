@@ -7,59 +7,43 @@
 #include "mozilla/dom/SVGAnimateMotionElement.h"
 #include "mozilla/dom/SVGAnimateMotionElementBinding.h"
 
-NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(AnimateMotion)
+NS_IMPL_NS_NEW_SVG_ELEMENT(AnimateMotion)
 
 namespace mozilla {
 namespace dom {
 
-JSObject*
-SVGAnimateMotionElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGAnimateMotionElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* SVGAnimateMotionElement::WrapNode(JSContext* aCx,
+                                            JS::Handle<JSObject*> aGivenProto) {
+  return SVGAnimateMotionElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 //----------------------------------------------------------------------
 // Implementation
 
-SVGAnimateMotionElement::SVGAnimateMotionElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : SVGAnimationElement(aNodeInfo)
-{
-}
+SVGAnimateMotionElement::SVGAnimateMotionElement(
+    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    : SVGAnimationElement(std::move(aNodeInfo)) {}
 
 //----------------------------------------------------------------------
-// nsIDOMNode methods
+// nsINode methods
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGAnimateMotionElement)
 
 //----------------------------------------------------------------------
 
-nsSMILAnimationFunction&
-SVGAnimateMotionElement::AnimationFunction()
-{
+SMILAnimationFunction& SVGAnimateMotionElement::AnimationFunction() {
   return mAnimationFunction;
 }
 
-bool
-SVGAnimateMotionElement::GetTargetAttributeName(int32_t *aNamespaceID,
-                                                nsIAtom **aLocalName) const
-{
+bool SVGAnimateMotionElement::GetTargetAttributeName(
+    int32_t* aNamespaceID, nsAtom** aLocalName) const {
   // <animateMotion> doesn't take an attributeName, since it doesn't target an
   // 'attribute' per se.  We'll use a unique dummy attribute-name so that our
-  // nsSMILTargetIdentifier logic (which requires a attribute name) still works.
+  // SMILTargetIdentifier logic (which requires a attribute name) still works.
   *aNamespaceID = kNameSpaceID_None;
   *aLocalName = nsGkAtoms::mozAnimateMotionDummyAttr;
   return true;
 }
 
-nsSMILTargetAttrType
-SVGAnimateMotionElement::GetTargetAttributeType() const
-{
-  // <animateMotion> doesn't take an attributeType, since it doesn't target an
-  // 'attribute' per se.  We'll just return 'XML' for simplicity.  (This just
-  // needs to match what we expect in nsSVGElement::GetAnimAttr.)
-  return eSMILTargetAttrType_XML;
-}
-
-} // namespace dom
-} // namespace mozilla
-
+}  // namespace dom
+}  // namespace mozilla

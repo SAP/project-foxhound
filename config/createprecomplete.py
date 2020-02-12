@@ -6,8 +6,12 @@
 # longer present in a complete update. The current working directory is used for
 # the location to enumerate and to create the precomplete file.
 
-import sys
+from __future__ import absolute_import
+from __future__ import unicode_literals
+
 import os
+import io
+
 
 def get_build_entries(root_path):
     """ Iterates through the root_path, creating a list for each file and
@@ -39,6 +43,7 @@ def get_build_entries(root_path):
 
     return rel_file_path_list, rel_dir_path_list
 
+
 def generate_precomplete(root_path):
     """ Creates the precomplete file containing the remove and rmdir
         application update instructions. The given directory is used
@@ -50,18 +55,19 @@ def generate_precomplete(root_path):
         root_path = os.path.abspath(os.path.join(root_path, '../../'))
         rel_path_precomplete = "Contents/Resources/precomplete"
 
-    precomplete_file_path = os.path.join(root_path,rel_path_precomplete)
+    precomplete_file_path = os.path.join(root_path, rel_path_precomplete)
     # Open the file so it exists before building the list of files and open it
     # in binary mode to prevent OS specific line endings.
-    precomplete_file = open(precomplete_file_path, "wb")
+    precomplete_file = io.open(precomplete_file_path, mode="wt", newline='\n')
     rel_file_path_list, rel_dir_path_list = get_build_entries(root_path)
     for rel_file_path in rel_file_path_list:
-        precomplete_file.writelines("remove \""+rel_file_path+"\"\n")
+        precomplete_file.write("remove \""+rel_file_path+"\"\n")
 
     for rel_dir_path in rel_dir_path_list:
-        precomplete_file.writelines("rmdir \""+rel_dir_path+"\"\n")
+        precomplete_file.write("rmdir \""+rel_dir_path+"\"\n")
 
     precomplete_file.close()
+
 
 if __name__ == "__main__":
     generate_precomplete(os.getcwd())

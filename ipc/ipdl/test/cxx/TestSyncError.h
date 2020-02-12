@@ -9,63 +9,53 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestSyncErrorParent : public PTestSyncErrorParent {
+  friend class PTestSyncErrorParent;
 
-class TestSyncErrorParent :
-    public PTestSyncErrorParent
-{
-public:
-    TestSyncErrorParent();
-    virtual ~TestSyncErrorParent();
+ public:
+  TestSyncErrorParent();
+  virtual ~TestSyncErrorParent();
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    void Main();
+  void Main();
 
-protected:    
-    virtual bool RecvError() override;
+ protected:
+  mozilla::ipc::IPCResult RecvError();
 
-    virtual void ProcessingError(Result aCode, const char* aReason) override
-    {
-        // Ignore errors
-    }
+  virtual void ProcessingError(Result aCode, const char* aReason) override {
+    // Ignore errors
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestSyncErrorChild : public PTestSyncErrorChild {
+  friend class PTestSyncErrorChild;
 
-class TestSyncErrorChild :
-    public PTestSyncErrorChild
-{
-public:
-    TestSyncErrorChild();
-    virtual ~TestSyncErrorChild();
+ public:
+  TestSyncErrorChild();
+  virtual ~TestSyncErrorChild();
 
-protected:
-    virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual void ProcessingError(Result aCode, const char* aReason) override
-    {
-        // Ignore errors
-    }
+  virtual void ProcessingError(Result aCode, const char* aReason) override {
+    // Ignore errors
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestSyncError_h
+#endif  // ifndef mozilla__ipdltest_TestSyncError_h

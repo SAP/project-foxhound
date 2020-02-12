@@ -11,19 +11,10 @@
 
 class nsWifiAccessPoint;
 
-// This class allows the wifi monitor to use WinWifiScanner and WinXPWifiScanner interchangeably.
-class WindowsWifiScannerInterface {
-public:
-  virtual ~WindowsWifiScannerInterface() {}
-
-  virtual nsresult GetAccessPointsFromWLAN(nsCOMArray<nsWifiAccessPoint> &accessPoints) = 0;
-};
-
-
-class WinWifiScanner : public WindowsWifiScannerInterface {
+class WinWifiScanner final {
  public:
   WinWifiScanner();
-  virtual ~WinWifiScanner();
+  ~WinWifiScanner();
 
   /**
    * GetAccessPointsFromWLAN
@@ -34,7 +25,7 @@ class WinWifiScanner : public WindowsWifiScannerInterface {
    * @param accessPoints The collection to populate with available APs
    * @return NS_OK on success, failure codes on failure
    */
-  nsresult GetAccessPointsFromWLAN(nsCOMArray<nsWifiAccessPoint> &accessPoints);
+  nsresult GetAccessPointsFromWLAN(nsCOMArray<nsWifiAccessPoint>& accessPoints);
 
  private:
   nsAutoPtr<WinWLANLibrary> mWlanLibrary;

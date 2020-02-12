@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # mozilla/autoload.py: Autoload SpiderMonkey pretty-printers.
 
 print("Loading JavaScript value pretty-printers; see js/src/gdb/README.")
@@ -21,12 +25,13 @@ import mozilla.unwind
 
 # The user may have personal pretty-printers. Get those, too, if they exist.
 try:
-    import my_mozilla_printers
+    import my_mozilla_printers  # NOQA: F401
 except ImportError:
     pass
 
-# Register our pretty-printers with |objfile|.
+
 def register(objfile):
+    # Register our pretty-printers with |objfile|.
     lookup = mozilla.prettyprinters.lookup_for_objfile(objfile)
     if lookup:
         gdb.printing.register_pretty_printer(objfile, lookup, replace=True)

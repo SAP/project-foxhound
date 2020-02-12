@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,32 +10,12 @@
 namespace mozilla {
 namespace layers {
 
-gfx::Polygon3D PopFront(std::deque<gfx::Polygon3D>& aPolygons)
-{
-  gfx::Polygon3D polygon = std::move(aPolygons.front());
-  aPolygons.pop_front();
-  return polygon;
-}
+void BSPTree::BuildDrawOrder(BSPTreeNode* aNode,
+                             nsTArray<LayerPolygon>& aLayers) const {
+  const gfx::Point4D& normal = aNode->First().GetNormal();
 
-namespace {
-
-static int sign(float d) {
-  if (d > 0) return 1;
-  if (d < 0) return -1;
-
-  return 0;
-}
-
-}
-
-void
-BSPTree::BuildDrawOrder(const UniquePtr<BSPTreeNode>& aNode,
-                        nsTArray<gfx::Polygon3D>& aPolygons) const
-{
-  const gfx::Point3D& normal = aNode->First().GetNormal();
-
-  UniquePtr<BSPTreeNode> *front = &aNode->front;
-  UniquePtr<BSPTreeNode> *back = &aNode->back;
+  BSPTreeNode* front = aNode->front;
+  BSPTreeNode* back = aNode->back;
 
   // Since the goal is to return the draw order from back to front, we reverse
   // the traversal order if the current polygon is facing towards the camera.
@@ -44,144 +25,91 @@ BSPTree::BuildDrawOrder(const UniquePtr<BSPTreeNode>& aNode,
     std::swap(front, back);
   }
 
-  if (*front) {
-    BuildDrawOrder(*front, aPolygons);
+  if (front) {
+    BuildDrawOrder(front, aLayers);
   }
 
-  for (gfx::Polygon3D& polygon : aNode->polygons) {
-    aPolygons.AppendElement(std::move(polygon));
-  }
+  for (LayerPolygon& layer : aNode->layers) {
+    MOZ_ASSERT(layer.geometry);
 
-  if (*back) {
-    BuildDrawOrder(*back, aPolygons);
-  }
-}
-
-nsTArray<float>
-BSPTree::CalculateDotProduct(const gfx::Polygon3D& aFirst,
-                             const gfx::Polygon3D& aSecond,
-                             size_t& aPos, size_t& aNeg) const
-{
-  // Point classification might produce incorrect results due to numerical
-  // inaccuracies. Using an epsilon value makes the splitting plane "thicker".
-  const float epsilon = 0.05f;
-
-  const gfx::Point3D& normal = aFirst.GetNormal();
-  const gfx::Point3D& planePoint = aFirst[0];
-
-  nsTArray<float> dotProducts;
-
-  for (const gfx::Point3D& point : aSecond.GetPoints()) {
-    float dot = (point - planePoint).DotProduct(normal);
-
-    if (dot > epsilon) {
-      aPos++;
-    } else if (dot < -epsilon) {
-      aNeg++;
-    } else {
-      // The point is within the thick plane.
-      dot = 0.0f;
+    if (layer.geometry->GetPoints().Length() >= 3) {
+      aLayers.AppendElement(std::move(layer));
     }
-
-    dotProducts.AppendElement(dot);
   }
 
-  return dotProducts;
+  if (back) {
+    BuildDrawOrder(back, aLayers);
+  }
 }
 
-void
-BSPTree::BuildTree(UniquePtr<BSPTreeNode>& aRoot,
-                   std::deque<gfx::Polygon3D>& aPolygons)
-{
-  if (aPolygons.empty()) {
+void BSPTree::BuildTree(BSPTreeNode* aRoot, std::list<LayerPolygon>& aLayers) {
+  MOZ_ASSERT(!aLayers.empty());
+
+  aRoot->layers.push_back(std::move(aLayers.front()));
+  aLayers.pop_front();
+
+  if (aLayers.empty()) {
     return;
   }
 
-  const gfx::Polygon3D& splittingPlane = aRoot->First();
-  std::deque<gfx::Polygon3D> backPolygons, frontPolygons;
+  const gfx::Polygon& plane = aRoot->First();
+  MOZ_ASSERT(!plane.IsEmpty());
 
-  for (gfx::Polygon3D& polygon : aPolygons) {
+  const gfx::Point4D& planeNormal = plane.GetNormal();
+  const gfx::Point4D& planePoint = plane.GetPoints()[0];
+
+  std::list<LayerPolygon> backLayers, frontLayers;
+  for (LayerPolygon& layerPolygon : aLayers) {
+    const nsTArray<gfx::Point4D>& geometry = layerPolygon.geometry->GetPoints();
+
+    // Calculate the plane-point distances for the polygon classification.
     size_t pos = 0, neg = 0;
-    nsTArray<float> dots = CalculateDotProduct(splittingPlane, polygon,
-                                               pos, neg);
+    nsTArray<float> distances = CalculatePointPlaneDistances(
+        geometry, planeNormal, planePoint, pos, neg);
 
     // Back polygon
     if (pos == 0 && neg > 0) {
-      backPolygons.push_back(std::move(polygon));
+      backLayers.push_back(std::move(layerPolygon));
     }
     // Front polygon
     else if (pos > 0 && neg == 0) {
-     frontPolygons.push_back(std::move(polygon));
+      frontLayers.push_back(std::move(layerPolygon));
     }
     // Coplanar polygon
     else if (pos == 0 && neg == 0) {
-      aRoot->polygons.push_back(std::move(polygon));
+      aRoot->layers.push_back(std::move(layerPolygon));
     }
     // Polygon intersects with the splitting plane.
     else if (pos > 0 && neg > 0) {
-      nsTArray<gfx::Point3D> backPoints, frontPoints;
-      SplitPolygon(splittingPlane, polygon, dots, backPoints, frontPoints);
+      nsTArray<gfx::Point4D> backPoints, frontPoints;
+      // Clip the polygon against the plane. We reuse the previously calculated
+      // distances to find the plane-edge intersections.
+      ClipPointsWithPlane(geometry, planeNormal, distances, backPoints,
+                          frontPoints);
 
-      backPolygons.push_back(gfx::Polygon3D(std::move(backPoints)));
-      frontPolygons.push_back(gfx::Polygon3D(std::move(frontPoints)));
+      const gfx::Point4D& normal = layerPolygon.geometry->GetNormal();
+      Layer* layer = layerPolygon.layer;
+
+      if (backPoints.Length() >= 3) {
+        backLayers.emplace_back(layer, std::move(backPoints), normal);
+      }
+
+      if (frontPoints.Length() >= 3) {
+        frontLayers.emplace_back(layer, std::move(frontPoints), normal);
+      }
     }
   }
 
-  if (!backPolygons.empty()) {
-    aRoot->back.reset(new BSPTreeNode(PopFront(backPolygons)));
-    BuildTree(aRoot->back, backPolygons);
+  if (!backLayers.empty()) {
+    aRoot->back = new (mPool) BSPTreeNode(mListPointers);
+    BuildTree(aRoot->back, backLayers);
   }
 
-  if (!frontPolygons.empty()) {
-    aRoot->front.reset(new BSPTreeNode(PopFront(frontPolygons)));
-    BuildTree(aRoot->front, frontPolygons);
-  }
-}
-
-void
-BSPTree::SplitPolygon(const gfx::Polygon3D& aSplittingPlane,
-                      const gfx::Polygon3D& aPolygon,
-                      const nsTArray<float>& dots,
-                      nsTArray<gfx::Point3D>& backPoints,
-                      nsTArray<gfx::Point3D>& frontPoints)
-{
-  const gfx::Point3D& normal = aSplittingPlane.GetNormal();
-  const size_t pointCount = aPolygon.GetPoints().Length();
-
-  for (size_t i = 0; i < pointCount; ++i) {
-    size_t j = (i + 1) % pointCount;
-
-    const gfx::Point3D& a = aPolygon[i];
-    const gfx::Point3D& b = aPolygon[j];
-    const float dotA = dots[i];
-    const float dotB = dots[j];
-
-    // The point is in front of the plane.
-    if (dotA >= 0) {
-      frontPoints.AppendElement(a);
-    }
-
-    // The point is behind the plane.
-    if (dotA <= 0) {
-      backPoints.AppendElement(a);
-    }
-
-    // If the sign of the dot product changes between two consecutive vertices,
-    // the splitting plane intersects the corresponding polygon edge.
-    if (sign(dotA) != sign(dotB)) {
-
-      // Calculate the line segment and plane intersection point.
-      const gfx::Point3D ab = b - a;
-      const float dotAB = ab.DotProduct(normal);
-      const float t = -dotA / dotAB;
-      const gfx::Point3D p = a + (ab * t);
-
-      // Add the intersection point to both polygons.
-      backPoints.AppendElement(p);
-      frontPoints.AppendElement(p);
-    }
+  if (!frontLayers.empty()) {
+    aRoot->front = new (mPool) BSPTreeNode(mListPointers);
+    BuildTree(aRoot->front, frontLayers);
   }
 }
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla

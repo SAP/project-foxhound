@@ -10,28 +10,46 @@
 interface WindowProxy;
 
 [Pref="dom.w3c_pointer_events.enabled",
- Constructor(DOMString type, optional PointerEventInit eventInitDict)]
+ Exposed=Window]
 interface PointerEvent : MouseEvent
 {
+  constructor(DOMString type, optional PointerEventInit eventInitDict = {});
+
+  [NeedsCallerType]
   readonly attribute long pointerId;
+
+  [NeedsCallerType]
   readonly attribute long width;
+  [NeedsCallerType]
   readonly attribute long height;
+  [NeedsCallerType]
   readonly attribute float pressure;
+  [NeedsCallerType]
+  readonly attribute float tangentialPressure;
+  [NeedsCallerType]
   readonly attribute long tiltX;
+  [NeedsCallerType]
   readonly attribute long tiltY;
+  [NeedsCallerType]
+  readonly attribute long twist;
+
+  [NeedsCallerType]
   readonly attribute DOMString pointerType;
   readonly attribute boolean isPrimary;
+  sequence<PointerEvent> getCoalescedEvents();
 };
 
 dictionary PointerEventInit : MouseEventInit
 {
   long pointerId = 0;
-  long width = 0;
-  long height = 0;
+  long width = 1;
+  long height = 1;
   float pressure = 0;
+  float tangentialPressure = 0;
   long tiltX = 0;
   long tiltY = 0;
+  long twist = 0;
   DOMString pointerType = "";
   boolean isPrimary = false;
+  sequence<PointerEvent> coalescedEvents = [];
 };
-

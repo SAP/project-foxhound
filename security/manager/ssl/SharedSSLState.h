@@ -17,9 +17,9 @@ namespace mozilla {
 namespace psm {
 
 class SharedSSLState {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedSSLState)
-  SharedSSLState();
+  explicit SharedSSLState(uint32_t aTlsFlags = 0);
 
   static void GlobalInit();
   static void GlobalCleanup();
@@ -28,20 +28,19 @@ public:
     return mClientAuthRemember;
   }
 
-  nsSSLIOLayerHelpers& IOLayerHelpers() {
-    return mIOLayerHelpers;
-  }
+  nsSSLIOLayerHelpers& IOLayerHelpers() { return mIOLayerHelpers; }
 
   // Main-thread only
   void ResetStoredData();
   void NotePrivateBrowsingStatus();
-  void SetOCSPStaplingEnabled(bool staplingEnabled)
-  {
+  void SetOCSPStaplingEnabled(bool staplingEnabled) {
     mOCSPStaplingEnabled = staplingEnabled;
   }
-  void SetOCSPMustStapleEnabled(bool mustStapleEnabled)
-  {
+  void SetOCSPMustStapleEnabled(bool mustStapleEnabled) {
     mOCSPMustStapleEnabled = mustStapleEnabled;
+  }
+  void SetSignedCertTimestampsEnabled(bool signedCertTimestampsEnabled) {
+    mSignedCertTimestampsEnabled = signedCertTimestampsEnabled;
   }
 
   // The following methods may be called from any thread
@@ -50,8 +49,11 @@ public:
   static void NoteCertOverrideServiceInstantiated();
   bool IsOCSPStaplingEnabled() const { return mOCSPStaplingEnabled; }
   bool IsOCSPMustStapleEnabled() const { return mOCSPMustStapleEnabled; }
+  bool IsSignedCertTimestampsEnabled() const {
+    return mSignedCertTimestampsEnabled;
+  }
 
-private:
+ private:
   ~SharedSSLState();
 
   void Cleanup();
@@ -67,12 +69,13 @@ private:
   bool mSocketCreated;
   bool mOCSPStaplingEnabled;
   bool mOCSPMustStapleEnabled;
+  bool mSignedCertTimestampsEnabled;
 };
 
 SharedSSLState* PublicSSLState();
 SharedSSLState* PrivateSSLState();
 
-} // namespace psm
-} // namespace mozilla
+}  // namespace psm
+}  // namespace mozilla
 
 #endif

@@ -24,6 +24,8 @@ TODO:
   these settings are set.
 """
 
+from __future__ import print_function
+
 from copy import deepcopy
 from optparse import OptionParser, Option, OptionGroup
 import os
@@ -78,6 +80,7 @@ def make_immutable(item):
 class LockedTuple(tuple):
     def __new__(cls, items):
         return tuple.__new__(cls, (make_immutable(x) for x in items))
+
     def __deepcopy__(self, memo):
         return [deepcopy(elem, memo) for elem in self]
 
@@ -135,6 +138,13 @@ class ReadOnlyDict(dict):
             result[k] = deepcopy(v, memo)
         return result
 
+
+DEFAULT_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "configs",
+)
+
+
 # parse_config_file {{{1
 def parse_config_file(file_name, quiet=False, search_path=None,
                       config_dict_name="config"):
@@ -145,8 +155,7 @@ def parse_config_file(file_name, quiet=False, search_path=None,
         file_path = file_name
     else:
         if not search_path:
-            search_path = ['.', os.path.join(sys.path[0], '..', 'configs'),
-                           os.path.join(sys.path[0], '..', '..', 'configs')]
+            search_path = ['.', DEFAULT_CONFIG_PATH]
         for path in search_path:
             if os.path.exists(os.path.join(path, file_name)):
                 file_path = os.path.join(path, file_name)
@@ -165,7 +174,8 @@ def parse_config_file(file_name, quiet=False, search_path=None,
         config = dict(json_config)
         fh.close()
     else:
-        raise RuntimeError("Unknown config file type %s!" % file_name)
+        raise RuntimeError(
+            "Unknown config file type %s! (config files must end in .json or .py)" % file_name)
     # TODO return file_path
     return config
 
@@ -177,18 +187,18 @@ def download_config_file(url, file_name):
     max_sleeptime = 5 * 60
     while True:
         if n >= attempts:
-            print "Failed to download from url %s after %d attempts, quiting..." % (url, attempts)
+            print("Failed to download from url %s after %d attempts, quiting..." % (url, attempts))
             raise SystemError(-1)
         try:
             contents = urllib2.urlopen(url, timeout=30).read()
             break
-        except urllib2.URLError, e:
-            print "Error downloading from url %s: %s" % (url, str(e))
-        except socket.timeout, e:
-            print "Time out accessing %s: %s" % (url, str(e))
-        except socket.error, e:
-            print "Socket error when accessing %s: %s" % (url, str(e))
-        print "Sleeping %d seconds before retrying" % sleeptime
+        except urllib2.URLError as e:
+            print("Error downloading from url %s: %s" % (url, str(e)))
+        except socket.timeout as e:
+            print("Time out accessing %s: %s" % (url, str(e)))
+        except socket.error as e:
+            print("Socket error when accessing %s: %s" % (url, str(e)))
+        print("Sleeping %d seconds before retrying" % sleeptime)
         time.sleep(sleeptime)
         sleeptime = sleeptime * 2
         if sleeptime > max_sleeptime:
@@ -199,8 +209,8 @@ def download_config_file(url, file_name):
         f = open(file_name, 'w')
         f.write(contents)
         f.close()
-    except IOError, e:
-        print "Error writing downloaded contents to file %s: %s" % (file_name, str(e))
+    except IOError as e:
+        print("Error writing downloaded contents to file %s: %s" % (file_name, str(e)))
         raise SystemError(-1)
 
 
@@ -257,7 +267,7 @@ class BaseConfig(object):
             # not add anything from the test invocation command line
             # arguments to the mozharness options.
             if option_args is None:
-                option_args=['dummy_mozharness_script_with_no_command_line_options.py']
+                option_args = ['dummy_mozharness_script_with_no_command_line_options.py']
         if config_options is None:
             config_options = []
         self._create_config_parser(config_options, usage)
@@ -280,8 +290,13 @@ class BaseConfig(object):
             help="Specify the absolute path of the parent of the working directory"
         )
         self.config_parser.add_option(
-            "-c", "--config-file", "--cfg", action="extend", dest="config_files",
-            type="string", help="Specify a config file; can be repeated"
+            "--extra-config-path", action='extend', dest="config_paths",
+            type="string", help="Specify additional paths to search for config files.",
+        )
+        self.config_parser.add_option(
+            "-c", "--config-file", "--cfg", action="extend",
+            dest="config_files", default=[], type="string",
+            help="Specify a config file; can be repeated",
         )
         self.config_parser.add_option(
             "-C", "--opt-config-file", "--opt-cfg", action="extend",
@@ -302,6 +317,11 @@ class BaseConfig(object):
                  "files were used making up the config and specify their own "
                  "keys/values that were not overwritten by another cfg -- "
                  "held the highest hierarchy."
+        )
+        self.config_parser.add_option(
+            "--append-env-variables-from-configs", action="store_true",
+            dest="append_env_variables_from_configs",
+            help="Merge environment variables from config files."
         )
 
         # Logging
@@ -397,7 +417,7 @@ class BaseConfig(object):
 
     def verify_actions_order(self, action_list):
         try:
-            indexes = [ self.all_actions.index(elt) for elt in action_list ]
+            indexes = [self.all_actions.index(elt) for elt in action_list]
             sorted_indexes = sorted(indexes)
             for i in range(len(indexes)):
                 if indexes[i] != sorted_indexes[i]:
@@ -409,9 +429,9 @@ class BaseConfig(object):
             raise SystemExit(-1)
 
     def list_actions(self):
-        print "Actions available:"
+        print("Actions available:")
         for a in self.all_actions:
-            print "    " + ("*" if a in self.default_actions else " "), a
+            print("    " + ("*" if a in self.default_actions else " "), a)
         raise SystemExit(0)
 
     def get_cfgs_from_files(self, all_config_files, options):
@@ -432,6 +452,7 @@ class BaseConfig(object):
         way that self.config is made up.  See
         `mozharness.mozilla.building.buildbase.BuildingConfig` for an example.
         """
+        config_paths = options.config_paths or ['.']
         all_cfg_files_and_dicts = []
         for cf in all_config_files:
             try:
@@ -440,10 +461,15 @@ class BaseConfig(object):
                     file_path = os.path.join(os.getcwd(), file_name)
                     download_config_file(cf, file_path)
                     all_cfg_files_and_dicts.append(
-                        (file_path, parse_config_file(file_path))
+                        (file_path, parse_config_file(file_path, search_path=["."]))
                     )
                 else:
-                    all_cfg_files_and_dicts.append((cf, parse_config_file(cf)))
+                    all_cfg_files_and_dicts.append(
+                        (cf, parse_config_file(
+                            cf,
+                            search_path=config_paths + [DEFAULT_CONFIG_PATH]
+                        ))
+                    )
             except Exception:
                 if cf in options.opt_config_files:
                     print(
@@ -451,6 +477,11 @@ class BaseConfig(object):
                     )
                 else:
                     raise
+
+        if 'EXTRA_MOZHARNESS_CONFIG' in os.environ:
+            env_config = json.loads(os.environ['EXTRA_MOZHARNESS_CONFIG'])
+            all_cfg_files_and_dicts.append(("[EXTRA_MOZHARENSS_CONFIG]", env_config))
+
         return all_cfg_files_and_dicts
 
     def parse_args(self, args=None):
@@ -471,34 +502,36 @@ class BaseConfig(object):
                     self.list_actions()
                 print("Required config file not set! (use --config-file option)")
                 raise SystemExit(-1)
+
+        # this is what get_cfgs_from_files returns. It will represent each
+        # config file name and its assoctiated dict
+        # eg ('builds/branch_specifics.py', {'foo': 'bar'})
+        # let's store this to self for things like --interpret-config-files
+        self.all_cfg_files_and_dicts.extend(self.get_cfgs_from_files(
+            # append opt_config to allow them to overwrite previous configs
+            options.config_files + options.opt_config_files, options=options
+        ))
+        config = {}
+        if (self.append_env_variables_from_configs
+                or options.append_env_variables_from_configs):
+            # We only append values from various configs for the 'env' entry
+            # For everything else we follow the standard behaviour
+            for i, (c_file, c_dict) in enumerate(self.all_cfg_files_and_dicts):
+                for v in c_dict.keys():
+                    if v == 'env' and v in config:
+                        config[v].update(c_dict[v])
+                    else:
+                        config[v] = c_dict[v]
         else:
-            # this is what get_cfgs_from_files returns. It will represent each
-            # config file name and its assoctiated dict
-            # eg ('builds/branch_specifics.py', {'foo': 'bar'})
-            # let's store this to self for things like --interpret-config-files
-            self.all_cfg_files_and_dicts.extend(self.get_cfgs_from_files(
-                # append opt_config to allow them to overwrite previous configs
-                options.config_files + options.opt_config_files, options=options
-            ))
-            config = {}
-            if self.append_env_variables_from_configs:
-                # We only append values from various configs for the 'env' entry
-                # For everything else we follow the standard behaviour
-                for i, (c_file, c_dict) in enumerate(self.all_cfg_files_and_dicts):
-                    for v in c_dict.keys():
-                        if v == 'env' and v in config:
-                            config[v].update(c_dict[v])
-                        else:
-                            config[v] = c_dict[v]
-            else:
-                for i, (c_file, c_dict) in enumerate(self.all_cfg_files_and_dicts):
-                    config.update(c_dict)
-            # assign or update self._config depending on if it exists or not
-            #    NOTE self._config will be passed to ReadOnlyConfig's init -- a
-            #    dict subclass with immutable locking capabilities -- and serve
-            #    as the keys/values that make up that instance. Ultimately,
-            #    this becomes self.config during BaseScript's init
-            self.set_config(config)
+            for i, (c_file, c_dict) in enumerate(self.all_cfg_files_and_dicts):
+                config.update(c_dict)
+        # assign or update self._config depending on if it exists or not
+        #    NOTE self._config will be passed to ReadOnlyConfig's init -- a
+        #    dict subclass with immutable locking capabilities -- and serve
+        #    as the keys/values that make up that instance. Ultimately,
+        #    this becomes self.config during BaseScript's init
+        self.set_config(config)
+
         for key in defaults.keys():
             value = getattr(options, key)
             if value is None:

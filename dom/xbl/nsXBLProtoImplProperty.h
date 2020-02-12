@@ -8,24 +8,21 @@
 #define nsXBLProtoImplProperty_h__
 
 #include "mozilla/Attributes.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsString.h"
 #include "nsString.h"
 #include "nsXBLSerialize.h"
 #include "nsXBLMaybeCompiled.h"
 #include "nsXBLProtoImplMember.h"
 
-class nsXBLProtoImplProperty: public nsXBLProtoImplMember
-{
-public:
-  nsXBLProtoImplProperty(const char16_t* aName,
-                         const char16_t* aGetter, 
-                         const char16_t* aSetter,
-                         const char16_t* aReadOnly,
+class nsXBLProtoImplProperty : public nsXBLProtoImplMember {
+ public:
+  nsXBLProtoImplProperty(const char16_t* aName, const char16_t* aGetter,
+                         const char16_t* aSetter, const char16_t* aReadOnly,
                          uint32_t aLineNumber);
 
   nsXBLProtoImplProperty(const char16_t* aName, const bool aIsReadOnly);
- 
+
   virtual ~nsXBLProtoImplProperty();
 
   void AppendGetterText(const nsAString& aGetter);
@@ -34,18 +31,19 @@ public:
   void SetGetterLineNumber(uint32_t aLineNumber);
   void SetSetterLineNumber(uint32_t aLineNumber);
 
-  virtual nsresult InstallMember(JSContext* aCx,
-                                 JS::Handle<JSObject*> aTargetClassObject) override;
-  virtual nsresult CompileMember(mozilla::dom::AutoJSAPI& jsapi, const nsString& aClassStr,
+  virtual nsresult InstallMember(
+      JSContext* aCx, JS::Handle<JSObject*> aTargetClassObject) override;
+  virtual nsresult CompileMember(mozilla::dom::AutoJSAPI& jsapi,
+                                 const nsString& aClassStr,
                                  JS::Handle<JSObject*> aClassObject) override;
 
-  virtual void Trace(const TraceCallbacks& aCallback, void *aClosure) override;
+  virtual void Trace(const TraceCallbacks& aCallback, void* aClosure) override;
 
   nsresult Read(nsIObjectInputStream* aStream,
                 XBLBindingSerializeDetails aType);
   virtual nsresult Write(nsIObjectOutputStream* aStream) override;
 
-protected:
+ protected:
   typedef JS::Heap<nsXBLMaybeCompiled<nsXBLTextWithLineNumber> > PropertyOp;
 
   void EnsureUncompiledText(PropertyOp& aPropertyOp);
@@ -55,12 +53,13 @@ protected:
 
   // The raw text for the setter, or the JS object (after compilation).
   PropertyOp mSetter;
-  
-  unsigned mJSAttributes;  // A flag for all our JS properties (getter/setter/readonly/shared/enum)
+
+  unsigned mJSAttributes;  // A flag for all our JS properties
+                           // (getter/setter/readonly/shared/enum)
 
 #ifdef DEBUG
   bool mIsCompiled;
 #endif
 };
 
-#endif // nsXBLProtoImplProperty_h__
+#endif  // nsXBLProtoImplProperty_h__

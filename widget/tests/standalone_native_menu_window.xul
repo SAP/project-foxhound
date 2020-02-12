@@ -45,16 +45,16 @@
   <script type="application/javascript"><![CDATA[
 
     function ok(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+      window.arguments[0].SimpleTest.ok(condition, message);
     }
 
     function todo(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.todo(condition, message);
+      window.arguments[0].SimpleTest.todo(condition, message);
     }
 
     function onTestsFinished() {
       window.close();
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
     }
 
     var executedCommandID = "";
@@ -104,8 +104,6 @@
 
     function createStandaloneNativeMenu(menuNode) {
       try {
-        let Cc = Components.classes;
-        let Ci = Components.interfaces;
         let menu = Cc["@mozilla.org/widget/standalonenativemenu;1"].createInstance(Ci.nsIStandaloneNativeMenu);
         menu.init(menuNode);
         return menu;

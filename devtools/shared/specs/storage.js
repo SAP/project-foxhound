@@ -6,27 +6,27 @@
 const protocol = require("devtools/shared/protocol");
 const { Arg, RetVal, types } = protocol;
 
-let childSpecs = {};
+const childSpecs = {};
 
 function createStorageSpec(options) {
   // common methods for all storage types
-  let methods = {
+  const methods = {
     getStoreObjects: {
       request: {
         host: Arg(0),
         names: Arg(1, "nullable:array:string"),
-        options: Arg(2, "nullable:json")
+        options: Arg(2, "nullable:json"),
       },
-      response: RetVal(options.storeObjectType)
+      response: RetVal(options.storeObjectType),
     },
     getFields: {
       request: {
-        subType: Arg(0, "nullable:string")
+        subType: Arg(0, "nullable:string"),
       },
       response: {
-        value: RetVal("json")
-      }
-    }
+        value: RetVal("json"),
+      },
+    },
   };
 
   // extra methods specific for storage type
@@ -34,51 +34,52 @@ function createStorageSpec(options) {
 
   childSpecs[options.typeName] = protocol.generateActorSpec({
     typeName: options.typeName,
-    methods
+    methods,
   });
 }
 
 // Cookies store object
 types.addDictType("cookieobject", {
+  uniqueKey: "string",
   name: "string",
   value: "longstring",
   path: "nullable:string",
   host: "string",
-  isDomain: "boolean",
+  hostOnly: "boolean",
   isSecure: "boolean",
   isHttpOnly: "boolean",
   creationTime: "number",
   lastAccessed: "number",
-  expires: "number"
+  expires: "number",
 });
 
 // Array of cookie store objects
 types.addDictType("cookiestoreobject", {
   total: "number",
   offset: "number",
-  data: "array:nullable:cookieobject"
+  data: "array:nullable:cookieobject",
 });
 
 // Common methods for edit/remove
 const editRemoveMethods = {
-  getEditableFields: {
+  getFields: {
     request: {},
     response: {
-      value: RetVal("json")
-    }
+      value: RetVal("json"),
+    },
   },
   editItem: {
     request: {
       data: Arg(0, "json"),
     },
-    response: {}
+    response: {},
   },
   removeItem: {
     request: {
       host: Arg(0, "string"),
       name: Arg(1, "string"),
     },
-    response: {}
+    response: {},
   },
 };
 
@@ -86,36 +87,64 @@ const editRemoveMethods = {
 createStorageSpec({
   typeName: "cookies",
   storeObjectType: "cookiestoreobject",
-  methods: Object.assign({},
+  methods: Object.assign(
+    {},
     editRemoveMethods,
+    {
+      addItem: {
+        request: {
+          guid: Arg(0, "string"),
+        },
+        response: {},
+      },
+    },
     {
       removeAll: {
         request: {
           host: Arg(0, "string"),
-          domain: Arg(1, "nullable:string")
+          domain: Arg(1, "nullable:string"),
         },
-        response: {}
-      }
+        response: {},
+      },
+    },
+    {
+      removeAllSessionCookies: {
+        request: {
+          host: Arg(0, "string"),
+          domain: Arg(1, "nullable:string"),
+        },
+        response: {},
+      },
     }
-  )
+  ),
 });
 
 // Local Storage / Session Storage store object
 types.addDictType("storageobject", {
   name: "string",
-  value: "longstring"
+  value: "longstring",
 });
 
 // Common methods for local/session storage
-const storageMethods = Object.assign({},
+const storageMethods = Object.assign(
+  {},
   editRemoveMethods,
+  {
+    addItem: {
+      request: {
+        guid: Arg(0, "string"),
+        host: Arg(1, "nullable:string"),
+      },
+      response: {},
+    },
+  },
   {
     removeAll: {
       request: {
-        host: Arg(0, "string")
+        host: Arg(0, "string"),
       },
-      response: {}
-    }
+      response: {},
+    },
   }
 );
 
@@ -123,66 +152,101 @@ const storageMethods = Object.assign({},
 types.addDictType("storagestoreobject", {
   total: "number",
   offset: "number",
-  data: "array:nullable:storageobject"
+  data: "array:nullable:storageobject",
 });
 
 createStorageSpec({
   typeName: "localStorage",
   storeObjectType: "storagestoreobject",
-  methods: storageMethods
+  methods: storageMethods,
 });
 
 createStorageSpec({
   typeName: "sessionStorage",
   storeObjectType: "storagestoreobject",
-  methods: storageMethods
+  methods: storageMethods,
+});
+
+types.addDictType("extensionobject", {
+  name: "nullable:string",
+  value: "nullable:longstring",
+});
+
+types.addDictType("extensionstoreobject", {
+  total: "number",
+  offset: "number",
+  data: "array:nullable:extensionobject",
+});
+
+createStorageSpec({
+  typeName: "extensionStorage",
+  storeObjectType: "extensionstoreobject",
+  methods: {},
 });
 
 types.addDictType("cacheobject", {
-  "url": "string",
-  "status": "string"
+  url: "string",
+  status: "string",
 });
 
 // Array of Cache store objects
 types.addDictType("cachestoreobject", {
   total: "number",
   offset: "number",
-  data: "array:nullable:cacheobject"
+  data: "array:nullable:cacheobject",
 });
 
 // Cache storage spec
 createStorageSpec({
   typeName: "Cache",
-  storeObjectType: "cachestoreobject"
+  storeObjectType: "cachestoreobject",
+  methods: {
+    removeAll: {
+      request: {
+        host: Arg(0, "string"),
+        name: Arg(1, "string"),
+      },
+      response: {},
+    },
+    removeItem: {
+      request: {
+        host: Arg(0, "string"),
+        name: Arg(1, "string"),
+      },
+      response: {},
+    },
+  },
 });
 
 // Indexed DB store object
 // This is a union on idb object, db metadata object and object store metadata
 // object
 types.addDictType("idbobject", {
+  uniqueKey: "string",
   name: "nullable:string",
   db: "nullable:string",
   objectStore: "nullable:string",
   origin: "nullable:string",
   version: "nullable:number",
+  storage: "nullable:string",
   objectStores: "nullable:number",
   keyPath: "nullable:string",
   autoIncrement: "nullable:boolean",
   indexes: "nullable:string",
-  value: "nullable:longstring"
+  value: "nullable:longstring",
 });
 
 // Array of Indexed DB store objects
 types.addDictType("idbstoreobject", {
   total: "number",
   offset: "number",
-  data: "array:nullable:idbobject"
+  data: "array:nullable:idbobject",
 });
 
 // Result of Indexed DB delete operation: can block or throw error
 types.addDictType("idbdeleteresult", {
   blocked: "nullable:boolean",
-  error: "nullable:string"
+  error: "nullable:string",
 });
 
 createStorageSpec({
@@ -194,37 +258,40 @@ createStorageSpec({
         host: Arg(0, "string"),
         name: Arg(1, "string"),
       },
-      response: RetVal("idbdeleteresult")
+      response: RetVal("idbdeleteresult"),
     },
     removeAll: {
       request: {
         host: Arg(0, "string"),
         name: Arg(1, "string"),
       },
-      response: {}
+      response: {},
     },
     removeItem: {
       request: {
         host: Arg(0, "string"),
         name: Arg(1, "string"),
       },
-      response: {}
+      response: {},
     },
-  }
+  },
 });
 
 // Update notification object
 types.addDictType("storeUpdateObject", {
   changed: "nullable:json",
   deleted: "nullable:json",
-  added: "nullable:json"
+  added: "nullable:json",
 });
 
 // Generate a type definition for an object with actors for all storage types.
-types.addDictType("storelist", Object.keys(childSpecs).reduce((obj, type) => {
-  obj[type] = type;
-  return obj;
-}, {}));
+types.addDictType(
+  "storelist",
+  Object.keys(childSpecs).reduce((obj, type) => {
+    obj[type] = type;
+    return obj;
+  }, {})
+);
 
 exports.childSpecs = childSpecs;
 
@@ -242,22 +309,22 @@ exports.storageSpec = protocol.generateActorSpec({
   events: {
     "stores-update": {
       type: "storesUpdate",
-      data: Arg(0, "storeUpdateObject")
+      data: Arg(0, "storeUpdateObject"),
     },
     "stores-cleared": {
       type: "storesCleared",
-      data: Arg(0, "json")
+      data: Arg(0, "json"),
     },
     "stores-reloaded": {
       type: "storesReloaded",
-      data: Arg(0, "json")
-    }
+      data: Arg(0, "json"),
+    },
   },
 
   methods: {
     listStores: {
       request: {},
-      response: RetVal("storelist")
+      response: RetVal("storelist"),
     },
-  }
+  },
 });

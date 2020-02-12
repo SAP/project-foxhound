@@ -5,11 +5,16 @@
 #ifndef mozilla_a11y_FocusManager_h_
 #define mozilla_a11y_FocusManager_h_
 
+#include "mozilla/RefPtr.h"
+
 class nsINode;
-class nsIDocument;
 class nsISupports;
 
 namespace mozilla {
+namespace dom {
+class Document;
+}
+
 namespace a11y {
 
 class AccEvent;
@@ -19,9 +24,8 @@ class DocAccessible;
 /**
  * Manage the accessible focus. Used to fire and process accessible events.
  */
-class FocusManager
-{
-public:
+class FocusManager {
+ public:
   virtual ~FocusManager();
 
   /**
@@ -38,14 +42,21 @@ public:
    * Return true if the given accessible is an active item, i.e. an item that
    * is current within the active widget.
    */
-  inline bool IsActiveItem(const Accessible* aAccessible)
-    { return aAccessible == mActiveItem; }
+  inline bool IsActiveItem(const Accessible* aAccessible) {
+    return aAccessible == mActiveItem;
+  }
+
+  /**
+   * Return DOM node having DOM focus.
+   */
+  nsINode* FocusedDOMNode() const;
 
   /**
    * Return true if given DOM node has DOM focus.
    */
-  inline bool HasDOMFocus(const nsINode* aNode) const
-    { return aNode == FocusedDOMNode(); }
+  inline bool HasDOMFocus(const nsINode* aNode) const {
+    return aNode == FocusedDOMNode();
+  }
 
   /**
    * Return true if focused accessible is within the given container.
@@ -56,13 +67,20 @@ public:
    * Return whether the given accessible is focused or contains the focus or
    * contained by focused accessible.
    */
-  enum FocusDisposition {
-    eNone,
-    eFocused,
-    eContainsFocus,
-    eContainedByFocus
-  };
+  enum FocusDisposition { eNone, eFocused, eContainsFocus, eContainedByFocus };
   FocusDisposition IsInOrContainsFocus(const Accessible* aAccessible) const;
+
+  /**
+   * Return true if the given accessible was the last accessible focused.
+   * This is useful to detect the case where the last focused accessible was
+   * removed before something else was focused. This can happen in one of two
+   * ways:
+   * 1. The DOM focus was removed. DOM doesn't fire a blur event when this
+   *    happens; see bug 559561.
+   * 2. The accessibility focus was an active item (e.g. aria-activedescendant)
+   *    and that item was removed.
+   */
+  bool WasLastFocused(const Accessible* aAccessible) const;
 
   //////////////////////////////////////////////////////////////////////////////
   // Focus notifications and processing (don't use until you know what you do).
@@ -104,29 +122,25 @@ public:
    */
   void ProcessFocusEvent(AccEvent* aEvent);
 
-protected:
+ protected:
   FocusManager();
 
-private:
+ private:
   FocusManager(const FocusManager&);
-  FocusManager& operator =(const FocusManager&);
-
-  /**
-   * Return DOM node having DOM focus.
-   */
-  nsINode* FocusedDOMNode() const;
+  FocusManager& operator=(const FocusManager&);
 
   /**
    * Return DOM document having DOM focus.
    */
-  nsIDocument* FocusedDOMDocument() const;
+  dom::Document* FocusedDOMDocument() const;
 
-private:
+ private:
   RefPtr<Accessible> mActiveItem;
+  RefPtr<Accessible> mLastFocus;
   RefPtr<Accessible> mActiveARIAMenubar;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

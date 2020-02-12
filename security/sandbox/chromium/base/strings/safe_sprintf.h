@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 // For ssize_t
 #include <unistd.h>
 #endif
@@ -21,7 +21,7 @@
 namespace base {
 namespace strings {
 
-#if defined(_MSC_VER)
+#if defined(COMPILER_MSVC)
 // Define ssize_t inside of our namespace.
 #if defined(_WIN64)
 typedef __int64 ssize_t;

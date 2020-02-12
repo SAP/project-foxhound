@@ -8,62 +8,75 @@
  * displayed as XML or plain text
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
 
   info("Starting test... ");
-  let { panelWin } = monitor;
-  let { document, Editor, NetMonitorView } = panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getDisplayedRequests, getSortedRequests } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
 
-  const REQUESTS = [
-    [ "hls-m3u8", /^#EXTM3U/, Editor.modes.text ],
-    [ "mpeg-dash", /^<\?xml/, Editor.modes.html ]
-  ];
+  store.dispatch(Actions.batchEnable(false));
 
-  RequestsMenu.lazyUpdate = false;
+  const REQUESTS = [["hls-m3u8", /^#EXTM3U/], ["mpeg-dash", /^<\?xml/]];
 
   let wait = waitForNetworkEvents(monitor, REQUESTS.length);
-  for (let [fmt] of REQUESTS) {
-    let url = CONTENT_TYPE_SJS + "?fmt=" + fmt;
-    yield ContentTask.spawn(tab.linkedBrowser, { url }, function* (args) {
+  for (const [fmt] of REQUESTS) {
+    const url = CONTENT_TYPE_SJS + "?fmt=" + fmt;
+    await ContentTask.spawn(tab.linkedBrowser, { url }, async function(args) {
       content.wrappedJSObject.performRequests(1, args.url);
     });
   }
-  yield wait;
+  await wait;
 
-  REQUESTS.forEach(([ fmt ], i) => {
-    verifyRequestItemTarget(RequestsMenu.getItemAtIndex(i),
-      "GET", CONTENT_TYPE_SJS + "?fmt=" + fmt, {
+  const requestItems = document.querySelectorAll(".request-list-item");
+  for (const requestItem of requestItems) {
+    requestItem.scrollIntoView();
+    const requestsListStatus = requestItem.querySelector(".status-code");
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    await waitUntil(() => requestsListStatus.title);
+  }
+
+  REQUESTS.forEach(([fmt], i) => {
+    verifyRequestItemTarget(
+      document,
+      getDisplayedRequests(store.getState()),
+      getSortedRequests(store.getState()).get(i),
+      "GET",
+      CONTENT_TYPE_SJS + "?fmt=" + fmt,
+      {
         status: 200,
-        statusText: "OK"
-      });
+        statusText: "OK",
+      }
+    );
   });
 
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.getElementById("details-pane-toggle"));
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll("#details-pane tab")[3]);
+  wait = waitForDOM(document, "#response-panel");
+  store.dispatch(Actions.toggleNetworkDetails());
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#response-tab")
+  );
+  await wait;
 
-  yield panelWin.once(panelWin.EVENTS.RESPONSE_BODY_DISPLAYED);
-  let editor = yield NetMonitorView.editor("#response-content-textarea");
+  store.dispatch(Actions.selectRequest(null));
 
+  await selectIndexAndWaitForSourceEditor(monitor, 0);
   // the hls-m3u8 part
-  testEditorContent(editor, REQUESTS[0]);
+  testEditorContent(REQUESTS[0]);
 
-  RequestsMenu.selectedIndex = 1;
-  yield panelWin.once(panelWin.EVENTS.TAB_UPDATED);
-  yield panelWin.once(panelWin.EVENTS.RESPONSE_BODY_DISPLAYED);
-
+  await selectIndexAndWaitForSourceEditor(monitor, 1);
   // the mpeg-dash part
-  testEditorContent(editor, REQUESTS[1]);
+  testEditorContent(REQUESTS[1]);
 
   return teardown(monitor);
 
-  function testEditorContent(e, [ fmt, textRe, mode ]) {
-    ok(e.getText().match(textRe),
-      "The text shown in the source editor for " + fmt + " is correct.");
-    is(e.getMode(), mode,
-      "The mode active in the source editor for " + fmt + " is correct.");
+  function testEditorContent([fmt, textRe]) {
+    ok(
+      getCodeMirrorValue(monitor).match(textRe),
+      "The text shown in the source editor for " + fmt + " is correct."
+    );
   }
 });

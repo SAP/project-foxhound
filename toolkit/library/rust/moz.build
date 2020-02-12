@@ -4,4 +4,28 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-RustLibrary('gkrust')
+include('gkrust-features.mozbuild')
+
+RustLibrary('gkrust', gkrust_features)
+
+# Target directory doesn't matter a lot here, since we can't share panic=abort
+# compilation artifacts with gkrust.
+RUST_TESTS = [
+    'selectors',
+    'servo_arc',
+    'stylo_tests',
+]
+
+for feature in gkrust_features:
+    # We don't want to enable refcount logging during rusttests, since the
+    # relevant FFI symbols wouldn't be found.
+    if feature != 'gecko_refcount_logging':
+        RUST_TEST_FEATURES.append(feature)
+
+if CONFIG['CPU_ARCH'] != 'x86':
+    # malloc_size_of_derive is a build dependency, so if we are doing
+    # cross-compile for x86, this may not run correctly.
+    RUST_TESTS += ['malloc_size_of_derive']
+
+if CONFIG['MOZ_BITS_DOWNLOAD']:
+    RUST_TESTS += ['bits_client']

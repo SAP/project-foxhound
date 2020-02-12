@@ -14,8 +14,10 @@ var supportedProps = [
   "onLine",
   "language",
   "languages",
+  "mediaCapabilities",
   "hardwareConcurrency",
-  { name: "storage", nightly: true },
+  { name: "storage", isSecureContext: true },
+  "connection",
 ];
 
 self.onmessage = function(event) {
@@ -32,13 +34,16 @@ function startTest(channelData) {
   var interfaceMap = {};
 
   for (var prop of supportedProps) {
-    if (typeof(prop) === "string") {
+    if (typeof prop === "string") {
       interfaceMap[prop] = true;
       continue;
     }
 
-    if (prop.nightly === !channelData.isNightly ||
-        prop.release === !channelData.isRelease) {
+    if (
+      prop.nightly === !channelData.isNightly ||
+      prop.release === !channelData.isRelease ||
+      prop.isSecureContext === !isSecureContext
+    ) {
       interfaceMap[prop.name] = false;
       continue;
     }
@@ -65,14 +70,14 @@ function startTest(channelData) {
       throw "Navigator has no '" + prop + "' property!";
     }
 
-    obj = { name:  prop };
+    obj = { name: prop };
     obj.value = navigator[prop];
 
     postMessage(JSON.stringify(obj));
   }
 
   obj = {
-    name: "testFinished"
+    name: "testFinished",
   };
 
   postMessage(JSON.stringify(obj));

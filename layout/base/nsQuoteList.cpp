@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:ts=2:et:sw=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,11 +9,14 @@
 #include "nsQuoteList.h"
 #include "nsReadableUtils.h"
 #include "nsIContent.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/Text.h"
+#include "mozilla/intl/Quotes.h"
 
-bool
-nsQuoteNode::InitTextFrame(nsGenConList* aList, nsIFrame* aPseudoFrame,
-                           nsIFrame* aTextFrame)
-{
+using namespace mozilla;
+
+bool nsQuoteNode::InitTextFrame(nsGenConList* aList, nsIFrame* aPseudoFrame,
+                                nsIFrame* aTextFrame) {
   nsGenConNode::InitTextFrame(aList, aPseudoFrame, aTextFrame);
 
   nsQuoteList* quoteList = static_cast<nsQuoteList*>(aList);
@@ -26,44 +29,64 @@ nsQuoteNode::InitTextFrame(nsGenConList* aList, nsIFrame* aPseudoFrame,
 
   // Don't set up text for 'no-open-quote' and 'no-close-quote'.
   if (IsRealQuote()) {
-    aTextFrame->GetContent()->SetText(*Text(), false);
+    aTextFrame->GetContent()->AsText()->SetText(Text(), false);
   }
   return dirty;
 }
 
-const nsString*
-nsQuoteNode::Text()
-{
-  NS_ASSERTION(mType == eStyleContentType_OpenQuote ||
-               mType == eStyleContentType_CloseQuote,
+nsString nsQuoteNode::Text() {
+  NS_ASSERTION(mType == StyleContentType::OpenQuote ||
+                   mType == StyleContentType::CloseQuote,
                "should only be called when mText should be non-null");
-  const nsStyleQuoteValues::QuotePairArray& quotePairs =
-    mPseudoFrame->StyleList()->GetQuotePairs();
-  int32_t quotesCount = quotePairs.Length(); // 0 if 'quotes:none'
-  int32_t quoteDepth = Depth();
+  nsString result;
+  int32_t depth = Depth();
+  MOZ_ASSERT(depth >= -1);
+
+  if (depth < 0) {
+    return result;
+  }
+
+  const auto& quotesProp = mPseudoFrame->StyleList()->mQuotes;
+
+  if (quotesProp.IsAuto()) {
+    // Look up CLDR-derived quotation marks for current language;
+    // if none available, use built-in default.
+    const intl::Quotes* quotes =
+        intl::QuotesForLang(mPseudoFrame->StyleFont()->mLanguage);
+    if (!quotes) {
+      static const intl::Quotes sDefaultQuotes = {
+          {0x201c, 0x201d, 0x2018, 0x2019}};
+      quotes = &sDefaultQuotes;
+    }
+    size_t index = (depth == 0 ? 0 : 2);  // select first or second pair
+    index += (mType == StyleContentType::OpenQuote ? 0 : 1);  // open or close
+    result.Append(quotes->mChars[index]);
+    return result;
+  }
+
+  MOZ_ASSERT(quotesProp.IsQuoteList());
+  const Span<const StyleQuotePair> quotes = quotesProp.AsQuoteList().AsSpan();
 
   // Reuse the last pair when the depth is greater than the number of
   // pairs of quotes.  (Also make 'quotes: none' and close-quote from
   // a depth of 0 equivalent for the next test.)
-  if (quoteDepth >= quotesCount)
-    quoteDepth = quotesCount - 1;
-
-  const nsString* result;
-  if (quoteDepth == -1) {
-    // close-quote from a depth of 0 or 'quotes: none' (we want a node
-    // with the empty string so dynamic changes are easier to handle)
-    result = &EmptyString();
-  } else {
-    result = eStyleContentType_OpenQuote == mType
-               ? &quotePairs[quoteDepth].first
-               : &quotePairs[quoteDepth].second;
+  if (depth >= static_cast<int32_t>(quotes.Length())) {
+    depth = static_cast<int32_t>(quotes.Length()) - 1;
   }
+
+  if (depth == -1) {
+    // close-quote from a depth of 0 or 'quotes: none'
+    return result;
+  }
+
+  const StyleQuotePair& pair = quotes[depth];
+  const StyleOwnedStr& quote =
+      mType == StyleContentType::OpenQuote ? pair.opening : pair.closing;
+  result.Assign(NS_ConvertUTF8toUTF16(quote.AsString()));
   return result;
 }
 
-void
-nsQuoteList::Calc(nsQuoteNode* aNode)
-{
+void nsQuoteList::Calc(nsQuoteNode* aNode) {
   if (aNode == FirstNode()) {
     aNode->mDepthBefore = 0;
   } else {
@@ -71,51 +94,36 @@ nsQuoteList::Calc(nsQuoteNode* aNode)
   }
 }
 
-void
-nsQuoteList::RecalcAll()
-{
-  nsQuoteNode *node = FirstNode();
-  if (!node)
-    return;
-
-  do {
+void nsQuoteList::RecalcAll() {
+  for (nsQuoteNode* node = FirstNode(); node; node = Next(node)) {
     int32_t oldDepth = node->mDepthBefore;
     Calc(node);
 
     if (node->mDepthBefore != oldDepth && node->mText && node->IsRealQuote())
-      node->mText->SetData(*node->Text());
-
-    // Next node
-    node = Next(node);
-  } while (node != FirstNode());
+      node->mText->SetData(node->Text(), IgnoreErrors());
+  }
 }
 
 #ifdef DEBUG
-void
-nsQuoteList::PrintChain()
-{
+void nsQuoteList::PrintChain() {
   printf("Chain: \n");
-  if (!FirstNode()) {
-    return;
-  }
-  nsQuoteNode* node = FirstNode();
-  do {
+  for (nsQuoteNode* node = FirstNode(); node; node = Next(node)) {
     printf("  %p %d - ", static_cast<void*>(node), node->mDepthBefore);
-    switch(node->mType) {
-        case (eStyleContentType_OpenQuote):
-          printf("open");
-          break;
-        case (eStyleContentType_NoOpenQuote):
-          printf("noOpen");
-          break;
-        case (eStyleContentType_CloseQuote):
-          printf("close");
-          break;
-        case (eStyleContentType_NoCloseQuote):
-          printf("noClose");
-          break;
-        default:
-          printf("unknown!!!");
+    switch (node->mType) {
+      case StyleContentType::OpenQuote:
+        printf("open");
+        break;
+      case StyleContentType::NoOpenQuote:
+        printf("noOpen");
+        break;
+      case StyleContentType::CloseQuote:
+        printf("close");
+        break;
+      case StyleContentType::NoCloseQuote:
+        printf("noClose");
+        break;
+      default:
+        printf("unknown!!!");
     }
     printf(" %d - %d,", node->Depth(), node->DepthAfter());
     if (node->mText) {
@@ -124,7 +132,6 @@ nsQuoteList::PrintChain()
       printf(" \"%s\",", NS_ConvertUTF16toUTF8(data).get());
     }
     printf("\n");
-    node = Next(node);
-  } while (node != FirstNode());
+  }
 }
 #endif

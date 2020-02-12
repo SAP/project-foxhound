@@ -9,21 +9,34 @@
 
 XPCOMUtils.defineLazyGetter(this, "tests", function() {
   return [
-    new Test("http://localhost:" + srv.identity.primaryPort + "/throws/exception",
-            null, start_throws_exception, succeeded),
-    new Test("http://localhost:" + srv.identity.primaryPort +
-            "/this/file/does/not/exist/and/404s",
-            null, start_nonexistent_404_fails_so_400, succeeded),
-    new Test("http://localhost:" + srv.identity.primaryPort +
-            "/attempts/404/fails/so/400/fails/so/500s",
-            register400Handler, start_multiple_exceptions_500, succeeded),
+    new Test(
+      "http://localhost:" + srv.identity.primaryPort + "/throws/exception",
+      null,
+      start_throws_exception,
+      succeeded
+    ),
+    new Test(
+      "http://localhost:" +
+        srv.identity.primaryPort +
+        "/this/file/does/not/exist/and/404s",
+      null,
+      start_nonexistent_404_fails_so_400,
+      succeeded
+    ),
+    new Test(
+      "http://localhost:" +
+        srv.identity.primaryPort +
+        "/attempts/404/fails/so/400/fails/so/500s",
+      register400Handler,
+      start_multiple_exceptions_500,
+      succeeded
+    ),
   ];
 });
 
 var srv;
 
-function run_test()
-{
+function run_test() {
   srv = createServer();
 
   srv.registerErrorHandler(404, throwsException);
@@ -34,51 +47,49 @@ function run_test()
   runHttpTests(tests, testComplete(srv));
 }
 
-
 // TEST DATA
 
-function checkStatusLine(channel, httpMaxVer, httpMinVer, httpCode, statusText)
-{
-  do_check_eq(channel.responseStatus, httpCode);
-  do_check_eq(channel.responseStatusText, statusText);
+function checkStatusLine(
+  channel,
+  httpMaxVer,
+  httpMinVer,
+  httpCode,
+  statusText
+) {
+  Assert.equal(channel.responseStatus, httpCode);
+  Assert.equal(channel.responseStatusText, statusText);
 
-  var respMaj = {}, respMin = {};
+  var respMaj = {},
+    respMin = {};
   channel.getResponseVersion(respMaj, respMin);
-  do_check_eq(respMaj.value, httpMaxVer);
-  do_check_eq(respMin.value, httpMinVer);
+  Assert.equal(respMaj.value, httpMaxVer);
+  Assert.equal(respMin.value, httpMinVer);
 }
 
-function start_throws_exception(ch, cx)
-{
+function start_throws_exception(ch) {
   checkStatusLine(ch, 1, 1, 500, "Internal Server Error");
 }
 
-function start_nonexistent_404_fails_so_400(ch, cx)
-{
+function start_nonexistent_404_fails_so_400(ch) {
   checkStatusLine(ch, 1, 1, 400, "Bad Request");
 }
 
-function start_multiple_exceptions_500(ch, cx)
-{
+function start_multiple_exceptions_500(ch) {
   checkStatusLine(ch, 1, 1, 500, "Internal Server Error");
 }
 
-function succeeded(ch, cx, status, data)
-{
-  do_check_true(Components.isSuccessCode(status));
+function succeeded(ch, status, data) {
+  Assert.ok(Components.isSuccessCode(status));
 }
 
-function register400Handler(ch)
-{
+function register400Handler(ch) {
   srv.registerErrorHandler(400, throwsException);
 }
-
 
 // PATH HANDLERS
 
 // /throws/exception (and also a 404 and 400 error handler)
-function throwsException(metadata, response)
-{
-  throw "this shouldn't cause an exit...";
-  do_throw("Not reached!");
+function throwsException(metadata, response) {
+  throw new Error("this shouldn't cause an exit...");
+  do_throw("Not reached!"); // eslint-disable-line no-unreachable
 }

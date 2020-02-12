@@ -11,10 +11,12 @@
  * and create derivative works of this document.
  */
 
-[OverrideBuiltins]
+[OverrideBuiltins,
+ Exposed=Window]
 interface DOMStringMap {
   getter DOMString (DOMString name);
-  [Throws]
-  setter creator void (DOMString name, DOMString value);
+  [CEReactions, Throws]
+  setter void (DOMString name, DOMString value);
+  [CEReactions]
   deleter void (DOMString name);
 };

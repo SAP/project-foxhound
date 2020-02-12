@@ -6,8 +6,9 @@
 
 #include <fcntl.h>
 
+#include <memory>
+
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "sandbox/linux/bpf_dsl/policy.h"
 #include "sandbox/linux/seccomp-bpf/die.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
@@ -28,13 +29,13 @@ void SandboxBPFTestRunner::Run() {
   DCHECK(bpf_tester_delegate_);
   sandbox::Die::EnableSimpleExit();
 
-  scoped_ptr<bpf_dsl::Policy> policy =
+  std::unique_ptr<bpf_dsl::Policy> policy =
       bpf_tester_delegate_->GetSandboxBPFPolicy();
 
   if (sandbox::SandboxBPF::SupportsSeccompSandbox(
           SandboxBPF::SeccompLevel::SINGLE_THREADED)) {
     // Initialize and then start the sandbox with our custom policy
-    sandbox::SandboxBPF sandbox(policy.release());
+    sandbox::SandboxBPF sandbox(std::move(policy));
     SANDBOX_ASSERT(sandbox.StartSandbox(
         sandbox::SandboxBPF::SeccompLevel::SINGLE_THREADED));
 
@@ -42,15 +43,15 @@ void SandboxBPFTestRunner::Run() {
     bpf_tester_delegate_->RunTestFunction();
   } else {
     printf("This BPF test is not fully running in this configuration!\n");
-    // Android and Valgrind are the only configurations where we accept not
-    // having kernel BPF support.
-    if (!IsAndroid() && !IsRunningOnValgrind()) {
+    // Android is the only configuration where we accept not having kernel
+    // BPF support.
+    if (!IsAndroid()) {
       const bool seccomp_bpf_is_supported = false;
       SANDBOX_ASSERT(seccomp_bpf_is_supported);
     }
     // Call the compiler and verify the policy. That's the least we can do,
     // if we don't have kernel support.
-    sandbox::SandboxBPF sandbox(policy.release());
+    sandbox::SandboxBPF sandbox(std::move(policy));
     sandbox.AssembleFilter();
     sandbox::UnitTests::IgnoreThisTest();
   }

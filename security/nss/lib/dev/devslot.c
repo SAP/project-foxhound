@@ -31,7 +31,10 @@ nssSlot_Destroy(
 {
     if (slot) {
         if (PR_ATOMIC_DECREMENT(&slot->base.refCount) == 0) {
+            PK11_FreeSlot(slot->pk11slot);
             PZ_DestroyLock(slot->base.lock);
+            PZ_DestroyCondVar(slot->isPresentCondition);
+            PZ_DestroyLock(slot->isPresentLock);
             return nssArena_Destroy(slot->base.arena);
         }
     }
@@ -87,23 +90,30 @@ NSS_IMPLEMENT void
 nssSlot_ResetDelay(
     NSSSlot *slot)
 {
-    slot->lastTokenPing = 0;
+    PZ_Lock(slot->isPresentLock);
+    slot->lastTokenPingState = nssSlotLastPingState_Reset;
+    PZ_Unlock(slot->isPresentLock);
 }
 
 static PRBool
-within_token_delay_period(NSSSlot *slot)
+token_status_checked(const NSSSlot *slot)
 {
-    PRIntervalTime time, lastTime;
+    PRIntervalTime time;
+    int lastPingState = slot->lastTokenPingState;
+    /* When called from the same thread, that means
+     * nssSlot_IsTokenPresent() is called recursively through
+     * nssSlot_Refresh(). Return immediately in that case. */
+    if (slot->isPresentThread == PR_GetCurrentThread()) {
+        return PR_TRUE;
+    }
     /* Set the delay time for checking the token presence */
     if (s_token_delay_time == 0) {
         s_token_delay_time = PR_SecondsToInterval(NSSSLOT_TOKEN_DELAY_TIME);
     }
     time = PR_IntervalNow();
-    lastTime = slot->lastTokenPing;
-    if ((lastTime) && ((time - lastTime) < s_token_delay_time)) {
+    if ((lastPingState == nssSlotLastPingState_Valid) && ((time - slot->lastTokenPingTime) < s_token_delay_time)) {
         return PR_TRUE;
     }
-    slot->lastTokenPing = time;
     return PR_FALSE;
 }
 
@@ -117,33 +127,63 @@ nssSlot_IsTokenPresent(
     nssSession *session;
     CK_SLOT_INFO slotInfo;
     void *epv;
+    PRBool isPresent = PR_FALSE;
+
     /* permanent slots are always present unless they're disabled */
     if (nssSlot_IsPermanent(slot)) {
         return !PK11_IsDisabled(slot->pk11slot);
     }
-    /* avoid repeated calls to check token status within set interval */
-    if (within_token_delay_period(slot)) {
-        return ((slot->ckFlags & CKF_TOKEN_PRESENT) != 0);
-    }
 
-    /* First obtain the slot info */
+    /* avoid repeated calls to check token status within set interval */
+    PZ_Lock(slot->isPresentLock);
+    if (token_status_checked(slot)) {
+        CK_FLAGS ckFlags = slot->ckFlags;
+        PZ_Unlock(slot->isPresentLock);
+        return ((ckFlags & CKF_TOKEN_PRESENT) != 0);
+    }
+    PZ_Unlock(slot->isPresentLock);
+
+    /* First obtain the slot epv before we set up the condition
+     * variable, so we can just return if we couldn't get it. */
     epv = slot->epv;
     if (!epv) {
         return PR_FALSE;
     }
+
+    /* set up condition so only one thread is active in this part of the code at a time */
+    PZ_Lock(slot->isPresentLock);
+    while (slot->isPresentThread) {
+        PR_WaitCondVar(slot->isPresentCondition, PR_INTERVAL_NO_TIMEOUT);
+    }
+    /* if we were one of multiple threads here, the first thread will have
+     * given us the answer, no need to make more queries of the token. */
+    if (token_status_checked(slot)) {
+        CK_FLAGS ckFlags = slot->ckFlags;
+        PZ_Unlock(slot->isPresentLock);
+        return ((ckFlags & CKF_TOKEN_PRESENT) != 0);
+    }
+    /* this is the winning thread, block all others until we've determined
+     * if the token is present and that it needs initialization. */
+    slot->lastTokenPingState = nssSlotLastPingState_Update;
+    slot->isPresentThread = PR_GetCurrentThread();
+
+    PZ_Unlock(slot->isPresentLock);
+
     nssSlot_EnterMonitor(slot);
     ckrv = CKAPI(epv)->C_GetSlotInfo(slot->slotID, &slotInfo);
     nssSlot_ExitMonitor(slot);
     if (ckrv != CKR_OK) {
         slot->token->base.name[0] = 0; /* XXX */
-        return PR_FALSE;
+        isPresent = PR_FALSE;
+        goto done;
     }
     slot->ckFlags = slotInfo.flags;
     /* check for the presence of the token */
     if ((slot->ckFlags & CKF_TOKEN_PRESENT) == 0) {
         if (!slot->token) {
             /* token was never present */
-            return PR_FALSE;
+            isPresent = PR_FALSE;
+            goto done;
         }
         session = nssToken_GetDefaultSession(slot->token);
         if (session) {
@@ -165,14 +205,15 @@ nssSlot_IsTokenPresent(
         slot->token->base.name[0] = 0; /* XXX */
         /* clear the token cache */
         nssToken_Remove(slot->token);
-        return PR_FALSE;
+        isPresent = PR_FALSE;
+        goto done;
     }
     /* token is present, use the session info to determine if the card
      * has been removed and reinserted.
      */
     session = nssToken_GetDefaultSession(slot->token);
     if (session) {
-        PRBool isPresent = PR_FALSE;
+        PRBool tokenRemoved;
         nssSession_EnterMonitor(session);
         if (session->handle != CK_INVALID_SESSION) {
             CK_SESSION_INFO sessionInfo;
@@ -184,11 +225,13 @@ nssSlot_IsTokenPresent(
                 session->handle = CK_INVALID_SESSION;
             }
         }
-        isPresent = session->handle != CK_INVALID_SESSION;
+        tokenRemoved = (session->handle == CK_INVALID_SESSION);
         nssSession_ExitMonitor(session);
         /* token not removed, finished */
-        if (isPresent)
-            return PR_TRUE;
+        if (!tokenRemoved) {
+            isPresent = PR_TRUE;
+            goto done;
+        }
     }
     /* the token has been removed, and reinserted, or the slot contains
      * a token it doesn't recognize. invalidate all the old
@@ -198,12 +241,32 @@ nssSlot_IsTokenPresent(
     nssToken_Remove(slot->token);
     /* token has been removed, need to refresh with new session */
     nssrv = nssSlot_Refresh(slot);
+    isPresent = PR_TRUE;
     if (nssrv != PR_SUCCESS) {
         slot->token->base.name[0] = 0; /* XXX */
         slot->ckFlags &= ~CKF_TOKEN_PRESENT;
-        return PR_FALSE;
+        isPresent = PR_FALSE;
     }
-    return PR_TRUE;
+done:
+    /* Once we've set up the condition variable,
+     * Before returning, it's necessary to:
+     *  1) Set the lastTokenPingTime so that any other threads waiting on this
+     *     initialization and any future calls within the initialization window
+     *     return the just-computed status.
+     *  2) Indicate we're complete, waking up all other threads that may still
+     *     be waiting on initialization can progress.
+     */
+    PZ_Lock(slot->isPresentLock);
+    /* don't update the time if we were reset while we were
+     * getting the token state */
+    if (slot->lastTokenPingState == nssSlotLastPingState_Update) {
+        slot->lastTokenPingTime = PR_IntervalNow();
+        slot->lastTokenPingState = nssSlotLastPingState_Valid;
+    }
+    slot->isPresentThread = NULL;
+    PR_NotifyAllCondVar(slot->isPresentCondition);
+    PZ_Unlock(slot->isPresentLock);
+    return isPresent;
 }
 
 NSS_IMPLEMENT void *
@@ -217,10 +280,18 @@ NSS_IMPLEMENT NSSToken *
 nssSlot_GetToken(
     NSSSlot *slot)
 {
+    NSSToken *rvToken = NULL;
+
     if (nssSlot_IsTokenPresent(slot)) {
-        return nssToken_AddRef(slot->token);
+        /* Even if a token should be present, check `slot->token` too as it
+         * might be gone already. This would happen mostly on shutdown. */
+        nssSlot_EnterMonitor(slot);
+        if (slot->token)
+            rvToken = nssToken_AddRef(slot->token);
+        nssSlot_ExitMonitor(slot);
     }
-    return (NSSToken *)NULL;
+
+    return rvToken;
 }
 
 NSS_IMPLEMENT PRStatus

@@ -12,13 +12,22 @@ function resetPrefs() {
 
 registerCleanupFunction(resetPrefs);
 
-Services.prefs.getDefaultBranch("testing.allowed-prefs.").setBoolPref("some-bool-pref", false);
-Services.prefs.getDefaultBranch("testing.allowed-prefs.").setCharPref("some-char-pref", "");
-Services.prefs.getDefaultBranch("testing.allowed-prefs.").setIntPref("some-int-pref", 0);
+Services.prefs
+  .getDefaultBranch("testing.allowed-prefs.")
+  .setBoolPref("some-bool-pref", false);
+Services.prefs
+  .getDefaultBranch("testing.allowed-prefs.")
+  .setCharPref("some-char-pref", "");
+Services.prefs
+  .getDefaultBranch("testing.allowed-prefs.")
+  .setIntPref("some-int-pref", 0);
 
-function* runTest() {
-  let {AsyncPrefs} = Cu.import("resource://gre/modules/AsyncPrefs.jsm", {});
-  const kInChildProcess = Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
+async function runTest() {
+  let { AsyncPrefs } = ChromeUtils.import(
+    "resource://gre/modules/AsyncPrefs.jsm"
+  );
+  const kInChildProcess =
+    Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
 
   // Need to define these again because when run in a content task we have no scope access.
   const kNotWhiteListed = "some.pref.thats.not.whitelisted";
@@ -37,7 +46,7 @@ function* runTest() {
     ["stuff", "Char"],
     [[], false],
     [{}, false],
-    [BrowserUtils.makeURI("http://mozilla.org/"), false],
+    [Services.io.newURI("http://mozilla.org/"), false],
   ];
 
   const prefMap = [
@@ -48,50 +57,77 @@ function* runTest() {
 
   function doesFail(pref, value) {
     let msg = `Should not succeed setting ${pref} to ${value} in ${procDesc}`;
-    return AsyncPrefs.set(pref, value).then(() => ok(false, msg), error => ok(true, msg + "; " + error));
+    return AsyncPrefs.set(pref, value).then(
+      () => ok(false, msg),
+      error => ok(true, msg + "; " + error)
+    );
   }
 
   function doesWork(pref, value) {
     let msg = `Should be able to set ${pref} to ${value} in ${procDesc}`;
-    return AsyncPrefs.set(pref, value).then(() => ok(true, msg), error => ok(false, msg + "; " + error));
+    return AsyncPrefs.set(pref, value).then(
+      () => ok(true, msg),
+      error => ok(false, msg + "; " + error)
+    );
   }
 
   function doReset(pref) {
     let msg = `Should be able to reset ${pref} in ${procDesc}`;
-    return AsyncPrefs.reset(pref).then(() => ok(true, msg), () => ok(false, msg));
+    return AsyncPrefs.reset(pref).then(
+      () => ok(true, msg),
+      () => ok(false, msg)
+    );
   }
 
-  for (let [val, ] of valueResultMap) {
-    yield doesFail(kNotWhiteListed, val);
-    is(Services.prefs.prefHasUserValue(kNotWhiteListed), false, "Pref shouldn't get changed");
+  for (let [val] of valueResultMap) {
+    await doesFail(kNotWhiteListed, val);
+    is(
+      Services.prefs.prefHasUserValue(kNotWhiteListed),
+      false,
+      "Pref shouldn't get changed"
+    );
   }
 
   let resetMsg = `Should not succeed resetting ${kNotWhiteListed} in ${procDesc}`;
-  AsyncPrefs.reset(kNotWhiteListed).then(() => ok(false, resetMsg), error => ok(true, resetMsg + "; " + error));
+  AsyncPrefs.reset(kNotWhiteListed).then(
+    () => ok(false, resetMsg),
+    error => ok(true, resetMsg + "; " + error)
+  );
 
   for (let [type, pref] of prefMap) {
     for (let [val, result] of valueResultMap) {
       if (result == type) {
-        yield doesWork(pref, val);
-        is(Services.prefs["get" + type + "Pref"](pref), val, "Pref should have been updated");
-        yield doReset(pref);
+        await doesWork(pref, val);
+        is(
+          Services.prefs["get" + type + "Pref"](pref),
+          val,
+          "Pref should have been updated"
+        );
+        await doReset(pref);
       } else {
-        yield doesFail(pref, val);
-        is(Services.prefs.prefHasUserValue(pref), false, `Pref ${pref} shouldn't get changed`);
+        await doesFail(pref, val);
+        is(
+          Services.prefs.prefHasUserValue(pref),
+          false,
+          `Pref ${pref} shouldn't get changed`
+        );
       }
     }
   }
 }
 
-add_task(function* runInParent() {
-  yield runTest();
+add_task(async function runInParent() {
+  await runTest();
   resetPrefs();
 });
 
 if (gMultiProcessBrowser) {
-  add_task(function* runInChild() {
-    ok(gBrowser.selectedBrowser.isRemoteBrowser, "Should actually run this in child process");
-    yield ContentTask.spawn(gBrowser.selectedBrowser, null, runTest);
+  add_task(async function runInChild() {
+    ok(
+      gBrowser.selectedBrowser.isRemoteBrowser,
+      "Should actually run this in child process"
+    );
+    await ContentTask.spawn(gBrowser.selectedBrowser, null, runTest);
     resetPrefs();
   });
 }

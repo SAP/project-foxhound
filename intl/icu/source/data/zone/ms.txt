@@ -1,13 +1,7 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/ms.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 ms{
-    Version{"2.1.19.94"}
+    Version{"2.1.49.2"}
     zoneStrings{
         "Africa:Abidjan"{
             ec{"Abidjan"}
@@ -46,7 +40,7 @@ ms{
             ec{"Bujumbura"}
         }
         "Africa:Cairo"{
-            ec{"Cairo"}
+            ec{"Kaherah"}
         }
         "Africa:Casablanca"{
             ec{"Casablanca"}
@@ -309,6 +303,9 @@ ms{
         "America:El_Salvador"{
             ec{"El Salvador"}
         }
+        "America:Fort_Nelson"{
+            ec{"Fort Nelson"}
+        }
         "America:Fortaleza"{
             ec{"Fortaleza"}
         }
@@ -510,6 +507,9 @@ ms{
         "America:Puerto_Rico"{
             ec{"Puerto Rico"}
         }
+        "America:Punta_Arenas"{
+            ec{"Punta Arenas"}
+        }
         "America:Rainy_River"{
             ec{"Sungai Rainy"}
         }
@@ -660,6 +660,9 @@ ms{
         "Asia:Ashgabat"{
             ec{"Ashgabat"}
         }
+        "Asia:Atyrau"{
+            ec{"Atyrau"}
+        }
         "Asia:Baghdad"{
             ec{"Baghdad"}
         }
@@ -671,6 +674,9 @@ ms{
         }
         "Asia:Bangkok"{
             ec{"Bangkok"}
+        }
+        "Asia:Barnaul"{
+            ec{"Barnaul"}
         }
         "Asia:Beirut"{
             ec{"Beirut"}
@@ -707,6 +713,9 @@ ms{
         }
         "Asia:Dushanbe"{
             ec{"Dushanbe"}
+        }
+        "Asia:Famagusta"{
+            ec{"Famagusta"}
         }
         "Asia:Gaza"{
             ec{"Gaza"}
@@ -849,6 +858,9 @@ ms{
         "Asia:Tokyo"{
             ec{"Tokyo"}
         }
+        "Asia:Tomsk"{
+            ec{"Tomsk"}
+        }
         "Asia:Ulaanbaatar"{
             ec{"Ulaanbaatar"}
         }
@@ -939,6 +951,9 @@ ms{
         "Australia:Sydney"{
             ec{"Sydney"}
         }
+        "Etc:UTC"{
+            ls{"Waktu Universal Selaras"}
+        }
         "Etc:Unknown"{
             ec{"Bandar Tidak Diketahui"}
         }
@@ -947,6 +962,9 @@ ms{
         }
         "Europe:Andorra"{
             ec{"Andorra"}
+        }
+        "Europe:Astrakhan"{
+            ec{"Astrakhan"}
         }
         "Europe:Athens"{
             ec{"Athens"}
@@ -980,7 +998,7 @@ ms{
         }
         "Europe:Dublin"{
             ec{"Dublin"}
-            ld{"Waktu Musim Panas Ireland"}
+            ld{"Waktu Piawai Ireland"}
         }
         "Europe:Gibraltar"{
             ec{"Gibraltar"}
@@ -1005,6 +1023,9 @@ ms{
         }
         "Europe:Kiev"{
             ec{"Kiev"}
+        }
+        "Europe:Kirov"{
+            ec{"Kirov"}
         }
         "Europe:Lisbon"{
             ec{"Lisbon"}
@@ -1064,6 +1085,9 @@ ms{
         "Europe:Sarajevo"{
             ec{"Sarajevo"}
         }
+        "Europe:Saratov"{
+            ec{"Saratov"}
+        }
         "Europe:Simferopol"{
             ec{"Simferopol"}
         }
@@ -1081,6 +1105,9 @@ ms{
         }
         "Europe:Tirane"{
             ec{"Tirane"}
+        }
+        "Europe:Ulyanovsk"{
+            ec{"Ulyanovsk"}
         }
         "Europe:Uzhgorod"{
             ec{"Uzhgorod"}
@@ -1317,7 +1344,7 @@ ms{
         "meta:Apia"{
             ld{"Waktu Siang Apia"}
             lg{"Waktu Apia"}
-            ls{"Waktu Standard Apia"}
+            ls{"Waktu Piawai Apia"}
         }
         "meta:Arabian"{
             ld{"Waktu Siang Arab"}
@@ -1521,7 +1548,7 @@ ms{
             ls{"Waktu Piawai Greenland Barat"}
         }
         "meta:Gulf"{
-            ls{"Waktu Teluk"}
+            ls{"Waktu Piawai Teluk"}
         }
         "meta:Guyana"{
             ls{"Waktu Guyana"}
@@ -1747,6 +1774,9 @@ ms{
         }
         "meta:Ponape"{
             ls{"Waktu Ponape"}
+        }
+        "meta:Pyongyang"{
+            ls{"Waktu Pyongyang"}
         }
         "meta:Reunion"{
             ls{"Waktu Reunion"}

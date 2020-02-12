@@ -15,10 +15,18 @@ typedef int64_t PRTime;
 /*
  * Forward declarations for new string types
  */
-class nsAString;
-class nsACString;
+#include "nsStringFwd.h"
 
-/* 
+/*
+ * Forward declaration of mozilla::dom::Promise
+ */
+namespace mozilla {
+namespace dom {
+class Promise;
+} // namespace dom
+} // namespace mozilla
+
+/*
  * Start commenting out the C++ versions of the below in the output header
  */
 #if 0
@@ -54,11 +62,11 @@ typedef unsigned long       size_t;
 [ptr, nsid]   native nsIIDPtr(nsIID);
 [ptr, nsid]   native nsCIDPtr(nsCID);
 
-// NOTE: Be careful in using the following 3 types. The *Ref and *Ptr variants 
-// are more commonly used (and better supported). Those variants require 
-// nsMemory alloc'd copies when used as 'out' params while these types do not. 
-// However, currently these types can not be used for 'in' params. And, methods 
-// that use them as 'out' params *must* be declared [notxpcom] (with an explicit 
+// NOTE: Be careful in using the following 3 types. The *Ref and *Ptr variants
+// are more commonly used (and better supported). Those variants require
+// nsMemory alloc'd copies when used as 'out' params while these types do not.
+// However, currently these types can not be used for 'in' params. And, methods
+// that use them as 'out' params *must* be declared [notxpcom] (with an explicit
 // return type of nsresult). This makes such methods implicitly not scriptable.
 // Use of these types in methods without a [notxpcom] declaration will cause
 // the xpidl compiler to raise an error.
@@ -69,10 +77,6 @@ typedef unsigned long       size_t;
 [nsid]        native nsCID(nsCID);
 
 [ptr]         native nsQIResult(void);
-
-[ref, domstring] native DOMString(ignored);
-[ref, domstring] native DOMStringRef(ignored);
-[ptr, domstring] native DOMStringPtr(ignored);
 
 [ref, utf8string] native AUTF8String(ignored);
 [ref, utf8string] native AUTF8StringRef(ignored);
@@ -89,8 +93,10 @@ typedef unsigned long       size_t;
 [ref, jsval]  native jsval(jsval);
               native jsid(jsid);
 
+[ptr, promise] native Promise(ignored);
+
 %{C++
-/* 
+/*
  * End commenting out the C++ versions of the above in the output header
  */
 #endif

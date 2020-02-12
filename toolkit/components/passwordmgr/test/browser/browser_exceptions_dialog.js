@@ -1,4 +1,3 @@
-
 "use strict";
 
 const LOGIN_HOST = "http://example.com";
@@ -6,51 +5,58 @@ const LOGIN_HOST = "http://example.com";
 function openExceptionsDialog() {
   return window.openDialog(
     "chrome://browser/content/preferences/permissions.xul",
-    "Toolkit:PasswordManagerExceptions", "",
+    "Toolkit:PasswordManagerExceptions",
+    "",
     {
       blockVisible: true,
       sessionVisible: false,
       allowVisible: false,
       hideStatusColumn: true,
       prefilledHost: "",
-      permissionType: "login-saving"
+      permissionType: "login-saving",
     }
   );
 }
 
 function countDisabledHosts(dialog) {
-  let doc = dialog.document;
-  let rejectsTree = doc.getElementById("permissionsTree");
-
-  return rejectsTree.view.rowCount;
+  return dialog.document.getElementById("permissionsBox").itemCount;
 }
 
 function promiseStorageChanged(expectedData) {
   function observer(subject, data) {
-    return data == expectedData && subject.QueryInterface(Ci.nsISupportsString).data == LOGIN_HOST;
+    return (
+      data == expectedData &&
+      subject.QueryInterface(Ci.nsISupportsString).data == LOGIN_HOST
+    );
   }
 
   return TestUtils.topicObserved("passwordmgr-storage-changed", observer);
 }
 
-add_task(function* test_disable() {
+add_task(async function test_disable() {
   let dialog = openExceptionsDialog();
   let promiseChanged = promiseStorageChanged("hostSavingDisabled");
 
-  yield BrowserTestUtils.waitForEvent(dialog, "load");
+  await BrowserTestUtils.waitForEvent(dialog, "load");
+  await new Promise(resolve => {
+    waitForFocus(resolve, dialog);
+  });
   Services.logins.setLoginSavingEnabled(LOGIN_HOST, false);
-  yield promiseChanged;
+  await promiseChanged;
   is(countDisabledHosts(dialog), 1, "Verify disabled host added");
-  yield BrowserTestUtils.closeWindow(dialog);
+  await BrowserTestUtils.closeWindow(dialog);
 });
 
-add_task(function* test_enable() {
+add_task(async function test_enable() {
   let dialog = openExceptionsDialog();
   let promiseChanged = promiseStorageChanged("hostSavingEnabled");
 
-  yield BrowserTestUtils.waitForEvent(dialog, "load");
+  await BrowserTestUtils.waitForEvent(dialog, "load");
+  await new Promise(resolve => {
+    waitForFocus(resolve, dialog);
+  });
   Services.logins.setLoginSavingEnabled(LOGIN_HOST, true);
-  yield promiseChanged;
+  await promiseChanged;
   is(countDisabledHosts(dialog), 0, "Verify disabled host removed");
-  yield BrowserTestUtils.closeWindow(dialog);
+  await BrowserTestUtils.closeWindow(dialog);
 });

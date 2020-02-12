@@ -11,10 +11,13 @@ typedef CustomEventInit TestDictionaryTypedef;
 
 interface TestExternalInterface;
 
-[Pref="xyz"]
+// We need a pref name that's in StaticPrefList.h here.
+[Pref="dom.webidl.test1",
+ Exposed=Window]
 interface TestRenamedInterface {
 };
 
+[Exposed=Window]
 callback interface TestCallbackInterface {
   readonly attribute long foo;
   attribute DOMString bar;
@@ -22,7 +25,7 @@ callback interface TestCallbackInterface {
   long doSomethingElse(DOMString arg, TestInterface otherArg);
   void doSequenceLongArg(sequence<long> arg);
   void doSequenceStringArg(sequence<DOMString> arg);
-  void doMozMapLongArg(MozMap<long> arg);
+  void doRecordLongArg(record<DOMString, long> arg);
   sequence<long> getSequenceOfLong();
   sequence<TestInterface> getSequenceOfInterfaces();
   sequence<TestInterface>? getNullableSequenceOfInterfaces();
@@ -32,7 +35,7 @@ callback interface TestCallbackInterface {
   sequence<TestCallbackInterface>? getNullableSequenceOfCallbackInterfaces();
   sequence<TestCallbackInterface?> getSequenceOfNullableCallbackInterfaces();
   sequence<TestCallbackInterface?>? getNullableSequenceOfNullableCallbackInterfaces();
-  MozMap<long> getMozMapOfLong();
+  record<DOMString, long> getRecordOfLong();
   Dict? getDictionary();
   void passArrayBuffer(ArrayBuffer arg);
   void passNullableArrayBuffer(ArrayBuffer? arg);
@@ -58,6 +61,7 @@ callback interface TestCallbackInterface {
   Promise<void> receivePromise();
 };
 
+[Exposed=Window]
 callback interface TestSingleOperationCallbackInterface {
   TestInterface doSomething(short arg, sequence<double> anotherArg);
 };
@@ -65,7 +69,9 @@ callback interface TestSingleOperationCallbackInterface {
 enum TestEnum {
   "1",
   "a",
-  "b"
+  "b",
+  "1-2",
+  "2d-array"
 };
 
 callback TestCallback = void();
@@ -117,32 +123,54 @@ callback TestOptionalArguments = void(optional DOMString aString,
                                       optional TestInterface? anInterface,
                                       optional TestInterface anotherInterface,
                                       optional long aLong);
+// Callback constructor return value tests
+callback constructor TestVoidConstruction = void(TestDictionaryTypedef arg);
+callback constructor TestIntegerConstruction = unsigned long();
+callback constructor TestBooleanConstruction = boolean(any arg1,
+                                                       optional any arg2);
+callback constructor TestFloatConstruction = unrestricted float(optional object arg1,
+                                                                optional TestDictionaryTypedef arg2);
+callback constructor TestStringConstruction = DOMString(long? arg);
+callback constructor TestEnumConstruction = TestEnum(any... arg);
+callback constructor TestInterfaceConstruction = TestInterface();
+callback constructor TestExternalInterfaceConstruction = TestExternalInterface();
+callback constructor TestCallbackInterfaceConstruction = TestCallbackInterface();
+callback constructor TestCallbackConstruction = TestCallback();
+callback constructor TestObjectConstruction = object();
+callback constructor TestTypedArrayConstruction = ArrayBuffer();
+callback constructor TestSequenceConstruction = sequence<boolean>();
 // If you add a new test callback, add it to the forceCallbackGeneration
 // method on TestInterface so it actually gets tested.
 
-TestInterface implements ImplementedInterface;
+TestInterface includes InterfaceMixin;
 
 // This interface is only for use in the constructor below
+[Exposed=Window]
 interface OnlyForUseInConstructor {
 };
 
-[Constructor,
- Constructor(DOMString str),
- Constructor(unsigned long num, boolean? boolArg),
- Constructor(TestInterface? iface),
- Constructor(long arg1, IndirectlyImplementedInterface iface),
- Constructor(Date arg1),
- Constructor(ArrayBuffer arrayBuf),
- Constructor(Uint8Array typedArr),
- // Constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3),
- NamedConstructor=Test,
+[NamedConstructor=Test,
  NamedConstructor=Test(DOMString str),
  NamedConstructor=Test2(DictForConstructor dict, any any1, object obj1,
                         object? obj2, sequence<Dict> seq, optional any any2,
                         optional object obj3, optional object? obj4),
- NamedConstructor=Test3((long or MozMap<any>) arg1)
+ NamedConstructor=Test3((long or record<DOMString, any>) arg1),
+ NamedConstructor=Test4(record<DOMString, record<DOMString, any>> arg1),
+ NamedConstructor=Test5(record<DOMString, sequence<record<DOMString, record<DOMString, sequence<sequence<any>>>>>> arg1),
+ NamedConstructor=Test6(sequence<record<ByteString, sequence<sequence<record<ByteString, record<USVString, any>>>>>> arg1),
+ Exposed=Window,
  ]
 interface TestInterface {
+  constructor();
+  constructor(DOMString str);
+  constructor(unsigned long num, boolean? boolArg);
+  constructor(TestInterface? iface);
+  constructor(unsigned long arg1, TestInterface iface);
+  constructor(Date arg1);
+  constructor(ArrayBuffer arrayBuf);
+  constructor(Uint8Array typedArr);
+  // constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3);
+
   // Integer types
   // XXXbz add tests for throwing versions of all the integer stuff
   readonly attribute byte readonlyByte;
@@ -179,12 +207,6 @@ interface TestInterface {
   [DependsOn=DeviceState, Affects=Nothing]
   byte returnDeviceStateDependentByte();
 
-  [UnsafeInPrerendering]
-  void unsafePrerenderMethod();
-  [UnsafeInPrerendering]
-  attribute long unsafePrerenderWritable;
-  [UnsafeInPrerendering]
-  readonly attribute long unsafePrerenderReadonly;
   readonly attribute short readonlyShort;
   attribute short writableShort;
   void passShort(short arg);
@@ -308,20 +330,6 @@ interface TestInterface {
   [NewObject]
   sequence<TestNonWrapperCacheInterface?>? receiveNullableNonWrapperCacheInterfaceNullableSequence();
 
-  // Non-castable interface types
-  IndirectlyImplementedInterface receiveOther();
-  IndirectlyImplementedInterface? receiveNullableOther();
-  IndirectlyImplementedInterface receiveWeakOther();
-  IndirectlyImplementedInterface? receiveWeakNullableOther();
-  void passOther(IndirectlyImplementedInterface arg);
-  void passNullableOther(IndirectlyImplementedInterface? arg);
-  attribute IndirectlyImplementedInterface nonNullOther;
-  attribute IndirectlyImplementedInterface? nullableOther;
-  // Optional arguments
-  void passOptionalOther(optional IndirectlyImplementedInterface? arg);
-  void passOptionalNonNullOther(optional IndirectlyImplementedInterface arg);
-  void passOptionalOtherWithDefault(optional IndirectlyImplementedInterface? arg = null);
-
   // External interface types
   TestExternalInterface receiveExternal();
   TestExternalInterface? receiveNullableExternal();
@@ -349,10 +357,6 @@ interface TestInterface {
   void passOptionalCallbackInterface(optional TestCallbackInterface? arg);
   void passOptionalNonNullCallbackInterface(optional TestCallbackInterface arg);
   void passOptionalCallbackInterfaceWithDefault(optional TestCallbackInterface? arg = null);
-
-  // Miscellaneous interface tests
-  IndirectlyImplementedInterface receiveConsequentialInterface();
-  void passConsequentialInterface(IndirectlyImplementedInterface arg);
 
   // Sequence types
   [Cached, Pure]
@@ -415,31 +419,31 @@ interface TestInterface {
   sequence<sequence<long>> receiveSequenceOfSequences();
   sequence<sequence<sequence<long>>> receiveSequenceOfSequencesOfSequences();
 
-  // MozMap types
-  void passMozMap(MozMap<long> arg);
-  void passNullableMozMap(MozMap<long>? arg);
-  void passMozMapOfNullableInts(MozMap<long?> arg);
-  void passOptionalMozMapOfNullableInts(optional MozMap<long?> arg);
-  void passOptionalNullableMozMapOfNullableInts(optional MozMap<long?>? arg);
-  void passCastableObjectMozMap(MozMap<TestInterface> arg);
-  void passNullableCastableObjectMozMap(MozMap<TestInterface?> arg);
-  void passCastableObjectNullableMozMap(MozMap<TestInterface>? arg);
-  void passNullableCastableObjectNullableMozMap(MozMap<TestInterface?>? arg);
-  void passOptionalMozMap(optional MozMap<long> arg);
-  void passOptionalNullableMozMap(optional MozMap<long>? arg);
-  void passOptionalNullableMozMapWithDefaultValue(optional MozMap<long>? arg = null);
-  void passOptionalObjectMozMap(optional MozMap<TestInterface> arg);
-  void passExternalInterfaceMozMap(MozMap<TestExternalInterface> arg);
-  void passNullableExternalInterfaceMozMap(MozMap<TestExternalInterface?> arg);
-  void passStringMozMap(MozMap<DOMString> arg);
-  void passByteStringMozMap(MozMap<ByteString> arg);
-  void passMozMapOfMozMaps(MozMap<MozMap<long>> arg);
-  MozMap<long> receiveMozMap();
-  MozMap<long>? receiveNullableMozMap();
-  MozMap<long?> receiveMozMapOfNullableInts();
-  MozMap<long?>? receiveNullableMozMapOfNullableInts();
-  MozMap<MozMap<long>> receiveMozMapOfMozMaps();
-  MozMap<any> receiveAnyMozMap();
+  // record types
+  void passRecord(record<DOMString, long> arg);
+  void passNullableRecord(record<DOMString, long>? arg);
+  void passRecordOfNullableInts(record<DOMString, long?> arg);
+  void passOptionalRecordOfNullableInts(optional record<DOMString, long?> arg);
+  void passOptionalNullableRecordOfNullableInts(optional record<DOMString, long?>? arg);
+  void passCastableObjectRecord(record<DOMString, TestInterface> arg);
+  void passNullableCastableObjectRecord(record<DOMString, TestInterface?> arg);
+  void passCastableObjectNullableRecord(record<DOMString, TestInterface>? arg);
+  void passNullableCastableObjectNullableRecord(record<DOMString, TestInterface?>? arg);
+  void passOptionalRecord(optional record<DOMString, long> arg);
+  void passOptionalNullableRecord(optional record<DOMString, long>? arg);
+  void passOptionalNullableRecordWithDefaultValue(optional record<DOMString, long>? arg = null);
+  void passOptionalObjectRecord(optional record<DOMString, TestInterface> arg);
+  void passExternalInterfaceRecord(record<DOMString, TestExternalInterface> arg);
+  void passNullableExternalInterfaceRecord(record<DOMString, TestExternalInterface?> arg);
+  void passStringRecord(record<DOMString, DOMString> arg);
+  void passByteStringRecord(record<DOMString, ByteString> arg);
+  void passRecordOfRecords(record<DOMString, record<DOMString, long>> arg);
+  record<DOMString, long> receiveRecord();
+  record<DOMString, long>? receiveNullableRecord();
+  record<DOMString, long?> receiveRecordOfNullableInts();
+  record<DOMString, long?>? receiveNullableRecordOfNullableInts();
+  record<DOMString, record<DOMString, long>> receiveRecordOfRecords();
+  record<DOMString, any> receiveAnyRecord();
 
   // Typed array types
   void passArrayBuffer(ArrayBuffer arg);
@@ -459,8 +463,8 @@ interface TestInterface {
   void passFloat64Array(Float64Array arg);
   void passSequenceOfArrayBuffers(sequence<ArrayBuffer> arg);
   void passSequenceOfNullableArrayBuffers(sequence<ArrayBuffer?> arg);
-  void passMozMapOfArrayBuffers(MozMap<ArrayBuffer> arg);
-  void passMozMapOfNullableArrayBuffers(MozMap<ArrayBuffer?> arg);
+  void passRecordOfArrayBuffers(record<DOMString, ArrayBuffer> arg);
+  void passRecordOfNullableArrayBuffers(record<DOMString, ArrayBuffer?> arg);
   void passVariadicTypedArray(Float32Array... arg);
   void passVariadicNullableTypedArray(Float32Array?... arg);
   Uint8Array receiveUint8Array();
@@ -496,6 +500,24 @@ interface TestInterface {
   void passOptionalNullableUSVSWithDefaultValue(optional USVString? arg = null);
   void passVariadicUSVS(USVString... arg);
   USVString receiveUSVS();
+
+  // JSString types
+  void passJSString(JSString arg);
+  // void passNullableJSString(JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalJSString(optional JSString arg); // NOT SUPPORTED YET
+  void passOptionalJSStringWithDefaultValue(optional JSString arg = "abc");
+  // void passOptionalNullableJSString(optional JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalNullableJSStringWithDefaultValue(optional JSString? arg = null); // NOT SUPPORTED YET
+  // void passVariadicJSString(JSString... arg); // NOT SUPPORTED YET
+  // void passRecordOfJSString(record<DOMString, JSString> arg); // NOT SUPPORTED YET
+  // void passSequenceOfJSString(sequence<JSString> arg); // NOT SUPPORTED YET
+  // void passUnionJSString((JSString or long) arg); // NOT SUPPORTED YET
+  JSString receiveJSString();
+  // sequence<JSString> receiveJSStringSequence(); // NOT SUPPORTED YET
+  // (JSString or long) receiveJSStringUnion(); // NOT SUPPORTED YET
+  // record<DOMString, JSString> receiveJSStringRecord(); // NOT SUPPORTED YET
+  readonly attribute JSString readonlyJSStringAttr;
+  attribute JSString jsStringAttr;
 
   // Enumerated types
   void passEnum(TestEnum arg);
@@ -549,7 +571,20 @@ interface TestInterface {
                                TestInterfaceArguments arg22,
                                TestStringEnumArguments arg23,
                                TestObjectArguments arg24,
-                               TestOptionalArguments arg25);
+                               TestOptionalArguments arg25,
+                               TestVoidConstruction arg26,
+                               TestIntegerConstruction arg27,
+                               TestBooleanConstruction arg28,
+                               TestFloatConstruction arg29,
+                               TestStringConstruction arg30,
+                               TestEnumConstruction arg31,
+                               TestInterfaceConstruction arg32,
+                               TestExternalInterfaceConstruction arg33,
+                               TestCallbackInterfaceConstruction arg34,
+                               TestCallbackConstruction arg35,
+                               TestObjectConstruction arg36,
+                               TestTypedArrayConstruction arg37,
+                               TestSequenceConstruction arg38);
 
   // Any types
   void passAny(any arg);
@@ -565,17 +600,17 @@ interface TestInterface {
   void passSequenceOfNullableSequenceOfAny(sequence<sequence<any>?> arg);
   void passNullableSequenceOfNullableSequenceOfAny(sequence<sequence<any>?>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfAny(optional sequence<sequence<any>?>? arg);
-  void passMozMapOfAny(MozMap<any> arg);
-  void passNullableMozMapOfAny(MozMap<any>? arg);
-  void passOptionalMozMapOfAny(optional MozMap<any> arg);
-  void passOptionalNullableMozMapOfAny(optional MozMap<any>? arg);
-  void passOptionalMozMapOfAnyWithDefaultValue(optional MozMap<any>? arg = null);
-  void passMozMapOfMozMapOfAny(MozMap<MozMap<any>> arg);
-  void passMozMapOfNullableMozMapOfAny(MozMap<MozMap<any>?> arg);
-  void passNullableMozMapOfNullableMozMapOfAny(MozMap<MozMap<any>?>? arg);
-  void passOptionalNullableMozMapOfNullableMozMapOfAny(optional MozMap<MozMap<any>?>? arg);
-  void passOptionalNullableMozMapOfNullableSequenceOfAny(optional MozMap<sequence<any>?>? arg);
-  void passOptionalNullableSequenceOfNullableMozMapOfAny(optional sequence<MozMap<any>?>? arg);
+  void passRecordOfAny(record<DOMString, any> arg);
+  void passNullableRecordOfAny(record<DOMString, any>? arg);
+  void passOptionalRecordOfAny(optional record<DOMString, any> arg);
+  void passOptionalNullableRecordOfAny(optional record<DOMString, any>? arg);
+  void passOptionalRecordOfAnyWithDefaultValue(optional record<DOMString, any>? arg = null);
+  void passRecordOfRecordOfAny(record<DOMString, record<DOMString, any>> arg);
+  void passRecordOfNullableRecordOfAny(record<DOMString, record<DOMString, any>?> arg);
+  void passNullableRecordOfNullableRecordOfAny(record<DOMString, record<DOMString, any>?>? arg);
+  void passOptionalNullableRecordOfNullableRecordOfAny(optional record<DOMString, record<DOMString, any>?>? arg);
+  void passOptionalNullableRecordOfNullableSequenceOfAny(optional record<DOMString, sequence<any>?>? arg);
+  void passOptionalNullableSequenceOfNullableRecordOfAny(optional sequence<record<DOMString, any>?>? arg);
   any receiveAny();
 
   // object types
@@ -591,7 +626,7 @@ interface TestInterface {
   void passNullableSequenceOfObject(sequence<object>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfObject(optional sequence<sequence<object>?>? arg);
   void passOptionalNullableSequenceOfNullableSequenceOfNullableObject(optional sequence<sequence<object?>?>? arg);
-  void passMozMapOfObject(MozMap<object> arg);
+  void passRecordOfObject(record<DOMString, object> arg);
   object receiveObject();
   object? receiveNullableObject();
 
@@ -608,8 +643,8 @@ interface TestInterface {
   void passUnion7((object or DOMString or long) arg);
   void passUnion8((object or DOMString or boolean) arg);
   void passUnion9((object or DOMString or long or boolean) arg);
-  void passUnion10(optional (EventInit or long) arg);
-  void passUnion11(optional (CustomEventInit or long) arg);
+  void passUnion10(optional (EventInit or long) arg = {});
+  void passUnion11(optional (CustomEventInit or long) arg = {});
   void passUnion12(optional (EventInit or long) arg = 5);
   void passUnion13(optional (object or long?) arg = null);
   void passUnion14(optional (object or long?) arg = 5);
@@ -619,19 +654,19 @@ interface TestInterface {
   void passUnion18((sequence<object> or long) arg);
   void passUnion19(optional (sequence<object> or long) arg);
   void passUnion20(optional (sequence<object> or long) arg = []);
-  void passUnion21((MozMap<long> or long) arg);
-  void passUnion22((MozMap<object> or long) arg);
+  void passUnion21((record<DOMString, long> or long) arg);
+  void passUnion22((record<DOMString, object> or long) arg);
   void passUnion23((sequence<ImageData> or long) arg);
   void passUnion24((sequence<ImageData?> or long) arg);
   void passUnion25((sequence<sequence<ImageData>> or long) arg);
   void passUnion26((sequence<sequence<ImageData?>> or long) arg);
-  void passUnion27(optional (sequence<DOMString> or EventInit) arg);
-  void passUnion28(optional (EventInit or sequence<DOMString>) arg);
+  void passUnion27(optional (sequence<DOMString> or EventInit) arg = {});
+  void passUnion28(optional (EventInit or sequence<DOMString>) arg = {});
   void passUnionWithCallback((EventHandler or long) arg);
   void passUnionWithByteString((ByteString or long) arg);
-  void passUnionWithMozMap((MozMap<DOMString> or DOMString) arg);
-  void passUnionWithMozMapAndSequence((MozMap<DOMString> or sequence<DOMString>) arg);
-  void passUnionWithSequenceAndMozMap((sequence<DOMString> or MozMap<DOMString>) arg);
+  void passUnionWithRecord((record<DOMString, DOMString> or DOMString) arg);
+  void passUnionWithRecordAndSequence((record<DOMString, DOMString> or sequence<DOMString>) arg);
+  void passUnionWithSequenceAndRecord((sequence<DOMString> or record<DOMString, DOMString>) arg);
   void passUnionWithUSVS((USVString or long) arg);
 #endif
   void passUnionWithNullable((object? or long) arg);
@@ -675,6 +710,9 @@ interface TestInterface {
   void passUnionWithDefaultValue17(optional (double or SupportedType) arg = "text/html");
   void passUnionWithDefaultValue18(optional (double or SupportedType) arg = 1);
   void passUnionWithDefaultValue19(optional (double or SupportedType) arg = 1.5);
+  void passUnionWithDefaultValue20(optional (double or USVString) arg = "abc");
+  void passUnionWithDefaultValue21(optional (double or USVString) arg = 1);
+  void passUnionWithDefaultValue22(optional (double or USVString) arg = 1.5);
 
   void passNullableUnionWithDefaultValue1(optional (double or DOMString)? arg = "");
   void passNullableUnionWithDefaultValue2(optional (double or DOMString)? arg = 1);
@@ -696,6 +734,10 @@ interface TestInterface {
   void passNullableUnionWithDefaultValue18(optional (double or SupportedType)? arg = 1);
   void passNullableUnionWithDefaultValue19(optional (double or SupportedType)? arg = 1.5);
   void passNullableUnionWithDefaultValue20(optional (double or SupportedType)? arg = null);
+  void passNullableUnionWithDefaultValue21(optional (double or USVString)? arg = "abc");
+  void passNullableUnionWithDefaultValue22(optional (double or USVString)? arg = 1);
+  void passNullableUnionWithDefaultValue23(optional (double or USVString)? arg = 1.5);
+  void passNullableUnionWithDefaultValue24(optional (double or USVString)? arg = null);
 
   void passSequenceOfUnions(sequence<(CanvasPattern or CanvasGradient)> arg);
   void passSequenceOfUnions2(sequence<(object or long)> arg);
@@ -703,9 +745,9 @@ interface TestInterface {
 
   void passSequenceOfNullableUnions(sequence<(CanvasPattern or CanvasGradient)?> arg);
   void passVariadicNullableUnion((CanvasPattern or CanvasGradient)?... arg);
-  void passMozMapOfUnions(MozMap<(CanvasPattern or CanvasGradient)> arg);
+  void passRecordOfUnions(record<DOMString, (CanvasPattern or CanvasGradient)> arg);
   // XXXbz no move constructor on some unions
-  // void passMozMapOfUnions2(MozMap<(object or long)> arg);
+  // void passRecordOfUnions2(record<DOMString, (object or long)> arg);
 
   (CanvasPattern or CanvasGradient) receiveUnion();
   (object or long) receiveUnion2();
@@ -725,32 +767,28 @@ interface TestInterface {
   void passOptionalNullableDateWithDefaultValue(optional Date? arg = null);
   void passDateSequence(sequence<Date> arg);
   void passNullableDateSequence(sequence<Date?> arg);
-  void passDateMozMap(MozMap<Date> arg);
+  void passDateRecord(record<DOMString, Date> arg);
   Date receiveDate();
   Date? receiveNullableDate();
 
   // Promise types
   void passPromise(Promise<any> arg);
-  void passNullablePromise(Promise<any>? arg);
   void passOptionalPromise(optional Promise<any> arg);
-  void passOptionalNullablePromise(optional Promise<any>? arg);
-  void passOptionalNullablePromiseWithDefaultValue(optional Promise<any>? arg = null);
   void passPromiseSequence(sequence<Promise<any>> arg);
-  void passNullablePromiseSequence(sequence<Promise<any>?> arg);
   Promise<any> receivePromise();
   Promise<any> receiveAddrefedPromise();
 
   // binaryNames tests
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom();
-  [BinaryName="otherMethodRenamedTo"]
-  void otherMethodRenamedFrom();
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom(byte argument);
+  [BinaryName="attributeGetterRenamedTo"]
   readonly attribute byte attributeGetterRenamedFrom;
+  [BinaryName="attributeRenamedTo"]
   attribute byte attributeRenamedFrom;
-  [BinaryName="otherAttributeRenamedTo"]
-  attribute byte otherAttributeRenamedFrom;
 
-  void passDictionary(optional Dict x);
+  void passDictionary(optional Dict x = {});
   void passDictionary2(Dict x);
   [Cached, Pure]
   readonly attribute Dict readonlyDictionary;
@@ -766,16 +804,16 @@ interface TestInterface {
   attribute Dict writableFrozenDictionary;
   Dict receiveDictionary();
   Dict? receiveNullableDictionary();
-  void passOtherDictionary(optional GrandparentDict x);
+  void passOtherDictionary(optional GrandparentDict x = {});
   void passSequenceOfDictionaries(sequence<Dict> x);
-  void passMozMapOfDictionaries(MozMap<GrandparentDict> x);
+  void passRecordOfDictionaries(record<DOMString, GrandparentDict> x);
   // No support for nullable dictionaries inside a sequence (nor should there be)
   //  void passSequenceOfNullableDictionaries(sequence<Dict?> x);
-  void passDictionaryOrLong(optional Dict x);
+  void passDictionaryOrLong(optional Dict x = {});
   void passDictionaryOrLong(long x);
 
-  void passDictContainingDict(optional DictContainingDict arg);
-  void passDictContainingSequence(optional DictContainingSequence arg);
+  void passDictContainingDict(optional DictContainingDict arg = {});
+  void passDictContainingSequence(optional DictContainingSequence arg = {});
   DictContainingSequence receiveDictContainingSequence();
   void passVariadicDictionary(Dict... arg);
 
@@ -783,8 +821,8 @@ interface TestInterface {
   void dontEnforceRangeOrClamp(byte arg);
   void doEnforceRange([EnforceRange] byte arg);
   void doClamp([Clamp] byte arg);
-  [EnforceRange] attribute byte enforcedByte;
-  [Clamp] attribute byte clampedByte;
+  attribute [EnforceRange] byte enforcedByte;
+  attribute [Clamp] byte clampedByte;
 
   // Typedefs
   const myLong myLongConstant = 5;
@@ -793,11 +831,11 @@ interface TestInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   attribute byte deprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   byte deprecatedMethod();
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   byte deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -809,11 +847,11 @@ interface TestInterface {
   static void assert(boolean arg);
 
   // Deprecated static methods and attributes
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static attribute byte staticDeprecatedAttribute;
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethod();
-  [Deprecated="GetAttributeNode"]
+  [Deprecated="EnablePrivilege"]
   static void staticDeprecatedMethodWithContext(any arg);
 
   // Overload resolution tests
@@ -821,7 +859,7 @@ interface TestInterface {
   boolean overload1(TestInterface arg);
   TestInterface overload1(DOMString strs, TestInterface arg);
   void overload2(TestInterface arg);
-  void overload2(optional Dict arg);
+  void overload2(optional Dict arg = {});
   void overload2(boolean arg);
   void overload2(DOMString arg);
   void overload2(Date arg);
@@ -857,75 +895,75 @@ interface TestInterface {
   void overload16(long arg);
   void overload16(optional TestInterface? arg);
   void overload17(sequence<long> arg);
-  void overload17(MozMap<long> arg);
-  void overload18(MozMap<DOMString> arg);
+  void overload17(record<DOMString, long> arg);
+  void overload18(record<DOMString, DOMString> arg);
   void overload18(sequence<DOMString> arg);
   void overload19(sequence<long> arg);
-  void overload19(optional Dict arg);
-  void overload20(optional Dict arg);
+  void overload19(optional Dict arg = {});
+  void overload20(optional Dict arg = {});
   void overload20(sequence<long> arg);
 
   // Variadic handling
   void passVariadicThirdArg(DOMString arg1, long arg2, TestInterface... arg3);
 
   // Conditionally exposed methods/attributes
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable1;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable2;
-  [Pref="ghi.jkl"]
+  [Pref="dom.webidl.test2"]
   readonly attribute boolean prefable3;
-  [Pref="ghi.jkl"]
+  [Pref="dom.webidl.test2"]
   readonly attribute boolean prefable4;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   readonly attribute boolean prefable5;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable6;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable7;
-  [Pref="ghi.jkl", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test2", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable8;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean prefable9;
-  [Pref="abc.def"]
+  [Pref="dom.webidl.test1"]
   void prefable10();
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable11();
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable12;
-  [Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void prefable13();
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean prefable14;
   [Func="TestFuncControlledMember"]
   readonly attribute boolean prefable15;
   [Func="TestFuncControlledMember"]
   readonly attribute boolean prefable16;
-  [Pref="abc.def", Func="TestFuncControlledMember"]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   void prefable17();
   [Func="TestFuncControlledMember"]
   void prefable18();
   [Func="TestFuncControlledMember"]
   void prefable19();
-  [Pref="abc.def", Func="TestFuncControlledMember", ChromeOnly]
+  [Pref="dom.webidl.test1", Func="TestFuncControlledMember", ChromeOnly]
   void prefable20();
 
   // Conditionally exposed methods/attributes involving [SecureContext]
   [SecureContext]
   readonly attribute boolean conditionalOnSecureContext1;
-  [SecureContext, Pref="abc.def"]
+  [SecureContext, Pref="dom.webidl.test1"]
   readonly attribute boolean conditionalOnSecureContext2;
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   readonly attribute boolean conditionalOnSecureContext3;
-  [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
+  [SecureContext, Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   readonly attribute boolean conditionalOnSecureContext4;
   [SecureContext]
   void conditionalOnSecureContext5();
-  [SecureContext, Pref="abc.def"]
+  [SecureContext, Pref="dom.webidl.test1"]
   void conditionalOnSecureContext6();
-  [SecureContext, Pref="abc.def", Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [SecureContext, Pref="dom.webidl.test1", Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   void conditionalOnSecureContext7();
-  [SecureContext, Pref="abc.def", Func="TestFuncControlledMember"]
+  [SecureContext, Pref="dom.webidl.test1", Func="TestFuncControlledMember"]
   void conditionalOnSecureContext8();
 
   // Miscellania
@@ -943,80 +981,67 @@ interface TestInterface {
   [Throws] attribute boolean throwingAttr;
   [GetterThrows] attribute boolean throwingGetterAttr;
   [SetterThrows] attribute boolean throwingSetterAttr;
+  [CanOOM] void canOOMMethod();
+  [CanOOM] attribute boolean canOOMAttr;
+  [GetterCanOOM] attribute boolean canOOMGetterAttr;
+  [SetterCanOOM] attribute boolean canOOMSetterAttr;
+  [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
+  [NeedsCallerType] void needsCallerTypeMethod();
+  [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
+  [CEReactions] void ceReactionsMethod();
+  [CEReactions] void ceReactionsMethodOverload();
+  [CEReactions] void ceReactionsMethodOverload(DOMString bar);
+  [CEReactions] attribute boolean ceReactionsAttr;
   legacycaller short(unsigned long arg1, TestInterface arg2);
   void passArgsWithDefaults(optional long arg1,
                             optional TestInterface? arg2 = null,
-                            optional Dict arg3, optional double arg4 = 5.0,
+                            optional Dict arg3 = {}, optional double arg4 = 5.0,
                             optional float arg5);
 
-  attribute any jsonifierShouldSkipThis;
-  attribute TestParentInterface jsonifierShouldSkipThis2;
-  attribute TestCallbackInterface jsonifierShouldSkipThis3;
-  jsonifier;
+  attribute any toJSONShouldSkipThis;
+  attribute TestParentInterface toJSONShouldSkipThis2;
+  attribute TestCallbackInterface toJSONShouldSkipThis3;
+  [Default] object toJSON();
 
   attribute byte dashed-attribute;
   void dashed-method();
 
+  // [NonEnumerable] tests
+  [NonEnumerable]
+  attribute boolean nonEnumerableAttr;
+  [NonEnumerable]
+  const boolean nonEnumerableConst = true;
+  [NonEnumerable]
+  void nonEnumerableMethod();
+
+  // [NeedsWindowsUndef] test generation
+  [NeedsWindowsUndef]
+  const unsigned long NO_ERROR = 0xffffffff;
+
   // If you add things here, add them to TestExampleGen and TestJSImplGen as well
 };
 
+[Exposed=Window]
 interface TestParentInterface {
 };
 
+[Exposed=Window]
 interface TestChildInterface : TestParentInterface {
 };
 
+[Exposed=Window]
 interface TestNonWrapperCacheInterface {
 };
 
-[NoInterfaceObject]
-interface ImplementedInterfaceParent {
-  void implementedParentMethod();
-  attribute boolean implementedParentProperty;
+interface mixin InterfaceMixin {
+  void mixedInMethod();
+  attribute boolean mixedInProperty;
 
-  const long implementedParentConstant = 8;
+  const long mixedInConstant = 5;
 };
-
-ImplementedInterfaceParent implements IndirectlyImplementedInterface;
-
-[NoInterfaceObject]
-interface IndirectlyImplementedInterface {
-  void indirectlyImplementedMethod();
-  attribute boolean indirectlyImplementedProperty;
-
-  const long indirectlyImplementedConstant = 9;
-};
-
-[NoInterfaceObject]
-interface ImplementedInterface : ImplementedInterfaceParent {
-  void implementedMethod();
-  attribute boolean implementedProperty;
-
-  const long implementedConstant = 5;
-};
-
-[NoInterfaceObject]
-interface DiamondImplements {
-  readonly attribute long diamondImplementedProperty;
-};
-[NoInterfaceObject]
-interface DiamondBranch1A {
-};
-[NoInterfaceObject]
-interface DiamondBranch1B {
-};
-[NoInterfaceObject]
-interface DiamondBranch2A : DiamondImplements {
-};
-[NoInterfaceObject]
-interface DiamondBranch2B : DiamondImplements {
-};
-TestInterface implements DiamondBranch1A;
-TestInterface implements DiamondBranch1B;
-TestInterface implements DiamondBranch2A;
-TestInterface implements DiamondBranch2B;
-DiamondBranch1A implements DiamondImplements;
-DiamondBranch1B implements DiamondImplements;
 
 dictionary Dict : ParentDict {
   TestEnum someEnum;
@@ -1035,6 +1060,7 @@ dictionary Dict : ParentDict {
   ByteString byteStr;
   ByteString emptyByteStr = "";
   ByteString otherByteStr = "def";
+  // JSString jsStr; // NOT SUPPORTED YET
   object someObj;
   boolean prototype;
   object? anotherObj = null;
@@ -1068,8 +1094,8 @@ dictionary Dict : ParentDict {
   // CustomEventInit is useful to test because it needs rooting.
   (CustomEventInit or long) eventInitOrLong2;
   (CustomEventInit or long)? nullableEventInitOrLong2;
-  (EventInit or long) eventInitOrLongWithDefaultValue = null;
-  (CustomEventInit or long) eventInitOrLongWithDefaultValue2 = null;
+  (EventInit or long) eventInitOrLongWithDefaultValue = {};
+  (CustomEventInit or long) eventInitOrLongWithDefaultValue2 = {};
   (EventInit or long) eventInitOrLongWithDefaultValue3 = 5;
   (CustomEventInit or long) eventInitOrLongWithDefaultValue4 = 5;
   (EventInit or long)? nullableEventInitOrLongWithDefaultValue = null;
@@ -1105,6 +1131,17 @@ dictionary Dict : ParentDict {
 
   Promise<void> promise;
   sequence<Promise<void>> promiseSequence;
+
+  record<DOMString, long> recordMember;
+  record<DOMString, long>? nullableRecord;
+  record<DOMString, DOMString>? nullableRecordWithDefault = null;
+  record<USVString, long> usvStringRecord;
+  record<USVString, long>? nullableUSVStringRecordWithDefault = null;
+  record<ByteString, long> byteStringRecord;
+  record<ByteString, long>? nullableByteStringRecordWithDefault = null;
+  required record<DOMString, TestInterface> requiredRecord;
+  required record<USVString, TestInterface> requiredUSVRecord;
+  required record<ByteString, TestInterface> requiredByteRecord;
 };
 
 dictionary ParentDict : GrandparentDict {
@@ -1151,101 +1188,110 @@ dictionary DictWithConditionalMembers {
   long chromeOnlyMember;
   [Func="TestFuncControlledMember"]
   long funcControlledMember;
-  [ChromeOnly, Func="nsGenericHTMLElement::TouchEventsEnabled"]
+  [ChromeOnly, Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
   long chromeOnlyFuncControlledMember;
+  // We need a pref name that's in StaticPrefList.h here.
+  [Pref="dom.webidl.test1"]
+  long prefControlledMember;
+  [Pref="dom.webidl.test1", ChromeOnly, Func="TestFuncControlledMember"]
+  long chromeOnlyFuncAndPrefControlledMember;
 };
 
+[Exposed=Window]
 interface TestIndexedGetterInterface {
   getter long item(unsigned long idx);
   readonly attribute unsigned long length;
   legacycaller void();
+  [Cached, Pure] readonly attribute long cachedAttr;
+  [StoreInSlot, Pure] readonly attribute long storeInSlotAttr;
 };
 
+[Exposed=Window]
 interface TestNamedGetterInterface {
   getter DOMString (DOMString name);
 };
 
+[Exposed=Window]
 interface TestIndexedGetterAndSetterAndNamedGetterInterface {
   getter DOMString (DOMString myName);
   getter long (unsigned long index);
-  setter creator void (unsigned long index, long arg);
+  setter void (unsigned long index, long arg);
+  readonly attribute unsigned long length;
 };
 
+[Exposed=Window]
 interface TestIndexedAndNamedGetterInterface {
   getter long (unsigned long index);
   getter DOMString namedItem(DOMString name);
   readonly attribute unsigned long length;
 };
 
+[Exposed=Window]
 interface TestIndexedSetterInterface {
-  setter creator void setItem(unsigned long idx, DOMString item);
+  setter void setItem(unsigned long idx, DOMString item);
   getter DOMString (unsigned long idx);
+  readonly attribute unsigned long length;
 };
 
+[Exposed=Window]
 interface TestNamedSetterInterface {
-  setter creator void (DOMString myName, TestIndexedSetterInterface item);
+  setter void (DOMString myName, TestIndexedSetterInterface item);
   getter TestIndexedSetterInterface (DOMString name);
 };
 
+[Exposed=Window]
 interface TestIndexedAndNamedSetterInterface {
-  setter creator void (unsigned long index, TestIndexedSetterInterface item);
+  setter void (unsigned long index, TestIndexedSetterInterface item);
   getter TestIndexedSetterInterface (unsigned long index);
-  setter creator void setNamedItem(DOMString name, TestIndexedSetterInterface item);
+  readonly attribute unsigned long length;
+  setter void setNamedItem(DOMString name, TestIndexedSetterInterface item);
   getter TestIndexedSetterInterface (DOMString name);
 };
 
+[Exposed=Window]
 interface TestIndexedAndNamedGetterAndSetterInterface : TestIndexedSetterInterface {
   getter long item(unsigned long index);
   getter DOMString namedItem(DOMString name);
-  setter creator void (unsigned long index, long item);
-  setter creator void (DOMString name, DOMString item);
+  setter void (unsigned long index, long item);
+  setter void (DOMString name, DOMString item);
   stringifier DOMString ();
   readonly attribute unsigned long length;
 };
 
-interface TestIndexedDeleterInterface {
-  deleter void delItem(unsigned long idx);
-  getter long (unsigned long index);
-};
-
-interface TestIndexedDeleterWithRetvalInterface {
-  deleter boolean delItem(unsigned long index);
-  getter long (unsigned long index);
-};
-
+[Exposed=Window]
 interface TestNamedDeleterInterface {
   deleter void (DOMString name);
   getter long (DOMString name);
 };
 
+[Exposed=Window]
 interface TestNamedDeleterWithRetvalInterface {
   deleter boolean delNamedItem(DOMString name);
   getter long (DOMString name);
 };
 
-interface TestIndexedAndNamedDeleterInterface {
-  deleter void (unsigned long index);
-  getter long (unsigned long index);
-  deleter void delNamedItem(DOMString name);
-  getter long (DOMString name);
-};
-
+[Exposed=Window]
 interface TestCppKeywordNamedMethodsInterface {
   boolean continue();
   boolean delete();
   long volatile();
 };
 
-[Deprecated="GetAttributeNode", Constructor()]
+[Deprecated="EnablePrivilege",
+ Exposed=Window]
 interface TestDeprecatedInterface {
+  constructor();
+
   static void alsoDeprecated();
 };
 
 
-[Constructor(Promise<void> promise)]
+[Exposed=Window]
 interface TestInterfaceWithPromiseConstructorArg {
+  constructor(Promise<void> promise);
 };
 
+[Exposed=Window]
 namespace TestNamespace {
   readonly attribute boolean foo;
   long bar();
@@ -1255,15 +1301,90 @@ partial namespace TestNamespace {
   void baz();
 };
 
-[ClassString="RenamedNamespaceClassName"]
+[ClassString="RenamedNamespaceClassName",
+ Exposed=Window]
 namespace TestRenamedNamespace {
 };
 
-[ProtoObjectHack]
+[ProtoObjectHack,
+ Exposed=Window]
 namespace TestProtoObjectHackedNamespace {
 };
 
-[SecureContext]
+[SecureContext,
+ Exposed=Window]
 interface TestSecureContextInterface {
   static void alsoSecureContext();
+};
+
+[Exposed=(Window,Worker)]
+interface TestWorkerExposedInterface {
+  [NeedsSubjectPrincipal] void needsSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal] attribute boolean needsSubjectPrincipalAttr;
+  [NeedsCallerType] void needsCallerTypeMethod();
+  [NeedsCallerType] attribute boolean needsCallerTypeAttr;
+  [NeedsSubjectPrincipal=NonSystem] void needsNonSystemSubjectPrincipalMethod();
+  [NeedsSubjectPrincipal=NonSystem] attribute boolean needsNonSystemSubjectPrincipalAttr;
+};
+
+[Exposed=Window]
+interface TestHTMLConstructorInterface {
+  [HTMLConstructor] constructor();
+};
+
+[Exposed=Window]
+interface TestThrowingConstructorInterface {
+  [Throws]
+  constructor();
+  [Throws]
+  constructor(DOMString str);
+  [Throws]
+  constructor(unsigned long num, boolean? boolArg);
+  [Throws]
+  constructor(TestInterface? iface);
+  [Throws]
+  constructor(unsigned long arg1, TestInterface iface);
+  [Throws]
+  constructor(Date arg1);
+  [Throws]
+  constructor(ArrayBuffer arrayBuf);
+  [Throws]
+  constructor(Uint8Array typedArr);
+  // [Throws] constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3);
+};
+
+[Exposed=Window]
+interface TestCEReactionsInterface {
+  [CEReactions] setter void (unsigned long index, long item);
+  [CEReactions] setter void (DOMString name, DOMString item);
+  [CEReactions] deleter void (DOMString name);
+  getter long item(unsigned long index);
+  getter DOMString (DOMString name);
+  readonly attribute unsigned long length;
+};
+
+typedef [EnforceRange] octet OctetRange;
+typedef [Clamp] octet OctetClamp;
+typedef [TreatNullAs=EmptyString] DOMString NullEmptyString;
+// typedef [TreatNullAs=EmptyString] JSString NullEmptyJSString;
+
+dictionary TestAttributesOnDictionaryMembers {
+  [Clamp] octet a;
+  [ChromeOnly, Clamp] octet b;
+  required [Clamp] octet c;
+  [ChromeOnly] octet d;
+  // ChromeOnly doesn't mix with required, so we can't
+  // test [ChromeOnly] required [Clamp] octet e
+};
+
+[Exposed=Window]
+interface TestAttributesOnTypes {
+  void foo(OctetClamp thingy);
+  void bar(OctetRange thingy);
+  void baz(NullEmptyString thingy);
+  // void qux(NullEmptyJSString thingy);
+  attribute [Clamp] octet someAttr;
+  void argWithAttr([Clamp] octet arg0, optional [Clamp] octet arg1);
+  // There aren't any argument-only attributes that we can test here,
+  // TreatNonCallableAsNull isn't compatible with Clamp-able types
 };

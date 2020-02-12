@@ -8,10 +8,10 @@
 #ifndef SkRecord_DEFINED
 #define SkRecord_DEFINED
 
+#include "SkArenaAlloc.h"
 #include "SkRecords.h"
 #include "SkTLogic.h"
 #include "SkTemplates.h"
-#include "SkVarAlloc.h"
 
 // SkRecord represents a sequence of SkCanvas calls, saved for future use.
 // These future uses may include: replay, optimization, serialization, or combinations of those.
@@ -25,18 +25,9 @@
 // only with SkRecords::* structs defined in SkRecords.h.  Your compiler will helpfully yell if you
 // get this wrong.
 
-class SkRecord : public SkNVRefCnt<SkRecord> {
-    enum {
-        // TODO: tune these two constants.
-        kInlineRecords      = 4, // Ideally our lower limit on recorded ops per picture.
-        kInlineAllocLgBytes = 8, // 1<<8 == 256 bytes inline, then SkVarAlloc starting at 512 bytes.
-    };
+class SkRecord : public SkRefCnt {
 public:
-    SkRecord()
-        : fCount(0)
-        , fReserved(kInlineRecords)
-        , fAlloc(kInlineAllocLgBytes+1,  // First malloc'd block is 2x as large as fInlineAlloc.
-                 fInlineAlloc, sizeof(fInlineAlloc)) {}
+    SkRecord() = default;
     ~SkRecord();
 
     // Returns the number of canvas commands in this SkRecord.
@@ -64,7 +55,11 @@ public:
     // Here T can be any class, not just those from SkRecords.  Throws on failure.
     template <typename T>
     T* alloc(size_t count = 1) {
-        return (T*)fAlloc.alloc(sizeof(T) * count);
+        struct RawBytes {
+            alignas(T) char data[sizeof(T)];
+        };
+        fApproxBytesAllocated += count * sizeof(T) + alignof(T);
+        return (T*)fAlloc.makeArrayDefault<RawBytes>(count);
     }
 
     // Add a new command of type T to the end of this SkRecord.
@@ -146,22 +141,20 @@ private:
 
     // A typed pointer to some bytes in fAlloc.  visit() and mutate() allow polymorphic dispatch.
     struct Record {
-        // On 32-bit machines we store type in 4 bytes, followed by a pointer.  Simple.
-        // On 64-bit machines we store a pointer with the type slotted into two top (unused) bytes.
-        // FWIW, SkRecords::Type is tiny.  It can easily fit in one byte.
-        uint64_t fTypeAndPtr;
-        static const int kTypeShift = sizeof(void*) == 4 ? 32 : 48;
+        SkRecords::Type fType;
+        void*           fPtr;
 
         // Point this record to its data in fAlloc.  Returns ptr for convenience.
         template <typename T>
         T* set(T* ptr) {
-            fTypeAndPtr = ((uint64_t)T::kType) << kTypeShift | (uintptr_t)ptr;
+            fType = T::kType;
+            fPtr  = ptr;
             SkASSERT(this->ptr() == ptr && this->type() == T::kType);
             return ptr;
         }
 
-        SkRecords::Type type() const { return (SkRecords::Type)(fTypeAndPtr >> kTypeShift); }
-        void* ptr() const { return (void*)(fTypeAndPtr & ((1ull<<kTypeShift)-1)); }
+        SkRecords::Type type() const { return fType; }
+        void* ptr() const { return fPtr; }
 
         // Visit this record with functor F (see public API above).
         template <typename F>
@@ -170,7 +163,8 @@ private:
             switch(this->type()) { SK_RECORD_TYPES(CASE) }
         #undef CASE
             SkDEBUGFAIL("Unreachable");
-            return f(SkRecords::NoOp());
+            static const SkRecords::NoOp noop{};
+            return f(noop);
         }
 
         // Mutate this record with functor F (see public API above).
@@ -180,19 +174,21 @@ private:
             switch(this->type()) { SK_RECORD_TYPES(CASE) }
         #undef CASE
             SkDEBUGFAIL("Unreachable");
-            return f((SkRecords::NoOp*)nullptr);
+            static const SkRecords::NoOp noop{};
+            return f(const_cast<SkRecords::NoOp*>(&noop));
         }
     };
 
     // fRecords needs to be a data structure that can append fixed length data, and need to
     // support efficient random access and forward iteration.  (It doesn't need to be contiguous.)
-    int fCount, fReserved;
-    SkAutoSTMalloc<kInlineRecords, Record> fRecords;
+    int fCount{0},
+        fReserved{0};
+    SkAutoTMalloc<Record> fRecords;
 
     // fAlloc needs to be a data structure which can append variable length data in contiguous
     // chunks, returning a stable handle to that data for later retrieval.
-    SkVarAlloc fAlloc;
-    char fInlineAlloc[1 << kInlineAllocLgBytes];
+    SkArenaAlloc fAlloc{256};
+    size_t       fApproxBytesAllocated{0};
 };
 
 #endif//SkRecord_DEFINED

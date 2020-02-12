@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_MediaKeySession_h
 #define mozilla_dom_MediaKeySession_h
 
+#include "DecoderDoctorLogger.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"
@@ -24,37 +25,42 @@
 struct JSContext;
 
 namespace mozilla {
+
+namespace dom {
+class MediaKeySession;
+}  // namespace dom
+DDLoggedTypeName(dom::MediaKeySession);
+
 namespace dom {
 
 class ArrayBufferViewOrArrayBuffer;
 class MediaKeyError;
 class MediaKeyStatusMap;
 
-class MediaKeySession final : public DOMEventTargetHelper
-{
-public:
+nsCString ToCString(MediaKeySessionType aType);
+
+nsString ToString(MediaKeySessionType aType);
+
+class MediaKeySession final : public DOMEventTargetHelper,
+                              public DecoderDoctorLifeLogger<MediaKeySession> {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaKeySession,
                                            DOMEventTargetHelper)
-public:
-  MediaKeySession(JSContext* aCx,
-                  nsPIDOMWindowInner* aParent,
-                  MediaKeys* aKeys,
-                  const nsAString& aKeySystem,
-                  const nsAString& aCDMVersion,
-                  MediaKeySessionType aSessionType,
+ public:
+  MediaKeySession(JSContext* aCx, nsPIDOMWindowInner* aParent, MediaKeys* aKeys,
+                  const nsAString& aKeySystem, MediaKeySessionType aSessionType,
                   ErrorResult& aRv);
 
   void SetSessionId(const nsAString& aSessionId);
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   // Mark this as resultNotAddRefed to return raw pointers
   MediaKeyError* GetError() const;
 
   MediaKeyStatusMap* KeyStatuses() const;
-
-  void GetKeySystem(nsString& aRetval) const;
 
   void GetSessionId(nsString& aRetval) const;
 
@@ -67,12 +73,11 @@ public:
 
   Promise* Closed() const;
 
-  already_AddRefed<Promise> GenerateRequest(const nsAString& aInitDataType,
-                                            const ArrayBufferViewOrArrayBuffer& aInitData,
-                                            ErrorResult& aRv);
+  already_AddRefed<Promise> GenerateRequest(
+      const nsAString& aInitDataType,
+      const ArrayBufferViewOrArrayBuffer& aInitData, ErrorResult& aRv);
 
-  already_AddRefed<Promise> Load(const nsAString& aSessionId,
-                                 ErrorResult& aRv);
+  already_AddRefed<Promise> Load(const nsAString& aSessionId, ErrorResult& aRv);
 
   already_AddRefed<Promise> Update(const ArrayBufferViewOrArrayBuffer& response,
                                    ErrorResult& aRv);
@@ -94,10 +99,16 @@ public:
 
   void SetExpiration(double aExpiry);
 
+  mozilla::dom::EventHandlerNonNull* GetOnkeystatuseschange();
+  void SetOnkeystatuseschange(mozilla::dom::EventHandlerNonNull* aCallback);
+
+  mozilla::dom::EventHandlerNonNull* GetOnmessage();
+  void SetOnmessage(mozilla::dom::EventHandlerNonNull* aCallback);
+
   // Process-unique identifier.
   uint32_t Token() const;
 
-private:
+ private:
   ~MediaKeySession();
 
   void UpdateKeyStatusMap();
@@ -117,7 +128,6 @@ private:
   RefPtr<MediaKeyError> mMediaKeyError;
   RefPtr<MediaKeys> mKeys;
   const nsString mKeySystem;
-  const nsString mCDMVersion;
   nsString mSessionId;
   const MediaKeySessionType mSessionType;
   const uint32_t mToken;
@@ -127,7 +137,7 @@ private:
   double mExpiration;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

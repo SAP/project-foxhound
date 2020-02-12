@@ -6,14 +6,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1016960
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1016960</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
   /** Test for Bug 1016960 **/
 
-  var chromeWindow = window.open("chrome://mochitests/content/chrome/dom/base/test/file_empty.html", "1016960", "chrome");
-  ok(chromeWindow instanceof ChromeWindow, "A chrome window should return true for |instanceof ChromeWindow|.");
+  var chromeWindow = docShell.rootTreeItem.domWindow.open("chrome://mochitests/content/chrome/dom/base/test/file_empty.html", "1016960", "chrome");
+  ok(chromeWindow.isChromeWindow, "A chrome window should return true for .isChromeWindow.");
   chromeWindow.close();
 
   </script>

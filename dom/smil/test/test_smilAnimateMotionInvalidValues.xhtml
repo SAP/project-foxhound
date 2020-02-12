@@ -4,7 +4,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=436418
 -->
 <head>
   <title>Test for animateMotion acceptance of invalid values</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="smilTestUtils.js" />
   <script type="text/javascript" src="smilAnimateMotionValueLists.js" />
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -43,7 +43,7 @@ function createAnim()
 
 function removeElem(aElem)
 {
-  aElem.parentNode.removeChild(aElem);
+  aElem.remove();
 }
 
 function testAttr(aAttrName, aAttrValueArray, aIsValid)
@@ -168,7 +168,7 @@ function main()
   SimpleTest.finish();
 }
 
-window.addEventListener("load", main, false);
+window.addEventListener("load", main);
 ]]>
 </script>
 </pre>

@@ -4,19 +4,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DIST_INSTALL = False
+FINAL_LIBRARY = 'xul-gtest'
 
-SimplePrograms([
-    'TestZip',
-])
-LOCAL_INCLUDES += ['..']
-USE_LIBS += [
-    'linker',
+UNIFIED_SOURCES += [
+    '../Zip.cpp',
+    'TestZip.cpp',
 ]
-OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
-DISABLE_STL_WRAPPING = True
 
-PYTHON_UNIT_TESTS += ['run_test_zip.py']
+SOURCES += [
+    'TestZipData.S',
+]
 
-if CONFIG['GNU_CXX']:
+LOCAL_INCLUDES += ['..']
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+ASFLAGS += ['-I', SRCDIR]

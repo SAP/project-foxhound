@@ -11,29 +11,19 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
   <label value="Mozilla Bug 549682"/>
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
-  var Cc = Components.classes;
-  var Ci = Components.interfaces;
-  var Cr = Components.results;
-  var Cu = Components.utils;
-
   var didRunAsync = false;
   var didRunLocal = false;
 
-  var global = Cc["@mozilla.org/globalmessagemanager;1"]
-                 .getService(Components.interfaces.nsIMessageBroadcaster);
-  var ppm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-              .getService(Components.interfaces.nsIMessageBroadcaster);
-  var cpm = Cc["@mozilla.org/childprocessmessagemanager;1"]
-              .getService(Components.interfaces.nsISyncMessageSender);
-
-  Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+  var global = Cc["@mozilla.org/globalmessagemanager;1"].getService();
+  var ppm = Cc["@mozilla.org/parentprocessmessagemanager;1"].getService();
+  var cpm = Cc["@mozilla.org/childprocessmessagemanager;1"].getService();
 
   function ok(cond, msg) {
-    opener.wrappedJSObject.ok(cond, msg);
+    window.arguments[0].ok(cond, msg);
   }
 
   function is(actual, expected, msg) {
-    opener.wrappedJSObject.is(actual, expected, msg);
+    window.arguments[0].is(actual, expected, msg);
   }
 
   var asyncPPML = false;
@@ -100,8 +90,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
 
   var weakMessageReceived = false;
   var weakListener = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIMessageListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsISupportsWeakReference]),
 
     receiveMessage: function(msg) {
       if (weakMessageReceived) {
@@ -117,8 +106,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
   };
 
   var weakListener2 = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIMessageListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsISupportsWeakReference]),
 
     receiveMessage: function(msg) {
       ok(false, 'Should not have received a message.');
@@ -131,9 +119,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
   }
 
   function finish() {
-    opener.setTimeout("done()", 0);
+    window.arguments[0].setTimeout(function() { this.done(); }, 0);
     var i = document.getElementById("ifr");
-    i.parentNode.removeChild(i); // This is a crash test!
+    i.remove(); // This is a crash test!
     window.close();
   }
 
@@ -150,10 +138,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
   function run() {
     var localmm = document.getElementById('ifr').messageManager;
 
-    var wn = document.getElementById('ifr').contentWindow
-      .getInterface(Components.interfaces.nsIWebNavigation);
-    ok(wn, "Should have webnavigation");
-    var cfmm = wn.getInterface(Components.interfaces.nsIContentFrameMessageManager);
+    var docShell = document.getElementById('ifr').contentWindow.docShell;
+    ok(docShell, "Should have docshell");
+    var cfmm = docShell.messageManager;
     ok(cfmm, "Should have content messageManager");
 
     var didGetSyncMessage = false;
@@ -186,7 +173,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
     messageManager.removeDelayedFrameScript(toBeRemovedScript);
 
     var oldValue = globalListenerCallCount;
-    var b = document.createElement("browser");
+    var b = document.createXULElement("browser");
     b.setAttribute("type", "content");
     document.documentElement.appendChild(b);
     is(globalListenerCallCount, oldValue + 1,

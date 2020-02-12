@@ -1,22 +1,27 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ["Status"];
+var EXPORTED_SYMBOLS = ["Status"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cr = Components.results;
-var Cu = Components.utils;
+const {
+  CLIENT_NOT_CONFIGURED,
+  ENGINE_SUCCEEDED,
+  LOGIN_FAILED,
+  LOGIN_FAILED_NO_PASSPHRASE,
+  LOGIN_FAILED_NO_USERNAME,
+  LOGIN_SUCCEEDED,
+  STATUS_OK,
+  SYNC_FAILED,
+  SYNC_FAILED_PARTIAL,
+  SYNC_SUCCEEDED,
+} = ChromeUtils.import("resource://services-sync/constants.js");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { BrowserIDManager } = ChromeUtils.import(
+  "resource://services-sync/browserid_identity.js"
+);
 
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/identity.js");
-Cu.import("resource://services-sync/browserid_identity.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://services-common/async.js");
-
-this.Status = {
+var Status = {
   _log: Log.repository.getLogger("Sync.Status"),
   __authManager: null,
   ready: false,
@@ -25,12 +30,7 @@ this.Status = {
     if (this.__authManager) {
       return this.__authManager;
     }
-    let service = Components.classes["@mozilla.org/weave/service;1"]
-                    .getService(Components.interfaces.nsISupports)
-                    .wrappedJSObject;
-    let idClass = service.fxAccountsEnabled ? BrowserIDManager : IdentityManager;
-    this.__authManager = new idClass();
-    this.__authManager.initialize();
+    this.__authManager = new BrowserIDManager();
     return this.__authManager;
   },
 
@@ -39,7 +39,9 @@ this.Status = {
   },
 
   set service(code) {
-    this._log.debug("Status.service: " + (this._service || undefined) + " => " + code);
+    this._log.debug(
+      "Status.service: " + (this._service || undefined) + " => " + code
+    );
     this._service = code;
   },
 
@@ -51,9 +53,10 @@ this.Status = {
     this._log.debug("Status.login: " + this._login + " => " + code);
     this._login = code;
 
-    if (code == LOGIN_FAILED_NO_USERNAME ||
-        code == LOGIN_FAILED_NO_PASSWORD ||
-        code == LOGIN_FAILED_NO_PASSPHRASE) {
+    if (
+      code == LOGIN_FAILED_NO_USERNAME ||
+      code == LOGIN_FAILED_NO_PASSPHRASE
+    ) {
       this.service = CLIENT_NOT_CONFIGURED;
     } else if (code != LOGIN_SUCCEEDED) {
       this.service = LOGIN_FAILED;
@@ -72,15 +75,6 @@ this.Status = {
     this.service = code == SYNC_SUCCEEDED ? STATUS_OK : SYNC_FAILED;
   },
 
-  get eol() {
-    let modePref = PREFS_BRANCH + "errorhandler.alert.mode";
-    try {
-      return Services.prefs.getCharPref(modePref) == "hard-eol";
-    } catch (ex) {
-      return false;
-    }
-  },
-
   get engines() {
     return this._engines;
   },
@@ -97,20 +91,25 @@ this.Status = {
   // Implement toString because adding a logger introduces a cyclic object
   // value, so we can't trivially debug-print Status as JSON.
   toString: function toString() {
-    return "<Status" +
-           ": login: "   + Status.login +
-           ", service: " + Status.service +
-           ", sync: "    + Status.sync + ">";
+    return (
+      "<Status" +
+      ": login: " +
+      Status.login +
+      ", service: " +
+      Status.service +
+      ", sync: " +
+      Status.sync +
+      ">"
+    );
   },
 
   checkSetup: function checkSetup() {
-    let result = this._authManager.currentAuthState;
-    if (result == STATUS_OK) {
-      Status.service = result;
-      return result;
+    if (!this._authManager.username) {
+      Status.login = LOGIN_FAILED_NO_USERNAME;
+      Status.service = CLIENT_NOT_CONFIGURED;
+    } else if (Status.login == STATUS_OK) {
+      Status.service = STATUS_OK;
     }
-
-    Status.login = result;
     return Status.service;
   },
 
@@ -122,14 +121,7 @@ this.Status = {
 
   resetSync: function resetSync() {
     // Logger setup.
-    let logPref = PREFS_BRANCH + "log.logger.status";
-    let logLevel = "Trace";
-    try {
-      logLevel = Services.prefs.getCharPref(logPref);
-    } catch (ex) {
-      // Use default.
-    }
-    this._log.level = Log.Level[logLevel];
+    this._log.manageLevelFromPref("services.sync.log.logger.status");
 
     this._log.info("Resetting Status.");
     this.service = STATUS_OK;
@@ -137,7 +129,7 @@ this.Status = {
     this._sync = SYNC_SUCCEEDED;
     this._engines = {};
     this.partial = false;
-  }
+  },
 };
 
 // Initialize various status values.

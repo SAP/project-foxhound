@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_events_test_runner.js */
@@ -18,84 +17,99 @@ const TEST_DATA = [
     selector: "html",
     expected: [
       {
-        type: "load",
-        filename: TEST_URL + ":27",
+        type: "DOMContentLoaded",
+        filename: URL_ROOT + TEST_LIB + ":32:355",
         attributes: [
           "Bubbling",
           "DOM2"
         ],
-        handler: "() => {\n" +
-                 "  var handler1 = function liveDivDblClick() {\n" +
-                 "    alert(1);\n" +
-                 "  };\n" +
-                 "  var handler2 = function liveDivDragStart() {\n" +
-                 "    alert(2);\n" +
-                 "  };\n" +
-                 "  var handler3 = function liveDivDragLeave() {\n" +
-                 "    alert(3);\n" +
-                 "  };\n" +
-                 "  var handler4 = function liveDivDragEnd() {\n" +
-                 "    alert(4);\n" +
-                 "  };\n" +
-                 "  var handler5 = function liveDivDrop() {\n" +
-                 "    alert(5);\n" +
-                 "  };\n" +
-                 "  var handler6 = function liveDivDragOver() {\n" +
-                 "    alert(6);\n" +
-                 "  };\n" +
-                 "  var handler7 = function divClick1() {\n" +
-                 "    alert(7);\n" +
-                 "  };\n" +
-                 "  var handler8 = function divClick2() {\n" +
-                 "    alert(8);\n" +
-                 "  };\n" +
-                 "  var handler9 = function divKeyDown() {\n" +
-                 "    alert(9);\n" +
-                 "  };\n" +
-                 "  var handler10 = function divDragOut() {\n" +
-                 "    alert(10);\n" +
-                 "  };\n" +
-                 "\n" +
-                 "  if ($(\"#livediv\").live) {\n" +
-                 "    $(\"#livediv\").live(\"dblclick\", handler1);\n" +
-                 "    $(\"#livediv\").live(\"dragstart\", handler2);\n" +
-                 "  }\n" +
-                 "\n" +
-                 "  if ($(\"#livediv\").delegate) {\n" +
-                 "    $(document).delegate(\"#livediv\", \"dragleave\", handler3);\n" +
-                 "    $(document).delegate(\"#livediv\", \"dragend\", handler4);\n" +
-                 "  }\n" +
-                 "\n" +
-                 "  if ($(\"#livediv\").on) {\n" +
-                 "    $(document).on(\"drop\", \"#livediv\", handler5);\n" +
-                 "    $(document).on(\"dragover\", \"#livediv\", handler6);\n" +
-                 "    $(document).on(\"dragout\", \"#livediv:xxxxx\", handler10);\n" +
-                 "  }\n" +
-                 "\n" +
-                 "  var div = $(\"div\")[0];\n" +
-                 "  $(div).click(handler7);\n" +
-                 "  $(div).click(handler8);\n" +
-                 "  $(div).keydown(handler9);\n" +
-                 "}"
+        handler: `
+          function() {
+            s.removeEventListener(\"DOMContentLoaded\", M, false);
+            c.ready()
+          }`
       },
       {
         type: "load",
-        filename: URL_ROOT + TEST_LIB + ":26",
+        filename: TEST_URL + ":27:38",
         attributes: [
           "Bubbling",
           "DOM2"
         ],
-        handler: "ready: function() {\n" +
-                 "  if (!c.isReady) {\n" +
-                 "    if (!s.body) return setTimeout(c.ready, 13);\n" +
-                 "    c.isReady = true;\n" +
-                 "    if (Q) {\n" +
-                 "      for (var a, b = 0; a = Q[b++];) a.call(s, c);\n" +
-                 "      Q = null\n" +
-                 "    }\n" +
-                 "    c.fn.triggerHandler && c(s).triggerHandler(\"ready\")\n" +
-                 "  }\n" +
-                 "}"
+        handler: `
+          () => {
+            var handler1 = function liveDivDblClick() {
+              alert(1);
+            };
+            var handler2 = function liveDivDragStart() {
+              alert(2);
+            };
+            var handler3 = function liveDivDragLeave() {
+              alert(3);
+            };
+            var handler4 = function liveDivDragEnd() {
+              alert(4);
+            };
+            var handler5 = function liveDivDrop() {
+              alert(5);
+            };
+            var handler6 = function liveDivDragOver() {
+              alert(6);
+            };
+            var handler7 = function divClick1() {
+              alert(7);
+            };
+            var handler8 = function divClick2() {
+              alert(8);
+            };
+            var handler9 = function divKeyDown() {
+              alert(9);
+            };
+            var handler10 = function divDragOut() {
+              alert(10);
+            };
+
+            if ($("#livediv").live) {
+              $("#livediv").live("dblclick", handler1);
+              $("#livediv").live("dragstart", handler2);
+            }
+
+            if ($("#livediv").delegate) {
+              $(document).delegate("#livediv", "dragleave", handler3);
+              $(document).delegate("#livediv", "dragend", handler4);
+            }
+
+            if ($("#livediv").on) {
+              $(document).on("drop", "#livediv", handler5);
+              $(document).on("dragover", "#livediv", handler6);
+              $(document).on("dragout", "#livediv:xxxxx", handler10);
+            }
+
+            var div = $("div")[0];
+            $(div).click(handler7);
+            $(div).click(handler8);
+            $(div).keydown(handler9);
+          }`
+      },
+      {
+        type: "load",
+        filename: URL_ROOT + TEST_LIB + ":26:107",
+        attributes: [
+          "Bubbling",
+          "DOM2"
+        ],
+        handler: `
+          function() {
+            if (!c.isReady) {
+              if (!s.body) return setTimeout(c.ready, 13);
+              c.isReady = true;
+              if (Q) {
+                for (var a, b = 0; a = Q[b++];) a.call(s, c);
+                Q = null
+              }
+              c.fn.triggerHandler && c(s).triggerHandler("ready")
+            }
+          }`
       }
     ]
   },
@@ -104,55 +118,36 @@ const TEST_DATA = [
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":34",
+        filename: TEST_URL + ":34:41",
         attributes: [
           "jQuery"
         ],
-        handler: "var handler7 = function divClick1() {\n" +
-                 "  alert(7);\n" +
-                 "}"
+        handler: `
+          function divClick1() {
+            alert(7);
+          }`
       },
       {
         type: "click",
-        filename: TEST_URL + ":35",
+        filename: TEST_URL + ":35:41",
         attributes: [
           "jQuery"
         ],
-        handler: "var handler8 = function divClick2() {\n" +
-                 "  alert(8);\n" +
-                 "}"
-      },
-      {
-        type: "click",
-        filename: URL_ROOT + TEST_LIB + ":48",
-        attributes: [
-          "Bubbling",
-          "DOM2"
-        ],
-        handler: "j = function() {\n" +
-                 "  return typeof c !== \"undefined\" && !c.event.triggered ? c.event.handle.apply(j.elem, arguments) : w\n" +
-                 "}"
+        handler: `
+          function divClick2() {
+            alert(8);
+          }`
       },
       {
         type: "keydown",
-        filename: TEST_URL + ":36",
+        filename: TEST_URL + ":36:42",
         attributes: [
           "jQuery"
         ],
-        handler: "var handler9 = function divKeyDown() {\n" +
-                 "  alert(9);\n" +
-                 "}"
-      },
-      {
-        type: "keydown",
-        filename: URL_ROOT + TEST_LIB + ":48",
-        attributes: [
-          "Bubbling",
-          "DOM2"
-        ],
-        handler: "j = function() {\n" +
-                 "  return typeof c !== \"undefined\" && !c.event.triggered ? c.event.handle.apply(j.elem, arguments) : w\n" +
-                 "}"
+        handler: `
+          function divKeyDown() {
+            alert(9);
+          }`
       }
     ]
   },
@@ -161,127 +156,57 @@ const TEST_DATA = [
     expected: [
       {
         type: "dblclick",
-        filename: TEST_URL + ":28",
+        filename: TEST_URL + ":28:47",
         attributes: [
           "jQuery",
           "Live"
         ],
-        handler: "var handler1 = function liveDivDblClick() {\n" +
-                 "  alert(1);\n" +
-                 "}"
+        handler: `
+          function() {
+            return a.apply(d || this, arguments)
+          }`
       },
       {
         type: "dblclick",
-        filename: URL_ROOT + TEST_LIB + ":17",
+        filename: URL_ROOT + TEST_LIB + ":17:183",
         attributes: [
           "jQuery",
           "Live"
         ],
-        handler: "function qa(a) {\n" +
-                 "  var b = true,\n" +
-                 "    d = [],\n" +
-                 "    f = [],\n" +
-                 "    e = arguments,\n" +
-                 "    i, j, o, p, n, t = c.extend({}, c.data(this, \"events\").live);\n" +
-                 "  for (p in t) {\n" +
-                 "    j = t[p];\n" +
-                 "    if (j.live === a.type || j.altLive && c.inArray(a.type, j.altLive) > -1) {\n" +
-                 "      i = j.data;\n" +
-                 "      i.beforeFilter && i.beforeFilter[a.type] && !i.beforeFilter[a.type](a) || f.push(j.selector)\n" +
-                 "    } else delete t[p]\n" +
-                 "  }\n" +
-                 "  i = c(a.target).closest(f, a.currentTarget);\n" +
-                 "  n = 0;\n" +
-                 "  for (l = i.length; n < l; n++)\n" +
-                 "    for (p in t) {\n" +
-                 "      j = t[p];\n" +
-                 "      o = i[n].elem;\n" +
-                 "      f = null;\n" +
-                 "      if (i[n].selector === j.selector) {\n" +
-                 "        if (j.live === \"mouseenter\" || j.live === \"mouseleave\") f = c(a.relatedTarget).closest(j.selector)[0];\n" +
-                 "        if (!f || f !== o) d.push({\n" +
-                 "          elem: o,\n" +
-                 "          fn: j\n" +
-                 "        })\n" +
-                 "      }\n" +
-                 "    }\n" +
-                 "  n = 0;\n" +
-                 "  for (l = d.length; n < l; n++) {\n" +
-                 "    i = d[n];\n" +
-                 "    a.currentTarget = i.elem;\n" +
-                 "    a.data = i.fn.data;\n" +
-                 "    if (i.fn.apply(i.elem, e) === false) {\n" +
-                 "      b = false;\n" +
-                 "      break\n" +
-                 "    }\n" +
-                 "  }\n" +
-                 "  return b\n" +
-                 "}"
+        handler: `
+          function() {
+            return a.apply(d || this, arguments)
+          }`
       },
       {
         type: "dragstart",
-        filename: TEST_URL + ":29",
+        filename: TEST_URL + ":29:48",
         attributes: [
           "jQuery",
           "Live"
         ],
-        handler: "var handler2 = function liveDivDragStart() {\n" +
-                 "  alert(2);\n" +
-                 "}"
+        handler: `
+          function() {
+            return a.apply(d || this, arguments)
+          }`
       },
       {
         type: "dragstart",
-        filename: URL_ROOT + TEST_LIB + ":17",
+        filename: URL_ROOT + TEST_LIB + ":17:183",
         attributes: [
           "jQuery",
           "Live"
         ],
-        handler: "function qa(a) {\n" +
-                 "  var b = true,\n" +
-                 "    d = [],\n" +
-                 "    f = [],\n" +
-                 "    e = arguments,\n" +
-                 "    i, j, o, p, n, t = c.extend({}, c.data(this, \"events\").live);\n" +
-                 "  for (p in t) {\n" +
-                 "    j = t[p];\n" +
-                 "    if (j.live === a.type || j.altLive && c.inArray(a.type, j.altLive) > -1) {\n" +
-                 "      i = j.data;\n" +
-                 "      i.beforeFilter && i.beforeFilter[a.type] && !i.beforeFilter[a.type](a) || f.push(j.selector)\n" +
-                 "    } else delete t[p]\n" +
-                 "  }\n" +
-                 "  i = c(a.target).closest(f, a.currentTarget);\n" +
-                 "  n = 0;\n" +
-                 "  for (l = i.length; n < l; n++)\n" +
-                 "    for (p in t) {\n" +
-                 "      j = t[p];\n" +
-                 "      o = i[n].elem;\n" +
-                 "      f = null;\n" +
-                 "      if (i[n].selector === j.selector) {\n" +
-                 "        if (j.live === \"mouseenter\" || j.live === \"mouseleave\") f = c(a.relatedTarget).closest(j.selector)[0];\n" +
-                 "        if (!f || f !== o) d.push({\n" +
-                 "          elem: o,\n" +
-                 "          fn: j\n" +
-                 "        })\n" +
-                 "      }\n" +
-                 "    }\n" +
-                 "  n = 0;\n" +
-                 "  for (l = d.length; n < l; n++) {\n" +
-                 "    i = d[n];\n" +
-                 "    a.currentTarget = i.elem;\n" +
-                 "    a.data = i.fn.data;\n" +
-                 "    if (i.fn.apply(i.elem, e) === false) {\n" +
-                 "      b = false;\n" +
-                 "      break\n" +
-                 "    }\n" +
-                 "  }\n" +
-                 "  return b\n" +
-                 "}"
+        handler: `
+          function() {
+            return a.apply(d || this, arguments)
+          }`
       }
     ]
   },
 ];
-/*eslint-enable */
+/* eslint-enable */
 
-add_task(function* () {
-  yield runEventPopupTests(TEST_URL, TEST_DATA);
+add_task(async function() {
+  await runEventPopupTests(TEST_URL, TEST_DATA);
 });

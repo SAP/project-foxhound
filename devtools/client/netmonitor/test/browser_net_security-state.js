@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -8,33 +8,43 @@
  * state.
  */
 
-add_task(function* () {
+add_task(async function() {
   const EXPECTED_SECURITY_STATES = {
     "test1.example.com": "security-state-insecure",
     "example.com": "security-state-secure",
     "nocert.example.com": "security-state-broken",
-    "localhost": "security-state-local",
+    localhost: "security-state-secure",
   };
 
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { $, EVENTS, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
-  RequestsMenu.lazyUpdate = false;
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  yield performRequests();
+  store.dispatch(Actions.batchEnable(false));
 
-  for (let item of RequestsMenu.items) {
-    let domain = $(".requests-menu-domain", item.target).value;
+  await performRequests();
 
+  for (const subitemNode of Array.from(
+    document.querySelectorAll(".requests-list-column.requests-list-domain")
+  )) {
+    // Skip header
+    const icon = subitemNode.querySelector(".requests-security-state-icon");
+    if (!icon) {
+      continue;
+    }
+
+    const domain = subitemNode.textContent;
     info("Found a request to " + domain);
-    ok(domain in EXPECTED_SECURITY_STATES, "Domain " + domain + " was expected.");
 
-    let classes = $(".requests-security-state-icon", item.target).classList;
-    let expectedClass = EXPECTED_SECURITY_STATES[domain];
+    const classes = icon.classList;
+    const expectedClass = EXPECTED_SECURITY_STATES[domain];
 
     info("Classes of security state icon are: " + classes);
     info("Security state icon is expected to contain class: " + expectedClass);
-    ok(classes.contains(expectedClass), "Icon contained the correct class name.");
+    ok(
+      classes.contains(expectedClass),
+      "Icon contained the correct class name."
+    );
   }
 
   return teardown(monitor);
@@ -47,73 +57,48 @@ add_task(function* () {
    *  - http://localhost (local)
    * and waits until NetworkMonitor has handled all packets sent by the server.
    */
-  function* performRequests() {
+  async function performRequests() {
     function executeRequests(count, url) {
-      return ContentTask.spawn(tab.linkedBrowser, {count, url}, function* (args) {
-        content.wrappedJSObject.performRequests(args.count, args.url);
-      });
+      return ContentTask.spawn(
+        tab.linkedBrowser,
+        { count, url },
+        async function(args) {
+          content.wrappedJSObject.performRequests(args.count, args.url);
+        }
+      );
     }
 
-    // waitForNetworkEvents does not work for requests with security errors as
-    // those only emit 9/13 events of a successful request.
-    let done = waitForSecurityBrokenNetworkEvent();
-
+    let done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource that has a certificate problem.");
-    yield executeRequests(1, "https://nocert.example.com");
+    await executeRequests(1, "https://nocert.example.com");
 
     // Wait for the request to complete before firing another request. Otherwise
     // the request with security issues interfere with waitForNetworkEvents.
     info("Waiting for request to complete.");
-    yield done;
+    await done;
 
     // Next perform a request over HTTP. If done the other way around the latter
     // occasionally hangs waiting for event timings that don't seem to appear...
     done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTP.");
-    yield executeRequests(1, "http://test1.example.com" + CORS_SJS_PATH);
-    yield done;
+    await executeRequests(1, "http://test1.example.com" + CORS_SJS_PATH);
+    await done;
 
     done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTPS.");
-    yield executeRequests(1, "https://example.com" + CORS_SJS_PATH);
-    yield done;
+    await executeRequests(1, "https://example.com" + CORS_SJS_PATH);
+    await done;
 
-    done = waitForSecurityBrokenNetworkEvent(true);
+    done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTP to localhost.");
-    yield executeRequests(1, "http://localhost" + CORS_SJS_PATH);
-    yield done;
+    await executeRequests(1, "http://localhost" + CORS_SJS_PATH);
+    await done;
 
     const expectedCount = Object.keys(EXPECTED_SECURITY_STATES).length;
-    is(RequestsMenu.itemCount, expectedCount, expectedCount + " events logged.");
-  }
-
-  /**
-   * Returns a promise that's resolved once a request with security issues is
-   * completed.
-   */
-  function waitForSecurityBrokenNetworkEvent(networkError) {
-    let awaitedEvents = [
-      "UPDATING_REQUEST_HEADERS",
-      "RECEIVED_REQUEST_HEADERS",
-      "UPDATING_REQUEST_COOKIES",
-      "RECEIVED_REQUEST_COOKIES",
-      "STARTED_RECEIVING_RESPONSE",
-      "UPDATING_RESPONSE_CONTENT",
-      "RECEIVED_RESPONSE_CONTENT",
-      "UPDATING_EVENT_TIMINGS",
-      "RECEIVED_EVENT_TIMINGS",
-    ];
-
-    // If the reason for breakage is a network error, then the
-    // STARTED_RECEIVING_RESPONSE event does not fire.
-    if (networkError) {
-      awaitedEvents = awaitedEvents.filter(e => e !== "STARTED_RECEIVING_RESPONSE");
-    }
-
-    let promises = awaitedEvents.map((event) => {
-      return monitor.panelWin.once(EVENTS[event]);
-    });
-
-    return Promise.all(promises);
+    is(
+      store.getState().requests.requests.size,
+      expectedCount,
+      expectedCount + " events logged."
+    );
   }
 });

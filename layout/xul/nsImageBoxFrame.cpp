@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +11,10 @@
 // See documentation in associated header file
 //
 
+#include "gfxContext.h"
 #include "nsImageBoxFrame.h"
 #include "nsGkAtoms.h"
-#include "nsRenderingContext.h"
-#include "nsStyleContext.h"
+#include "mozilla/ComputedStyle.h"
 #include "nsStyleConsts.h"
 #include "nsStyleUtil.h"
 #include "nsCOMPtr.h"
@@ -23,19 +24,15 @@
 #include "nsHTMLParts.h"
 #include "nsString.h"
 #include "nsLeafFrame.h"
-#include "nsIPresShell.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsImageMap.h"
-#include "nsILinkHandler.h"
 #include "nsIURL.h"
 #include "nsILoadGroup.h"
 #include "nsContainerFrame.h"
-#include "prprf.h"
 #include "nsCSSRendering.h"
-#include "nsIDOMHTMLImageElement.h"
 #include "nsNameSpaceManager.h"
 #include "nsTextFragment.h"
-#include "nsIDOMHTMLMapElement.h"
 #include "nsTransform2D.h"
 #include "nsITheme.h"
 
@@ -52,6 +49,16 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/PresShell.h"
+#include "SVGImageContext.h"
+#include "Units.h"
+#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/WebRenderLayerManager.h"
+
+#if defined(XP_WIN)
+// Undefine LoadImage to prevent naming conflict with Windows.
+#  undef LoadImage
+#endif
 
 #define ONLOAD_CALLED_TOO_EARLY 1
 
@@ -60,28 +67,23 @@ using namespace mozilla::gfx;
 using namespace mozilla::image;
 using namespace mozilla::layers;
 
-class nsImageBoxFrameEvent : public Runnable
-{
-public:
-  nsImageBoxFrameEvent(nsIContent *content, EventMessage message)
-    : mContent(content), mMessage(message) {}
+class nsImageBoxFrameEvent : public Runnable {
+ public:
+  nsImageBoxFrameEvent(nsIContent* content, EventMessage message)
+      : mozilla::Runnable("nsImageBoxFrameEvent"),
+        mContent(content),
+        mMessage(message) {}
 
   NS_IMETHOD Run() override;
 
-private:
+ private:
   nsCOMPtr<nsIContent> mContent;
   EventMessage mMessage;
 };
 
 NS_IMETHODIMP
-nsImageBoxFrameEvent::Run()
-{
-  nsIPresShell *pres_shell = mContent->OwnerDoc()->GetShell();
-  if (!pres_shell) {
-    return NS_OK;
-  }
-
-  RefPtr<nsPresContext> pres_context = pres_shell->GetPresContext();
+nsImageBoxFrameEvent::Run() {
+  RefPtr<nsPresContext> pres_context = mContent->OwnerDoc()->GetPresContext();
   if (!pres_context) {
     return NS_OK;
   }
@@ -96,21 +98,20 @@ nsImageBoxFrameEvent::Run()
 
 // Fire off an event that'll asynchronously call the image elements
 // onload handler once handled. This is needed since the image library
-// can't decide if it wants to call it's observer methods
+// can't decide if it wants to call its observer methods
 // synchronously or asynchronously. If an image is loaded from the
 // cache the notifications come back synchronously, but if the image
-// is loaded from the netswork the notifications come back
+// is loaded from the network the notifications come back
 // asynchronously.
-
-void
-FireImageDOMEvent(nsIContent* aContent, EventMessage aMessage)
-{
-  NS_ASSERTION(aMessage == eLoad || aMessage == eLoadError,
-               "invalid message");
+static void FireImageDOMEvent(nsIContent* aContent, EventMessage aMessage) {
+  NS_ASSERTION(aMessage == eLoad || aMessage == eLoadError, "invalid message");
 
   nsCOMPtr<nsIRunnable> event = new nsImageBoxFrameEvent(aContent, aMessage);
-  if (NS_FAILED(NS_DispatchToCurrentThread(event)))
+  nsresult rv =
+      aContent->OwnerDoc()->Dispatch(TaskCategory::Other, event.forget());
+  if (NS_FAILED(rv)) {
     NS_WARNING("failed to dispatch image event");
+  }
 }
 
 //
@@ -118,82 +119,74 @@ FireImageDOMEvent(nsIContent* aContent, EventMessage aMessage)
 //
 // Creates a new image frame and returns it
 //
-nsIFrame*
-NS_NewImageBoxFrame (nsIPresShell* aPresShell, nsStyleContext* aContext)
-{
-  return new (aPresShell) nsImageBoxFrame(aContext);
+nsIFrame* NS_NewImageBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
+  return new (aPresShell) nsImageBoxFrame(aStyle, aPresShell->GetPresContext());
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsImageBoxFrame)
+NS_QUERYFRAME_HEAD(nsImageBoxFrame)
+  NS_QUERYFRAME_ENTRY(nsImageBoxFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsLeafBoxFrame)
 
-nsresult
-nsImageBoxFrame::AttributeChanged(int32_t aNameSpaceID,
-                                  nsIAtom* aAttribute,
-                                  int32_t aModType)
-{
-  nsresult rv = nsLeafBoxFrame::AttributeChanged(aNameSpaceID, aAttribute,
-                                                 aModType);
+nsresult nsImageBoxFrame::AttributeChanged(int32_t aNameSpaceID,
+                                           nsAtom* aAttribute,
+                                           int32_t aModType) {
+  nsresult rv =
+      nsLeafBoxFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 
   if (aAttribute == nsGkAtoms::src) {
     UpdateImage();
-    PresContext()->PresShell()->
-      FrameNeedsReflow(this, nsIPresShell::eStyleChange, NS_FRAME_IS_DIRTY);
-  }
-  else if (aAttribute == nsGkAtoms::validate)
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                  NS_FRAME_IS_DIRTY);
+  } else if (aAttribute == nsGkAtoms::validate)
     UpdateLoadFlags();
 
   return rv;
 }
 
-nsImageBoxFrame::nsImageBoxFrame(nsStyleContext* aContext):
-  nsLeafBoxFrame(aContext),
-  mIntrinsicSize(0,0),
-  mLoadFlags(nsIRequest::LOAD_NORMAL),
-  mRequestRegistered(false),
-  mUseSrcAttr(false),
-  mSuppressStyleCheck(false)
-{
+nsImageBoxFrame::nsImageBoxFrame(ComputedStyle* aStyle,
+                                 nsPresContext* aPresContext)
+    : nsLeafBoxFrame(aStyle, aPresContext, kClassID),
+      mIntrinsicSize(0, 0),
+      mLoadFlags(nsIRequest::LOAD_NORMAL),
+      mRequestRegistered(false),
+      mUseSrcAttr(false),
+      mSuppressStyleCheck(false) {
   MarkIntrinsicISizesDirty();
 }
 
-nsImageBoxFrame::~nsImageBoxFrame()
-{
-}
+nsImageBoxFrame::~nsImageBoxFrame() {}
 
-
-/* virtual */ void
-nsImageBoxFrame::MarkIntrinsicISizesDirty()
-{
+/* virtual */
+void nsImageBoxFrame::MarkIntrinsicISizesDirty() {
   SizeNeedsRecalc(mImageSize);
   nsLeafBoxFrame::MarkIntrinsicISizesDirty();
 }
 
-void
-nsImageBoxFrame::DestroyFrom(nsIFrame* aDestructRoot)
-{
+void nsImageBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
+                                  PostDestroyData& aPostDestroyData) {
   if (mImageRequest) {
     nsLayoutUtils::DeregisterImageRequest(PresContext(), mImageRequest,
                                           &mRequestRegistered);
+
+    mImageRequest->UnlockImage();
 
     // Release image loader first so that it's refcnt can go to zero
     mImageRequest->CancelAndForgetObserver(NS_ERROR_FAILURE);
   }
 
-  if (mListener)
-    reinterpret_cast<nsImageBoxListener*>(mListener.get())->SetFrame(nullptr); // set the frame to null so we don't send messages to a dead object.
+  if (mListener) {
+    // set the frame to null so we don't send messages to a dead object.
+    reinterpret_cast<nsImageBoxListener*>(mListener.get())->ClearFrame();
+  }
 
-  nsLeafBoxFrame::DestroyFrom(aDestructRoot);
+  nsLeafBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
-
-void
-nsImageBoxFrame::Init(nsIContent*       aContent,
-                      nsContainerFrame* aParent,
-                      nsIFrame*         aPrevInFlow)
-{
+void nsImageBoxFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
+                           nsIFrame* aPrevInFlow) {
   if (!mListener) {
-    RefPtr<nsImageBoxListener> listener = new nsImageBoxListener();
-    listener->SetFrame(this);
+    RefPtr<nsImageBoxListener> listener = new nsImageBoxListener(this);
     mListener = listener.forget();
   }
 
@@ -205,9 +198,21 @@ nsImageBoxFrame::Init(nsIContent*       aContent,
   UpdateImage();
 }
 
-void
-nsImageBoxFrame::UpdateImage()
-{
+void nsImageBoxFrame::RestartAnimation() {
+  if (mImageRequest && !mRequestRegistered) {
+    nsLayoutUtils::RegisterImageRequestIfAnimated(PresContext(), mImageRequest,
+                                                  &mRequestRegistered);
+  }
+}
+
+void nsImageBoxFrame::StopAnimation() {
+  if (mImageRequest && mRequestRegistered) {
+    nsLayoutUtils::DeregisterImageRequest(PresContext(), mImageRequest,
+                                          &mRequestRegistered);
+  }
+}
+
+void nsImageBoxFrame::UpdateImage() {
   nsPresContext* presContext = PresContext();
 
   RefPtr<imgRequestProxy> oldImageRequest = mImageRequest;
@@ -221,42 +226,39 @@ nsImageBoxFrame::UpdateImage()
 
   // get the new image src
   nsAutoString src;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
   mUseSrcAttr = !src.IsEmpty();
   if (mUseSrcAttr) {
-    nsIDocument* doc = mContent->GetComposedDoc();
+    Document* doc = mContent->GetComposedDoc();
     if (doc) {
-      nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
+      nsContentPolicyType contentPolicyType;
+      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+      uint64_t requestContextID = 0;
+      nsContentUtils::GetContentPolicyTypeForUIImageLoading(
+          mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
+          &requestContextID);
+
       nsCOMPtr<nsIURI> uri;
-      nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri),
-                                                src,
-                                                doc,
-                                                baseURI);
+      nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
+                                                mContent->GetBaseURI());
       if (uri) {
-        nsresult rv = nsContentUtils::LoadImage(uri, mContent, doc, mContent->NodePrincipal(),
-                                                doc->GetDocumentURI(), doc->GetReferrerPolicy(),
-                                                mListener, mLoadFlags,
-                                                EmptyString(), getter_AddRefs(mImageRequest));
+        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+        referrerInfo->InitWithNode(mContent);
+
+        nsresult rv = nsContentUtils::LoadImage(
+            uri, mContent, doc, triggeringPrincipal, requestContextID,
+            referrerInfo, mListener, mLoadFlags, EmptyString(),
+            getter_AddRefs(mImageRequest), contentPolicyType);
 
         if (NS_SUCCEEDED(rv) && mImageRequest) {
-          nsLayoutUtils::RegisterImageRequestIfAnimated(presContext,
-                                                        mImageRequest,
-                                                        &mRequestRegistered);
+          nsLayoutUtils::RegisterImageRequestIfAnimated(
+              presContext, mImageRequest, &mRequestRegistered);
         }
       }
     }
-  } else {
-    // Only get the list-style-image if we aren't being drawn
-    // by a native theme.
-    uint8_t appearance = StyleDisplay()->mAppearance;
-    if (!(appearance && nsBox::gTheme &&
-          nsBox::gTheme->ThemeSupportsWidget(nullptr, this, appearance))) {
-      // get the list-style-image
-      imgRequestProxy *styleRequest = StyleList()->GetListStyleImage();
-      if (styleRequest) {
-        styleRequest->Clone(mListener, getter_AddRefs(mImageRequest));
-      }
-    }
+  } else if (auto* styleRequest = GetRequestFromStyle()) {
+    styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
+                            getter_AddRefs(mImageRequest));
   }
 
   if (!mImageRequest) {
@@ -264,7 +266,7 @@ nsImageBoxFrame::UpdateImage()
     mIntrinsicSize.SizeTo(0, 0);
   } else {
     // We don't want discarding or decode-on-draw for xul images.
-    mImageRequest->StartDecoding();
+    mImageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
     mImageRequest->LockImage();
   }
 
@@ -274,18 +276,16 @@ nsImageBoxFrame::UpdateImage()
   }
 }
 
-void
-nsImageBoxFrame::UpdateLoadFlags()
-{
-  static nsIContent::AttrValuesArray strings[] =
-    {&nsGkAtoms::always, &nsGkAtoms::never, nullptr};
-  switch (mContent->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::validate,
-                                    strings, eCaseMatters)) {
+void nsImageBoxFrame::UpdateLoadFlags() {
+  static Element::AttrValuesArray strings[] = {nsGkAtoms::always,
+                                               nsGkAtoms::never, nullptr};
+  switch (mContent->AsElement()->FindAttrValueIn(
+      kNameSpaceID_None, nsGkAtoms::validate, strings, eCaseMatters)) {
     case 0:
       mLoadFlags = nsIRequest::VALIDATE_ALWAYS;
       break;
     case 1:
-      mLoadFlags = nsIRequest::VALIDATE_NEVER|nsIRequest::LOAD_FROM_CACHE;
+      mLoadFlags = nsIRequest::VALIDATE_NEVER | nsIRequest::LOAD_FROM_CACHE;
       break;
     default:
       mLoadFlags = nsIRequest::LOAD_NORMAL;
@@ -293,12 +293,9 @@ nsImageBoxFrame::UpdateLoadFlags()
   }
 }
 
-void
-nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                  const nsRect&           aDirtyRect,
-                                  const nsDisplayListSet& aLists)
-{
-  nsLeafBoxFrame::BuildDisplayList(aBuilder, aDirtyRect, aLists);
+void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                                       const nsDisplayListSet& aLists) {
+  nsLeafBoxFrame::BuildDisplayList(aBuilder, aLists);
 
   if ((0 == mRect.width) || (0 == mRect.height)) {
     // Do not render when given a zero area. This avoids some useless
@@ -307,64 +304,149 @@ nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     return;
   }
 
-  if (!IsVisibleForPainting(aBuilder))
-    return;
+  if (!IsVisibleForPainting()) return;
 
   uint32_t clipFlags =
-    nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition()) ?
-    0 : DisplayListClipState::ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT;
+      nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition())
+          ? 0
+          : DisplayListClipState::ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT;
 
-  DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox
-    clip(aBuilder, this, clipFlags);
+  DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox clip(
+      aBuilder, this, clipFlags);
 
   nsDisplayList list;
-  list.AppendNewToTop(
-    new (aBuilder) nsDisplayXULImage(aBuilder, this));
+  list.AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
 
-  CreateOwnLayerIfNeeded(aBuilder, &list);
+  CreateOwnLayerIfNeeded(aBuilder, &list,
+                         nsDisplayOwnLayer::OwnLayerForImageBoxFrame);
 
   aLists.Content()->AppendToTop(&list);
 }
 
-DrawResult
-nsImageBoxFrame::PaintImage(nsRenderingContext& aRenderingContext,
-                            const nsRect& aDirtyRect, nsPoint aPt,
-                            uint32_t aFlags)
-{
-  nsRect constraintRect;
-  GetXULClientRect(constraintRect);
-
-  constraintRect += aPt;
-
+already_AddRefed<imgIContainer> nsImageBoxFrame::GetImageContainerForPainting(
+    const nsPoint& aPt, ImgDrawResult& aDrawResult,
+    Maybe<nsPoint>& aAnchorPoint, nsRect& aDest) {
   if (!mImageRequest) {
     // This probably means we're drawn by a native theme.
-    return DrawResult::SUCCESS;
-  }
-
-  // don't draw if the image is not dirty
-  // XXX(seth): Can this actually happen anymore?
-  nsRect dirty;
-  if (!dirty.IntersectRect(aDirtyRect, constraintRect)) {
-    return DrawResult::TEMPORARY_ERROR;
+    aDrawResult = ImgDrawResult::SUCCESS;
+    return nullptr;
   }
 
   // Don't draw if the image's size isn't available.
   uint32_t imgStatus;
   if (!NS_SUCCEEDED(mImageRequest->GetImageStatus(&imgStatus)) ||
       !(imgStatus & imgIRequest::STATUS_SIZE_AVAILABLE)) {
-    return DrawResult::NOT_READY;
+    aDrawResult = ImgDrawResult::NOT_READY;
+    return nullptr;
   }
 
   nsCOMPtr<imgIContainer> imgCon;
   mImageRequest->GetImage(getter_AddRefs(imgCon));
 
   if (!imgCon) {
-    return DrawResult::NOT_READY;
+    aDrawResult = ImgDrawResult::NOT_READY;
+    return nullptr;
+  }
+
+  aDest = GetDestRect(aPt, aAnchorPoint);
+  aDrawResult = ImgDrawResult::SUCCESS;
+  return imgCon.forget();
+}
+
+ImgDrawResult nsImageBoxFrame::PaintImage(gfxContext& aRenderingContext,
+                                          const nsRect& aDirtyRect, nsPoint aPt,
+                                          uint32_t aFlags) {
+  ImgDrawResult result;
+  Maybe<nsPoint> anchorPoint;
+  nsRect dest;
+  nsCOMPtr<imgIContainer> imgCon =
+      GetImageContainerForPainting(aPt, result, anchorPoint, dest);
+  if (!imgCon) {
+    return result;
+  }
+
+  // don't draw if the image is not dirty
+  // XXX(seth): Can this actually happen anymore?
+  nsRect dirty;
+  if (!dirty.IntersectRect(aDirtyRect, dest)) {
+    return ImgDrawResult::TEMPORARY_ERROR;
   }
 
   bool hasSubRect = !mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0);
 
+  Maybe<SVGImageContext> svgContext;
+  SVGImageContext::MaybeStoreContextPaint(svgContext, this, imgCon);
+  return nsLayoutUtils::DrawSingleImage(
+      aRenderingContext, PresContext(), imgCon,
+      nsLayoutUtils::GetSamplingFilterForFrame(this), dest, dirty, svgContext,
+      aFlags, anchorPoint.ptrOr(nullptr), hasSubRect ? &mSubRect : nullptr);
+}
+
+ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
+    mozilla::wr::DisplayListBuilder& aBuilder,
+    mozilla::wr::IpcResourceUpdateQueue& aResources,
+    const StackingContextHelper& aSc,
+    mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
+    nsPoint aPt, uint32_t aFlags) {
+  ImgDrawResult result;
   Maybe<nsPoint> anchorPoint;
+  nsRect dest;
+  nsCOMPtr<imgIContainer> imgCon =
+      GetImageContainerForPainting(aPt, result, anchorPoint, dest);
+  if (!imgCon) {
+    return result;
+  }
+
+  uint32_t containerFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
+  if (aFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+    containerFlags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
+  }
+  if (aFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
+    containerFlags |= imgIContainer::FLAG_SYNC_DECODE;
+  }
+
+  const int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
+  LayoutDeviceRect fillRect =
+      LayoutDeviceRect::FromAppUnits(dest, appUnitsPerDevPixel);
+
+  Maybe<SVGImageContext> svgContext;
+  gfx::IntSize decodeSize =
+      nsLayoutUtils::ComputeImageContainerDrawingParameters(
+          imgCon, aItem->Frame(), fillRect, aSc, containerFlags, svgContext);
+
+  RefPtr<layers::ImageContainer> container;
+  result = imgCon->GetImageContainerAtSize(aManager->LayerManager(), decodeSize,
+                                           svgContext, containerFlags,
+                                           getter_AddRefs(container));
+  if (!container) {
+    NS_WARNING("Failed to get image container");
+    return result;
+  }
+
+  mozilla::wr::ImageRendering rendering = wr::ToImageRendering(
+      nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame()));
+  gfx::IntSize size;
+  Maybe<wr::ImageKey> key = aManager->CommandBuilder().CreateImageKey(
+      aItem, container, aBuilder, aResources, rendering, aSc, size, Nothing());
+  if (key.isNothing()) {
+    return result;
+  }
+
+  wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
+  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), rendering, key.value());
+
+  return result;
+}
+
+nsRect nsImageBoxFrame::GetDestRect(const nsPoint& aOffset,
+                                    Maybe<nsPoint>& aAnchorPoint) {
+  nsCOMPtr<imgIContainer> imgCon;
+  mImageRequest->GetImage(getter_AddRefs(imgCon));
+  MOZ_ASSERT(imgCon);
+
+  nsRect clientRect;
+  GetXULClientRect(clientRect);
+  clientRect += aOffset;
   nsRect dest;
   if (!mUseSrcAttr) {
     // Our image (if we have one) is coming from the CSS property
@@ -373,84 +455,108 @@ nsImageBoxFrame::PaintImage(nsRenderingContext& aRenderingContext,
     // XXXdholbert Should we even honor these properties in this case? They only
     // apply to replaced elements, and I'm not sure we count as a replaced
     // element when our image data is determined by CSS.
-    dest = constraintRect;
+    dest = clientRect;
   } else {
     // Determine dest rect based on intrinsic size & ratio, along with
     // 'object-fit' & 'object-position' properties:
     IntrinsicSize intrinsicSize;
-    nsSize intrinsicRatio;
+    AspectRatio intrinsicRatio;
     if (mIntrinsicSize.width > 0 && mIntrinsicSize.height > 0) {
       // Image has a valid size; use it as intrinsic size & ratio.
-      intrinsicSize.width.SetCoordValue(mIntrinsicSize.width);
-      intrinsicSize.height.SetCoordValue(mIntrinsicSize.height);
-      intrinsicRatio = mIntrinsicSize;
+      intrinsicSize =
+          IntrinsicSize(mIntrinsicSize.width, mIntrinsicSize.height);
+      intrinsicRatio =
+          AspectRatio::FromSize(mIntrinsicSize.width, mIntrinsicSize.height);
     } else {
       // Image doesn't have a (valid) intrinsic size.
       // Try to look up intrinsic ratio and use that at least.
-      imgCon->GetIntrinsicRatio(&intrinsicRatio);
+      intrinsicRatio = imgCon->GetIntrinsicRatio().valueOr(AspectRatio());
     }
-    anchorPoint.emplace();
-    dest = nsLayoutUtils::ComputeObjectDestRect(constraintRect,
-                                                intrinsicSize,
-                                                intrinsicRatio,
-                                                StylePosition(),
-                                                anchorPoint.ptr());
+    aAnchorPoint.emplace();
+    dest = nsLayoutUtils::ComputeObjectDestRect(clientRect, intrinsicSize,
+                                                intrinsicRatio, StylePosition(),
+                                                aAnchorPoint.ptr());
   }
 
-
-  return nsLayoutUtils::DrawSingleImage(
-           *aRenderingContext.ThebesContext(),
-           PresContext(), imgCon,
-           nsLayoutUtils::GetSamplingFilterForFrame(this),
-           dest, dirty, nullptr, aFlags,
-           anchorPoint.ptrOr(nullptr),
-           hasSubRect ? &mSubRect : nullptr);
+  return dest;
 }
 
 void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
-                              nsRenderingContext* aCtx)
-{
-  uint32_t flags = imgIContainer::FLAG_NONE;
+                              gfxContext* aCtx) {
+  // Even though we call StartDecoding when we get a new image we pass
+  // FLAG_SYNC_DECODE_IF_FAST here for the case where the size we draw at is not
+  // the intrinsic size of the image and we aren't likely to implement
+  // predictive decoding at the correct size for this class like nsImageFrame
+  // has.
+  uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
   if (aBuilder->ShouldSyncDecodeImages())
     flags |= imgIContainer::FLAG_SYNC_DECODE;
   if (aBuilder->IsPaintingToWindow())
     flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
 
-  DrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->
-    PaintImage(*aCtx, mVisibleRect, ToReferenceFrame(), flags);
+  ImgDrawResult result = static_cast<nsImageBoxFrame*>(mFrame)->PaintImage(
+      *aCtx, GetPaintRect(), ToReferenceFrame(), flags);
 
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
 
-nsDisplayItemGeometry*
-nsDisplayXULImage::AllocateGeometry(nsDisplayListBuilder* aBuilder)
-{
+bool nsDisplayXULImage::CreateWebRenderCommands(
+    mozilla::wr::DisplayListBuilder& aBuilder,
+    mozilla::wr::IpcResourceUpdateQueue& aResources,
+    const StackingContextHelper& aSc,
+    mozilla::layers::RenderRootStateManager* aManager,
+    nsDisplayListBuilder* aDisplayListBuilder) {
+  nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
+  if (!imageFrame->CanOptimizeToImageLayer()) {
+    return false;
+  }
+
+  if (!imageFrame->mImageRequest) {
+    return true;
+  }
+
+  uint32_t flags = imgIContainer::FLAG_SYNC_DECODE_IF_FAST;
+  if (aDisplayListBuilder->ShouldSyncDecodeImages()) {
+    flags |= imgIContainer::FLAG_SYNC_DECODE;
+  }
+  if (aDisplayListBuilder->IsPaintingToWindow()) {
+    flags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
+  }
+
+  ImgDrawResult result = imageFrame->CreateWebRenderCommands(
+      aBuilder, aResources, aSc, aManager, this, ToReferenceFrame(), flags);
+  if (result == ImgDrawResult::NOT_SUPPORTED) {
+    return false;
+  }
+
+  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
+  return true;
+}
+
+nsDisplayItemGeometry* nsDisplayXULImage::AllocateGeometry(
+    nsDisplayListBuilder* aBuilder) {
   return new nsDisplayItemGenericImageGeometry(this, aBuilder);
 }
 
-void
-nsDisplayXULImage::ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
-                                             const nsDisplayItemGeometry* aGeometry,
-                                             nsRegion* aInvalidRegion)
-{
+void nsDisplayXULImage::ComputeInvalidationRegion(
+    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
+    nsRegion* aInvalidRegion) const {
   auto boxFrame = static_cast<nsImageBoxFrame*>(mFrame);
   auto geometry =
-    static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
+      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
 
-  if (aBuilder->ShouldSyncDecodeImages() &&
-      boxFrame->mImageRequest &&
+  if (aBuilder->ShouldSyncDecodeImages() && boxFrame->mImageRequest &&
       geometry->ShouldInvalidateToSyncDecodeImages()) {
-      bool snap;
-      aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
+    bool snap;
+    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
   }
 
-  nsDisplayImageContainer::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
+  nsDisplayImageContainer::ComputeInvalidationRegion(aBuilder, aGeometry,
+                                                     aInvalidRegion);
 }
 
-bool
-nsDisplayXULImage::CanOptimizeToImageLayer(LayerManager* aManager,
-                                           nsDisplayListBuilder* aBuilder)
-{
+bool nsDisplayXULImage::CanOptimizeToImageLayer(
+    LayerManager* aManager, nsDisplayListBuilder* aBuilder) {
   nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
   if (!imageFrame->CanOptimizeToImageLayer()) {
     return false;
@@ -459,9 +565,7 @@ nsDisplayXULImage::CanOptimizeToImageLayer(LayerManager* aManager,
   return nsDisplayImageContainer::CanOptimizeToImageLayer(aManager, aBuilder);
 }
 
-already_AddRefed<imgIContainer>
-nsDisplayXULImage::GetImage()
-{
+already_AddRefed<imgIContainer> nsDisplayXULImage::GetImage() {
   nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
   if (!imageFrame->mImageRequest) {
     return nullptr;
@@ -469,24 +573,17 @@ nsDisplayXULImage::GetImage()
 
   nsCOMPtr<imgIContainer> imgCon;
   imageFrame->mImageRequest->GetImage(getter_AddRefs(imgCon));
-  
+
   return imgCon.forget();
 }
 
-nsRect
-nsDisplayXULImage::GetDestRect()
-{
-  nsImageBoxFrame* imageFrame = static_cast<nsImageBoxFrame*>(mFrame);
-
-  nsRect clientRect;
-  imageFrame->GetXULClientRect(clientRect);
-
-  return clientRect + ToReferenceFrame();
+nsRect nsDisplayXULImage::GetDestRect() const {
+  Maybe<nsPoint> anchorPoint;
+  return static_cast<nsImageBoxFrame*>(mFrame)->GetDestRect(ToReferenceFrame(),
+                                                            anchorPoint);
 }
 
-bool
-nsImageBoxFrame::CanOptimizeToImageLayer()
-{
+bool nsImageBoxFrame::CanOptimizeToImageLayer() {
   bool hasSubRect = !mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0);
   if (hasSubRect) {
     return false;
@@ -494,47 +591,46 @@ nsImageBoxFrame::CanOptimizeToImageLayer()
   return true;
 }
 
-//
-// DidSetStyleContext
-//
-// When the style context changes, make sure that all of our image is up to date.
-//
-/* virtual */ void
-nsImageBoxFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
-{
-  nsLeafBoxFrame::DidSetStyleContext(aOldStyleContext);
+imgRequestProxy* nsImageBoxFrame::GetRequestFromStyle() {
+  const nsStyleDisplay* disp = StyleDisplay();
+  if (disp->HasAppearance() && nsBox::gTheme &&
+      nsBox::gTheme->ThemeSupportsWidget(nullptr, this, disp->mAppearance)) {
+    return nullptr;
+  }
+
+  return StyleList()->GetListStyleImage();
+}
+
+/* virtual */
+void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
+  nsLeafBoxFrame::DidSetComputedStyle(aOldStyle);
 
   // Fetch our subrect.
   const nsStyleList* myList = StyleList();
-  mSubRect = myList->mImageRegion; // before |mSuppressStyleCheck| test!
+  mSubRect = myList->GetImageRegion();  // before |mSuppressStyleCheck| test!
 
   if (mUseSrcAttr || mSuppressStyleCheck)
-    return; // No more work required, since the image isn't specified by style.
+    return;  // No more work required, since the image isn't specified by style.
 
-  // If we're using a native theme implementation, we shouldn't draw anything.
-  const nsStyleDisplay* disp = StyleDisplay();
-  if (disp->mAppearance && nsBox::gTheme &&
-      nsBox::gTheme->ThemeSupportsWidget(nullptr, this, disp->mAppearance))
-    return;
-
-  // If list-style-image changes, we have a new image.
+  // If the image to use changes, we have a new image.
   nsCOMPtr<nsIURI> oldURI, newURI;
-  if (mImageRequest)
+  if (mImageRequest) {
     mImageRequest->GetURI(getter_AddRefs(oldURI));
-  if (myList->GetListStyleImage())
-    myList->GetListStyleImage()->GetURI(getter_AddRefs(newURI));
+  }
+  if (auto* newImage = GetRequestFromStyle()) {
+    newImage->GetURI(getter_AddRefs(newURI));
+  }
   bool equal;
-  if (newURI == oldURI ||   // handles null==null
-      (newURI && oldURI &&
-       NS_SUCCEEDED(newURI->Equals(oldURI, &equal)) && equal))
+  if (newURI == oldURI ||  // handles null==null
+      (newURI && oldURI && NS_SUCCEEDED(newURI->Equals(oldURI, &equal)) &&
+       equal)) {
     return;
+  }
 
   UpdateImage();
-} // DidSetStyleContext
+}  // DidSetComputedStyle
 
-void
-nsImageBoxFrame::GetImageSize()
-{
+void nsImageBoxFrame::GetImageSize() {
   if (mIntrinsicSize.width > 0 && mIntrinsicSize.height > 0) {
     mImageSize.width = mIntrinsicSize.width;
     mImageSize.height = mIntrinsicSize.height;
@@ -547,13 +643,10 @@ nsImageBoxFrame::GetImageSize()
 /**
  * Ok return our dimensions
  */
-nsSize
-nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState)
-{
-  nsSize size(0,0);
+nsSize nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
+  nsSize size(0, 0);
   DISPLAY_PREF_SIZE(this, size);
-  if (DoesNeedRecalc(mImageSize))
-     GetImageSize();
+  if (DoesNeedRecalc(mImageSize)) GetImageSize();
 
   if (!mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0))
     size = mSubRect.Size();
@@ -562,33 +655,35 @@ nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState)
 
   nsSize intrinsicSize = size;
 
-  nsMargin borderPadding(0,0,0,0);
+  nsMargin borderPadding(0, 0, 0, 0);
   GetXULBorderAndPadding(borderPadding);
   size.width += borderPadding.LeftRight();
   size.height += borderPadding.TopBottom();
 
   bool widthSet, heightSet;
   nsIFrame::AddXULPrefSize(this, size, widthSet, heightSet);
-  NS_ASSERTION(size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
-               "non-intrinsic size expected");
+  NS_ASSERTION(
+      size.width != NS_UNCONSTRAINEDSIZE && size.height != NS_UNCONSTRAINEDSIZE,
+      "non-intrinsic size expected");
 
   nsSize minSize = GetXULMinSize(aState);
   nsSize maxSize = GetXULMaxSize(aState);
 
   if (!widthSet && !heightSet) {
-    if (minSize.width != NS_INTRINSICSIZE)
+    if (minSize.width != NS_UNCONSTRAINEDSIZE)
       minSize.width -= borderPadding.LeftRight();
-    if (minSize.height != NS_INTRINSICSIZE)
+    if (minSize.height != NS_UNCONSTRAINEDSIZE)
       minSize.height -= borderPadding.TopBottom();
-    if (maxSize.width != NS_INTRINSICSIZE)
+    if (maxSize.width != NS_UNCONSTRAINEDSIZE)
       maxSize.width -= borderPadding.LeftRight();
-    if (maxSize.height != NS_INTRINSICSIZE)
+    if (maxSize.height != NS_UNCONSTRAINEDSIZE)
       maxSize.height -= borderPadding.TopBottom();
 
-    size = nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(minSize.width, minSize.height,
-                                                                 maxSize.width, maxSize.height,
-                                                                 intrinsicSize.width, intrinsicSize.height);
-    NS_ASSERTION(size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
+    size = nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(
+        minSize.width, minSize.height, maxSize.width, maxSize.height,
+        intrinsicSize.width, intrinsicSize.height);
+    NS_ASSERTION(size.width != NS_UNCONSTRAINEDSIZE &&
+                     size.height != NS_UNCONSTRAINEDSIZE,
                  "non-intrinsic size expected");
     size.width += borderPadding.LeftRight();
     size.height += borderPadding.TopBottom();
@@ -602,20 +697,17 @@ nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState)
       nscoord height = size.height - borderPadding.TopBottom();
       size.width = nscoord(int64_t(height) * int64_t(intrinsicSize.width) /
                            int64_t(intrinsicSize.height));
-    }
-    else {
+    } else {
       size.width = intrinsicSize.width;
     }
 
     size.width += borderPadding.LeftRight();
-  }
-  else if (!heightSet) {
+  } else if (!heightSet) {
     if (intrinsicSize.width > 0) {
       nscoord width = size.width - borderPadding.LeftRight();
       size.height = nscoord(int64_t(width) * int64_t(intrinsicSize.height) /
                             int64_t(intrinsicSize.width));
-    }
-    else {
+    } else {
       size.height = intrinsicSize.height;
     }
 
@@ -625,11 +717,9 @@ nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState)
   return BoundsCheck(minSize, size, maxSize);
 }
 
-nsSize
-nsImageBoxFrame::GetXULMinSize(nsBoxLayoutState& aState)
-{
+nsSize nsImageBoxFrame::GetXULMinSize(nsBoxLayoutState& aState) {
   // An image can always scale down to (0,0).
-  nsSize size(0,0);
+  nsSize size(0, 0);
   DISPLAY_MIN_SIZE(this, size);
   AddBorderAndPadding(size);
   bool widthSet, heightSet;
@@ -637,31 +727,18 @@ nsImageBoxFrame::GetXULMinSize(nsBoxLayoutState& aState)
   return size;
 }
 
-nscoord
-nsImageBoxFrame::GetXULBoxAscent(nsBoxLayoutState& aState)
-{
+nscoord nsImageBoxFrame::GetXULBoxAscent(nsBoxLayoutState& aState) {
   return GetXULPrefSize(aState).height;
 }
 
-nsIAtom*
-nsImageBoxFrame::GetType() const
-{
-  return nsGkAtoms::imageBoxFrame;
-}
-
 #ifdef DEBUG_FRAME_DUMP
-nsresult
-nsImageBoxFrame::GetFrameName(nsAString& aResult) const
-{
+nsresult nsImageBoxFrame::GetFrameName(nsAString& aResult) const {
   return MakeFrameName(NS_LITERAL_STRING("ImageBox"), aResult);
 }
 #endif
 
-nsresult
-nsImageBoxFrame::Notify(imgIRequest* aRequest,
-                        int32_t aType,
-                        const nsIntRect* aData)
-{
+nsresult nsImageBoxFrame::Notify(imgIRequest* aRequest, int32_t aType,
+                                 const nsIntRect* aData) {
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     nsCOMPtr<imgIContainer> image;
     aRequest->GetImage(getter_AddRefs(image));
@@ -691,15 +768,16 @@ nsImageBoxFrame::Notify(imgIRequest* aRequest,
   return NS_OK;
 }
 
-nsresult
-nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage)
-{
+nsresult nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
+                                          imgIContainer* aImage) {
   NS_ENSURE_ARG_POINTER(aImage);
 
   // Ensure the animation (if any) is started. Note: There is no
   // corresponding call to Decrement for this. This Increment will be
   // 'cleaned up' by the Request when it is destroyed, but only then.
   aRequest->IncrementAnimationConsumers();
+
+  aImage->SetAnimationMode(PresContext()->ImageAnimationMode());
 
   nscoord w, h;
   aImage->GetWidth(&w);
@@ -709,41 +787,36 @@ nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage)
                         nsPresContext::CSSPixelsToAppUnits(h));
 
   if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-    PresContext()->PresShell()->
-      FrameNeedsReflow(this, nsIPresShell::eStyleChange, NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                  NS_FRAME_IS_DIRTY);
   }
 
   return NS_OK;
 }
 
-nsresult
-nsImageBoxFrame::OnDecodeComplete(imgIRequest* aRequest)
-{
+nsresult nsImageBoxFrame::OnDecodeComplete(imgIRequest* aRequest) {
   nsBoxLayoutState state(PresContext());
   this->XULRedraw(state);
   return NS_OK;
 }
 
-nsresult
-nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest, nsresult aStatus)
-{
+nsresult nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest,
+                                         nsresult aStatus) {
   if (NS_SUCCEEDED(aStatus)) {
     // Fire an onload DOM event.
     FireImageDOMEvent(mContent, eLoad);
   } else {
     // Fire an onerror DOM event.
     mIntrinsicSize.SizeTo(0, 0);
-    PresContext()->PresShell()->
-      FrameNeedsReflow(this, nsIPresShell::eStyleChange, NS_FRAME_IS_DIRTY);
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                  NS_FRAME_IS_DIRTY);
     FireImageDOMEvent(mContent, eLoadError);
   }
 
   return NS_OK;
 }
 
-nsresult
-nsImageBoxFrame::OnImageIsAnimated(imgIRequest* aRequest)
-{
+nsresult nsImageBoxFrame::OnImageIsAnimated(imgIRequest* aRequest) {
   // Register with our refresh driver, if we're animated.
   nsLayoutUtils::RegisterImageRequest(PresContext(), aRequest,
                                       &mRequestRegistered);
@@ -751,53 +824,35 @@ nsImageBoxFrame::OnImageIsAnimated(imgIRequest* aRequest)
   return NS_OK;
 }
 
-nsresult
-nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest)
-{
+nsresult nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
   if ((0 == mRect.width) || (0 == mRect.height)) {
     return NS_OK;
   }
- 
-  InvalidateLayer(nsDisplayItem::TYPE_XUL_IMAGE);
+
+  // Check if WebRender has interacted with this frame. If it has
+  // we need to let it know that things have changed.
+  const auto type = DisplayItemType::TYPE_XUL_IMAGE;
+  const auto producerId = aRequest->GetProducerId();
+  if (WebRenderUserData::ProcessInvalidateForImage(this, type, producerId)) {
+    return NS_OK;
+  }
+
+  InvalidateLayer(type);
 
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(nsImageBoxListener, imgINotificationObserver, imgIOnloadBlocker)
+NS_IMPL_ISUPPORTS(nsImageBoxListener, imgINotificationObserver)
 
-nsImageBoxListener::nsImageBoxListener()
-{
-}
+nsImageBoxListener::nsImageBoxListener(nsImageBoxFrame* frame)
+    : mFrame(frame) {}
 
-nsImageBoxListener::~nsImageBoxListener()
-{
-}
+nsImageBoxListener::~nsImageBoxListener() {}
 
 NS_IMETHODIMP
-nsImageBoxListener::Notify(imgIRequest *request, int32_t aType, const nsIntRect* aData)
-{
-  if (!mFrame)
-    return NS_OK;
+nsImageBoxListener::Notify(imgIRequest* request, int32_t aType,
+                           const nsIntRect* aData) {
+  if (!mFrame) return NS_OK;
 
   return mFrame->Notify(request, aType, aData);
-}
-
-NS_IMETHODIMP
-nsImageBoxListener::BlockOnload(imgIRequest *aRequest)
-{
-  if (mFrame && mFrame->GetContent() && mFrame->GetContent()->GetUncomposedDoc()) {
-    mFrame->GetContent()->GetUncomposedDoc()->BlockOnload();
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsImageBoxListener::UnblockOnload(imgIRequest *aRequest)
-{
-  if (mFrame && mFrame->GetContent() && mFrame->GetContent()->GetUncomposedDoc()) {
-    mFrame->GetContent()->GetUncomposedDoc()->UnblockOnload(false);
-  }
-
-  return NS_OK;
 }

@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TestHarness.h"
-
 #include <windows.h>
 #include <winnetwk.h>
 
@@ -13,52 +11,42 @@
 #include "mozilla/DebugOnly.h"
 #include "nsCRTGlue.h"
 
-class DriveMapping
-{
-public:
-  DriveMapping(const nsAString& aRemoteUNCPath);
+#include "gtest/gtest.h"
+
+class DriveMapping {
+ public:
+  explicit DriveMapping(const nsAString& aRemoteUNCPath);
   ~DriveMapping();
 
-  bool
-  Init();
-  bool
-  ChangeDriveLetter();
-  wchar_t
-  GetDriveLetter() { return mDriveLetter; }
+  bool Init();
+  bool ChangeDriveLetter();
+  wchar_t GetDriveLetter() { return mDriveLetter; }
 
-private:
-  bool
-  DoMapping();
-  void
-  Disconnect(wchar_t aDriveLetter);
+ private:
+  bool DoMapping();
+  void Disconnect(wchar_t aDriveLetter);
 
-  wchar_t   mDriveLetter;
-  nsString  mRemoteUNCPath;
+  wchar_t mDriveLetter;
+  nsString mRemoteUNCPath;
 };
 
 DriveMapping::DriveMapping(const nsAString& aRemoteUNCPath)
-  : mDriveLetter(0)
-  , mRemoteUNCPath(aRemoteUNCPath)
-{
-}
+    : mDriveLetter(0), mRemoteUNCPath(aRemoteUNCPath) {}
 
-bool
-DriveMapping::Init()
-{
+bool DriveMapping::Init() {
   if (mDriveLetter) {
     return false;
   }
   return DoMapping();
 }
 
-bool
-DriveMapping::DoMapping()
-{
+bool DriveMapping::DoMapping() {
   wchar_t drvTemplate[] = L" :";
   NETRESOURCEW netRes = {0};
   netRes.dwType = RESOURCETYPE_DISK;
   netRes.lpLocalName = drvTemplate;
-  netRes.lpRemoteName = reinterpret_cast<wchar_t*>(mRemoteUNCPath.BeginWriting());
+  netRes.lpRemoteName =
+      reinterpret_cast<wchar_t*>(mRemoteUNCPath.BeginWriting());
   wchar_t driveLetter = L'D';
   DWORD result = NO_ERROR;
   do {
@@ -72,41 +60,36 @@ DriveMapping::DoMapping()
   return true;
 }
 
-bool
-DriveMapping::ChangeDriveLetter()
-{
+bool DriveMapping::ChangeDriveLetter() {
   wchar_t prevDriveLetter = mDriveLetter;
   bool result = DoMapping();
-  MOZ_ASSERT(mDriveLetter != prevDriveLetter);
+  MOZ_RELEASE_ASSERT(mDriveLetter != prevDriveLetter);
   if (result && prevDriveLetter) {
     Disconnect(prevDriveLetter);
   }
   return result;
 }
 
-void
-DriveMapping::Disconnect(wchar_t aDriveLetter)
-{
+void DriveMapping::Disconnect(wchar_t aDriveLetter) {
   wchar_t drvTemplate[] = {aDriveLetter, L':', L'\0'};
-  mozilla::DebugOnly<DWORD> result = WNetCancelConnection2W(drvTemplate, 0, TRUE);
-  MOZ_ASSERT(result == NO_ERROR);
+  DWORD result = WNetCancelConnection2W(drvTemplate, 0, TRUE);
+  MOZ_RELEASE_ASSERT(result == NO_ERROR);
 }
 
-DriveMapping::~DriveMapping()
-{
+DriveMapping::~DriveMapping() {
   if (mDriveLetter) {
     Disconnect(mDriveLetter);
   }
 }
 
-bool
-DriveToNtPath(const wchar_t aDriveLetter, nsAString& aNtPath)
-{
+bool DriveToNtPath(const wchar_t aDriveLetter, nsAString& aNtPath) {
   const wchar_t drvTpl[] = {aDriveLetter, L':', L'\0'};
   aNtPath.SetLength(MAX_PATH);
   DWORD pathLen;
   while (true) {
-    pathLen = QueryDosDeviceW(drvTpl, reinterpret_cast<wchar_t*>(aNtPath.BeginWriting()), aNtPath.Length());
+    pathLen = QueryDosDeviceW(
+        drvTpl, reinterpret_cast<wchar_t*>(aNtPath.BeginWriting()),
+        aNtPath.Length());
     if (pathLen || GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
       break;
     }
@@ -121,115 +104,73 @@ DriveToNtPath(const wchar_t aDriveLetter, nsAString& aNtPath)
   return true;
 }
 
-bool
-TestNtPathToDosPath(const wchar_t* aNtPath,
-                    const wchar_t* aExpectedDosPath)
-{
+bool TestNtPathToDosPath(const wchar_t* aNtPath,
+                         const wchar_t* aExpectedDosPath) {
   nsAutoString output;
   bool result = mozilla::NtPathToDosPath(nsDependentString(aNtPath), output);
-  return result && output == aExpectedDosPath;
+  return result && output == reinterpret_cast<const nsAString::char_type*>(
+                                 aExpectedDosPath);
 }
 
-int main(int argc, char* argv[])
+TEST(NtPathToDosPath, Tests)
 {
-  ScopedXPCOM xpcom("NtPathToDosPath");
-  if (xpcom.failed()) {
-    fail("XPCOM Startup");
-    return 1;
-  }
   nsAutoString cDrive;
-  if (!DriveToNtPath(L'C', cDrive)) {
-    fail("Querying for this machine's C:");
-    return 1;
-  }
-
-  int result = 0;
+  ASSERT_TRUE(DriveToNtPath(L'C', cDrive));
 
   // empty string
-  if (!TestNtPathToDosPath(L"", L"")) {
-    fail("Empty string");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(L"", L""));
+
   // non-existent device, must fail
-  if (TestNtPathToDosPath(L"\\Device\\ThisDeviceDoesNotExist\\Foo", nullptr)) {
-    fail("Non-existent device");
-    result = 1;
-  }
+  EXPECT_FALSE(
+      TestNtPathToDosPath(L"\\Device\\ThisDeviceDoesNotExist\\Foo", nullptr));
+
   // base case
   nsAutoString testPath(cDrive);
   testPath.Append(L"\\Program Files");
-  if (!TestNtPathToDosPath(testPath.get(), L"C:\\Program Files")) {
-    fail("Base case");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(testPath.get(), L"C:\\Program Files"));
+
   // short filename
   nsAutoString ntShortName(cDrive);
   ntShortName.Append(L"\\progra~1");
-  if (!TestNtPathToDosPath(ntShortName.get(), L"C:\\Program Files")) {
-    fail("Short file name");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(ntShortName.get(), L"C:\\Program Files"));
+
   // drive letters as symbolic links (NtCreateFile uses these)
-  if (!TestNtPathToDosPath(L"\\??\\C:\\Foo", L"C:\\Foo")) {
-    fail("Path specified as symbolic link");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(L"\\??\\C:\\Foo", L"C:\\Foo"));
+
   // other symbolic links (should fail)
-  if (TestNtPathToDosPath(L"\\??\\MountPointManager", nullptr)) {
-    fail("Other symbolic link");
-    result = 1;
-  }
+  EXPECT_FALSE(TestNtPathToDosPath(L"\\??\\MountPointManager", nullptr));
+
   // socket (should fail)
-  if (TestNtPathToDosPath(L"\\Device\\Afd\\Endpoint", nullptr)) {
-    fail("Socket");
-    result = 1;
-  }
+  EXPECT_FALSE(TestNtPathToDosPath(L"\\Device\\Afd\\Endpoint", nullptr));
+
   // UNC path (using MUP)
-  if (!TestNtPathToDosPath(L"\\Device\\Mup\\127.0.0.1\\C$",
-                           L"\\\\127.0.0.1\\C$")) {
-    fail("Unmapped UNC path (\\Device\\Mup\\)");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(L"\\Device\\Mup\\127.0.0.1\\C$",
+                                  L"\\\\127.0.0.1\\C$"));
+
   // UNC path (using LanmanRedirector)
-  if (!TestNtPathToDosPath(L"\\Device\\LanmanRedirector\\127.0.0.1\\C$",
-                           L"\\\\127.0.0.1\\C$")) {
-    fail("Unmapped UNC path (\\Device\\LanmanRedirector\\)");
-    result = 1;
-  }
+  EXPECT_TRUE(TestNtPathToDosPath(L"\\Device\\LanmanRedirector\\127.0.0.1\\C$",
+                                  L"\\\\127.0.0.1\\C$"));
+
   DriveMapping drvMapping(NS_LITERAL_STRING("\\\\127.0.0.1\\C$"));
   // Only run these tests if we were able to map; some machines don't have perms
   if (drvMapping.Init()) {
     wchar_t expected[] = L" :\\";
     expected[0] = drvMapping.GetDriveLetter();
     nsAutoString networkPath;
-    if (!DriveToNtPath(drvMapping.GetDriveLetter(), networkPath)) {
-      fail("Querying network drive");
-      return 1;
-    }
+    ASSERT_TRUE(DriveToNtPath(drvMapping.GetDriveLetter(), networkPath));
+
     networkPath += u"\\";
-    if (!TestNtPathToDosPath(networkPath.get(), expected)) {
-      fail("Mapped UNC path");
-      result = 1;
-    }
-    // NtPathToDosPath must correctly handle paths whose drive letter mapping has
-    // changed. We need to test this because the APIs called by NtPathToDosPath
-    // return different info if this has happened.
-    if (!drvMapping.ChangeDriveLetter()) {
-      fail("Change drive letter");
-      return 1;
-    }
+    EXPECT_TRUE(TestNtPathToDosPath(networkPath.get(), expected));
+
+    // NtPathToDosPath must correctly handle paths whose drive letter mapping
+    // has changed. We need to test this because the APIs called by
+    // NtPathToDosPath return different info if this has happened.
+    ASSERT_TRUE(drvMapping.ChangeDriveLetter());
+
     expected[0] = drvMapping.GetDriveLetter();
-    if (!DriveToNtPath(drvMapping.GetDriveLetter(), networkPath)) {
-      fail("Querying second network drive");
-      return 1;
-    }
+    ASSERT_TRUE(DriveToNtPath(drvMapping.GetDriveLetter(), networkPath));
+
     networkPath += u"\\";
-    if (!TestNtPathToDosPath(networkPath.get(), expected)) {
-      fail("Re-mapped UNC path");
-      result = 1;
-    }
+    EXPECT_TRUE(TestNtPathToDosPath(networkPath.get(), expected));
   }
-
-  return result;
 }
-

@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/transient/transient_suppressor.h"
+#include "modules/audio_processing/transient/transient_suppressor.h"
 
 #include <math.h>
 #include <string.h>
@@ -17,15 +17,15 @@
 #include <deque>
 #include <set>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/common_audio/fft4g.h"
-#include "webrtc/common_audio/include/audio_util.h"
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
-#include "webrtc/modules/audio_processing/transient/common.h"
-#include "webrtc/modules/audio_processing/transient/transient_detector.h"
-#include "webrtc/modules/audio_processing/ns/windows_private.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/typedefs.h"
+#include "common_audio/fft4g.h"
+#include "common_audio/include/audio_util.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "modules/audio_processing/ns/windows_private.h"
+#include "modules/audio_processing/transient/common.h"
+#include "modules/audio_processing/transient/transient_detector.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -101,13 +101,13 @@ int TransientSuppressor::Initialize(int sample_rate_hz,
   detector_.reset(new TransientDetector(detection_rate_hz));
   data_length_ = sample_rate_hz * ts::kChunkSizeMs / 1000;
   if (data_length_ > analysis_length_) {
-    assert(false);
+    RTC_NOTREACHED();
     return -1;
   }
   buffer_delay_ = analysis_length_ - data_length_;
 
   complex_analysis_length_ = analysis_length_ / 2 + 1;
-  assert(complex_analysis_length_ >= kMaxVoiceBin);
+  RTC_DCHECK_GE(complex_analysis_length_, kMaxVoiceBin);
   num_channels_ = num_channels;
   in_buffer_.reset(new float[analysis_length_ * num_channels_]);
   memset(in_buffer_.get(),
@@ -124,7 +124,7 @@ int TransientSuppressor::Initialize(int sample_rate_hz,
          analysis_length_ * num_channels_ * sizeof(out_buffer_[0]));
   // ip[0] must be zero to trigger initialization using rdft().
   size_t ip_length = 2 + sqrtf(analysis_length_);
-  ip_.reset(new int[ip_length]());
+  ip_.reset(new size_t[ip_length]());
   memset(ip_.get(), 0, ip_length * sizeof(ip_[0]));
   wfft_.reset(new float[complex_analysis_length_ - 1]);
   memset(wfft_.get(), 0, (complex_analysis_length_ - 1) * sizeof(wfft_[0]));
@@ -295,7 +295,7 @@ void TransientSuppressor::UpdateKeypress(bool key_pressed) {
 
   if (keypress_counter_ > kIsTypingThreshold) {
     if (!suppression_enabled_) {
-      LOG(LS_INFO) << "[ts] Transient suppression is now enabled.";
+      RTC_LOG(LS_INFO) << "[ts] Transient suppression is now enabled.";
     }
     suppression_enabled_ = true;
     keypress_counter_ = 0;
@@ -304,7 +304,7 @@ void TransientSuppressor::UpdateKeypress(bool key_pressed) {
   if (detection_enabled_ &&
       ++chunks_since_keypress_ > kChunksUntilNotTyping) {
     if (suppression_enabled_) {
-      LOG(LS_INFO) << "[ts] Transient suppression is now disabled.";
+      RTC_LOG(LS_INFO) << "[ts] Transient suppression is now disabled.";
     }
     detection_enabled_ = false;
     suppression_enabled_ = false;

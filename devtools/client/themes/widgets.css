@@ -1,35 +1,22 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url(chrome://devtools/skin/breadcrumbs.css);
+
 .theme-dark {
   --table-splitter-color: rgba(255,255,255,0.15);
   --table-zebra-background: rgba(255,255,255,0.05);
-  --sidemenu-selected-arrow: url(images/itemArrow-dark-ltr.svg);
-  --sidemenu-selected-arrow-rtl: url(images/itemArrow-dark-rtl.svg);
-  --delete-icon: url(chrome://devtools/skin/images/vview-delete.png);
-  --delete-icon-2x: url(chrome://devtools/skin/images/vview-delete@2x.png);
+  --sidemenu-selected-arrow: url(images/item-arrow-dark-ltr.svg);
+  --sidemenu-selected-arrow-rtl: url(images/item-arrow-dark-rtl.svg);
 }
 
 .theme-light {
   --table-splitter-color: rgba(0,0,0,0.15);
   --table-zebra-background: rgba(0,0,0,0.05);
-  --sidemenu-selected-arrow: url(images/itemArrow-ltr.svg);
-  --sidemenu-selected-arrow-rtl: url(images/itemArrow-rtl.svg);
-  --delete-icon: url(chrome://devtools/skin/images/vview-delete.png);
-  --delete-icon-2x: url(chrome://devtools/skin/images/vview-delete@2x.png);
+  --sidemenu-selected-arrow: url(images/item-arrow-ltr.svg);
+  --sidemenu-selected-arrow-rtl: url(images/item-arrow-rtl.svg);
 }
-
-.theme-firebug {
-  --table-splitter-color: rgba(0,0,0,0.15);
-  --table-zebra-background: rgba(0,0,0,0.05);
-  --sidemenu-selected-arrow: url(images/itemArrow-ltr.svg);
-  --sidemenu-selected-arrow-rtl: url(images/itemArrow-rtl.svg);
-  --delete-icon: url(chrome://devtools/skin/images/firebug/close.svg);
-  --delete-icon-2x: url(chrome://devtools/skin/images/firebug/close.svg);
-}
-
 
 /* Generic pane helpers */
 
@@ -93,8 +80,8 @@
     margin-inline-end: 0;
     margin-inline-start: 0;
 
-    /* In some edge case the cursor is not changed to n-resize */
-    cursor: n-resize;
+    /* In some edge case the cursor is not changed to ns-resize */
+    cursor: ns-resize;
   }
 
   .devtools-responsive-container > .devtools-sidebar-tabs:not(.pane-collapsed) {
@@ -113,485 +100,6 @@
   }
 }
 
-/* BreacrumbsWidget */
-
-.breadcrumbs-widget-container {
-  margin-inline-end: 3px;
-  max-height: 24px; /* Set max-height for proper sizing on linux */
-  height: 24px; /* Set height to prevent starting small waiting for content */
-}
-
-.scrollbutton-up,
-.scrollbutton-down {
-  -moz-appearance: none;
-  background: transparent;
-  box-shadow: none;
-  border: none;
-  list-style-image: none;
-  margin: 0;
-  padding: 0;
-}
-
-.scrollbutton-up > .toolbarbutton-icon,
-.scrollbutton-down > .toolbarbutton-icon {
-  -moz-appearance: none;
-  width: 7px;
-  height: 16px;
-  background-size: 14px 16px;
-  background-position: 0 center;
-  background-repeat: no-repeat;
-  background-image: url("images/breadcrumbs-scrollbutton.png");
-  list-style-image: none;
-  margin: 0 8px;
-  padding: 0;
-}
-
-@media (min-resolution: 1.1dppx) {
-  .scrollbutton-up > .toolbarbutton-icon,
-  .scrollbutton-down > .toolbarbutton-icon {
-    background-image: url("images/breadcrumbs-scrollbutton@2x.png");
-  }
-}
-
-.scrollbutton-up:not([disabled]):active:hover > .toolbarbutton-icon,
-.scrollbutton-down:not([disabled]):active:hover > .toolbarbutton-icon {
-  background-position: -7px center;
-}
-
-.scrollbutton-up[disabled] > .toolbarbutton-icon,
-.scrollbutton-down[disabled] > .toolbarbutton-icon {
-  opacity: 0.5;
-}
-
-/* Draw shadows to indicate there is more content 'behind' scrollbuttons. */
-.scrollbutton-up:-moz-locale-dir(ltr),
-.scrollbutton-down:-moz-locale-dir(rtl) {
-  border-right: solid 1px rgba(255, 255, 255, .1);
-  border-left: solid 1px transparent;
-  box-shadow: 3px 0px 3px -3px var(--theme-sidebar-background);
-}
-
-.scrollbutton-down:-moz-locale-dir(ltr),
-.scrollbutton-up:-moz-locale-dir(rtl) {
-  border-right: solid 1px transparent;
-  border-left: solid 1px rgba(255, 255, 255, .1);
-  box-shadow: -3px 0px 3px -3px var(--theme-sidebar-background);
-}
-
-.scrollbutton-up[disabled],
-.scrollbutton-down[disabled] {
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.scrollbutton-up > .toolbarbutton-icon:-moz-locale-dir(rtl),
-.scrollbutton-down > .toolbarbutton-icon:-moz-locale-dir(ltr) {
-  transform: scaleX(-1);
-}
-
-/* The breadcrumb separator elements are used as background images with
- * -moz-element, so we position them offscreen since we don't care about
- * seeing the original elements.
- */
-.breadcrumb-separator-container {
-  position: fixed;
-  top: -1000px;
-  left: -1000px;
-}
-
-#breadcrumb-separator-before,
-#breadcrumb-separator-after,
-#breadcrumb-separator-normal {
-  width: 12px;
-  height: 24px;
-  overflow: hidden;
-}
-
-#breadcrumb-separator-before,
-#breadcrumb-separator-after:after {
-  background: var(--theme-selection-background);
-}
-
-#breadcrumb-separator-after,
-#breadcrumb-separator-before:after {
-  background: var(--theme-body-background);
-}
-
-/* This chevron arrow cannot be replicated easily in CSS, so we are using
- * a background image for it (still keeping it in a separate element so
- * we can handle RTL support with a CSS transform).
- */
-#breadcrumb-separator-normal {
-  background: url(images/breadcrumbs-divider@2x.png) no-repeat center right;
-  background-size: 12px 24px;
-}
-
-/* Fake a triangle by rotating a rectangle inside the elements */
-#breadcrumb-separator-before:after,
-#breadcrumb-separator-after:after {
-  content: "";
-  display: block;
-  width: 25px;
-  height: 24px;
-  transform: translateX(-18px) rotate(45deg);
-  -moz-box-sizing: border-box;
-}
-
-.breadcrumbs-widget-item {
-  background-color: transparent;
-  -moz-appearance: none;
-  min-height: 24px;
-  min-width: 65px;
-  margin: 0;
-  padding: 0 8px 0 20px;
-  border: none;
-  outline: none;
-  color: hsl(210,30%,85%);
-}
-
-.breadcrumbs-widget-item > .button-box {
-  border: none;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-:root[platform="win"] .breadcrumbs-widget-item:-moz-focusring > .button-box {
-  border-width: 0;
-}
-
-.breadcrumbs-widget-item:not([checked]) {
-  background: -moz-element(#breadcrumb-separator-normal) no-repeat center left;
-}
-
-.breadcrumbs-widget-item[checked] + .breadcrumbs-widget-item {
-  background: -moz-element(#breadcrumb-separator-after) no-repeat 0 0;
-}
-
-.breadcrumbs-widget-item[checked] {
-  background: -moz-element(#breadcrumb-separator-before) no-repeat 0 0;
-}
-
-.breadcrumbs-widget-item[checked] {
-  background-color: var(--theme-selection-background);
-}
-
-.breadcrumbs-widget-item:first-child {
-  background-image: none;
-}
-
-/* RTL support: move the images that were on the left to the right,
- * and move images that were on the right to the left.
- */
-.breadcrumbs-widget-item:-moz-locale-dir(rtl) {
-  padding: 0 20px 0 8px;
-}
-
-.breadcrumbs-widget-item:-moz-locale-dir(rtl),
-.breadcrumbs-widget-item[checked] + .breadcrumbs-widget-item:-moz-locale-dir(rtl) {
-  background-position: center right;
-}
-
-#breadcrumb-separator-before:-moz-locale-dir(rtl),
-#breadcrumb-separator-after:-moz-locale-dir(rtl),
-#breadcrumb-separator-normal:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-#breadcrumb-separator-before:-moz-locale-dir(rtl):after,
-#breadcrumb-separator-after:-moz-locale-dir(rtl):after {
-  transform: translateX(-5px) rotate(45deg);
-}
-
-.breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-id,
-.breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-tag,
-.breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-pseudo-classes,
-.breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-classes {
-  color: var(--theme-selection-color);
-}
-
-.theme-dark .breadcrumbs-widget-item {
-  color: var(--theme-selection-color);
-}
-
-.theme-light .breadcrumbs-widget-item {
-  color: var(--theme-body-color);
-}
-
-.breadcrumbs-widget-item-id {
-  color: var(--theme-body-color-alt);
-}
-
-.breadcrumbs-widget-item-classes {
-  color: var(--theme-content-color1);
-}
-
-.breadcrumbs-widget-item-pseudo-classes {
-  color: var(--theme-highlight-lightorange);
-}
-
-.theme-dark .breadcrumbs-widget-item:not([checked]):hover label {
-  color: white;
-}
-
-.theme-light .breadcrumbs-widget-item:not([checked]):hover label {
-  color: black;
-}
-
-/* Firebug theme support for breadcrumbs widget. */
-
-.theme-firebug .breadcrumbs-widget-item {
-  margin-inline-start: 10px;
-  margin-inline-end: 1px;
-  background-image: none;
-  border: 1px solid transparent;
-  color: #141414;
-  border-radius: 2px;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  font-size: var(--theme-toolbar-font-size);
-}
-
-.theme-firebug .breadcrumbs-widget-item:hover {
-  border-color: rgba(0, 0, 0, 0.2);
-  background: transparent linear-gradient(
-              rgba(255, 255, 255, 0.4),
-              rgba(255, 255, 255, 0.2)) no-repeat;
-  box-shadow: 1px 1px 1px rgba(255, 255, 255, 0.6) inset,
-              0 0 1px rgba(255, 255, 255, 0.6) inset,
-              0 0 2px rgba(0, 0, 0, 0.05);
-}
-
-.theme-firebug .breadcrumbs-widget-item > .button-box {
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.theme-firebug .breadcrumbs-widget-item:first-child {
-  margin: 0;
-}
-
-.theme-firebug .breadcrumbs-widget-item:not(:first-child)::before {
-  content: url(chrome://devtools/skin/images/firebug/breadcrumbs-divider.svg);
-  position: relative;
-  left: -3px;
-  margin: 0 0 0 -5px;
-  padding: 0;
-  width: 5px;
-}
-
-/* Breadcrumbs Separators (reset selection styles) */
-.theme-firebug .breadcrumbs-widget-item[checked],
-.theme-firebug .breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-id,
-.theme-firebug .breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-tag,
-.theme-firebug .breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-pseudo-classes,
-.theme-firebug .breadcrumbs-widget-item[checked] .breadcrumbs-widget-item-classes {
-  background: none;
-  font-weight: bold;
-  color: inherit;
-}
-
-/* The first rule is there only to make sure the default rule from
-widgets.css is overwritten. */
-.theme-firebug .breadcrumbs-widget-item[checked] + .breadcrumbs-widget-item {
-  background: none;
-}
-
-.theme-firebug .breadcrumbs-widget-item .breadcrumbs-widget-item-tag {
-  padding-left: 4px;
-  padding-right: 4px;
-}
-
-/* Breadcrumbs Scrolling Buttons */
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-up,
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-down {
-  padding: 0;
-  box-shadow: none;
-}
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-up:hover,
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-down:hover {
-  border: 1px transparent solid !important;
-  box-shadow: none !important;
-}
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-up:active,
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-down:active {
-  background: none !important;
-}
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-up > .toolbarbutton-icon {
-  background-image: url(chrome://global/skin/arrow/arrow-lft-sharp.gif);
-}
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-down > .toolbarbutton-icon {
-  background-image: url(chrome://global/skin/arrow/arrow-lft-sharp.gif);
-}
-
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-up:not([disabled]):active:hover > .toolbarbutton-icon,
-.theme-firebug .breadcrumbs-widget-container .scrollbutton-down:not([disabled]):active:hover > .toolbarbutton-icon {
-  background-position: 0 center;
-}
-
-/* SimpleListWidget */
-
-.simple-list-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-.simple-list-widget-item.selected {
-  background-color: var(--theme-selection-background);
-  color: var(--theme-selection-color);
-}
-
-.theme-dark .simple-list-widget-item:not(.selected):hover {
-  background-color: rgba(255,255,255,.05);
-}
-
-.theme-light .simple-list-widget-item:not(.selected):hover {
-  background-color: rgba(0,0,0,.05);
-}
-
-.simple-list-widget-empty-text,
-.simple-list-widget-perma-text {
-  padding: 4px 8px;
-}
-
-.simple-list-widget-empty-text,
-.simple-list-widget-perma-text {
-  color: var(--theme-body-color-alt);
-}
-
-/* FastListWidget */
-
-.fast-list-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-.fast-list-widget-empty-text {
-  padding: 4px 8px;
-}
-
-.fast-list-widget-empty-text {
-  color: var(--theme-body-color-alt);
-}
-
-/* SideMenuWidget */
-
-.side-menu-widget-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-/* SideMenuWidget container */
-
-.side-menu-widget-container[with-arrows=true] .side-menu-widget-item {
-  /* To compensate for the arrow image's dark margin. */
-  margin-inline-end: -1px;
-}
-
-/* SideMenuWidget groups */
-
-.side-menu-widget-group-title {
-  padding: 4px;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(128,128,128,0.15);
-}
-
-.side-menu-widget-group-title + .side-menu-widget-group-list .side-menu-widget-item-contents {
-  padding-inline-start: 20px;
-}
-
-/* SideMenuWidget items */
-
-.side-menu-widget-item {
-  border-bottom: 1px solid rgba(128,128,128,0.15);
-  background-clip: padding-box;
-}
-
-.side-menu-widget-item.selected {
-  background-color: var(--theme-selection-background);
-  color: var(--theme-selection-color);
-}
-
-.side-menu-widget-item-arrow {
-  margin-inline-start: -7px;
-  width: 7px; /* The image's width is 7 pixels */
-}
-
-.side-menu-widget-item.selected > .side-menu-widget-item-arrow {
-  background-image: var(--sidemenu-selected-arrow);
-  background-size: auto;
-  background-repeat: no-repeat;
-  background-position: center right;
-}
-
-.side-menu-widget-item.selected > .side-menu-widget-item-arrow:-moz-locale-dir(rtl) {
-  background-image: var(--sidemenu-selected-arrow-rtl);
-  background-position: center left;
-}
-
-/* SideMenuWidget items contents */
-
-.side-menu-widget-item-contents {
-  padding: 4px;
-  /* To avoid having content overlapping the arrow image. */
-  padding-inline-end: 8px;
-}
-
-.side-menu-widget-item-other {
-  /* To avoid having content overlapping the arrow image. */
-  padding-inline-end: 8px;
-  /* To compensate for the .side-menu-widget-item-contents padding. */
-  margin-inline-start: -4px;
-  margin-inline-end: -8px;
-}
-
-.side-menu-widget-group-title + .side-menu-widget-group-list .side-menu-widget-item-other {
-  /* To compensate for the .side-menu-widget-item-contents padding. */
-  margin-inline-start: -20px;
-}
-
-.side-menu-widget-item.selected .side-menu-widget-item-other:not(.selected) {
-  background-color: var(--theme-sidebar-background);
-  box-shadow: inset 2px 0 0 var(--theme-selection-background);
-  color: var(--theme-body-color);
-}
-
-.side-menu-widget-item.selected .side-menu-widget-item-other.selected {
-  background-color: var(--theme-selection-background);
-}
-
-.side-menu-widget-item-other:first-of-type {
-  margin-top: 4px;
-}
-
-.side-menu-widget-item-other:last-of-type {
-  margin-bottom: -4px;
-}
-
-/* SideMenuWidget checkboxes */
-
-.side-menu-widget-group-checkbox {
-  margin: 0;
-  margin-inline-end: 4px;
-}
-
-.side-menu-widget-item-checkbox {
-  margin: 0;
-  margin-inline-start: 4px;
-}
-
-/* SideMenuWidget misc */
-
-.side-menu-widget-empty-text {
-  padding: 4px 8px;
-  background-color: var(--theme-sidebar-background);
-}
-
 /* VariablesView */
 
 .variables-view-container {
@@ -604,7 +112,7 @@ widgets.css is overwritten. */
 }
 
 .variables-view-empty-notice {
-  color: var(--theme-body-color-alt);
+  color: var(--theme-text-color-alt);
 }
 
 .variables-view-scope:focus > .title,
@@ -619,29 +127,20 @@ widgets.css is overwritten. */
   margin-top: -1px;
 }
 
+.variables-view-scope > .title:-moz-locale-dir(rtl) {
+  direction: rtl;
+}
+
 /* Custom scope stylings */
 
 .variables-view-watch-expressions .title > .name  {
   max-width: 14em;
 }
 
-.theme-firebug .variables-view-scope > .title {
-  height: auto;
-  border: none;
-}
-
-.theme-firebug .variables-view-scope > .title > .theme-twisty {
-  display: none;
-}
-
 /* Generic variables traits */
 
 .variables-view-variable:not(:last-child) {
   border-bottom: 1px solid rgba(128, 128, 128, .15);
-}
-
-.theme-firebug .variables-view-variable {
-  border-bottom: 1px solid transparent;
 }
 
 .variables-view-variable > .title > .name {
@@ -660,6 +159,10 @@ widgets.css is overwritten. */
 
 .variable-or-property > .title > .theme-twisty {
   margin-inline-start: 5px;
+}
+
+.variables-view-container .variables-view-element-details .theme-twisty:not([open]):-moz-locale-dir(rtl) {
+  transform: rotate(-90deg);
 }
 
 .variable-or-property:not([untitled]) > .variables-view-element-details {
@@ -815,52 +318,35 @@ widgets.css is overwritten. */
   cursor: pointer;
 }
 
+.variables-view-open-inspector {
+  background-size: 15px;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
+}
+
 .variables-view-delete:hover,
 .variables-view-edit:hover,
 .variables-view-open-inspector:hover {
-  filter: url(images/filters.svg#checked-icon-state);
+  fill: var(--theme-icon-color);
 }
 
 .variables-view-delete:active,
 .variables-view-edit:active,
 .variables-view-open-inspector:active {
-  filter: url(images/filters.svg#checked-icon-state) brightness(0.9);
-}
-
-.variable-or-property:focus > .title > .variables-view-delete,
-.variable-or-property:focus > .title > .variables-view-edit,
-.variable-or-property:focus > .title > .variables-view-open-inspector {
-  filter: none;
+  fill: var(--theme-icon-checked-color);
 }
 
 .variables-view-delete {
-  background-image: var(--delete-icon);
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-delete {
-    background-image: var(--delete-icon-2x);
-  }
+  background-image: url("chrome://devtools/skin/images/vview-delete.svg");
 }
 
 .variables-view-edit {
-  background-image: url("chrome://devtools/skin/images/vview-edit.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-edit {
-    background-image: url("chrome://devtools/skin/images/vview-edit@2x.png");
-  }
+  background-image: url("chrome://devtools/skin/images/vview-edit.svg");
 }
 
 .variables-view-open-inspector {
-  background-image: url("chrome://devtools/skin/images/vview-open-inspector.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .variables-view-open-inspector {
-    background-image: url("chrome://devtools/skin/images/vview-open-inspector@2x.png");
-  }
+  background-image: url("chrome://devtools/skin/images/open-inspector.svg");
 }
 
 /* Variables and properties input boxes */
@@ -1039,7 +525,7 @@ widgets.css is overwritten. */
 }
 
 .line-graph-widget-tooltip > [text=info] {
-  color: var(--theme-content-color1);
+  color: var(--theme-text-color-strong);
 }
 
 .line-graph-widget-tooltip > [text=value] {
@@ -1048,7 +534,7 @@ widgets.css is overwritten. */
 
 .line-graph-widget-tooltip > [text=metric] {
   margin-inline-start: 1px;
-  color: var(--theme-content-color3);
+  color: var(--theme-text-color-alt);
 }
 
 .theme-light .line-graph-widget-tooltip > [text=value],
@@ -1077,177 +563,6 @@ widgets.css is overwritten. */
 
 .line-graph-widget-tooltip[type=average] > [text=value] {
   color: var(--theme-highlight-orange);
-}
-
-/* Bar graph widget */
-
-.bar-graph-widget-legend {
-  position: absolute;
-  top: 4px;
-  left: 8px;
-  color: #292e33;
-  font-size: 80%;
-  pointer-events: none;
-}
-
-.bar-graph-widget-legend-item {
-  float: left;
-  margin-inline-end: 8px;
-}
-
-.bar-graph-widget-legend-item > [view="color"],
-.bar-graph-widget-legend-item > [view="label"] {
-  vertical-align: middle;
-}
-
-.bar-graph-widget-legend-item > [view="color"] {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border: 1px solid #fff;
-  border-radius: 1px;
-  margin-inline-end: 4px;
-  pointer-events: all;
-  cursor: pointer;
-}
-
-.bar-graph-widget-legend-item > [view="label"] {
-  text-shadow: 1px  0px rgba(255,255,255,0.8),
-              -1px  0px rgba(255,255,255,0.8),
-               0px -1px rgba(255,255,255,0.8),
-               0px  1px rgba(255,255,255,0.8);
-}
-
-/* Charts */
-
-.generic-chart-container {
-  /* Hack: force hardware acceleration */
-  transform: translateZ(1px);
-}
-
-.theme-dark .generic-chart-container {
-  color: var(--theme-selection-color);
-}
-
-.theme-light .generic-chart-container {
-  color: var(--theme-body-color-alt);
-}
-
-.chart-colored-blob {
-  fill: var(--theme-content-color2);
-  background: var(--theme-content-color2);
-}
-
-/* Charts: Pie */
-
-.pie-chart-slice {
-  stroke-width: 1px;
-  cursor: pointer;
-}
-
-.theme-dark .pie-chart-slice {
-  stroke: rgba(0,0,0,0.2);
-}
-
-.theme-light .pie-chart-slice {
-  stroke: rgba(255,255,255,0.8);
-}
-
-.theme-dark .pie-chart-slice[largest] {
-  stroke-width: 2px;
-  stroke: #fff;
-}
-
-.theme-light .pie-chart-slice[largest] {
-  stroke: #000;
-}
-
-.pie-chart-label {
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-
-.theme-dark .pie-chart-label {
-  fill: #000;
-}
-
-.theme-light .pie-chart-label {
-  fill: #fff;
-}
-
-.pie-chart-container[slices="1"] > .pie-chart-slice {
-  stroke-width: 0px;
-}
-
-.pie-chart-slice,
-.pie-chart-label {
-  transition: all 0.1s ease-out;
-}
-
-.pie-chart-slice:not(:hover):not([focused]),
-.pie-chart-slice:not(:hover):not([focused]) + .pie-chart-label {
-  transform: none !important;
-}
-
-/* Charts: Table */
-
-.table-chart-title {
-  padding-bottom: 10px;
-  font-size: 120%;
-  font-weight: 600;
-}
-
-.table-chart-row {
-  margin-top: 1px;
-  cursor: pointer;
-}
-
-.table-chart-grid:hover > .table-chart-row {
-  transition: opacity 0.1s ease-in-out;
-}
-
-.table-chart-grid:not(:hover) > .table-chart-row {
-  transition: opacity 0.2s ease-in-out;
-}
-
-.generic-chart-container:hover > .table-chart-grid:hover > .table-chart-row:not(:hover),
-.generic-chart-container:hover ~ .table-chart-container > .table-chart-grid > .table-chart-row:not([focused]) {
-  opacity: 0.4;
-}
-
-.table-chart-row-box {
-  width: 8px;
-  height: 1.5em;
-  margin-inline-end: 10px;
-}
-
-.table-chart-row-label {
-  width: 8em;
-  padding-inline-end: 6px;
-  cursor: inherit;
-}
-
-.table-chart-totals {
-  margin-top: 8px;
-  padding-top: 6px;
-}
-
-.table-chart-totals {
-  border-top: 1px solid var(--theme-body-color-alt); /* Grey foreground text */
-}
-
-.table-chart-summary-label {
-  font-weight: 600;
-  padding: 1px 0px;
-}
-
-.theme-dark .table-chart-summary-label {
-  color: var(--theme-selection-color);
-}
-
-.theme-light .table-chart-summary-label {
-  color: var(--theme-body-color);
 }
 
 /* Table Widget */
@@ -1282,9 +597,9 @@ widgets.css is overwritten. */
   top: 0;
   width: 100%;
   margin: 0;
-  padding: 5px 0 0 !important;
+  padding: 5px 4px 0 !important;
   color: inherit;
-  text-align: center;
+  text-align: start;
   font-weight: inherit !important;
   border-image: linear-gradient(transparent 15%,
                                 var(--theme-splitter-color) 15%,
@@ -1312,11 +627,11 @@ widgets.css is overwritten. */
 }
 
 .table-widget-column-header[sorted=ascending] {
-  background-image: url("chrome://devtools/skin/images/sort-arrows.svg#ascending");
+  background-image: url("chrome://devtools/skin/images/sort-ascending-arrow.svg");
 }
 
 .table-widget-column-header[sorted=descending] {
-  background-image: url("chrome://devtools/skin/images/sort-arrows.svg#descending");
+  background-image: url("chrome://devtools/skin/images/sort-descending-arrow.svg");
 }
 
 .theme-dark .table-widget-column[readonly] {
@@ -1329,41 +644,6 @@ widgets.css is overwritten. */
 
 .table-widget-body .devtools-side-splitter:last-of-type {
   display: none;
-}
-
-/* Firebug theme support for table widget */
-
-.theme-firebug .devtools-toolbar.table-widget-column-header {
-  font-family: var(--proportional-font-family);
-  color: var(--theme-body-color);
-
-  /* Make sure to override the default Firebug devtools-toolbar height */
-  height: 19px !important;
-
-  /* Make sure to override the dafault .table-widget-column-header font-weight and background */
-  font-weight: bold !important;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.05));
-  background-color: #C8D2DC !important;
-
-  /* Vertically center header label */
-  padding-top: 2px !important;
-}
-
-.theme-firebug .devtools-toolbar.table-widget-column-header[sorted] {
-  background-color: #AAC3DC !important;
-}
-
-.theme-firebug .devtools-toolbar.table-widget-column-header:hover:active {
-  background-image: linear-gradient(rgba(0, 0, 0, 0.1),
-                                    transparent);
-}
-
-.theme-firebug .devtools-toolbar.table-widget-column-header[sorted=descending]:not(:active) {
-  background-image: url(chrome://devtools/skin/images/firebug/arrow-down.svg);
-}
-
-.theme-firebug .devtools-toolbar.table-widget-column-header[sorted=ascending]:not(:active) {
-  background-image: url(chrome://devtools/skin/images/firebug/arrow-up.svg);
 }
 
 /* Cells */
@@ -1435,12 +715,12 @@ widgets.css is overwritten. */
 /* Tree Item */
 
 .tree-widget-container .tree-widget-item {
-  padding: 2px 0px 4px;
+  padding: 4px 0px;
   /* OSX has line-height 14px by default, which causes weird alignment issues
    * because of 20px high icons. thus making line-height consistent with that of
    * windows.
    */
-  line-height: 17px !important;
+  line-height: 16px;
   display: inline-block;
   width: 100%;
   word-break: keep-all; /* To prevent long urls like http://foo.com/bar from
@@ -1460,24 +740,23 @@ widgets.css is overwritten. */
 /* Twisties */
 .tree-widget-item::before {
   content: "";
-  width: 14px;
-  height: 14px;
-  float: left;
-  margin: 3px 2px -3px;
+  width: 16px;
+  height: 16px;
+  float: inline-start;
+  margin: 0 1px;
+  background-image: url("chrome://devtools/skin/images/arrow.svg");
+  background-position: 50% 50%;
   background-repeat: no-repeat;
-  background-image: url("chrome://devtools/skin/images/controls.png");
-  background-size: 56px 28px;
+  background-size: 10px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-dimmed-color);
   cursor: pointer;
-  background-position: -28px -14px;
+  transition: transform 125ms ease;
+  transform: rotate(-90deg);
 }
 
 .tree-widget-item:-moz-locale-dir(rtl)::before {
-  float: right;
-  transform: scaleX(-1);
-}
-
-.theme-light .tree-widget-item:not(.theme-selected)::before {
-  background-position: 0 -14px;
+  transform: rotate(90deg);
 }
 
 .tree-widget-item[empty]::before {
@@ -1485,11 +764,11 @@ widgets.css is overwritten. */
 }
 
 .tree-widget-item[expanded]::before {
-  background-position: -42px -14px;
+  transform: none;
 }
 
-.theme-light .tree-widget-item:not(.theme-selected)[expanded]:before {
-  background-position: -14px -14px;
+.tree-widget-item.theme-selected::before {
+  fill: currentColor;
 }
 
 .tree-widget-item + ul {
@@ -1518,12 +797,6 @@ widgets.css is overwritten. */
   }
   to {
     max-height: 500px;
-  }
-}
-
-@media (min-resolution: 1.1dppx) {
-  .tree-widget-item:before {
-    background-image: url("chrome://devtools/skin/images/controls@2x.png");
   }
 }
 
@@ -1568,43 +841,24 @@ widgets.css is overwritten. */
 
 .tree-widget-item[type]::after {
   content: "";
-  float: left;
+  float: inline-start;
   width: 16px;
-  height: 17px;
+  height: 16px;
   margin-inline-end: 4px;
   background-repeat: no-repeat;
-  background-size: 20px auto;
-  background-position: 0 0;
-  background-size: auto 20px;
-  opacity: 0.75;
-}
-
-.tree-widget-item.theme-selected[type]::after {
-  opacity: 1;
-}
-
-.tree-widget-item:-moz-locale-dir(rtl)::after {
-  float: right;
-}
-
-.theme-light .tree-widget-item.theme-selected[type]::after,
-.theme-dark .tree-widget-item[type]::after {
-  filter: invert(1);
+  background-size: contain;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .tree-widget-item[type="dir"]::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/dir-close.svg);
-  background-position: 2px 0;
-  background-size: auto 16px;
-  width: 20px;
-}
-
-.tree-widget-item[type="dir"][expanded]:not([empty])::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/dir-open.svg);
+  background-image: url(chrome://devtools/skin/images/folder.svg);
 }
 
 .tree-widget-item[type="url"]::after {
-  background-image: url(chrome://devtools/skin/images/filetypes/globe.svg);
-  background-size: auto 18px;
-  width: 18px;
+  background-image: url(chrome://devtools/skin/images/globe.svg);
+}
+
+.tree-widget-item[type="store"]::after {
+  background-image: url(chrome://devtools/skin/images/datastore.svg);
 }

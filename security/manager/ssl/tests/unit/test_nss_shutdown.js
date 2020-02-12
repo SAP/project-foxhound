@@ -6,29 +6,33 @@
 
 // This test attempts to ensure that PSM doesn't deadlock or crash when shutting
 // down NSS while a background thread is attempting to use NSS.
-// Uses test_signed_apps/valid_app_1.zip from test_signed_apps.js.
+// Uses test_signed_apps/app_mf-1_sf-1_p7-1.zip from test_signed_apps.js.
 
 function startAsyncNSSOperation(certdb, appFile) {
   return new Promise((resolve, reject) => {
-    certdb.openSignedAppFileAsync(Ci.nsIX509CertDB.AppXPCShellRoot, appFile,
+    certdb.openSignedAppFileAsync(
+      Ci.nsIX509CertDB.AppXPCShellRoot,
+      appFile,
       function(rv, aZipReader, aSignerCert) {
         // rv will either indicate success (if NSS hasn't been shut down yet) or
         // it will be some error code that varies depending on when NSS got shut
         // down. As such, there's nothing really to check here. Just resolve the
         // promise to continue execution.
         resolve();
-      });
+      }
+    );
   });
 }
 
-add_task(function* () {
+add_task(async function() {
   do_get_profile();
   let psm = Cc["@mozilla.org/psm;1"]
-              .getService(Ci.nsISupports)
-              .QueryInterface(Ci.nsIObserver);
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"]
-                 .getService(Ci.nsIX509CertDB);
-  let appFile = do_get_file("test_signed_apps/valid_app_1.zip");
+    .getService(Ci.nsISupports)
+    .QueryInterface(Ci.nsIObserver);
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  let appFile = do_get_file("test_signed_apps/app_mf-1_sf-1_p7-1.zip");
 
   let promises = [];
   for (let i = 0; i < 25; i++) {
@@ -40,5 +44,5 @@ add_task(function* () {
   for (let i = 0; i < 25; i++) {
     promises.push(startAsyncNSSOperation(certdb, appFile));
   }
-  yield Promise.all(promises);
+  await Promise.all(promises);
 });

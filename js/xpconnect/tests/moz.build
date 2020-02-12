@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 TEST_DIRS += [
+    'marionette',
     'mochitest',
     'chrome',
     'browser',
@@ -24,6 +25,7 @@ TEST_HARNESS_FILES.xpcshell.js.xpconnect.tests.components.js += [
     'components/js/xpctest.manifest',
     'components/js/xpctest_attributes.js',
     'components/js/xpctest_bug809674.js',
+    'components/js/xpctest_cenums.js',
     'components/js/xpctest_interfaces.js',
     'components/js/xpctest_params.js',
     'components/js/xpctest_returncode_child.js',

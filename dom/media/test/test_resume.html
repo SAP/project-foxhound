@@ -3,7 +3,7 @@
 <head>
   <title>Media test: Test resume of server-dropped connections</title>
   <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -21,23 +21,23 @@ function didEnd() {
 }
 
 function didSendCancel() {
-  a.addEventListener("ended", didEnd, false);
+  a.addEventListener("ended", didEnd);
   a.play();
 }
 
 function didSuspend() {
-  a.removeEventListener("suspend", didSuspend, false);
+  a.removeEventListener("suspend", didSuspend);
 
   // Cache must have filled up, or something. Tell the Web server to drop
   // our connection.
-  f.addEventListener("load", didSendCancel, false);
+  f.addEventListener("load", didSendCancel);
   f.src = "cancellable_request.sjs?cancelkey=" + key;
 }
 
 if (!a.canPlayType("audio/wave")) {
   todo(false, "Test requires support for audio/wave");
 } else {
-  a.addEventListener("suspend", didSuspend, false);
+  a.addEventListener("suspend", didSuspend);
   a.src = "cancellable_request.sjs?key=" + key;
   SimpleTest.waitForExplicitFinish();
 }

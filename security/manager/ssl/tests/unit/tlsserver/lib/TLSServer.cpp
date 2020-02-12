@@ -6,7 +6,15 @@
 
 #include <stdio.h>
 #include <string>
+#include <thread>
 #include <vector>
+#include <fstream>
+#include <iostream>
+#ifdef XP_WIN
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
 
 #include "base64.h"
 #include "mozilla/Move.h"
@@ -19,41 +27,38 @@
 #include "prnetdb.h"
 #include "prtime.h"
 #include "ssl.h"
+#include "sslproto.h"
 
-namespace mozilla { namespace test {
+namespace mozilla {
+namespace test {
 
 static const uint16_t LISTEN_PORT = 8443;
 
 DebugLevel gDebugLevel = DEBUG_ERRORS;
 uint16_t gCallbackPort = 0;
 
+const std::string kPEMBegin = "-----BEGIN ";
+const std::string kPEMEnd = "-----END ";
 const char DEFAULT_CERT_NICKNAME[] = "default-ee";
 
-struct Connection
-{
-  PRFileDesc *mSocket;
+struct Connection {
+  PRFileDesc* mSocket;
   char mByte;
 
-  explicit Connection(PRFileDesc *aSocket);
+  explicit Connection(PRFileDesc* aSocket);
   ~Connection();
 };
 
-Connection::Connection(PRFileDesc *aSocket)
-: mSocket(aSocket)
-, mByte(0)
-{}
+Connection::Connection(PRFileDesc* aSocket) : mSocket(aSocket), mByte(0) {}
 
-Connection::~Connection()
-{
+Connection::~Connection() {
   if (mSocket) {
     PR_Close(mSocket);
   }
 }
 
-void
-PrintPRError(const char *aPrefix)
-{
-  const char *err = PR_ErrorToName(PR_GetError());
+void PrintPRError(const char* aPrefix) {
+  const char* err = PR_ErrorToName(PR_GetError());
   if (err) {
     if (gDebugLevel >= DEBUG_ERRORS) {
       fprintf(stderr, "%s: %s\n", aPrefix, err);
@@ -65,156 +70,122 @@ PrintPRError(const char *aPrefix)
   }
 }
 
-template <size_t N>
-SECStatus
-ReadFileToBuffer(const char* basePath, const char* filename, char (&buf)[N])
-{
-  static_assert(N > 0, "input buffer too small for ReadFileToBuffer");
-  if (snprintf(buf, N - 1, "%s/%s", basePath, filename) == 0) {
-    PrintPRError("snprintf failed");
-    return SECFailure;
+// This decodes a PEM file into `item`. The line endings need to be
+// UNIX-style, or there will be cross-platform issues.
+static bool DecodePEMFile(const std::string& filename, SECItem* item) {
+  std::ifstream in(filename);
+  if (in.bad()) {
+    return false;
   }
-  UniquePRFileDesc fd(PR_OpenFile(buf, PR_RDONLY, 0));
-  if (!fd) {
-    PrintPRError("PR_Open failed");
-    return SECFailure;
-  }
-  int32_t fileSize = PR_Available(fd.get());
-  if (fileSize < 0) {
-    PrintPRError("PR_Available failed");
-    return SECFailure;
-  }
-  if (static_cast<size_t>(fileSize) > N - 1) {
-    PR_fprintf(PR_STDERR, "file too large - not reading\n");
-    return SECFailure;
-  }
-  int32_t bytesRead = PR_Read(fd.get(), buf, fileSize);
-  if (bytesRead != fileSize) {
-    PrintPRError("PR_Read failed");
-    return SECFailure;
-  }
-  buf[bytesRead] = 0;
-  return SECSuccess;
-}
 
-SECStatus
-AddKeyFromFile(const char* basePath, const char* filename)
-{
-  const char* PRIVATE_KEY_HEADER = "-----BEGIN PRIVATE KEY-----";
-  const char* PRIVATE_KEY_FOOTER = "-----END PRIVATE KEY-----";
+  char buf[1024];
+  in.getline(buf, sizeof(buf));
+  if (in.bad()) {
+    return false;
+  }
 
-  char buf[16384] = { 0 };
-  SECStatus rv = ReadFileToBuffer(basePath, filename, buf);
-  if (rv != SECSuccess) {
-    return rv;
+  if (strncmp(buf, kPEMBegin.c_str(), kPEMBegin.size()) != 0) {
+    return false;
   }
-  if (strncmp(buf, PRIVATE_KEY_HEADER, strlen(PRIVATE_KEY_HEADER)) != 0) {
-    PR_fprintf(PR_STDERR, "invalid key - not importing\n");
-    return SECFailure;
-  }
-  const char* bufPtr = buf + strlen(PRIVATE_KEY_HEADER);
-  size_t bufLen = strlen(buf);
-  char base64[16384] = { 0 };
-  char* base64Ptr = base64;
-  while (bufPtr < buf + bufLen) {
-    if (strncmp(bufPtr, PRIVATE_KEY_FOOTER, strlen(PRIVATE_KEY_FOOTER)) == 0) {
+
+  std::string value;
+  for (;;) {
+    in.getline(buf, sizeof(buf));
+    if (in.bad()) {
+      return false;
+    }
+
+    if (strncmp(buf, kPEMEnd.c_str(), kPEMEnd.size()) == 0) {
       break;
     }
-    if (*bufPtr != '\r' && *bufPtr != '\n') {
-      *base64Ptr = *bufPtr;
-      base64Ptr++;
-    }
-    bufPtr++;
+
+    value += buf;
   }
 
   unsigned int binLength;
-  UniquePORTString bin(
-    BitwiseCast<char*, unsigned char*>(ATOB_AsciiToData(base64, &binLength)));
+  UniquePORTString bin(BitwiseCast<char*, unsigned char*>(
+      ATOB_AsciiToData(value.c_str(), &binLength)));
   if (!bin || binLength == 0) {
     PrintPRError("ATOB_AsciiToData failed");
+    return false;
+  }
+
+  if (SECITEM_AllocItem(nullptr, item, binLength) == nullptr) {
+    return false;
+  }
+
+  PORT_Memcpy(item->data, bin.get(), binLength);
+  return true;
+}
+
+static SECStatus AddKeyFromFile(const std::string& path,
+                                const std::string& filename) {
+  ScopedAutoSECItem item;
+
+  std::string file = path + "/" + filename;
+  if (!DecodePEMFile(file, &item)) {
     return SECFailure;
   }
-  UniqueSECItem secitem(::SECITEM_AllocItem(nullptr, nullptr, binLength));
-  if (!secitem) {
-    PrintPRError("SECITEM_AllocItem failed");
-    return SECFailure;
-  }
-  PORT_Memcpy(secitem->data, bin.get(), binLength);
+
   UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
   if (!slot) {
     PrintPRError("PK11_GetInternalKeySlot failed");
     return SECFailure;
   }
+
   if (PK11_NeedUserInit(slot.get())) {
     if (PK11_InitPin(slot.get(), nullptr, nullptr) != SECSuccess) {
       PrintPRError("PK11_InitPin failed");
       return SECFailure;
     }
   }
-  SECKEYPrivateKey* privateKey;
-  if (PK11_ImportDERPrivateKeyInfoAndReturnKey(slot.get(), secitem.get(),
-                                               nullptr, nullptr, true, false,
-                                               KU_ALL, &privateKey, nullptr)
-        != SECSuccess) {
+
+  SECKEYPrivateKey* privateKey = nullptr;
+  if (PK11_ImportDERPrivateKeyInfoAndReturnKey(
+          slot.get(), &item, nullptr, nullptr, true, false, KU_ALL, &privateKey,
+          nullptr) != SECSuccess) {
     PrintPRError("PK11_ImportDERPrivateKeyInfoAndReturnKey failed");
     return SECFailure;
   }
+
   SECKEY_DestroyPrivateKey(privateKey);
   return SECSuccess;
 }
 
-SECStatus
-DecodeCertCallback(void* arg, SECItem** certs, int numcerts)
-{
-  if (numcerts != 1) {
-    PR_SetError(SEC_ERROR_LIBRARY_FAILURE, 0);
+static SECStatus AddCertificateFromFile(const std::string& path,
+                                        const std::string& filename) {
+  ScopedAutoSECItem item;
+
+  std::string file = path + "/" + filename;
+  if (!DecodePEMFile(file, &item)) {
     return SECFailure;
   }
 
-  SECItem* certDEROut = static_cast<SECItem*>(arg);
-  return SECITEM_CopyItem(nullptr, certDEROut, *certs);
-}
-
-SECStatus
-AddCertificateFromFile(const char* basePath, const char* filename)
-{
-  char buf[16384] = { 0 };
-  SECStatus rv = ReadFileToBuffer(basePath, filename, buf);
-  if (rv != SECSuccess) {
-    return rv;
-  }
-  ScopedAutoSECItem certDER;
-  rv = CERT_DecodeCertPackage(buf, strlen(buf), DecodeCertCallback, &certDER);
-  if (rv != SECSuccess) {
-    PrintPRError("CERT_DecodeCertPackage failed");
-    return rv;
-  }
-  UniqueCERTCertificate cert(CERT_NewTempCertificate(CERT_GetDefaultCertDB(),
-                                                     &certDER, nullptr, false,
-                                                     true));
+  UniqueCERTCertificate cert(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &item, nullptr, false, true));
   if (!cert) {
     PrintPRError("CERT_NewTempCertificate failed");
     return SECFailure;
   }
+
   UniquePK11SlotInfo slot(PK11_GetInternalKeySlot());
   if (!slot) {
     PrintPRError("PK11_GetInternalKeySlot failed");
     return SECFailure;
   }
   // The nickname is the filename without '.pem'.
-  std::string nickname(filename, strlen(filename) - 4);
-  rv = PK11_ImportCert(slot.get(), cert.get(), CK_INVALID_HANDLE,
-                       nickname.c_str(), false);
+  std::string nickname = filename.substr(0, filename.length() - 4);
+  SECStatus rv = PK11_ImportCert(slot.get(), cert.get(), CK_INVALID_HANDLE,
+                                 nickname.c_str(), false);
   if (rv != SECSuccess) {
     PrintPRError("PK11_ImportCert failed");
     return rv;
   }
+
   return SECSuccess;
 }
 
-SECStatus
-LoadCertificatesAndKeys(const char* basePath)
-{
+SECStatus LoadCertificatesAndKeys(const char* basePath) {
   // The NSS cert DB path could have been specified as "sql:path". Trim off
   // the leading "sql:" if so.
   if (strncmp(basePath, "sql:", 4) == 0) {
@@ -264,9 +235,7 @@ LoadCertificatesAndKeys(const char* basePath)
   return SECSuccess;
 }
 
-SECStatus
-InitializeNSS(const char* nssCertDBDir)
-{
+SECStatus InitializeNSS(const char* nssCertDBDir) {
   // Try initializing an existing DB.
   if (NSS_Init(nssCertDBDir) == SECSuccess) {
     return SECSuccess;
@@ -282,16 +251,14 @@ InitializeNSS(const char* nssCertDBDir)
   return LoadCertificatesAndKeys(nssCertDBDir);
 }
 
-nsresult
-SendAll(PRFileDesc *aSocket, const char *aData, size_t aDataLen)
-{
+nsresult SendAll(PRFileDesc* aSocket, const char* aData, size_t aDataLen) {
   if (gDebugLevel >= DEBUG_VERBOSE) {
     fprintf(stderr, "sending '%s'\n", aData);
   }
 
   while (aDataLen > 0) {
-    int32_t bytesSent = PR_Send(aSocket, aData, aDataLen, 0,
-                                PR_INTERVAL_NO_TIMEOUT);
+    int32_t bytesSent =
+        PR_Send(aSocket, aData, aDataLen, 0, PR_INTERVAL_NO_TIMEOUT);
     if (bytesSent == -1) {
       PrintPRError("PR_Send failed");
       return NS_ERROR_FAILURE;
@@ -304,19 +271,15 @@ SendAll(PRFileDesc *aSocket, const char *aData, size_t aDataLen)
   return NS_OK;
 }
 
-nsresult
-ReplyToRequest(Connection *aConn)
-{
+nsresult ReplyToRequest(Connection* aConn) {
   // For debugging purposes, SendAll can print out what it's sending.
   // So, any strings we give to it to send need to be null-terminated.
-  char buf[2] = { aConn->mByte, 0 };
+  char buf[2] = {aConn->mByte, 0};
   return SendAll(aConn->mSocket, buf, 1);
 }
 
-nsresult
-SetupTLS(Connection *aConn, PRFileDesc *aModelSocket)
-{
-  PRFileDesc *sslSocket = SSL_ImportFD(aModelSocket, aConn->mSocket);
+nsresult SetupTLS(Connection* aConn, PRFileDesc* aModelSocket) {
+  PRFileDesc* sslSocket = SSL_ImportFD(aModelSocket, aConn->mSocket);
   if (!sslSocket) {
     PrintPRError("SSL_ImportFD failed");
     return NS_ERROR_FAILURE;
@@ -332,11 +295,9 @@ SetupTLS(Connection *aConn, PRFileDesc *aModelSocket)
   return NS_OK;
 }
 
-nsresult
-ReadRequest(Connection *aConn)
-{
-  int32_t bytesRead = PR_Recv(aConn->mSocket, &aConn->mByte, 1, 0,
-                              PR_INTERVAL_NO_TIMEOUT);
+nsresult ReadRequest(Connection* aConn) {
+  int32_t bytesRead =
+      PR_Recv(aConn->mSocket, &aConn->mByte, 1, 0, PR_INTERVAL_NO_TIMEOUT);
   if (bytesRead < 0) {
     PrintPRError("PR_Recv failed");
     return NS_ERROR_FAILURE;
@@ -352,9 +313,8 @@ ReadRequest(Connection *aConn)
   return NS_OK;
 }
 
-void
-HandleConnection(PRFileDesc* aSocket, const UniquePRFileDesc& aModelSocket)
-{
+void HandleConnection(PRFileDesc* aSocket,
+                      const UniquePRFileDesc& aModelSocket) {
   Connection conn(aSocket);
   nsresult rv = SetupTLS(&conn, aModelSocket.get());
   if (NS_FAILED(rv)) {
@@ -375,9 +335,7 @@ HandleConnection(PRFileDesc* aSocket, const UniquePRFileDesc& aModelSocket)
 }
 
 // returns 0 on success, non-zero on error
-int
-DoCallback()
-{
+int DoCallback() {
   UniquePRFileDesc socket(PR_NewTCPSocket());
   if (!socket) {
     PrintPRError("PR_NewTCPSocket failed");
@@ -391,12 +349,12 @@ DoCallback()
     return 1;
   }
 
-  const char *request = "GET / HTTP/1.0\r\n\r\n";
+  const char* request = "GET / HTTP/1.0\r\n\r\n";
   SendAll(socket.get(), request, strlen(request));
   char buf[4096];
   memset(buf, 0, sizeof(buf));
-  int32_t bytesRead = PR_Recv(socket.get(), buf, sizeof(buf) - 1, 0,
-                              PR_INTERVAL_NO_TIMEOUT);
+  int32_t bytesRead =
+      PR_Recv(socket.get(), buf, sizeof(buf) - 1, 0, PR_INTERVAL_NO_TIMEOUT);
   if (bytesRead < 0) {
     PrintPRError("PR_Recv failed 1");
     return 1;
@@ -409,11 +367,11 @@ DoCallback()
   return 0;
 }
 
-SECStatus
-ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
-                                /*optional*/ UniqueCERTCertificate* certOut,
-                                /*optional*/ SSLKEAType* keaOut)
-{
+SECStatus ConfigSecureServerWithNamedCert(
+    PRFileDesc* fd, const char* certName,
+    /*optional*/ UniqueCERTCertificate* certOut,
+    /*optional*/ SSLKEAType* keaOut,
+    /*optional*/ SSLExtraServerCertData* extraData) {
   UniqueCERTCertificate cert(PK11_FindCertFromNickname(certName, nullptr));
   if (!cert) {
     PrintPRError("PK11_FindCertFromNickname failed");
@@ -425,7 +383,7 @@ ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
   // testing.
   UniqueCERTCertificateList certList;
   UniqueCERTCertificate issuerCert(
-    CERT_FindCertByName(CERT_GetDefaultCertDB(), &cert->derIssuer));
+      CERT_FindCertByName(CERT_GetDefaultCertDB(), &cert->derIssuer));
   // If we can't find the issuer cert, continue without it.
   if (issuerCert) {
     // Sadly, CERTCertificateList does not have a CERT_NewCertificateList
@@ -438,7 +396,7 @@ ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
       return SECFailure;
     }
     certList.reset(static_cast<CERTCertificateList*>(
-      PORT_ArenaAlloc(arena.get(), sizeof(CERTCertificateList))));
+        PORT_ArenaAlloc(arena.get(), sizeof(CERTCertificateList))));
     if (!certList) {
       PrintPRError("PORT_ArenaAlloc failed");
       return SECFailure;
@@ -447,9 +405,9 @@ ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
     // We also have to manually copy the certificates we care about to the
     // list, because there aren't any utility functions for that either.
     certList->certs = static_cast<SECItem*>(
-      PORT_ArenaAlloc(certList->arena, 2 * sizeof(SECItem)));
-    if (SECITEM_CopyItem(certList->arena, certList->certs, &cert->derCert)
-          != SECSuccess) {
+        PORT_ArenaAlloc(certList->arena, 2 * sizeof(SECItem)));
+    if (SECITEM_CopyItem(certList->arena, certList->certs, &cert->derCert) !=
+        SECSuccess) {
       PrintPRError("SECITEM_CopyItem failed");
       return SECFailure;
     }
@@ -467,49 +425,99 @@ ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
     return SECFailure;
   }
   UniqueSECKEYPrivateKey key(
-    PK11_FindKeyByDERCert(slot.get(), cert.get(), nullptr));
+      PK11_FindKeyByDERCert(slot.get(), cert.get(), nullptr));
   if (!key) {
     PrintPRError("PK11_FindKeyByDERCert failed");
     return SECFailure;
   }
 
-  SSLKEAType certKEA = NSS_FindCertKEAType(cert.get());
+  if (extraData) {
+    SSLExtraServerCertData dataCopy = {ssl_auth_null, nullptr, nullptr,
+                                       nullptr,       nullptr, nullptr};
+    memcpy(&dataCopy, extraData, sizeof(dataCopy));
+    dataCopy.certChain = certList.get();
 
-  if (SSL_ConfigSecureServerWithCertChain(fd, cert.get(), certList.get(),
-                                          key.get(), certKEA) != SECSuccess) {
-    PrintPRError("SSL_ConfigSecureServer failed");
-    return SECFailure;
+    if (SSL_ConfigServerCert(fd, cert.get(), key.get(), &dataCopy,
+                             sizeof(dataCopy)) != SECSuccess) {
+      PrintPRError("SSL_ConfigServerCert failed");
+      return SECFailure;
+    }
+
+  } else {
+    // This is the deprecated setup mechanism, to be cleaned up in Bug 1569222
+    SSLKEAType certKEA = NSS_FindCertKEAType(cert.get());
+    if (SSL_ConfigSecureServerWithCertChain(fd, cert.get(), certList.get(),
+                                            key.get(), certKEA) != SECSuccess) {
+      PrintPRError("SSL_ConfigSecureServer failed");
+      return SECFailure;
+    }
+
+    if (keaOut) {
+      *keaOut = certKEA;
+    }
   }
 
   if (certOut) {
-    *certOut = Move(cert);
+    *certOut = std::move(cert);
   }
 
-  if (keaOut) {
-    *keaOut = certKEA;
-  }
+  SSL_OptionSet(fd, SSL_NO_CACHE, false);
+  SSL_OptionSet(fd, SSL_ENABLE_SESSION_TICKETS, true);
 
   return SECSuccess;
 }
 
-int
-StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
-            void *sniSocketConfigArg)
-{
-  const char *debugLevel = PR_GetEnv("MOZ_TLS_SERVER_DEBUG_LEVEL");
+#ifdef XP_WIN
+using PidType = DWORD;
+constexpr bool IsValidPid(long long pid) {
+  // Excluding `(DWORD)-1` because it is not a valid process ID.
+  // See https://devblogs.microsoft.com/oldnewthing/20040223-00/?p=40503
+  return pid > 0 && pid < std::numeric_limits<PidType>::max();
+}
+#else
+using PidType = pid_t;
+constexpr bool IsValidPid(long long pid) {
+  return pid > 0 && pid <= std::numeric_limits<PidType>::max();
+}
+#endif
+
+PidType ConvertPid(const char* pidStr) {
+  long long pid = strtoll(pidStr, nullptr, 10);
+  if (!IsValidPid(pid)) {
+    return 0;
+  }
+  return static_cast<PidType>(pid);
+}
+
+int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
+                void* sniSocketConfigArg) {
+  if (argc != 3) {
+    fprintf(stderr, "usage: %s <NSS DB directory> <ppid>\n", argv[0]);
+    return 1;
+  }
+  const char* nssCertDBDir = argv[1];
+  PidType ppid = ConvertPid(argv[2]);
+
+  const char* debugLevel = PR_GetEnv("MOZ_TLS_SERVER_DEBUG_LEVEL");
   if (debugLevel) {
     int level = atoi(debugLevel);
     switch (level) {
-      case DEBUG_ERRORS: gDebugLevel = DEBUG_ERRORS; break;
-      case DEBUG_WARNINGS: gDebugLevel = DEBUG_WARNINGS; break;
-      case DEBUG_VERBOSE: gDebugLevel = DEBUG_VERBOSE; break;
+      case DEBUG_ERRORS:
+        gDebugLevel = DEBUG_ERRORS;
+        break;
+      case DEBUG_WARNINGS:
+        gDebugLevel = DEBUG_WARNINGS;
+        break;
+      case DEBUG_VERBOSE:
+        gDebugLevel = DEBUG_VERBOSE;
+        break;
       default:
         PrintPRError("invalid MOZ_TLS_SERVER_DEBUG_LEVEL");
         return 1;
     }
   }
 
-  const char *callbackPort = PR_GetEnv("MOZ_TLS_SERVER_CALLBACK_PORT");
+  const char* callbackPort = PR_GetEnv("MOZ_TLS_SERVER_CALLBACK_PORT");
   if (callbackPort) {
     gCallbackPort = atoi(callbackPort);
   }
@@ -564,6 +572,20 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
     return 1;
   }
 
+  SSLVersionRange range = {0, 0};
+  if (SSL_VersionRangeGet(modelSocket.get(), &range) != SECSuccess) {
+    PrintPRError("SSL_VersionRangeGet failed");
+    return 1;
+  }
+
+  if (range.max < SSL_LIBRARY_VERSION_TLS_1_3) {
+    range.max = SSL_LIBRARY_VERSION_TLS_1_3;
+    if (SSL_VersionRangeSet(modelSocket.get(), &range) != SECSuccess) {
+      PrintPRError("SSL_VersionRangeSet failed");
+      return 1;
+    }
+  }
+
   if (SSL_SNISocketConfigHook(modelSocket.get(), sniSocketConfig,
                               sniSocketConfigArg) != SECSuccess) {
     PrintPRError("SSL_SNISocketConfigHook failed");
@@ -573,8 +595,17 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
   // We have to configure the server with a certificate, but it's not one
   // we're actually going to end up using. In the SNI callback, we pick
   // the right certificate for the connection.
+  //
+  // Provide an empty |extra_data| to force config via SSL_ConfigServerCert.
+  // This is a temporary mechanism to work around inconsistent setting of
+  // |authType| in the deprecated API (preventing the default cert from
+  // being removed in favor of the SNI-selected cert). This may be removed
+  // after Bug 1569222 removes the deprecated mechanism.
+  SSLExtraServerCertData extra_data = {ssl_auth_null, nullptr, nullptr,
+                                       nullptr,       nullptr, nullptr};
   if (ConfigSecureServerWithNamedCert(modelSocket.get(), DEFAULT_CERT_NICKNAME,
-                                      nullptr, nullptr) != SECSuccess) {
+                                      nullptr, nullptr,
+                                      &extra_data) != SECSuccess) {
     return 1;
   }
 
@@ -584,14 +615,43 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
     }
   }
 
+  std::thread([ppid] {
+    if (!ppid) {
+      if (gDebugLevel >= DEBUG_ERRORS) {
+        fprintf(stderr, "invalid ppid\n");
+      }
+      return;
+    }
+#ifdef XP_WIN
+    HANDLE parent = OpenProcess(SYNCHRONIZE, false, ppid);
+    if (!parent) {
+      if (gDebugLevel >= DEBUG_ERRORS) {
+        fprintf(stderr, "OpenProcess failed\n");
+      }
+      return;
+    }
+    WaitForSingleObject(parent, INFINITE);
+    CloseHandle(parent);
+#else
+    while (getppid() == ppid) {
+      sleep(1);
+    }
+#endif
+    if (gDebugLevel >= DEBUG_ERRORS) {
+      fprintf(stderr, "Parent process crashed\n");
+    }
+    exit(1);
+  }).detach();
+
   while (true) {
     PRNetAddr clientAddr;
-    PRFileDesc* clientSocket = PR_Accept(serverSocket.get(), &clientAddr,
-                                         PR_INTERVAL_NO_TIMEOUT);
+    PRFileDesc* clientSocket =
+        PR_Accept(serverSocket.get(), &clientAddr, PR_INTERVAL_NO_TIMEOUT);
     HandleConnection(clientSocket, modelSocket);
   }
 
   return 0;
 }
 
-} } // namespace mozilla::test
+}  // namespace test
+}  // namespace mozilla

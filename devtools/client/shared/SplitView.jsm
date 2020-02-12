@@ -1,13 +1,11 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const Cu = Components.utils;
-const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const {KeyCodes} = require("devtools/client/shared/keycodes");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+const { KeyCodes } = require("devtools/client/shared/keycodes");
 
 this.EXPORTED_SYMBOLS = ["SplitView"];
 
@@ -29,8 +27,7 @@ var bindings = new WeakMap();
  * @param DOMElement aRoot
  * @see appendItem
  */
-this.SplitView = function SplitView(aRoot)
-{
+this.SplitView = function SplitView(aRoot) {
   this._root = aRoot;
   this._controller = aRoot.querySelector(".splitview-controller");
   this._nav = aRoot.querySelector(".splitview-nav");
@@ -40,7 +37,7 @@ this.SplitView = function SplitView(aRoot)
   this._mql = aRoot.ownerDocument.defaultView.matchMedia(LANDSCAPE_MEDIA_QUERY);
 
   // items list focus and search-on-type handling
-  this._nav.addEventListener("keydown", (aEvent) => {
+  this._nav.addEventListener("keydown", aEvent => {
     function getFocusedItemWithin(nav) {
       let node = nav.ownerDocument.activeElement;
       while (node && node.parentNode != nav) {
@@ -50,84 +47,89 @@ this.SplitView = function SplitView(aRoot)
     }
 
     // do not steal focus from inside iframes or textboxes
-    if (aEvent.target.ownerDocument != this._nav.ownerDocument ||
-        aEvent.target.tagName == "input" ||
-        aEvent.target.tagName == "textbox" ||
-        aEvent.target.tagName == "textarea" ||
-        aEvent.target.classList.contains("textbox")) {
+    if (
+      aEvent.target.ownerDocument != this._nav.ownerDocument ||
+      aEvent.target.tagName == "input" ||
+      aEvent.target.tagName == "textarea" ||
+      aEvent.target.classList.contains("textbox")
+    ) {
       return false;
     }
 
     // handle keyboard navigation within the items list
     let newFocusOrdinal;
-    if (aEvent.keyCode == KeyCodes.DOM_VK_PAGE_UP ||
-        aEvent.keyCode == KeyCodes.DOM_VK_HOME) {
+    if (
+      aEvent.keyCode == KeyCodes.DOM_VK_PAGE_UP ||
+      aEvent.keyCode == KeyCodes.DOM_VK_HOME
+    ) {
       newFocusOrdinal = 0;
-    } else if (aEvent.keyCode == KeyCodes.DOM_VK_PAGE_DOWN ||
-               aEvent.keyCode == KeyCodes.DOM_VK_END) {
+    } else if (
+      aEvent.keyCode == KeyCodes.DOM_VK_PAGE_DOWN ||
+      aEvent.keyCode == KeyCodes.DOM_VK_END
+    ) {
       newFocusOrdinal = this._nav.childNodes.length - 1;
     } else if (aEvent.keyCode == KeyCodes.DOM_VK_UP) {
-      newFocusOrdinal = getFocusedItemWithin(this._nav).getAttribute("data-ordinal");
+      newFocusOrdinal = getFocusedItemWithin(this._nav).getAttribute(
+        "data-ordinal"
+      );
       newFocusOrdinal--;
     } else if (aEvent.keyCode == KeyCodes.DOM_VK_DOWN) {
-      newFocusOrdinal = getFocusedItemWithin(this._nav).getAttribute("data-ordinal");
+      newFocusOrdinal = getFocusedItemWithin(this._nav).getAttribute(
+        "data-ordinal"
+      );
       newFocusOrdinal++;
     }
     if (newFocusOrdinal !== undefined) {
       aEvent.stopPropagation();
-      let el = this.getSummaryElementByOrdinal(newFocusOrdinal);
+      const el = this.getSummaryElementByOrdinal(newFocusOrdinal);
       if (el) {
         el.focus();
       }
       return false;
     }
-  }, false);
+  });
 };
 
 SplitView.prototype = {
   /**
-    * Retrieve whether the UI currently has a landscape orientation.
-    *
-    * @return boolean
-    */
-  get isLandscape()
-  {
+   * Retrieve whether the UI currently has a landscape orientation.
+   *
+   * @return boolean
+   */
+  get isLandscape() {
     return this._mql.matches;
   },
 
   /**
-    * Retrieve the root element.
-    *
-    * @return DOMElement
-    */
-  get rootElement()
-  {
+   * Retrieve the root element.
+   *
+   * @return DOMElement
+   */
+  get rootElement() {
     return this._root;
   },
 
   /**
-    * Retrieve the active item's summary element or null if there is none.
-    *
-    * @return DOMElement
-    */
-  get activeSummary()
-  {
+   * Retrieve the active item's summary element or null if there is none.
+   *
+   * @return DOMElement
+   */
+  get activeSummary() {
     return this._activeSummary;
   },
 
   /**
-    * Set the active item's summary element.
-    *
-    * @param DOMElement aSummary
-    */
-  set activeSummary(aSummary)
-  {
+   * Set the active item's summary element.
+   *
+   * @param DOMElement aSummary
+   */
+  set activeSummary(aSummary) {
     if (aSummary == this._activeSummary) {
       return;
     }
 
     if (this._activeSummary) {
-      let binding = bindings.get(this._activeSummary);
+      const binding = bindings.get(this._activeSummary);
 
       if (binding.onHide) {
         binding.onHide(this._activeSummary, binding._details, binding.data);
@@ -141,7 +143,7 @@ SplitView.prototype = {
       return;
     }
 
-    let binding = bindings.get(aSummary);
+    const binding = bindings.get(aSummary);
     aSummary.classList.add("splitview-active");
     binding._details.classList.add("splitview-active");
 
@@ -153,12 +155,11 @@ SplitView.prototype = {
   },
 
   /**
-    * Retrieve the active item's details element or null if there is none.
-    * @return DOMElement
-    */
-  get activeDetails()
-  {
-    let summary = this.activeSummary;
+   * Retrieve the active item's details element or null if there is none.
+   * @return DOMElement
+   */
+  get activeDetails() {
+    const summary = this.activeSummary;
     return summary ? bindings.get(summary)._details : null;
   },
 
@@ -170,8 +171,9 @@ SplitView.prototype = {
    *         Summary element with given ordinal or null if not found.
    * @see appendItem
    */
-  getSummaryElementByOrdinal: function SEC_getSummaryElementByOrdinal(aOrdinal)
-  {
+  getSummaryElementByOrdinal: function SEC_getSummaryElementByOrdinal(
+    aOrdinal
+  ) {
     return this._nav.querySelector("* > li[data-ordinal='" + aOrdinal + "']");
   },
 
@@ -199,9 +201,8 @@ SplitView.prototype = {
    *         Items with a lower ordinal are displayed before those with a
    *         higher ordinal.
    */
-  appendItem: function ASV_appendItem(aSummary, aDetails, aOptions)
-  {
-    let binding = aOptions || {};
+  appendItem: function ASV_appendItem(aSummary, aDetails, aOptions) {
+    const binding = aOptions || {};
 
     binding._summary = aSummary;
     binding._details = aDetails;
@@ -209,10 +210,10 @@ SplitView.prototype = {
 
     this._nav.appendChild(aSummary);
 
-    aSummary.addEventListener("click", (aEvent) => {
+    aSummary.addEventListener("click", aEvent => {
       aEvent.stopPropagation();
       this.activeSummary = aSummary;
-    }, false);
+    });
 
     this._side.appendChild(aDetails);
 
@@ -236,15 +237,15 @@ SplitView.prototype = {
    *         Object with the new DOM elements created for summary and details.
    * @see appendItem
    */
-  appendTemplatedItem: function ASV_appendTemplatedItem(aName, aOptions)
-  {
+  appendTemplatedItem: function ASV_appendTemplatedItem(aName, aOptions) {
     aOptions = aOptions || {};
     let summary = this._root.querySelector("#splitview-tpl-summary-" + aName);
     let details = this._root.querySelector("#splitview-tpl-details-" + aName);
 
     summary = summary.cloneNode(true);
     summary.id = "";
-    if (aOptions.ordinal !== undefined) { // can be zero
+    if (aOptions.ordinal !== undefined) {
+      // can be zero
       summary.style.MozBoxOrdinalGroup = aOptions.ordinal;
       summary.setAttribute("data-ordinal", aOptions.ordinal);
     }
@@ -252,24 +253,23 @@ SplitView.prototype = {
     details.id = "";
 
     this.appendItem(summary, details, aOptions);
-    return {summary: summary, details: details};
+    return { summary: summary, details: details };
   },
 
   /**
-    * Remove an item from the split view.
-    *
-    * @param DOMElement aSummary
-    *        Summary element of the item to remove.
-    */
-  removeItem: function ASV_removeItem(aSummary)
-  {
+   * Remove an item from the split view.
+   *
+   * @param DOMElement aSummary
+   *        Summary element of the item to remove.
+   */
+  removeItem: function ASV_removeItem(aSummary) {
     if (aSummary == this._activeSummary) {
       this.activeSummary = null;
     }
 
-    let binding = bindings.get(aSummary);
-    aSummary.parentNode.removeChild(aSummary);
-    binding._details.parentNode.removeChild(binding._details);
+    const binding = bindings.get(aSummary);
+    aSummary.remove();
+    binding._details.remove();
 
     if (binding.onDestroy) {
       binding.onDestroy(aSummary, binding._details, binding.data);
@@ -279,8 +279,7 @@ SplitView.prototype = {
   /**
    * Remove all items from the split view.
    */
-  removeAll: function ASV_removeAll()
-  {
+  removeAll: function ASV_removeAll() {
     while (this._nav.hasChildNodes()) {
       this.removeItem(this._nav.firstChild);
     }
@@ -296,9 +295,8 @@ SplitView.prototype = {
    * @param string aClassName
    *        One or more space-separated CSS classes.
    */
-  setItemClassName: function ASV_setItemClassName(aSummary, aClassName)
-  {
-    let binding = bindings.get(aSummary);
+  setItemClassName: function ASV_setItemClassName(aSummary, aClassName) {
+    const binding = bindings.get(aSummary);
     let viewSpecific;
 
     viewSpecific = aSummary.className.match(/(splitview\-[\w-]+)/g);

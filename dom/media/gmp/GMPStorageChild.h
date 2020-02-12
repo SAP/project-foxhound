@@ -20,20 +20,17 @@ namespace gmp {
 class GMPChild;
 class GMPStorageChild;
 
-class GMPRecordImpl : public GMPRecord
-{
-public:
+class GMPRecordImpl : public GMPRecord {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPRecordImpl)
 
-  GMPRecordImpl(GMPStorageChild* aOwner,
-                const nsCString& aName,
+  GMPRecordImpl(GMPStorageChild* aOwner, const nsCString& aName,
                 GMPRecordClient* aClient);
 
   // GMPRecord.
   GMPErr Open() override;
   GMPErr Read() override;
-  GMPErr Write(const uint8_t* aData,
-               uint32_t aDataSize) override;
+  GMPErr Write(const uint8_t* aData, uint32_t aDataSize) override;
   GMPErr Close() override;
 
   const nsCString& Name() const { return mName; }
@@ -42,77 +39,58 @@ public:
   void ReadComplete(GMPErr aStatus, const uint8_t* aBytes, uint32_t aLength);
   void WriteComplete(GMPErr aStatus);
 
-private:
+ private:
   ~GMPRecordImpl() {}
   const nsCString mName;
   GMPRecordClient* const mClient;
   GMPStorageChild* const mOwner;
 };
 
-class GMPStorageChild : public PGMPStorageChild
-{
-public:
+class GMPStorageChild : public PGMPStorageChild {
+  friend class PGMPStorageChild;
+
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPStorageChild)
 
   explicit GMPStorageChild(GMPChild* aPlugin);
 
-  GMPErr CreateRecord(const nsCString& aRecordName,
-                      GMPRecord** aOutRecord,
+  GMPErr CreateRecord(const nsCString& aRecordName, GMPRecord** aOutRecord,
                       GMPRecordClient* aClient);
 
   GMPErr Open(GMPRecordImpl* aRecord);
 
   GMPErr Read(GMPRecordImpl* aRecord);
 
-  GMPErr Write(GMPRecordImpl* aRecord,
-               const uint8_t* aData,
+  GMPErr Write(GMPRecordImpl* aRecord, const uint8_t* aData,
                uint32_t aDataSize);
 
   GMPErr Close(const nsCString& aRecordName);
 
-  GMPErr EnumerateRecords(RecvGMPRecordIteratorPtr aRecvIteratorFunc,
-                          void* aUserArg);
-
-private:
+ private:
   bool HasRecord(const nsCString& aRecordName);
   already_AddRefed<GMPRecordImpl> GetRecord(const nsCString& aRecordName);
 
-protected:
+ protected:
   ~GMPStorageChild() {}
 
   // PGMPStorageChild
-  bool RecvOpenComplete(const nsCString& aRecordName,
-                        const GMPErr& aStatus) override;
-  bool RecvReadComplete(const nsCString& aRecordName,
-                        const GMPErr& aStatus,
-                        InfallibleTArray<uint8_t>&& aBytes) override;
-  bool RecvWriteComplete(const nsCString& aRecordName,
-                         const GMPErr& aStatus) override;
-  bool RecvRecordNames(InfallibleTArray<nsCString>&& aRecordNames,
-                       const GMPErr& aStatus) override;
-  bool RecvShutdown() override;
+  mozilla::ipc::IPCResult RecvOpenComplete(const nsCString& aRecordName,
+                                           const GMPErr& aStatus);
+  mozilla::ipc::IPCResult RecvReadComplete(const nsCString& aRecordName,
+                                           const GMPErr& aStatus,
+                                           nsTArray<uint8_t>&& aBytes);
+  mozilla::ipc::IPCResult RecvWriteComplete(const nsCString& aRecordName,
+                                            const GMPErr& aStatus);
+  mozilla::ipc::IPCResult RecvShutdown();
 
-private:
+ private:
   Monitor mMonitor;
   nsRefPtrHashtable<nsCStringHashKey, GMPRecordImpl> mRecords;
   GMPChild* mPlugin;
-
-  struct RecordIteratorContext {
-    explicit RecordIteratorContext(RecvGMPRecordIteratorPtr aFunc,
-                                   void* aUserArg)
-      : mFunc(aFunc)
-      , mUserArg(aUserArg)
-    {}
-    RecordIteratorContext() {}
-    RecvGMPRecordIteratorPtr mFunc;
-    void* mUserArg;
-  };
-
-  std::queue<RecordIteratorContext> mPendingRecordIterators;
   bool mShutdown;
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPStorageChild_h_
+#endif  // GMPStorageChild_h_

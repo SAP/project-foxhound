@@ -11,8 +11,8 @@
 #include <shlobj.h>
 
 #ifndef IDropTargetHelper
-#include <shobjidl.h> // Vista drag image interfaces
-#undef LogSeverity // SetupAPI.h #defines this as DWORD
+#  include <shobjidl.h>  // Vista drag image interfaces
+#  undef LogSeverity     // SetupAPI.h #defines this as DWORD
 #endif
 
 #include "mozilla/Attributes.h"
@@ -26,10 +26,9 @@ class nsIWidget;
  * behavior from the associated adapter (m_dragDrop).
  */
 
-class nsNativeDragTarget final : public IDropTarget
-{
-public:
-  nsNativeDragTarget(nsIWidget * aWidget);
+class nsNativeDragTarget final : public IDropTarget {
+ public:
+  explicit nsNativeDragTarget(nsIWidget* aWidget);
   ~nsNativeDragTarget();
 
   // IUnknown members - see iunknown.h for documentation
@@ -44,34 +43,38 @@ public:
   // in grfKeyState, and the coordinates specified by point. This is
   // called by OLE when a drag enters this object's window (as registered
   // by Initialize).
-  STDMETHODIMP DragEnter(LPDATAOBJECT pSource, DWORD grfKeyState,
-                         POINTL point, DWORD* pEffect);
+  STDMETHODIMP DragEnter(LPDATAOBJECT pSource, DWORD grfKeyState, POINTL point,
+                         DWORD* pEffect);
 
   // Similar to DragEnter except it is called frequently while the drag
   // is over this object's window.
-  STDMETHODIMP DragOver(DWORD grfKeyState, POINTL point, DWORD* pEffect);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP DragOver(DWORD grfKeyState,
+                                                    POINTL point,
+                                                    DWORD* pEffect);
 
   // Release the drag-drop source and put internal state back to the point
   // before the call to DragEnter. This is called when the drag leaves
   // without a drop occurring.
-  STDMETHODIMP DragLeave();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP DragLeave();
 
   // If point is within our region of interest and pSource's data supports
   // one of our formats, get the data and set pEffect according to
   // grfKeyState (DROPEFFECT_MOVE if the control key was not pressed,
   // DROPEFFECT_COPY if the control key was pressed). Otherwise return
   // E_FAIL.
-  STDMETHODIMP Drop(LPDATAOBJECT pSource, DWORD grfKeyState,
-                    POINTL point, DWORD* pEffect);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP Drop(LPDATAOBJECT pSource,
+                                                DWORD grfKeyState, POINTL point,
+                                                DWORD* pEffect);
   /**
    * Cancel the current drag session, if any.
    */
-  void DragCancel();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void DragCancel();
 
-protected:
+  static void DragImageChanged() { gDragImageChanged = true; }
 
-  void GetGeckoDragAction(DWORD grfKeyState, LPDWORD pdwEffect, 
-                          uint32_t * aGeckoAction);
+ protected:
+  void GetGeckoDragAction(DWORD grfKeyState, LPDWORD pdwEffect,
+                          uint32_t* aGeckoAction);
   void ProcessDrag(mozilla::EventMessage aEventMessage, DWORD grfKeyState,
                    POINTL pt, DWORD* pdwEffect);
   void DispatchDragDropEvent(mozilla::EventMessage aEventMessage,
@@ -79,24 +82,23 @@ protected:
   void AddLinkSupportIfCanBeGenerated(LPDATAOBJECT aIDataSource);
 
   // Native Stuff
-  ULONG            m_cRef;      // reference count
-  HWND             mHWnd;
-  DWORD            mEffectsAllowed;
-  DWORD            mEffectsPreferred;
-  bool             mTookOwnRef;
+  ULONG m_cRef;  // reference count
+  HWND mHWnd;
+  DWORD mEffectsAllowed;
+  DWORD mEffectsPreferred;
+  bool mTookOwnRef;
 
   // Gecko Stuff
-  nsIWidget      * mWidget;
-  nsIDragService * mDragService;
-  // Drag target helper 
-  IDropTargetHelper * GetDropTargetHelper();
+  nsIWidget* mWidget;
+  nsIDragService* mDragService;
+  // Drag target helper
+  IDropTargetHelper* GetDropTargetHelper();
 
+ private:
+  // Drag target helper
+  IDropTargetHelper* mDropTargetHelper;
 
-private:
-  // Drag target helper 
-  IDropTargetHelper * mDropTargetHelper;
+  static bool gDragImageChanged;
 };
 
-#endif // _nsNativeDragTarget_h_
-
-
+#endif  // _nsNativeDragTarget_h_

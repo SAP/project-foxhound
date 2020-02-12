@@ -5,13 +5,19 @@
 
 #include "nsIInputStream.idl"
 
+%{C++
+#include "mozilla/MemoryReporting.h"
+%}
+
+native MallocSizeOf(mozilla::MallocSizeOf);
+
 /**
  * nsIStringInputStream
  *
  * Provides scriptable and specialized C++-only methods for initializing a
  * nsIInputStream implementation with a simple character array.
  */
-[scriptable, uuid(450cd2d4-f0fd-424d-b365-b1251f80fd53)]
+[scriptable, builtinclass, uuid(450cd2d4-f0fd-424d-b365-b1251f80fd53)]
 interface nsIStringInputStream : nsIInputStream
 {
     /**
@@ -29,6 +35,16 @@ interface nsIStringInputStream : nsIInputStream
      * from a JS string to a C++ character array.
      */
     void setData(in string data, in long dataLen);
+
+    /**
+     * SetUTF8Data - encode input data to UTF-8 and assign it to the input
+     * stream.
+     *
+     * @param data    - stream data
+     *
+     * NOTE: This method is meant to be used by JS callers,
+     */
+    void setUTF8Data(in AUTF8String data);
 
     /**
      * NOTE: the following methods are designed to give C++ code added control
@@ -54,4 +70,10 @@ interface nsIStringInputStream : nsIInputStream
      * @param dataLen   - stream data length (-1 if length should be computed)
      */
     [noscript] void shareData(in string data, in long dataLen);
+
+    [noscript, notxpcom]
+    size_t SizeOfIncludingThisIfUnshared(in MallocSizeOf aMallocSizeOf);
+
+    [noscript, notxpcom]
+    size_t SizeOfIncludingThisEvenIfShared(in MallocSizeOf aMallocSizeOf);
 };

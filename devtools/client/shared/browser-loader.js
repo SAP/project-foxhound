@@ -3,19 +3,43 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var Cu = Components.utils;
-const loaders = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
-const { devtools } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-const { joinURI } = devtools.require("devtools/shared/path");
-const { assert } = devtools.require("devtools/shared/DevToolsUtils");
-const Services = devtools.require("Services");
-const { AppConstants } = devtools.require("resource://gre/modules/AppConstants.jsm");
+const loaders = ChromeUtils.import("resource://devtools/shared/base-loader.js");
+const { require: devtoolsRequire, loader } = ChromeUtils.import(
+  "resource://devtools/shared/Loader.jsm"
+);
+const flags = devtoolsRequire("devtools/shared/flags");
+const { joinURI } = devtoolsRequire("devtools/shared/path");
+const { assert } = devtoolsRequire("devtools/shared/DevToolsUtils");
+const { AppConstants } = devtoolsRequire(
+  "resource://gre/modules/AppConstants.jsm"
+);
+
+loader.lazyRequireGetter(
+  this,
+  "getMockedModule",
+  "devtools/client/shared/browser-loader-mocks",
+  {}
+);
 
 const BROWSER_BASED_DIRS = [
+  "resource://devtools/client/inspector/boxmodel",
+  "resource://devtools/client/inspector/changes",
+  "resource://devtools/client/inspector/computed",
+  "resource://devtools/client/inspector/events",
+  "resource://devtools/client/inspector/flexbox",
+  "resource://devtools/client/inspector/fonts",
+  "resource://devtools/client/inspector/grids",
+  "resource://devtools/client/inspector/layout",
+  "resource://devtools/client/inspector/markup",
   "resource://devtools/client/jsonview",
-  "resource://devtools/client/shared/vendor",
+  "resource://devtools/client/netmonitor/src/utils",
+  "resource://devtools/client/shared/fluent-l10n",
+  "resource://devtools/client/shared/source-map",
   "resource://devtools/client/shared/redux",
+  "resource://devtools/client/shared/vendor",
 ];
+
+const COMMON_LIBRARY_DIRS = ["resource://devtools/client/shared/vendor"];
 
 // Any directory that matches the following regular expression
 // is also considered as browser based module directory.
@@ -24,12 +48,7 @@ const BROWSER_BASED_DIRS = [
 // An example:
 // * `resource://devtools/client/inspector/components`
 // * `resource://devtools/client/inspector/shared/components`
-const browserBasedDirsRegExp =
-  /^resource\:\/\/devtools\/client\/\S*\/components\//;
-
-function clearCache() {
-  Services.obs.notifyObservers(null, "startupcache-invalidate", null);
-}
+const browserBasedDirsRegExp = /^resource\:\/\/devtools\/client\/\S*\/components\//;
 
 /*
  * Create a loader to be used in a browser environment. This evaluates
@@ -65,7 +84,7 @@ function BrowserLoader(options) {
   const browserLoaderBuilder = new BrowserLoaderBuilder(options);
   return {
     loader: browserLoaderBuilder.loader,
-    require: browserLoaderBuilder.require
+    require: browserLoaderBuilder.require,
   };
 }
 
@@ -80,45 +99,73 @@ function BrowserLoader(options) {
  * @param Boolean useOnlyShared
  *        If true, ignores `baseURI` and only loads the shared
  *        BROWSER_BASED_DIRS via BrowserLoader.
+ * @param Function commonLibRequire
+ *        Require function that should be used to load common libraries, like React.
+ *        Allows for sharing common modules between tools, instead of loading a new
+ *        instance into each tool. For example, pass "toolbox.browserRequire" here.
  */
-function BrowserLoaderBuilder({ baseURI, window, useOnlyShared }) {
-  assert(!!baseURI !== !!useOnlyShared,
-    "Cannot use both `baseURI` and `useOnlyShared`.");
+function BrowserLoaderBuilder({
+  baseURI,
+  window,
+  useOnlyShared,
+  commonLibRequire,
+}) {
+  assert(
+    !!baseURI !== !!useOnlyShared,
+    "Cannot use both `baseURI` and `useOnlyShared`."
+  );
 
-  const loaderOptions = devtools.require("@loader/options");
+  const loaderOptions = devtoolsRequire("@loader/options");
   const dynamicPaths = {};
-  const componentProxies = new Map();
 
-  if (AppConstants.DEBUG || AppConstants.DEBUG_JS_MODULES) {
+  if (AppConstants.DEBUG_JS_MODULES) {
     dynamicPaths["devtools/client/shared/vendor/react"] =
       "resource://devtools/client/shared/vendor/react-dev";
+    dynamicPaths["devtools/client/shared/vendor/react-dom"] =
+      "resource://devtools/client/shared/vendor/react-dom-dev";
+    dynamicPaths["devtools/client/shared/vendor/react-dom-server"] =
+      "resource://devtools/client/shared/vendor/react-dom-server-dev";
+    dynamicPaths["devtools/client/shared/vendor/react-prop-types"] =
+      "resource://devtools/client/shared/vendor/react-prop-types-dev";
+    dynamicPaths["devtools/client/shared/vendor/react-dom-test-utils"] =
+      "resource://devtools/client/shared/vendor/react-dom-test-utils-dev";
   }
 
   const opts = {
-    id: "browser-loader",
-    sharedGlobal: true,
     sandboxPrototype: window,
+    sandboxName: "DevTools (UI loader)",
     paths: Object.assign({}, dynamicPaths, loaderOptions.paths),
     invisibleToDebugger: loaderOptions.invisibleToDebugger,
     requireHook: (id, require) => {
       // If |id| requires special handling, simply defer to devtools
       // immediately.
-      if (devtools.isLoaderPluginId(id)) {
-        return devtools.require(id);
+      if (loader.isLoaderPluginId(id)) {
+        return devtoolsRequire(id);
       }
 
       const uri = require.resolve(id);
-      let isBrowserDir = BROWSER_BASED_DIRS.filter(dir => {
-        return uri.startsWith(dir);
-      }).length > 0;
 
-      // If the URI doesn't match hardcoded paths try the regexp.
-      if (!isBrowserDir) {
-        isBrowserDir = uri.match(browserBasedDirsRegExp) != null;
+      // The mocks can be set from tests using browser-loader-mocks.js setMockedModule().
+      // If there is an entry for a given uri in the `mocks` object, return it instead of
+      // requiring the module.
+      if (flags.testing && getMockedModule(uri)) {
+        return getMockedModule(uri);
       }
 
+      if (
+        commonLibRequire &&
+        COMMON_LIBRARY_DIRS.some(dir => uri.startsWith(dir))
+      ) {
+        return commonLibRequire(uri);
+      }
+
+      // Check if the URI matches one of hardcoded paths or a regexp.
+      const isBrowserDir =
+        BROWSER_BASED_DIRS.some(dir => uri.startsWith(dir)) ||
+        uri.match(browserBasedDirsRegExp) != null;
+
       if ((useOnlyShared || !uri.startsWith(baseURI)) && !isBrowserDir) {
-        return devtools.require(uri);
+        return devtoolsRequire(uri);
       }
 
       return require(uri);
@@ -145,49 +192,20 @@ function BrowserLoaderBuilder({ baseURI, window, useOnlyShared }) {
       },
       // Allow modules to use the DevToolsLoader lazy loading helpers.
       loader: {
-        lazyGetter: devtools.lazyGetter,
-        lazyImporter: devtools.lazyImporter,
-        lazyServiceGetter: devtools.lazyServiceGetter,
+        lazyGetter: loader.lazyGetter,
+        lazyImporter: loader.lazyImporter,
+        lazyServiceGetter: loader.lazyServiceGetter,
         lazyRequireGetter: this.lazyRequireGetter.bind(this),
       },
-    }
+    },
   };
-
-  if (Services.prefs.getBoolPref("devtools.loader.hotreload")) {
-    opts.loadModuleHook = (module, require) => {
-      const { uri, exports } = module;
-
-      if (exports.prototype &&
-          exports.prototype.isReactComponent) {
-        const { createProxy, getForceUpdate } =
-              require("devtools/client/shared/vendor/react-proxy");
-        const React = require("devtools/client/shared/vendor/react");
-
-        if (!componentProxies.get(uri)) {
-          const proxy = createProxy(exports);
-          componentProxies.set(uri, proxy);
-          module.exports = proxy.get();
-        } else {
-          const proxy = componentProxies.get(uri);
-          const instances = proxy.update(exports);
-          instances.forEach(getForceUpdate(React));
-          module.exports = proxy.get();
-        }
-      }
-      return exports;
-    };
-    const watcher = devtools.require("devtools/client/shared/devtools-file-watcher");
-    let onFileChanged = (_, relativePath, path) => {
-      this.hotReloadFile(componentProxies, "resource://devtools/" + relativePath);
-    };
-    watcher.on("file-changed", onFileChanged);
-    window.addEventListener("unload", () => {
-      watcher.off("file-changed", onFileChanged);
-    });
-  }
 
   const mainModule = loaders.Module(baseURI, joinURI(baseURI, "main.js"));
   this.loader = loaders.Loader(opts);
+  // When running tests, expose the BrowserLoader instance for metrics tests.
+  if (flags.testing) {
+    window.getBrowserLoaderForWindow = () => this;
+  }
   this.require = loaders.Require(this.loader, mainModule);
 }
 
@@ -206,27 +224,13 @@ BrowserLoaderBuilder.prototype = {
    * @param Boolean destructure
    *    Pass true if the property name is a member of the module's exports.
    */
-  lazyRequireGetter: function (obj, property, module, destructure) {
-    devtools.lazyGetter(obj, property, () => {
+  lazyRequireGetter: function(obj, property, module, destructure) {
+    loader.lazyGetter(obj, property, () => {
       return destructure
-          ? this.require(module)[property]
-          : this.require(module || property);
+        ? this.require(module)[property]
+        : this.require(module || property);
     });
   },
-
-  hotReloadFile: function (componentProxies, fileURI) {
-    if (fileURI.match(/\.js$/)) {
-      // Test for React proxy components
-      const proxy = componentProxies.get(fileURI);
-      if (proxy) {
-        // Remove the old module and re-require the new one; the require
-        // hook in the loader will take care of the rest
-        delete this.loader.modules[fileURI];
-        clearCache();
-        this.require(fileURI);
-      }
-    }
-  }
 };
 
 this.BrowserLoader = BrowserLoader;

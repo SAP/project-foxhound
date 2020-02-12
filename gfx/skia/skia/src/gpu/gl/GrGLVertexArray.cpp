@@ -6,63 +6,123 @@
  */
 
 #include "GrGLVertexArray.h"
+#include "GrCpuBuffer.h"
 #include "GrGLBuffer.h"
 #include "GrGLGpu.h"
 
 struct AttribLayout {
-    GrGLint     fCount;
-    GrGLenum    fType;
-    GrGLboolean fNormalized;  // Only used by floating point types.
+    bool        fNormalized;  // Only used by floating point types.
+    uint8_t     fCount;
+    uint16_t    fType;
 };
 
-static const AttribLayout gLayouts[kGrVertexAttribTypeCount] = {
-    {1, GR_GL_FLOAT, false},         // kFloat_GrVertexAttribType
-    {2, GR_GL_FLOAT, false},         // kVec2f_GrVertexAttribType
-    {3, GR_GL_FLOAT, false},         // kVec3f_GrVertexAttribType
-    {4, GR_GL_FLOAT, false},         // kVec4f_GrVertexAttribType
-    {1, GR_GL_UNSIGNED_BYTE, true},  // kUByte_GrVertexAttribType
-    {4, GR_GL_UNSIGNED_BYTE, true},  // kVec4ub_GrVertexAttribType
-    {2, GR_GL_UNSIGNED_SHORT, true}, // kVec2s_GrVertexAttribType
-    {1, GR_GL_INT, false},           // kInt_GrVertexAttribType
-    {1, GR_GL_UNSIGNED_INT, false},  // kUint_GrVertexAttribType
-};
+GR_STATIC_ASSERT(4 == sizeof(AttribLayout));
 
-GR_STATIC_ASSERT(0 == kFloat_GrVertexAttribType);
-GR_STATIC_ASSERT(1 == kVec2f_GrVertexAttribType);
-GR_STATIC_ASSERT(2 == kVec3f_GrVertexAttribType);
-GR_STATIC_ASSERT(3 == kVec4f_GrVertexAttribType);
-GR_STATIC_ASSERT(4 == kUByte_GrVertexAttribType);
-GR_STATIC_ASSERT(5 == kVec4ub_GrVertexAttribType);
-GR_STATIC_ASSERT(6 == kVec2us_GrVertexAttribType);
-GR_STATIC_ASSERT(7 == kInt_GrVertexAttribType);
-GR_STATIC_ASSERT(8 == kUint_GrVertexAttribType);
+static AttribLayout attrib_layout(GrVertexAttribType type) {
+    switch (type) {
+        case kFloat_GrVertexAttribType:
+            return {false, 1, GR_GL_FLOAT};
+        case kFloat2_GrVertexAttribType:
+            return {false, 2, GR_GL_FLOAT};
+        case kFloat3_GrVertexAttribType:
+            return {false, 3, GR_GL_FLOAT};
+        case kFloat4_GrVertexAttribType:
+            return {false, 4, GR_GL_FLOAT};
+        case kHalf_GrVertexAttribType:
+            return {false, 1, GR_GL_HALF_FLOAT};
+        case kHalf2_GrVertexAttribType:
+            return {false, 2, GR_GL_HALF_FLOAT};
+        case kHalf3_GrVertexAttribType:
+            return {false, 3, GR_GL_HALF_FLOAT};
+        case kHalf4_GrVertexAttribType:
+            return {false, 4, GR_GL_HALF_FLOAT};
+        case kInt2_GrVertexAttribType:
+            return {false, 2, GR_GL_INT};
+        case kInt3_GrVertexAttribType:
+            return {false, 3, GR_GL_INT};
+        case kInt4_GrVertexAttribType:
+            return {false, 4, GR_GL_INT};
+        case kByte_GrVertexAttribType:
+            return {false, 1, GR_GL_BYTE};
+        case kByte2_GrVertexAttribType:
+            return {false, 2, GR_GL_BYTE};
+        case kByte3_GrVertexAttribType:
+            return {false, 3, GR_GL_BYTE};
+        case kByte4_GrVertexAttribType:
+            return {false, 4, GR_GL_BYTE};
+        case kUByte_GrVertexAttribType:
+            return {false, 1, GR_GL_UNSIGNED_BYTE};
+        case kUByte2_GrVertexAttribType:
+            return {false, 2, GR_GL_UNSIGNED_BYTE};
+        case kUByte3_GrVertexAttribType:
+            return {false, 3, GR_GL_UNSIGNED_BYTE};
+        case kUByte4_GrVertexAttribType:
+            return {false, 4, GR_GL_UNSIGNED_BYTE};
+        case kUByte_norm_GrVertexAttribType:
+            return {true, 1, GR_GL_UNSIGNED_BYTE};
+        case kUByte4_norm_GrVertexAttribType:
+            return {true, 4, GR_GL_UNSIGNED_BYTE};
+        case kShort2_GrVertexAttribType:
+            return {false, 2, GR_GL_SHORT};
+        case kShort4_GrVertexAttribType:
+            return {false, 4, GR_GL_SHORT};
+        case kUShort2_GrVertexAttribType:
+            return {false, 2, GR_GL_UNSIGNED_SHORT};
+        case kUShort2_norm_GrVertexAttribType:
+            return {true, 2, GR_GL_UNSIGNED_SHORT};
+        case kInt_GrVertexAttribType:
+            return {false, 1, GR_GL_INT};
+        case kUint_GrVertexAttribType:
+            return {false, 1, GR_GL_UNSIGNED_INT};
+    }
+    SK_ABORT("Unknown vertex attrib type");
+    return {false, 0, 0};
+};
 
 void GrGLAttribArrayState::set(GrGLGpu* gpu,
                                int index,
-                               const GrGLBuffer* vertexBuffer,
-                               GrVertexAttribType type,
+                               const GrBuffer* vertexBuffer,
+                               GrVertexAttribType cpuType,
+                               GrSLType gpuType,
                                GrGLsizei stride,
-                               GrGLvoid* offset) {
+                               size_t offsetInBytes,
+                               int divisor) {
     SkASSERT(index >= 0 && index < fAttribArrayStates.count());
+    SkASSERT(0 == divisor || gpu->caps()->instanceAttribSupport());
     AttribArrayState* array = &fAttribArrayStates[index];
-    if (!array->fEnableIsValid || !array->fEnabled) {
-        GR_GL_CALL(gpu->glInterface(), EnableVertexAttribArray(index));
-        array->fEnableIsValid = true;
-        array->fEnabled = true;
+    const char* offsetAsPtr;
+    bool bufferChanged = false;
+    if (vertexBuffer->isCpuBuffer()) {
+        if (!array->fUsingCpuBuffer) {
+            bufferChanged = true;
+            array->fUsingCpuBuffer = true;
+        }
+        offsetAsPtr = static_cast<const GrCpuBuffer*>(vertexBuffer)->data() + offsetInBytes;
+    } else {
+        auto gpuBuffer = static_cast<const GrGpuBuffer*>(vertexBuffer);
+        if (array->fUsingCpuBuffer || array->fVertexBufferUniqueID != gpuBuffer->uniqueID()) {
+            bufferChanged = true;
+            array->fVertexBufferUniqueID = gpuBuffer->uniqueID();
+        }
+        offsetAsPtr = reinterpret_cast<const char*>(offsetInBytes);
     }
-    if (array->fVertexBufferUniqueID != vertexBuffer->getUniqueID() ||
-        array->fType != type ||
+    if (bufferChanged ||
+        array->fCPUType != cpuType ||
+        array->fGPUType != gpuType ||
         array->fStride != stride ||
-        array->fOffset != offset) {
-        gpu->bindBuffer(kVertex_GrBufferType, vertexBuffer);
-        const AttribLayout& layout = gLayouts[type];
-        if (!GrVertexAttribTypeIsIntType(type)) {
+        array->fOffset != offsetAsPtr) {
+        // We always have to call this if we're going to change the array pointer. 'array' is
+        // tracking the last buffer used to setup attrib pointers, not the last buffer bound.
+        // GrGLGpu will avoid redundant binds.
+        gpu->bindBuffer(GrGpuBufferType::kVertex, vertexBuffer);
+        const AttribLayout& layout = attrib_layout(cpuType);
+        if (GrSLTypeIsFloatType(gpuType)) {
             GR_GL_CALL(gpu->glInterface(), VertexAttribPointer(index,
                                                                layout.fCount,
                                                                layout.fType,
                                                                layout.fNormalized,
                                                                stride,
-                                                               offset));
+                                                               offsetAsPtr));
         } else {
             SkASSERT(gpu->caps()->shaderCaps()->integerSupport());
             SkASSERT(!layout.fNormalized);
@@ -70,30 +130,53 @@ void GrGLAttribArrayState::set(GrGLGpu* gpu,
                                                                 layout.fCount,
                                                                 layout.fType,
                                                                 stride,
-                                                                offset));
+                                                                offsetAsPtr));
         }
-        array->fVertexBufferUniqueID = vertexBuffer->getUniqueID();
-        array->fType = type;
+        array->fCPUType = cpuType;
+        array->fGPUType = gpuType;
         array->fStride = stride;
-        array->fOffset = offset;
+        array->fOffset = offsetAsPtr;
+    }
+    if (gpu->caps()->instanceAttribSupport() && array->fDivisor != divisor) {
+        SkASSERT(0 == divisor || 1 == divisor); // not necessarily a requirement but what we expect.
+        GR_GL_CALL(gpu->glInterface(), VertexAttribDivisor(index, divisor));
+        array->fDivisor = divisor;
     }
 }
 
-void GrGLAttribArrayState::disableUnusedArrays(const GrGLGpu* gpu, uint64_t usedMask) {
-    int count = fAttribArrayStates.count();
-    for (int i = 0; i < count; ++i) {
-        if (!(usedMask & 0x1)) {
-            if (!fAttribArrayStates[i].fEnableIsValid || fAttribArrayStates[i].fEnabled) {
-                GR_GL_CALL(gpu->glInterface(), DisableVertexAttribArray(i));
-                fAttribArrayStates[i].fEnableIsValid = true;
-                fAttribArrayStates[i].fEnabled = false;
-            }
-        } else {
-            SkASSERT(fAttribArrayStates[i].fEnableIsValid && fAttribArrayStates[i].fEnabled);
+void GrGLAttribArrayState::enableVertexArrays(const GrGLGpu* gpu, int enabledCount,
+                                              GrPrimitiveRestart enablePrimitiveRestart) {
+    SkASSERT(enabledCount <= fAttribArrayStates.count());
+
+    if (!fEnableStateIsValid || enabledCount != fNumEnabledArrays) {
+        int firstIdxToEnable = fEnableStateIsValid ? fNumEnabledArrays : 0;
+        for (int i = firstIdxToEnable; i < enabledCount; ++i) {
+            GR_GL_CALL(gpu->glInterface(), EnableVertexAttribArray(i));
         }
-        // if the count is greater than 64 then this will become 0 and we will disable arrays 64+.
-        usedMask >>= 1;
+
+        int endIdxToDisable = fEnableStateIsValid ? fNumEnabledArrays : fAttribArrayStates.count();
+        for (int i = enabledCount; i < endIdxToDisable; ++i) {
+            GR_GL_CALL(gpu->glInterface(), DisableVertexAttribArray(i));
+        }
+
+        fNumEnabledArrays = enabledCount;
     }
+
+    SkASSERT(GrPrimitiveRestart::kNo == enablePrimitiveRestart ||
+             gpu->caps()->usePrimitiveRestart());
+
+    if (gpu->caps()->usePrimitiveRestart() &&
+        (!fEnableStateIsValid || enablePrimitiveRestart != fPrimitiveRestartEnabled)) {
+        if (GrPrimitiveRestart::kYes == enablePrimitiveRestart) {
+            GR_GL_CALL(gpu->glInterface(), Enable(GR_GL_PRIMITIVE_RESTART_FIXED_INDEX));
+        } else {
+            GR_GL_CALL(gpu->glInterface(), Disable(GR_GL_PRIMITIVE_RESTART_FIXED_INDEX));
+        }
+
+        fPrimitiveRestartEnabled = enablePrimitiveRestart;
+    }
+
+    fEnableStateIsValid = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -112,16 +195,26 @@ GrGLAttribArrayState* GrGLVertexArray::bind(GrGLGpu* gpu) {
     return &fAttribArrays;
 }
 
-GrGLAttribArrayState* GrGLVertexArray::bindWithIndexBuffer(GrGLGpu* gpu, const GrGLBuffer* ibuff) {
+GrGLAttribArrayState* GrGLVertexArray::bindWithIndexBuffer(GrGLGpu* gpu, const GrBuffer* ibuff) {
     GrGLAttribArrayState* state = this->bind(gpu);
-    if (state && fIndexBufferUniqueID != ibuff->getUniqueID()) {
-        GR_GL_CALL(gpu->glInterface(), BindBuffer(GR_GL_ELEMENT_ARRAY_BUFFER, ibuff->bufferID()));
-        fIndexBufferUniqueID = ibuff->getUniqueID();
+    if (!state) {
+        return nullptr;
+    }
+    if (ibuff->isCpuBuffer()) {
+        GR_GL_CALL(gpu->glInterface(), BindBuffer(GR_GL_ELEMENT_ARRAY_BUFFER, 0));
+    } else {
+        const GrGLBuffer* glBuffer = static_cast<const GrGLBuffer*>(ibuff);
+        if (fIndexBufferUniqueID != glBuffer->uniqueID()) {
+            const GrGLBuffer* glBuffer = static_cast<const GrGLBuffer*>(ibuff);
+            GR_GL_CALL(gpu->glInterface(),
+                       BindBuffer(GR_GL_ELEMENT_ARRAY_BUFFER, glBuffer->bufferID()));
+            fIndexBufferUniqueID = glBuffer->uniqueID();
+        }
     }
     return state;
 }
 
 void GrGLVertexArray::invalidateCachedState() {
     fAttribArrays.invalidate();
-    fIndexBufferUniqueID = SK_InvalidUniqueID;
+    fIndexBufferUniqueID.makeInvalid();
 }

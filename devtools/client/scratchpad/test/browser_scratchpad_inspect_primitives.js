@@ -4,46 +4,44 @@
 // Test that inspecting primitive values uses the object inspector, not an
 // inline comment.
 
-var {Task} = require("devtools/shared/task");
-
 function test() {
   const options = {
-    tabContent: "test inspecting primitive values"
+    tabContent: "test inspecting primitive values",
   };
   openTabAndScratchpad(options)
-    .then(Task.async(runTests))
+    .then(runTests)
     .then(finish, console.error);
 }
 
-function* runTests([win, sp]) {
+async function runTests([win, sp]) {
   // Inspect a number.
-  yield checkResults(sp, 7);
+  await checkResults(sp, 7);
 
   // Inspect a string.
-  yield checkResults(sp, "foobar", true);
+  await checkResults(sp, "foobar", true);
 
   // Inspect a boolean.
-  yield checkResults(sp, true);
+  await checkResults(sp, true);
 }
 
 // Helper function that does the actual testing.
-var checkResults = Task.async(function* (sp, value, isString = false) {
+var checkResults = async function(sp, value, isString = false) {
   let sourceValue = value;
   if (isString) {
     sourceValue = '"' + value + '"';
   }
-  let source = "var foobar = " + sourceValue + "; foobar";
+  const source = "var foobar = " + sourceValue + "; foobar";
   sp.setText(source);
-  yield sp.inspect();
+  await sp.inspect();
 
-  let sidebar = sp.sidebar;
+  const sidebar = sp.sidebar;
   ok(sidebar.visible, "sidebar is open");
 
   let found = false;
 
-  outer: for (let scope of sidebar.variablesView) {
-    for (let [, obj] of scope) {
-      for (let [, prop] of obj) {
+  outer: for (const scope of sidebar.variablesView) {
+    for (const [, obj] of scope) {
+      for (const [, prop] of obj) {
         if (prop.name == "value" && prop.value == value) {
           found = true;
           break outer;
@@ -54,8 +52,8 @@ var checkResults = Task.async(function* (sp, value, isString = false) {
 
   ok(found, "found the value of " + value);
 
-  let tabbox = sidebar._sidebar._tabbox;
+  const tabbox = sidebar._sidebar._tabbox;
   ok(!tabbox.hasAttribute("hidden"), "Scratchpad sidebar visible");
   sidebar.hide();
   ok(tabbox.hasAttribute("hidden"), "Scratchpad sidebar hidden");
-});
+};

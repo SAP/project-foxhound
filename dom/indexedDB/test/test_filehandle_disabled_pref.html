@@ -6,14 +6,13 @@
   <head>
     <title>Indexed Database Property Test</title>
 
-    <script type="text/javascript"
-            src="/tests/SimpleTest/SimpleTest.js">
+    <script src="/tests/SimpleTest/SimpleTest.js">
     </script>
 
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 
-    <script type="text/javascript;version=1.7">
-      function testSteps()
+    <script type="text/javascript">
+      function* testSteps()
       {
         const databaseName = window.location.pathname;
         const databaseVersion = 1;
@@ -167,6 +166,7 @@
         event = yield undefined;
 
         try {
+          // eslint-disable-next-line no-unused-vars
           let result = request.result;
           ok(false, "Should have thrown!");
         }
@@ -190,12 +190,11 @@
         yield undefined;
 
         finishTest();
-        yield undefined;
       }
     </script>
 
-    <script type="text/javascript;version=1.7" src="helpers.js"></script>
-    <script type="text/javascript;version=1.7" src="file.js"></script>
+    <script type="text/javascript" src="helpers.js"></script>
+    <script type="text/javascript" src="file.js"></script>
 
   </head>
 

@@ -6,11 +6,10 @@
 
 #include "ColorPickerParent.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIDocument.h"
-#include "nsIDOMWindow.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/TabParent.h"
+#include "mozilla/dom/BrowserParent.h"
 
 using mozilla::Unused;
 using namespace mozilla::dom;
@@ -19,8 +18,7 @@ NS_IMPL_ISUPPORTS(ColorPickerParent::ColorPickerShownCallback,
                   nsIColorPickerShownCallback);
 
 NS_IMETHODIMP
-ColorPickerParent::ColorPickerShownCallback::Update(const nsAString& aColor)
-{
+ColorPickerParent::ColorPickerShownCallback::Update(const nsAString& aColor) {
   if (mColorPickerParent) {
     Unused << mColorPickerParent->SendUpdate(nsString(aColor));
   }
@@ -28,30 +26,25 @@ ColorPickerParent::ColorPickerShownCallback::Update(const nsAString& aColor)
 }
 
 NS_IMETHODIMP
-ColorPickerParent::ColorPickerShownCallback::Done(const nsAString& aColor)
-{
+ColorPickerParent::ColorPickerShownCallback::Done(const nsAString& aColor) {
   if (mColorPickerParent) {
-    Unused << mColorPickerParent->Send__delete__(mColorPickerParent,
-                                                 nsString(aColor));
+    Unused << ColorPickerParent::Send__delete__(mColorPickerParent,
+                                                nsString(aColor));
   }
   return NS_OK;
 }
 
-void
-ColorPickerParent::ColorPickerShownCallback::Destroy()
-{
+void ColorPickerParent::ColorPickerShownCallback::Destroy() {
   mColorPickerParent = nullptr;
 }
 
-bool
-ColorPickerParent::CreateColorPicker()
-{
+bool ColorPickerParent::CreateColorPicker() {
   mPicker = do_CreateInstance("@mozilla.org/colorpicker;1");
   if (!mPicker) {
     return false;
   }
 
-  Element* ownerElement = TabParent::GetFrom(Manager())->GetOwnerElement();
+  Element* ownerElement = BrowserParent::GetFrom(Manager())->GetOwnerElement();
   if (!ownerElement) {
     return false;
   }
@@ -64,23 +57,19 @@ ColorPickerParent::CreateColorPicker()
   return NS_SUCCEEDED(mPicker->Init(window, mTitle, mInitialColor));
 }
 
-bool
-ColorPickerParent::RecvOpen()
-{
+mozilla::ipc::IPCResult ColorPickerParent::RecvOpen() {
   if (!CreateColorPicker()) {
     Unused << Send__delete__(this, mInitialColor);
-    return true;
+    return IPC_OK();
   }
 
   mCallback = new ColorPickerShownCallback(this);
 
   mPicker->Open(mCallback);
-  return true;
+  return IPC_OK();
 };
 
-void
-ColorPickerParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void ColorPickerParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (mCallback) {
     mCallback->Destroy();
   }

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=377947
 -->
 <head>
   <title>Test for Bug 377947</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -59,8 +59,10 @@ var all_but_one = {
   "font-stretch": "normal",
   "font-size-adjust": "none", // has to be default value
   "font-feature-settings": "normal", // has to be default value
+  "font-variation-settings": "normal", // has to be default value
   "font-language-override": "normal", // has to be default value
   "font-kerning": "auto", // has to be default value
+  "font-optical-sizing": "auto", // has to be default value
   "font-synthesis": "weight style", // has to be default value
   "font-variant-alternates": "normal", // has to be default value
   "font-variant-caps": "normal", // has to be default value

@@ -7,23 +7,22 @@
 // runs of genRootCAHashes.js; you should never need to manually edit it
 //***************************************************************************
 
+// Notes:
+// binNumber 1 used to be for "GTE_CyberTrust_Global_Root", but that root was
+// removed from the built-in roots module, so now it is used to indicate that
+// the certificate is not a built-in and was found in the softoken (cert9.db).
+
+// binNumber 2 used to be for "Thawte_Server_CA", but that root was removed from
+// the built-in roots module, so now it is used to indicate that the certificate
+// is not a built-in and was found on an external PKCS#11 token.
+
+// binNumber 3 used to be for "Thawte_Premium_Server_CA", but that root was
+// removed from the built-in roots module, so now it is used to indicate that
+// the certificate is not a built-in and was temporarily imported from the OS as
+// part of the "Enterprise Roots" feature.
+
 {
   "roots": [
-    {
-      "label": "GTE_CyberTrust_Global_Root",
-      "binNumber": 1,
-      "sha256Fingerprint": "pTElGI0hEKqWSwLHt8baMgMXCJTl+3H/+2Zn1eaBCjY="
-    },
-    {
-      "label": "Thawte_Server_CA",
-      "binNumber": 2,
-      "sha256Fingerprint": "tEELc+Lm6spH+8Qvj6QBivQ4HcVM+qhEUEYe7QlFTek="
-    },
-    {
-      "label": "Thawte_Premium_Server_CA",
-      "binNumber": 3,
-      "sha256Fingerprint": "q3A2NlxxVKopwsKfXUGRFjsWKiIlARNX1W0H/6e8H3I="
-    },
     {
       "label": "OU_Equifax_Secure_Certificate_Authority_O_Equifax_C_US",
       "binNumber": 4,
@@ -873,7 +872,192 @@
       "label": "Certum_Trusted_Network_CA_2",
       "binNumber": 173,
       "sha256Fingerprint": "tnby7drod1zTbLD2PNHUYDlh9J5iZboBOi8DB7bQuAQ="
+    },
+    {
+      "label": "Hellenic_Academic_and_Research_Institutions_RootCA_2015",
+      "binNumber": 174,
+      "sha256Fingerprint": "oECSmgLOU7Ss9PL/xpgc5ElvdV5tRf4LKmkrzVJSPzY="
+    },
+    {
+      "label": "Hellenic_Academic_and_Research_Institutions_ECC_RootCA_2015",
+      "binNumber": 175,
+      "sha256Fingerprint": "RLVFqool5lpzyhXcJ/w20kwcuZU6BmU5sRWC3Eh7SDM="
+    },
+    {
+      "label": "Certplus_Root_CA_G1",
+      "binNumber": 176,
+      "sha256Fingerprint": "FSpAK/zfLNVIBU0idbOcf8o+wJeAeLDw6nblYabHQz4="
+    },
+    {
+      "label": "Certplus_Root_CA_G2",
+      "binNumber": 177,
+      "sha256Fingerprint": "bMBQQeZEXnRpbEz7yfgPVDt+q7tEtM5veHxqmXHELxc="
+    },
+    {
+      "label": "OpenTrust_Root_CA_G1",
+      "binNumber": 178,
+      "sha256Fingerprint": "VsdxKNmMGNkbTP3/vCXukQPUdY6iq62CapDzRX1GDrQ="
+    },
+    {
+      "label": "OpenTrust_Root_CA_G2",
+      "binNumber": 179,
+      "sha256Fingerprint": "J5lYKf5qdRXBv+hI+cR2HbFsIlkpJXv0DQiU8p6ouvI="
+    },
+    {
+      "label": "OpenTrust_Root_CA_G3",
+      "binNumber": 180,
+      "sha256Fingerprint": "t8NiMXBugQeMNny4lhmPHjII3ZJpSd2PVwmkEPdbYpI="
+    },
+    {
+      "label": "ISRG_Root_X1",
+      "binNumber": 181,
+      "sha256Fingerprint": "lrzsBiZJdvN0YHeazyjFp8/oo8Cq4RqP/O4FwL3fCMY="
+    },
+    {
+      "label": "OU_AC_RAIZ_FNMT_RCM_O_FNMT_RCM_C_ES",
+      "binNumber": 182,
+      "sha256Fingerprint": "68VXDCkBjE1nsaoSe68S9wO0YR68F7fatVc4lBebk/o="
+    },
+    {
+      "label": "Amazon_Root_CA_1",
+      "binNumber": 183,
+      "sha256Fingerprint": "js3miE89h7ESW6Maw/yxPXAW3n9XzJBP4cuXxq6YGW4="
+    },
+    {
+      "label": "Amazon_Root_CA_2",
+      "binNumber": 184,
+      "sha256Fingerprint": "G6WyqoxlQBqClgEY+AvsT2IwTYPOxHE6GcOcAR6kbbQ="
+    },
+    {
+      "label": "Amazon_Root_CA_3",
+      "binNumber": 185,
+      "sha256Fingerprint": "GM5s/nvxTmCy40e43+hoyzHQLrs62icVafUDQ7Rts6Q="
+    },
+    {
+      "label": "Amazon_Root_CA_4",
+      "binNumber": 186,
+      "sha256Fingerprint": "410oQZ7QICXPppA4zWI5YkWNpcaV+96jwisL+yWJcJI="
+    },
+    {
+      "label": "LuxTrust_Global_Root_2",
+      "binNumber": 187,
+      "sha256Fingerprint": "VEVfcSnCCxRHxBj5lxaPJMWPxQI79dpb4utuHdiQLtU="
+    },
+    {
+      "label": "TUBITAK_Kamu_SM_SSL_Kok_Sertifikasi___Surum_1",
+      "binNumber": 188,
+      "sha256Fingerprint": "Ru3DaJBG1TpFP7MQSrgNyuxliyZg6hYp3X6GeZBkhxY="
+    },
+    {
+      "label": "GDCA_TrustAUTH_R5_ROOT",
+      "binNumber": 189,
+      "sha256Fingerprint": "v/+P0EQzSH1qiqYMGil2ep/Cu7BeQg9xOhO5kokdOJM="
+    },
+    {
+      "label": "TrustCor_RootCert_CA_1",
+      "binNumber": 190,
+      "sha256Fingerprint": "1A6chs2P5GjBd2lZ9J6ndPpUhoS2xAbzkJJh9NziV1w="
+    },
+    {
+      "label": "TrustCor_RootCert_CA_2",
+      "binNumber": 191,
+      "sha256Fingerprint": "B1PpQDeMG9Xjg245Xa6ly4OeUEbxvQ6uGVHPEP7HyWU="
+    },
+    {
+      "label": "TrustCor_ECA_1",
+      "binNumber": 192,
+      "sha256Fingerprint": "WohdsZwB2RLFdZOIk4yvu98DGrLUjpHuFVibQpcdA5w="
+    },
+    {
+      "label": "SSL_com_Root_Certification_Authority_RSA",
+      "binNumber": 193,
+      "sha256Fingerprint": "hWZqVi7gvlzpJcHYiQpvdqh+wW1NfV8p6nQZzyASO2k="
+    },
+    {
+      "label": "SSL_com_Root_Certification_Authority_ECC",
+      "binNumber": 194,
+      "sha256Fingerprint": "NBe7BsxgB9oblhySC4q0zj+tgg5Kowuay8SnTr3OvGU="
+    },
+    {
+      "label": "SSL_com_EV_Root_Certification_Authority_RSA_R2",
+      "binNumber": 195,
+      "sha256Fingerprint": "LnvxbMIkhae74qqGlnUHYbCuOb47L+nQzG1O9zSRQlw="
+    },
+    {
+      "label": "SSL_com_EV_Root_Certification_Authority_ECC",
+      "binNumber": 196,
+      "sha256Fingerprint": "IqLB973tcEzB5wG19AjDEIgP6Va13ipKRPmchzolp8g="
+    },
+    {
+      "label": "GlobalSign",
+      "binNumber": 197,
+      "sha256Fingerprint": "LKvq/jfQbKIqunORwAM9JZgpUsRTZHNJdjo6ta1sz2k="
+    },
+    {
+      "label": "OISTE_WISeKey_Global_Root_GC_CA",
+      "binNumber": 198,
+      "sha256Fingerprint": "hWD5HDYk2rqVcLX+oNvjb/EagyO+lIaFT7PzSlVxGY0="
+    },
+    {
+      "label": "GTS_Root_R1",
+      "binNumber": 199,
+      "sha256Fingerprint": "KldUceMTQLwhWBy9LPE+FYRjID7OlLz508wZa/CaVHI="
+    },
+    {
+      "label": "GTS_Root_R2",
+      "binNumber": 200,
+      "sha256Fingerprint": "xF17sI5tZ+YuQjURC1ZOX3j9ku8FjIQK6k5kVddYXGA="
+    },
+    {
+      "label": "GTS_Root_R3",
+      "binNumber": 201,
+      "sha256Fingerprint": "FdW4d0YZ6n1Uzhym0LDEA+A3qRfxMeigTh5renG6vOU="
+    },
+    {
+      "label": "GTS_Root_R4",
+      "binNumber": 202,
+      "sha256Fingerprint": "ccylOR+eeUsEgCUws2PhIdqKMEO7JmYv6k3Kf8lRpL0="
+    },
+    {
+      "label": "UCA_Global_G2_Root",
+      "binNumber": 203,
+      "sha256Fingerprint": "m+oRyXb+AUdkwb5WpvkUtaVgMXq9mYg5M4LlFhqgSTw="
+    },
+    {
+      "label": "UCA_Extended_Validation_Root",
+      "binNumber": 204,
+      "sha256Fingerprint": "1Dr5s1RzdVyWhPwG19jLcO5cKOdz+ylOtB7nFyKSTSQ="
+    },
+    {
+      "label": "Certigna_Root_CA",
+      "binNumber": 205,
+      "sha256Fingerprint": "1I09I+7bUKRZ5VGXYBwnd0udexjJTVoFlRGhAlC5MWg="
+    },
+    {
+      "label": "emSign_Root_CA___G1",
+      "binNumber": 206,
+      "sha256Fingerprint": "QPavA0apmqHNHVVaTpzOYsf5Y0YD7kBmFYM9yMjQA2c="
+    },
+    {
+      "label": "emSign_ECC_Root_CA___G3",
+      "binNumber": 207,
+      "sha256Fingerprint": "hqHsugicSo07vic0xhK6NB2BPgQ8+eioYs1cV6Nrvms="
+    },
+    {
+      "label": "emSign_Root_CA___C1",
+      "binNumber": 208,
+      "sha256Fingerprint": "ElYJqjAdoKJJuXqCOctqNCFvRNysnzlUsUKS8ujIYI8="
+    },
+    {
+      "label": "emSign_ECC_Root_CA___C3",
+      "binNumber": 209,
+      "sha256Fingerprint": "vE2AmxUYnXjbPh2M9PlyanldoWQ8pfE1jh3bDtwNfrM="
+    },
+    {
+      "label": "Hongkong_Post_Root_CA_3",
+      "binNumber": 210,
+      "sha256Fingerprint": "Wi/APwyDsJC7+kBgSwmIRGx2Nhg9+YRuFxAaRH+479Y="
     }
   ],
-  "maxBin": 173
+  "maxBin": 210
 }

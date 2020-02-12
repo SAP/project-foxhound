@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -8,11 +8,12 @@
  * is selected.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { EVENTS, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu, NetworkDetails } = NetMonitorView;
-  RequestsMenu.lazyUpdate = false;
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+
+  store.dispatch(Actions.batchEnable(false));
 
   info("Performing requests.");
   let wait = waitForNetworkEvents(monitor, 2);
@@ -20,27 +21,39 @@ add_task(function* () {
     "https://example.com" + CORS_SJS_PATH,
     "http://example.com" + CORS_SJS_PATH,
   ];
-  yield ContentTask.spawn(tab.linkedBrowser, REQUEST_URLS, function* (urls) {
-    for (let url of urls) {
+  await ContentTask.spawn(tab.linkedBrowser, REQUEST_URLS, async function(
+    urls
+  ) {
+    for (const url of urls) {
       content.wrappedJSObject.performRequests(1, url);
     }
   });
-  yield wait;
+  await wait;
 
   info("Selecting secure request.");
-  RequestsMenu.selectedIndex = 0;
+  wait = waitForDOM(document, ".tabs");
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
+  await wait;
 
   info("Selecting security tab.");
-  NetworkDetails.widget.selectedIndex = 5;
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelector("#security-tab")
+  );
 
   info("Selecting insecure request.");
-  RequestsMenu.selectedIndex = 1;
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[1]
+  );
 
-  info("Waiting for security tab to be updated.");
-  yield monitor.panelWin.once(EVENTS.NETWORKDETAILSVIEW_POPULATED);
-
-  is(NetworkDetails.widget.selectedIndex, 0,
-    "Selected tab was reset when selected security tab was hidden.");
+  ok(
+    document.querySelector("#headers-tab[aria-selected=true]"),
+    "Selected tab was reset when selected security tab was hidden."
+  );
 
   return teardown(monitor);
 });

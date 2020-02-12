@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
  * Check conditional breakpoint when condition evaluates to true.
@@ -7,55 +10,61 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-conditional-breakpoint");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-conditional-breakpoint", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-conditional-breakpoint", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront = threadFront;
       test_simple_breakpoint();
     });
   });
   do_test_pending();
 }
 
-function test_simple_breakpoint()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    let source = gThreadClient.source(aPacket.frame.where.source);
-    source.setBreakpoint({
-      line: 3,
-      condition: "a === 1"
-    }, function (aResponse, bpClient) {
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        // Check the return value.
-        do_check_eq(aPacket.why.type, "breakpoint");
-        do_check_eq(aPacket.frame.where.line, 3);
+function test_simple_breakpoint() {
+  let hitBreakpoint = false;
 
-        // Remove the breakpoint.
-        bpClient.remove(function (aResponse) {
-          gThreadClient.resume(function () {
-            finishClient(gClient);
-          });
-        });
+  gThreadFront.once("paused", async function(packet) {
+    const source = await getSourceById(gThreadFront, packet.frame.where.actor);
+    const location = { sourceUrl: source.url, line: 3 };
+    gThreadFront.setBreakpoint(location, { condition: "a === 1" });
+    gThreadFront.once("paused", function(packet) {
+      Assert.equal(hitBreakpoint, false);
+      hitBreakpoint = true;
 
+      // Check the return value.
+      Assert.equal(packet.why.type, "breakpoint");
+      Assert.equal(packet.frame.where.line, 3);
+
+      // Remove the breakpoint.
+      gThreadFront.removeBreakpoint(location);
+
+      gThreadFront.resume().then(function() {
+        finishClient(gClient);
       });
-      // Continue until the breakpoint is hit.
-      gThreadClient.resume();
-
     });
 
+    // Continue until the breakpoint is hit.
+    gThreadFront.resume();
   });
 
-  Components.utils.evalInSandbox("debugger;\n" +   // 1
-                                 "var a = 1;\n" +  // 2
-                                 "var b = 2;\n",  // 3
-                                 gDebuggee,
-                                 "1.8",
-                                 "test.js",
-                                 1);
+  /* eslint-disable */
+  Cu.evalInSandbox("debugger;\n" +   // 1
+                   "var a = 1;\n" +  // 2
+                   "var b = 2;\n",  // 3
+                   gDebuggee,
+                   "1.8",
+                   "test.js",
+                   1);
+  /* eslint-enable */
+
+  Assert.equal(hitBreakpoint, true);
 }

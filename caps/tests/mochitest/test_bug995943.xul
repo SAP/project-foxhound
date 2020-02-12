@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
 -->
 <window title="Mozilla Bug 995943"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -17,19 +17,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  const Cu = Components.utils;
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-  Cu.import("resource://gre/modules/Services.jsm");
+  const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
   function debug(msg) { info(msg); }
 
   /** Test for CAPS file:// URI prefs. **/
   SimpleTest.waitForExplicitFinish();
   SimpleTest.requestCompleteLog();
-  if (navigator.userAgent.indexOf("Mac OS X 10.10") != -1)
-    SimpleTest.expectAssertions(5, 9); // See bug 1067022
+  if (navigator.userAgent.includes("Mac OS X 10.10"))
+    SimpleTest.expectAssertions(5, 11); // See bug 1067022, 1307988
   else if (Services.appinfo.OS == "WINNT")
     SimpleTest.expectAssertions(0, 1); // See bug 1067022
+  else
+    SimpleTest.expectAssertions(0, 2); // See bug 1305241
 
   var rootdir = Services.appinfo.OS == "WINNT" ? "file:///C:" : "file:///";
 
@@ -63,7 +62,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
   }
 
   function pushPrefs(prefs) {
-    return new Promise(function(resolve) { SpecialPowers.pushPrefEnv({ set: prefs }, resolve); });
+    return SpecialPowers.pushPrefEnv({ set: prefs });
   }
 
   function popPrefs() {
@@ -72,7 +71,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=995943
 
   var gGoCount = 0;
   function go() {
-    debug("Invoking go for window with id: " + window.getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID);
+    debug("Invoking go for window with id: " + window.windowUtils.currentInnerWindowID);
     is(++gGoCount, 1, "Should only call go once!");
     checkLoadFileURI('http://example.com', false).then(
       pushPrefs.bind(null, [['capability.policy.policynames', ' somepolicy '],

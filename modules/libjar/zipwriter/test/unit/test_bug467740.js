@@ -3,8 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-function run_test()
-{
+function run_test() {
   // In this test we try to open some files that aren't archives:
   //  - An empty file, that is certainly not an archive.
   //  - A file that couldn't be mistaken for archive, since it is too small.
@@ -19,10 +18,17 @@ function run_test()
     // Opening the invalid file should fail (but not crash)
     try {
       zipW.open(invalidFile, PR_RDWR);
-      do_throw("Should have thrown NS_ERROR_FILE_CORRUPTED on " +
-               invalidArchive + " !");
-    } catch (e if (e instanceof Ci.nsIException &&
-                   e.result == Components.results.NS_ERROR_FILE_CORRUPTED)) {
+      do_throw(
+        "Should have thrown NS_ERROR_FILE_CORRUPTED on " + invalidArchive + " !"
+      );
+    } catch (e) {
+      if (
+        !(
+          e instanceof Ci.nsIException && e.result == Cr.NS_ERROR_FILE_CORRUPTED
+        )
+      ) {
+        throw e;
+      }
       // do nothing
     }
   });

@@ -7,8 +7,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=977003
   <meta charset="utf-8">
   <title>Test for Bug 977003</title>
   <meta name="author" content="Maksim Lebedev" />
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
     #target, #listener { background: yellow; }
@@ -46,12 +46,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=977003
       logger("executeTest");
       target = document.getElementById("target");
       listener = document.getElementById("listener");
-      target.addEventListener("pointerdown",          TargetDownHandler, false);
-      listener.addEventListener("gotpointercapture",  ListenerHandler,   false);
-      listener.addEventListener("lostpointercapture", ListenerHandler,   false);
+      target.addEventListener("pointerdown",          TargetDownHandler);
+      listener.addEventListener("gotpointercapture",  ListenerHandler);
+      listener.addEventListener("lostpointercapture", ListenerHandler);
       var rect = target.getBoundingClientRect();
-      synthesizePointer(target, rect.width/2, rect.height/2, {type: "pointerdown"});
-      synthesizePointer(target, rect.width/2, rect.height/2, {type: "pointerup"});
+      synthesizeMouse(target, rect.width/2, rect.height/2, {type: "mousedown"});
+      synthesizeMouse(target, rect.width/2, rect.height/2, {type: "mouseup"});
       finishTest();
     }
     function finishTest() {

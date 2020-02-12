@@ -2,33 +2,42 @@
 <head>
 <title>cookie blocking test</title>
 
-<script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
 <script type="text/javascript">
 
 function startTest()
 {
-  try {
-    localStorage.setItem("blocked", "blockedvalue");
-    ok(false, "Exception for localStorage.setItem, ACCESS_DENY");
-  }
-  catch (ex) {
-    ok(true, "Exception for localStorage.setItem, ACCESS_DENY");
-  }
+  // Let's use a new window to have the cookie permission applied.
+  let w = window.open("windowProxy.html");
+  w.onload = _ => {
+    try {
+      w.localStorage.setItem("blocked", "blockedvalue");
+      ok(false, "Exception for localStorage.setItem, ACCESS_DENY");
+    }
+    catch (ex) {
+      ok(true, "Exception for localStorage.setItem, ACCESS_DENY");
+    }
 
-  try {
-    localStorage.getItem("blocked");
-    ok(false, "Exception for localStorage.getItem, ACCESS_DENY");
-  }
-  catch (ex) {
-    ok(true, "Exception for localStorage.getItem, ACCESS_DENY");
-  }
+    try {
+      w.localStorage.getItem("blocked");
+      ok(false, "Exception for localStorage.getItem, ACCESS_DENY");
+    }
+    catch (ex) {
+      ok(true, "Exception for localStorage.getItem, ACCESS_DENY");
+    }
 
-  SimpleTest.finish();
+    w.close();
+    SimpleTest.finish();
+  }
 }
 
 SimpleTest.waitForExplicitFinish();
+
+// Initialize storage before setting the cookie, otherwise we won't be testing
+// the checks in setItem/getItem methods.
+var storage = localStorage;
 
 SpecialPowers.pushPermissions([{'type': 'cookie', 'allow': false, 'context': document}], startTest);
 

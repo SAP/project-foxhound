@@ -7,31 +7,27 @@
  * http://dev.w3.org/csswg/cssom/
  */
 
-interface CSSRule;
-
+ // Because of getComputedStyle, many CSSStyleDeclaration objects can be
+ // short-living.
+[ProbablyShortLivingWrapper,
+ Exposed=Window]
 interface CSSStyleDeclaration {
-  [SetterThrows]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
   attribute DOMString cssText;
 
   readonly attribute unsigned long length;
   getter DOMString item(unsigned long index);
 
+  [Throws, ChromeOnly]
+  sequence<DOMString> getCSSImageURLs(DOMString property);
+
   [Throws]
   DOMString getPropertyValue(DOMString property);
-  // Mozilla extension, sort of
-  [Throws]
-  CSSValue? getPropertyCSSValue(DOMString property);
   DOMString getPropertyPriority(DOMString property);
-  [Throws]
-  void setProperty(DOMString property, [TreatNullAs=EmptyString] DOMString value, [TreatNullAs=EmptyString] optional DOMString priority = "");
-  [Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
+  void setProperty(DOMString property, [TreatNullAs=EmptyString] DOMString value, optional [TreatNullAs=EmptyString] DOMString priority = "");
+  [CEReactions, Throws]
   DOMString removeProperty(DOMString property);
 
   readonly attribute CSSRule? parentRule;
-};
-
-// Mozilla extensions
-partial interface CSSStyleDeclaration {
-  [ChromeOnly,Throws]
-  DOMString getAuthoredPropertyValue(DOMString property);
 };

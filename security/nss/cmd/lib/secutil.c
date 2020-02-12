@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <limits.h>
 
 #ifdef XP_UNIX
 #include <unistd.h>
@@ -32,7 +33,7 @@
 #include "certt.h"
 #include "certdb.h"
 
-/* #include "secmod.h" */
+#include "secmod.h"
 #include "pk11func.h"
 #include "secoid.h"
 
@@ -53,6 +54,10 @@ static char consoleName[] = {
 #include "sslproto.h"
 
 static PRBool utf8DisplayEnabled = PR_FALSE;
+
+/* The minimum password/pin length (in Unicode characters) in FIPS mode,
+ * defined in lib/softoken/pkcs11i.h. */
+#define FIPS_MIN_PIN 7
 
 void
 SECU_EnableUtf8Display(PRBool enable)
@@ -236,7 +241,8 @@ SECU_GetModulePassword(PK11SlotInfo *slot, PRBool retry, void *arg)
             sprintf(prompt,
                     "Press Enter, then enter PIN for \"%s\" on external device.\n",
                     PK11_GetTokenName(slot));
-            (void)SECU_GetPasswordString(NULL, prompt);
+            char *pw = SECU_GetPasswordString(NULL, prompt);
+            PORT_Free(pw);
         /* Fall Through */
         case PW_PLAINTEXT:
             return PL_strdup(pwdata->data);
@@ -276,10 +282,25 @@ secu_InitSlotPassword(PK11SlotInfo *slot, PRBool retry, void *arg)
     }
 
     /* we have no password, so initialize database with one */
-    PR_fprintf(PR_STDERR,
-               "Enter a password which will be used to encrypt your keys.\n"
-               "The password should be at least 8 characters long,\n"
-               "and should contain at least one non-alphabetic character.\n\n");
+    if (PK11_IsFIPS()) {
+        PR_fprintf(PR_STDERR,
+                   "Enter a password which will be used to encrypt your keys.\n"
+                   "The password should be at least %d characters long,\n"
+                   "and should consist of at least three character classes.\n"
+                   "The available character classes are: digits (0-9), ASCII\n"
+                   "lowercase letters, ASCII uppercase letters, ASCII\n"
+                   "non-alphanumeric characters, and non-ASCII characters.\n\n"
+                   "If an ASCII uppercase letter appears at the beginning of\n"
+                   "the password, it is not counted toward its character class.\n"
+                   "Similarly, if a digit appears at the end of the password,\n"
+                   "it is not counted toward its character class.\n\n",
+                   FIPS_MIN_PIN);
+    } else {
+        PR_fprintf(PR_STDERR,
+                   "Enter a password which will be used to encrypt your keys.\n"
+                   "The password should be at least 8 characters long,\n"
+                   "and should contain at least one non-alphabetic character.\n\n");
+    }
 
     output = fopen(consoleName, "w");
     if (output == NULL) {
@@ -463,48 +484,6 @@ SECU_ConfigDirectory(const char *base)
 
     initted = PR_TRUE;
     return buf;
-}
-
-/*Turn off SSL for now */
-/* This gets called by SSL when server wants our cert & key */
-int
-SECU_GetClientAuthData(void *arg, PRFileDesc *fd,
-                       struct CERTDistNamesStr *caNames,
-                       struct CERTCertificateStr **pRetCert,
-                       struct SECKEYPrivateKeyStr **pRetKey)
-{
-    SECKEYPrivateKey *key;
-    CERTCertificate *cert;
-    int errsave;
-
-    if (arg == NULL) {
-        fprintf(stderr, "no key/cert name specified for client auth\n");
-        return -1;
-    }
-    cert = PK11_FindCertFromNickname(arg, NULL);
-    errsave = PORT_GetError();
-    if (!cert) {
-        if (errsave == SEC_ERROR_BAD_PASSWORD)
-            fprintf(stderr, "Bad password\n");
-        else if (errsave > 0)
-            fprintf(stderr, "Unable to read cert (error %d)\n", errsave);
-        else if (errsave == SEC_ERROR_BAD_DATABASE)
-            fprintf(stderr, "Unable to get cert from database (%d)\n", errsave);
-        else
-            fprintf(stderr, "SECKEY_FindKeyByName: internal error %d\n", errsave);
-        return -1;
-    }
-
-    key = PK11_FindKeyByAnyCert(arg, NULL);
-    if (!key) {
-        fprintf(stderr, "Unable to get key (%d)\n", PORT_GetError());
-        return -1;
-    }
-
-    *pRetCert = cert;
-    *pRetKey = key;
-
-    return 0;
 }
 
 SECStatus
@@ -991,7 +970,7 @@ secu_PrintUniversalString(FILE *out, const SECItem *i, const char *m, int level)
     for (s = my.data, d = tmp.data; len > 0; len--) {
         PRUint32 bmpChar = (s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3];
         s += 4;
-        if (!isprint(bmpChar))
+        if (!isprint(bmpChar & 0xFF))
             goto loser;
         *d++ = (unsigned char)bmpChar;
     }
@@ -1129,36 +1108,33 @@ typedef struct secuPBEParamsStr {
 SEC_ASN1_MKSUB(SECOID_AlgorithmIDTemplate)
 
 /* SECOID_PKCS5_PBKDF2 */
-const SEC_ASN1Template secuKDF2Params[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
-      { SEC_ASN1_OCTET_STRING, offsetof(secuPBEParams, salt) },
-      { SEC_ASN1_INTEGER, offsetof(secuPBEParams, iterationCount) },
-      { SEC_ASN1_INTEGER, offsetof(secuPBEParams, keyLength) },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, kdfAlg),
-        SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template secuKDF2Params[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
+    { SEC_ASN1_OCTET_STRING, offsetof(secuPBEParams, salt) },
+    { SEC_ASN1_INTEGER, offsetof(secuPBEParams, iterationCount) },
+    { SEC_ASN1_INTEGER, offsetof(secuPBEParams, keyLength) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, kdfAlg),
+      SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
+    { 0 }
+};
 
 /* PKCS5v1 & PKCS12 */
-const SEC_ASN1Template secuPBEParamsTemp[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
-      { SEC_ASN1_OCTET_STRING, offsetof(secuPBEParams, salt) },
-      { SEC_ASN1_INTEGER, offsetof(secuPBEParams, iterationCount) },
-      { 0 }
-    };
+const SEC_ASN1Template secuPBEParamsTemp[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
+    { SEC_ASN1_OCTET_STRING, offsetof(secuPBEParams, salt) },
+    { SEC_ASN1_INTEGER, offsetof(secuPBEParams, iterationCount) },
+    { 0 }
+};
 
 /* SEC_OID_PKCS5_PBES2, SEC_OID_PKCS5_PBMAC1 */
-const SEC_ASN1Template secuPBEV2Params[] =
-    {
-      { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, kdfAlg),
-        SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
-      { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, cipherAlg),
-        SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
-      { 0 }
-    };
+const SEC_ASN1Template secuPBEV2Params[] = {
+    { SEC_ASN1_SEQUENCE, 0, NULL, sizeof(secuPBEParams) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, kdfAlg),
+      SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
+    { SEC_ASN1_INLINE | SEC_ASN1_XTRN, offsetof(secuPBEParams, cipherAlg),
+      SEC_ASN1_SUB(SECOID_AlgorithmIDTemplate) },
+    { 0 }
+};
 
 void
 secu_PrintRSAPSSParams(FILE *out, SECItem *value, char *m, int level)
@@ -1215,7 +1191,7 @@ secu_PrintRSAPSSParams(FILE *out, SECItem *value, char *m, int level)
             SECU_Indent(out, level + 1);
             fprintf(out, "Salt length: default, %i (0x%2X)\n", 20, 20);
         } else {
-            SECU_PrintInteger(out, &param.saltLength, "Salt Length", level + 1);
+            SECU_PrintInteger(out, &param.saltLength, "Salt length", level + 1);
         }
     } else {
         SECU_Indent(out, level + 1);
@@ -1335,15 +1311,12 @@ SECU_PrintAlgorithmID(FILE *out, SECAlgorithmID *a, char *m, int level)
         return;
     }
 
-    if (algtag == SEC_OID_PKCS1_RSA_PSS_SIGNATURE) {
-        secu_PrintRSAPSSParams(out, &a->parameters, "Parameters", level + 1);
-        return;
-    }
-
     if (a->parameters.len == 0 ||
         (a->parameters.len == 2 &&
          PORT_Memcmp(a->parameters.data, "\005\000", 2) == 0)) {
         /* No arguments or NULL argument */
+    } else if (algtag == SEC_OID_PKCS1_RSA_PSS_SIGNATURE) {
+        secu_PrintRSAPSSParams(out, &a->parameters, "Parameters", level + 1);
     } else {
         /* Print args to algorithm */
         SECU_PrintAsHex(out, &a->parameters, "Args", level + 1);
@@ -1390,7 +1363,6 @@ secu_PrintAttribute(FILE *out, SEC_PKCS7Attribute *attr, char *m, int level)
     }
 }
 
-#ifndef NSS_DISABLE_ECC
 static void
 secu_PrintECPublicKey(FILE *out, SECKEYPublicKey *pk, char *m, int level)
 {
@@ -1409,7 +1381,6 @@ secu_PrintECPublicKey(FILE *out, SECKEYPublicKey *pk, char *m, int level)
         SECU_PrintObjectID(out, &curveOID, "Curve", level + 1);
     }
 }
-#endif /* NSS_DISABLE_ECC */
 
 void
 SECU_PrintRSAPublicKey(FILE *out, SECKEYPublicKey *pk, char *m, int level)
@@ -1457,11 +1428,9 @@ secu_PrintSubjectPublicKeyInfo(FILE *out, PLArenaPool *arena,
                 SECU_PrintDSAPublicKey(out, pk, "DSA Public Key", level + 1);
                 break;
 
-#ifndef NSS_DISABLE_ECC
             case ecKey:
                 secu_PrintECPublicKey(out, pk, "EC Public Key", level + 1);
                 break;
-#endif
 
             case dhKey:
             case fortezzaKey:
@@ -1557,9 +1526,9 @@ SECU_PrintDumpDerIssuerAndSerial(FILE *out, SECItem *der, char *m,
         unsigned int i;
         for (i = 0; i < c->serialNumber.len; ++i) {
             unsigned char *chardata = (unsigned char *)(c->serialNumber.data);
-            unsigned char c = *(chardata + i);
+            unsigned char ch = *(chardata + i);
 
-            fprintf(out, "\\x%02x", c);
+            fprintf(out, "\\x%02x", ch);
         }
         fprintf(out, "\" }\n");
     }
@@ -2328,8 +2297,9 @@ SECU_PrintCertAttributes(FILE *out, CERTAttribute **attrs, char *m, int level)
     return rv;
 }
 
-int /* sometimes a PRErrorCode, other times a SECStatus.  Sigh. */
-    SECU_PrintCertificateRequest(FILE *out, SECItem *der, char *m, int level)
+/* sometimes a PRErrorCode, other times a SECStatus.  Sigh. */
+int
+SECU_PrintCertificateRequest(FILE *out, SECItem *der, char *m, int level)
 {
     PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     CERTCertificateRequest *cr;
@@ -3166,7 +3136,7 @@ typedef enum {
 static int
 secu_PrintSignedDataSigOpt(FILE *out, SECItem *der, const char *m,
                            int level, SECU_PPFunc inner,
-                           SignatureOptionType withSignature)
+                           SignatureOptionType signatureOption)
 {
     PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     CERTSignedData *sd;
@@ -3193,7 +3163,7 @@ secu_PrintSignedDataSigOpt(FILE *out, SECItem *der, const char *m,
     }
     rv = (*inner)(out, &sd->data, "Data", level + 1);
 
-    if (withSignature) {
+    if (signatureOption == withSignature) {
         SECU_PrintAlgorithmID(out, &sd->signatureAlgorithm, "Signature Algorithm",
                               level + 1);
         DER_ConvertBitString(&sd->signature);
@@ -3229,6 +3199,10 @@ SEC_PrintCertificateAndTrust(CERTCertificate *cert,
     SECStatus rv;
     SECItem data;
     CERTCertTrust certTrust;
+    PK11SlotList *slotList;
+    PRBool falseAttributeFound = PR_FALSE;
+    PRBool trueAttributeFound = PR_FALSE;
+    const char *moz_policy_ca_info = NULL;
 
     data.data = cert->derCert.data;
     data.len = cert->derCert.len;
@@ -3238,12 +3212,61 @@ SEC_PrintCertificateAndTrust(CERTCertificate *cert,
     if (rv) {
         return (SECFailure);
     }
+
+    slotList = PK11_GetAllSlotsForCert(cert, NULL);
+    if (slotList) {
+        PK11SlotListElement *se = PK11_GetFirstSafe(slotList);
+        for (; se; se = PK11_GetNextSafe(slotList, se, PR_FALSE)) {
+            CK_OBJECT_HANDLE handle = PK11_FindCertInSlot(se->slot, cert, NULL);
+            if (handle != CK_INVALID_HANDLE) {
+                PORT_SetError(0);
+                if (PK11_HasAttributeSet(se->slot, handle,
+                                         CKA_NSS_MOZILLA_CA_POLICY, PR_FALSE)) {
+                    trueAttributeFound = PR_TRUE;
+                } else if (!PORT_GetError()) {
+                    falseAttributeFound = PR_TRUE;
+                }
+            }
+        }
+        PK11_FreeSlotList(slotList);
+    }
+
+    if (trueAttributeFound) {
+        moz_policy_ca_info = "true (attribute present)";
+    } else if (falseAttributeFound) {
+        moz_policy_ca_info = "false (attribute present)";
+    } else {
+        moz_policy_ca_info = "false (attribute missing)";
+    }
+    SECU_Indent(stdout, 1);
+    printf("Mozilla-CA-Policy: %s\n", moz_policy_ca_info);
+
     if (trust) {
         SECU_PrintTrustFlags(stdout, trust,
                              "Certificate Trust Flags", 1);
     } else if (CERT_GetCertTrust(cert, &certTrust) == SECSuccess) {
         SECU_PrintTrustFlags(stdout, &certTrust,
                              "Certificate Trust Flags", 1);
+    }
+
+    /* The distrust fields are hard-coded in nssckbi and read-only.
+     * If verifying some cert, with vfychain, for instance, the certificate may
+     * not have a defined slot if not imported. */
+    if (cert->slot != NULL && cert->distrust != NULL) {
+        const unsigned int kDistrustFieldSize = 13;
+        fprintf(stdout, "\n");
+        SECU_Indent(stdout, 1);
+        fprintf(stdout, "%s:\n", "Certificate Distrust Dates");
+        if (cert->distrust->serverDistrustAfter.len == kDistrustFieldSize) {
+            SECU_PrintTimeChoice(stdout,
+                                 &cert->distrust->serverDistrustAfter,
+                                 "Server Distrust After", 2);
+        }
+        if (cert->distrust->emailDistrustAfter.len == kDistrustFieldSize) {
+            SECU_PrintTimeChoice(stdout,
+                                 &cert->distrust->emailDistrustAfter,
+                                 "E-mail Distrust After", 2);
+        }
     }
 
     printf("\n");
@@ -3581,44 +3604,6 @@ loser:
     return rv;
 }
 
-#if 0
-
-/* we need access to the private function cert_FindExtension for this code to work */
-
-CERTAuthKeyID *
-SECU_FindCRLAuthKeyIDExten (PLArenaPool *arena, CERTSignedCrl *scrl)
-{
-    SECItem encodedExtenValue;
-    SECStatus rv;
-    CERTAuthKeyID *ret;
-    CERTCrl* crl;
-
-    if (!scrl) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return NULL;
-    }
-
-    crl = &scrl->crl;
-
-    encodedExtenValue.data = NULL;
-    encodedExtenValue.len = 0;
-
-    rv = cert_FindExtension(crl->extensions, SEC_OID_X509_AUTH_KEY_ID,
-                            &encodedExtenValue);
-    if ( rv != SECSuccess ) {
-        return (NULL);
-    }
-
-    ret = CERT_DecodeAuthKeyID (arena, &encodedExtenValue);
-
-    PORT_Free(encodedExtenValue.data);
-    encodedExtenValue.data = NULL;
-
-    return(ret);
-}
-
-#endif
-
 /*
  * Find the issuer of a Crl.  Use the authorityKeyID if it exists.
  */
@@ -3692,7 +3677,7 @@ SECU_FindCertByNicknameOrFilename(CERTCertDBHandle *handle,
                                   void *pwarg)
 {
     CERTCertificate *the_cert;
-    the_cert = CERT_FindCertByNicknameOrEmailAddr(handle, name);
+    the_cert = CERT_FindCertByNicknameOrEmailAddrCX(handle, name, pwarg);
     if (the_cert) {
         return the_cert;
     }
@@ -3833,45 +3818,344 @@ SECU_ParseSSLVersionRangeString(const char *input,
     return SECSuccess;
 }
 
-SECItem *
-SECU_HexString2SECItem(PLArenaPool *arena, SECItem *item, const char *str)
+static SSLNamedGroup
+groupNameToNamedGroup(char *name)
 {
-    int i = 0;
-    int byteval = 0;
-    int tmp = PORT_Strlen(str);
-
-    PORT_Assert(arena);
-    PORT_Assert(item);
-
-    if ((tmp % 2) != 0) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return NULL;
-    }
-
-    item = SECITEM_AllocItem(arena, item, tmp / 2);
-    if (item == NULL) {
-        return NULL;
-    }
-
-    while (str[i]) {
-        if ((str[i] >= '0') && (str[i] <= '9')) {
-            tmp = str[i] - '0';
-        } else if ((str[i] >= 'a') && (str[i] <= 'f')) {
-            tmp = str[i] - 'a' + 10;
-        } else if ((str[i] >= 'A') && (str[i] <= 'F')) {
-            tmp = str[i] - 'A' + 10;
-        } else {
-            /* item is in arena and gets freed by the caller */
-            return NULL;
+    if (PL_strlen(name) == 4) {
+        if (!strncmp(name, "P256", 4)) {
+            return ssl_grp_ec_secp256r1;
         }
-
-        byteval = byteval * 16 + tmp;
-        if ((i % 2) != 0) {
-            item->data[i / 2] = byteval;
-            byteval = 0;
+        if (!strncmp(name, "P384", 4)) {
+            return ssl_grp_ec_secp384r1;
         }
-        i++;
+        if (!strncmp(name, "P521", 4)) {
+            return ssl_grp_ec_secp521r1;
+        }
+    }
+    if (PL_strlen(name) == 6) {
+        if (!strncmp(name, "x25519", 6)) {
+            return ssl_grp_ec_curve25519;
+        }
+        if (!strncmp(name, "FF2048", 6)) {
+            return ssl_grp_ffdhe_2048;
+        }
+        if (!strncmp(name, "FF3072", 6)) {
+            return ssl_grp_ffdhe_3072;
+        }
+        if (!strncmp(name, "FF4096", 6)) {
+            return ssl_grp_ffdhe_4096;
+        }
+        if (!strncmp(name, "FF6144", 6)) {
+            return ssl_grp_ffdhe_6144;
+        }
+        if (!strncmp(name, "FF8192", 6)) {
+            return ssl_grp_ffdhe_8192;
+        }
     }
 
-    return item;
+    return ssl_grp_none;
+}
+
+static SECStatus
+countItems(const char *arg, unsigned int *numItems)
+{
+    char *str = PORT_Strdup(arg);
+    if (!str) {
+        return SECFailure;
+    }
+    char *p = strtok(str, ",");
+    while (p) {
+        ++(*numItems);
+        p = strtok(NULL, ",");
+    }
+    PORT_Free(str);
+    str = NULL;
+    return SECSuccess;
+}
+
+SECStatus
+parseGroupList(const char *arg, SSLNamedGroup **enabledGroups,
+               unsigned int *enabledGroupsCount)
+{
+    SSLNamedGroup *groups;
+    char *str;
+    char *p;
+    unsigned int numValues = 0;
+    unsigned int count = 0;
+
+    if (countItems(arg, &numValues) != SECSuccess) {
+        return SECFailure;
+    }
+    groups = PORT_ZNewArray(SSLNamedGroup, numValues);
+    if (!groups) {
+        return SECFailure;
+    }
+
+    /* Get group names. */
+    str = PORT_Strdup(arg);
+    if (!str) {
+        goto done;
+    }
+    p = strtok(str, ",");
+    while (p) {
+        SSLNamedGroup group = groupNameToNamedGroup(p);
+        if (group == ssl_grp_none) {
+            count = 0;
+            goto done;
+        }
+        groups[count++] = group;
+        p = strtok(NULL, ",");
+    }
+
+done:
+    PORT_Free(str);
+    if (!count) {
+        PORT_Free(groups);
+        return SECFailure;
+    }
+
+    *enabledGroupsCount = count;
+    *enabledGroups = groups;
+    return SECSuccess;
+}
+
+SSLSignatureScheme
+schemeNameToScheme(const char *name)
+{
+#define compareScheme(x)                                \
+    do {                                                \
+        if (!PORT_Strncmp(name, #x, PORT_Strlen(#x))) { \
+            return ssl_sig_##x;                         \
+        }                                               \
+    } while (0)
+
+    compareScheme(rsa_pkcs1_sha1);
+    compareScheme(rsa_pkcs1_sha256);
+    compareScheme(rsa_pkcs1_sha384);
+    compareScheme(rsa_pkcs1_sha512);
+    compareScheme(ecdsa_sha1);
+    compareScheme(ecdsa_secp256r1_sha256);
+    compareScheme(ecdsa_secp384r1_sha384);
+    compareScheme(ecdsa_secp521r1_sha512);
+    compareScheme(rsa_pss_rsae_sha256);
+    compareScheme(rsa_pss_rsae_sha384);
+    compareScheme(rsa_pss_rsae_sha512);
+    compareScheme(ed25519);
+    compareScheme(ed448);
+    compareScheme(rsa_pss_pss_sha256);
+    compareScheme(rsa_pss_pss_sha384);
+    compareScheme(rsa_pss_pss_sha512);
+    compareScheme(dsa_sha1);
+    compareScheme(dsa_sha256);
+    compareScheme(dsa_sha384);
+    compareScheme(dsa_sha512);
+
+#undef compareScheme
+
+    return ssl_sig_none;
+}
+
+SECStatus
+parseSigSchemeList(const char *arg, const SSLSignatureScheme **enabledSigSchemes,
+                   unsigned int *enabledSigSchemeCount)
+{
+    SSLSignatureScheme *schemes;
+    unsigned int numValues = 0;
+    unsigned int count = 0;
+
+    if (countItems(arg, &numValues) != SECSuccess) {
+        return SECFailure;
+    }
+    schemes = PORT_ZNewArray(SSLSignatureScheme, numValues);
+    if (!schemes) {
+        return SECFailure;
+    }
+
+    /* Get group names. */
+    char *str = PORT_Strdup(arg);
+    if (!str) {
+        goto done;
+    }
+    char *p = strtok(str, ",");
+    while (p) {
+        SSLSignatureScheme scheme = schemeNameToScheme(p);
+        if (scheme == ssl_sig_none) {
+            count = 0;
+            goto done;
+        }
+        schemes[count++] = scheme;
+        p = strtok(NULL, ",");
+    }
+
+done:
+    PORT_Free(str);
+    if (!count) {
+        PORT_Free(schemes);
+        return SECFailure;
+    }
+
+    *enabledSigSchemeCount = count;
+    *enabledSigSchemes = schemes;
+    return SECSuccess;
+}
+
+/* Parse the exporter spec in the form: LABEL[:OUTPUT-LENGTH[:CONTEXT]] */
+static SECStatus
+parseExporter(const char *arg,
+              secuExporter *exporter)
+{
+    SECStatus rv = SECSuccess;
+
+    char *str = PORT_Strdup(arg);
+    if (!str) {
+        rv = SECFailure;
+        goto done;
+    }
+
+    char *labelEnd = strchr(str, ':');
+    if (labelEnd) {
+        *labelEnd = '\0';
+        labelEnd++;
+
+        /* To extract CONTEXT, first skip OUTPUT-LENGTH */
+        char *outputEnd = strchr(labelEnd, ':');
+        if (outputEnd) {
+            *outputEnd = '\0';
+            outputEnd++;
+
+            exporter->hasContext = PR_TRUE;
+            exporter->context.data = (unsigned char *)PORT_Strdup(outputEnd);
+            exporter->context.len = strlen(outputEnd);
+            if (PORT_Strncasecmp((char *)exporter->context.data, "0x", 2) == 0) {
+                rv = SECU_SECItemHexStringToBinary(&exporter->context);
+                if (rv != SECSuccess) {
+                    goto done;
+                }
+            }
+        }
+    }
+
+    if (labelEnd && *labelEnd != '\0') {
+        long int outputLength = strtol(labelEnd, NULL, 10);
+        if (!(outputLength > 0 && outputLength <= UINT_MAX)) {
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            rv = SECFailure;
+            goto done;
+        }
+        exporter->outputLength = outputLength;
+    } else {
+        exporter->outputLength = 20;
+    }
+
+    char *label = PORT_Strdup(str);
+    exporter->label.data = (unsigned char *)label;
+    exporter->label.len = strlen(label);
+    if (PORT_Strncasecmp((char *)exporter->label.data, "0x", 2) == 0) {
+        rv = SECU_SECItemHexStringToBinary(&exporter->label);
+        if (rv != SECSuccess) {
+            goto done;
+        }
+    }
+
+done:
+    PORT_Free(str);
+
+    return rv;
+}
+
+SECStatus
+parseExporters(const char *arg,
+               const secuExporter **enabledExporters,
+               unsigned int *enabledExporterCount)
+{
+    secuExporter *exporters;
+    unsigned int numValues = 0;
+    unsigned int count = 0;
+
+    if (countItems(arg, &numValues) != SECSuccess) {
+        return SECFailure;
+    }
+    exporters = PORT_ZNewArray(secuExporter, numValues);
+    if (!exporters) {
+        return SECFailure;
+    }
+
+    /* Get exporter definitions. */
+    char *str = PORT_Strdup(arg);
+    if (!str) {
+        goto done;
+    }
+    char *p = strtok(str, ",");
+    while (p) {
+        SECStatus rv = parseExporter(p, &exporters[count++]);
+        if (rv != SECSuccess) {
+            count = 0;
+            goto done;
+        }
+        p = strtok(NULL, ",");
+    }
+
+done:
+    PORT_Free(str);
+    if (!count) {
+        PORT_Free(exporters);
+        return SECFailure;
+    }
+
+    *enabledExporterCount = count;
+    *enabledExporters = exporters;
+    return SECSuccess;
+}
+
+static SECStatus
+exportKeyingMaterial(PRFileDesc *fd, const secuExporter *exporter)
+{
+    SECStatus rv = SECSuccess;
+    unsigned char *out = PORT_Alloc(exporter->outputLength);
+
+    if (!out) {
+        fprintf(stderr, "Unable to allocate buffer for keying material\n");
+        return SECFailure;
+    }
+    rv = SSL_ExportKeyingMaterial(fd,
+                                  (char *)exporter->label.data,
+                                  exporter->label.len,
+                                  exporter->hasContext,
+                                  exporter->context.data,
+                                  exporter->context.len,
+                                  out,
+                                  exporter->outputLength);
+    if (rv != SECSuccess) {
+        goto done;
+    }
+    fprintf(stdout, "Exported Keying Material:\n");
+    secu_PrintRawString(stdout, (SECItem *)&exporter->label, "Label", 1);
+    if (exporter->hasContext) {
+        SECU_PrintAsHex(stdout, &exporter->context, "Context", 1);
+    }
+    SECU_Indent(stdout, 1);
+    fprintf(stdout, "Length: %u\n", exporter->outputLength);
+    SECItem temp = { siBuffer, out, exporter->outputLength };
+    SECU_PrintAsHex(stdout, &temp, "Keying Material", 1);
+
+done:
+    PORT_Free(out);
+    return rv;
+}
+
+SECStatus
+exportKeyingMaterials(PRFileDesc *fd,
+                      const secuExporter *exporters,
+                      unsigned int exporterCount)
+{
+    unsigned int i;
+
+    for (i = 0; i < exporterCount; i++) {
+        SECStatus rv = exportKeyingMaterial(fd, &exporters[i]);
+        if (rv != SECSuccess) {
+            return rv;
+        }
+    }
+
+    return SECSuccess;
 }

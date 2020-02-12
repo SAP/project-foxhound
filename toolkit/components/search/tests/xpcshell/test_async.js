@@ -1,34 +1,28 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function run_test() {
-  do_test_pending();
+add_task(async function setup() {
+  await AddonTestUtils.promiseStartupManager();
+});
 
-  removeMetadata();
-  removeCacheFile();
-
-  do_load_manifest("data/chrome.manifest");
-
+add_task(async function test_async() {
   configureToLoadJarEngines();
 
-  do_check_false(Services.search.isInitialized);
+  Assert.ok(!Services.search.isInitialized);
 
-  Services.search.init(function search_initialized(aStatus) {
-    do_check_true(Components.isSuccessCode(aStatus));
-    do_check_true(Services.search.isInitialized);
+  let aStatus = await Services.search.init();
+  Assert.ok(Components.isSuccessCode(aStatus));
+  Assert.ok(Services.search.isInitialized);
 
-    // test engines from dir are not loaded.
-    let engines = Services.search.getEngines();
-    do_check_eq(engines.length, 1);
+  // test engines from dir are not loaded.
+  let engines = await Services.search.getEngines();
+  Assert.equal(engines.length, 1);
 
-    // test jar engine is loaded ok.
-    let engine = Services.search.getEngineByName("bug645970");
-    do_check_neq(engine, null);
+  // test jar engine is loaded ok.
+  let engine = Services.search.getEngineByName("bug645970");
+  Assert.notEqual(engine, null);
 
-    // Check the hidden engine is not loaded.
-    engine = Services.search.getEngineByName("hidden");
-    do_check_eq(engine, null);
-
-    do_test_finished();
-  });
-}
+  // Check the hidden engine is not loaded.
+  engine = Services.search.getEngineByName("hidden");
+  Assert.equal(engine, null);
+});

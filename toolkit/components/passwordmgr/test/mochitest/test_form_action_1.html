@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <title>Test for considering form action</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 Login Manager test: Bug 360493
 <script>
+gTestDependsOnDeprecatedLogin = true;
 runChecksAfterCommonInit(() => startTest());
 </script>
 <p id="display"></p>
@@ -124,7 +125,7 @@ function startTest() {
     is($_(i, "pword").value, "testpass", "Checking for filled password " + i);
   }
 
-  // The login's formSubmitURL isn't "javascript:", so don't fill it in.
+  // The login's formActionOrigin isn't "javascript:", so don't fill it in.
   isnot($_(10, "uname"), "testuser", "Checking username w/ JS action URL");
   isnot($_(10, "pword"), "testpass", "Checking password w/ JS action URL");
 

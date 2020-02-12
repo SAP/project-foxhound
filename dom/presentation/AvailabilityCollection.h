@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,19 +17,18 @@ namespace dom {
 
 class PresentationAvailability;
 
-class AvailabilityCollection final
-{
-public:
+class AvailabilityCollection final {
+ public:
   static AvailabilityCollection* GetSingleton();
 
   void Add(PresentationAvailability* aAvailability);
 
   void Remove(PresentationAvailability* aAvailability);
 
-  already_AddRefed<PresentationAvailability>
-  Find(const uint64_t aWindowId, const nsTArray<nsString>& aUrls);
+  already_AddRefed<PresentationAvailability> Find(
+      const uint64_t aWindowId, const nsTArray<nsString>& aUrls);
 
-private:
+ private:
   friend class StaticAutoPtr<AvailabilityCollection>;
 
   AvailabilityCollection();
@@ -39,7 +38,7 @@ private:
   nsTArray<WeakPtr<PresentationAvailability>> mAvailabilities;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_AvailabilityCollection_h
+#endif  // mozilla_dom_AvailabilityCollection_h

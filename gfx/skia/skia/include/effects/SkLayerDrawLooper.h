@@ -11,11 +11,11 @@
 #include "SkDrawLooper.h"
 #include "SkPaint.h"
 #include "SkPoint.h"
-#include "SkXfermode.h"
+#include "SkBlendMode.h"
 
 class SK_API SkLayerDrawLooper : public SkDrawLooper {
 public:
-    virtual ~SkLayerDrawLooper();
+    ~SkLayerDrawLooper() override;
 
     /**
      *  Bits specifies which aspects of the layer's paint should replace the
@@ -26,12 +26,13 @@ public:
      */
     enum Bits {
         kStyle_Bit      = 1 << 0,   //!< use this layer's Style/stroke settings
-        kTextSkewX_Bit  = 1 << 1,   //!< use this layer's textskewx
         kPathEffect_Bit = 1 << 2,   //!< use this layer's patheffect
         kMaskFilter_Bit = 1 << 3,   //!< use this layer's maskfilter
         kShader_Bit     = 1 << 4,   //!< use this layer's shader
         kColorFilter_Bit = 1 << 5,  //!< use this layer's colorfilter
         kXfermode_Bit   = 1 << 6,   //!< use this layer's xfermode
+
+        // unsupported kTextSkewX_Bit  = 1 << 1,
 
         /**
          *  Use the layer's paint entirely, with these exceptions:
@@ -51,15 +52,15 @@ public:
      *      The layer's paint's color is treated as the SRC
      *      The draw's paint's color is treated as the DST
      *      final-color = Mode(layers-color, draws-color);
-     *  Any SkXfermode::Mode will work. Two common choices are:
-     *      kSrc_Mode: to use the layer's color, ignoring the draw's
-     *      kDst_Mode: to just keep the draw's color, ignoring the layer's
+     *  Any SkBlendMode will work. Two common choices are:
+     *      kSrc: to use the layer's color, ignoring the draw's
+     *      kDst: to just keep the draw's color, ignoring the layer's
      */
     struct SK_API LayerInfo {
-        BitFlags            fPaintBits;
-        SkXfermode::Mode    fColorMode;
-        SkVector            fOffset;
-        bool                fPostTranslate; //!< applies to fOffset
+        BitFlags    fPaintBits;
+        SkBlendMode fColorMode;
+        SkVector    fOffset;
+        bool        fPostTranslate; //!< applies to fOffset
 
         /**
          *  Initial the LayerInfo. Defaults to settings that will draw the
@@ -71,23 +72,20 @@ public:
         LayerInfo();
     };
 
-    SkDrawLooper::Context* createContext(SkCanvas*, void* storage) const override;
-
-    size_t contextSize() const override { return sizeof(LayerDrawLooperContext); }
+    SkDrawLooper::Context* makeContext(SkCanvas*, SkArenaAlloc*) const override;
 
     bool asABlurShadow(BlurShadowRec* rec) const override;
 
-    SK_TO_STRING_OVERRIDE()
-
-    Factory getFactory() const override { return CreateProc; }
-    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
-
 protected:
+    sk_sp<SkDrawLooper> onMakeColorSpace(SkColorSpaceXformer*) const override;
+
     SkLayerDrawLooper();
 
     void flatten(SkWriteBuffer&) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkLayerDrawLooper)
+
     struct Rec {
         Rec*    fNext;
         SkPaint fPaint;
@@ -143,11 +141,6 @@ public:
           * also reset the builder, so it can be used to build another looper.
           */
         sk_sp<SkDrawLooper> detach();
-#ifdef SK_SUPPORT_LEGACY_MINOR_EFFECT_PTR
-        SkLayerDrawLooper* detachLooper() {
-            return (SkLayerDrawLooper*)this->detach().release();
-        }
-#endif
 
     private:
         Rec* fRecs;

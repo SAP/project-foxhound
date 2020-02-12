@@ -11,8 +11,8 @@
 // This file contains platform-specific typedefs and defines.
 // Much of it is derived from Chromium's build/build_config.h.
 
-#ifndef WEBRTC_TYPEDEFS_H_
-#define WEBRTC_TYPEDEFS_H_
+#ifndef TYPEDEFS_H_
+#define TYPEDEFS_H_
 
 // Processor architecture detection.  For more info on what's defined, see:
 //   http://msdn.microsoft.com/en-us/library/b0084kay.aspx
@@ -24,6 +24,7 @@
 #define WEBRTC_ARCH_64_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #elif defined(__aarch64__)
+#define WEBRTC_ARCH_ARM_FAMILY
 #define WEBRTC_ARCH_64_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #elif defined(_M_IX86) || defined(__i386__)
@@ -32,13 +33,7 @@
 #define WEBRTC_ARCH_32_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #elif defined(__ARMEL__)
-// TODO(ajm): We'd prefer to control platform defines here, but this is
-// currently provided by the Android makefiles. Commented to avoid duplicate
-// definition warnings.
-//#define WEBRTC_ARCH_ARM
-// TODO(ajm): Chromium uses the following two defines. Should we switch?
-//#define WEBRTC_ARCH_ARM_FAMILY
-//#define WEBRTC_ARCH_ARMEL
+#define WEBRTC_ARCH_ARM_FAMILY
 #define WEBRTC_ARCH_32_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #elif defined(__powerpc64__)
@@ -61,7 +56,7 @@
 #define WEBRTC_ARCH_BIG_ENDIAN
 #define WEBRTC_BIG_ENDIAN
 #endif
-#elif defined(__sparc64__)
+#elif defined(__sparc__) && defined(__arch64__)
 #define WEBRTC_ARCH_SPARC 1
 #define WEBRTC_ARCH_64_BITS 1
 #define WEBRTC_ARCH_BIG_ENDIAN
@@ -105,10 +100,10 @@
 #define WEBRTC_ARCH_32_BITS 1
 #define WEBRTC_ARCH_BIG_ENDIAN
 #define WEBRTC_BIG_ENDIAN
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
 #define WEBRTC_ARCH_AARCH64 1
 #define WEBRTC_ARCH_64_BITS 1
-#if defined(__AARCH64EL__)
+#if defined(__AARCH64EL__) || defined(_M_ARM64)
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #define WEBRTC_LITTLE_ENDIAN
 #elif defined(__AARCH64EB__)
@@ -136,44 +131,37 @@
 #error Define either WEBRTC_ARCH_LITTLE_ENDIAN or WEBRTC_ARCH_BIG_ENDIAN
 #endif
 
-#if (defined(WEBRTC_ARCH_X86_FAMILY) && !defined(__SSE2__)) ||  \
-    (defined(WEBRTC_ARCH_ARM_V7) && !defined(WEBRTC_ARCH_ARM_NEON))
+// TODO(zhongwei.yao): WEBRTC_CPU_DETECTION is only used in one place; we should
+// probably just remove it.
+#if (defined(WEBRTC_ARCH_X86_FAMILY) && !defined(__SSE2__))
 #define WEBRTC_CPU_DETECTION
 #endif
 
-#if !defined(_MSC_VER)
 #include <stdint.h>
-#else
-// Define C99 equivalent types, since pre-2010 MSVC doesn't provide stdint.h.
-typedef signed char         int8_t;
-typedef signed short        int16_t;
-typedef signed int          int32_t;
-typedef __int64             int64_t;
-typedef unsigned char       uint8_t;
-typedef unsigned short      uint16_t;
-typedef unsigned int        uint32_t;
-typedef unsigned __int64    uint64_t;
-#endif
 
 // Annotate a function indicating the caller must examine the return value.
 // Use like:
-//   int foo() WARN_UNUSED_RESULT;
-// TODO(ajm): Hack to avoid multiple definitions until the base/ of webrtc and
-// libjingle are merged.
-#if !defined(WARN_UNUSED_RESULT)
-#if defined(__GNUC__)
-#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+//   int foo() RTC_WARN_UNUSED_RESULT;
+// To explicitly ignore a result, cast to void.
+// TODO(kwiberg): Remove when we can use [[nodiscard]] from C++17.
+#if defined(__clang__)
+#define RTC_WARN_UNUSED_RESULT __attribute__((__warn_unused_result__))
+#elif defined(__GNUC__)
+// gcc has a __warn_unused_result__ attribute, but you can't quiet it by
+// casting to void, so we don't use it.
+#define RTC_WARN_UNUSED_RESULT
 #else
-#define WARN_UNUSED_RESULT
+#define RTC_WARN_UNUSED_RESULT
 #endif
-#endif  // WARN_UNUSED_RESULT
 
 // Put after a variable that might not be used, to prevent compiler warnings:
 //   int result ATTRIBUTE_UNUSED = DoSomething();
 //   assert(result == 17);
+// Deprecated since it only works with GCC & clang. See RTC_UNUSED below.
+// TODO(terelius): Remove.
 #ifndef ATTRIBUTE_UNUSED
 #if defined(__GNUC__) || defined(__clang__)
-#define ATTRIBUTE_UNUSED __attribute__((unused))
+#define ATTRIBUTE_UNUSED __attribute__ ((__unused__))
 #else
 #define ATTRIBUTE_UNUSED
 #endif
@@ -189,13 +177,25 @@ typedef unsigned __int64    uint64_t;
 #endif
 #endif
 
+#ifndef NO_RETURN
 // Annotate a function that will not return control flow to the caller.
 #if defined(_MSC_VER)
 #define NO_RETURN __declspec(noreturn)
 #elif defined(__GNUC__)
-#define NO_RETURN __attribute__((noreturn))
+#define NO_RETURN __attribute__ ((__noreturn__))
 #else
 #define NO_RETURN
 #endif
+#endif
 
-#endif  // WEBRTC_TYPEDEFS_H_
+// Prevent the compiler from warning about an unused variable. For example:
+//   int result = DoSomething();
+//   assert(result == 17);
+//   RTC_UNUSED(result);
+// Note: In most cases it is better to remove the unused variable rather than
+// suppressing the compiler warning.
+#ifndef RTC_UNUSED
+#define RTC_UNUSED(x) static_cast<void>(x)
+#endif  // RTC_UNUSED
+
+#endif  // TYPEDEFS_H_

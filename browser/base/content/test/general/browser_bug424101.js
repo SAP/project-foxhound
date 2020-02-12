@@ -1,9 +1,11 @@
 /* Make sure that the context menu appears on form elements */
 
-add_task(function *() {
-  yield BrowserTestUtils.openNewForegroundTab(gBrowser, "data:text/html,test");
+add_task(async function() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "data:text/html,test");
 
-  let contentAreaContextMenu = document.getElementById("contentAreaContextMenu");
+  let contentAreaContextMenu = document.getElementById(
+    "contentAreaContextMenu"
+  );
 
   let tests = [
     { element: "input", type: "text" },
@@ -17,35 +19,53 @@ add_task(function *() {
     { element: "button" },
     { element: "select" },
     { element: "option" },
-    { element: "optgroup" }
+    { element: "optgroup" },
   ];
 
   for (let index = 0; index < tests.length; index++) {
     let test = tests[index];
 
-    yield ContentTask.spawn(gBrowser.selectedBrowser,
-                            { element: test.element, type: test.type, index: index },
-                            function* (arg) {
-      let element = content.document.createElement(arg.element);
-      element.id = "element" + arg.index;
-      if (arg.type) {
-        element.setAttribute("type", arg.type);
+    await ContentTask.spawn(
+      gBrowser.selectedBrowser,
+      { element: test.element, type: test.type, index },
+      async function(arg) {
+        let element = content.document.createElement(arg.element);
+        element.id = "element" + arg.index;
+        if (arg.type) {
+          element.setAttribute("type", arg.type);
+        }
+        content.document.body.appendChild(element);
       }
-      content.document.body.appendChild(element);
-    });
+    );
 
-    let popupShownPromise = BrowserTestUtils.waitForEvent(contentAreaContextMenu, "popupshown");
-    yield BrowserTestUtils.synthesizeMouseAtCenter("#element" + index,
-          { type: "contextmenu", button: 2}, gBrowser.selectedBrowser);
-    yield popupShownPromise;
+    let popupShownPromise = BrowserTestUtils.waitForEvent(
+      contentAreaContextMenu,
+      "popupshown"
+    );
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      "#element" + index,
+      { type: "contextmenu", button: 2 },
+      gBrowser.selectedBrowser
+    );
+    await popupShownPromise;
 
     let typeAttr = test.type ? "type=" + test.type + " " : "";
-    is(gContextMenu.shouldDisplay, true,
-        "context menu behavior for <" + test.element + " " + typeAttr + "> is wrong");
+    is(
+      gContextMenu.shouldDisplay,
+      true,
+      "context menu behavior for <" +
+        test.element +
+        " " +
+        typeAttr +
+        "> is wrong"
+    );
 
-    let popupHiddenPromise = BrowserTestUtils.waitForEvent(contentAreaContextMenu, "popuphidden");
+    let popupHiddenPromise = BrowserTestUtils.waitForEvent(
+      contentAreaContextMenu,
+      "popuphidden"
+    );
     contentAreaContextMenu.hidePopup();
-    yield popupHiddenPromise;
+    await popupHiddenPromise;
   }
 
   gBrowser.removeCurrentTab();

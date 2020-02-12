@@ -1,25 +1,20 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
-var Cr = Components.results;
-
-Cu.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var httpserver = null;
 var geolocation = null;
 var success = false;
 var watchId = -1;
 
-function geoHandler(metadata, response)
-{
-    var georesponse = {
-        status: "OK",
-        location: {
-            lat: 42,
-            lng: 42,
-        },
-        accuracy: 42,
-    };
+function geoHandler(metadata, response) {
+  var georesponse = {
+    status: "OK",
+    location: {
+      lat: 42,
+      lng: 42,
+    },
+    accuracy: 42,
+  };
   var position = JSON.stringify(georesponse);
   response.processAsync();
   response.setStatusLine("1.0", 200, "OK");
@@ -32,21 +27,19 @@ function geoHandler(metadata, response)
 }
 
 function successCallback() {
-  do_check_true(false);
+  Assert.ok(false);
   do_test_finished();
 }
 
 function errorCallback() {
-  do_check_true(true);
+  Assert.ok(true);
   do_test_finished();
 }
 
-function run_test()
-{
+function run_test() {
   do_test_pending();
 
-  if (Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
-        .processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
+  if (Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
     // XPCShell does not get a profile by default. The geolocation service
     // depends on the settings service which uses IndexedDB and IndexedDB
     // needs a place where it can store databases.
@@ -55,13 +48,16 @@ function run_test()
     httpserver = new HttpServer();
     httpserver.registerPathHandler("/geo", geoHandler);
     httpserver.start(-1);
-    var prefs = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
-    prefs.setBoolPref("geo.wifi.scan", false);
-    prefs.setCharPref("geo.wifi.uri", "http://localhost:" +
-                      httpserver.identity.primaryPort + "/geo");
-    prefs.setBoolPref("dom.testing.ignore_ipc_principal", true);
+    Services.prefs.setBoolPref("geo.wifi.scan", false);
+    Services.prefs.setCharPref(
+      "geo.wifi.uri",
+      "http://localhost:" + httpserver.identity.primaryPort + "/geo"
+    );
+    Services.prefs.setBoolPref("dom.testing.ignore_ipc_principal", true);
   }
 
   geolocation = Cc["@mozilla.org/geolocation;1"].getService(Ci.nsISupports);
-  geolocation.getCurrentPosition(successCallback, errorCallback, {timeout: 2000});
+  geolocation.getCurrentPosition(successCallback, errorCallback, {
+    timeout: 2000,
+  });
 }

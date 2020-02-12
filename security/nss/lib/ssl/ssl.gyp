@@ -13,16 +13,20 @@
         'authcert.c',
         'cmpcert.c',
         'dtlscon.c',
+        'dtls13con.c',
         'prelib.c',
+        'selfencrypt.c',
         'ssl3con.c',
         'ssl3ecc.c',
         'ssl3ext.c',
         'ssl3exthandle.c',
         'ssl3gthr.c',
         'sslauth.c',
+        'sslbloom.c',
         'sslcert.c',
         'sslcon.c',
         'ssldef.c',
+        'sslencode.c',
         'sslenum.c',
         'sslerr.c',
         'sslerrstrs.c',
@@ -31,15 +35,21 @@
         'sslinit.c',
         'sslmutex.c',
         'sslnonce.c',
+        'sslprimitive.c',
         'sslreveal.c',
         'sslsecur.c',
         'sslsnce.c',
         'sslsock.c',
+        'sslspec.c',
         'ssltrace.c',
         'sslver.c',
         'tls13con.c',
+        'tls13esni.c',
         'tls13exthandle.c',
+        'tls13hashstate.c',
         'tls13hkdf.c',
+        'tls13replay.c',
+        'tls13subcerts.c',
       ],
       'conditions': [
         [ 'OS=="win"', {
@@ -55,23 +65,24 @@
             'unix_err.c'
           ],
         }],
-        [ 'ssl_enable_zlib==1', {
-          'dependencies': [
-            '<(DEPTH)/lib/zlib/zlib.gyp:nss_zlib'
-          ],
-          'defines': [
-            'NSS_SSL_ENABLE_ZLIB',
-          ],
-        }],
-        [ 'fuzz==1', {
+        [ 'fuzz_tls==1', {
           'defines': [
             'UNSAFE_FUZZER_MODE',
+          ],
+        }],
+        [ 'OS=="dragonfly" or OS=="freebsd" or OS=="netbsd" or OS=="openbsd" or OS=="linux"', {
+          'cflags': [
+            '-std=gnu99',
+          ],
+        }],
+        [ 'enable_sslkeylogfile==1', {
+          'defines': [
+            'NSS_ALLOW_SSLKEYLOGFILE',
           ],
         }],
       ],
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
-        '<(DEPTH)/lib/freebl/freebl.gyp:freebl',
       ],
     },
     {
@@ -81,17 +92,13 @@
         'ssl',
         '<(DEPTH)/lib/nss/nss.gyp:nss3',
         '<(DEPTH)/lib/util/util.gyp:nssutil3',
+        '<(DEPTH)/lib/freebl/freebl.gyp:freebl',
       ],
       'variables': {
         'mapfile': 'ssl.def'
       }
     }
   ],
-  'target_defaults': {
-    'defines': [
-      'NSS_ALLOW_SSLKEYLOGFILE=1'
-    ]
-  },
   'variables': {
     'module': 'nss'
   }

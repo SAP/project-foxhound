@@ -9,8 +9,7 @@ http://creativecommons.org/licenses/publicdomain/
 -->
 <head>
   <title>Test for Bug 1038811</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/dom/push/test/test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
@@ -24,6 +23,7 @@ http://creativecommons.org/licenses/publicdomain/
 </pre>
 
 <script class="testbody" type="text/javascript">
+  /* import-globals-from ./test_utils.js */
 
   function debug(str) {
   //  console.log(str + "\n");
@@ -40,67 +40,67 @@ http://creativecommons.org/licenses/publicdomain/
       uaid: "c69e2014-9e15-438d-b253-d79cc2df60a8",
       channelID,
       status: 200,
-      pushEndpoint: "https://example.com/endpoint/1"
+      pushEndpoint: "https://example.com/endpoint/1",
     }));
   };
 
   var registration;
-  add_task(function* start() {
-    yield setupPrefsAndMockSocket(mockSocket);
-    yield setPushPermission(true);
+  add_task(async function start() {
+    await setupPrefsAndMockSocket(mockSocket);
+    await setPushPermission(true);
 
-    var url = "worker.js" + "?" + (Math.random());
-    registration = yield navigator.serviceWorker.register(url, {scope: "."});
-    yield waitForActive(registration);
+    var url = "worker.js?" + (Math.random());
+    registration = await navigator.serviceWorker.register(url, {scope: "."});
+    await waitForActive(registration);
   });
 
   var controlledFrame;
-  add_task(function* createControlledIFrame() {
-    controlledFrame = yield injectControlledFrame();
+  add_task(async function createControlledIFrame() {
+    controlledFrame = await injectControlledFrame();
   });
 
-  add_task(function* checkPermissionState() {
-    var state = yield registration.pushManager.permissionState();
+  add_task(async function checkPermissionState() {
+    var state = await registration.pushManager.permissionState();
     is(state, "granted", "permissionState() should resolve to granted.");
   });
 
   var pushSubscription;
-  add_task(function* subscribe() {
-    pushSubscription = yield registration.pushManager.subscribe();
+  add_task(async function subscribe() {
+    pushSubscription = await registration.pushManager.subscribe();
     is(pushSubscription.options.applicationServerKey, null,
        "Subscription should not have an app server key");
   });
 
-  add_task(function* resubscribe() {
-    var data = yield sendRequestToWorker({
+  add_task(async function resubscribe() {
+    var data = await sendRequestToWorker({
       type: "resubscribe",
       endpoint: pushSubscription.endpoint,
     });
-    pushSubscription = yield registration.pushManager.getSubscription();
+    pushSubscription = await registration.pushManager.getSubscription();
     is(data.endpoint, pushSubscription.endpoint,
        "Subscription endpoints should match after resubscribing in worker");
   });
 
-  add_task(function* waitForPushNotification() {
+  add_task(async function waitForPushNotification() {
     var finishedPromise = controlledFrame.waitOnWorkerMessage("finished");
 
     // Send a blank message.
     mockSocket.serverSendMsg(JSON.stringify({
       messageType: "notification",
       version: "vDummy",
-      channelID: channelID
+      channelID,
     }));
 
-    yield finishedPromise;
+    await finishedPromise;
   });
 
-  add_task(function* unsubscribe() {
+  add_task(async function unsubscribe() {
     controlledFrame.remove();
-    yield pushSubscription.unsubscribe();
+    await pushSubscription.unsubscribe();
   });
 
-  add_task(function* unregister() {
-    var result = yield registration.unregister();
+  add_task(async function unregister() {
+    var result = await registration.unregister();
     ok(result, "Unregister should return true.");
   });
 

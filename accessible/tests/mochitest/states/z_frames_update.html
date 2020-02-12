@@ -1,10 +1,9 @@
 <html>
 <head>
 <script>
-function replaceBody()
-{
-  var accService = Components.classes["@mozilla.org/accessibilityService;1"].
-    getService(Components.interfaces.nsIAccessibilityService);
+function replaceBody() {
+  var accService = Cc["@mozilla.org/accessibilityService;1"].
+    getService(Ci.nsIAccessibilityService);
   accService.getAccessibleFor(document);
 
   var newBody = document.createElement("body");

@@ -4,96 +4,120 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Preferences.h"
-#include "MediaDecoderStateMachine.h"
-#include "WebMDemuxer.h"
 #include "WebMDecoder.h"
+#include "mozilla/Move.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
+#ifdef MOZ_AV1
+#  include "AOMDecoder.h"
+#endif
+#include "MediaContainerType.h"
+#include "PDMFactory.h"
 #include "VideoUtils.h"
-#include "nsContentTypeParser.h"
 
 namespace mozilla {
 
-MediaDecoderStateMachine* WebMDecoder::CreateStateMachine()
-{
-  mReader =
-    new MediaFormatReader(this, new WebMDemuxer(GetResource()), GetVideoFrameContainer());
-  return new MediaDecoderStateMachine(this, mReader);
-}
-
 /* static */
-bool
-WebMDecoder::IsEnabled()
-{
-  return Preferences::GetBool("media.webm.enabled");
-}
+nsTArray<UniquePtr<TrackInfo>> WebMDecoder::GetTracksInfo(
+    const MediaContainerType& aType, MediaResult& aError) {
+  nsTArray<UniquePtr<TrackInfo>> tracks;
+  const bool isVideo = aType.Type() == MEDIAMIMETYPE("video/webm");
 
-/* static */
-bool
-WebMDecoder::CanHandleMediaType(const nsACString& aMIMETypeExcludingCodecs,
-                                const nsAString& aCodecs)
-{
-  if (!IsEnabled()) {
-    return false;
+  if (aType.Type() != MEDIAMIMETYPE("audio/webm") && !isVideo) {
+    aError = MediaResult(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR,
+        RESULT_DETAIL("Invalid type:%s", aType.Type().AsString().get()));
+    return tracks;
   }
 
-  const bool isWebMAudio = aMIMETypeExcludingCodecs.EqualsASCII("audio/webm");
-  const bool isWebMVideo = aMIMETypeExcludingCodecs.EqualsASCII("video/webm");
-  if (!isWebMAudio && !isWebMVideo) {
-    return false;
+  aError = NS_OK;
+
+  const MediaCodecs& codecs = aType.ExtendedType().Codecs();
+  if (codecs.IsEmpty()) {
+    return tracks;
   }
 
-  nsTArray<nsCString> codecMimes;
-  if (aCodecs.IsEmpty()) {
-    // WebM guarantees that the only codecs it contained are vp8, vp9, opus or vorbis.
-    return true;
-  }
-  // Verify that all the codecs specified are ones that we expect that
-  // we can play.
-  nsTArray<nsString> codecs;
-  if (!ParseCodecsString(aCodecs, codecs)) {
-    return false;
-  }
-  for (const nsString& codec : codecs) {
+  for (const auto& codec : codecs.Range()) {
     if (codec.EqualsLiteral("opus") || codec.EqualsLiteral("vorbis")) {
+      tracks.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+              NS_LITERAL_CSTRING("audio/") + NS_ConvertUTF16toUTF8(codec),
+              aType));
       continue;
     }
-    // Note: Only accept VP8/VP9 in a video content type, not in an audio
-    // content type.
-    if (isWebMVideo &&
-        (codec.EqualsLiteral("vp8") || codec.EqualsLiteral("vp8.0") ||
-         codec.EqualsLiteral("vp9") || codec.EqualsLiteral("vp9.0"))) {
-
+    if (isVideo) {
+      UniquePtr<TrackInfo> trackInfo;
+      if (IsVP9CodecString(codec)) {
+        trackInfo = CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+            NS_LITERAL_CSTRING("video/vp9"), aType);
+      } else if (IsVP8CodecString(codec)) {
+        trackInfo = CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+            NS_LITERAL_CSTRING("video/vp8"), aType);
+      }
+      if (trackInfo) {
+        uint8_t profile = 0;
+        uint8_t level = 0;
+        uint8_t bitDepth = 0;
+        if (ExtractVPXCodecDetails(codec, profile, level, bitDepth)) {
+          trackInfo->GetAsVideoInfo()->mColorDepth =
+              gfx::ColorDepthForBitDepth(bitDepth);
+        }
+        tracks.AppendElement(std::move(trackInfo));
+        continue;
+      }
+    }
+#ifdef MOZ_AV1
+    if (StaticPrefs::media_av1_enabled() && IsAV1CodecString(codec)) {
+      tracks.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+              NS_LITERAL_CSTRING("video/av1"), aType));
       continue;
     }
-    // Some unsupported codec.
-    return false;
+#endif
+    // Unknown codec
+    aError = MediaResult(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR,
+        RESULT_DETAIL("Unknown codec:%s", NS_ConvertUTF16toUTF8(codec).get()));
   }
-  return true;
+  return tracks;
 }
 
-/* static */ bool
-WebMDecoder::CanHandleMediaType(const nsAString& aContentType)
-{
-  nsContentTypeParser parser(aContentType);
-  nsAutoString mimeType;
-  nsresult rv = parser.GetType(mimeType);
+/* static */
+bool WebMDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
+  if (!StaticPrefs::media_webm_enabled()) {
+    return false;
+  }
+
+  MediaResult rv = NS_OK;
+  auto tracks = GetTracksInfo(aContainerType, rv);
+
   if (NS_FAILED(rv)) {
     return false;
   }
-  nsString codecs;
-  parser.GetParameter("codecs", codecs);
 
-  return CanHandleMediaType(NS_ConvertUTF16toUTF8(mimeType),
-                            codecs);
-}
-
-void
-WebMDecoder::GetMozDebugReaderData(nsAString& aString)
-{
-  if (mReader) {
-    mReader->GetMozDebugReaderData(aString);
+  if (tracks.IsEmpty()) {
+    // WebM guarantees that the only codecs it contained are vp8, vp9, opus or
+    // vorbis.
+    return true;
   }
+
+  // Verify that we have a PDM that supports the whitelisted types, include
+  // color depth
+  RefPtr<PDMFactory> platform = new PDMFactory();
+  for (const auto& track : tracks) {
+    if (!track || !platform->Supports(*track, nullptr /* diagnostic */)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
-} // namespace mozilla
+/* static */
+nsTArray<UniquePtr<TrackInfo>> WebMDecoder::GetTracksInfo(
+    const MediaContainerType& aType) {
+  MediaResult rv = NS_OK;
+  return GetTracksInfo(aType, rv);
+}
 
+}  // namespace mozilla

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
-<?xml-stylesheet href="/tests/SimpleTest/test.css" type="text/css"?>
+<?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 <?xml-stylesheet href="data:text/css, hbox { border: 1px solid red; } vbox { border: 1px solid green }" type="text/css"?>
 <!--
 XUL <splitter> collapsing tests
@@ -8,8 +8,8 @@ XUL <splitter> collapsing tests
 <window title="XUL splitter collapsing tests"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         orient="horizontal">
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -20,7 +20,7 @@ XUL <splitter> collapsing tests
     SimpleTest.waitForExplicitFinish();
 
     function dragSplitter(offsetX, callback) {
-      var splitterWidth = splitter.boxObject.width;
+      var splitterWidth = splitter.getBoundingClientRect().width;
       synthesizeMouse(splitter, splitterWidth / 2, 2, {type: "mousedown"});
       synthesizeMouse(splitter, splitterWidth / 2, 1, {type: "mousemove"});
       SimpleTest.executeSoon(function() {
@@ -41,7 +41,7 @@ XUL <splitter> collapsing tests
     }
 
     function runPass(rightCollapsed, leftCollapsed, callback) {
-      var containerWidth = container.boxObject.width;
+      var containerWidth = container.getBoundingClientRect().width;
       var isRTL = getComputedStyle(splitter, null).direction == "rtl";
       dragSplitter(containerWidth, function() {
         if (rightCollapsed) {

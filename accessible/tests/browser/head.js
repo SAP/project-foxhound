@@ -2,10 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-'use strict';
+"use strict";
 
-/* exported initPromise, shutdownPromise,
-            setE10sPrefs, unsetE10sPrefs, forceGC */
+/* exported initAccService, shutdownAccService, waitForEvent, setE10sPrefs,
+            unsetE10sPrefs, accConsumersChanged */
+
+// Load the shared-head file first.
+/* import-globals-from shared-head.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js",
+  this
+);
+
+const { CommonUtils } = ChromeUtils.import(
+  "chrome://mochitests/content/browser/accessible/tests/browser/Common.jsm"
+);
 
 /**
  * Set e10s related preferences in the test environment.
@@ -13,13 +24,13 @@
  */
 function setE10sPrefs() {
   return new Promise(resolve =>
-    SpecialPowers.pushPrefEnv({
-      set: [
-        ['browser.tabs.remote.autostart', true],
-        ['browser.tabs.remote.force-enable', true],
-        ['extensions.e10sBlocksEnabling', false]
-      ]
-    }, resolve));
+    SpecialPowers.pushPrefEnv(
+      {
+        set: [["browser.tabs.remote.autostart", true]],
+      },
+      resolve
+    )
+  );
 }
 
 /**
@@ -32,85 +43,105 @@ function unsetE10sPrefs() {
   });
 }
 
-// Load the shared-head file first.
-Services.scriptloader.loadSubScript(
-  'chrome://mochitests/content/browser/accessible/tests/browser/shared-head.js',
-  this);
+/**
+ * Capture when 'a11y-consumers-changed' event is fired.
+ *
+ * @param  {?Object} target
+ *         [optional] browser object that indicates that accessibility service
+ *         is in content process.
+ * @return {Array}
+ *         List of promises where first one is the promise for when the event
+ *         observer is added and the second one for when the event is observed.
+ */
+function accConsumersChanged(target) {
+  return target
+    ? [
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.addAccConsumersChangedObserver()
+        ),
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.observeAccConsumersChanged()
+        ),
+      ]
+    : [
+        CommonUtils.addAccConsumersChangedObserver(),
+        CommonUtils.observeAccConsumersChanged(),
+      ];
+}
 
 /**
- * Returns a promise that resolves when 'a11y-init-or-shutdown' event is fired.
- * @return {Promise} event promise evaluating to event's data
+ * Capture when accessibility service is initialized.
+ *
+ * @param  {?Object} target
+ *         [optional] browser object that indicates that accessibility service
+ *         is expected to be initialized in content process.
+ * @return {Array}
+ *         List of promises where first one is the promise for when the event
+ *         observer is added and the second one for when the event is observed.
  */
-function a11yInitOrShutdownPromise() {
+function initAccService(target) {
+  return target
+    ? [
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.addAccServiceInitializedObserver()
+        ),
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.observeAccServiceInitialized()
+        ),
+      ]
+    : [
+        CommonUtils.addAccServiceInitializedObserver(),
+        CommonUtils.observeAccServiceInitialized(),
+      ];
+}
+
+/**
+ * Capture when accessibility service is shutdown.
+ *
+ * @param  {?Object} target
+ *         [optional] browser object that indicates that accessibility service
+ *         is expected to be shutdown in content process.
+ * @return {Array}
+ *         List of promises where first one is the promise for when the event
+ *         observer is added and the second one for when the event is observed.
+ */
+function shutdownAccService(target) {
+  return target
+    ? [
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.addAccServiceShutdownObserver()
+        ),
+        SpecialPowers.spawn(target, [], () =>
+          content.CommonUtils.observeAccServiceShutdown()
+        ),
+      ]
+    : [
+        CommonUtils.addAccServiceShutdownObserver(),
+        CommonUtils.observeAccServiceShutdown(),
+      ];
+}
+
+/**
+ * Simpler verions of waitForEvent defined in
+ * accessible/tests/browser/events.js
+ */
+function waitForEvent(eventType, expectedId) {
   return new Promise(resolve => {
-    let observe = (subject, topic, data) => {
-      Services.obs.removeObserver(observe, 'a11y-init-or-shutdown');
-      resolve(data);
+    let eventObserver = {
+      observe(subject) {
+        let event = subject.QueryInterface(Ci.nsIAccessibleEvent);
+        let id;
+        try {
+          id = event.accessible.id;
+        } catch (e) {
+          // This can throw NS_ERROR_FAILURE.
+        }
+        if (event.eventType === eventType && id === expectedId) {
+          Services.obs.removeObserver(this, "accessible-event");
+          resolve(event);
+        }
+      },
     };
-    Services.obs.addObserver(observe, 'a11y-init-or-shutdown', false);
+    Services.obs.addObserver(eventObserver, "accessible-event");
   });
-}
-
-/**
- * Returns a promise that resolves when 'a11y-init-or-shutdown' event is fired
- * in content.
- * @param  {Object}   browser  current "tabbrowser" element
- * @return {Promise}  event    promise evaluating to event's data
- */
-function contentA11yInitOrShutdownPromise(browser) {
-  return ContentTask.spawn(browser, {}, a11yInitOrShutdownPromise);
-}
-
-/**
- * A helper function that maps 'a11y-init-or-shutdown' event to a promise that
- * resovles or rejects depending on whether accessibility service is expected to
- * be initialized or shut down.
- */
-function promiseOK(promise, expected) {
-  return promise.then(flag =>
-    flag === expected ? Promise.resolve() : Promise.reject());
-}
-
-/**
- * Checks and returns a promise that resolves when accessibility service is
- * initialized with the correct flag.
- * @param  {?Object} contentBrowser optinal remove browser object that indicates
- *                                  that accessibility service is expected to be
- *                                  initialized in content process.
- * @return {Promise}                promise that resolves when the accessibility
- *                                  service initialized correctly.
- */
-function initPromise(contentBrowser) {
-  let a11yInitPromise = contentBrowser ?
-    contentA11yInitOrShutdownPromise(contentBrowser) :
-    a11yInitOrShutdownPromise();
-  return promiseOK(a11yInitPromise, '1').then(
-    () => ok(true, 'Service initialized correctly'),
-    () => ok(false, 'Service shutdown incorrectly'));
-}
-
-/**
- * Checks and returns a promise that resolves when accessibility service is
- * shut down with the correct flag.
- * @param  {?Object} contentBrowser optinal remove browser object that indicates
- *                                  that accessibility service is expected to be
- *                                  shut down in content process.
- * @return {Promise}                promise that resolves when the accessibility
- *                                  service shuts down correctly.
- */
-function shutdownPromise(contentBrowser) {
-  let a11yShutdownPromise = contentBrowser ?
-    contentA11yInitOrShutdownPromise(contentBrowser) :
-    a11yInitOrShutdownPromise();
-  return promiseOK(a11yShutdownPromise, '0').then(
-    () => ok(true, 'Service shutdown correctly'),
-    () => ok(false, 'Service initialized incorrectly'));
-}
-
-/**
- * Force garbage collection.
- */
-function forceGC() {
-  Cu.forceCC();
-  Cu.forceGC();
 }

@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/en_SI.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 en_SI{
     %%Parent{"en_150"}
     NumberElements{
@@ -14,9 +8,11 @@ en_SI{
                 accountingFormat{"#,##0.00 ¤;(#,##0.00 ¤)"}
             }
             symbols{
+                decimal{","}
                 exponential{"e"}
+                group{"."}
             }
         }
     }
-    Version{"2.1.19.69"}
+    Version{"2.1.47.70"}
 }

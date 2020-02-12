@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test repeating audio is not distorted</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="webaudio.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -23,7 +23,7 @@ var gTest = {
   length: 2048,
   numberOfChannels: 1,
 
-  createGraph: function(context) {
+  createGraph(context) {
     var freq = Math.round(context.sampleRate / SAMPLE_PLACEMENT);
     var dur = context.sampleRate / gcd(freq, context.sampleRate);
     var buffer = context.createBuffer(1, dur, context.sampleRate);
@@ -41,7 +41,7 @@ var gTest = {
     return source;
   },
 
-  createExpectedBuffers: function(context) {
+  createExpectedBuffers(context) {
     var freq = Math.round(context.sampleRate / SAMPLE_PLACEMENT);
     var expectedBuffer = context.createBuffer(1, 2048, context.sampleRate);
     var c = expectedBuffer.getChannelData(0);

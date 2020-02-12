@@ -7,15 +7,31 @@
 
 interface nsIInputStream;
 interface nsIOutputStream;
+interface nsIAsyncOutputStream;
 interface nsICacheEntryDoomCallback;
 
 interface nsICacheListener;
 interface nsIFile;
 interface nsICacheEntryMetaDataVisitor;
+interface nsILoadContextInfo;
 
 [scriptable, uuid(607c2a2c-0a48-40b9-a956-8cf2bb9857cf)]
 interface nsICacheEntry : nsISupports
 {
+  const unsigned long CONTENT_TYPE_UNKNOWN = 0;
+  const unsigned long CONTENT_TYPE_OTHER = 1;
+  const unsigned long CONTENT_TYPE_JAVASCRIPT = 2;
+  const unsigned long CONTENT_TYPE_IMAGE = 3;
+  const unsigned long CONTENT_TYPE_MEDIA = 4;
+  const unsigned long CONTENT_TYPE_STYLESHEET = 5;
+  const unsigned long CONTENT_TYPE_WASM = 6;
+  /**
+   * Content type that is used internally to check whether the value parsed
+   * from disk is within allowed limits. Don't pass CONTENT_TYPE_LAST to
+   * setContentType method.
+   */
+  const unsigned long CONTENT_TYPE_LAST = 7;
+
   /**
    * Placeholder for the initial value of expiration time.
    */
@@ -25,6 +41,12 @@ interface nsICacheEntry : nsISupports
    * Get the key identifying the cache entry.
    */
   readonly attribute ACString key;
+
+  /**
+   * The unique ID for every nsICacheEntry instance, which can be used to check
+   * whether two pieces of information are from the same nsICacheEntry instance.
+   */
+  readonly attribute uint64_t cacheEntryId;
 
   /**
    * Whether the entry is memory/only or persisted to disk.
@@ -58,6 +80,32 @@ interface nsICacheEntry : nsISupports
    * seconds since the Epoch).
    */
   void setExpirationTime(in uint32_t expirationTime);
+
+  /**
+   * Get the last network response times for onStartReqeust/onStopRequest (in ms).
+   * @throws
+   *    - NS_ERROR_NOT_AVAILABLE if onStartTime/onStopTime does not exist.
+   */
+  readonly attribute uint64_t  onStartTime;
+  readonly attribute uint64_t  onStopTime;
+
+  /**
+   * Set the network response times for onStartReqeust/onStopRequest (in ms).
+   */
+  void setNetworkTimes(in uint64_t onStartTime, in uint64_t onStopTime);
+
+  /**
+   * Set content type. Available types are defined at the begining of this file.
+   * The content type is used internally for cache partitioning and telemetry
+   * purposes so there is no getter.
+   */
+  void setContentType(in uint8_t contentType);
+
+  /**
+   * Stores information about an access from site identified by unique siteID.
+   * It's used for first party cache isolation telemetry.
+   */
+  void addBaseDomainAccess(in uint32_t siteID);
 
   /**
    * This method is intended to override the per-spec cache validation
@@ -108,18 +156,15 @@ interface nsICacheEntry : nsISupports
    * @param offset
    *        write starting from this offset into the cached data.  an offset
    *        beyond the end of the stream has undefined consequences.
+   * @param predictedSize
+   *        Predicted size of the data that will be written. It's used to decide
+   *        whether the resulting entry would exceed size limit, in which case
+   *        an error is thrown. If the size isn't known in advance, -1 should be
+   *        passed.
    *
    * @return blocking, buffered output stream.
    */
-  nsIOutputStream openOutputStream(in long long offset);
-
-  /**
-    * Stores the Content-Length specified in the HTTP header for this
-    * entry. Checked before we write to the cache entry, to prevent ever
-    * taking up space in the cache for an entry that we know up front
-    * is going to have to be evicted anyway. See bug 588507.
-    */
-  attribute int64_t predictedDataSize;
+  nsIOutputStream openOutputStream(in long long offset, in long long predictedSize);
 
   /**
    * Get/set security info on the cache entry for this descriptor.
@@ -174,6 +219,23 @@ interface nsICacheEntry : nsISupports
   void setValid();
 
   /**
+   * Explicitly tell the cache backend this consumer is no longer going to modify
+   * this cache entry data or metadata.  In case the consumer was responsible to
+   * either of writing the cache entry or revalidating it, calling this method
+   * reverts the state to initial (as never written) or as not-validated and
+   * immediately notifies the next consumer in line waiting for this entry.
+   * This is the way to prevent deadlocks when someone else than the responsible
+   * channel references the cache entry being in a non-written or revalidating
+   * state.
+   */
+  void dismiss();
+
+  /**
+   * Returns the size in kilobytes used to store the cache entry on disk.
+   */
+  readonly attribute uint32_t diskStorageSizeInKB;
+
+  /**
    * Doom this entry and open a new, empty, entry for write.  Consumer has
    * to exchange the entry this method is called on for the newly created.
    * Used on 200 responses to conditional requests.
@@ -195,6 +257,59 @@ interface nsICacheEntry : nsISupports
    *    NS_ERROR_IN_PROGRESS when the write is still in progress.
    */
   readonly attribute long long dataSize;
+
+  /**
+  * Returns the length of data this entry holds.
+  * @throws
+  *    - NS_ERROR_IN_PROGRESS when a write is still in progress (either real
+                              content or alt data).
+  *    - NS_ERROR_NOT_AVAILABLE if alt data does not exist.
+  */
+  readonly attribute long long altDataSize;
+
+  /**
+  * Returns the type of the saved alt data.
+  * @throws
+  *    - NS_ERROR_NOT_AVAILABLE if alt data does not exist.
+  */
+  readonly attribute ACString altDataType;
+
+  /**
+   * Opens and returns an output stream that a consumer may use to save an
+   * alternate representation of the data.
+   *
+   * @param type
+   *        type of the alternative data representation
+   * @param predictedSize
+   *        Predicted size of the data that will be written. It's used to decide
+   *        whether the resulting entry would exceed size limit, in which case
+   *        an error is thrown. If the size isn't known in advance, -1 should be
+   *        passed.
+   *
+   * @throws
+   *    - NS_ERROR_NOT_AVAILABLE if the real data hasn't been written.
+   *    - NS_ERROR_IN_PROGRESS when the writing regular content or alt-data to
+   *      the cache entry is still in progress.
+   *
+   * If there is alt-data already saved, it will be overwritten.
+   */
+  nsIAsyncOutputStream openAlternativeOutputStream(in ACString type, in long long predictedSize);
+
+  /**
+   * Opens and returns an input stream that can be used to read the alternative
+   * representation previously saved in the cache.
+   * If this call is made while writing alt-data is still in progress, it is
+   * still possible to read content from the input stream as it's being written.
+   * @throws
+   *    - NS_ERROR_NOT_AVAILABLE if the alt-data representation doesn't exist at
+   *      all or if alt-data of the given type doesn't exist.
+   */
+  nsIInputStream openAlternativeInputStream(in ACString type);
+
+  /**
+   * Get the nsILoadContextInfo of the cache entry
+   */
+  readonly attribute nsILoadContextInfo loadContextInfo;
 
   /****************************************************************************
    * The following methods might be added to some nsICacheEntryInternal

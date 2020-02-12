@@ -11,7 +11,7 @@
 
 SkDEBUGCODE(static const int kExpectedDistanceAdjustTableSize = 8;)
 
-void GrDistanceFieldAdjustTable::buildDistanceAdjustTable() {
+SkScalar* build_distance_adjust_table(SkScalar paintGamma, SkScalar deviceGamma) {
     // This is used for an approximation of the mask gamma hack, used by raster and bitmap
     // text. The mask gamma hack is based off of guessing what the blend color is going to
     // be, and adjusting the mask so that when run through the linear blend will
@@ -55,17 +55,21 @@ void GrDistanceFieldAdjustTable::buildDistanceAdjustTable() {
 #else
     SkScalar contrast = 0.5f;
 #endif
-    SkScalar paintGamma = SK_GAMMA_EXPONENT;
-    SkScalar deviceGamma = SK_GAMMA_EXPONENT;
 
     size = SkScalerContext::GetGammaLUTSize(contrast, paintGamma, deviceGamma,
         &width, &height);
 
     SkASSERT(kExpectedDistanceAdjustTableSize == height);
-    fTable = new SkScalar[height];
+    SkScalar* table = new SkScalar[height];
 
     SkAutoTArray<uint8_t> data((int)size);
-    SkScalerContext::GetGammaLUTData(contrast, paintGamma, deviceGamma, data.get());
+    if (!SkScalerContext::GetGammaLUTData(contrast, paintGamma, deviceGamma, data.get())) {
+        // if no valid data is available simply do no adjustment
+        for (int row = 0; row < height; ++row) {
+            table[row] = 0;
+        }
+        return table;
+    }
 
     // find the inverse points where we cross 0.5
     // binsearch might be better, but we only need to do this once on creation
@@ -85,9 +89,16 @@ void GrDistanceFieldAdjustTable::buildDistanceAdjustTable() {
                 const float kDistanceFieldAAFactor = 0.65f; // should match SK_DistanceFieldAAFactor
                 float d = 2.0f*kDistanceFieldAAFactor*t - kDistanceFieldAAFactor;
 
-                fTable[row] = d;
+                table[row] = d;
                 break;
             }
         }
     }
+
+    return table;
+}
+
+void GrDistanceFieldAdjustTable::buildDistanceAdjustTables() {
+    fTable = build_distance_adjust_table(SK_GAMMA_EXPONENT, SK_GAMMA_EXPONENT);
+    fGammaCorrectTable = build_distance_adjust_table(SK_Scalar1, SK_Scalar1);
 }

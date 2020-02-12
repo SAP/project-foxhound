@@ -14,11 +14,8 @@
         title="396519 test">
 
   <script type="application/javascript"><![CDATA[
-
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
     const LISTEN_EVENTS = ["pageshow"];
-
-    const Cc = Components.classes;
-    const Ci = Components.interfaces;
 
     var gBrowser;
     var gTestCount = 0;
@@ -26,10 +23,10 @@
     var gExpected = [];
 
     function ok(condition, message) {
-      window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+      window.arguments[0].SimpleTest.ok(condition, message);
     }
     function is(a, b, message) {
-      window.opener.wrappedJSObject.SimpleTest.is(a, b, message);
+      window.arguments[0].SimpleTest.is(a, b, message);
     }
     function finish() {
       for (let eventType of LISTEN_EVENTS) {
@@ -37,7 +34,7 @@
       }
     
       window.close();
-      window.opener.wrappedJSObject.SimpleTest.finish();
+      window.arguments[0].SimpleTest.finish();
     }
 
     function onLoad() {
@@ -62,8 +59,8 @@
       var history = gBrowser.webNavigation.sessionHistory;
       if (history.count == gExpected.length) {
         for (var i=0; i<history.count; i++) {
-          var shEntry = history.getEntryAtIndex(i,false).
-                          QueryInterface(Components.interfaces.nsISHEntry);
+          var shEntry = history.legacySHistory.getEntryAtIndex(i).
+                          QueryInterface(Ci.nsISHEntry);
           is(!!shEntry.contentViewer, gExpected[i], "content viewer "+i+", test "+gTestCount);
         }
 
@@ -74,9 +71,9 @@
             if (j == i)
               continue;
 
-            let shentry1 = history.getEntryAtIndex(i, false)
+            let shentry1 = history.legacySHistory.getEntryAtIndex(i)
                                   .QueryInterface(Ci.nsISHEntry);
-            let shentry2 = history.getEntryAtIndex(j, false)
+            let shentry2 = history.legacySHistory.getEntryAtIndex(j)
                                   .QueryInterface(Ci.nsISHEntry);
             ok(!shentry1.sharesDocumentWith(shentry2),
                'Test ' + gTestCount + ': shentry[' + i + "] shouldn't " +
@@ -92,15 +89,10 @@
     }
 
     function nextTest() {
-      try {
-        gTestsIterator.next();
-      } catch (err if err instanceof StopIteration) {
-        finish();
-      }
+      gTestsIterator.next();
     }
 
-    function testsIterator() {
-
+    function* testsIterator() {
       // Tests 1 + 2:
       //  Back/forward between two simple documents. Bfcache will be used.
 
@@ -109,33 +101,33 @@
 
       gTestCount++;
       gExpected = [false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, false];
       var test2Doc = test1Doc.replace(/1/,"2");
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, true, false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [true, true, true, false];
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [false, true, true, true, false];
-      gBrowser.loadURI(test1Doc);
+      BrowserTestUtils.loadURI(gBrowser, test1Doc);
       yield undefined;
 
       gTestCount++;
       gExpected = [false, false, true, true, true, false];
-      gBrowser.loadURI(test2Doc);
+      BrowserTestUtils.loadURI(gBrowser, test2Doc);
       yield undefined;
 
       gTestCount++;
@@ -162,8 +154,10 @@
       gExpected = [false, false, true, true, false, false];
       gBrowser.gotoIndex(5);
       yield undefined;
+
+      finish();
     }
   ]]></script>
 
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
 </window>

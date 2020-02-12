@@ -2,17 +2,13 @@
 <html>
 <head>
   <title>Test for Principal in MessageManager</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 </head>
 <body>
 
-  <script type="application/javascript;version=1.7">
+  <script type="application/javascript">
     "use strict";
-
-    const Ci = Components.interfaces;
-    const Cc = Components.classes;
-    const Cu = Components.utils;
 
     var permManager = Cc["@mozilla.org/permissionmanager;1"]
                         .getService(Ci.nsIPermissionManager);
@@ -25,15 +21,10 @@
     function childFrameScript() {
       "use strict";
 
-      const secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].
-        getService(Ci.nsIScriptSecurityManager);
 
       addMessageListener("test:content", function(message) {
         sendAsyncMessage("test:result", "is nsIPrincipal: " +
                          (message.data instanceof Ci.nsIPrincipal ? "OK" : "KO"));
-
-        sendAsyncMessage("test:result", "principal.appId: " +
-                         ("appId" in message.data ? "OK" : "KO"));
 
         sendAsyncMessage("test:result", "principal.origin: " +
                          ("origin" in message.data ? "OK" : "KO"));
@@ -44,7 +35,7 @@
 
       addMessageListener("test:system", function(message) {
         sendAsyncMessage("test:result", "isSystemPrincipal: " +
-                         (secMan.isSystemPrincipal(message.data) ? "OK" : "KO"));
+                         (message.data.isSystemPrincipal ? "OK" : "KO"));
       });
 
       addMessageListener("test:ep", function(message) {
@@ -73,7 +64,7 @@
       iframe.src = childFrameURL;
 
       let sb = new Cu.Sandbox(['http://foo.example.com', 'http://bar.example.com']);
-      let ep = Components.utils.getObjectPrincipal(sb);
+      let ep = Cu.getObjectPrincipal(sb);
 
       iframe.addEventListener("mozbrowserloadend", function() {
         ok(true, "Got iframe load event.");

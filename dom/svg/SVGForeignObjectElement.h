@@ -8,58 +8,58 @@
 #define mozilla_dom_SVGForeignObjectElement_h
 
 #include "mozilla/dom/SVGGraphicsElement.h"
-#include "nsSVGLength2.h"
+#include "nsCSSPropertyID.h"
+#include "SVGAnimatedLength.h"
 
-nsresult NS_NewSVGForeignObjectElement(nsIContent **aResult,
-                                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGForeignObjectElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 class nsSVGForeignObjectFrame;
 
 namespace mozilla {
 namespace dom {
 
-class SVGForeignObjectElement final : public SVGGraphicsElement
-{
+class SVGForeignObjectElement final : public SVGGraphicsElement {
   friend class ::nsSVGForeignObjectFrame;
 
-protected:
-  friend nsresult (::NS_NewSVGForeignObjectElement(nsIContent **aResult,
-                                                   already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGForeignObjectElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  friend nsresult(::NS_NewSVGForeignObjectElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGForeignObjectElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
-  // nsSVGElement specializations:
+ public:
+  // SVGElement specializations:
   virtual gfxMatrix PrependLocalTransformsTo(
-    const gfxMatrix &aMatrix,
-    SVGTransformTypes aWhich = eAllTransforms) const override;
+      const gfxMatrix& aMatrix,
+      SVGTransformTypes aWhich = eAllTransforms) const override;
   virtual bool HasValidDimensions() const override;
 
   // nsIContent interface
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              bool aCompileEventHandlers) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* name) const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
 
-protected:
-
+ protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGForeignObjectElement_h
-
+#endif  // mozilla_dom_SVGForeignObjectElement_h

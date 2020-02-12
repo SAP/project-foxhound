@@ -1,110 +1,185 @@
-"use strict"
+"use strict";
 
-const TEST_URL = "http://mochi.test:8888/browser/browser/components/places/tests/browser/keyword_form.html";
+const TEST_URL =
+  "http://mochi.test:8888/browser/browser/components/places/tests/browser/keyword_form.html";
 
-add_task(function* () {
-  yield BrowserTestUtils.withNewTab({
-    gBrowser,
-    url: TEST_URL,
-  }, function* (browser) {
-    // We must wait for the context menu code to build metadata.
-    yield openContextMenuForContentSelector(browser, '#form1 > input[name="search"]');
+function closeHandler(dialogWin) {
+  let savedItemId = dialogWin.gEditItemOverlay.itemId;
+  return PlacesTestUtils.waitForNotification(
+    "onItemRemoved",
+    itemId => itemId === savedItemId
+  );
+}
 
-    yield withBookmarksDialog(true, AddKeywordForSearchField, function* (dialogWin) {
-      let acceptBtn = dialogWin.document.documentElement.getButton("accept");
-      ok(acceptBtn.disabled, "Accept button is disabled");
+add_task(async function() {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_URL,
+    },
+    async function(browser) {
+      // We must wait for the context menu code to build metadata.
+      await openContextMenuForContentSelector(
+        browser,
+        '#form1 > input[name="search"]'
+      );
 
-      let promiseKeywordNotification = promiseBookmarksNotification(
-        "onItemChanged", (itemId, prop, isAnno, val) => prop == "keyword" && val =="kw");
+      await withBookmarksDialog(
+        true,
+        AddKeywordForSearchField,
+        async function(dialogWin) {
+          let acceptBtn = dialogWin.document.documentElement.getButton(
+            "accept"
+          );
+          Assert.ok(acceptBtn.disabled, "Accept button is disabled");
 
-      fillBookmarkTextField("editBMPanel_keywordField", "kw", dialogWin);
+          let promiseKeywordNotification = PlacesTestUtils.waitForNotification(
+            "onItemChanged",
+            (itemId, prop, isAnno, val) => prop == "keyword" && val == "kw"
+          );
 
-      ok(!acceptBtn.disabled, "Accept button is enabled");
+          fillBookmarkTextField("editBMPanel_keywordField", "kw", dialogWin);
 
-      // The dialog is instant apply.
-      yield promiseKeywordNotification;
+          Assert.ok(!acceptBtn.disabled, "Accept button is enabled");
 
-      // After the notification, the keywords cache will update asynchronously.
-      info("Check the keyword entry has been created");
-      let entry;
-      yield waitForCondition(function* () {
-        entry = yield PlacesUtils.keywords.fetch("kw");
-        return !!entry;
-      }, "Unable to find the expected keyword");
-      is(entry.keyword, "kw", "keyword is correct");
-      is(entry.url.href, TEST_URL, "URL is correct");
-      is(entry.postData, "accenti%3D%E0%E8%EC%F2%F9&search%3D%25s", "POST data is correct");
+          // The dialog is instant apply.
+          await promiseKeywordNotification;
 
-      info("Check the charset has been saved");
-      let charset = yield PlacesUtils.getCharsetForURI(NetUtil.newURI(TEST_URL));
-      is(charset, "windows-1252", "charset is correct");
+          // After the notification, the keywords cache will update asynchronously.
+          info("Check the keyword entry has been created");
+          let entry;
+          await waitForCondition(async function() {
+            entry = await PlacesUtils.keywords.fetch("kw");
+            return !!entry;
+          }, "Unable to find the expected keyword");
+          Assert.equal(entry.keyword, "kw", "keyword is correct");
+          Assert.equal(entry.url.href, TEST_URL, "URL is correct");
+          Assert.equal(
+            entry.postData,
+            "accenti%3D%E0%E8%EC%F2%F9&search%3D%25s",
+            "POST data is correct"
+          );
 
-      // Now check getShortcutOrURI.
-      let data = yield getShortcutOrURIAndPostData("kw test");
-      is(getPostDataString(data.postData), "accenti=\u00E0\u00E8\u00EC\u00F2\u00F9&search=test", "getShortcutOrURI POST data is correct");
-      is(data.url, TEST_URL, "getShortcutOrURI URL is correct");
-    });
-  });
+          info("Check the charset has been saved");
+          let pageInfo = await PlacesUtils.history.fetch(TEST_URL, {
+            includeAnnotations: true,
+          });
+          Assert.equal(
+            pageInfo.annotations.get(PlacesUtils.CHARSET_ANNO),
+            "windows-1252",
+            "charset is correct"
+          );
+
+          // Now check getShortcutOrURI.
+          let data = await UrlbarUtils.getShortcutOrURIAndPostData("kw test");
+          Assert.equal(
+            getPostDataString(data.postData),
+            "accenti=\u00E0\u00E8\u00EC\u00F2\u00F9&search=test",
+            "getShortcutOrURI POST data is correct"
+          );
+          Assert.equal(data.url, TEST_URL, "getShortcutOrURI URL is correct");
+        },
+        closeHandler
+      );
+    }
+  );
 });
 
-add_task(function* reopen_same_field() {
-  yield PlacesUtils.keywords.insert({
+add_task(async function reopen_same_field() {
+  await PlacesUtils.keywords.insert({
     url: TEST_URL,
     keyword: "kw",
-    postData: "accenti%3D%E0%E8%EC%F2%F9&search%3D%25s"
+    postData: "accenti%3D%E0%E8%EC%F2%F9&search%3D%25s",
   });
-  registerCleanupFunction(function* () {
-    yield PlacesUtils.keywords.remove("kw");
+  registerCleanupFunction(async function() {
+    await PlacesUtils.keywords.remove("kw");
   });
   // Reopening on the same input field should show the existing keyword.
-  yield BrowserTestUtils.withNewTab({
-    gBrowser,
-    url: TEST_URL,
-  }, function* (browser) {
-    // We must wait for the context menu code to build metadata.
-    yield openContextMenuForContentSelector(browser, '#form1 > input[name="search"]');
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_URL,
+    },
+    async function(browser) {
+      // We must wait for the context menu code to build metadata.
+      await openContextMenuForContentSelector(
+        browser,
+        '#form1 > input[name="search"]'
+      );
 
-    yield withBookmarksDialog(true, AddKeywordForSearchField, function* (dialogWin) {
-      let acceptBtn = dialogWin.document.documentElement.getButton("accept");
-      ok(acceptBtn.disabled, "Accept button is disabled");
+      await withBookmarksDialog(
+        true,
+        AddKeywordForSearchField,
+        async function(dialogWin) {
+          let acceptBtn = dialogWin.document.documentElement.getButton(
+            "accept"
+          );
+          ok(acceptBtn.disabled, "Accept button is disabled");
 
-      let elt = dialogWin.document.getElementById("editBMPanel_keywordField");
-      is(elt.value, "kw");
-    });
-  });
+          let elt = dialogWin.document.getElementById(
+            "editBMPanel_keywordField"
+          );
+          await BrowserTestUtils.waitForCondition(
+            () => elt.value == "kw",
+            "Keyword should be the previous value"
+          );
+        },
+        closeHandler
+      );
+    }
+  );
 });
 
-add_task(function* open_other_field() {
-  yield PlacesUtils.keywords.insert({
+add_task(async function open_other_field() {
+  await PlacesUtils.keywords.insert({
     url: TEST_URL,
     keyword: "kw2",
-    postData: "search%3D%25s"
+    postData: "search%3D%25s",
   });
-  registerCleanupFunction(function* () {
-    yield PlacesUtils.keywords.remove("kw2");
+  registerCleanupFunction(async function() {
+    await PlacesUtils.keywords.remove("kw2");
   });
   // Reopening on another field of the same page that has different postData
   // should not show the existing keyword.
-  yield BrowserTestUtils.withNewTab({
-    gBrowser,
-    url: TEST_URL,
-  }, function* (browser) {
-    // We must wait for the context menu code to build metadata.
-    yield openContextMenuForContentSelector(browser, '#form2 > input[name="search"]');
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_URL,
+    },
+    async function(browser) {
+      // We must wait for the context menu code to build metadata.
+      await openContextMenuForContentSelector(
+        browser,
+        '#form2 > input[name="search"]'
+      );
 
-    yield withBookmarksDialog(true, AddKeywordForSearchField, function* (dialogWin) {
-      let acceptBtn = dialogWin.document.documentElement.getButton("accept");
-      ok(acceptBtn.disabled, "Accept button is disabled");
+      await withBookmarksDialog(
+        true,
+        AddKeywordForSearchField,
+        function(dialogWin) {
+          let acceptBtn = dialogWin.document.documentElement.getButton(
+            "accept"
+          );
+          ok(acceptBtn.disabled, "Accept button is disabled");
 
-      let elt = dialogWin.document.getElementById("editBMPanel_keywordField");
-      is(elt.value, "");
-    });
-  });
+          let elt = dialogWin.document.getElementById(
+            "editBMPanel_keywordField"
+          );
+          is(elt.value, "");
+        },
+        closeHandler
+      );
+    }
+  );
 });
 
 function getPostDataString(stream) {
-  let sis = Cc["@mozilla.org/scriptableinputstream;1"]
-              .createInstance(Ci.nsIScriptableInputStream);
+  let sis = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
+    Ci.nsIScriptableInputStream
+  );
   sis.init(stream);
-  return sis.read(stream.available()).split("\n").pop();
+  return sis
+    .read(stream.available())
+    .split("\n")
+    .pop();
 }

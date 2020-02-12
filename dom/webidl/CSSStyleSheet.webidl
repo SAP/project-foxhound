@@ -7,23 +7,30 @@
  * http://dev.w3.org/csswg/cssom/
  */
 
-interface CSSRule;
-
 enum CSSStyleSheetParsingMode {
   "author",
   "user",
   "agent"
 };
 
+[Exposed=Window]
 interface CSSStyleSheet : StyleSheet {
-  [Pure]
+  [Pure, BinaryName="DOMOwnerRule"]
   readonly attribute CSSRule? ownerRule;
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
   readonly attribute CSSRuleList cssRules;
   [ChromeOnly, BinaryName="parsingModeDOM"]
   readonly attribute CSSStyleSheetParsingMode parsingMode;
-  [Throws]
-  unsigned long insertRule(DOMString rule, unsigned long index);
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
+  unsigned long insertRule(DOMString rule, optional unsigned long index = 0);
+  [Throws, NeedsSubjectPrincipal]
   void deleteRule(unsigned long index);
+
+  // Non-standard WebKit things.
+  [Throws, NeedsSubjectPrincipal, BinaryName="cssRules"]
+  readonly attribute CSSRuleList rules;
+  [Throws, NeedsSubjectPrincipal, BinaryName="deleteRule"]
+  void removeRule(optional unsigned long index = 0);
+  [Throws, NeedsSubjectPrincipal]
+  long addRule(optional DOMString selector = "undefined", optional DOMString style = "undefined", optional unsigned long index);
 };

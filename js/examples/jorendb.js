@@ -28,7 +28,7 @@ var lastExc = null;
 var todo = [];
 var activeTask;
 var options = { 'pretty': true,
-                'emacs': (os.getenv('EMACS') == 't') };
+                'emacs': !!os.getenv('INSIDE_EMACS') };
 var rerun = true;
 
 // Cleanup functions to run when we next re-enter the repl.
@@ -80,7 +80,7 @@ function debuggeeValueToString(dv, style) {
         return [dvrepr, undefined];
 
     if (dv.class == "Error") {
-        let errval = debuggeeGlobalWrapper.executeInGlobalWithBindings("$" + i + ".toString()", debuggeeValues);
+        let errval = debuggeeGlobalWrapper.executeInGlobalWithBindings("$$.toString()", debuggeeValues);
         return [dvrepr, errval.return];
     }
 
@@ -106,6 +106,7 @@ function debuggeeValueToString(dv, style) {
 function showDebuggeeValue(dv, style={pretty: options.pretty}) {
     var i = nextDebuggeeValueIndex++;
     debuggeeValues["$" + i] = dv;
+    debuggeeValues["$$"] = dv;
     let [brief, full] = debuggeeValueToString(dv, style);
     print("$" + i + " = " + brief);
     if (full !== undefined)
@@ -246,7 +247,7 @@ function evalCommand(expr) {
 }
 
 function quitCommand() {
-    dbg.enabled = false;
+    dbg.removeAllDebuggees();
     quit(0);
 }
 
@@ -271,9 +272,9 @@ function setCommand(rest) {
             var yes = ["1", "yes", "true", "on"];
             var no = ["0", "no", "false", "off"];
 
-            if (yes.indexOf(value) !== -1)
+            if (yes.includes(value))
                 options[name] = true;
-            else if (no.indexOf(value) !== -1)
+            else if (no.includes(value))
                 options[name] = false;
             else
                 options[name] = value;
@@ -285,9 +286,9 @@ function split_print_options(s, style) {
     var m = /^\/(\w+)/.exec(s);
     if (!m)
         return [ s, style ];
-    if (m[1].indexOf("p") != -1)
+    if (m[1].includes("p"))
         style.pretty = true;
-    if (m[1].indexOf("b") != -1)
+    if (m[1].includes("b"))
         style.brief = true;
     return [ s.substr(m[0].length).trimLeft(), style ];
 }
@@ -299,16 +300,10 @@ function doPrint(expr, style) {
               ? debuggeeGlobalWrapper.executeInGlobalWithBindings(expr, debuggeeValues)
               : focusedFrame.evalWithBindings(expr, debuggeeValues));
     if (cv === null) {
-        if (!dbg.enabled)
-            return [cv];
         print("Debuggee died.");
     } else if ('return' in cv) {
-        if (!dbg.enabled)
-            return [undefined];
         showDebuggeeValue(cv.return, style);
     } else {
-        if (!dbg.enabled)
-            return [cv];
         print("Exception caught. (To rethrow it, type 'throw'.)");
         lastExc = cv.throw;
         showDebuggeeValue(lastExc, style);
@@ -323,7 +318,7 @@ function printCommand(rest) {
 function keysCommand(rest) { return doPrint("Object.keys(" + rest + ")"); }
 
 function detachCommand() {
-    dbg.enabled = false;
+    dbg.removeAllDebuggees();
     return [undefined];
 }
 
@@ -354,14 +349,10 @@ function throwCommand(rest) {
     } else {
         var cv = saveExcursion(function () { return focusedFrame.eval(rest); });
         if (cv === null) {
-            if (!dbg.enabled)
-                return [cv];
             print("Debuggee died while determining what to throw. Stopped.");
         } else if ('return' in cv) {
             return [{throw: cv.return}];
         } else {
-            if (!dbg.enabled)
-                return [cv];
             print("Exception determining what to throw. Stopped.");
             showDebuggeeValue(cv.throw);
         }
@@ -438,14 +429,10 @@ function forcereturnCommand(rest) {
     } else {
         var cv = saveExcursion(function () { return f.eval(rest); });
         if (cv === null) {
-            if (!dbg.enabled)
-                return [cv];
             print("Debuggee died while determining what to forcereturn. Stopped.");
         } else if ('return' in cv) {
             return [{return: cv.return}];
         } else {
-            if (!dbg.enabled)
-                return [cv];
             print("Error determining what to forcereturn. Stopped.");
             showDebuggeeValue(cv.throw);
         }
@@ -645,7 +632,7 @@ function helpCommand(rest) {
 //
 function breakcmd(cmd) {
     cmd = cmd.trimLeft();
-    if ("!@#$%^&*_+=/?.,<>:;'\"".indexOf(cmd.substr(0, 1)) != -1)
+    if ("!@#$%^&*_+=/?.,<>:;'\"".includes(cmd.substr(0, 1)))
         return [cmd.substr(0, 1), cmd.substr(1).trimLeft()];
     var m = /\s+|(?=\/)/.exec(cmd);
     if (m === null)
@@ -747,7 +734,7 @@ function handleBreakpoint (frame) {
 var jorendbDepth;
 if (typeof jorendbDepth == 'undefined') jorendbDepth = 0;
 
-var debuggeeGlobal = newGlobal("new-compartment");
+var debuggeeGlobal = newGlobal({newCompartment: true});
 debuggeeGlobal.jorendbDepth = jorendbDepth + 1;
 var debuggeeGlobalWrapper = dbg.addDebuggee(debuggeeGlobal);
 
@@ -863,10 +850,9 @@ for (var task of todo) {
     task['scriptArgs'] = actualScriptArgs;
 }
 
-// If nothing to run, just drop into a repl
-if (todo.length == 0) {
-    todo.push({ 'action': 'repl' });
-}
+// Always drop into a repl at the end. Especially if the main script throws an
+// exception.
+todo.push({ 'action': 'repl' });
 
 while (rerun) {
     print("Top of run loop");
@@ -879,7 +865,12 @@ while (rerun) {
             debuggeeGlobal['scriptArgs'] = task.scriptArgs;
             debuggeeGlobal['scriptPath'] = task.script;
             print("Loading JavaScript file " + task.script);
-            debuggeeGlobal.evaluate(read(task.script), { 'fileName': task.script, 'lineNumber': 1 });
+            try {
+                debuggeeGlobal.evaluate(read(task.script), { 'fileName': task.script, 'lineNumber': 1 });
+            } catch (exc) {
+                print("Caught exception " + exc);
+                print(exc.stack);
+            }
         } else if (task.action == 'repl') {
             repl();
         }

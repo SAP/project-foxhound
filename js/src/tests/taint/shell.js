@@ -113,6 +113,8 @@ if (typeof rand === 'undefined') {
 }
 
 defaultCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789   \n{}[]()!@#$%^&*-_=+'\";:/?.,<>";   // TODO extend
+escapableCharset = "!@#$%^&*()+=-[]\\\';,./{}|\":<>?~"
+
 if (typeof randomString === 'undefined') {
     // Generate a random string
     var randomString = function(len, charset) {
@@ -128,6 +130,14 @@ if (typeof randomString === 'undefined') {
             str += charset.charAt(Math.floor(Math.random() * charset.length));
 
         return str;
+    }
+}
+
+escapableCharset = "!@#$%^&*()+=-[]\\\';,./{}|\":<>?~"
+if (typeof randomStringWithEsacpables === 'undefined') {
+    // Generate a random String with some esacpable characters
+    var randomStringWithEsacpables = function(len) {
+	return randomString(len, escapableCharset);
     }
 }
 
@@ -163,6 +173,14 @@ if (typeof randomMultiTaintedString === 'undefined') {
     }
 }
 
+if (typeof randomMultiTaintedStringWithEscapables === 'undefined') {
+    // Generates a random string with randomly tainted substrings
+    var randomMultiTaintedStringWithEscapables = function(len) {
+        var str = randomStringWithEsacpables(len);
+        return multiTaint(str);
+    }
+}
+
 if (typeof assertHasTaintOperation === 'undefined') {
     var assertHasTaintOperation = function(str, opName) {
         for (var i = 0; i < str.taint.length; i++) {
@@ -174,7 +192,41 @@ if (typeof assertHasTaintOperation === 'undefined') {
                 }
             }
         }
-        return false;
+        throw Error("String does not contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
+    }
+}
+
+if (typeof assertNotHasTaintOperation === 'undefined') {
+    var assertNotHasTaintOperation = function(str, opName) {
+        for (var i = 0; i < str.taint.length; i++) {
+            var range = str.taint[i];
+            for (var j = 0; j < range.flow.length; j++) {
+                var node = range.flow[j];
+                if (node.operation === opName) {
+                    throw Error("String does contain \"" + opName + "\" as taint operation. Taint: " + JSON.stringify(str.taint));
+                }
+            }
+        }
+        return true;
+    }
+}
+
+if (typeof assertLastTaintOperationEquals === 'undefined') {
+    var assertLastTaintOperationEquals = function(str, opName) {
+        for (var i = 0; i < str.taint.length; i++) {
+            var range = str.taint[i];
+
+            // Quirk: ignore "function call arguments" nodes for now...
+            var index = 0;
+            while (index < range.flow.length && range.flow[index].operation === "function call argument")
+                index++;
+
+            var node = range.flow[index];
+            if (node.operation === opName) {
+                return true;
+            }
+        }
+        throw Error("String does not contain \"" + opName + "\" as last taint operation. Taint: " + JSON.stringify(str.taint));
     }
 }
 

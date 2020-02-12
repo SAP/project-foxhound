@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Test click events on canvas hit regions</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -16,7 +16,7 @@
 </div>
 <pre id="test">
 <script type="application/javascript">
-SpecialPowers.pushPrefEnv({"set": [["canvas.hitregions.enabled", true]]}, function() {
+SpecialPowers.pushPrefEnv({"set": [["canvas.hitregions.enabled", true]]}).then(function() {
 
   var input = document.getElementById("input");
   var regionId = "";

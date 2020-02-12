@@ -2,18 +2,18 @@
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 if (!this.window) {
   this.runTest = function() {
     todo(false, "Test disabled in xpcshell test suite for now");
     finishTest();
-  }
+  };
 }
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
 
   // Needs to be enough to saturate the thread pool.
@@ -53,7 +53,10 @@ function testSteps()
 
   for (let i = 0; i < SYNC_REQUEST_COUNT; i++) {
     readerCount++;
-    let request = db.transaction("foo").objectStore("foo").get(key);
+    let request = db
+      .transaction("foo")
+      .objectStore("foo")
+      .get(key);
     request.onsuccess = function(event) {
       is(event.target.transaction.mode, "readonly", "Correct mode");
       callbackCount++;
@@ -63,37 +66,53 @@ function testSteps()
   while (continueReading) {
     readerCount++;
     info("Generating additional readonly request (" + readerCount + ")");
-    let request = db.transaction("foo").objectStore("foo").get(key);
+    let request = db
+      .transaction("foo")
+      .objectStore("foo")
+      .get(key);
     request.onsuccess = function(event) {
       callbackCount++;
       info("Received readonly request callback (" + callbackCount + ")");
       is(event.target.transaction.mode, "readonly", "Correct mode");
       if (callbackCount == SYNC_REQUEST_COUNT) {
         writerCount++;
-        info("Generating 1 readwrite request with " + readerCount +
-             " previous readonly requests");
-        let request = db.transaction("foo", "readwrite")
-                        .objectStore("foo")
-                        .add({}, readerCount);
+        info(
+          "Generating 1 readwrite request with " +
+            readerCount +
+            " previous readonly requests"
+        );
+        let request = db
+          .transaction("foo", "readwrite")
+          .objectStore("foo")
+          .add({}, readerCount);
         request.onsuccess = function(event) {
           callbackCount++;
           info("Received readwrite request callback (" + callbackCount + ")");
           is(event.target.transaction.mode, "readwrite", "Correct mode");
-          is(event.target.result, callbackCount,
-             "write callback came before later reads");
-        }
-      }
-      else if (callbackCount == SYNC_REQUEST_COUNT + 5) {
+          is(
+            event.target.result,
+            callbackCount,
+            "write callback came before later reads"
+          );
+        };
+      } else if (callbackCount == SYNC_REQUEST_COUNT + 5) {
         continueReading = false;
       }
     };
 
-    setTimeout(function() { testGenerator.next(); }, writerCount ? 1000 : 100);
+    setTimeout(
+      function() {
+        testGenerator.next();
+      },
+      writerCount ? 1000 : 100
+    );
     yield undefined;
   }
 
-  while (callbackCount < (readerCount + writerCount)) {
-    executeSoon(function() { testGenerator.next(); });
+  while (callbackCount < readerCount + writerCount) {
+    executeSoon(function() {
+      testGenerator.next();
+    });
     yield undefined;
   }
 

@@ -8,10 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/neteq/dtmf_buffer.h"
+#include "modules/audio_coding/neteq/dtmf_buffer.h"
 
 #include <assert.h>
 #include <algorithm>  // max
+
+#include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 // Modify the code to obtain backwards bit-exactness. Once bit-exactness is no
 // longer required, this #define should be removed (and the code that it
@@ -19,6 +22,16 @@
 #define LEGACY_BITEXACT
 
 namespace webrtc {
+
+DtmfBuffer::DtmfBuffer(int fs_hz) {
+  SetSampleRate(fs_hz);
+}
+
+DtmfBuffer::~DtmfBuffer() = default;
+
+void DtmfBuffer::Flush() {
+  buffer_.clear();
+}
 
 // The ParseEvent method parses 4 bytes from |payload| according to this format
 // from RFC 4733:
@@ -57,10 +70,10 @@ int DtmfBuffer::ParseEvent(uint32_t rtp_timestamp,
                            const uint8_t* payload,
                            size_t payload_length_bytes,
                            DtmfEvent* event) {
-  if (!payload || !event) {
-    return kInvalidPointer;
-  }
+  RTC_CHECK(payload);
+  RTC_CHECK(event);
   if (payload_length_bytes < 4) {
+    RTC_LOG(LS_WARNING) << "ParseEvent payload too short";
     return kPayloadTooShort;
   }
 
@@ -86,8 +99,9 @@ int DtmfBuffer::ParseEvent(uint32_t rtp_timestamp,
 // existing one.
 int DtmfBuffer::InsertEvent(const DtmfEvent& event) {
   if (event.event_no < 0 || event.event_no > 15 ||
-      event.volume < 0 || event.volume > 36 ||
+      event.volume < 0 || event.volume > 63 ||
       event.duration <= 0 || event.duration > 65535) {
+    RTC_LOG(LS_WARNING) << "InsertEvent invalid parameters";
     return kInvalidEventParameters;
   }
   DtmfList::iterator it = buffer_.begin();
@@ -173,10 +187,19 @@ bool DtmfBuffer::GetEvent(uint32_t current_timestamp, DtmfEvent* event) {
   return false;
 }
 
+size_t DtmfBuffer::Length() const {
+  return buffer_.size();
+}
+
+bool DtmfBuffer::Empty() const {
+  return buffer_.empty();
+}
+
 int DtmfBuffer::SetSampleRate(int fs_hz) {
   if (fs_hz != 8000 &&
       fs_hz != 16000 &&
       fs_hz != 32000 &&
+      fs_hz != 44100 &&
       fs_hz != 48000) {
     return kInvalidSampleRate;
   }

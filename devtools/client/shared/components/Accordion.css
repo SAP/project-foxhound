@@ -1,0 +1,73 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Accordion */
+
+:root {
+  --accordion-header-background: var(--theme-toolbar-background);
+}
+
+:root.theme-dark {
+  --accordion-header-background: #222225;
+}
+
+.accordion {
+  background-color: var(--theme-sidebar-background);
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  white-space: nowrap;
+  overflow: auto;
+}
+
+.accordion .accordion-header {
+  background-color: var(--accordion-header-background);
+  border-bottom: 1px solid var(--theme-splitter-color);
+  box-sizing: border-box;
+  display: flex;
+  font-size: 12px;
+  line-height: 16px;
+  transition: all 0.25s ease;
+  /* Reserve 1px for the border */
+  min-height: calc(var(--theme-toolbar-height) + 1px);
+  padding: 2px 4px;
+  align-items: center;
+  margin: 0px;
+  font-weight: normal;
+
+  user-select: none;
+  cursor: default;
+}
+
+/*
+  Arrow should be a bit closer to the text than to the start edge:
+  - total distance between text and start edge = 20px
+  - arrow width = 10px
+  - distance between arrow and start edge = 6px
+  - distance between arrow and text = 4px
+*/
+.accordion .accordion-header .theme-twisty {
+  width: 10px;
+  height: 10px;
+  margin-inline-start: 2px;
+  margin-inline-end: 4px;
+}
+
+.accordion .accordion-header:hover {
+  background-color: var(--theme-toolbar-background-hover);
+}
+
+.accordion .accordion-content:not(:empty) {
+  font-size: 12px;
+  overflow: auto;
+}
+
+.accordion > li > .accordion-content:not(:empty) {
+  border-bottom: 1px solid var(--theme-splitter-color);
+}
+
+.accordion li:last-child .accordion-content {
+  border-bottom: none;
+}

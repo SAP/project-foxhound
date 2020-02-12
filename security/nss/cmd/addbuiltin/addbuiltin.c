@@ -31,6 +31,29 @@ dumpbytes(unsigned char *buf, int len)
     printf("\n");
 }
 
+int
+hasPositiveTrust(unsigned int trust)
+{
+    if (trust & CERTDB_TRUSTED) {
+        if (trust & CERTDB_TRUSTED_CA) {
+            return PR_TRUE;
+        } else {
+            return PR_FALSE;
+        }
+    } else {
+        if (trust & CERTDB_TRUSTED_CA) {
+            return PR_TRUE;
+        } else if (trust & CERTDB_VALID_CA) {
+            return PR_TRUE;
+        } else if (trust & CERTDB_TERMINAL_RECORD) {
+            return PR_FALSE;
+        } else {
+            return PR_FALSE;
+        }
+    }
+    return PR_FALSE;
+}
+
 char *
 getTrustString(unsigned int trust)
 {
@@ -202,6 +225,13 @@ ConvertCertificate(SECItem *sdder, char *nickname, CERTCertTrust *trust,
         printf("CKA_VALUE MULTILINE_OCTAL\n");
         dumpbytes(sdder->data, sdder->len);
         printf("END\n");
+        if (hasPositiveTrust(trust->sslFlags) ||
+            hasPositiveTrust(trust->emailFlags) ||
+            hasPositiveTrust(trust->objectSigningFlags)) {
+            printf("CKA_NSS_MOZILLA_CA_POLICY CK_BBOOL CK_TRUE\n");
+        }
+        printf("CKA_NSS_SERVER_DISTRUST_AFTER CK_BBOOL CK_FALSE\n");
+        printf("CKA_NSS_EMAIL_DISTRUST_AFTER CK_BBOOL CK_FALSE\n");
     }
 
     if ((trust->sslFlags | trust->emailFlags | trust->objectSigningFlags) ==
@@ -278,19 +308,21 @@ printheader()
            "#\n"
            "#    Certificates\n"
            "#\n"
-           "#  -- Attribute --          -- type --              -- value --\n"
-           "#  CKA_CLASS                CK_OBJECT_CLASS         CKO_CERTIFICATE\n"
-           "#  CKA_TOKEN                CK_BBOOL                CK_TRUE\n"
-           "#  CKA_PRIVATE              CK_BBOOL                CK_FALSE\n"
-           "#  CKA_MODIFIABLE           CK_BBOOL                CK_FALSE\n"
-           "#  CKA_LABEL                UTF8                    (varies)\n"
-           "#  CKA_CERTIFICATE_TYPE     CK_CERTIFICATE_TYPE     CKC_X_509\n"
-           "#  CKA_SUBJECT              DER+base64              (varies)\n"
-           "#  CKA_ID                   byte array              (varies)\n"
-           "#  CKA_ISSUER               DER+base64              (varies)\n"
-           "#  CKA_SERIAL_NUMBER        DER+base64              (varies)\n"
-           "#  CKA_VALUE                DER+base64              (varies)\n"
-           "#  CKA_NSS_EMAIL            ASCII7                  (unused here)\n"
+           "#  -- Attribute --               -- type --          -- value --\n"
+           "#  CKA_CLASS                     CK_OBJECT_CLASS     CKO_CERTIFICATE\n"
+           "#  CKA_TOKEN                     CK_BBOOL            CK_TRUE\n"
+           "#  CKA_PRIVATE                   CK_BBOOL            CK_FALSE\n"
+           "#  CKA_MODIFIABLE                CK_BBOOL            CK_FALSE\n"
+           "#  CKA_LABEL                     UTF8                (varies)\n"
+           "#  CKA_CERTIFICATE_TYPE          CK_CERTIFICATE_TYPE CKC_X_509\n"
+           "#  CKA_SUBJECT                   DER+base64          (varies)\n"
+           "#  CKA_ID                        byte array          (varies)\n"
+           "#  CKA_ISSUER                    DER+base64          (varies)\n"
+           "#  CKA_SERIAL_NUMBER             DER+base64          (varies)\n"
+           "#  CKA_VALUE                     DER+base64          (varies)\n"
+           "#  CKA_NSS_EMAIL                 ASCII7              (unused here)\n"
+           "#  CKA_NSS_SERVER_DISTRUST_AFTER DER+base64          (varies)\n"
+           "#  CKA_NSS_EMAIL_DISTRUST_AFTER  DER+base64          (varies)\n"
            "#\n"
            "#    Trust\n"
            "#\n"
@@ -364,6 +396,12 @@ Usage(char *progName)
     fprintf(stderr, "%-15s a CRL entry number, as shown by \"crlutil -S\"\n", "-e");
     fprintf(stderr, "%-15s input file to read (default stdin)\n", "-i file");
     fprintf(stderr, "%-15s     (pipe through atob if the cert is b64-encoded)\n", "");
+    fprintf(stderr, "%-15s convert a timestamp to DER, and output.\n", "-d timestamp");
+    fprintf(stderr, "%-15s useful to fill server and email distrust fields\n", "");
+    fprintf(stderr, "%-15s Example: %s -d 1561939200\n", "", progName);
+    fprintf(stderr, "%-15s NOTE: The informed timestamp are interpreted as seconds\n", "");
+    fprintf(stderr, "%-15s since unix epoch.\n", "");
+    fprintf(stderr, "%-15s TIP: date -d \"2019-07-01 00:00:00 UTC\" +%%s\n", "");
     exit(-1);
 }
 
@@ -375,20 +413,21 @@ enum {
     opt_ExcludeCert,
     opt_ExcludeHash,
     opt_DistrustCRL,
-    opt_CRLEnry
+    opt_CRLEntry,
+    opt_ConvertDate
 };
 
-static secuCommandFlag addbuiltin_options[] =
-    {
-      { /* opt_Input         */ 'i', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Nickname      */ 'n', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Trust         */ 't', PR_TRUE, 0, PR_FALSE },
-      { /* opt_Distrust      */ 'D', PR_FALSE, 0, PR_FALSE },
-      { /* opt_ExcludeCert   */ 'c', PR_FALSE, 0, PR_FALSE },
-      { /* opt_ExcludeHash   */ 'h', PR_FALSE, 0, PR_FALSE },
-      { /* opt_DistrustCRL   */ 'C', PR_FALSE, 0, PR_FALSE },
-      { /* opt_CRLEnry       */ 'e', PR_TRUE, 0, PR_FALSE },
-    };
+static secuCommandFlag addbuiltin_options[] = {
+    { /* opt_Input         */ 'i', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Nickname      */ 'n', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Trust         */ 't', PR_TRUE, 0, PR_FALSE },
+    { /* opt_Distrust      */ 'D', PR_FALSE, 0, PR_FALSE },
+    { /* opt_ExcludeCert   */ 'c', PR_FALSE, 0, PR_FALSE },
+    { /* opt_ExcludeHash   */ 'h', PR_FALSE, 0, PR_FALSE },
+    { /* opt_DistrustCRL   */ 'C', PR_FALSE, 0, PR_FALSE },
+    { /* opt_CRLEntry      */ 'e', PR_TRUE, 0, PR_FALSE },
+    { /* opt_ConvertDate   */ 'd', PR_TRUE, 0, PR_FALSE },
+};
 
 int
 main(int argc, char **argv)
@@ -416,6 +455,30 @@ main(int argc, char **argv)
     if (rv != SECSuccess)
         Usage(progName);
 
+    if (addbuiltin.options[opt_ConvertDate].activated) {
+        char *endPtr;
+        PRTime distrustTimestamp = strtol(addbuiltin.options[opt_ConvertDate].arg, &endPtr, 0) * PR_USEC_PER_SEC;
+        if (*endPtr != '\0' && distrustTimestamp > 0) {
+            Usage(progName);
+            exit(1);
+        }
+        SECItem encTime;
+        DER_EncodeTimeChoice(NULL, &encTime, distrustTimestamp);
+        SECU_PrintTimeChoice(stdout, &encTime, "The timestamp represents this date", 0);
+        printf("Locate the entry of the desired certificate in certdata.txt\n"
+               "Erase the CKA_NSS_[SERVER|EMAIL]_DISTRUST_AFTER CK_BBOOL CK_FALSE\n"
+               "And override with the following respective entry:\n\n");
+        SECU_PrintTimeChoice(stdout, &encTime, "# For Server Distrust After", 0);
+        printf("CKA_NSS_SERVER_DISTRUST_AFTER MULTILINE_OCTAL\n");
+        dumpbytes(encTime.data, encTime.len);
+        printf("END\n");
+        SECU_PrintTimeChoice(stdout, &encTime, "# For Email Distrust After", 0);
+        printf("CKA_NSS_EMAIL_DISTRUST_AFTER MULTILINE_OCTAL\n");
+        dumpbytes(encTime.data, encTime.len);
+        printf("END\n");
+        exit(0);
+    }
+
     if (addbuiltin.options[opt_Trust].activated)
         ++mutuallyExclusiveOpts;
     if (addbuiltin.options[opt_Distrust].activated)
@@ -430,12 +493,12 @@ main(int argc, char **argv)
     }
 
     if (addbuiltin.options[opt_DistrustCRL].activated) {
-        if (!addbuiltin.options[opt_CRLEnry].activated) {
+        if (!addbuiltin.options[opt_CRLEntry].activated) {
             fprintf(stderr, "%s: you must specify the CRL entry number.\n",
                     progName);
             Usage(progName);
         } else {
-            crlentry = atoi(addbuiltin.options[opt_CRLEnry].arg);
+            crlentry = atoi(addbuiltin.options[opt_CRLEntry].arg);
             if (crlentry < 1) {
                 fprintf(stderr, "%s: The CRL entry number must be > 0.\n",
                         progName);

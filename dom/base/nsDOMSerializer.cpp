@@ -6,9 +6,9 @@
 
 #include "nsDOMSerializer.h"
 
-#include "nsIDocument.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/dom/Document.h"
 #include "nsIDocumentEncoder.h"
-#include "nsIDOMDocument.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentCID.h"
 #include "nsContentUtils.h"
@@ -17,131 +17,97 @@
 
 using namespace mozilla;
 
-nsDOMSerializer::nsDOMSerializer()
-{
-}
+nsDOMSerializer::nsDOMSerializer() {}
 
-nsDOMSerializer::~nsDOMSerializer()
-{
-}
-
-// QueryInterface implementation for nsDOMSerializer
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMSerializer)
-  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMSerializer)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsDOMSerializer, mOwner)
-
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDOMSerializer)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMSerializer)
-
-
-static nsresult
-SetUpEncoder(nsIDOMNode *aRoot, const nsACString& aCharset,
-             nsIDocumentEncoder **aEncoder)
-{
-  *aEncoder = nullptr;
-   
-  nsresult rv;
+static already_AddRefed<nsIDocumentEncoder> SetUpEncoder(
+    nsINode& aRoot, const nsAString& aCharset, ErrorResult& aRv) {
   nsCOMPtr<nsIDocumentEncoder> encoder =
-    do_CreateInstance(NS_DOC_ENCODER_CONTRACTID_BASE "application/xhtml+xml", &rv);
-  if (NS_FAILED(rv))
-    return rv;
-
-  bool entireDocument = true;
-  nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(aRoot));
-  if (!domDoc) {
-    entireDocument = false;
-    rv = aRoot->GetOwnerDocument(getter_AddRefs(domDoc));
-    if (NS_FAILED(rv))
-      return rv;
+      do_createDocumentEncoder("application/xhtml+xml");
+  if (!encoder) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
   }
+
+  dom::Document* doc = aRoot.OwnerDoc();
+  bool entireDocument = (doc == &aRoot);
 
   // This method will fail if no document
-  rv = encoder->Init(domDoc, NS_LITERAL_STRING("application/xhtml+xml"),
-                     nsIDocumentEncoder::OutputRaw |
-                     nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration);
+  nsresult rv = encoder->NativeInit(
+      doc, NS_LITERAL_STRING("application/xhtml+xml"),
+      nsIDocumentEncoder::OutputRaw |
+          nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration);
 
-  if (NS_FAILED(rv))
-    return rv;
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+    return nullptr;
+  }
 
-  nsAutoCString charset(aCharset);
+  NS_ConvertUTF16toUTF8 charset(aCharset);
   if (charset.IsEmpty()) {
-    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
-    NS_ASSERTION(doc, "Need a document");
-    charset = doc->GetDocumentCharacterSet();
+    doc->GetDocumentCharacterSet()->Name(charset);
   }
   rv = encoder->SetCharset(charset);
-  if (NS_FAILED(rv))
-    return rv;
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+    return nullptr;
+  }
 
   // If we are working on the entire document we do not need to
   // specify which part to serialize
   if (!entireDocument) {
-    rv = encoder->SetNode(aRoot);
+    rv = encoder->SetNode(&aRoot);
   }
 
-  if (NS_SUCCEEDED(rv)) {
-    encoder.forget(aEncoder);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+    return nullptr;
   }
 
-  return rv;
+  return encoder.forget();
 }
 
-void
-nsDOMSerializer::SerializeToString(nsINode& aRoot, nsAString& aStr,
-                                   ErrorResult& rv)
-{
-  rv = nsDOMSerializer::SerializeToString(aRoot.AsDOMNode(), aStr);
-}
+void nsDOMSerializer::SerializeToString(nsINode& aRoot, nsAString& aStr,
+                                        ErrorResult& aRv) {
+  aStr.Truncate();
 
-NS_IMETHODIMP
-nsDOMSerializer::SerializeToString(nsIDOMNode *aRoot, nsAString& _retval)
-{
-  NS_ENSURE_ARG_POINTER(aRoot);
-  
-  _retval.Truncate();
-
-  if (!nsContentUtils::CanCallerAccess(aRoot)) {
-    return NS_ERROR_DOM_SECURITY_ERR;
+  if (!nsContentUtils::CanCallerAccess(&aRoot)) {
+    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
-  nsCOMPtr<nsIDocumentEncoder> encoder;
-  nsresult rv = SetUpEncoder(aRoot, EmptyCString(), getter_AddRefs(encoder));
-  if (NS_FAILED(rv))
-    return rv;
+  nsCOMPtr<nsIDocumentEncoder> encoder =
+      SetUpEncoder(aRoot, EmptyString(), aRv);
+  if (aRv.Failed()) {
+    return;
+  }
 
-  return encoder->EncodeToString(_retval);
+  nsresult rv = encoder->EncodeToString(aStr);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
 }
 
-void
-nsDOMSerializer::SerializeToStream(nsINode& aRoot, nsIOutputStream* aStream,
-                                   const nsAString& aCharset, ErrorResult& rv)
-{
-  rv = nsDOMSerializer::SerializeToStream(aRoot.AsDOMNode(), aStream,
-                                          NS_ConvertUTF16toUTF8(aCharset));
-}
+void nsDOMSerializer::SerializeToStream(nsINode& aRoot,
+                                        nsIOutputStream* aStream,
+                                        const nsAString& aCharset,
+                                        ErrorResult& aRv) {
+  if (NS_WARN_IF(!aStream)) {
+    aRv.Throw(NS_ERROR_INVALID_ARG);
+    return;
+  }
 
-NS_IMETHODIMP
-nsDOMSerializer::SerializeToStream(nsIDOMNode *aRoot, 
-                                   nsIOutputStream *aStream, 
-                                   const nsACString& aCharset)
-{
-  NS_ENSURE_ARG_POINTER(aRoot);
-  NS_ENSURE_ARG_POINTER(aStream);
   // The charset arg can be empty, in which case we get the document's
   // charset and use that when serializing.
 
-  if (!nsContentUtils::CanCallerAccess(aRoot)) {
-    return NS_ERROR_DOM_SECURITY_ERR;
+  // No point doing a CanCallerAccess check, because we can only be
+  // called by system JS or C++.
+  nsCOMPtr<nsIDocumentEncoder> encoder = SetUpEncoder(aRoot, aCharset, aRv);
+  if (aRv.Failed()) {
+    return;
   }
 
-  nsCOMPtr<nsIDocumentEncoder> encoder;
-  nsresult rv = SetUpEncoder(aRoot, aCharset, getter_AddRefs(encoder));
-  if (NS_FAILED(rv))
-    return rv;
-
-  return encoder->EncodeToStream(aStream);
+  nsresult rv = encoder->EncodeToStream(aStream);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
 }

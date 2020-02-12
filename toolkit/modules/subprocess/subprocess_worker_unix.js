@@ -6,11 +6,15 @@
 "use strict";
 
 /* exported Process */
-/* globals BaseProcess, BasePipe */
 
-importScripts("resource://gre/modules/subprocess/subprocess_shared.js",
-              "resource://gre/modules/subprocess/subprocess_shared_unix.js",
-              "resource://gre/modules/subprocess/subprocess_worker_common.js");
+/* import-globals-from subprocess_shared.js */
+/* import-globals-from subprocess_shared_unix.js */
+/* import-globals-from subprocess_worker_common.js */
+importScripts(
+  "resource://gre/modules/subprocess/subprocess_shared.js",
+  "resource://gre/modules/subprocess/subprocess_shared_unix.js",
+  "resource://gre/modules/subprocess/subprocess_worker_common.js"
+);
 
 const POLL_TIMEOUT = 5000;
 
@@ -48,7 +52,7 @@ class Pipe extends BasePipe {
       return this.closedPromise;
     }
 
-    for (let {reject} of this.pending) {
+    for (let { reject } of this.pending) {
       let error = new Error("File closed");
       error.errorCode = SubprocessConstants.ERROR_END_OF_FILE;
       reject(error);
@@ -104,7 +108,7 @@ class InputPipe extends Pipe {
     }
 
     return new Promise((resolve, reject) => {
-      this.pending.push({resolve, reject, length});
+      this.pending.push({ resolve, reject, length });
       io.updatePollFds();
     });
   }
@@ -149,7 +153,7 @@ class InputPipe extends Pipe {
     let result = false;
     let reads = this.pending;
     while (reads.length) {
-      let {resolve, length} = reads[0];
+      let { resolve, length } = reads[0];
 
       let buffer = this.readBuffer(length);
       if (buffer) {
@@ -161,7 +165,7 @@ class InputPipe extends Pipe {
       }
     }
 
-    if (reads.length == 0) {
+    if (!reads.length) {
       io.updatePollFds();
     }
     return result;
@@ -197,7 +201,7 @@ class OutputPipe extends Pipe {
     }
 
     return new Promise((resolve, reject) => {
-      this.pending.push({resolve, reject, buffer, length: buffer.byteLength});
+      this.pending.push({ resolve, reject, buffer, length: buffer.byteLength });
       io.updatePollFds();
     });
   }
@@ -232,7 +236,7 @@ class OutputPipe extends Pipe {
   onReady() {
     let writes = this.pending;
     while (writes.length) {
-      let {buffer, resolve, length} = writes[0];
+      let { buffer, resolve, length } = writes[0];
 
       let written = this.writeBuffer(buffer);
 
@@ -246,7 +250,7 @@ class OutputPipe extends Pipe {
       }
     }
 
-    if (writes.length == 0) {
+    if (!writes.length) {
       io.updatePollFds();
     }
   }
@@ -375,7 +379,7 @@ class Process extends BaseProcess {
   }
 
   spawn(options) {
-    let {command, arguments: args} = options;
+    let { command, arguments: args } = options;
 
     let argv = this.stringArray(args);
     let envp = this.stringArray(options.environment);
@@ -392,7 +396,9 @@ class Process extends BaseProcess {
         libc.getcwd(cwd, cwd.length);
 
         if (libc.chdir(options.workdir) < 0) {
-          throw new Error(`Unable to change working directory to ${options.workdir}`);
+          throw new Error(
+            `Unable to change working directory to ${options.workdir}`
+          );
         }
       }
 
@@ -402,7 +408,14 @@ class Process extends BaseProcess {
       }
 
       let pid = unix.pid_t();
-      let rv = libc.posix_spawn(pid.address(), command, actionsp, null, argv, envp);
+      let rv = libc.posix_spawn(
+        pid.address(),
+        command,
+        actionsp,
+        null,
+        argv,
+        envp
+      );
 
       if (rv != 0) {
         for (let pipe of this.pipes) {
@@ -463,19 +476,25 @@ class Process extends BaseProcess {
     let status = ctypes.int();
 
     let res = libc.waitpid(this.pid, status.address(), LIBC.WNOHANG);
-    if (res == this.pid) {
-      let sig = unix.WTERMSIG(status.value);
-      if (sig) {
-        this.exitCode = -sig;
-      } else {
-        this.exitCode = unix.WEXITSTATUS(status.value);
-      }
-
-      this.fd.dispose();
-      io.updatePollFds();
-      this.resolveExit(this.exitCode);
-      return this.exitCode;
+    // If there's a failure here and we get any errno other than EINTR, it
+    // means that the process has been reaped by another thread (most likely
+    // the nspr process wait thread), and its actual exit status is not
+    // available to us. In that case, we have to assume success.
+    if (res == 0 || (res == -1 && ctypes.errno == LIBC.EINTR)) {
+      return null;
     }
+
+    let sig = unix.WTERMSIG(status.value);
+    if (sig) {
+      this.exitCode = -sig;
+    } else {
+      this.exitCode = unix.WEXITSTATUS(status.value);
+    }
+
+    this.fd.dispose();
+    io.updatePollFds();
+    this.resolveExit(this.exitCode);
+    return this.exitCode;
   }
 }
 
@@ -491,6 +510,8 @@ io = {
 
   running: true,
 
+  polling: false,
+
   init(details) {
     this.signal = new Signal(details.signalFd);
     this.updatePollFds();
@@ -505,7 +526,7 @@ io = {
       this.signal.cleanup();
       this.signal = null;
 
-      self.postMessage({msg: "close"});
+      self.postMessage({ msg: "close" });
       self.close();
     }
   },
@@ -531,11 +552,23 @@ io = {
   },
 
   updatePollFds() {
-    let handlers = [this.signal,
-                    ...this.pipes.values(),
-                    ...this.processes.values()];
+    let handlers = [
+      this.signal,
+      ...this.pipes.values(),
+      ...this.processes.values(),
+    ];
 
     handlers = handlers.filter(handler => handler.pollEvents);
+
+    // Our poll loop is only useful if we've got at least 1 thing to poll other than our own
+    // signal.
+    if (handlers.length == 1) {
+      this.polling = false;
+    } else if (!this.polling && this.running) {
+      // Restart the poll loop if necessary:
+      setTimeout(this.loop.bind(this), 0);
+      this.polling = true;
+    }
 
     let pollfds = unix.pollfd.array(handlers.length)();
 
@@ -553,7 +586,7 @@ io = {
 
   loop() {
     this.poll();
-    if (this.running) {
+    if (this.running && this.polling) {
       setTimeout(this.loop.bind(this), 0);
     }
   },
@@ -581,7 +614,10 @@ io = {
           // on a pipe when it's closed but there's still buffered data to be
           // read, and Darwin sets POLLIN and POLLHUP on a closed pipe, even
           // when there's no data to be read.
-          if (!success && (pollfd.revents & (LIBC.POLLERR | LIBC.POLLHUP | LIBC.POLLNVAL))) {
+          if (
+            !success &&
+            pollfd.revents & (LIBC.POLLERR | LIBC.POLLHUP | LIBC.POLLNVAL)
+          ) {
             handler.onError();
           }
         } catch (e) {

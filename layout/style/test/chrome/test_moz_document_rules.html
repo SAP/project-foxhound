@@ -2,32 +2,32 @@
 <html>
 <head>
   <title>Test for @-moz-document rules</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
 </head>
 <body onload="run()">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=398962">Mozilla Bug 398962</a>
 <iframe id="iframe" src="http://mochi.test:8888/tests/layout/style/test/chrome/moz_document_helper.html"></iframe>
 <pre id="test">
-<script type="application/javascript; version=1.8">
+<script type="application/javascript">
 
 var [gStyleSheetService, gIOService] = (function() {
     return [
-            Components.classes["@mozilla.org/content/style-sheet-service;1"]
-                .getService(Components.interfaces.nsIStyleSheetService),
-            Components.classes["@mozilla.org/network/io-service;1"]
-                .getService(Components.interfaces.nsIIOService)
+            Cc["@mozilla.org/content/style-sheet-service;1"]
+                .getService(Ci.nsIStyleSheetService),
+            Cc["@mozilla.org/network/io-service;1"]
+                .getService(Ci.nsIIOService)
            ];
 })();
 function set_user_sheet(sheeturi)
 {
-    var uri = gIOService.newURI(sheeturi, null, null);
+    var uri = gIOService.newURI(sheeturi);
     gStyleSheetService.loadAndRegisterSheet(uri, gStyleSheetService.USER_SHEET);
 }
 function remove_user_sheet(sheeturi)
 {
-    var uri = gIOService.newURI(sheeturi, null, null);
+    var uri = gIOService.newURI(sheeturi);
     gStyleSheetService.unregisterSheet(uri, gStyleSheetService.USER_SHEET);
 }
 
@@ -36,7 +36,7 @@ function run()
     var iframe = document.getElementById("iframe");
     var subdoc = iframe.contentDocument;
     var subwin = iframe.contentWindow;
-    var cs = subwin.getComputedStyle(subdoc.getElementById("display"), "");
+    var cs = subwin.getComputedStyle(subdoc.getElementById("display"));
     var zIndexCounter = 0;
 
     function test_document_rule(urltests, shouldapply)

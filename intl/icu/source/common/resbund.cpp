@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (C) 1997-2013, International Business Machines
@@ -374,8 +376,8 @@ void ResourceBundle::getVersion(UVersionInfo versionInfo) const {
     ures_getVersion(fResource, versionInfo);
 }
 
-static UMutex gLocaleLock = U_MUTEX_INITIALIZER;
 const Locale &ResourceBundle::getLocale(void) const {
+    static UMutex gLocaleLock = U_MUTEX_INITIALIZER;
     Mutex lock(&gLocaleLock);
     if (fLocale != NULL) {
         return *fLocale;

@@ -58,8 +58,9 @@ A `Debugger.Object` instance inherits the following accessor properties
 from its prototype:
 
 `proto`
-:   The referent's prototype (as a new `Debugger.Object` instance), or
-    `null` if it has no prototype.
+:   The referent's prototype (as a new `Debugger.Object` instance), or `null` if
+    it has no prototype. This accessor may throw if the referent is a scripted
+    proxy or some other sort of exotic object (an opaque wrapper, for example).
 
 `class`
 :   A string naming the ECMAScript `[[Class]]` of the referent.
@@ -157,6 +158,14 @@ from its prototype:
 :  If the referent is an error created with an engine internal message template
    this is a string which is the name of the template; `undefined` otherwise.
 
+`errorLineNumber`
+:  If the referent is an Error object, this is the line number at which the
+   referent was created; `undefined`  otherwise.
+
+`errorColumnNumber`
+:  If the referent is an Error object, this is the column number at which the
+   referent was created; `undefined`  otherwise.
+
 `isBoundFunction`
 :   If the referent is a debuggee function, returns `true` if the referent is a
     bound function; `false` otherwise. If the referent is not a debuggee
@@ -166,6 +175,22 @@ from its prototype:
 :   If the referent is a debuggee function, returns `true` if the referent is an
     arrow function; `false` otherwise. If the referent is not a debuggee
     function, or not a function at all, returns `undefined` instead.
+
+`isGeneratorFunction`
+:   If the referent is a debuggee function, returns `true` if the referent was
+    created with a `function*` expression or statement, or false if it is some
+    other sort of function. If the referent is not a debuggee function, or not a
+    function at all, this is `undefined`. (This is always equal to
+    `obj.script.isGeneratorFunction`, assuming `obj.script` is a
+    `Debugger.Script`.)
+
+`isAsyncFunction`
+:   If the referent is a debuggee function, returns `true` if the referent is an
+    async function, defined with an `async function` expression or statement, or
+    false if it is some other sort of function. If the referent is not a
+    debuggee function, or not a function at all, this is `undefined`. (This is
+    always equal to `obj.script.isAsyncFunction`, assuming `obj.script` is a
+    `Debugger.Script`.)
 
 `isPromise`
 :   `true` if the referent is a Promise; `false` otherwise.
@@ -286,13 +311,6 @@ from its prototype:
     when it was resolved. If the referent hasn't been resolved or is not a
     [`Promise`][promise], throw a `TypeError` exception.
 
-`global`
-:   A `Debugger.Object` instance referring to the global object in whose
-    scope the referent was allocated. This does not unwrap cross-compartment
-    wrappers: if the referent is a wrapper, the result refers to the
-    wrapper's global, not the wrapped object's global. The result refers to
-    the global directly, not via a wrapper.
-
 <code id="allocationsite">allocationSite</code>
 :   If [object allocation site tracking][tracking-allocs] was enabled when this
     `Debugger.Object`'s referent was allocated, return the
@@ -313,18 +331,32 @@ Unless otherwise specified, these methods are not
 debuggee code, or because the referent is a proxy whose traps are debuggee
 code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
 
-<code>getProperty(<i>name</i>)</code>
-:   Return the value of the referent's property named <i>name</i>, or
-    `undefined` if it has no such property. <i>Name</i> must be a string.
-    The result is a debuggee value.
+These methods may throw if the referent is not a native object. Even simple
+accessors like `isExtensible` may throw if the referent is a proxy or some sort
+of exotic object like an opaque wrapper.
 
-<code>setProperty(<i>name</i>, <i>value</i>)</code>
+<code>getProperty(<i>key</i>, [<i>receiver</i>])</code>
+:   Return a [completion value][cv] with "return" being the value of the
+    referent's property named <i>key</i>, or `undefined` if it has no such
+    property. <i>key</i> must be a string or symbol; <i>receiver</i> must be
+    a debuggee value. If the property is a getter, it will be evaluated with
+    <i>receiver</i> as the receiver, defaulting to the `Debugger.Object`
+    if omitted. All extant handler methods, breakpoints, and so on remain
+    active during the call.
+
+<code>setProperty(<i>key</i>, <i>value</i>, [<i>receiver</i>])</code>
 :   Store <i>value</i> as the value of the referent's property named
-    <i>name</i>, creating the property if it does not exist. <i>Name</i>
-    must be a string; <i>value</i> must be a debuggee value.
+    <i>key</i>, creating the property if it does not exist. <i>key</i>
+    must be a string or symbol; <i>value</i> and <i>receiver</i> must be
+    debuggee values. If the property is a setter, it will be evaluated with
+    <i>receiver</i> as the receiver, defaulting to the `Debugger.Object`
+    if omitted. Return a [completion value][cv] with "return" being a
+    success/failure boolean, or else "throw" being the exception thrown
+    during property assignment. All extant handler methods, breakpoints,
+    and so on remain active during the call.
 
-<code>getOwnPropertyDescriptor(<i>name</i>)</code>
-:   Return a property descriptor for the property named <i>name</i> of the
+<code>getOwnPropertyDescriptor(<i>key</i>)</code>
+:   Return a property descriptor for the property named <i>key</i> of the
     referent. If the referent has no such property, return `undefined`.
     (This function behaves like the standard
     `Object.getOwnPropertyDescriptor` function, except that the object being
@@ -345,8 +377,8 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     called in the debuggee, and the result copied in the scope of the
     debugger's global object.
 
-<code>defineProperty(<i>name</i>, <i>attributes</i>)</code>
-:   Define a property on the referent named <i>name</i>, as described by
+<code>defineProperty(<i>key</i>, <i>attributes</i>)</code>
+:   Define a property on the referent named <i>key</i>, as described by
     the property descriptor <i>descriptor</i>. Any `value`, `get`, and
     `set` properties of <i>attributes</i> must be debuggee values. (This
     function behaves like `Object.defineProperty`, except that the target
@@ -359,8 +391,8 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     object is implicit, and in a different compartment from the
     <i>properties</i> argument.)
 
-<code>deleteProperty(<i>name</i>)</code>
-:   Remove the referent's property named <i>name</i>. Return true if the
+<code>deleteProperty(<i>key</i>)</code>
+:   Remove the referent's property named <i>key</i>. Return true if the
     property was successfully removed, or if the referent has no such
     property. Return false if the property is non-configurable.
 
@@ -403,26 +435,6 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     `Object.isExtensible` function, except that the object inspected is
     implicit and in a different compartment from the caller.)
 
-<code>copy(<i>value</i>)</code>
-:   Apply the HTML5 "structured cloning" algorithm to create a copy of
-    <i>value</i> in the referent's global object (and thus in the referent's
-    compartment), and return a `Debugger.Object` instance referring to the
-    copy.
-
-    Note that this returns primitive values unchanged. This means you can
-    use `Debugger.Object.prototype.copy` as a generic "debugger value to
-    debuggee value" conversion function—within the limitations of the
-    "structured cloning" algorithm.
-
-<code>create(<i>prototype</i>, [<i>properties</i>])</code>
-:   Create a new object in the referent's global (and thus in the
-    referent's compartment), and return a `Debugger.Object` referring to
-    it. The new object's prototype is <i>prototype</i>, which must be an
-    `Debugger.Object` instance. The new object's properties are as given by
-    <i>properties</i>, as if <i>properties</i> were passed to
-    `Debugger.Object.prototype.defineProperties`, with the new
-    `Debugger.Object` instance as the `this` value.
-
 <code>makeDebuggeeValue(<i>value</i>)</code>
 :   Return the debuggee value that represents <i>value</i> in the debuggee.
     If <i>value</i> is a primitive, we return it unchanged; if <i>value</i>
@@ -441,6 +453,17 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     `Debugger.Object` instance that presents <i>o</i> as it would be seen
     by code in <i>d</i>'s compartment.
 
+<code>makeDebuggeeNativeFunction(<i>value</i>)</code>
+:   If <i>value</i> is a native function in the debugger's compartment, create
+    an equivalent function for the same native in the debuggee's realm, and
+    return a `Debugger.Object` instance for the new function.  The new function
+    can be accessed by code in the debuggee without going through a cross
+    compartment wrapper.
+
+<code>isSameNative(<i>value</i>)</code>
+:   If <i>value</i> is a native function in the debugger's compartment, return
+    whether the referent is a native function for the same C++ native.
+
 <code>decompile([<i>pretty</i>])</code>
 :   If the referent is a function that is debuggee code, return the
     JavaScript source code for a function definition equivalent to the
@@ -456,7 +479,7 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     value, or `{ asConstructor: true }` to invoke the referent as a
     constructor, in which case SpiderMonkey provides an appropriate `this`
     value itself. Each <i>argument</i> must be a debuggee value. All extant
-    handler methods, breakpoints, watchpoints, and so on remain active
+    handler methods, breakpoints, and so on remain active
     during the call. If the referent is not callable, throw a `TypeError`.
     This function follows the [invocation function conventions][inv fr].
 
@@ -469,7 +492,7 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
     an appropriate `this` value itself. <i>Arguments</i> must either be an
     array (in the debugger) of debuggee values, or `null` or `undefined`,
     which are treated as an empty array. All extant handler methods,
-    breakpoints, watchpoints, and so on remain active during the call. If
+    breakpoints, and so on remain active during the call. If
     the referent is not callable, throw a `TypeError`. This function
     follows the [invocation function conventions][inv fr].
 
@@ -477,7 +500,7 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
 :   If the referent is a global object, evaluate <i>code</i> in that global
     environment, and return a [completion value][cv] describing how it completed.
     <i>Code</i> is a string. All extant handler methods, breakpoints,
-    watchpoints, and so on remain active during the call. This function
+    and so on remain active during the call. This function
     follows the [invocation function conventions][inv fr].
     If the referent is not a global object, throw a `TypeError` exception.
 
@@ -516,101 +539,26 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
 
     The <i>options</i> argument is as for [`Debugger.Frame.prototype.eval`][fr eval].
 
+<code>createSource(<i>options</i>)</code>
+:    If the referent is a global object, return a new JavaScript source in the
+    global's realm which has its properties filled in according to the `options`
+    object.  If the referent is not a global object, throw a `TypeError`
+    exception.  The `options` object can have the following properties:
+      * `text`: String contents of the JavaScript in the source.
+      * `url`: URL the resulting source should be associated with.
+      * `startLine`: Starting line of the source.
+      * `sourceMapURL`: Optional URL specifying the source's source map URL.
+        If not specified, the source map URL can be filled in if specified by
+        the source's text.
+      * `isScriptElement`: Optional boolean which will set the source's
+        `introductionType` to `"scriptElement"` if specified.  Otherwise, the
+        source's `introductionType` will be `undefined`.
+
 `asEnvironment()`
 :   If the referent is a global object, return the [`Debugger.Environment`][environment]
     instance representing the referent's global lexical scope. The global
     lexical scope's enclosing scope is the global object. If the referent is
     not a global object, throw a `TypeError`.
-
-<code>setObjectWatchpoint(<i>handler</i>)</code> <i>(future plan)</i>
-:   Set a watchpoint on all the referent's own properties, reporting events
-    by calling <i>handler</i>'s methods. Any previous watchpoint handler on
-    this `Debugger.Object` instance is replaced. If <i>handler</i> is null,
-    the referent is no longer watched. <i>Handler</i> may have the following
-    methods, called under the given circumstances:
-
-    <code>add(<i>frame</i>, <i>name</i>, <i>descriptor</i>)</code>
-    :   A property named <i>name</i> has been added to the referent.
-        <i>Descriptor</i> is a property descriptor of the sort accepted by
-        `Debugger.Object.prototype.defineProperty`, giving the newly added
-        property's attributes.
-
-    <code>delete(<i>frame</i>, <i>name</i>)</code>
-    :   The property named <i>name</i> is about to be deleted from the referent.
-
-    <code>change(<i>frame</i>, <i>name</i>, <i>oldDescriptor</i>, <i>newDescriptor</i>)</code>
-    :   The existing property named <i>name</i> on the referent is being changed
-        from those given by <i>oldDescriptor</i> to those given by
-        <i>newDescriptor</i>. This handler method is only called when attributes
-        of the property other than its value are being changed; if only the
-        value is changing, SpiderMonkey calls the handler's `set` method.
-
-    <code>set(<i>frame</i>, <i>oldValue</i>, <i>newValue</i>)</code>
-    :   The data property named <i>name</i> of the referent is about to have its
-        value changed from <i>oldValue</i> to <i>newValue</i>.
-
-        SpiderMonkey only calls this method on assignments to data properties
-        that will succeed; assignments to un-writable data properties fail
-        without notifying the debugger.
-
-    <code>extensionsPrevented(<i>frame</i>)</code>
-    :   The referent has been made non-extensible, as if by a call to
-        `Object.preventExtensions`.
-
-    For all watchpoint handler methods:
-
-    * Handler calls receive the handler object itself as the `this` value.
-
-    * The <i>frame</i> argument is the current stack frame, whose code is
-      about to perform the operation on the object being reported.
-
-    * If the method returns `undefined`, then SpiderMonkey makes the announced
-      change to the object, and continues execution normally. If the method
-      returns an object:
-
-    * If the object has a `superseded` property whose value is a true value,
-      then SpiderMonkey does not make the announced change.
-
-    * If the object has a `resume` property, its value is taken as a
-      [resumption value][rv], indicating how
-      execution should proceed. (However, `return` resumption values are not
-      supported.)
-
-    * If a given method is absent from <i>handler</i>, then events of that
-      sort are ignored. The watchpoint consults <i>handler</i>'s properties
-      each time an event occurs, so adding methods to or removing methods from
-      <i>handler</i> after setting the watchpoint enables or disables
-      reporting of the corresponding events.
-
-    * Values passed to <i>handler</i>'s methods are debuggee values.
-      Descriptors passed to <i>handler</i>'s methods are ordinary objects in
-      the debugger's compartment, except for `value`, `get`, and `set`
-      properties in descriptors, which are debuggee values; they are the sort
-      of value expected by `Debugger.Object.prototype.defineProperty`.
-
-    * Watchpoint handler calls are cross-compartment, intra-thread calls: the
-      call takes place in the same thread that changed the property, and in
-      <i>handler</i>'s method's compartment (typically the same as the
-      debugger's compartment).
-
-    The new watchpoint belongs to the [`Debugger`][debugger-object] instance to which this
-    `Debugger.Object` instance belongs; disabling the [`Debugger`][debugger-object] instance
-    disables this watchpoint.
-
-`clearObjectWatchpoint()` <i>(future plan)</i>
-:   Remove any object watchpoint set on the referent.
-
-<code>setPropertyWatchpoint(<i>name</i>, <i>handler</i>)</code> <i>(future plan)</i>
-:   Set a watchpoint on the referent's property named <i>name</i>, reporting
-    events by calling <i>handler</i>'s methods. Any previous watchpoint
-    handler on this property for this `Debugger.Object` instance is
-    replaced. If <i>handler</i> is null, the property is no longer watched.
-    <i>Handler</i> is as described for
-    `Debugger.Object.prototype.setObjectWatchpoint`, except that it does not
-    receive `extensionsPrevented` events.
-
-<code>clearPropertyWatchpoint(<i>name</i>)</code> <i>(future plan)</i>
-:   Remove any watchpoint set on the referent's property named <i>name</i>.
 
 `unwrap()`
 :   If the referent is a wrapper that this `Debugger.Object`'s compartment
@@ -639,3 +587,44 @@ code), the call throws a [`Debugger.DebuggeeWouldRun`][wouldrun] exception.
 <code>forceLexicalInitializationByName(<i>binding</i>)</code>
 :  If <i>binding</i> is in an uninitialized state initialize it to undefined
    and return true, otherwise do nothing and return false.
+
+`setInstrumentation(callback, kinds)`
+:   If the referent is a global object, this specifies how instrumentation
+    should be installed on scripts created in the future in this global's realm.
+    If the referent is not a global object, throw a `TypeError`.  If the global
+    already has instrumentation specified, throw an `Error`. `callback` is a
+    `Debugger.Object` wrapping the callback to invoke, and `kinds` is an array
+    of strings specifying the kinds of operations at which the callback should
+    be invoked. Instrumentation is initially inactive, and can be activated via
+    `DebuggerObject.setInstrumentationActive`. When instrumentation is active
+    and an operation described by one of the instrumentation kinds executes,
+    the callback is invoked with at least three arguments: the string kind of
+    operation executing, the ID for the script specified by
+    `Debugger.Script.setInstrumentationId`, and the bytecode offset
+    of the script location following the instrumentation.  More call arguments
+    are possible for some instrumentation kinds.  If an instrumented script is
+    invoked without having `setInstrumentationId` called on it, it will throw an
+    `Error`.  The possible instrumentation kinds and any extra arguments are as
+    follows:
+      * `main`: The main entry point of a script.
+      * `entry`: Points other than the main entry point where a frame for the
+        script might begin executing when it was not previously on the stack.
+        Only applies to generator/async scripts.
+      * `exit`: Points at which a script's frame will be popped or suspended.
+      * `breakpoint`: Breakpoint sites in a script.
+      * `getProperty`: Property read operations, including `x.f` and
+        destructuring operations. The callback will be additionally invoked with
+        the object and property name.
+      * `setProperty`: Property write operations. The callback will be
+        additionally invoked with the object, property name, and rhs.
+      * `getElement`: Element read operations. The callback will be additionally
+        invoked with the object and element value.
+      * `setElement`: Element write operations. The callback will be
+        additionally invoked with the object, element value, and rhs.
+
+`setInstrumentationActive(active)`
+:   If the referent is a global object, set whether instrumentation is active
+    in the global's realm.  The instrumentation callback is only invoked when
+    instrumentation is active, and code will run faster when instrumentation is
+    inactive. If the referent is not a global object, throw a `TypeError`.
+    If the referent has not had instrumentation installed, throw an `Error`.

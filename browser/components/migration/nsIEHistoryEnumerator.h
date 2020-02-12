@@ -9,19 +9,21 @@
 
 #include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIWritablePropertyBag2.h"
+#include "nsSimpleEnumerator.h"
 
-class nsIEHistoryEnumerator final : public nsISimpleEnumerator
-{
-public:
-  NS_DECL_ISUPPORTS
+class nsIEHistoryEnumerator final : public nsSimpleEnumerator {
+ public:
   NS_DECL_NSISIMPLEENUMERATOR
 
   nsIEHistoryEnumerator();
 
-private:
-  ~nsIEHistoryEnumerator();
+  const nsID& DefaultInterface() override {
+    return NS_GET_IID(nsIWritablePropertyBag2);
+  }
+
+ private:
+  ~nsIEHistoryEnumerator() override;
 
   /**
    * Initializes the history reader, if needed.

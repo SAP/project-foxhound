@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=459848
 -->
 <head>
   <title>Test for Bug 459848</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -46,7 +46,7 @@ function startTest() {
   is(doc1.documentElement.getAttribute("didRun"), "true",
      "Should have run an event listener");
 
-  ifr2.parentNode.removeChild(ifr2);
+  ifr2.remove();
   setTimeout(testDoc2, 0);
 }
 SimpleTest.waitForExplicitFinish();

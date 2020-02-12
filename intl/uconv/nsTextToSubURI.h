@@ -9,23 +9,22 @@
 #include "nsITextToSubURI.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "mozilla/net/IDNBlocklistUtils.h"
 
-class nsTextToSubURI: public nsITextToSubURI
-{
+class nsTextToSubURI : public nsITextToSubURI {
   NS_DECL_ISUPPORTS
   NS_DECL_NSITEXTTOSUBURI
 
-private:
+ private:
   virtual ~nsTextToSubURI();
 
   // We assume that the URI is encoded as UTF-8.
-  nsresult convertURItoUnicode(const nsAFlatCString &aCharset,
-                               const nsAFlatCString &aURI, 
-                               nsAString &_retval);
+  nsresult convertURItoUnicode(const nsCString& aCharset, const nsCString& aURI,
+                               nsAString& _retval);
 
-  // Characters from the pref "network.IDN.blacklist_chars", or a built-in
-  // fallback if reading the pref fails.
-  nsTArray<char16_t> mUnsafeChars;
+  // Characters defined in netwerk/dns/IDNCharacterBlocklist.inc or via the
+  // network.IDN.extra_allowed_chars and network.IDN.extra_blocked_chars prefs.
+  nsTArray<mozilla::net::BlocklistRange> mIDNBlocklist;
 };
 
-#endif // nsTextToSubURI_h__
+#endif  // nsTextToSubURI_h__

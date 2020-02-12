@@ -19,19 +19,14 @@ NS_IMPL_ISUPPORTS(DummyPresentationTransportBuilderConstructor,
 
 NS_IMETHODIMP
 DummyPresentationTransportBuilderConstructor::CreateTransportBuilder(
-                              uint8_t aType,
-                              nsIPresentationSessionTransportBuilder** aRetval)
-{
+    uint8_t aType, nsIPresentationSessionTransportBuilder** aRetval) {
   MOZ_ASSERT(false, "Unexpected to be invoked.");
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(PresentationTransportBuilderConstructor,
-                             DummyPresentationTransportBuilderConstructor)
-
-/* static */ already_AddRefed<nsIPresentationTransportBuilderConstructor>
-PresentationTransportBuilderConstructor::Create()
-{
+/* static */
+already_AddRefed<nsIPresentationTransportBuilderConstructor>
+PresentationTransportBuilderConstructor::Create() {
   nsCOMPtr<nsIPresentationTransportBuilderConstructor> constructor;
   if (XRE_IsContentProcess()) {
     constructor = new DummyPresentationTransportBuilderConstructor();
@@ -44,9 +39,7 @@ PresentationTransportBuilderConstructor::Create()
 
 NS_IMETHODIMP
 PresentationTransportBuilderConstructor::CreateTransportBuilder(
-                              uint8_t aType,
-                              nsIPresentationSessionTransportBuilder** aRetval)
-{
+    uint8_t aType, nsIPresentationSessionTransportBuilder** aRetval) {
   if (NS_WARN_IF(!aRetval)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -54,7 +47,8 @@ PresentationTransportBuilderConstructor::CreateTransportBuilder(
   *aRetval = nullptr;
 
   if (NS_WARN_IF(aType != nsIPresentationChannelDescription::TYPE_TCP &&
-                 aType != nsIPresentationChannelDescription::TYPE_DATACHANNEL)) {
+                 aType !=
+                     nsIPresentationChannelDescription::TYPE_DATACHANNEL)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -66,11 +60,10 @@ PresentationTransportBuilderConstructor::CreateTransportBuilder(
 
   nsCOMPtr<nsIPresentationSessionTransportBuilder> builder;
   if (aType == nsIPresentationChannelDescription::TYPE_TCP) {
-    builder =
-      do_CreateInstance(PRESENTATION_TCP_SESSION_TRANSPORT_CONTRACTID);
+    builder = do_CreateInstance(PRESENTATION_TCP_SESSION_TRANSPORT_CONTRACTID);
   } else {
-    builder =
-      do_CreateInstance("@mozilla.org/presentation/datachanneltransportbuilder;1");
+    builder = do_CreateInstance(
+        "@mozilla.org/presentation/datachanneltransportbuilder;1");
   }
 
   if (NS_WARN_IF(!builder)) {
@@ -81,5 +74,5 @@ PresentationTransportBuilderConstructor::CreateTransportBuilder(
   return NS_OK;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -4,28 +4,41 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+const { SyncedTabsDeckStore } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/SyncedTabsDeckStore.js"
+);
+const { SyncedTabsDeckView } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/SyncedTabsDeckView.js"
+);
+const { SyncedTabsListStore } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/SyncedTabsListStore.js"
+);
+const { TabListComponent } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/TabListComponent.js"
+);
+const { TabListView } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/TabListView.js"
+);
+let { getChromeWindow } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/util.js"
+);
+const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 
-Cu.import("resource:///modules/syncedtabs/SyncedTabsDeckStore.js");
-Cu.import("resource:///modules/syncedtabs/SyncedTabsDeckView.js");
-Cu.import("resource:///modules/syncedtabs/SyncedTabsListStore.js");
-Cu.import("resource:///modules/syncedtabs/TabListComponent.js");
-Cu.import("resource:///modules/syncedtabs/TabListView.js");
-let { getChromeWindow } = Cu.import("resource:///modules/syncedtabs/util.js", {});
-
-XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function () {
-  return Components.utils.import("resource://gre/modules/FxAccountsCommon.js", {});
+XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
+  return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js", {});
 });
 
-let log = Cu.import("resource://gre/modules/Log.jsm", {})
-            .Log.repository.getLogger("Sync.RemoteTabs");
+let log = ChromeUtils.import(
+  "resource://gre/modules/Log.jsm",
+  {}
+).Log.repository.getLogger("Sync.RemoteTabs");
 
-this.EXPORTED_SYMBOLS = [
-  "SyncedTabsDeckComponent"
-];
+var EXPORTED_SYMBOLS = ["SyncedTabsDeckComponent"];
 
 /* SyncedTabsDeckComponent
  * This component instantiates views and storage objects as well as defines
@@ -34,35 +47,46 @@ this.EXPORTED_SYMBOLS = [
  */
 
 function SyncedTabsDeckComponent({
-  window, SyncedTabs, fxAccounts, deckStore, listStore, listComponent, DeckView, getChromeWindowMock,
+  window,
+  SyncedTabs,
+  deckStore,
+  listStore,
+  listComponent,
+  DeckView,
+  getChromeWindowMock,
 }) {
   this._window = window;
   this._SyncedTabs = SyncedTabs;
-  this._fxAccounts = fxAccounts;
   this._DeckView = DeckView || SyncedTabsDeckView;
   // used to stub during tests
   this._getChromeWindow = getChromeWindowMock || getChromeWindow;
 
   this._deckStore = deckStore || new SyncedTabsDeckStore();
   this._syncedTabsListStore = listStore || new SyncedTabsListStore(SyncedTabs);
-  this.tabListComponent = listComponent || new TabListComponent({
-    window: this._window,
-    store: this._syncedTabsListStore,
-    View: TabListView,
-    SyncedTabs: SyncedTabs,
-    clipboardHelper: Cc["@mozilla.org/widget/clipboardhelper;1"]
-                       .getService(Ci.nsIClipboardHelper),
-    getChromeWindow: this._getChromeWindow,
-  });
+  this.tabListComponent =
+    listComponent ||
+    new TabListComponent({
+      window: this._window,
+      store: this._syncedTabsListStore,
+      View: TabListView,
+      SyncedTabs,
+      clipboardHelper: Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
+        Ci.nsIClipboardHelper
+      ),
+      getChromeWindow: this._getChromeWindow,
+    });
 }
 
 SyncedTabsDeckComponent.prototype = {
   PANELS: {
     TABS_CONTAINER: "tabs-container",
     TABS_FETCHING: "tabs-fetching",
+    LOGIN_FAILED: "reauth",
     NOT_AUTHED_INFO: "notAuthedInfo",
+    SYNC_DISABLED: "syncDisabled",
     SINGLE_DEVICE_INFO: "singleDeviceInfo",
     TABS_DISABLED: "tabs-disabled",
+    UNVERIFIED: "unverified",
   },
 
   get container() {
@@ -70,30 +94,37 @@ SyncedTabsDeckComponent.prototype = {
   },
 
   init() {
-    Services.obs.addObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED, false);
-    Services.obs.addObserver(this, FxAccountsCommon.ONLOGIN_NOTIFICATION, false);
+    Services.obs.addObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED);
+    Services.obs.addObserver(this, UIState.ON_UPDATE);
+
+    // Add app locale change support for HTML sidebar
+    Services.obs.addObserver(this, "intl:app-locales-changed");
+    Services.prefs.addObserver("intl.uidirection", this);
+    this.updateDir();
 
     // Go ahead and trigger sync
-    this._SyncedTabs.syncTabs()
-                    .catch(Cu.reportError);
+    this._SyncedTabs.syncTabs().catch(Cu.reportError);
 
     this._deckView = new this._DeckView(this._window, this.tabListComponent, {
-      onAndroidClick: event => this.openAndroidLink(event),
-      oniOSClick: event => this.openiOSLink(event),
-      onSyncPrefClick: event => this.openSyncPrefs(event)
+      onConnectDeviceClick: event => this.openConnectDevice(event),
+      onSyncPrefClick: event => this.openSyncPrefs(event),
     });
 
     this._deckStore.on("change", state => this._deckView.render(state));
     // Trigger the initial rendering of the deck view
     // Object.values only in nightly
-    this._deckStore.setPanels(Object.keys(this.PANELS).map(k => this.PANELS[k]));
+    this._deckStore.setPanels(
+      Object.keys(this.PANELS).map(k => this.PANELS[k])
+    );
     // Set the initial panel to display
     this.updatePanel();
   },
 
   uninit() {
     Services.obs.removeObserver(this, this._SyncedTabs.TOPIC_TABS_CHANGED);
-    Services.obs.removeObserver(this, FxAccountsCommon.ONLOGIN_NOTIFICATION);
+    Services.obs.removeObserver(this, UIState.ON_UPDATE);
+    Services.obs.removeObserver(this, "intl:app-locales-changed");
+    Services.prefs.removeObserver("intl.uidirection", this);
     this._deckView.destroy();
   },
 
@@ -103,42 +134,61 @@ SyncedTabsDeckComponent.prototype = {
         this._syncedTabsListStore.getData();
         this.updatePanel();
         break;
-      case FxAccountsCommon.ONLOGIN_NOTIFICATION:
+      case UIState.ON_UPDATE:
         this.updatePanel();
+        break;
+      case "intl:app-locales-changed":
+        this.updateDir();
+        break;
+      case "nsPref:changed":
+        if (data == "intl.uidirection") {
+          this.updateDir();
+        }
         break;
       default:
         break;
     }
   },
 
-  // There's no good way to mock fxAccounts in browser tests where it's already
-  // been instantiated, so we have this method for stubbing.
-  _accountStatus() {
-    return this._fxAccounts.accountStatus();
-  },
-
-  getPanelStatus() {
-    return this._accountStatus().then(exists => {
-      if (!exists) {
+  async getPanelStatus() {
+    try {
+      const state = UIState.get();
+      const { status } = state;
+      if (status == UIState.STATUS_NOT_CONFIGURED) {
         return this.PANELS.NOT_AUTHED_INFO;
-      }
-      if (!this._SyncedTabs.isConfiguredToSyncTabs) {
+      } else if (status == UIState.STATUS_LOGIN_FAILED) {
+        return this.PANELS.LOGIN_FAILED;
+      } else if (status == UIState.STATUS_NOT_VERIFIED) {
+        return this.PANELS.UNVERIFIED;
+      } else if (!state.syncEnabled) {
+        return this.PANELS.SYNC_DISABLED;
+      } else if (!this._SyncedTabs.isConfiguredToSyncTabs) {
         return this.PANELS.TABS_DISABLED;
-      }
-      if (!this._SyncedTabs.hasSyncedThisSession) {
+      } else if (!this._SyncedTabs.hasSyncedThisSession) {
         return this.PANELS.TABS_FETCHING;
       }
-      return this._SyncedTabs.getTabClients().then(clients => {
-        if (clients.length) {
-          return this.PANELS.TABS_CONTAINER;
-        }
-        return this.PANELS.SINGLE_DEVICE_INFO;
-      });
-    })
-    .catch(err => {
+      const clients = await this._SyncedTabs.getTabClients();
+      if (clients.length) {
+        return this.PANELS.TABS_CONTAINER;
+      }
+      return this.PANELS.SINGLE_DEVICE_INFO;
+    } catch (err) {
       Cu.reportError(err);
       return this.PANELS.NOT_AUTHED_INFO;
-    });
+    }
+  },
+
+  updateDir() {
+    // If the HTML document doesn't exist, we can't update the window
+    if (!this._window.document) {
+      return;
+    }
+
+    if (Services.locale.isAppLocaleRTL) {
+      this._window.document.body.dir = "rtl";
+    } else {
+      this._window.document.body.dir = "ltr";
+    }
   },
 
   updatePanel() {
@@ -148,22 +198,13 @@ SyncedTabsDeckComponent.prototype = {
       .catch(Cu.reportError);
   },
 
-  openAndroidLink(event) {
-    let href = Services.prefs.getCharPref("identity.mobilepromo.android") + "synced-tabs-sidebar";
-    this._openUrl(href, event);
-  },
-
-  openiOSLink(event) {
-    let href = Services.prefs.getCharPref("identity.mobilepromo.ios") + "synced-tabs-sidebar";
-    this._openUrl(href, event);
-  },
-
-  _openUrl(url, event) {
-    this._window.openUILink(url, event);
-  },
-
   openSyncPrefs() {
-    this._getChromeWindow(this._window).gSyncUI.openSetup(null, "tabs-sidebar");
-  }
-};
+    this._getChromeWindow(this._window).gSync.openPrefs("tabs-sidebar");
+  },
 
+  openConnectDevice() {
+    this._getChromeWindow(this._window).gSync.openConnectAnotherDevice(
+      "tabs-sidebar"
+    );
+  },
+};

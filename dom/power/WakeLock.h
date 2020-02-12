@@ -10,6 +10,7 @@
 #include "nsCOMPtr.h"
 #include "nsIDOMEventListener.h"
 #include "nsIObserver.h"
+#include "nsIWakeLock.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
@@ -22,18 +23,16 @@ namespace dom {
 
 class ContentParent;
 
-class WakeLock final
-  : public nsIDOMEventListener
-  , public nsWrapperCache
-  , public nsIObserver
-  , public nsSupportsWeakReference
-{
-public:
+class WakeLock final : public nsIDOMEventListener,
+                       public nsIObserver,
+                       public nsSupportsWeakReference,
+                       public nsIWakeLock {
+ public:
   NS_DECL_NSIDOMEVENTLISTENER
   NS_DECL_NSIOBSERVER
+  NS_DECL_NSIWAKELOCK
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(WakeLock, nsIDOMEventListener)
+  NS_DECL_ISUPPORTS
 
   // Note: WakeLock lives for the lifetime of the document in order to avoid
   // exposing GC behavior to pages. This means that
@@ -45,46 +44,43 @@ public:
   // Initialize this wake lock on behalf of the given window.  Null windows are
   // allowed; a lock without an associated window is always considered
   // invisible.
-  nsresult Init(const nsAString &aTopic, nsPIDOMWindowInner* aWindow);
+  nsresult Init(const nsAString& aTopic, nsPIDOMWindowInner* aWindow);
 
   // Initialize this wake lock on behalf of the given process.  If the process
   // dies, the lock is released.  A wake lock initialized via this method is
   // always considered visible.
-  nsresult Init(const nsAString &aTopic, ContentParent* aContentParent);
+  nsresult Init(const nsAString& aTopic, ContentParent* aContentParent);
 
   // WebIDL methods
 
   nsPIDOMWindowInner* GetParentObject() const;
 
-  virtual JSObject*
-  WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
   void GetTopic(nsAString& aTopic);
 
   void Unlock(ErrorResult& aRv);
 
-private:
+ private:
   virtual ~WakeLock();
 
-  void     DoUnlock();
-  void     DoLock();
-  void     AttachEventListener();
-  void     DetachEventListener();
+  void DoUnlock();
+  void DoLock();
+  void AttachEventListener();
+  void DetachEventListener();
 
-  bool      mLocked;
-  bool      mHidden;
+  bool mLocked;
+  bool mHidden;
 
   // The ID of the ContentParent on behalf of whom we acquired this lock, or
   // CONTENT_PROCESS_UNKNOWN_ID if this lock was acquired on behalf of the
   // current process.
-  uint64_t  mContentParentID;
-  nsString  mTopic;
+  uint64_t mContentParentID;
+  nsString mTopic;
 
   // window that this was created for.  Weak reference.
   nsWeakPtr mWindow;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_power_WakeLock_h
+#endif  // mozilla_dom_power_WakeLock_h

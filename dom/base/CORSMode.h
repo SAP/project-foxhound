@@ -7,6 +7,8 @@
 #ifndef CORSMode_h_
 #define CORSMode_h_
 
+#include <stdint.h>
+
 namespace mozilla {
 
 enum CORSMode : uint8_t {
@@ -28,6 +30,6 @@ enum CORSMode : uint8_t {
   CORS_USE_CREDENTIALS
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* CORSMode_h_ */

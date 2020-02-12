@@ -21,7 +21,7 @@ module.exports = function(context) {
   //  --------------------------------------------------------------------------
 
   return {
-    "VariableDeclaration": function(node) {
+    VariableDeclaration(node) {
       if (node.kind === "var") {
         if (helpers.getIsGlobalScope(context.getAncestors())) {
           return;
@@ -29,6 +29,6 @@ module.exports = function(context) {
 
         context.report(node, "Unexpected var, use let or const instead.");
       }
-    }
+    },
   };
 };

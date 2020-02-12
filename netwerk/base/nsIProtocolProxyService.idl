@@ -13,12 +13,13 @@ interface nsIProtocolProxyChannelFilter;
 interface nsIProxyInfo;
 interface nsIChannel;
 interface nsIURI;
+interface nsIEventTarget;
 
 /**
  * nsIProtocolProxyService provides methods to access information about
  * various network proxies.
  */
-[scriptable, uuid(ef57c8b6-e09d-4cd4-9222-2a5d2402e15d)]
+[scriptable, builtinclass, uuid(ef57c8b6-e09d-4cd4-9222-2a5d2402e15d)]
 interface nsIProtocolProxyService : nsISupports
 {
     /** Flag 1 << 0 is unused **/
@@ -79,6 +80,8 @@ interface nsIProtocolProxyService : nsISupports
      *        not correspond to a RESOLVE_ flag are reserved for future use.
      * @param aCallback
      *        The object to be notified when the result is available.
+     * @param aMainThreadTarget
+     *        A labelled event target for dispatching runnables to main thread.
      *
      * @return An object that can be used to cancel the asychronous operation.
      *         If canceled, the cancelation status (aReason) will be forwarded
@@ -96,10 +99,11 @@ interface nsIProtocolProxyService : nsISupports
      * the given URI should be loaded using the HTTP protocol handler, which
      * also supports nsIProxiedProtocolHandler.
      *
-     * @see nsIProxiedProtocolHandler::newProxiedChannel 
+     * @see nsIProxiedProtocolHandler::newProxiedChannel
      */
     nsICancelable asyncResolve(in nsISupports aChannelOrURI, in unsigned long aFlags,
-                               in nsIProtocolProxyCallback aCallback);
+                               in nsIProtocolProxyCallback aCallback,
+                               [optional] in nsIEventTarget aMainThreadTarget);
 
     /**
      * This method may be called to construct a nsIProxyInfo instance from
@@ -135,7 +139,10 @@ interface nsIProtocolProxyService : nsISupports
      *        parameter may be null.
      */
     nsIProxyInfo newProxyInfo(in ACString aType, in AUTF8String aHost,
-                              in long aPort, in unsigned long aFlags,
+                              in long aPort,
+                              in ACString aProxyAuthorizationHeader,
+                              in ACString aConnectionIsolationKey,
+                              in unsigned long aFlags,
                               in unsigned long aFailoverTimeout,
                               in nsIProxyInfo aFailoverProxy);
 
@@ -174,6 +181,8 @@ interface nsIProtocolProxyService : nsISupports
     nsIProxyInfo newProxyInfoWithAuth(in ACString aType, in AUTF8String aHost,
                                       in long aPort,
                                       in ACString aUsername, in ACString aPassword,
+                                      in ACString aProxyAuthorizationHeader,
+                                      in ACString aConnectionIsolationKey,
                                       in unsigned long aFlags,
                                       in unsigned long aFailoverTimeout,
                                       in nsIProxyInfo aFailoverProxy);
@@ -267,7 +276,7 @@ interface nsIProtocolProxyService : nsISupports
      /**
       * These values correspond to the possible integer values for the
       * network.proxy.type preference.
-      */ 
+      */
      const unsigned long PROXYCONFIG_DIRECT   = 0;
      const unsigned long PROXYCONFIG_MANUAL   = 1;
      const unsigned long PROXYCONFIG_PAC      = 2;
@@ -278,4 +287,9 @@ interface nsIProtocolProxyService : nsISupports
       * This attribute specifies the current type of proxy configuration.
       */
      readonly attribute unsigned long proxyConfigType;
+
+     /**
+      * True if there is a PAC download in progress.
+      */
+    [notxpcom, nostdcall] readonly attribute boolean isPACLoading;
 };

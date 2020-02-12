@@ -8,58 +8,73 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
-const { once } = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  initPerformanceInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  once,
+} = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  setSelectedRecording,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let {
-    EVENTS,
-    $,
-    PerformanceController,
-    PerformanceView,
-    RecordingsView
-  } = panel.panelWin;
+  const { EVENTS, $, PerformanceController, PerformanceView } = panel.panelWin;
 
-  let MAIN_CONTAINER = $("#performance-view");
-  let CONTENT = $("#performance-view-content");
-  let DETAILS_CONTAINER = $("#details-pane-container");
-  let RECORDING = $("#recording-notice");
-  let DETAILS = $("#details-pane");
+  const MAIN_CONTAINER = $("#performance-view");
+  const CONTENT = $("#performance-view-content");
+  const DETAILS_CONTAINER = $("#details-pane-container");
+  const RECORDING = $("#recording-notice");
+  const DETAILS = $("#details-pane");
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  is(PerformanceView.getState(), "recording", "Correct state during recording.");
+  is(
+    PerformanceView.getState(),
+    "recording",
+    "Correct state during recording."
+  );
   is(MAIN_CONTAINER.selectedPanel, CONTENT, "Showing main view with timeline.");
   is(DETAILS_CONTAINER.selectedPanel, RECORDING, "Showing recording panel.");
 
   let selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
-  RecordingsView.selectedIndex = 0;
-  yield selected;
+  setSelectedRecording(panel, 0);
+  await selected;
 
-  is(PerformanceView.getState(), "recorded",
-     "Correct state during recording but selecting a completed recording.");
+  is(
+    PerformanceView.getState(),
+    "recorded",
+    "Correct state during recording but selecting a completed recording."
+  );
   is(MAIN_CONTAINER.selectedPanel, CONTENT, "Showing main view with timeline.");
   is(DETAILS_CONTAINER.selectedPanel, DETAILS, "Showing recorded panel.");
 
   selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
-  RecordingsView.selectedIndex = 1;
-  yield selected;
+  setSelectedRecording(panel, 1);
+  await selected;
 
-  is(PerformanceView.getState(), "recording",
-     "Correct state when switching back to recording in progress.");
+  is(
+    PerformanceView.getState(),
+    "recording",
+    "Correct state when switching back to recording in progress."
+  );
   is(MAIN_CONTAINER.selectedPanel, CONTENT, "Showing main view with timeline.");
   is(DETAILS_CONTAINER.selectedPanel, RECORDING, "Showing recording panel.");
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

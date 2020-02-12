@@ -7,8 +7,9 @@
 
 include protocol PNecko;
 include URIParams;
+include NeckoChannelParams;
 
-using mozilla::NeckoOriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 
 namespace mozilla {
 namespace net {
@@ -19,63 +20,40 @@ namespace net {
  * Provides IPDL methods for setting and getting cookies. These are stored on
  * and managed by the parent; the child process goes through the parent for
  * all cookie operations. Lower-level programmatic operations (i.e. those
- * provided by the nsICookieManager and nsICookieManager2 interfaces) are not
+ * provided by the nsICookieManager interface) are not
  * currently implemented and requesting these interfaces in the child will fail.
  *
  * @see nsICookieService
  * @see nsICookiePermission
  */
 
-prio(normal upto urgent) sync protocol PCookieService
+nested(upto inside_cpow) sync protocol PCookieService
 {
   manager PNecko;
 
 parent:
 
   /*
-   * Get the complete cookie string associated with the URI. This is a sync
-   * call in order to avoid race conditions -- for instance, an HTTP response
-   * on the parent and script access on the child.
-   *
-   * @param host
-   *        Same as the 'aURI' argument to nsICookieService.getCookieString.
-   * @param isForeign
-   *        True if the the request is third party, for purposes of allowing
-   *        access to cookies. This should be obtained from
-   *        mozIThirdPartyUtil.isThirdPartyChannel. Third party requests may be
-   *        rejected depending on user preferences; if those checks are
-   *        disabled, this parameter is ignored.
-   * @param fromHttp
-   *        Whether the result is for an HTTP request header. This should be
-   *        true for nsICookieService.getCookieStringFromHttp calls, false
-   *        otherwise.
-   * @param attrs
-   *        The origin attributes from the HTTP channel or document that the
-   *        cookie is being set on.
-   *
-   * @see nsICookieService.getCookieString
-   * @see nsICookieService.getCookieStringFromHttp
-   * @see mozIThirdPartyUtil.isThirdPartyChannel
-   *
-   * @return the resulting cookie string.
-   */
-  prio(urgent) sync GetCookieString(URIParams host,
-                                    bool isForeign,
-                                    bool fromHttp,
-                                    NeckoOriginAttributes attrs)
-       returns (nsCString result);
-
-  /*
    * Set a cookie string.
    *
    * @param host
    *        Same as the 'aURI' argument to nsICookieService.setCookieString.
+   * @param channelURI
+   *        The URI of the request.
+   * @param loadInfoArgs
+   *        The optional serialization of nsILoadInfo.
    * @param isForeign
    *        True if the the request is third party, for purposes of allowing
    *        access to cookies. This should be obtained from
    *        mozIThirdPartyUtil.isThirdPartyChannel. Third party requests may be
    *        rejected depending on user preferences; if those checks are
    *        disabled, this parameter is ignored.
+   * @param isTrackingResource
+   *        True if the request has been marked as tracking.
+   * @param firstPartyStorageAccessGranted
+   *        True if host has storage access granted. Note that the storage
+   *        access is automatically granted also if the channel is not marked as
+   *        tracking resource, or if it's not a 3rd party context.
    * @param cookieString
    *        Same as the 'aCookie' argument to nsICookieService.setCookieString.
    * @param serverTime
@@ -86,22 +64,49 @@ parent:
    *        Whether the result is for an HTTP request header. This should be
    *        true for nsICookieService.setCookieStringFromHttp calls, false
    *        otherwise.
-   * @param attrs
-   *        The origin attributes from the HTTP channel or document that the
-   *        cookie is being set on.
    *
    * @see nsICookieService.setCookieString
    * @see nsICookieService.setCookieStringFromHttp
    * @see mozIThirdPartyUtil.isThirdPartyChannel
    */
-  prio(urgent) async SetCookieString(URIParams host,
-                                     bool isForeign,
-                                     nsCString cookieString,
-                                     nsCString serverTime,
-                                     bool fromHttp,
-                                     NeckoOriginAttributes attrs);
+  nested(inside_cpow) async SetCookieString(URIParams host,
+                                            URIParams? channelURI,
+                                            LoadInfoArgs? loadInfoArgs,
+                                            bool isForeign,
+                                            bool isTrackingResource,
+                                            bool firstPartyStorageAccessGranted,
+                                            uint32_t rejectedReason,
+                                            OriginAttributes aStoragePrincipalAttrs,
+                                            nsCString cookieString,
+                                            nsCString serverTime,
+                                            bool aFromHttp);
+
+  async PrepareCookieList(URIParams host,
+                          bool isForeign,
+                          bool isTrackingResource,
+                          bool firstPartyStorageAccessGranted,
+                          uint32_t rejectedReason,
+                          bool isSafeTopLevelNav,
+                          bool isSameSiteForeign,
+                          OriginAttributes attrs);
 
   async __delete__();
+
+child:
+  async TrackCookiesLoad(CookieStruct[] cookiesList,
+                         OriginAttributes attrs);
+
+  async RemoveCookie(CookieStruct cookie,
+                     OriginAttributes attrs);
+
+  async RemoveBatchDeletedCookies(CookieStruct[] cookiesList,
+                                  OriginAttributes[] attrsList);
+
+  async RemoveAll();
+
+  async AddCookie(CookieStruct cookie,
+                  OriginAttributes attrs);
+
 };
 
 }

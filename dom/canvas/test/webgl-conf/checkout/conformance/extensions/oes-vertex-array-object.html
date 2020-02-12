@@ -1,4 +1,4 @@
-<!--
+﻿<!--
 
 /*
 ** Copyright (c) 2012 The Khronos Group Inc.
@@ -624,6 +624,8 @@ function runBoundDeleteTests() {
         gl.deleteBuffer(colorBuffer);
         gl.deleteBuffer(positionBuffer);
 
+        // After the first iteration, deleteBuffer will be a no-op, and will not unbind its matching
+        // bind points on the now-bound VAO like it did on the first iteration.
         var expectRetained = (ii != 0);
         var shouldBeStr = (expectRetained ? "retained" : "cleared");
 
@@ -643,11 +645,11 @@ function runBoundDeleteTests() {
         wtu.glErrorShouldBe(gl, expectedError,
                             "Draw call should " + (expectRetained ? "not " : "") + "fail.");
 
-        if (!gl.isBuffer(positionBuffer)) {
-            testFailed("Position buffer should count for isBuffer.");
+        if (gl.isBuffer(positionBuffer)) {
+            testFailed("References from unbound VAOs don't keep Position buffer alive.");
         }
-        if (!gl.isBuffer(colorBuffer)) {
-            testFailed("Color buffer should count for isBuffer.");
+        if (gl.isBuffer(colorBuffer)) {
+            testFailed("References from unbound VAOs don't keep Color buffer alive");
         }
     }
 }

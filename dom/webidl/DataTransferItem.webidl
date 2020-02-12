@@ -5,20 +5,24 @@
  *
  * The origin of this IDL file is:
  * https://html.spec.whatwg.org/multipage/interaction.html#the-datatransferitem-interface
+ * https://wicg.github.io/entries-api/#idl-index
  */
 
+[Exposed=Window]
 interface DataTransferItem {
   readonly attribute DOMString kind;
   readonly attribute DOMString type;
-  [Throws]
-  void getAsString(FunctionStringCallback? _callback);
-  [Throws]
+  [Throws, NeedsSubjectPrincipal]
+  void getAsString(FunctionStringCallback? callback);
+  [Throws, NeedsSubjectPrincipal]
   File? getAsFile();
 };
 
 callback FunctionStringCallback = void (DOMString data);
 
+// https://wicg.github.io/entries-api/#idl-index
 partial interface DataTransferItem {
-  [Pref="dom.webkitBlink.filesystem.enabled", BinaryName="getAsEntry", Throws]
+  [Pref="dom.webkitBlink.filesystem.enabled", BinaryName="getAsEntry", Throws,
+   NeedsSubjectPrincipal]
   FileSystemEntry? webkitGetAsEntry();
 };

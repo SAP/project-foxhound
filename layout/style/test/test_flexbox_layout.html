@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=666041
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 666041</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="flexbox_layout_testcases.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=666041
   </div>
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 "use strict";
 
 /** Test for Bug 666041 **/
@@ -34,7 +34,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=666041
 
 function getComputedStyleWrapper(elem, prop)
 {
-  return window.getComputedStyle(elem, null).getPropertyValue(prop);
+  return window.getComputedStyle(elem).getPropertyValue(prop);
 }
 
 function setPossiblyAliasedProperty(aElem, aPropertyName, aPropertyValue,

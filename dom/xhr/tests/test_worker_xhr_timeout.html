@@ -7,8 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=498998
   <title>Test for Bug 498998</title>
   <script type="application/javascript"
           src="/MochiKit/MochiKit.js"></script>
-  <script type="application/javascript"
-          src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet"
         type="text/css"
         href="/tests/SimpleTest/test.css">
@@ -27,22 +26,22 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=498998
   var worker = new Worker("../../../dom/xhr/tests/test_XHR_timeout.js");
 
   worker.addEventListener("message", function (event) {
-    if (event.data == "done") {
-      SimpleTest.finish();
-      return;
-    }
-    if (event.data == "start") {
-      return;
-    }
-    if (event.data.type == "is") {
-      SimpleTest.is(event.data.got, event.data.expected, event.data.msg);
-      return;
-    }
-    if (event.data.type == "ok") {
-      SimpleTest.ok(event.data.bool, event.data.msg);
-      return;
-    }
-  });
+  if (event.data == "done") {
+    SimpleTest.finish();
+    return;
+  }
+  if (event.data == "start") {
+    return;
+  }
+  if (event.data.type == "is") {
+    SimpleTest.is(event.data.got, event.data.expected, event.data.msg);
+    return;
+  }
+  if (event.data.type == "ok") {
+    SimpleTest.ok(event.data.bool, event.data.msg);
+    
+  }
+});
   // Final test harness setup and launch.
   (function() {
     SimpleTest.waitForExplicitFinish();

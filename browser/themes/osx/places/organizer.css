@@ -2,49 +2,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-%include ../shared.inc
-
 /* Places Organizer Sidebars */
 
-#placesList > treechildren::-moz-tree-row {
-  background-color: transparent;
-  border-color: transparent;
-  padding-bottom: 1px;
-  height: 24px;
+#placesList {
+  -moz-appearance: -moz-mac-source-list;
+  width: 160px;
+}
+
+@media (-moz-mac-yosemite-theme: 0) {
+  #placesList {
+    box-shadow: inset -2px 0 0 hsla(0,0%,100%,.2);
+  }
 }
 
 #placesList > treechildren::-moz-tree-cell-text {
-  font-size: 12px;
   margin-inline-end: 6px;
 }
 
-#placesList > treechildren::-moz-tree-row(selected) {  
-  background: @sidebarItemBackground@;
-  border-top: @sidebarItemBorderTop@;
-  border-bottom: @sidebarItemBorderBottom@;
+#placesList > treechildren::-moz-tree-row(selected) {
+  -moz-appearance: -moz-mac-source-list-selection;
+  -moz-font-smoothing-background-color: -moz-mac-source-list-selection;
 }
 
-#placesList > treechildren::-moz-tree-row(selected,focus) {  
-  background: @sidebarItemFocusedBackground@;
-  border-top: @sidebarItemFocusedBorderTop@;
-  border-bottom: @sidebarItemFocusedBorderBottom@;
-}
-
-#placesList:-moz-system-metric(mac-graphite-theme) > treechildren::-moz-tree-row(selected) {
-  background: @sidebarItemGraphiteBackground@;
-  border-top: @sidebarItemGraphiteBorderTop@;
-  border-bottom: @sidebarItemGraphiteBorderBottom@;
-}
-
-#placesList:-moz-system-metric(mac-graphite-theme) > treechildren::-moz-tree-row(selected,focus) {
-  background: @sidebarItemGraphiteFocusedBackground@;
-  border-top: @sidebarItemGraphiteFocusedBorderTop@;
-  border-bottom: @sidebarItemGraphiteFocusedBorderBottom@;
-}
-
-#placesList > treechildren::-moz-tree-row(History),
-#placesList > treechildren::-moz-tree-row(history)  {
-  background-color: blue;
+#placesList > treechildren::-moz-tree-row(selected,focus) {
+  -moz-appearance: -moz-mac-active-source-list-selection;
+  -moz-font-smoothing-background-color: -moz-mac-active-source-list-selection;
 }
 
 #placesList > treechildren::-moz-tree-cell(separator) {
@@ -56,109 +38,16 @@
   margin: 0 10px;
 }
 
-#placesList > treechildren::-moz-tree-cell-text(selected) {  
-  color: #fff;
-  font-weight: bold;
-}
-
-#placesList > treechildren::-moz-tree-twisty {
-  -moz-appearance: none;
-  padding: 0 2px;
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed");
-}
-
-#placesList > treechildren::-moz-tree-twisty(selected) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-inverted");
-}
-
-#placesList > treechildren::-moz-tree-twisty(open) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded");
-}
-
-#placesList > treechildren::-moz-tree-twisty(open, selected) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded-inverted");
-}
-
-#placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-rtl");
-}
-
-#placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(selected) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-inverted-rtl");
-}
-
-#placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(open) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded");
-}
-
-#placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(open, selected) {
-  list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded-inverted");
-}
-
-@media (-moz-mac-yosemite-theme) {
-  #placesList > treechildren::-moz-tree-row(selected) {
-    background: @sidebarItemBackgroundYosemite@;
-    border-top: none;
-    border-bottom: none;
-  }
-
-  #placesList > treechildren::-moz-tree-row(selected,focus) {
-    background: @sidebarItemFocusedBackgroundYosemite@;
-    border-top: none;
-    border-bottom: none;
-  }
-
-  #placesList > treechildren:-moz-system-metric(mac-graphite-theme)::-moz-tree-row(selected) {
-    background: @sidebarItemGraphiteBackgroundYosemite@;
-    border-top: none;
-    border-bottom: none;
-  }
-
-  #placesList > treechildren:-moz-system-metric(mac-graphite-theme)::-moz-tree-row(selected,focus) {
-    background: @sidebarItemGraphiteFocusedBackgroundYosemite@;
-    border-top: none;
-    border-bottom: none;
-  }
-
+/* Match selected item styling for -moz-appearance values on OSX 10.9 */
+@media (-moz-mac-yosemite-theme: 0) {
+  #placesList > treechildren::-moz-tree-image(selected),
+  #placesList > treechildren::-moz-tree-twisty(selected),
   #placesList > treechildren::-moz-tree-cell-text(selected) {
-    color: -moz-dialogtext;
-    font-weight: 500;
-  }
-
-  #placesList > treechildren::-moz-tree-cell-text(selected, focus) {
     color: #fff;
   }
 
-  #placesList > treechildren::-moz-tree-twisty(selected) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed");
-  }
-
-  #placesList > treechildren::-moz-tree-twisty(selected, focus) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-inverted");
-  }
-
-  #placesList > treechildren::-moz-tree-twisty(open, selected) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded");
-  }
-
-  #placesList > treechildren::-moz-tree-twisty(open, selected, focus) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded-inverted");
-  }
-
-  #placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(selected) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-rtl");
-  }
-
-  #placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(selected, focus) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-collapsed-inverted-rtl");
-  }
-
-  #placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(open, selected) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded");
-  }
-
-  #placesList > treechildren:-moz-locale-dir(rtl)::-moz-tree-twisty(open, selected, focus) {
-    list-style-image: url("chrome://global/skin/tree/arrow-disclosure.svg#arrow-disclosure-expanded-inverted");
+  #placesList > treechildren::-moz-tree-cell-text(selected) {
+    font-weight: bold;
   }
 }
 
@@ -181,7 +70,6 @@
 }
 
 #placesToolbar > toolbarbutton {
-  list-style-image: url("chrome://browser/skin/places/toolbar.png");
   margin: 4px 4px 5px;
   padding: 0;
   height: 22px;
@@ -189,6 +77,9 @@
 }
 
 #placesToolbar > toolbarbutton > .toolbarbutton-icon {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.8;
   margin: 1px 4px;
 }
 
@@ -197,20 +88,9 @@
 }
 
 #placesToolbar > toolbarbutton[type="menu"] > .toolbarbutton-menu-dropmarker {
-  list-style-image: url(chrome://browser/skin/toolbarbutton-dropmarker.png);
+  list-style-image: url(chrome://global/skin/icons/arrow-dropdown-12.svg);
   padding: 0;
-  margin-top: 1px;
   margin-inline-end: 2px;
-}
-
-@media (min-resolution: 2dppx) {
-  #placesToolbar > toolbarbutton[type="menu"] > .toolbarbutton-menu-dropmarker {
-    list-style-image: url(chrome://browser/skin/toolbarbutton-dropmarker@2x.png);
-  }
-
-  #placesToolbar > toolbarbutton[type="menu"] > .toolbarbutton-menu-dropmarker > .dropmarker-icon {
-    width: 7px;
-  }
 }
 
 #placesToolbar > toolbarbutton[disabled="true"] > .toolbarbutton-icon,
@@ -230,60 +110,51 @@
 }
 
 /* back and forward button */
-#back-button:-moz-locale-dir(ltr),
-#forward-button:-moz-locale-dir(rtl) {
-  -moz-image-region: rect(0px, 16px, 16px, 0px);
-  margin-right: 0;
+#back-button,
+#forward-button {
+  list-style-image: url("chrome://browser/skin/arrow-left.svg");
 }
 
-#forward-button:-moz-locale-dir(ltr),
-#back-button:-moz-locale-dir(rtl) {
-  -moz-image-region: rect(0px, 32px, 16px, 16px);
-  margin-left: 0;
+#back-button {
+  margin-inline-end: 0 !important; /* override margin from #placesToolbar > toolbarbutton */
+}
+
+#forward-button {
+  margin-inline-start: 0 !important; /* override margin from #placesToolbar > toolbarbutton */
+}
+
+#back-button:-moz-locale-dir(rtl) > .toolbarbutton-icon,
+#forward-button:-moz-locale-dir(ltr) > .toolbarbutton-icon {
+  transform: scaleX(-1);
 }
 
 #back-button > .toolbarbutton-icon {
-  margin-inline-start: 3px !important;
-  margin-inline-end: 2px !important;
+  margin-inline: 3px 2px !important;
 }
 
 #forward-button > .toolbarbutton-icon {
-  margin-inline-start: 2px !important;
-  margin-inline-end: 3px !important;
+  margin-inline: 2px 3px !important;
 }
 
 /* organize button */
 #organizeButton {
-  -moz-image-region: rect(0px, 48px, 16px, 32px);
+  list-style-image: url("chrome://browser/skin/settings.svg");
 }
 
 /* view button */
 #viewMenu {
-  -moz-image-region: rect(0px, 64px, 16px, 48px);
+  list-style-image: url("chrome://browser/skin/sort.svg");
 }
 
 /* maintenance button */
 #maintenanceButton {
-  -moz-image-region: rect(0px, 80px, 16px, 64px);
+  list-style-image: url("chrome://browser/skin/import-export.svg");
 }
 
 /* Root View */
 #placesView {
   border-top: 1px solid ThreeDDarkShadow;
   -moz-user-focus: ignore;
-}
-
-/* Place List, Place Content */
-#placesList {
-  -moz-appearance: -moz-mac-source-list;
-  box-shadow: inset -2px 0 0 hsla(0,0%,100%,.2);
-  width: 160px;
-}
-
-@media (-moz-mac-yosemite-theme) {
-  #placesList {
-    box-shadow: none;
-  }
 }
 
 /* Info box */
@@ -295,27 +166,7 @@
 
 #placeContent {
   -moz-appearance: none;
-  border: 0px;
-}
-
-#placeContent > treechildren::-moz-tree-row {
-  border-top: none !important;
-  padding-top: 1px;
-}
-
-#placeContent > treechildren::-moz-tree-row(odd) {
-  background-color: #edf3fe;
-}
-
-#placeContent > treechildren::-moz-tree-row(selected),
-#placeContent > treechildren::-moz-tree-row(odd, selected) {
-  background-color: -moz-mac-secondaryhighlight;
-}
-
-#placeContent > treechildren::-moz-tree-row(selected, focus), 
-#placeContent > treechildren::-moz-tree-row(odd, selected, focus) {
-  background-color: Highlight;
-  color: HighlightText !important;
+  border: none;
 }
 
 #placeContent > treechildren::-moz-tree-cell,
@@ -325,22 +176,6 @@
 
 #placeContent > treechildren::-moz-tree-cell(separator) {
   border-color: transparent;
-}
-
-/**** expanders ****/
-
-.expander-up,
-.expander-down {
-  margin: 0 4px 1px 8px;
-  padding: 0;
-}
-
-.expander-up {
-  -moz-appearance: -moz-mac-disclosure-button-open;
-}
-
-.expander-down {
-  -moz-appearance: -moz-mac-disclosure-button-closed;
 }
 
 /**
@@ -358,10 +193,6 @@
 #itemsCountText,
 #selectItemDescription {
   color: GrayText;
-}
-
-.editBMPanel_rowLabel {
-  text-align: end;
 }
 
 /**

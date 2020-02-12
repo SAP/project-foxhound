@@ -9,8 +9,7 @@ http://creativecommons.org/licenses/publicdomain/
 -->
 <head>
   <title>Test for Bug 1246341</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="/tests/dom/push/test/test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
@@ -24,6 +23,7 @@ http://creativecommons.org/licenses/publicdomain/
 </pre>
 
 <script class="testbody" type="text/javascript">
+  /* import-globals-from ./test_utils.js */
 
   var pushNotifier = SpecialPowers.Cc["@mozilla.org/push/Notifier;1"]
                                   .getService(SpecialPowers.Ci.nsIPushNotifier);
@@ -31,26 +31,26 @@ http://creativecommons.org/licenses/publicdomain/
   var reporters = new Map();
 
   var registration;
-  add_task(function* start() {
-    yield setupPrefsAndReplaceService({
+  add_task(async function start() {
+    await setupPrefsAndReplaceService({
       reportDeliveryError(messageId, reason) {
         ok(reporters.has(messageId),
-          'Unexpected error reported for message ' + messageId);
+          "Unexpected error reported for message " + messageId);
         var resolve = reporters.get(messageId);
         reporters.delete(messageId);
         resolve(reason);
       },
     });
-    yield setPushPermission(true);
+    await setPushPermission(true);
 
-    var url = "error_worker.js" + "?" + (Math.random());
-    registration = yield navigator.serviceWorker.register(url, {scope: "."});
-    yield waitForActive(registration);
+    var url = "error_worker.js?" + (Math.random());
+    registration = await navigator.serviceWorker.register(url, {scope: "."});
+    await waitForActive(registration);
   });
 
   var controlledFrame;
-  add_task(function* createControlledIFrame() {
-    controlledFrame = yield injectControlledFrame();
+  add_task(async function createControlledIFrame() {
+    controlledFrame = await injectControlledFrame();
   });
 
   var idCounter = 1;
@@ -62,48 +62,33 @@ http://creativecommons.org/licenses/publicdomain/
       let messageId = "message-" + (idCounter++);
       reporters.set(messageId, resolve);
       pushNotifier.notifyPushWithData(registration.scope, principal, messageId,
-                                      data.length, data);
+                                      data);
     });
   }
 
-  add_task(function* reportDeliveryErrors() {
-    var reason = yield waitForDeliveryError({ type: "exception" });
+  add_task(async function reportDeliveryErrors() {
+    var reason = await waitForDeliveryError({ type: "exception" });
     is(reason, SpecialPowers.Ci.nsIPushErrorReporter.DELIVERY_UNCAUGHT_EXCEPTION,
       "Should report uncaught exceptions");
 
-    reason = yield waitForDeliveryError({ type: "rejection" });
+    reason = await waitForDeliveryError({ type: "rejection" });
     is(reason, SpecialPowers.Ci.nsIPushErrorReporter.DELIVERY_UNHANDLED_REJECTION,
       "Should report unhandled rejections");
   });
 
-  add_task(function* reportDecryptionError() {
-    var message = yield new Promise(resolve => {
-      var consoleService = SpecialPowers.Cc["@mozilla.org/consoleservice;1"]
-        .getService(SpecialPowers.Ci.nsIConsoleService);
-
-      var listener = SpecialPowers.wrapCallbackObject({
-        QueryInterface(iid) {
-          if (!SpecialPowers.Ci.nsISupports.equals(iid) &&
-              !SpecialPowers.Ci.nsIConsoleListener.equals(iid)) {
-            throw SpecialPowers.Cr.NS_ERROR_NO_INTERFACE;
-          }
-          return this;
-        },
-
-        observe(message) {
-          let error = message;
-          try {
-            error.QueryInterface(SpecialPowers.Ci.nsIScriptError);
-          } catch (error) {
-            return;
-          }
-          if (message.innerWindowID == controlledFrame.innerWindowId()) {
-            consoleService.unregisterListener(listener);
-            resolve(error);
-          }
-        },
+  add_task(async function reportDecryptionError() {
+    var message = await new Promise(resolve => {
+      SpecialPowers.registerConsoleListener(msg => {
+        if (!msg.isScriptError && !msg.isConsoleEvent) {
+          return;
+        }
+        const scope = "http://mochi.test:8888/tests/dom/push/test/";
+        if (msg.innerWindowID === "ServiceWorker" &&
+            msg.windowID === scope) {
+          SpecialPowers.postConsoleSentinel();
+          resolve(msg);
+        }
       });
-      consoleService.registerListener(listener);
 
       var principal = SpecialPowers.wrap(document).nodePrincipal;
       pushNotifier.notifyError(registration.scope, principal, "Push error",
@@ -116,12 +101,12 @@ http://creativecommons.org/licenses/publicdomain/
       "Should report the given error string");
   });
 
-  add_task(function* unsubscribe() {
+  add_task(async function unsubscribe() {
     controlledFrame.remove();
   });
 
-  add_task(function* unregister() {
-    yield registration.unregister();
+  add_task(async function unregister() {
+    await registration.unregister();
   });
 
 </script>

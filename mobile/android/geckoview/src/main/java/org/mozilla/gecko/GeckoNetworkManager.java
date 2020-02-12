@@ -7,14 +7,15 @@ package org.mozilla.gecko;
 
 import org.mozilla.gecko.annotation.JNITarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.util.NativeEventListener;
-import org.mozilla.gecko.util.NativeJSObject;
+import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.EventCallback;
+import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.NetworkUtils;
 import org.mozilla.gecko.util.NetworkUtils.ConnectionSubType;
 import org.mozilla.gecko.util.NetworkUtils.ConnectionType;
 import org.mozilla.gecko.util.NetworkUtils.NetworkStatus;
 
+import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -42,16 +43,19 @@ import android.util.Log;
  * Logic is implemented as a state machine, so see the transition matrix to figure out what happens when.
  * This class depends on access to the context, so only use after GeckoAppShell has been initialized.
  */
-public class GeckoNetworkManager extends BroadcastReceiver implements NativeEventListener {
+public class GeckoNetworkManager extends BroadcastReceiver implements BundleEventListener {
     private static final String LOGTAG = "GeckoNetworkManager";
 
+    // If network configuration and/or status changed, we send details of what changed.
+    // If we received a "check out new network state!" intent from the OS but nothing in it looks
+    // different, we ignore it. See Bug 1330836 for some relevant details.
     private static final String LINK_DATA_CHANGED = "changed";
 
     private static GeckoNetworkManager instance;
 
     // We hackishly (yet harmlessly, in this case) keep a Context reference passed in via the start method.
     // See context handling notes in handleManagerEvent, and Bug 1277333.
-    private Context context;
+    private Context mContext;
 
     public static void destroy() {
         if (instance != null) {
@@ -75,13 +79,13 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         receivedUpdate
     }
 
-    private ManagerState currentState = ManagerState.OffNoListeners;
-    private ConnectionType currentConnectionType = ConnectionType.NONE;
-    private ConnectionType previousConnectionType = ConnectionType.NONE;
-    private ConnectionSubType currentConnectionSubtype = ConnectionSubType.UNKNOWN;
-    private ConnectionSubType previousConnectionSubtype = ConnectionSubType.UNKNOWN;
-    private NetworkStatus currentNetworkStatus = NetworkStatus.UNKNOWN;
-    private NetworkStatus previousNetworkStatus = NetworkStatus.UNKNOWN;
+    private ManagerState mCurrentState = ManagerState.OffNoListeners;
+    private ConnectionType mCurrentConnectionType = ConnectionType.NONE;
+    private ConnectionType mPreviousConnectionType = ConnectionType.NONE;
+    private ConnectionSubType mCurrentConnectionSubtype = ConnectionSubType.UNKNOWN;
+    private ConnectionSubType mPreviousConnectionSubtype = ConnectionSubType.UNKNOWN;
+    private NetworkStatus mCurrentNetworkStatus = NetworkStatus.UNKNOWN;
+    private NetworkStatus mPreviousNetworkStatus = NetworkStatus.UNKNOWN;
 
     private enum InfoType {
         MCC,
@@ -89,14 +93,14 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
     }
 
     private GeckoNetworkManager() {
-        EventDispatcher.getInstance().registerGeckoThreadListener(this,
+        EventDispatcher.getInstance().registerUiThreadListener(this,
                 "Wifi:Enable",
                 "Wifi:GetIPAddress");
     }
 
     private void onDestroy() {
         handleManagerEvent(ManagerEvent.stop);
-        EventDispatcher.getInstance().unregisterGeckoThreadListener(this,
+        EventDispatcher.getInstance().unregisterUiThreadListener(this,
                 "Wifi:Enable",
                 "Wifi:GetIPAddress");
     }
@@ -111,21 +115,21 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
 
     public double[] getCurrentInformation() {
         final Context applicationContext = GeckoAppShell.getApplicationContext();
-        final ConnectionType connectionType = currentConnectionType;
+        final ConnectionType connectionType = mCurrentConnectionType;
         return new double[] {
-                connectionType.value,
-                connectionType == ConnectionType.WIFI ? 1.0 : 0.0,
-                connectionType == ConnectionType.WIFI ? wifiDhcpGatewayAddress(applicationContext) : 0.0
+            connectionType.value,
+            connectionType == ConnectionType.WIFI ? 1.0 : 0.0,
+            connectionType == ConnectionType.WIFI ? wifiDhcpGatewayAddress(applicationContext) : 0.0
         };
     }
 
     @Override
-    public void onReceive(Context aContext, Intent aIntent) {
+    public void onReceive(final Context aContext, final Intent aIntent) {
         handleManagerEvent(ManagerEvent.receivedUpdate);
     }
 
     public void start(final Context context) {
-        this.context = context;
+        mContext = context;
         handleManagerEvent(ManagerEvent.start);
     }
 
@@ -148,12 +152,12 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
      * @param event Incoming event
      * @return Boolean indicating if transition was performed.
      */
-    private synchronized boolean handleManagerEvent(ManagerEvent event) {
-        final ManagerState nextState = getNextState(currentState, event);
+    private synchronized boolean handleManagerEvent(final ManagerEvent event) {
+        final ManagerState nextState = getNextState(mCurrentState, event);
 
-        Log.d(LOGTAG, "Incoming event " + event + " for state " + currentState + " -> " + nextState);
+        Log.d(LOGTAG, "Incoming event " + event + " for state " + mCurrentState + " -> " + nextState);
         if (nextState == null) {
-            Log.w(LOGTAG, "Invalid event " + event + " for state " + currentState);
+            Log.w(LOGTAG, "Invalid event " + event + " for state " + mCurrentState);
             return false;
         }
 
@@ -165,19 +169,19 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         // seems to be how this class fits into the larger ecosystem and general flow of events.
         // See Bug 1277333.
         final Context contextForAction;
-        if (context != null) {
-            contextForAction = context;
+        if (mContext != null) {
+            contextForAction = mContext;
         } else {
             contextForAction = GeckoAppShell.getApplicationContext();
         }
 
         if (contextForAction == null) {
-            Log.w(LOGTAG, "Context is not available while processing event " + event + " for state " + currentState);
+            Log.w(LOGTAG, "Context is not available while processing event " + event + " for state " + mCurrentState);
             return false;
         }
 
-        performActionsForStateEvent(contextForAction, currentState, event);
-        currentState = nextState;
+        performActionsForStateEvent(contextForAction, mCurrentState, event);
+        mCurrentState = nextState;
 
         return true;
     }
@@ -190,7 +194,8 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
      * @return State into which we should transition as result of given event
      */
     @Nullable
-    public static ManagerState getNextState(@NonNull ManagerState currentState, @NonNull ManagerEvent event) {
+    public static ManagerState getNextState(final @NonNull ManagerState currentState,
+                                            final @NonNull ManagerEvent event) {
         switch (currentState) {
             case OffNoListeners:
                 switch (event) {
@@ -304,15 +309,15 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         if (connectivityManager == null) {
             Log.e(LOGTAG, "ConnectivityManager does not exist.");
         }
-        currentConnectionType = NetworkUtils.getConnectionType(connectivityManager);
-        currentNetworkStatus = NetworkUtils.getNetworkStatus(connectivityManager);
-        currentConnectionSubtype = NetworkUtils.getConnectionSubType(connectivityManager);
-        Log.d(LOGTAG, "New network state: " + currentNetworkStatus + ", " + currentConnectionType + ", " + currentConnectionSubtype);
+        mCurrentConnectionType = NetworkUtils.getConnectionType(connectivityManager);
+        mCurrentNetworkStatus = NetworkUtils.getNetworkStatus(connectivityManager);
+        mCurrentConnectionSubtype = NetworkUtils.getConnectionSubType(connectivityManager);
+        Log.d(LOGTAG, "New network state: " + mCurrentNetworkStatus + ", " + mCurrentConnectionType + ", " + mCurrentConnectionSubtype);
     }
 
     @WrapForJNI(dispatchTo = "gecko")
     private static native void onConnectionChanged(int type, String subType,
-                                                   boolean isWifi, int DHCPGateway);
+                                                   boolean isWifi, int dhcpGateway);
 
     @WrapForJNI(dispatchTo = "gecko")
     private static native void onStatusChanged(String status);
@@ -321,40 +326,47 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
      * Send current network state and connection type to whomever is listening.
      */
     private void sendNetworkStateToListeners(final Context context) {
-        if (currentConnectionType != previousConnectionType ||
-                currentConnectionSubtype != previousConnectionSubtype) {
-            previousConnectionType = currentConnectionType;
-            previousConnectionSubtype = currentConnectionSubtype;
+        final boolean connectionTypeOrSubtypeChanged = mCurrentConnectionType != mPreviousConnectionType ||
+                mCurrentConnectionSubtype != mPreviousConnectionSubtype;
+        if (connectionTypeOrSubtypeChanged) {
+            mPreviousConnectionType = mCurrentConnectionType;
+            mPreviousConnectionSubtype = mCurrentConnectionSubtype;
 
-            final boolean isWifi = currentConnectionType == ConnectionType.WIFI;
+            final boolean isWifi = mCurrentConnectionType == ConnectionType.WIFI;
             final int gateway = !isWifi ? 0 :
                     wifiDhcpGatewayAddress(context);
 
             if (GeckoThread.isRunning()) {
-                onConnectionChanged(currentConnectionType.value,
-                                    currentConnectionSubtype.value, isWifi, gateway);
+                onConnectionChanged(mCurrentConnectionType.value,
+                                    mCurrentConnectionSubtype.value, isWifi, gateway);
             } else {
                 GeckoThread.queueNativeCall(GeckoNetworkManager.class, "onConnectionChanged",
-                                            currentConnectionType.value,
-                                            String.class, currentConnectionSubtype.value,
+                                            mCurrentConnectionType.value,
+                                            String.class, mCurrentConnectionSubtype.value,
                                             isWifi, gateway);
             }
         }
 
-        final String status;
+        // If neither network status nor network configuration changed, do nothing.
+        if (mCurrentNetworkStatus == mPreviousNetworkStatus && !connectionTypeOrSubtypeChanged) {
+            return;
+        }
 
-        if (currentNetworkStatus != previousNetworkStatus) {
-            previousNetworkStatus = currentNetworkStatus;
-            status = currentNetworkStatus.value;
-        } else {
+        // If network status remains the same, send "changed". Otherwise, send new network status.
+        // See Bug 1330836 for relevant details.
+        final String status;
+        if (mCurrentNetworkStatus == mPreviousNetworkStatus) {
             status = LINK_DATA_CHANGED;
+        } else {
+            mPreviousNetworkStatus = mCurrentNetworkStatus;
+            status = mCurrentNetworkStatus.value;
         }
 
         if (GeckoThread.isRunning()) {
             onStatusChanged(status);
         } else {
             GeckoThread.queueNativeCall(GeckoNetworkManager.class, "onStatusChanged",
-                                        String.class, status);
+                    String.class, status);
         }
     }
 
@@ -379,8 +391,12 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         }
 
         try {
-            WifiManager mgr = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-            DhcpInfo d = mgr.getDhcpInfo();
+            WifiManager mgr = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (mgr == null) {
+                return 0;
+            }
+
+            @SuppressLint("MissingPermission") DhcpInfo d = mgr.getDhcpInfo();
             if (d == null) {
                 return 0;
             }
@@ -395,26 +411,33 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         }
     }
 
-    @Override
+    @SuppressLint("MissingPermission")
+    @Override // BundleEventListener
     /**
      * Handles native messages, not part of the state machine flow.
      */
-    public void handleMessage(final String event, final NativeJSObject message,
+    public void handleMessage(final String event, final GeckoBundle message,
                               final EventCallback callback) {
         final Context applicationContext = GeckoAppShell.getApplicationContext();
         switch (event) {
             case "Wifi:Enable":
-                final WifiManager mgr = (WifiManager) applicationContext.getSystemService(Context.WIFI_SERVICE);
+                final WifiManager mgr = (WifiManager)
+                        applicationContext.getSystemService(Context.WIFI_SERVICE);
+                if (mgr == null) {
+                    return;
+                }
 
                 if (!mgr.isWifiEnabled()) {
                     mgr.setWifiEnabled(true);
-                } else {
-                    // If Wifi is enabled, maybe you need to select a network
-                    Intent intent = new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS);
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    applicationContext.startActivity(intent);
+                    break;
                 }
+
+                // If Wifi is enabled, maybe you need to select a network
+                Intent intent = new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                applicationContext.startActivity(intent);
                 break;
+
             case "Wifi:GetIPAddress":
                 getWifiIPAddress(callback);
                 break;
@@ -430,7 +453,7 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
             return;
         }
 
-        final WifiInfo info = mgr.getConnectionInfo();
+        @SuppressLint("MissingPermission") final WifiInfo info = mgr.getConnectionInfo();
         if (info == null) {
             callback.sendError("Cannot get connection info");
             return;
@@ -444,7 +467,7 @@ public class GeckoNetworkManager extends BroadcastReceiver implements NativeEven
         callback.sendSuccess(Formatter.formatIpAddress(ip));
     }
 
-    private static int getNetworkOperator(InfoType type, Context context) {
+    private static int getNetworkOperator(final InfoType type, final Context context) {
         if (null == context) {
             return -1;
         }

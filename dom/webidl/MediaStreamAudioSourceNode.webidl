@@ -10,11 +10,20 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
-interface MediaStreamAudioSourceNode : AudioNode {
+dictionary MediaStreamAudioSourceOptions {
+    required MediaStream mediaStream;
+};
 
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface MediaStreamAudioSourceNode : AudioNode {
+  [Throws]
+  constructor(AudioContext context, MediaStreamAudioSourceOptions options);
+
+  [BinaryName="GetMediaStream"]
+  readonly attribute MediaStream mediaStream;
 };
 
 // Mozilla extensions
-MediaStreamAudioSourceNode implements AudioNodePassThrough;
+MediaStreamAudioSourceNode includes AudioNodePassThrough;
 

@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1202366
 <head>
   <meta http-equiv="Content-type" content="text/html; charset=UTF-8">
   <title>Test for unpaired surrogates</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="step()">
@@ -38,7 +38,7 @@ var i = 0;
 function step() {
   var f = document.getElementsByTagName("iframe")[i];
   f.onload = function() {
-    var href = f.contentWindow.location.href;
+    var href = SpecialPowers.wrap(f).contentWindow.location.href;
     var index = href.indexOf("?foo=");
     var actual = href.substring(index + 5);
     var expected = expectations[i];
@@ -50,7 +50,7 @@ function step() {
       step();
     }    
   }
-  f.contentDocument.forms[0].submit();
+  SpecialPowers.wrap(f).contentDocument.forms[0].submit();
 }
 </script>
 </pre>

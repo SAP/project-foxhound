@@ -16,43 +16,33 @@ namespace mozilla {
 namespace dom {
 
 class BlobImpl;
+class FileSystemGetFilesParams;
 
-class GetFilesTaskChild final : public FileSystemTaskChildBase
-{
-public:
-  static already_AddRefed<GetFilesTaskChild>
-  Create(FileSystemBase* aFileSystem,
-         Directory* aDirectory,
-         nsIFile* aTargetPath,
-         bool aRecursiveFlag,
-         ErrorResult& aRv);
+class GetFilesTaskChild final : public FileSystemTaskChildBase {
+ public:
+  static already_AddRefed<GetFilesTaskChild> Create(FileSystemBase* aFileSystem,
+                                                    Directory* aDirectory,
+                                                    nsIFile* aTargetPath,
+                                                    bool aRecursiveFlag,
+                                                    ErrorResult& aRv);
 
-  virtual
-  ~GetFilesTaskChild();
+  virtual ~GetFilesTaskChild();
 
-  already_AddRefed<Promise>
-  GetPromise();
+  already_AddRefed<Promise> GetPromise();
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
-
-private:
+ private:
   // If aDirectoryOnly is set, we should ensure that the target is a directory.
-  GetFilesTaskChild(FileSystemBase* aFileSystem,
-                    Directory* aDirectory,
-                    nsIFile* aTargetPath,
+  GetFilesTaskChild(nsIGlobalObject* aGlobalObject, FileSystemBase* aFileSystem,
+                    Directory* aDirectory, nsIFile* aTargetPath,
                     bool aRecursiveFlag);
 
-  virtual FileSystemParams
-  GetRequestParams(const nsString& aSerializedDOMPath,
-                   ErrorResult& aRv) const override;
+  virtual FileSystemParams GetRequestParams(const nsString& aSerializedDOMPath,
+                                            ErrorResult& aRv) const override;
 
-  virtual void
-  SetSuccessRequestResult(const FileSystemResponseValue& aValue,
-                          ErrorResult& aRv) override;
+  virtual void SetSuccessRequestResult(const FileSystemResponseValue& aValue,
+                                       ErrorResult& aRv) override;
 
-  virtual void
-  HandlerCallback() override;
+  virtual void HandlerCallback() override;
 
   RefPtr<Promise> mPromise;
   RefPtr<Directory> mDirectory;
@@ -60,43 +50,33 @@ private:
   bool mRecursiveFlag;
 
   // We store the fullpath and the dom path of Files.
-  struct FileData {
-    nsString mRealPath;
-    nsString mDOMPath;
-  };
-
-  FallibleTArray<FileData> mTargetData;
+  FallibleTArray<RefPtr<File>> mTargetData;
 };
 
-class GetFilesTaskParent final : public FileSystemTaskParentBase
-                               , public GetFilesHelperBase
-{
-public:
-  static already_AddRefed<GetFilesTaskParent>
-  Create(FileSystemBase* aFileSystem,
-         const FileSystemGetFilesParams& aParam,
-         FileSystemRequestParent* aParent,
-         ErrorResult& aRv);
+class GetFilesTaskParent final : public FileSystemTaskParentBase,
+                                 public GetFilesHelperBase {
+ public:
+  static already_AddRefed<GetFilesTaskParent> Create(
+      FileSystemBase* aFileSystem, const FileSystemGetFilesParams& aParam,
+      FileSystemRequestParent* aParent, ErrorResult& aRv);
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
+  nsresult GetTargetPath(nsAString& aPath) const override;
 
-private:
+ private:
   GetFilesTaskParent(FileSystemBase* aFileSystem,
                      const FileSystemGetFilesParams& aParam,
                      FileSystemRequestParent* aParent);
 
-  virtual FileSystemResponseValue
-  GetSuccessRequestResult(ErrorResult& aRv) const override;
+  virtual FileSystemResponseValue GetSuccessRequestResult(
+      ErrorResult& aRv) const override;
 
-  virtual nsresult
-  IOWork() override;
+  virtual nsresult IOWork() override;
 
   nsString mDirectoryDOMPath;
   nsCOMPtr<nsIFile> mTargetPath;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_GetFilesTask_h
+#endif  // mozilla_dom_GetFilesTask_h

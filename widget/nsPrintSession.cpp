@@ -14,35 +14,20 @@ typedef mozilla::layout::RemotePrintJobChild RemotePrintJobChild;
 //*****************************************************************************
 
 NS_IMPL_ISUPPORTS(nsPrintSession, nsIPrintSession, nsISupportsWeakReference)
-                             
-//-----------------------------------------------------------------------------
-nsPrintSession::nsPrintSession()
-{
-}
 
 //-----------------------------------------------------------------------------
-nsPrintSession::~nsPrintSession()
-{
-}
+nsPrintSession::nsPrintSession() {}
 
 //-----------------------------------------------------------------------------
-nsresult nsPrintSession::Init()
-{
-  return NS_OK;
+nsPrintSession::~nsPrintSession() {}
+
+//-----------------------------------------------------------------------------
+nsresult nsPrintSession::Init() { return NS_OK; }
+
+RemotePrintJobChild* nsPrintSession::GetRemotePrintJob() {
+  return mRemotePrintJob;
 }
 
-NS_IMETHODIMP
-nsPrintSession::GetRemotePrintJob(RemotePrintJobChild** aRemotePrintJob)
-{
-  MOZ_ASSERT(aRemotePrintJob);
-  RefPtr<RemotePrintJobChild> result = mRemotePrintJob;
-  result.forget(aRemotePrintJob);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPrintSession::SetRemotePrintJob(RemotePrintJobChild* aRemotePrintJob)
-{
+void nsPrintSession::SetRemotePrintJob(RemotePrintJobChild* aRemotePrintJob) {
   mRemotePrintJob = aRemotePrintJob;
-  return NS_OK;
 }

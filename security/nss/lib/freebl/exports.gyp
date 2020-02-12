@@ -27,12 +27,15 @@
         },
         {
           'files': [
+            'cmac.h',
             'alghmac.h',
             'blapi.h',
+            'blake2b.h',
             'chacha20poly1305.h',
             'ec.h',
             'ecl/ecl-curve.h',
             'ecl/ecl.h',
+            'ecl/eclt.h',
             'hmacct.h',
             'secmpi.h',
             'secrng.h'

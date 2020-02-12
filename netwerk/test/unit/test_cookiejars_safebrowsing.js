@@ -5,10 +5,10 @@
 /*
  * Description of the test:
  *   We show that we can separate the safebrowsing cookie by creating a custom
- *   OriginAttributes using a reserved AppId (UINT_32_MAX - 1). Setting this
+ *   OriginAttributes using a unique safebrowsing first-party domain. Setting this
  *   custom OriginAttributes on the loadInfo of the channel allows us to query the
- *   AppId and therefore separate the safebrowing cookie in its own cookie-jar.
- *   For testing safebrowsing update we do >> NOT << emulate a response
+ *   first-party domain and therefore separate the safebrowing cookie in its own
+ *   cookie-jar. For testing safebrowsing update we do >> NOT << emulate a response
  *   in the body, rather we only set the cookies in the header of the response
  *   and confirm that cookies are separated in their own cookie-jar.
  *
@@ -23,26 +23,29 @@
  *    actually get stored in the correct jar).
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserver.identity.primaryPort;
 });
 
-XPCOMUtils.defineLazyModuleGetter(this, "SafeBrowsing",
-  "resource://gre/modules/SafeBrowsing.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "SafeBrowsing",
+  "resource://gre/modules/SafeBrowsing.jsm"
+);
 
 var setCookiePath = "/setcookie";
 var checkCookiePath = "/checkcookie";
 var safebrowsingUpdatePath = "/safebrowsingUpdate";
+var safebrowsingGethashPath = "/safebrowsingGethash";
 var httpserver;
 
 function inChildProcess() {
-  return Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
-           .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+  return (
+    Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
+      .processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT
+  );
 }
 
 function cookieSetHandler(metadata, response) {
@@ -69,26 +72,50 @@ function safebrowsingUpdateHandler(metadata, response) {
   response.bodyOutputStream.write("Ok", "Ok".length);
 }
 
+function safebrowsingGethashHandler(metadata, response) {
+  var cookieName = "sb-gethash-cookie";
+  response.setStatusLine(metadata.httpVersion, 200, "Ok");
+  response.setHeader("set-Cookie", cookieName + "=1; Path=/", false);
+  response.setHeader("Content-Type", "text/plain");
+
+  let msg = "test-phish-simplea:1:32\n" + "a".repeat(32);
+  response.bodyOutputStream.write(msg, msg.length);
+}
+
 function setupChannel(path, originAttributes) {
-  var channel = NetUtil.newChannel({uri: URL + path, loadUsingSystemPrincipal: true});
+  var channel = NetUtil.newChannel({
+    uri: URL + path,
+    loadUsingSystemPrincipal: true,
+  });
   channel.loadInfo.originAttributes = originAttributes;
   channel.QueryInterface(Ci.nsIHttpChannel);
   return channel;
 }
 
 function run_test() {
-
   // Set up a profile
   do_get_profile();
 
   // Allow all cookies if the pref service is available in this process.
-  if (!inChildProcess())
+  if (!inChildProcess()) {
     Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
+    Services.prefs.setBoolPref(
+      "network.cookieSettings.unblocked_for_testing",
+      true
+    );
+  }
 
   httpserver = new HttpServer();
   httpserver.registerPathHandler(setCookiePath, cookieSetHandler);
   httpserver.registerPathHandler(checkCookiePath, cookieCheckHandler);
-  httpserver.registerPathHandler(safebrowsingUpdatePath, safebrowsingUpdateHandler);
+  httpserver.registerPathHandler(
+    safebrowsingUpdatePath,
+    safebrowsingUpdateHandler
+  );
+  httpserver.registerPathHandler(
+    safebrowsingGethashPath,
+    safebrowsingGethashHandler
+  );
 
   httpserver.start(-1);
   run_next_test();
@@ -97,11 +124,12 @@ function run_test() {
 // this test does not emulate a response in the body,
 // rather we only set the cookies in the header of response.
 add_test(function test_safebrowsing_update() {
-
-  var dbservice = Cc["@mozilla.org/url-classifier/dbservice;1"]
-                  .getService(Ci.nsIUrlClassifierDBService);
-  var streamUpdater = Cc["@mozilla.org/url-classifier/streamupdater;1"]
-                     .getService(Ci.nsIUrlClassifierStreamUpdater);
+  var dbservice = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
+    Ci.nsIUrlClassifierDBService
+  );
+  var streamUpdater = Cc[
+    "@mozilla.org/url-classifier/streamupdater;1"
+  ].getService(Ci.nsIUrlClassifierStreamUpdater);
 
   function onSuccess() {
     run_next_test();
@@ -113,24 +141,52 @@ add_test(function test_safebrowsing_update() {
     do_throw("ERROR: received onDownloadError!");
   }
 
-  streamUpdater.downloadUpdates("test-phish-simple,test-malware-simple", "",
-    true, URL + safebrowsingUpdatePath, onSuccess, onUpdateError, onDownloadError);
+  streamUpdater.downloadUpdates(
+    "test-phish-simple,test-malware-simple",
+    "",
+    true,
+    URL + safebrowsingUpdatePath,
+    onSuccess,
+    onUpdateError,
+    onDownloadError
+  );
+});
+
+add_test(function test_safebrowsing_gethash() {
+  var hashCompleter = Cc[
+    "@mozilla.org/url-classifier/hashcompleter;1"
+  ].getService(Ci.nsIUrlClassifierHashCompleter);
+
+  hashCompleter.complete(
+    "aaaa",
+    URL + safebrowsingGethashPath,
+    "test-phish-simple",
+    {
+      completionV2(hash, table, chunkId) {},
+
+      completionFinished(status) {
+        Assert.equal(status, Cr.NS_OK);
+        run_next_test();
+      },
+    }
+  );
 });
 
 add_test(function test_non_safebrowsing_cookie() {
-
-  var cookieName = 'regCookie_id0';
+  var cookieName = "regCookie_id0";
   var originAttributes = new OriginAttributes(0, false, 0);
 
   function setNonSafeBrowsingCookie() {
     var channel = setupChannel(setCookiePath, originAttributes);
     channel.setRequestHeader("set-cookie", cookieName, false);
-    channel.asyncOpen2(new ChannelListener(checkNonSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(checkNonSafeBrowsingCookie, null));
   }
 
   function checkNonSafeBrowsingCookie() {
     var channel = setupChannel(checkCookiePath, originAttributes);
-    channel.asyncOpen2(new ChannelListener(completeCheckNonSafeBrowsingCookie, null));
+    channel.asyncOpen(
+      new ChannelListener(completeCheckNonSafeBrowsingCookie, null)
+    );
   }
 
   function completeCheckNonSafeBrowsingCookie(request, data, context) {
@@ -138,7 +194,7 @@ add_test(function test_non_safebrowsing_cookie() {
     var expectedCookie = cookieName + "=1";
     request.QueryInterface(Ci.nsIHttpChannel);
     var cookiesSeen = request.getResponseHeader("saw-cookies");
-    do_check_eq(cookiesSeen, expectedCookie);
+    Assert.equal(cookiesSeen, expectedCookie);
     run_next_test();
   }
 
@@ -146,31 +202,36 @@ add_test(function test_non_safebrowsing_cookie() {
 });
 
 add_test(function test_safebrowsing_cookie() {
-
-  var cookieName = 'sbCookie_id4294967294';
-  var originAttributes = new OriginAttributes(Ci.nsIScriptSecurityManager.SAFEBROWSING_APP_ID, false, 0);
+  var cookieName = "sbCookie_id4294967294";
+  var originAttributes = new OriginAttributes(0, false, 0);
+  originAttributes.firstPartyDomain =
+    "safebrowsing.86868755-6b82-4842-b301-72671a0db32e.mozilla";
 
   function setSafeBrowsingCookie() {
     var channel = setupChannel(setCookiePath, originAttributes);
     channel.setRequestHeader("set-cookie", cookieName, false);
-    channel.asyncOpen2(new ChannelListener(checkSafeBrowsingCookie, null));
+    channel.asyncOpen(new ChannelListener(checkSafeBrowsingCookie, null));
   }
 
   function checkSafeBrowsingCookie() {
     var channel = setupChannel(checkCookiePath, originAttributes);
-    channel.asyncOpen2(new ChannelListener(completeCheckSafeBrowsingCookie, null));
+    channel.asyncOpen(
+      new ChannelListener(completeCheckSafeBrowsingCookie, null)
+    );
   }
 
   function completeCheckSafeBrowsingCookie(request, data, context) {
     // Confirm that all >> THREE << cookies are sent back over the channel:
     //   a) the safebrowsing cookie set when updating
-    //   b) the regular cookie with custom loadcontext defined in this test.
+    //   b) the safebrowsing cookie set when sending gethash
+    //   c) the regular cookie with custom loadcontext defined in this test.
     var expectedCookies = "sb-update-cookie=1; ";
+    expectedCookies += "sb-gethash-cookie=1; ";
     expectedCookies += cookieName + "=1";
     request.QueryInterface(Ci.nsIHttpChannel);
     var cookiesSeen = request.getResponseHeader("saw-cookies");
 
-    do_check_eq(cookiesSeen, expectedCookies);
+    Assert.equal(cookiesSeen, expectedCookies);
     httpserver.stop(do_test_finished);
   }
 

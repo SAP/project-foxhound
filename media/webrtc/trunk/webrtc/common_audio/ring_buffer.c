@@ -11,25 +11,11 @@
 // A ring buffer to hold arbitrary data. Provides no thread safety. Unless
 // otherwise specified, functions return 0 on success and -1 on error.
 
-#include "webrtc/common_audio/ring_buffer.h"
+#include "common_audio/ring_buffer.h"
 
 #include <stddef.h>  // size_t
 #include <stdlib.h>
 #include <string.h>
-
-enum Wrap {
-  SAME_WRAP,
-  DIFF_WRAP
-};
-
-struct RingBuffer {
-  size_t read_pos;
-  size_t write_pos;
-  size_t element_count;
-  size_t element_size;
-  enum Wrap rw_wrap;
-  char* data;
-};
 
 // Get address of region(s) from which we can read data.
 // If the region is contiguous, |data_ptr_bytes_2| will be zero.
@@ -132,7 +118,6 @@ size_t WebRtc_ReadBuffer(RingBuffer* self,
                                                    &buf_ptr_bytes_1,
                                                    &buf_ptr_2,
                                                    &buf_ptr_bytes_2);
-
     if (buf_ptr_bytes_2 > 0) {
       // We have a wrap around when reading the buffer. Copy the buffer data to
       // |data| and point to it.
@@ -145,7 +130,7 @@ size_t WebRtc_ReadBuffer(RingBuffer* self,
     }
     if (data_ptr) {
       // |buf_ptr_1| == |data| in the case of a wrap.
-      *data_ptr = buf_ptr_1;
+      *data_ptr = read_count == 0 ? NULL : buf_ptr_1;
     }
 
     // Update read position

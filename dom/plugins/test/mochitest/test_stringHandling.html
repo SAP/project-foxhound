@@ -1,7 +1,7 @@
 <html>
 <head>
   <title>NPAPI string test</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
 
   <link rel="stylesheet" type="text/css"
@@ -16,7 +16,7 @@
     function runTests() {
       try {
         var plugin = document.getElementById("plugin1");
-        var badData = 'foo ' + '\x00'.repeat(260000);
+        var badData = "foo " + "\x00".repeat(260000);
         var ret = plugin.echoString(badData);
         ok(true, "Did not crash.");
         is(ret, badData, "Returned string should equal what we passed in.");

@@ -24,17 +24,17 @@
   buttons="accept,cancel"
   style="width: 30em;"
   onload="startup();"
-  ondialogaccept="return acceptDialog()"
-  ondialogcancel="return exitDialog()"
   buttonlabelaccept="&start.label;"
   buttonlabelcancel="&exit.label;">
+
+  <script src="chrome://global/content/customElements.js"/>
 
   <stringbundle id="bundle_profileManager"
                 src="chrome://mozapps/locale/profile/profileSelection.properties"/>
   <stringbundle id="bundle_brand"
                 src="chrome://branding/locale/brand.properties"/>
 
-  <script type="application/javascript" src="chrome://mozapps/content/profile/profileSelection.js"/>
+  <script src="chrome://mozapps/content/profile/profileSelection.js"/>
 
   <description class="label">&pmDescription.label;</description>
 
@@ -54,10 +54,10 @@
     <separator flex="1"/>
 
     <vbox flex="1">
-      <listbox id="profiles" rows="5" seltype="single"
-               ondblclick="onProfilesDblClick(event)"
-               onkeypress="onProfilesKey(event);">
-      </listbox>
+      <richlistbox id="profiles" class="theme-listbox" seltype="single"
+                   ondblclick="onProfilesDblClick(event)"
+                   onkeypress="onProfilesKey(event);">
+      </richlistbox>
 
       <!-- Bug 257777 -->
       <checkbox id="offlineState" label="&offlineState.label;" accesskey="&offlineState.accesskey;"/>

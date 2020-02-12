@@ -1,12 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-'use strict';
+"use strict";
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
-const {PushDB, PushService, PushServiceHttp2} = serviceExports;
+const { PushDB, PushService, PushServiceHttp2 } = serviceExports;
 
 var httpServer = null;
 
@@ -15,10 +14,10 @@ XPCOMUtils.defineLazyGetter(this, "serverPort", function() {
 });
 
 var handlerDone;
-var handlerPromise = new Promise(r => handlerDone = after(3, r));
+var handlerPromise = new Promise(r => (handlerDone = after(3, r)));
 
 function listen4xxCodeHandler(metadata, response) {
-  ok(true, "Listener point error")
+  ok(true, "Listener point error");
   handlerDone();
   response.setStatusLine(metadata.httpVersion, 410, "GONE");
 }
@@ -26,20 +25,23 @@ function listen4xxCodeHandler(metadata, response) {
 function resubscribeHandler(metadata, response) {
   ok(true, "Ask for new subscription");
   handlerDone();
-  response.setHeader("Location",
-                  'http://localhost:' + serverPort + '/newSubscription')
-  response.setHeader("Link",
-                  '</newPushEndpoint>; rel="urn:ietf:params:push", ' +
-                  '</newReceiptPushEndpoint>; rel="urn:ietf:params:push:receipt"');
+  response.setHeader(
+    "Location",
+    "http://localhost:" + serverPort + "/newSubscription"
+  );
+  response.setHeader(
+    "Link",
+    '</newPushEndpoint>; rel="urn:ietf:params:push", ' +
+      '</newReceiptPushEndpoint>; rel="urn:ietf:params:push:receipt"'
+  );
   response.setStatusLine(metadata.httpVersion, 201, "OK");
 }
 
 function listenSuccessHandler(metadata, response) {
-  do_check_true(true, "New listener point");
+  Assert.ok(true, "New listener point");
   httpServer.stop(handlerDone);
   response.setStatusLine(metadata.httpVersion, 204, "Try again");
 }
-
 
 httpServer = new HttpServer();
 httpServer.registerPathHandler("/subscription4xxCode", listen4xxCodeHandler);
@@ -48,56 +50,64 @@ httpServer.registerPathHandler("/newSubscription", listenSuccessHandler);
 httpServer.start(-1);
 
 function run_test() {
-
   do_get_profile();
 
   setPrefs({
-    'testing.allowInsecureServerURL': true,
-    'testing.notifyWorkers': false,
-    'testing.notifyAllObservers': true,
+    "testing.allowInsecureServerURL": true,
+    "testing.notifyWorkers": false,
+    "testing.notifyAllObservers": true,
   });
 
   run_next_test();
 }
 
-add_task(function* test1() {
-
+add_task(async function test1() {
   let db = PushServiceHttp2.newPushDB();
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     return db.drop().then(_ => db.close());
   });
 
   var serverURL = "http://localhost:" + httpServer.identity.primaryPort;
 
-  let records = [{
-    subscriptionUri: serverURL + '/subscription4xxCode',
-    pushEndpoint: serverURL + '/pushEndpoint',
-    pushReceiptEndpoint: serverURL + '/pushReceiptEndpoint',
-    scope: 'https://example.com/page',
-    originAttributes: '',
-    quota: Infinity,
-  }];
+  let records = [
+    {
+      subscriptionUri: serverURL + "/subscription4xxCode",
+      pushEndpoint: serverURL + "/pushEndpoint",
+      pushReceiptEndpoint: serverURL + "/pushReceiptEndpoint",
+      scope: "https://example.com/page",
+      originAttributes: "",
+      quota: Infinity,
+    },
+  ];
 
   for (let record of records) {
-    yield db.put(record);
+    await db.put(record);
   }
 
   PushService.init({
     serverURI: serverURL + "/subscribe",
-    db
+    db,
   });
 
-  yield handlerPromise;
+  await handlerPromise;
 
-  let record = yield db.getByIdentifiers({
-    scope: 'https://example.com/page',
-    originAttributes: '',
+  let record = await db.getByIdentifiers({
+    scope: "https://example.com/page",
+    originAttributes: "",
   });
-  equal(record.keyID, serverURL + '/newSubscription',
-    'Should update subscription URL');
-  equal(record.pushEndpoint, serverURL + '/newPushEndpoint',
-    'Should update push endpoint');
-  equal(record.pushReceiptEndpoint, serverURL + '/newReceiptPushEndpoint',
-    'Should update push receipt endpoint');
-
+  equal(
+    record.keyID,
+    serverURL + "/newSubscription",
+    "Should update subscription URL"
+  );
+  equal(
+    record.pushEndpoint,
+    serverURL + "/newPushEndpoint",
+    "Should update push endpoint"
+  );
+  equal(
+    record.pushReceiptEndpoint,
+    serverURL + "/newReceiptPushEndpoint",
+    "Should update push receipt endpoint"
+  );
 });

@@ -4,18 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 #ifndef nsContentAreaDragDrop_h__
 #define nsContentAreaDragDrop_h__
-
 
 #include "nsCOMPtr.h"
 
 #include "nsIDOMEventListener.h"
 #include "nsITransferable.h"
+#include "nsIContentSecurityPolicy.h"
 
 class nsPIDOMWindowOuter;
-class nsISelection;
 class nsITransferable;
 class nsIContent;
 class nsIFile;
@@ -23,16 +21,15 @@ class nsIFile;
 namespace mozilla {
 namespace dom {
 class DataTransfer;
-} // namespace dom
-} // namespace mozilla
+class Selection;
+}  // namespace dom
+}  // namespace mozilla
 
 //
 // class nsContentAreaDragDrop, used to generate the dragdata
 //
-class nsContentAreaDragDrop
-{
-public:
-
+class nsContentAreaDragDrop {
+ public:
   /**
    * Determine what data in the content area, if any, is being dragged.
    *
@@ -50,32 +47,34 @@ public:
    *                    selection is being dragged.
    * aDragNode - [out] the link, image or area being dragged, or null if the
    *             drag occurred on another element.
+   * aPrincipal - [out] set to the triggering principal of the drag, or null if
+   *                    it's from browser chrome or OS
+   * aCSP       - [out] set to the CSP of the Drag, or null if
+   *                    it's from browser chrome or OS
    */
-  static nsresult GetDragData(nsPIDOMWindowOuter* aWindow,
-                              nsIContent* aTarget,
+  static nsresult GetDragData(nsPIDOMWindowOuter* aWindow, nsIContent* aTarget,
                               nsIContent* aSelectionTargetNode,
                               bool aIsAltKeyPressed,
                               mozilla::dom::DataTransfer* aDataTransfer,
                               bool* aCanDrag,
-                              nsISelection** aSelection,
-                              nsIContent** aDragNode);
+                              mozilla::dom::Selection** aSelection,
+                              nsIContent** aDragNode, nsIPrincipal** aPrincipal,
+                              nsIContentSecurityPolicy** aCsp);
 };
 
 // this is used to save images to disk lazily when the image data is asked for
 // during the drop instead of when it is added to the drag data transfer. This
 // ensures that the image data is only created when an image drop is allowed.
-class nsContentAreaDragDropDataProvider : public nsIFlavorDataProvider
-{
+class nsContentAreaDragDropDataProvider : public nsIFlavorDataProvider {
   virtual ~nsContentAreaDragDropDataProvider() {}
 
-public:
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIFLAVORDATAPROVIDER
 
-  nsresult SaveURIToFile(nsAString& inSourceURIString,
+  nsresult SaveURIToFile(nsIURI* inSourceURI,
+                         nsIPrincipal* inTriggeringPrincipal,
                          nsIFile* inDestFile, bool isPrivate);
 };
 
-
 #endif /* nsContentAreaDragDrop_h__ */
-

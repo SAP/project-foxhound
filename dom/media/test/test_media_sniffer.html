@@ -3,7 +3,7 @@
 <head>
   <title>Media test: sniffing</title>
   <meta charset='utf-8'>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -13,7 +13,7 @@
 var manager = new MediaTestManager;
 
 function finish_test(element) {
-  element.removeEventListener("error", onerror, false);
+  element.removeEventListener("error", onerror);
   removeNodeAndSource(element);
   manager.finished(element.token);
 }

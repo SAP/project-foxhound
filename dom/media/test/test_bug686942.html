@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=686942
 
 <head>
   <title>Test for Bug 448534</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -14,10 +14,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=686942
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=686942">Mozilla Bug 686942</a>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-
-if (navigator.platform.startsWith("Win")) {
-  SimpleTest.expectAssertions(0, 2);
-}
 
 var manager = new MediaTestManager;
 
@@ -46,7 +42,7 @@ function onended(event) {
   v.removeEventListener("ended", onended);
   if (v._finished)
     return;
-  v.addEventListener("seeked", onseeked, false);
+  v.addEventListener("seeked", onseeked);
   v.currentTime = 0;
 }
 
@@ -58,8 +54,8 @@ function startTest(test, token) {
   v.src = test.name;
   v._played = false;
   v._finished = false;
-  v.addEventListener("loadedmetadata", onloaded, false);
-  v.addEventListener("ended", onended, false);
+  v.addEventListener("loadedmetadata", onloaded);
+  v.addEventListener("ended", onended);
 
   document.body.appendChild(v);
 }

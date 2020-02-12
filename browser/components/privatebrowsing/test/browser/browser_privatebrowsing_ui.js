@@ -8,49 +8,66 @@
 function test() {
   // initialization
   waitForExplicitFinish();
+  SpecialPowers.pushPrefEnv({
+    set: [["security.allow_eval_with_system_principal", true]],
+  });
   let windowsToClose = [];
   let testURI = "about:blank";
   let pbMenuItem;
   let cmd;
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
-    aWindow.gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-      aWindow.gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+    BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(
+      function() {
+        ok(aWindow.gPrivateBrowsingUI, "The gPrivateBrowsingUI object exists");
 
-      ok(aWindow.gPrivateBrowsingUI, "The gPrivateBrowsingUI object exists");
+        pbMenuItem = aWindow.document.getElementById("menu_newPrivateWindow");
+        ok(pbMenuItem, "The Private Browsing menu item exists");
 
-      pbMenuItem = aWindow.document.getElementById("menu_newPrivateWindow");
-      ok(pbMenuItem, "The Private Browsing menu item exists");
+        cmd = aWindow.document.getElementById("Tools:PrivateBrowsing");
+        isnot(
+          cmd,
+          null,
+          "XUL command object for the private browsing service exists"
+        );
 
-      cmd = aWindow.document.getElementById("Tools:PrivateBrowsing");
-      isnot(cmd, null, "XUL command object for the private browsing service exists");
+        is(
+          pbMenuItem.getAttribute("label"),
+          "New Private Window",
+          'The Private Browsing menu item should read "New Private Window"'
+        );
+        is(
+          PrivateBrowsingUtils.isWindowPrivate(aWindow),
+          aIsPrivateMode,
+          "PrivateBrowsingUtils should report the correct per-window private browsing status (privateBrowsing should be " +
+            aIsPrivateMode +
+            ")"
+        );
 
-      is(pbMenuItem.getAttribute("label"), "New Private Window",
-        "The Private Browsing menu item should read \"New Private Window\"");
-      is(PrivateBrowsingUtils.isWindowPrivate(aWindow), aIsPrivateMode,
-        "PrivateBrowsingUtils should report the correct per-window private browsing status (privateBrowsing should be " +
-        aIsPrivateMode + ")");
+        aCallback();
+      }
+    );
 
-      aCallback();
-    }, true);
-
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
-  };
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
+  }
 
   function openPrivateBrowsingModeByUI(aWindow, aCallback) {
     Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
-      aSubject.addEventListener("load", function() {
-        aSubject.removeEventListener("load", arguments.callee);
+      aSubject.addEventListener(
+        "load",
+        function() {
           Services.obs.removeObserver(observer, "domwindowopened");
           windowsToClose.push(aSubject);
           aCallback(aSubject);
-      }, false);
-    }, "domwindowopened", false);
+        },
+        { once: true }
+      );
+    }, "domwindowopened");
 
     cmd = aWindow.document.getElementById("Tools:PrivateBrowsing");
     var func = new Function("", cmd.getAttribute("oncommand"));
     func.call(cmd);
-  };
+  }
 
   function testOnWindow(aOptions, aCallback) {
     whenNewWindowLoaded(aOptions, function(aWin) {
@@ -60,9 +77,9 @@ function test() {
       // call whenNewWindowLoaded() instead of testOnWindow() on your test.
       executeSoon(() => aCallback(aWin));
     });
-  };
+  }
 
-   // this function is called after calling finish() on the test.
+  // this function is called after calling finish() on the test.
   registerCleanupFunction(function() {
     windowsToClose.forEach(function(aWin) {
       aWin.close();

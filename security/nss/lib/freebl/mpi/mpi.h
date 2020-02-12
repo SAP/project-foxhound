@@ -128,7 +128,8 @@ typedef int mp_sword;
 #define MP_WORD_MAX UINT_MAX
 #endif
 
-#define MP_DIGIT_BIT (CHAR_BIT * sizeof(mp_digit))
+#define MP_DIGIT_SIZE sizeof(mp_digit)
+#define MP_DIGIT_BIT (CHAR_BIT * MP_DIGIT_SIZE)
 #define MP_WORD_BIT (CHAR_BIT * sizeof(mp_word))
 #define MP_RADIX (1 + (mp_word)MP_DIGIT_MAX)
 
@@ -225,13 +226,11 @@ int mp_isodd(const mp_int *a);
 int mp_iseven(const mp_int *a);
 
 /* Number theoretic        */
-#if MP_NUMTH
 mp_err mp_gcd(mp_int *a, mp_int *b, mp_int *c);
 mp_err mp_lcm(mp_int *a, mp_int *b, mp_int *c);
 mp_err mp_xgcd(const mp_int *a, const mp_int *b, mp_int *g, mp_int *x, mp_int *y);
 mp_err mp_invmod(const mp_int *a, const mp_int *m, mp_int *c);
 mp_err mp_invmod_xgcd(const mp_int *a, const mp_int *m, mp_int *c);
-#endif /* end MP_NUMTH */
 
 /* Input and output        */
 #if MP_IOFUNC
@@ -289,7 +288,14 @@ void freebl_cpuid(unsigned long op, unsigned long *eax,
 #define DIGITS(MP) MP_DIGITS(MP)
 #define DIGIT(MP, N) MP_DIGIT(MP, N)
 
+/* Functions which return an mp_err value will NULL-check their arguments via
+ * ARGCHK(condition, return), where the caller is responsible for checking the
+ * mp_err return code. For functions that return an integer type, the caller 
+ * has no way to tell if the value is an error code or a legitimate value. 
+ * Therefore, ARGMPCHK(condition) will trigger an assertion failure on debug
+ * builds, but no-op in optimized builds. */
 #if MP_ARGCHK == 1
+#define ARGMPCHK(X) /* */
 #define ARGCHK(X, Y)    \
     {                   \
         if (!(X)) {     \
@@ -298,9 +304,11 @@ void freebl_cpuid(unsigned long op, unsigned long *eax,
     }
 #elif MP_ARGCHK == 2
 #include <assert.h>
+#define ARGMPCHK(X) assert(X)
 #define ARGCHK(X, Y) assert(X)
 #else
-#define ARGCHK(X, Y) /*  */
+#define ARGMPCHK(X)  /* */
+#define ARGCHK(X, Y) /* */
 #endif
 
 #ifdef CT_VERIF

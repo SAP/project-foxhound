@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <stdint.h>
+#include <string>
 
 #include <set>
 
@@ -52,20 +53,14 @@ class MediaPipelineFilter {
   // the filter about ssrcs)
   bool Filter(const webrtc::RTPHeader& header, uint32_t correlator = 0);
 
-  // RTCP doesn't have things like the RTP correlator, and uses its own
-  // payload types too.
-  bool FilterSenderReport(const unsigned char* data, size_t len) const;
-
   void AddRemoteSSRC(uint32_t ssrc);
+  void AddRemoteRtpStreamId(const std::string& rtp_strm_id);
 
   // When a payload type id is unique to our media section, add it here.
   void AddUniquePT(uint8_t payload_type);
   void SetCorrelator(uint32_t correlator);
 
   void Update(const MediaPipelineFilter& filter_update);
-
-  // Some payload types
-  static const uint8_t SENDER_REPORT_T = 200;
 
  private:
   // Payload type is always in the second byte
@@ -78,9 +73,9 @@ class MediaPipelineFilter {
   // for readability.
   std::set<uint32_t> remote_ssrc_set_;
   std::set<uint8_t> payload_type_set_;
+  std::set<std::string> remote_rid_set_;
 };
 
-} // end namespace mozilla
+}  // end namespace mozilla
 
-#endif // mediapipelinefilter_h__
-
+#endif  // mediapipelinefilter_h__

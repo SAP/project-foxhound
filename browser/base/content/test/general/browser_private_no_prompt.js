@@ -1,8 +1,8 @@
 function test() {
   waitForExplicitFinish();
-  var privateWin = OpenBrowserWindow({private: true});
+  var privateWin = OpenBrowserWindow({ private: true });
 
-  whenDelayedStartupFinished(privateWin, function () {
+  whenDelayedStartupFinished(privateWin, function() {
     privateWin.BrowserOpenTab();
     privateWin.BrowserTryToCloseWindow();
     ok(true, "didn't prompt");

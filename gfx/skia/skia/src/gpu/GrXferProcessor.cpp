@@ -6,51 +6,22 @@
  */
 
 #include "GrXferProcessor.h"
+
+#include "GrCaps.h"
 #include "GrPipeline.h"
-#include "GrPipelineBuilder.h"
-#include "GrProcOptInfo.h"
-#include "gl/GrGLCaps.h"
 
-GrXferProcessor::GrXferProcessor()
-    : fWillReadDstColor(false)
-    , fDstReadUsesMixedSamples(false)
-    , fDstTextureOffset() {
-}
+GrXferProcessor::GrXferProcessor(ClassID classID)
+        : INHERITED(classID)
+        , fWillReadDstColor(false)
+        , fDstReadUsesMixedSamples(false)
+        , fIsLCD(false) {}
 
-GrXferProcessor::GrXferProcessor(const DstTexture* dstTexture,
-                                 bool willReadDstColor,
-                                 bool hasMixedSamples)
-    : fWillReadDstColor(willReadDstColor)
-    , fDstReadUsesMixedSamples(willReadDstColor && hasMixedSamples)
-    , fDstTextureOffset() {
-    if (dstTexture && dstTexture->texture()) {
-        SkASSERT(willReadDstColor);
-        fDstTexture.reset(dstTexture->texture());
-        fDstTextureOffset = dstTexture->offset();
-        this->addTextureAccess(&fDstTexture);
-        this->setWillReadFragmentPosition();
-    }
-}
-
-GrXferProcessor::OptFlags GrXferProcessor::getOptimizations(
-                                                       const GrPipelineOptimizations& optimizations,
-                                                       bool doesStencilWrite,
-                                                       GrColor* overrideColor,
-                                                       const GrCaps& caps) const {
-    GrXferProcessor::OptFlags flags = this->onGetOptimizations(optimizations,
-                                                               doesStencilWrite,
-                                                               overrideColor,
-                                                               caps);
-
-    if (this->willReadDstColor()) {
-        // When performing a dst read we handle coverage in the base class.
-        SkASSERT(!(flags & GrXferProcessor::kIgnoreCoverage_OptFlag));
-        if (optimizations.fCoveragePOI.isSolidWhite()) {
-            flags |= GrXferProcessor::kIgnoreCoverage_OptFlag;
-        }
-    }
-    return flags;
-}
+GrXferProcessor::GrXferProcessor(ClassID classID, bool willReadDstColor, bool hasMixedSamples,
+                                 GrProcessorAnalysisCoverage coverage)
+        : INHERITED(classID)
+        , fWillReadDstColor(willReadDstColor)
+        , fDstReadUsesMixedSamples(willReadDstColor && hasMixedSamples)
+        , fIsLCD(GrProcessorAnalysisCoverage::kLCD == coverage) {}
 
 bool GrXferProcessor::hasSecondaryOutput() const {
     if (!this->willReadDstColor()) {
@@ -68,12 +39,13 @@ void GrXferProcessor::getBlendInfo(BlendInfo* blendInfo) const {
     }
 }
 
-void GrXferProcessor::getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void GrXferProcessor::getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b,
+                                          const GrSurfaceOrigin* originIfDstTexture) const {
     uint32_t key = this->willReadDstColor() ? 0x1 : 0x0;
     if (key) {
-        if (const GrTexture* dstTexture = this->getDstTexture()) {
+        if (originIfDstTexture) {
             key |= 0x2;
-            if (kTopLeft_GrSurfaceOrigin == dstTexture->origin()) {
+            if (kTopLeft_GrSurfaceOrigin == *originIfDstTexture) {
                 key |= 0x4;
             }
         }
@@ -81,19 +53,11 @@ void GrXferProcessor::getGLSLProcessorKey(const GrGLSLCaps& caps, GrProcessorKey
             key |= 0x8;
         }
     }
+    if (fIsLCD) {
+        key |= 0x10;
+    }
     b->add32(key);
     this->onGetGLSLProcessorKey(caps, b);
-}
-
-GrXferBarrierType GrXferProcessor::xferBarrierType(const GrRenderTarget* rt,
-                                                   const GrCaps& caps) const {
-    SkASSERT(rt);
-    if (static_cast<const GrSurface*>(rt) == this->getDstTexture()) {
-        // Texture barriers are required when a shader reads and renders to the same texture.
-        SkASSERT(caps.textureBarrierSupport());
-        return kTexture_GrXferBarrierType;
-    }
-    return this->onXferBarrier(rt, caps);
 }
 
 #ifdef SK_DEBUG
@@ -135,7 +99,10 @@ static const char* equation_string(GrBlendEquation eq) {
             return "hsl_color";
         case kHSLLuminosity_GrBlendEquation:
             return "hsl_luminosity";
-    };
+        case kIllegal_GrBlendEquation:
+            SkASSERT(false);
+            return "<illegal>";
+    }
     return "";
 }
 
@@ -177,6 +144,9 @@ static const char* coeff_string(GrBlendCoeff coeff) {
             return "src2_alpha";
         case kIS2A_GrBlendCoeff:
             return "inv_src2_alpha";
+        case kIllegal_GrBlendCoeff:
+            SkASSERT(false);
+            return "<illegal>";
     }
     return "";
 }
@@ -185,42 +155,43 @@ SkString GrXferProcessor::BlendInfo::dump() const {
     SkString out;
     out.printf("write_color(%d) equation(%s) src_coeff(%s) dst_coeff:(%s) const(0x%08x)",
                fWriteColor, equation_string(fEquation), coeff_string(fSrcBlend),
-               coeff_string(fDstBlend), fBlendConstant);
+               coeff_string(fDstBlend), fBlendConstant.toBytes_RGBA());
     return out;
 }
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrXferProcessor* GrXPFactory::createXferProcessor(const GrPipelineOptimizations& optimizations,
-                                                  bool hasMixedSamples,
-                                                  const DstTexture* dstTexture,
-                                                  const GrCaps& caps) const {
-#ifdef SK_DEBUG
-    if (this->willReadDstColor(caps, optimizations, hasMixedSamples)) {
-        if (!caps.shaderCaps()->dstReadInShaderSupport()) {
-            SkASSERT(dstTexture && dstTexture->texture());
-        } else {
-            SkASSERT(!dstTexture || !dstTexture->texture());
-        }
+GrXPFactory::AnalysisProperties GrXPFactory::GetAnalysisProperties(
+        const GrXPFactory* factory,
+        const GrProcessorAnalysisColor& color,
+        const GrProcessorAnalysisCoverage& coverage,
+        const GrCaps& caps) {
+    AnalysisProperties result;
+    if (factory) {
+        result = factory->analysisProperties(color, coverage, caps);
     } else {
-        SkASSERT(!dstTexture || !dstTexture->texture());
+        result = GrPorterDuffXPFactory::SrcOverAnalysisProperties(color, coverage, caps);
     }
+    SkASSERT(!(result & AnalysisProperties::kRequiresDstTexture));
+    if ((result & AnalysisProperties::kReadsDstInShader) &&
+        !caps.shaderCaps()->dstReadInShaderSupport()) {
+        result |= AnalysisProperties::kRequiresDstTexture |
+                  AnalysisProperties::kRequiresNonOverlappingDraws;
+    }
+    return result;
+}
+
+sk_sp<const GrXferProcessor> GrXPFactory::MakeXferProcessor(const GrXPFactory* factory,
+                                                            const GrProcessorAnalysisColor& color,
+                                                            GrProcessorAnalysisCoverage coverage,
+                                                            bool hasMixedSamples,
+                                                            const GrCaps& caps) {
     SkASSERT(!hasMixedSamples || caps.shaderCaps()->dualSourceBlendingSupport());
-#endif
-    return this->onCreateXferProcessor(caps, optimizations, hasMixedSamples, dstTexture);
-}
-
-bool GrXPFactory::willNeedDstTexture(const GrCaps& caps,
-                                     const GrPipelineOptimizations& optimizations,
-                                     bool hasMixedSamples) const {
-    return (this->willReadDstColor(caps, optimizations, hasMixedSamples) &&
-            !caps.shaderCaps()->dstReadInShaderSupport());
-}
-
-bool GrXPFactory::willReadDstColor(const GrCaps& caps,
-                                   const GrPipelineOptimizations& optimizations,
-                                   bool hasMixedSamples) const {
-    return optimizations.fOverrides.fUsePLSDstRead || this->onWillReadDstColor(caps, optimizations,
-                                                                               hasMixedSamples);
+    if (factory) {
+        return factory->makeXferProcessor(color, coverage, hasMixedSamples, caps);
+    } else {
+        return GrPorterDuffXPFactory::MakeSrcOverXferProcessor(color, coverage, hasMixedSamples,
+                                                               caps);
+    }
 }

@@ -1,61 +1,148 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_task(function* () {
-  const REDIRECT_URI = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect.sjs");
-  const TARGET_URI = NetUtil.newURI("http://mochi.test:8888/tests/toolkit/components/places/tests/browser/redirect-target.html");
+const ROOT_URI =
+  "http://mochi.test:8888/tests/toolkit/components/places/tests/browser/";
+const REDIRECT_URI = Services.io.newURI(ROOT_URI + "redirect.sjs");
+const TARGET_URI = Services.io.newURI(ROOT_URI + "redirect-target.html");
 
-  // Create and add history observer.
-  let visitedPromise = new Promise(resolve => {
-    let historyObserver = {
-      _redirectNotified: false,
-      onVisit: function (aURI, aVisitID, aTime, aSessionID, aReferringID,
-                        aTransitionType) {
-        info("Received onVisit: " + aURI.spec);
+const REDIRECT_SOURCE_VISIT_BONUS = Services.prefs.getIntPref(
+  "places.frecency.redirectSourceVisitBonus"
+);
+const LINK_VISIT_BONUS = Services.prefs.getIntPref(
+  "places.frecency.linkVisitBonus"
+);
+const TYPED_VISIT_BONUS = Services.prefs.getIntPref(
+  "places.frecency.typedVisitBonus"
+);
 
-        if (aURI.equals(REDIRECT_URI)) {
-          this._redirectNotified = true;
-          // Wait for the target page notification.
-          return;
-        }
+// Ensure that decay frecency doesn't kick in during tests (as a result
+// of idle-daily).
+Services.prefs.setCharPref("places.frecency.decayRate", "1.0");
 
-        PlacesUtils.history.removeObserver(historyObserver);
+registerCleanupFunction(async function() {
+  Services.prefs.clearUserPref("places.frecency.decayRate");
+  await PlacesUtils.history.clear();
+});
 
-        ok(this._redirectNotified, "The redirect should have been notified");
+let redirectSourceFrecency = 0;
+let redirectTargetFrecency = 0;
 
-        fieldForUrl(REDIRECT_URI, "frecency", function (aFrecency) {
-          ok(aFrecency != 0, "Frecency or the redirecting page should not be 0");
+async function check_uri(uri, frecency, hidden) {
+  is(
+    await PlacesTestUtils.fieldInDB(uri, "frecency"),
+    frecency,
+    "Frecency of the page is the expected one"
+  );
+  is(
+    await PlacesTestUtils.fieldInDB(uri, "hidden"),
+    hidden,
+    "Hidden value of the page is the expected one"
+  );
+}
 
-          fieldForUrl(REDIRECT_URI, "hidden", function (aHidden) {
-            is(aHidden, 1, "The redirecting page should be hidden");
+add_task(async function redirect_check_new_typed_visit() {
+  // Used to verify the redirect bonus overrides the typed bonus.
+  PlacesUtils.history.markPageAsTyped(REDIRECT_URI);
 
-            fieldForUrl(TARGET_URI, "frecency", function (aFrecency) {
-              ok(aFrecency != 0, "Frecency of the target page should not be 0");
+  redirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
+  redirectTargetFrecency += TYPED_VISIT_BONUS;
+  let redirectNotified = false;
 
-              fieldForUrl(TARGET_URI, "hidden", function (aHidden) {
-                is(aHidden, 0, "The target page should not be hidden");
-                resolve();
-              });
-            });
-          });
-        });
-      },
-      onBeginUpdateBatch: function () {},
-      onEndUpdateBatch: function () {},
-      onTitleChanged: function () {},
-      onDeleteURI: function () {},
-      onClearHistory: function () {},
-      onPageChanged: function () {},
-      onDeleteVisits: function () {},
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver])
-    };
-    PlacesUtils.history.addObserver(historyObserver, false);
-  });
+  let visitedPromise = PlacesTestUtils.waitForNotification(
+    "page-visited",
+    visits => {
+      is(visits.length, 1, "Was notified for the right number of visits.");
+      let { url } = visits[0];
+      info("Received 'page-visited': " + url);
+      if (url == REDIRECT_URI.spec) {
+        redirectNotified = true;
+      }
+      return url == TARGET_URI.spec;
+    },
+    "places"
+  );
 
-  let newTabPromise = BrowserTestUtils.openNewForegroundTab(gBrowser, REDIRECT_URI.spec);
-  yield Promise.all([visitedPromise, newTabPromise]);
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    REDIRECT_URI.spec
+  );
+  info("Waiting for onVisits");
+  await visitedPromise;
+  ok(redirectNotified, "The redirect should have been notified");
 
-  yield PlacesTestUtils.clearHistory();
-  gBrowser.removeCurrentTab();
+  await check_uri(REDIRECT_URI, redirectSourceFrecency, 1);
+  await check_uri(TARGET_URI, redirectTargetFrecency, 0);
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function redirect_check_second_typed_visit() {
+  // A second visit with a typed url.
+  PlacesUtils.history.markPageAsTyped(REDIRECT_URI);
+
+  redirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
+  redirectTargetFrecency += TYPED_VISIT_BONUS;
+  let redirectNotified = false;
+
+  let visitedPromise = PlacesTestUtils.waitForNotification(
+    "page-visited",
+    visits => {
+      is(visits.length, 1, "Was notified for the right number of visits.");
+      let { url } = visits[0];
+      info("Received 'page-visited': " + url);
+      if (url == REDIRECT_URI.spec) {
+        redirectNotified = true;
+      }
+      return url == TARGET_URI.spec;
+    },
+    "places"
+  );
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    REDIRECT_URI.spec
+  );
+  info("Waiting for onVisits");
+  await visitedPromise;
+  ok(redirectNotified, "The redirect should have been notified");
+
+  await check_uri(REDIRECT_URI, redirectSourceFrecency, 1);
+  await check_uri(TARGET_URI, redirectTargetFrecency, 0);
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function redirect_check_subsequent_link_visit() {
+  // Another visit, but this time as a visited url.
+  redirectSourceFrecency += REDIRECT_SOURCE_VISIT_BONUS;
+  redirectTargetFrecency += LINK_VISIT_BONUS;
+  let redirectNotified = false;
+
+  let visitedPromise = PlacesTestUtils.waitForNotification(
+    "page-visited",
+    visits => {
+      is(visits.length, 1, "Was notified for the right number of visits.");
+      let { url } = visits[0];
+      info("Received 'page-visited': " + url);
+      if (url == REDIRECT_URI.spec) {
+        redirectNotified = true;
+      }
+      return url == TARGET_URI.spec;
+    },
+    "places"
+  );
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    REDIRECT_URI.spec
+  );
+  info("Waiting for onVisits");
+  await visitedPromise;
+  ok(redirectNotified, "The redirect should have been notified");
+
+  await check_uri(REDIRECT_URI, redirectSourceFrecency, 1);
+  await check_uri(TARGET_URI, redirectTargetFrecency, 0);
+
+  BrowserTestUtils.removeTab(tab);
 });

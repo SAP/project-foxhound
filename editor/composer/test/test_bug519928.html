@@ -5,14 +5,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=519928
 -->
 <head>
   <title>Test for Bug 519928</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=519928">Mozilla Bug 519928</a>
 <p id="display"></p>
 <div id="content">
-<iframe id="load-frame"></iframe>  
+<iframe id="load-frame"></iframe>
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript">
@@ -22,11 +22,7 @@ var iframe = document.getElementById("load-frame");
 function enableJS() { allowJS(true, iframe); }
 function disableJS() { allowJS(false, iframe); }
 function allowJS(allow, frame) {
-  SpecialPowers.wrap(frame.contentWindow)
-               .QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor)
-               .getInterface(SpecialPowers.Ci.nsIWebNavigation)
-               .QueryInterface(SpecialPowers.Ci.nsIDocShell)
-               .allowJavascript = allow;
+  SpecialPowers.wrap(frame.contentWindow).docShell.allowJavascript = allow;
 }
 
 function expectJSAllowed(allowed, testCondition, callback) {
@@ -38,17 +34,17 @@ function expectJSAllowed(allowed, testCondition, callback) {
   doc.body.innerHTML = "<iframe></iframe>";
   var innerFrame = doc.querySelector("iframe");
   innerFrame.addEventListener("load", function() {
-    innerFrame.removeEventListener("load", arguments.callee, false);
-
     var msg = "The inner iframe should" + (allowed ? "" : " not") + " be able to run Javascript";
     is(self_.ICanRunMyJS, allowed, msg);
     callback();
-  }, false);
-  var iframeSrc = "data:text/html,<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
-  innerFrame.src = iframeSrc;
+  }, {once: true});
+  // eslint-disable-next-line no-useless-concat
+  var iframeSrc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
+  innerFrame.srcdoc = iframeSrc;
 }
 
 SimpleTest.waitForExplicitFinish();
+/* eslint-disable max-nested-callbacks */
 addLoadEvent(function() {
   var enterDesignMode = function() { document.designMode = "on"; };
   var leaveDesignMode = function() { document.designMode = "off"; };
@@ -88,6 +84,7 @@ addLoadEvent(function() {
     });
   });
 });
+/* eslint-enable max-nested-callbacks */
 
 function testDocumentDisabledJS() {
   window.ICanRunMyJS = false;
@@ -107,14 +104,13 @@ function testDocumentDisabledJS() {
   allowJS(false, innerFrame);
 
   innerFrame.addEventListener("load", function() {
-    innerFrame.removeEventListener("load", arguments.callee, false);
-
     var msg = "The inner iframe should not be able to run Javascript";
     is(self_.ICanRunMyJS, false, msg);
     SimpleTest.finish();
-  }, false);
-  var iframeSrc = "data:text/html,<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
-  innerFrame.src = iframeSrc;
+  }, {once: true});
+  // eslint-disable-next-line no-useless-concat
+  var iframeSrc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
+  innerFrame.srcdoc = iframeSrc;
 }
 
 </script>

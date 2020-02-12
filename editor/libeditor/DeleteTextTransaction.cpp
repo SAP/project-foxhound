@@ -7,6 +7,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/EditorBase.h"
+#include "mozilla/EditorDOMPoint.h"
 #include "mozilla/SelectionState.h"
 #include "mozilla/dom/Selection.h"
 #include "nsDebug.h"
@@ -19,84 +20,138 @@ namespace mozilla {
 
 using namespace dom;
 
-DeleteTextTransaction::DeleteTextTransaction(
-                         EditorBase& aEditorBase,
-                         nsGenericDOMDataNode& aCharData,
-                         uint32_t aOffset,
-                         uint32_t aNumCharsToDelete,
-                         RangeUpdater* aRangeUpdater)
-  : mEditorBase(aEditorBase)
-  , mCharData(&aCharData)
-  , mOffset(aOffset)
-  , mNumCharsToDelete(aNumCharsToDelete)
-  , mRangeUpdater(aRangeUpdater)
-{
-  NS_ASSERTION(mCharData->Length() >= aOffset + aNumCharsToDelete,
+// static
+already_AddRefed<DeleteTextTransaction> DeleteTextTransaction::MaybeCreate(
+    EditorBase& aEditorBase, Text& aTextNode, uint32_t aOffset,
+    uint32_t aLengthToDelete) {
+  RefPtr<DeleteTextTransaction> transaction = new DeleteTextTransaction(
+      aEditorBase, aTextNode, aOffset, aLengthToDelete);
+  return transaction.forget();
+}
+
+// static
+already_AddRefed<DeleteTextTransaction>
+DeleteTextTransaction::MaybeCreateForPreviousCharacter(EditorBase& aEditorBase,
+                                                       Text& aTextNode,
+                                                       uint32_t aOffset) {
+  if (NS_WARN_IF(!aOffset)) {
+    return nullptr;
+  }
+
+  nsAutoString data;
+  aTextNode.GetData(data);
+  if (NS_WARN_IF(data.IsEmpty())) {
+    return nullptr;
+  }
+
+  uint32_t length = 1;
+  uint32_t offset = aOffset - 1;
+  if (offset && NS_IS_LOW_SURROGATE(data[offset]) &&
+      NS_IS_HIGH_SURROGATE(data[offset - 1])) {
+    ++length;
+    --offset;
+  }
+  return DeleteTextTransaction::MaybeCreate(aEditorBase, aTextNode, offset,
+                                            length);
+}
+
+// static
+already_AddRefed<DeleteTextTransaction>
+DeleteTextTransaction::MaybeCreateForNextCharacter(EditorBase& aEditorBase,
+                                                   Text& aTextNode,
+                                                   uint32_t aOffset) {
+  nsAutoString data;
+  aTextNode.GetData(data);
+  if (NS_WARN_IF(aOffset >= data.Length()) || NS_WARN_IF(data.IsEmpty())) {
+    return nullptr;
+  }
+
+  uint32_t length = 1;
+  if (aOffset + 1 < data.Length() && NS_IS_HIGH_SURROGATE(data[aOffset]) &&
+      NS_IS_LOW_SURROGATE(data[aOffset + 1])) {
+    ++length;
+  }
+  return DeleteTextTransaction::MaybeCreate(aEditorBase, aTextNode, aOffset,
+                                            length);
+}
+
+DeleteTextTransaction::DeleteTextTransaction(EditorBase& aEditorBase,
+                                             Text& aTextNode, uint32_t aOffset,
+                                             uint32_t aLengthToDelete)
+    : mEditorBase(&aEditorBase),
+      mTextNode(&aTextNode),
+      mOffset(aOffset),
+      mLengthToDelete(aLengthToDelete) {
+  NS_ASSERTION(mTextNode->Length() >= aOffset + aLengthToDelete,
                "Trying to delete more characters than in node");
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(DeleteTextTransaction, EditTransactionBase,
-                                   mCharData)
+                                   mEditorBase, mTextNode)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DeleteTextTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
-nsresult
-DeleteTextTransaction::Init()
-{
-  // Do nothing if the node is read-only
-  if (!mEditorBase.IsModifiableNode(mCharData)) {
-    return NS_ERROR_FAILURE;
+bool DeleteTextTransaction::CanDoIt() const {
+  if (NS_WARN_IF(!mTextNode) || NS_WARN_IF(!mEditorBase)) {
+    return false;
   }
-
-  return NS_OK;
+  return mEditorBase->IsModifiableNode(*mTextNode);
 }
 
+MOZ_CAN_RUN_SCRIPT_BOUNDARY
 NS_IMETHODIMP
-DeleteTextTransaction::DoTransaction()
-{
-  MOZ_ASSERT(mCharData);
+DeleteTextTransaction::DoTransaction() {
+  if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mTextNode)) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   // Get the text that we're about to delete
-  nsresult res = mCharData->SubstringData(mOffset, mNumCharsToDelete,
-                                          mDeletedText);
-  MOZ_ASSERT(NS_SUCCEEDED(res));
-  res = mCharData->DeleteData(mOffset, mNumCharsToDelete);
-  NS_ENSURE_SUCCESS(res, res);
-
-  if (mRangeUpdater) {
-    mRangeUpdater->SelAdjDeleteText(mCharData, mOffset, mNumCharsToDelete);
+  ErrorResult err;
+  mTextNode->SubstringData(mOffset, mLengthToDelete, mDeletedText, err);
+  if (NS_WARN_IF(err.Failed())) {
+    return err.StealNSResult();
   }
 
-  // Only set selection to deletion point if editor gives permission
-  if (mEditorBase.GetShouldTxnSetSelection()) {
-    RefPtr<Selection> selection = mEditorBase.GetSelection();
-    NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
-    res = selection->Collapse(mCharData, mOffset);
-    NS_ASSERTION(NS_SUCCEEDED(res),
-                 "Selection could not be collapsed after undo of deletetext");
-    NS_ENSURE_SUCCESS(res, res);
+  RefPtr<EditorBase> editorBase = mEditorBase;
+  RefPtr<Text> textNode = mTextNode;
+  editorBase->DoDeleteText(*textNode, mOffset, mLengthToDelete, err);
+  if (NS_WARN_IF(err.Failed())) {
+    return err.StealNSResult();
   }
-  // Else do nothing - DOM Range gravity will adjust selection
+
+  editorBase->RangeUpdaterRef().SelAdjDeleteText(textNode, mOffset,
+                                                 mLengthToDelete);
+
+  if (!editorBase->AllowsTransactionsToChangeSelection()) {
+    return NS_OK;
+  }
+
+  RefPtr<Selection> selection = editorBase->GetSelection();
+  if (NS_WARN_IF(!selection)) {
+    return NS_ERROR_FAILURE;
+  }
+  ErrorResult error;
+  selection->Collapse(EditorRawDOMPoint(textNode, mOffset), error);
+  if (NS_WARN_IF(error.Failed())) {
+    return error.StealNSResult();
+  }
   return NS_OK;
 }
 
-//XXX: We may want to store the selection state and restore it properly.  Was
+// XXX: We may want to store the selection state and restore it properly.  Was
 //     it an insertion point or an extended selection?
+MOZ_CAN_RUN_SCRIPT_BOUNDARY
 NS_IMETHODIMP
-DeleteTextTransaction::UndoTransaction()
-{
-  MOZ_ASSERT(mCharData);
-
-  return mCharData->InsertData(mOffset, mDeletedText);
+DeleteTextTransaction::UndoTransaction() {
+  if (NS_WARN_IF(!mTextNode) || NS_WARN_IF(!mEditorBase)) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+  RefPtr<EditorBase> editorBase = mEditorBase;
+  RefPtr<Text> textNode = mTextNode;
+  ErrorResult error;
+  editorBase->DoInsertText(*textNode, mOffset, mDeletedText, error);
+  return error.StealNSResult();
 }
 
-NS_IMETHODIMP
-DeleteTextTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("DeleteTextTransaction: ");
-  aString += mDeletedText;
-  return NS_OK;
-}
-
-} // namespace mozilla
+}  // namespace mozilla

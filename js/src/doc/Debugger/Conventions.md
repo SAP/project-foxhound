@@ -66,31 +66,65 @@ Similarly:
 
 ## Completion Values
 
-When a debuggee stack frame completes its execution, or when some sort
-of debuggee call initiated by the debugger finishes, the `Debugger`
-interface provides a value describing how the code completed; these are
-called *completion values*. A completion value has one of the
-following forms:
+The `Debugger` API often needs to convey the result of running some JS code. For example, suppose you get a `frame.onPop` callback telling you that a method in the debuggee just finished. Did it return successfully? Did it throw? What did it return? The debugger passes the `onPop` handler a *completion value* that tells what happened.
+
+A completion value is one of these:
 
 <code>{ return: <i>value</i> }</code>
 :   The code completed normally, returning <i>value</i>. <i>Value</i> is a
     debuggee value.
 
-<code>{ yield: <i>value</i> }</code>
-:   <i>(Not yet implemented.)</i> The running code is a generator frame
-    which has yielded <i>value</i>. <i>Value</i> is a debuggee value.
-
-<code>{ throw: <i>value</i> }</code>
+<code>{ throw: <i>value</i>, stack: <i>stack</i> }</code>
 :   The code threw <i>value</i> as an exception. <i>Value</i> is a debuggee
-    value.
+    value.  <i>stack</i> is a `SavedFrame` representing the location from which
+    the value was thrown, and may be missing.
 
 `null`
-:   The code was terminated, as if by the "slow script" dialog box.
+:   The code was terminated, as if by the "slow script" ribbon.
 
-If control reaches the end of a generator frame, the completion value is
-<code>{ throw: <i>stop</i> }</code> where <i>stop</i> is a
-`Debugger.Object` object representing the `StopIteration` object being
-thrown.
+Generators and async functions add a wrinkle: they can suspend themselves (with `yield` or `await`), which removes their frame from the stack. Later, the generator or async frame might be returned to the stack and continue running where it left off. Does it count as "completion" when a generator suspends itself?
+
+The `Debugger` API says yes. `yield` and `await` do trigger the `frame.onPop` handler, passing a completion value that explains why the frame is being suspended. The completion value gets an extra `.yield` or `.await` property, to distinguish this kind of completion from a normal `return`.
+
+<pre>
+{ return: *value*, yield: true }
+</pre>
+
+where *value* is a debuggee value for the iterator result object, like `{ value: 1, done: false }`, for the yield.
+
+When a generator function is called, it first evaluates any default argument
+expressions and destructures its arguments. Then its frame is suspended, and the
+new generator object is returned to the caller. This initial suspension is reported
+to any `onPop` handlers as a completion value of the form:
+
+<pre>
+{ return: *generatorObject*, yield: true, initial: true }
+</pre>
+
+where *generatorObject* is a debuggee value for the generator object being
+returned to the caller.
+
+When an async function awaits a promise, its suspension is reported to any
+`onPop` handlers as a completion value of the form:
+
+<pre>
+{ return: *promise*, await: true }
+</pre>
+
+where *promise* is a debuggee value for the promise being returned to the
+caller.
+
+The first time a call to an async function awaits, returns, or throws, a promise
+of its result is returned to the caller. Subsequent resumptions of the async
+call, if any, are initiated directly from the job queue's event loop, with no
+calling frame on the stack. Thus, if needed, an `onPop` handler can distinguish
+an async call's initial suspension, which returns the promise, from any
+subsequent suspensions by checking the `Debugger.Frame`'s `older` property: if
+that is `null`, the call was resumed directly from the event loop.
+
+Async generators are a combination of async functions and generators that can
+use both `yield` and `await` expressions. Suspensions of async generator frames
+are reported using any combination of the completion values above.
 
 
 ## Resumption Values
@@ -105,37 +139,72 @@ resumption value has one of the following forms:
 :   The debuggee should continue execution normally.
 
 <code>{ return: <i>value</i> }</code>
-:   Return <i>value</i> immediately as the current value of the function.
-    <i>Value</i> must be a debuggee value. (Most handler functions support
-    this, except those whose descriptions say otherwise.) If the function
-    was called as a constructor (that is, via a `new` expression), then
-    <i>value</i> serves as the value returned by the function's body, not
-    that produced by the `new` expression: if the value is not an object,
-    the `new` expression returns the frame's `this` value. Similarly, if
-    the function is the constructor for a subclass, then a non-object
-    value may result in a TypeError.
-
-<code>{ yield: <i>value</i> }</code>
-:   <i>(Not yet implemented.)</i> Yield <i>value</i> immediately as the
-    next value of the current frame, which must be a generator frame.
-    <i>Value</i> is a debuggee value. The current frame must be a generator
-    frame that has not yet completed in some other way. You may use `yield`
-    resumption values to substitute a new value or one already yielded by a
-    generator, or to make a generator yield additional values.
+:   Force the top frame of the debuggee to return <i>value</i> immediately,
+    as if by executing a `return` statement. <i>Value</i> must be a debuggee
+    value. (Most handler functions support this, except those whose
+    descriptions say otherwise.) See the list of special cases below.
 
 <code>{ throw: <i>value</i> }</code>
 :   Throw <i>value</i> as an exception from the current bytecode
-    instruction. <i>Value</i> must be a debuggee value.
+    instruction. <i>Value</i> must be a debuggee value. Note that unlike
+    completion values, resumption values do not specify a stack.  When
+    initiating an exceptional return from a handler, the current debuggee stack
+    will be used. If a handler wants to avoid modifying the stack of an
+    already-thrown exception, it should return `undefined`.
 
 `null`
 :   Terminate the debuggee, as if it had been cancelled by the "slow script"
     dialog box.
 
-If a function that would normally return a resumption value to indicate
-how the debuggee should continue instead throws an exception, we never
-propagate such an exception to the debuggee; instead, we call the
-associated `Debugger` instance's `uncaughtExceptionHook` property, as
-described below.
+In some places, the JS language treats `return` statements specially or
+doesn't allow them at all. So there are a few special cases.
+
+*   An arrow function without curly braces can't contain a return
+    statement, but <code>{return: <i>value</i>}</code> works anyway,
+    returning the specified value.
+
+    Likewise, if the top frame of the debuggee is not in a function at
+    all—that is, it's running toplevel code in a `script` tag, or `eval`
+    code—then <i>value</i> is returned even though `return` statements
+    aren't legal in that kind of code. (In the case of a `script` tag,
+    the browser discards the return value.)
+
+*   If the debuggee is in a function that was called as a constructor (that
+    is, via a `new` expression), then <i>value</i> serves as the value
+    returned by the function's body, not that produced by the `new`
+    expression: if the value is not an object, the `new` expression returns
+    the frame's `this` value.
+
+    Similarly, if the function is the constructor for a subclass, then a
+    non-object value may result in a `TypeError`.
+
+*   Returning from a generator simulates a `return`, not a `yield`;
+    there is no way to force a debuggee generator to `yield`.
+
+    The way generators execute is rather odd. When a generator-function
+    is first called, it is put onto the stack and runs just a few
+    bytecode instructions (or more, if the generator-function has any
+    default argument values to compute), then performs the "initial
+    suspend".  At that point, a new generator object is created and
+    returned to the caller. Thereafter, the caller may cause execution
+    of the generator to resume at any time, by calling `genObj.next()`,
+    and the generator may pause itself again using `yield`.
+
+    JS generators normally can't return before the "initial
+    suspend"—there’s no place to put a `return` statement—but
+    <code>{return: <i>value</i>}</code> there works anyway, replacing
+    the generator object that the initial suspend would normally create
+    and return.
+
+    Returning from a generator that's been resumed via `genobj.next()`
+    (or one of the other methods) closes the generator, and the
+    `genobj.next()` or other method returns a new object of the form
+    <code>{ done: true, value: <i>value</i> }</code>.
+
+If a debugger hook function throws an exception, rather than returning a
+resumption value, we never propagate such an exception to the debuggee;
+instead, we call the associated `Debugger` instance's
+`uncaughtExceptionHook` property, as described below.
 
 
 ## Timestamps

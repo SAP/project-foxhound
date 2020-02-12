@@ -9,14 +9,19 @@ var FindHelper = {
   _initialViewport: null,
   _viewportChanged: false,
   _result: null,
-  _limit: 0,
 
   // Start of nsIObserver implementation.
 
-  observe: function(aMessage, aTopic, aData) {
-    switch(aTopic) {
+  onEvent: function(event, data, callback) {
+    switch (event) {
       case "FindInPage:Opened": {
         this._findOpened();
+        break;
+      }
+
+      case "FindInPage:Closed": {
+        this._uninit();
+        this._findClosed();
         break;
       }
 
@@ -26,10 +31,20 @@ var FindHelper = {
         break;
       }
 
-      case "FindInPage:Closed":
-        this._uninit();
-        this._findClosed();
+      case "FindInPage:Find": {
+        this.doFind(data.searchString);
         break;
+      }
+
+      case "FindInPage:Next": {
+        this.findAgain(data.searchString, false);
+        break;
+      }
+
+      case "FindInPage:Prev": {
+        this.findAgain(data.searchString, true);
+        break;
+      }
     }
   },
 
@@ -39,16 +54,11 @@ var FindHelper = {
    * 2. initialize the Finder instance, if necessary.
    */
   _findOpened: function() {
-    try {
-      this._limit = Services.prefs.getIntPref("accessibility.typeaheadfind.matchesCountLimit");
-    } catch (e) {
-      // Pref not available, assume 0, no match counting.
-      this._limit = 0;
-    }
-
-    Messaging.addListener(data => this.doFind(data), "FindInPage:Find");
-    Messaging.addListener(data => this.findAgain(data, false), "FindInPage:Next");
-    Messaging.addListener(data => this.findAgain(data, true), "FindInPage:Prev");
+    GlobalEventDispatcher.registerListener(this, [
+      "FindInPage:Find",
+      "FindInPage:Next",
+      "FindInPage:Prev",
+    ]);
 
     // Initialize the finder component for the current page by performing a fake find.
     this._init();
@@ -69,13 +79,20 @@ var FindHelper = {
     try {
       this._finder = this._targetTab.browser.finder;
     } catch (e) {
-      throw new Error("FindHelper: " + e + "\n" +
-        "JS stack: \n" + (e.stack || Components.stack.formattedStack));
+      throw new Error(
+        "FindHelper: " +
+          e +
+          "\n" +
+          "JS stack: \n" +
+          (e.stack || Components.stack.formattedStack)
+      );
     }
 
     this._finder.addResultListener(this);
     this._initialViewport = JSON.stringify(this._targetTab.getViewport());
     this._viewportChanged = false;
+
+    WindowEventDispatcher.registerListener(this, ["Tab:Selected"]);
   },
 
   /**
@@ -94,15 +111,19 @@ var FindHelper = {
     this._targetTab = null;
     this._initialViewport = null;
     this._viewportChanged = false;
+
+    WindowEventDispatcher.unregisterListener(this, ["Tab:Selected"]);
   },
 
   /**
    * When the FindInPageBar closes, it's time to stop listening for its messages.
    */
   _findClosed: function() {
-    Messaging.removeListener("FindInPage:Find");
-    Messaging.removeListener("FindInPage:Next");
-    Messaging.removeListener("FindInPage:Prev");
+    GlobalEventDispatcher.unregisterListener(this, [
+      "FindInPage:Find",
+      "FindInPage:Next",
+      "FindInPage:Prev",
+    ]);
   },
 
   /**
@@ -119,7 +140,6 @@ var FindHelper = {
     }
 
     this._finder.fastFind(searchString, false);
-    this._finder.requestMatchesCount(searchString, this._limit);
     return { searchString, findBackwards: false };
   },
 
@@ -139,8 +159,7 @@ var FindHelper = {
       return this.doFind(searchString);
     }
 
-    this._finder.findAgain(findBackwards, false, false);
-    this._finder.requestMatchesCount(searchString, this._limit);
+    this._finder.findAgain(searchString, findBackwards, false, false);
     return { searchString, findBackwards };
   },
 
@@ -159,11 +178,15 @@ var FindHelper = {
    */
   onMatchesCountResult: function(result) {
     this._result = result;
-    this._result.limit = this._limit;
 
-    Messaging.sendRequest(Object.assign({
-      type: "FindInPage:MatchesCountResult"
-    }, this._result));
+    GlobalEventDispatcher.sendRequest(
+      Object.assign(
+        {
+          type: "FindInPage:MatchesCountResult",
+        },
+        this._result
+      )
+    );
   },
 
   /**
@@ -204,5 +227,5 @@ var FindHelper = {
       // ZoomHelper.zoomToRect(aData.rect);
       this._viewportChanged = true;
     }
-  }
+  },
 };

@@ -1,14 +1,13 @@
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/css" href="chrome://global/skin"?>
-<?xml-stylesheet type="text/css" href="/tests/SimpleTest/test.css"?>
+<?xml-stylesheet type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=453650
 -->
 <window title="Mozilla Bug 453650"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <!-- test code goes here -->
   <script type="application/javascript">
@@ -17,14 +16,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=453650
   /** Test for Bug 453650 **/
   SimpleTest.waitForExplicitFinish();
 
-  var Ci = Components.interfaces;
-  var Cr = Components.results;
-
   var iter = runTests();
   nextTest();
 
-  function runTests() {
-    var iframe = document.createElement("iframe");
+  function* runTests() {
+    var iframe = document.createXULElement("iframe");
     iframe.style.width = "300px";
     iframe.style.height = "300px";
     iframe.setAttribute("src", "data:text/html,<h1 id='h'>hello</h1>");
@@ -40,6 +36,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=453650
     h1.style.width = "300px";
     waitForReflow(iframe.docShell);
     yield is(300, h1.offsetWidth, "h1 has correct width");
+
+    SimpleTest.finish();
   }
 
   function waitForInterruptibleReflow(docShell) {
@@ -61,7 +59,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=453650
         }
 
         info("times: " + start + ", " + end);
-        ok(start < end, "reflow start time lower than end time");
+        ok(start <= end, "reflow start time lower than end time");
         done();
       },
 
@@ -73,7 +71,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=453650
         }
 
         info("times: " + start + ", " + end);
-        ok(start < end, "reflow start time lower than end time");
+        ok(start <= end, "reflow start time lower than end time");
         done();
       },
 
@@ -97,11 +95,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=453650
   }
 
   function nextTest() {
-    try {
-      iter.next();
-    } catch (e if e instanceof StopIteration) {
-      SimpleTest.finish();
-    }
+    iter.next();
   }
 
   ]]>

@@ -6,29 +6,43 @@
 
 // Avoid leaks by using tmp for imports...
 var tmp = {};
-Cu.import("resource://gre/modules/Promise.jsm", tmp);
-Cu.import("resource:///modules/CustomizableUI.jsm", tmp);
-Cu.import("resource://gre/modules/AppConstants.jsm", tmp);
-var {Promise, CustomizableUI, AppConstants} = tmp;
+ChromeUtils.import("resource://gre/modules/Promise.jsm", tmp);
+ChromeUtils.import("resource:///modules/CustomizableUI.jsm", tmp);
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm", tmp);
+ChromeUtils.import(
+  "resource://testing-common/CustomizableUITestUtils.jsm",
+  tmp
+);
+var { Promise, CustomizableUI, AppConstants, CustomizableUITestUtils } = tmp;
 
 var EventUtils = {};
-Services.scriptloader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
+Services.scriptloader.loadSubScript(
+  "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
+  EventUtils
+);
+
+/**
+ * Instance of CustomizableUITestUtils for the current browser window.
+ */
+var gCUITestUtils = new CustomizableUITestUtils(window);
 
 Services.prefs.setBoolPref("browser.uiCustomization.skipSourceNodeCheck", true);
-registerCleanupFunction(() => Services.prefs.clearUserPref("browser.uiCustomization.skipSourceNodeCheck"));
+registerCleanupFunction(() =>
+  Services.prefs.clearUserPref("browser.uiCustomization.skipSourceNodeCheck")
+);
 
-// Remove temporary e10s related new window options in customize ui,
-// they break a lot of tests.
-CustomizableUI.destroyWidget("e10s-button");
-CustomizableUI.removeWidgetFromArea("e10s-button");
-
-var {synthesizeDragStart, synthesizeDrop} = EventUtils;
+var {
+  synthesizeDragStart,
+  synthesizeDrop,
+  synthesizeMouseAtCenter,
+} = EventUtils;
 
 const kNSXUL = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-const kTabEventFailureTimeoutInMs = 20000;
+
+const kForceOverflowWidthPx = 300;
 
 function createDummyXULButton(id, label, win = window) {
-  let btn = document.createElementNS(kNSXUL, "toolbarbutton");
+  let btn = win.document.createElementNS(kNSXUL, "toolbarbutton");
   btn.id = id;
   btn.setAttribute("label", label || id);
   btn.className = "toolbarbutton-1 chromeclass-toolbar-additional";
@@ -45,9 +59,10 @@ function createToolbarWithPlacements(id, placements = []) {
   tb.setAttribute("customizable", "true");
   CustomizableUI.registerArea(id, {
     type: CustomizableUI.TYPE_TOOLBAR,
-    defaultPlacements: placements
+    defaultPlacements: placements,
   });
   gNavToolbox.appendChild(tb);
+  CustomizableUI.registerToolbarNode(tb);
   return tb;
 }
 
@@ -88,6 +103,7 @@ function createOverflowableToolbarWithPlacements(id, placements) {
   tb.setAttribute("overflowbutton", chevron.id);
 
   gNavToolbox.appendChild(tb);
+  CustomizableUI.registerToolbarNode(tb);
   return tb;
 }
 
@@ -98,16 +114,13 @@ function removeCustomToolbars() {
     let tb = document.getElementById(toolbarId);
     if (tb.hasAttribute("overflowpanel")) {
       let panel = document.getElementById(tb.getAttribute("overflowpanel"));
-      if (panel)
+      if (panel) {
         panel.remove();
+      }
     }
     tb.remove();
   }
   gAddedToolbars.clear();
-}
-
-function getToolboxCustomToolbarId(toolbarName) {
-  return "__customToolbar_" + toolbarName.replace(" ", "_");
 }
 
 function resetCustomization() {
@@ -118,10 +131,17 @@ function isInDevEdition() {
   return AppConstants.MOZ_DEV_EDITION;
 }
 
-function removeDeveloperButtonIfDevEdition(areaPanelPlacements) {
-  if (isInDevEdition()) {
-    areaPanelPlacements.splice(areaPanelPlacements.indexOf("developer-button"), 1);
+function removeNonReleaseButtons(areaPanelPlacements) {
+  if (isInDevEdition() && areaPanelPlacements.includes("developer-button")) {
+    areaPanelPlacements.splice(
+      areaPanelPlacements.indexOf("developer-button"),
+      1
+    );
   }
+}
+
+function removeNonOriginalButtons() {
+  CustomizableUI.removeWidgetFromArea("sync-button");
 }
 
 function assertAreaPlacements(areaId, expectedPlacements) {
@@ -130,20 +150,39 @@ function assertAreaPlacements(areaId, expectedPlacements) {
 }
 
 function placementArraysEqual(areaId, actualPlacements, expectedPlacements) {
-  is(actualPlacements.length, expectedPlacements.length,
-     "Area " + areaId + " should have " + expectedPlacements.length + " items.");
+  info("Actual placements: " + actualPlacements.join(", "));
+  info("Expected placements: " + expectedPlacements.join(", "));
+  is(
+    actualPlacements.length,
+    expectedPlacements.length,
+    "Area " + areaId + " should have " + expectedPlacements.length + " items."
+  );
   let minItems = Math.min(expectedPlacements.length, actualPlacements.length);
   for (let i = 0; i < minItems; i++) {
     if (typeof expectedPlacements[i] == "string") {
-      is(actualPlacements[i], expectedPlacements[i],
-         "Item " + i + " in " + areaId + " should match expectations.");
+      is(
+        actualPlacements[i],
+        expectedPlacements[i],
+        "Item " + i + " in " + areaId + " should match expectations."
+      );
     } else if (expectedPlacements[i] instanceof RegExp) {
-      ok(expectedPlacements[i].test(actualPlacements[i]),
-         "Item " + i + " (" + actualPlacements[i] + ") in " +
-         areaId + " should match " + expectedPlacements[i]);
+      ok(
+        expectedPlacements[i].test(actualPlacements[i]),
+        "Item " +
+          i +
+          " (" +
+          actualPlacements[i] +
+          ") in " +
+          areaId +
+          " should match " +
+          expectedPlacements[i]
+      );
     } else {
-      ok(false, "Unknown type of expected placement passed to " +
-                " assertAreaPlacements. Is your test broken?");
+      ok(
+        false,
+        "Unknown type of expected placement passed to " +
+          " assertAreaPlacements. Is your test broken?"
+      );
     }
   }
 }
@@ -158,98 +197,134 @@ function todoAssertAreaPlacements(areaId, expectedPlacements) {
     } else if (expectedPlacements[i] instanceof RegExp) {
       isPassing = isPassing && expectedPlacements[i].test(actualPlacements[i]);
     } else {
-      ok(false, "Unknown type of expected placement passed to " +
-                " assertAreaPlacements. Is your test broken?");
+      ok(
+        false,
+        "Unknown type of expected placement passed to " +
+          " assertAreaPlacements. Is your test broken?"
+      );
     }
   }
-  todo(isPassing, "The area placements for " + areaId +
-                  " should equal the expected placements.");
+  todo(
+    isPassing,
+    "The area placements for " +
+      areaId +
+      " should equal the expected placements."
+  );
 }
 
 function getAreaWidgetIds(areaId) {
   return CustomizableUI.getWidgetIdsInArea(areaId);
 }
 
-function simulateItemDrag(aToDrag, aTarget) {
-  synthesizeDrop(aToDrag.parentNode, aTarget);
+function simulateItemDrag(aToDrag, aTarget, aEvent = {}, aOffset = 2) {
+  let ev = aEvent;
+  if (ev == "end" || ev == "start") {
+    let win = aTarget.ownerGlobal;
+    const dwu = win.windowUtils;
+    let bounds = dwu.getBoundsWithoutFlushing(aTarget);
+    if (ev == "end") {
+      ev = {
+        clientX: bounds.right - aOffset,
+        clientY: bounds.bottom - aOffset,
+      };
+    } else {
+      ev = { clientX: bounds.left + aOffset, clientY: bounds.top + aOffset };
+    }
+  }
+  ev._domDispatchOnly = true;
+  synthesizeDrop(
+    aToDrag.parentNode,
+    aTarget,
+    null,
+    null,
+    aToDrag.ownerGlobal,
+    aTarget.ownerGlobal,
+    ev
+  );
+  // Ensure dnd suppression is cleared.
+  synthesizeMouseAtCenter(aTarget, { type: "mouseup" }, aTarget.ownerGlobal);
 }
 
-function endCustomizing(aWindow=window) {
+function endCustomizing(aWindow = window) {
   if (aWindow.document.documentElement.getAttribute("customizing") != "true") {
     return true;
   }
-  Services.prefs.setBoolPref("browser.uiCustomization.disableAnimation", true);
-  let deferredEndCustomizing = Promise.defer();
-  function onCustomizationEnds() {
-    Services.prefs.setBoolPref("browser.uiCustomization.disableAnimation", false);
-    aWindow.gNavToolbox.removeEventListener("aftercustomization", onCustomizationEnds);
-    deferredEndCustomizing.resolve();
-  }
-  aWindow.gNavToolbox.addEventListener("aftercustomization", onCustomizationEnds);
-  aWindow.gCustomizeMode.exit();
-
-  return deferredEndCustomizing.promise;
+  return new Promise(resolve => {
+    function onCustomizationEnds() {
+      aWindow.gNavToolbox.removeEventListener(
+        "aftercustomization",
+        onCustomizationEnds
+      );
+      resolve();
+    }
+    aWindow.gNavToolbox.addEventListener(
+      "aftercustomization",
+      onCustomizationEnds
+    );
+    aWindow.gCustomizeMode.exit();
+  });
 }
 
-function startCustomizing(aWindow=window) {
+function startCustomizing(aWindow = window) {
   if (aWindow.document.documentElement.getAttribute("customizing") == "true") {
     return null;
   }
-  Services.prefs.setBoolPref("browser.uiCustomization.disableAnimation", true);
-  let deferred = Promise.defer();
-  function onCustomizing() {
-    aWindow.gNavToolbox.removeEventListener("customizationready", onCustomizing);
-    Services.prefs.setBoolPref("browser.uiCustomization.disableAnimation", false);
-    deferred.resolve();
-  }
-  aWindow.gNavToolbox.addEventListener("customizationready", onCustomizing);
-  aWindow.gCustomizeMode.enter();
-  return deferred.promise;
+  return new Promise(resolve => {
+    function onCustomizing() {
+      aWindow.gNavToolbox.removeEventListener(
+        "customizationready",
+        onCustomizing
+      );
+      resolve();
+    }
+    aWindow.gNavToolbox.addEventListener("customizationready", onCustomizing);
+    aWindow.gCustomizeMode.enter();
+  });
 }
 
 function promiseObserverNotified(aTopic) {
-  let deferred = Promise.defer();
-  Services.obs.addObserver(function onNotification(aSubject, aTopic, aData) {
-    Services.obs.removeObserver(onNotification, aTopic);
-      deferred.resolve({subject: aSubject, data: aData});
-    }, aTopic, false);
-  return deferred.promise;
+  return new Promise(resolve => {
+    Services.obs.addObserver(function onNotification(subject, topic, data) {
+      Services.obs.removeObserver(onNotification, topic);
+      resolve({ subject, data });
+    }, aTopic);
+  });
 }
 
-function openAndLoadWindow(aOptions, aWaitForDelayedStartup=false) {
-  let deferred = Promise.defer();
-  let win = OpenBrowserWindow(aOptions);
-  if (aWaitForDelayedStartup) {
-    Services.obs.addObserver(function onDS(aSubject, aTopic, aData) {
-      if (aSubject != win) {
-        return;
-      }
-      Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
-      deferred.resolve(win);
-    }, "browser-delayed-startup-finished", false);
-
-  } else {
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad);
-      deferred.resolve(win);
-    });
-  }
-  return deferred.promise;
+function openAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
+  return new Promise(resolve => {
+    let win = OpenBrowserWindow(aOptions);
+    if (aWaitForDelayedStartup) {
+      Services.obs.addObserver(function onDS(aSubject, aTopic, aData) {
+        if (aSubject != win) {
+          return;
+        }
+        Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
+        resolve(win);
+      }, "browser-delayed-startup-finished");
+    } else {
+      win.addEventListener(
+        "load",
+        function() {
+          resolve(win);
+        },
+        { once: true }
+      );
+    }
+  });
 }
 
 function promiseWindowClosed(win) {
-  let deferred = Promise.defer();
-  win.addEventListener("unload", function onunload() {
-    win.removeEventListener("unload", onunload);
-    deferred.resolve();
+  return new Promise(resolve => {
+    win.addEventListener(
+      "unload",
+      function() {
+        resolve();
+      },
+      { once: true }
+    );
+    win.close();
   });
-  win.close();
-  return deferred.promise;
-}
-
-function promisePanelShown(win) {
-  let panelEl = win.PanelUI.panel;
-  return promisePanelElementShown(win, panelEl);
 }
 
 function promiseOverflowShown(win) {
@@ -258,78 +333,78 @@ function promiseOverflowShown(win) {
 }
 
 function promisePanelElementShown(win, aPanel) {
-  let deferred = Promise.defer();
-  let timeoutId = win.setTimeout(() => {
-    deferred.reject("Panel did not show within 20 seconds.");
-  }, 20000);
-  function onPanelOpen(e) {
-    aPanel.removeEventListener("popupshown", onPanelOpen);
-    win.clearTimeout(timeoutId);
-    deferred.resolve();
-  }
-  aPanel.addEventListener("popupshown", onPanelOpen);
-  return deferred.promise;
-}
-
-function promisePanelHidden(win) {
-  let panelEl = win.PanelUI.panel;
-  return promisePanelElementHidden(win, panelEl);
+  return new Promise((resolve, reject) => {
+    let timeoutId = win.setTimeout(() => {
+      reject("Panel did not show within 20 seconds.");
+    }, 20000);
+    function onPanelOpen(e) {
+      aPanel.removeEventListener("popupshown", onPanelOpen);
+      win.clearTimeout(timeoutId);
+      resolve();
+    }
+    aPanel.addEventListener("popupshown", onPanelOpen);
+  });
 }
 
 function promiseOverflowHidden(win) {
-  let panelEl = document.getElementById("widget-overflow");
+  let panelEl = win.PanelUI.overflowPanel;
   return promisePanelElementHidden(win, panelEl);
 }
 
 function promisePanelElementHidden(win, aPanel) {
-  let deferred = Promise.defer();
-  let timeoutId = win.setTimeout(() => {
-    deferred.reject("Panel did not hide within 20 seconds.");
-  }, 20000);
-  function onPanelClose(e) {
-    aPanel.removeEventListener("popuphidden", onPanelClose);
-    win.clearTimeout(timeoutId);
-    deferred.resolve();
-  }
-  aPanel.addEventListener("popuphidden", onPanelClose);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    let timeoutId = win.setTimeout(() => {
+      reject("Panel did not hide within 20 seconds.");
+    }, 20000);
+    function onPanelClose(e) {
+      aPanel.removeEventListener("popuphidden", onPanelClose);
+      win.clearTimeout(timeoutId);
+      executeSoon(resolve);
+    }
+    aPanel.addEventListener("popuphidden", onPanelClose);
+  });
 }
 
 function isPanelUIOpen() {
   return PanelUI.panel.state == "open" || PanelUI.panel.state == "showing";
 }
 
+function isOverflowOpen() {
+  let panel = document.getElementById("widget-overflow");
+  return panel.state == "open" || panel.state == "showing";
+}
+
 function subviewShown(aSubview) {
-  let deferred = Promise.defer();
-  let win = aSubview.ownerGlobal;
-  let timeoutId = win.setTimeout(() => {
-    deferred.reject("Subview (" + aSubview.id + ") did not show within 20 seconds.");
-  }, 20000);
-  function onViewShowing(e) {
-    aSubview.removeEventListener("ViewShowing", onViewShowing);
-    win.clearTimeout(timeoutId);
-    deferred.resolve();
-  }
-  aSubview.addEventListener("ViewShowing", onViewShowing);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    let win = aSubview.ownerGlobal;
+    let timeoutId = win.setTimeout(() => {
+      reject("Subview (" + aSubview.id + ") did not show within 20 seconds.");
+    }, 20000);
+    function onViewShown(e) {
+      aSubview.removeEventListener("ViewShown", onViewShown);
+      win.clearTimeout(timeoutId);
+      resolve();
+    }
+    aSubview.addEventListener("ViewShown", onViewShown);
+  });
 }
 
 function subviewHidden(aSubview) {
-  let deferred = Promise.defer();
-  let win = aSubview.ownerGlobal;
-  let timeoutId = win.setTimeout(() => {
-    deferred.reject("Subview (" + aSubview.id + ") did not hide within 20 seconds.");
-  }, 20000);
-  function onViewHiding(e) {
-    aSubview.removeEventListener("ViewHiding", onViewHiding);
-    win.clearTimeout(timeoutId);
-    deferred.resolve();
-  }
-  aSubview.addEventListener("ViewHiding", onViewHiding);
-  return deferred.promise;
+  return new Promise((resolve, reject) => {
+    let win = aSubview.ownerGlobal;
+    let timeoutId = win.setTimeout(() => {
+      reject("Subview (" + aSubview.id + ") did not hide within 20 seconds.");
+    }, 20000);
+    function onViewHiding(e) {
+      aSubview.removeEventListener("ViewHiding", onViewHiding);
+      win.clearTimeout(timeoutId);
+      resolve();
+    }
+    aSubview.addEventListener("ViewHiding", onViewHiding);
+  });
 }
 
-function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
+function waitForCondition(aConditionFn, aMaxTries = 50, aCheckInterval = 100) {
   function tryNow() {
     tries++;
     if (aConditionFn()) {
@@ -349,10 +424,10 @@ function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
   return deferred.promise;
 }
 
-function waitFor(aTimeout=100) {
-  let deferred = Promise.defer();
-  setTimeout(() => deferred.resolve(), aTimeout);
-  return deferred.promise;
+function waitFor(aTimeout = 100) {
+  return new Promise(resolve => {
+    setTimeout(() => resolve(), aTimeout);
+  });
 }
 
 /**
@@ -363,63 +438,11 @@ function waitFor(aTimeout=100) {
  * @param aEventType The load event type to wait for.  Defaults to "load".
  * @return {Promise} resolved when the event is handled.
  */
-function promiseTabLoadEvent(aTab, aURL, aEventType="load") {
-  let deferred = Promise.defer();
-  info("Wait for tab event: " + aEventType);
+function promiseTabLoadEvent(aTab, aURL) {
+  let browser = aTab.linkedBrowser;
 
-  let timeoutId = setTimeout(() => {
-    aTab.linkedBrowser.removeEventListener(aEventType, onTabLoad, true);
-    deferred.reject("TabSelect did not happen within " + kTabEventFailureTimeoutInMs + "ms");
-  }, kTabEventFailureTimeoutInMs);
-
-  function onTabLoad(event) {
-    if (event.originalTarget != aTab.linkedBrowser.contentDocument ||
-        event.target.location.href == "about:blank") {
-      info("skipping spurious load event");
-      return;
-    }
-    clearTimeout(timeoutId);
-    aTab.linkedBrowser.removeEventListener(aEventType, onTabLoad, true);
-    info("Tab event received: " + aEventType);
-    deferred.resolve();
-  }
-  aTab.linkedBrowser.addEventListener(aEventType, onTabLoad, true, true);
-  aTab.linkedBrowser.loadURI(aURL);
-  return deferred.promise;
-}
-
-/**
- * Navigate back or forward in tab history and wait for it to finish.
- *
- * @param aDirection   Number to indicate to move backward or forward in history.
- * @param aConditionFn Function that returns the result of an evaluated condition
- *                     that needs to be `true` to resolve the promise.
- * @return {Promise} resolved when navigation has finished.
- */
-function promiseTabHistoryNavigation(aDirection = -1, aConditionFn) {
-  let deferred = Promise.defer();
-
-  let timeoutId = setTimeout(() => {
-    gBrowser.removeEventListener("pageshow", listener, true);
-    deferred.reject("Pageshow did not happen within " + kTabEventFailureTimeoutInMs + "ms");
-  }, kTabEventFailureTimeoutInMs);
-
-  function listener(event) {
-    gBrowser.removeEventListener("pageshow", listener, true);
-    clearTimeout(timeoutId);
-
-    if (aConditionFn) {
-      waitForCondition(aConditionFn).then(() => deferred.resolve(),
-                                          aReason => deferred.reject(aReason));
-    } else {
-      deferred.resolve();
-    }
-  }
-  gBrowser.addEventListener("pageshow", listener, true);
-
-  content.history.go(aDirection);
-
-  return deferred.promise;
+  BrowserTestUtils.loadURI(browser, aURL);
+  return BrowserTestUtils.browserLoaded(browser);
 }
 
 /**
@@ -433,70 +456,53 @@ function promiseTabHistoryNavigation(aDirection = -1, aConditionFn) {
 function promiseAttributeMutation(aNode, aAttribute, aFilterFn) {
   return new Promise((resolve, reject) => {
     info("waiting for mutation of attribute '" + aAttribute + "'.");
-    let obs = new MutationObserver((mutations) => {
+    let obs = new MutationObserver(mutations => {
       for (let mut of mutations) {
         let attr = mut.attributeName;
         let newValue = mut.target.getAttribute(attr);
         if (aFilterFn(newValue)) {
-          ok(true, "mutation occurred: attribute '" + attr + "' changed to '" + newValue + "' from '" + mut.oldValue + "'.");
+          ok(
+            true,
+            "mutation occurred: attribute '" +
+              attr +
+              "' changed to '" +
+              newValue +
+              "' from '" +
+              mut.oldValue +
+              "'."
+          );
           obs.disconnect();
           resolve();
         } else {
-          info("Ignoring mutation that produced value " + newValue + " because of filter.");
+          info(
+            "Ignoring mutation that produced value " +
+              newValue +
+              " because of filter."
+          );
         }
       }
     });
-    obs.observe(aNode, {attributeFilter: [aAttribute]});
+    obs.observe(aNode, { attributeFilter: [aAttribute] });
   });
 }
 
 function popupShown(aPopup) {
-  return promisePopupEvent(aPopup, "shown");
+  return BrowserTestUtils.waitForPopupEvent(aPopup, "shown");
 }
 
 function popupHidden(aPopup) {
-  return promisePopupEvent(aPopup, "hidden");
-}
-
-/**
- * Returns a Promise that resolves when aPopup fires an event of type
- * aEventType. Times out and rejects after 20 seconds.
- *
- * @param aPopup the popup to monitor for events.
- * @param aEventSuffix the _suffix_ for the popup event type to watch for.
- *
- * Example usage:
- *   let popupShownPromise = promisePopupEvent(somePopup, "shown");
- *   // ... something that opens a popup
- *   yield popupShownPromise;
- *
- *  let popupHiddenPromise = promisePopupEvent(somePopup, "hidden");
- *  // ... something that hides a popup
- *  yield popupHiddenPromise;
- */
-function promisePopupEvent(aPopup, aEventSuffix) {
-  let deferred = Promise.defer();
-  let win = aPopup.ownerGlobal;
-  let eventType = "popup" + aEventSuffix;
-
-  function onPopupEvent(e) {
-    aPopup.removeEventListener(eventType, onPopupEvent);
-    deferred.resolve();
-  }
-
-  aPopup.addEventListener(eventType, onPopupEvent);
-  return deferred.promise;
+  return BrowserTestUtils.waitForPopupEvent(aPopup, "hidden");
 }
 
 // This is a simpler version of the context menu check that
 // exists in contextmenu_common.js.
-function checkContextMenu(aContextMenu, aExpectedEntries, aWindow=window) {
-  let childNodes = [...aContextMenu.childNodes];
+function checkContextMenu(aContextMenu, aExpectedEntries, aWindow = window) {
+  let children = [...aContextMenu.children];
   // Ignore hidden nodes:
-  childNodes = childNodes.filter((n) => !n.hidden);
+  children = children.filter(n => !n.hidden);
 
-  for (let i = 0; i < childNodes.length; i++) {
-    let menuitem = childNodes[i];
+  for (let i = 0; i < children.length; i++) {
+    let menuitem = children[i];
     try {
       if (aExpectedEntries[i][0] == "---") {
         is(menuitem.localName, "menuseparator", "menuseparator expected");
@@ -504,15 +510,38 @@ function checkContextMenu(aContextMenu, aExpectedEntries, aWindow=window) {
       }
 
       let selector = aExpectedEntries[i][0];
-      ok(menuitem.matches(selector), "menuitem should match " + selector + " selector");
+      ok(
+        menuitem.matches(selector),
+        "menuitem should match " + selector + " selector"
+      );
       let commandValue = menuitem.getAttribute("command");
-      let relatedCommand = commandValue ? aWindow.document.getElementById(commandValue) : null;
-      let menuItemDisabled = relatedCommand ?
-                               relatedCommand.getAttribute("disabled") == "true" :
-                               menuitem.getAttribute("disabled") == "true";
-      is(menuItemDisabled, !aExpectedEntries[i][1], "disabled state for " + selector);
+      let relatedCommand = commandValue
+        ? aWindow.document.getElementById(commandValue)
+        : null;
+      let menuItemDisabled = relatedCommand
+        ? relatedCommand.getAttribute("disabled") == "true"
+        : menuitem.getAttribute("disabled") == "true";
+      is(
+        menuItemDisabled,
+        !aExpectedEntries[i][1],
+        "disabled state for " + selector
+      );
     } catch (e) {
       ok(false, "Exception when checking context menu: " + e);
     }
   }
+}
+
+function waitForOverflowButtonShown(win = window) {
+  info("Waiting for overflow button to show");
+  let ov = win.document.getElementById("nav-bar-overflow-button");
+  return waitForElementShown(ov.icon);
+}
+function waitForElementShown(element) {
+  return BrowserTestUtils.waitForCondition(() => {
+    info("Checking if element has non-0 size");
+    // We intentionally flush layout to ensure the element is actually shown.
+    let rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
 }

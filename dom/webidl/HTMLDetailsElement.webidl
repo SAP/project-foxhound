@@ -11,8 +11,10 @@
  * and create derivative works of this document.
  */
 
-[Pref="dom.details_element.enabled"]
+[Exposed=Window]
 interface HTMLDetailsElement : HTMLElement {
-  [SetterThrows]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterThrows]
   attribute boolean open;
 };

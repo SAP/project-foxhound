@@ -6,19 +6,28 @@
 #ifndef _SSLSERVERCERTVERIFICATION_H
 #define _SSLSERVERCERTVERIFICATION_H
 
+#include "mozilla/Maybe.h"
+#include "nsTArray.h"
 #include "seccomon.h"
 #include "prio.h"
 
-namespace mozilla { namespace psm {
+namespace mozilla {
+namespace psm {
 
-SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd,
-                              PRBool checkSig, PRBool isServer);
+class TransportSecurityInfo;
 
-// EnsureServerVerificationInitialized() posts an event to a cert
-// verification thread to run nsINSSComponent::EnsureIdentityInfoLoaded()
-// exactly once. It must be called from socket thread.
-void EnsureServerVerificationInitialized();
+SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
+                              PRBool isServer);
 
-} } // namespace mozilla::psm
+// This function triggers the certificate verification. The verification is
+// asynchronous and the info object will be notified when the verification has
+// completed via SetCertVerificationResult.
+SECStatus AuthCertificateHookWithInfo(
+    TransportSecurityInfo* infoObject, const void* aPtrForLogging,
+    nsTArray<nsTArray<uint8_t>>& peerCertChain,
+    Maybe<nsTArray<nsTArray<uint8_t>>>& stapledOCSPResponses,
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags);
+}  // namespace psm
+}  // namespace mozilla
 
 #endif

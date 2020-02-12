@@ -8,51 +8,77 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
-const { once } = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  initPerformanceInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  once,
+} = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  getSelectedRecordingIndex,
+  setSelectedRecording,
+  getRecordingsCount,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
+add_task(async function() {
   // This test seems to take a very long time to finish on Linux VMs.
   requestLongerTimeout(4);
 
-  let { panel } = yield initPerformanceInNewTab({
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, PerformanceController, RecordingsView } = panel.panelWin;
+  const { EVENTS, PerformanceController } = panel.panelWin;
 
-  yield startRecording(panel);
-  yield stopRecording(panel);
+  await startRecording(panel);
+  await stopRecording(panel);
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  is(RecordingsView.itemCount, 2,
-    "There should be two recordings visible.");
-  is(RecordingsView.selectedIndex, 1,
-    "The new recording item should be selected.");
+  is(getRecordingsCount(panel), 2, "There should be two recordings visible.");
+  is(
+    getSelectedRecordingIndex(panel),
+    1,
+    "The new recording item should be selected."
+  );
 
   let selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
-  RecordingsView.selectedIndex = 0;
-  yield selected;
+  setSelectedRecording(panel, 0);
+  await selected;
 
-  is(RecordingsView.itemCount, 2,
-    "There should still be two recordings visible.");
-  is(RecordingsView.selectedIndex, 0,
-    "The first recording item should be selected now.");
+  is(
+    getRecordingsCount(panel),
+    2,
+    "There should still be two recordings visible."
+  );
+  is(
+    getSelectedRecordingIndex(panel),
+    0,
+    "The first recording item should be selected now."
+  );
 
   selected = once(PerformanceController, EVENTS.RECORDING_SELECTED);
-  RecordingsView.selectedIndex = 1;
-  yield selected;
+  setSelectedRecording(panel, 1);
+  await selected;
 
-  is(RecordingsView.itemCount, 2,
-    "There should still be two recordings visible.");
-  is(RecordingsView.selectedIndex, 1,
-    "The second recording item should be selected again.");
+  is(
+    getRecordingsCount(panel),
+    2,
+    "There should still be two recordings visible."
+  );
+  is(
+    getSelectedRecordingIndex(panel),
+    1,
+    "The second recording item should be selected again."
+  );
 
-  yield stopRecording(panel);
+  await stopRecording(panel);
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });
-

@@ -136,6 +136,8 @@ struct VFYContextStr {
         unsigned char dsasig[DSA_MAX_SIGNATURE_LEN];
         /* the full ECDSA signature */
         unsigned char ecdsasig[2 * MAX_ECKEY_LEN];
+        /* the full RSA signature, only used in RSA-PSS */
+        unsigned char rsasig[(RSA_MAX_MODULUS_BITS + 7) / 8];
     } u;
     unsigned int pkcs1RSADigestInfoLen;
     /* the encoded DigestInfo from a RSA PKCS#1 signature */
@@ -148,6 +150,7 @@ struct VFYContextStr {
                           * VFY_CreateContext call.  If false, the
                           * signature must be provided with a
                           * VFY_EndWithSignature call. */
+    SECItem *params;
 };
 
 static SECStatus
@@ -158,7 +161,7 @@ verifyPKCS1DigestInfo(const VFYContext *cx, const SECItem *digest)
     pkcs1DigestInfo.len = cx->pkcs1RSADigestInfoLen;
     return _SGN_VerifyPKCS1DigestInfo(
         cx->hashAlg, digest, &pkcs1DigestInfo,
-        PR_TRUE /*XXX: unsafeAllowMissingParameters*/);
+        PR_FALSE /*XXX: unsafeAllowMissingParameters*/);
 }
 
 /*
@@ -250,8 +253,25 @@ sec_DecodeSigAlg(const SECKEYPublicKey *key, SECOidTag sigAlg,
             *hashalg = SEC_OID_SHA1;
             break;
         case SEC_OID_PKCS1_RSA_ENCRYPTION:
-        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
             *hashalg = SEC_OID_UNKNOWN; /* get it from the RSA signature */
+            break;
+        case SEC_OID_PKCS1_RSA_PSS_SIGNATURE:
+            if (param && param->data) {
+                PORTCheapArenaPool tmpArena;
+
+                PORT_InitCheapArena(&tmpArena, DER_DEFAULT_CHUNKSIZE);
+                rv = sec_DecodeRSAPSSParams(&tmpArena.arena, param,
+                                            hashalg, NULL, NULL);
+                PORT_DestroyCheapArena(&tmpArena);
+
+                /* only accept hash algorithms */
+                if (HASH_GetHashTypeByOidTag(*hashalg) == HASH_AlgNULL) {
+                    /* error set by HASH_GetHashTypeByOidTag */
+                    return SECFailure;
+                }
+            } else {
+                *hashalg = SEC_OID_SHA1; /* default, SHA-1 */
+            }
             break;
 
         case SEC_OID_ANSIX962_ECDSA_SHA224_SIGNATURE:
@@ -434,6 +454,20 @@ vfy_CreateContext(const SECKEYPublicKey *key, const SECItem *sig,
                                             cx->key,
                                             sig, wincx);
                 break;
+            case rsaPssKey:
+                sigLen = SECKEY_SignatureLen(key);
+                if (sigLen == 0) {
+                    /* error set by SECKEY_SignatureLen */
+                    rv = SECFailure;
+                    break;
+                }
+                if (sig->len != sigLen) {
+                    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                    rv = SECFailure;
+                    break;
+                }
+                PORT_Memcpy(cx->u.buffer, sig->data, sigLen);
+                break;
             case dsaKey:
             case ecKey:
                 sigLen = SECKEY_SignatureLen(key);
@@ -496,6 +530,7 @@ VFYContext *
 VFY_CreateContextWithAlgorithmID(const SECKEYPublicKey *key, const SECItem *sig,
                                  const SECAlgorithmID *sigAlgorithm, SECOidTag *hash, void *wincx)
 {
+    VFYContext *cx;
     SECOidTag encAlg, hashAlg;
     SECStatus rv = sec_DecodeSigAlg(key,
                                     SECOID_GetAlgorithmTag((SECAlgorithmID *)sigAlgorithm),
@@ -503,7 +538,13 @@ VFY_CreateContextWithAlgorithmID(const SECKEYPublicKey *key, const SECItem *sig,
     if (rv != SECSuccess) {
         return NULL;
     }
-    return vfy_CreateContext(key, sig, encAlg, hashAlg, hash, wincx);
+
+    cx = vfy_CreateContext(key, sig, encAlg, hashAlg, hash, wincx);
+    if (sigAlgorithm->parameters.data) {
+        cx->params = SECITEM_DupItem(&sigAlgorithm->parameters);
+    }
+
+    return cx;
 }
 
 void
@@ -519,6 +560,9 @@ VFY_DestroyContext(VFYContext *cx, PRBool freeit)
         }
         if (cx->pkcs1RSADigestInfo) {
             PORT_Free(cx->pkcs1RSADigestInfo);
+        }
+        if (cx->params) {
+            SECITEM_FreeItem(cx->params, PR_TRUE);
         }
         if (freeit) {
             PORT_ZFree(cx, sizeof(VFYContext));
@@ -562,7 +606,7 @@ VFY_EndWithSignature(VFYContext *cx, SECItem *sig)
 {
     unsigned char final[HASH_LENGTH_MAX];
     unsigned part;
-    SECItem hash, dsasig; /* dsasig is also used for ECDSA */
+    SECItem hash, rsasig, dsasig; /* dsasig is also used for ECDSA */
     SECStatus rv;
 
     if ((cx->hasSignature == PR_FALSE) && (sig == NULL)) {
@@ -598,25 +642,60 @@ VFY_EndWithSignature(VFYContext *cx, SECItem *sig)
                 return SECFailure;
             }
             break;
-        case rsaKey: {
-            SECItem digest;
-            digest.data = final;
-            digest.len = part;
-            if (sig) {
-                SECOidTag hashid;
-                PORT_Assert(cx->hashAlg != SEC_OID_UNKNOWN);
-                rv = recoverPKCS1DigestInfo(cx->hashAlg, &hashid,
-                                            &cx->pkcs1RSADigestInfo,
-                                            &cx->pkcs1RSADigestInfoLen,
-                                            cx->key,
-                                            sig, cx->wincx);
-                PORT_Assert(cx->hashAlg == hashid);
+        case rsaKey:
+            if (cx->encAlg == SEC_OID_PKCS1_RSA_PSS_SIGNATURE) {
+                CK_RSA_PKCS_PSS_PARAMS mech;
+                SECItem mechItem = { siBuffer, (unsigned char *)&mech, sizeof(mech) };
+                PORTCheapArenaPool tmpArena;
+
+                PORT_InitCheapArena(&tmpArena, DER_DEFAULT_CHUNKSIZE);
+                rv = sec_DecodeRSAPSSParamsToMechanism(&tmpArena.arena,
+                                                       cx->params,
+                                                       &mech);
+                PORT_DestroyCheapArena(&tmpArena);
                 if (rv != SECSuccess) {
                     return SECFailure;
                 }
+
+                rsasig.data = cx->u.buffer;
+                rsasig.len = SECKEY_SignatureLen(cx->key);
+                if (rsasig.len == 0) {
+                    return SECFailure;
+                }
+                if (sig) {
+                    if (sig->len != rsasig.len) {
+                        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                        return SECFailure;
+                    }
+                    PORT_Memcpy(rsasig.data, sig->data, rsasig.len);
+                }
+                hash.data = final;
+                hash.len = part;
+                if (PK11_VerifyWithMechanism(cx->key, CKM_RSA_PKCS_PSS, &mechItem,
+                                             &rsasig, &hash, cx->wincx) != SECSuccess) {
+                    PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                    return SECFailure;
+                }
+            } else {
+                SECItem digest;
+                digest.data = final;
+                digest.len = part;
+                if (sig) {
+                    SECOidTag hashid;
+                    PORT_Assert(cx->hashAlg != SEC_OID_UNKNOWN);
+                    rv = recoverPKCS1DigestInfo(cx->hashAlg, &hashid,
+                                                &cx->pkcs1RSADigestInfo,
+                                                &cx->pkcs1RSADigestInfoLen,
+                                                cx->key,
+                                                sig, cx->wincx);
+                    PORT_Assert(cx->hashAlg == hashid);
+                    if (rv != SECSuccess) {
+                        return SECFailure;
+                    }
+                }
+                return verifyPKCS1DigestInfo(cx, &digest);
             }
-            return verifyPKCS1DigestInfo(cx, &digest);
-        }
+            break;
         default:
             PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
             return SECFailure; /* shouldn't happen */
@@ -722,7 +801,7 @@ VFY_VerifyDigestWithAlgorithmID(const SECItem *digest,
 static SECStatus
 vfy_VerifyData(const unsigned char *buf, int len, const SECKEYPublicKey *key,
                const SECItem *sig, SECOidTag encAlg, SECOidTag hashAlg,
-               SECOidTag *hash, void *wincx)
+               const SECItem *params, SECOidTag *hash, void *wincx)
 {
     SECStatus rv;
     VFYContext *cx;
@@ -730,6 +809,9 @@ vfy_VerifyData(const unsigned char *buf, int len, const SECKEYPublicKey *key,
     cx = vfy_CreateContext(key, sig, encAlg, hashAlg, hash, wincx);
     if (cx == NULL)
         return SECFailure;
+    if (params) {
+        cx->params = SECITEM_DupItem(params);
+    }
 
     rv = VFY_Begin(cx);
     if (rv == SECSuccess) {
@@ -748,7 +830,7 @@ VFY_VerifyDataDirect(const unsigned char *buf, int len,
                      SECOidTag encAlg, SECOidTag hashAlg,
                      SECOidTag *hash, void *wincx)
 {
-    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg, hash, wincx);
+    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg, NULL, hash, wincx);
 }
 
 SECStatus
@@ -760,7 +842,7 @@ VFY_VerifyData(const unsigned char *buf, int len, const SECKEYPublicKey *key,
     if (rv != SECSuccess) {
         return rv;
     }
-    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg, NULL, wincx);
+    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg, NULL, NULL, wincx);
 }
 
 SECStatus
@@ -777,5 +859,6 @@ VFY_VerifyDataWithAlgorithmID(const unsigned char *buf, int len,
     if (rv != SECSuccess) {
         return rv;
     }
-    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg, hash, wincx);
+    return vfy_VerifyData(buf, len, key, sig, encAlg, hashAlg,
+                          &sigAlgorithm->parameters, hash, wincx);
 }

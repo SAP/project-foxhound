@@ -4,7 +4,7 @@
 
 #include "mozilla/plugins/PluginWidgetChild.h"
 
-#include "mozilla/dom/TabChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/plugins/PluginWidgetParent.h"
 #include "PluginWidgetProxy.h"
 
@@ -12,9 +12,7 @@
 #include "mozilla/DebugOnly.h"
 #include "nsDebug.h"
 
-#if defined(XP_WIN)
 #include "mozilla/plugins/PluginInstanceParent.h"
-#endif
 
 #define PWLOG(...)
 //#define PWLOG(...) printf_stderr(__VA_ARGS__)
@@ -22,37 +20,30 @@
 namespace mozilla {
 namespace plugins {
 
-PluginWidgetChild::PluginWidgetChild() :
-  mWidget(nullptr)
-{
+PluginWidgetChild::PluginWidgetChild() : mWidget(nullptr) {
   PWLOG("PluginWidgetChild::PluginWidgetChild()\n");
   MOZ_COUNT_CTOR(PluginWidgetChild);
 }
 
-PluginWidgetChild::~PluginWidgetChild()
-{
+PluginWidgetChild::~PluginWidgetChild() {
   PWLOG("PluginWidgetChild::~PluginWidgetChild()\n");
   MOZ_COUNT_DTOR(PluginWidgetChild);
 }
 
 // Called by the proxy widget when it is destroyed by layout. Only gets
 // called once.
-void
-PluginWidgetChild::ProxyShutdown()
-{
+void PluginWidgetChild::ProxyShutdown() {
   PWLOG("PluginWidgetChild::ProxyShutdown()\n");
   if (mWidget) {
     mWidget = nullptr;
-    auto tab = static_cast<mozilla::dom::TabChild*>(Manager());
+    auto tab = static_cast<mozilla::dom::BrowserChild*>(Manager());
     if (!tab->IsDestroyed()) {
       Unused << Send__delete__(this);
     }
   }
 }
 
-void
-PluginWidgetChild::KillWidget()
-{
+void PluginWidgetChild::KillWidget() {
   PWLOG("PluginWidgetChild::KillWidget()\n");
   if (mWidget) {
     mWidget->ChannelDestroyed();
@@ -60,12 +51,10 @@ PluginWidgetChild::KillWidget()
   mWidget = nullptr;
 }
 
-void
-PluginWidgetChild::ActorDestroy(ActorDestroyReason aWhy)
-{
+void PluginWidgetChild::ActorDestroy(ActorDestroyReason aWhy) {
   PWLOG("PluginWidgetChild::ActorDestroy(%d)\n", aWhy);
   KillWidget();
 }
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla

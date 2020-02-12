@@ -8,15 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/opus/interface/opus_interface.h"
-#include "webrtc/modules/audio_coding/codecs/opus/opus_inst.h"
+#include "modules/audio_coding/codecs/opus/opus_interface.h"
+
+#include "rtc_base/checks.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 enum {
+#if WEBRTC_OPUS_SUPPORT_120MS_PTIME
+  /* Maximum supported frame size in WebRTC is 120 ms. */
+  kWebRtcOpusMaxEncodeFrameSizeMs = 120,
+#else
   /* Maximum supported frame size in WebRTC is 60 ms. */
   kWebRtcOpusMaxEncodeFrameSizeMs = 60,
+#endif
 
   /* The format allows up to 120 ms frames. Since we don't control the other
    * side, we must allow for packets of that size. NetEq is currently limited
@@ -32,40 +38,39 @@ enum {
 };
 
 int16_t WebRtcOpus_EncoderCreate(OpusEncInst** inst,
-                                 int32_t channels,
+                                 size_t channels,
                                  int32_t application) {
-  OpusEncInst* state;
-  if (inst != NULL) {
-    state = (OpusEncInst*) calloc(1, sizeof(OpusEncInst));
-    if (state) {
-      int opus_app;
-      switch (application) {
-        case 0: {
-          opus_app = OPUS_APPLICATION_VOIP;
-          break;
-        }
-        case 1: {
-          opus_app = OPUS_APPLICATION_AUDIO;
-          break;
-        }
-        default: {
-          free(state);
-          return -1;
-        }
-      }
+  int opus_app;
+  if (!inst)
+    return -1;
 
-      int error;
-      state->encoder = opus_encoder_create(48000, channels, opus_app,
-                                           &error);
-      state->in_dtx_mode = 0;
-      if (error == OPUS_OK && state->encoder != NULL) {
-        *inst = state;
-        return 0;
-      }
-      free(state);
-    }
+  switch (application) {
+    case 0:
+      opus_app = OPUS_APPLICATION_VOIP;
+      break;
+    case 1:
+      opus_app = OPUS_APPLICATION_AUDIO;
+      break;
+    default:
+      return -1;
   }
-  return -1;
+
+  OpusEncInst* state = calloc(1, sizeof(OpusEncInst));
+  RTC_DCHECK(state);
+
+  int error;
+  state->encoder = opus_encoder_create(48000, (int)channels, opus_app,
+                                       &error);
+  if (error != OPUS_OK || !state->encoder) {
+    WebRtcOpus_EncoderFree(state);
+    return -1;
+  }
+
+  state->in_dtx_mode = 0;
+  state->channels = channels;
+
+  *inst = state;
+  return 0;
 }
 
 int16_t WebRtcOpus_EncoderFree(OpusEncInst* inst) {
@@ -78,11 +83,11 @@ int16_t WebRtcOpus_EncoderFree(OpusEncInst* inst) {
   }
 }
 
-int16_t WebRtcOpus_Encode(OpusEncInst* inst,
-                          const int16_t* audio_in,
-                          int16_t samples,
-                          int16_t length_encoded_buffer,
-                          uint8_t* encoded) {
+int WebRtcOpus_Encode(OpusEncInst* inst,
+                      const int16_t* audio_in,
+                      size_t samples,
+                      size_t length_encoded_buffer,
+                      uint8_t* encoded) {
   int res;
 
   if (samples > 48 * kWebRtcOpusMaxEncodeFrameSizeMs) {
@@ -91,11 +96,15 @@ int16_t WebRtcOpus_Encode(OpusEncInst* inst,
 
   res = opus_encode(inst->encoder,
                     (const opus_int16*)audio_in,
-                    samples,
+                    (int)samples,
                     encoded,
-                    length_encoded_buffer);
+                    (opus_int32)length_encoded_buffer);
 
-  if (res == 1) {
+  if (res <= 0) {
+    return -1;
+  }
+
+  if (res <= 2) {
     // Indicates DTX since the packet has nothing but a header. In principle,
     // there is no need to send this packet. However, we do transmit the first
     // occurrence to let the decoder know that the encoder enters DTX mode.
@@ -103,21 +112,16 @@ int16_t WebRtcOpus_Encode(OpusEncInst* inst,
       return 0;
     } else {
       inst->in_dtx_mode = 1;
-      return 1;
+      return res;
     }
-  } else if (res > 1) {
-    inst->in_dtx_mode = 0;
-    return res;
   }
 
-  return -1;
+  inst->in_dtx_mode = 0;
+  return res;
 }
 
 int16_t WebRtcOpus_SetBitRate(OpusEncInst* inst, int32_t rate) {
   if (inst) {
-#if defined(OPUS_COMPLEXITY) && (OPUS_COMPLEXITY != 0)
-    opus_encoder_ctl(inst->encoder, OPUS_SET_COMPLEXITY(OPUS_COMPLEXITY));
-#endif
     return opus_encoder_ctl(inst->encoder, OPUS_SET_BITRATE(rate));
   } else {
     return -1;
@@ -171,16 +175,46 @@ int16_t WebRtcOpus_DisableFec(OpusEncInst* inst) {
 }
 
 int16_t WebRtcOpus_EnableDtx(OpusEncInst* inst) {
+  if (!inst) {
+    return -1;
+  }
+
+  // To prevent Opus from entering CELT-only mode by forcing signal type to
+  // voice to make sure that DTX behaves correctly. Currently, DTX does not
+  // last long during a pure silence, if the signal type is not forced.
+  // TODO(minyue): Remove the signal type forcing when Opus DTX works properly
+  // without it.
+  int ret = opus_encoder_ctl(inst->encoder,
+                             OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+  if (ret != OPUS_OK)
+    return ret;
+
+  return opus_encoder_ctl(inst->encoder, OPUS_SET_DTX(1));
+}
+
+int16_t WebRtcOpus_DisableDtx(OpusEncInst* inst) {
   if (inst) {
-    return opus_encoder_ctl(inst->encoder, OPUS_SET_DTX(1));
+    int ret = opus_encoder_ctl(inst->encoder,
+                               OPUS_SET_SIGNAL(OPUS_AUTO));
+    if (ret != OPUS_OK)
+      return ret;
+    return opus_encoder_ctl(inst->encoder, OPUS_SET_DTX(0));
   } else {
     return -1;
   }
 }
 
-int16_t WebRtcOpus_DisableDtx(OpusEncInst* inst) {
+int16_t WebRtcOpus_EnableCbr(OpusEncInst* inst) {
   if (inst) {
-    return opus_encoder_ctl(inst->encoder, OPUS_SET_DTX(0));
+    return opus_encoder_ctl(inst->encoder, OPUS_SET_VBR(0));
+  } else {
+    return -1;
+  }
+}
+
+int16_t WebRtcOpus_DisableCbr(OpusEncInst* inst) {
+  if (inst) {
+    return opus_encoder_ctl(inst->encoder, OPUS_SET_VBR(1));
   } else {
     return -1;
   }
@@ -194,7 +228,42 @@ int16_t WebRtcOpus_SetComplexity(OpusEncInst* inst, int32_t complexity) {
   }
 }
 
-int16_t WebRtcOpus_DecoderCreate(OpusDecInst** inst, int channels) {
+int32_t WebRtcOpus_GetBandwidth(OpusEncInst* inst) {
+  if (!inst) {
+    return -1;
+  }
+  int32_t bandwidth;
+  if (opus_encoder_ctl(inst->encoder, OPUS_GET_BANDWIDTH(&bandwidth)) == 0) {
+    return bandwidth;
+  } else {
+    return -1;
+  }
+
+}
+
+int16_t WebRtcOpus_SetBandwidth(OpusEncInst* inst, int32_t bandwidth) {
+  if (inst) {
+    return opus_encoder_ctl(inst->encoder, OPUS_SET_BANDWIDTH(bandwidth));
+  } else {
+    return -1;
+  }
+}
+
+int16_t WebRtcOpus_SetForceChannels(OpusEncInst* inst, size_t num_channels) {
+  if (!inst)
+    return -1;
+  if (num_channels == 0) {
+    return opus_encoder_ctl(inst->encoder,
+                            OPUS_SET_FORCE_CHANNELS(OPUS_AUTO));
+  } else if (num_channels == 1 || num_channels == 2) {
+    return opus_encoder_ctl(inst->encoder,
+                            OPUS_SET_FORCE_CHANNELS(num_channels));
+  } else {
+    return -1;
+  }
+}
+
+int16_t WebRtcOpus_DecoderCreate(OpusDecInst** inst, size_t channels) {
   int error;
   OpusDecInst* state;
 
@@ -206,7 +275,7 @@ int16_t WebRtcOpus_DecoderCreate(OpusDecInst** inst, int channels) {
     }
 
     /* Create new memory, always at 48000 Hz. */
-    state->decoder = opus_decoder_create(48000, channels, &error);
+    state->decoder = opus_decoder_create(48000, (int)channels, &error);
     if (error == OPUS_OK && state->decoder != NULL) {
       /* Creation of memory all ok. */
       state->channels = channels;
@@ -235,26 +304,26 @@ int16_t WebRtcOpus_DecoderFree(OpusDecInst* inst) {
   }
 }
 
-int WebRtcOpus_DecoderChannels(OpusDecInst* inst) {
+size_t WebRtcOpus_DecoderChannels(OpusDecInst* inst) {
   return inst->channels;
 }
 
-int16_t WebRtcOpus_DecoderInit(OpusDecInst* inst) {
-  int error = opus_decoder_ctl(inst->decoder, OPUS_RESET_STATE);
-  if (error == OPUS_OK) {
-    inst->in_dtx_mode = 0;
-    return 0;
-  }
-  return -1;
+void WebRtcOpus_DecoderInit(OpusDecInst* inst) {
+  opus_decoder_ctl(inst->decoder, OPUS_RESET_STATE);
+  inst->in_dtx_mode = 0;
 }
 
 /* For decoder to determine if it is to output speech or comfort noise. */
-static int16_t DetermineAudioType(OpusDecInst* inst, int16_t encoded_bytes) {
+static int16_t DetermineAudioType(OpusDecInst* inst, size_t encoded_bytes) {
   // Audio type becomes comfort noise if |encoded_byte| is 1 and keeps
   // to be so if the following |encoded_byte| are 0 or 1.
   if (encoded_bytes == 0 && inst->in_dtx_mode) {
     return 2;  // Comfort noise.
-  } else if (encoded_bytes == 1) {
+  } else if (encoded_bytes == 1 || encoded_bytes == 2) {
+    // TODO(henrik.lundin): There is a slight risk that a 2-byte payload is in
+    // fact a 1-byte TOC with a 1-byte payload. That will be erroneously
+    // interpreted as comfort noise output, but such a payload is probably
+    // faulty anyway.
     inst->in_dtx_mode = 1;
     return 2;  // Comfort noise.
   } else {
@@ -267,9 +336,9 @@ static int16_t DetermineAudioType(OpusDecInst* inst, int16_t encoded_bytes) {
  * is set to the number of samples needed for PLC in case of losses.
  * It is up to the caller to make sure the value is correct. */
 static int DecodeNative(OpusDecInst* inst, const uint8_t* encoded,
-                        int16_t encoded_bytes, int frame_size,
+                        size_t encoded_bytes, int frame_size,
                         int16_t* decoded, int16_t* audio_type, int decode_fec) {
-  int res = opus_decode(inst->decoder, encoded, encoded_bytes,
+  int res = opus_decode(inst->decoder, encoded, (opus_int32)encoded_bytes,
                         (opus_int16*)decoded, frame_size, decode_fec);
 
   if (res <= 0)
@@ -280,9 +349,9 @@ static int DecodeNative(OpusDecInst* inst, const uint8_t* encoded,
   return res;
 }
 
-int16_t WebRtcOpus_Decode(OpusDecInst* inst, const uint8_t* encoded,
-                          int16_t encoded_bytes, int16_t* decoded,
-                          int16_t* audio_type) {
+int WebRtcOpus_Decode(OpusDecInst* inst, const uint8_t* encoded,
+                      size_t encoded_bytes, int16_t* decoded,
+                      int16_t* audio_type) {
   int decoded_samples;
 
   if (encoded_bytes == 0) {
@@ -307,8 +376,8 @@ int16_t WebRtcOpus_Decode(OpusDecInst* inst, const uint8_t* encoded,
   return decoded_samples;
 }
 
-int16_t WebRtcOpus_DecodePlc(OpusDecInst* inst, int16_t* decoded,
-                             int16_t number_of_lost_frames) {
+int WebRtcOpus_DecodePlc(OpusDecInst* inst, int16_t* decoded,
+                         int number_of_lost_frames) {
   int16_t audio_type = 0;
   int decoded_samples;
   int plc_samples;
@@ -328,9 +397,9 @@ int16_t WebRtcOpus_DecodePlc(OpusDecInst* inst, int16_t* decoded,
   return decoded_samples;
 }
 
-int16_t WebRtcOpus_DecodeFec(OpusDecInst* inst, const uint8_t* encoded,
-                             int16_t encoded_bytes, int16_t* decoded,
-                             int16_t* audio_type) {
+int WebRtcOpus_DecodeFec(OpusDecInst* inst, const uint8_t* encoded,
+                         size_t encoded_bytes, int16_t* decoded,
+                         int16_t* audio_type) {
   int decoded_samples;
   int fec_samples;
 
@@ -351,9 +420,15 @@ int16_t WebRtcOpus_DecodeFec(OpusDecInst* inst, const uint8_t* encoded,
 
 int WebRtcOpus_DurationEst(OpusDecInst* inst,
                            const uint8_t* payload,
-                           int payload_length_bytes) {
+                           size_t payload_length_bytes) {
+  if (payload_length_bytes == 0) {
+    // WebRtcOpus_Decode calls PLC when payload length is zero. So we return
+    // PLC duration correspondingly.
+    return WebRtcOpus_PlcDuration(inst);
+  }
+
   int frames, samples;
-  frames = opus_packet_get_nb_frames(payload, payload_length_bytes);
+  frames = opus_packet_get_nb_frames(payload, (opus_int32)payload_length_bytes);
   if (frames < 0) {
     /* Invalid payload data. */
     return 0;
@@ -366,8 +441,17 @@ int WebRtcOpus_DurationEst(OpusDecInst* inst,
   return samples;
 }
 
+int WebRtcOpus_PlcDuration(OpusDecInst* inst) {
+  /* The number of samples we ask for is |number_of_lost_frames| times
+   * |prev_decoded_samples_|. Limit the number of samples to maximum
+   * |kWebRtcOpusMaxFrameSizePerChannel|. */
+  const int plc_samples = inst->prev_decoded_samples;
+  return (plc_samples <= kWebRtcOpusMaxFrameSizePerChannel) ?
+      plc_samples : kWebRtcOpusMaxFrameSizePerChannel;
+}
+
 int WebRtcOpus_FecDurationEst(const uint8_t* payload,
-                              int payload_length_bytes) {
+                              size_t payload_length_bytes) {
   int samples;
   if (WebRtcOpus_PacketHasFec(payload, payload_length_bytes) != 1) {
     return 0;
@@ -382,13 +466,13 @@ int WebRtcOpus_FecDurationEst(const uint8_t* payload,
 }
 
 int WebRtcOpus_PacketHasFec(const uint8_t* payload,
-                            int payload_length_bytes) {
+                            size_t payload_length_bytes) {
   int frames, channels, payload_length_ms;
   int n;
   opus_int16 frame_sizes[48];
   const unsigned char *frame_data[48];
 
-  if (payload == NULL || payload_length_bytes <= 0)
+  if (payload == NULL || payload_length_bytes == 0)
     return 0;
 
   /* In CELT_ONLY mode, packets should not have FEC. */
@@ -421,8 +505,8 @@ int WebRtcOpus_PacketHasFec(const uint8_t* payload,
   }
 
   /* The following is to parse the LBRR flags. */
-  if (opus_packet_parse(payload, payload_length_bytes, NULL, frame_data,
-                        frame_sizes, NULL) < 0) {
+  if (opus_packet_parse(payload, (opus_int32)payload_length_bytes, NULL,
+                        frame_data, frame_sizes, NULL) < 0) {
     return 0;
   }
 

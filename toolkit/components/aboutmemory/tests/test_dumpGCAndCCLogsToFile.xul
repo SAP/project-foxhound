@@ -4,8 +4,7 @@
                  type="text/css"?>
 <window title="GC/CC logging with child processes"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -13,9 +12,6 @@
 
   <!-- test code goes here -->
   <script type="application/javascript"><![CDATA[
-
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
 
   SimpleTest.waitForExplicitFinish();
 
@@ -28,7 +24,7 @@
   SpecialPowers.pushPrefEnv({"set": [["dom.ipc.processCount", numRemotes]]},
 			    function() {
     for (let i = 0; i < numRemotes; i++) {
-      let w = remotes[i] = window.open("remote.xul", "", "chrome");
+      let w = remotes[i] = docShell.rootTreeItem.domWindow.open("remote.xul", "", "chrome");
 
       w.addEventListener("load", function loadHandler() {
         w.removeEventListener("load", loadHandler);

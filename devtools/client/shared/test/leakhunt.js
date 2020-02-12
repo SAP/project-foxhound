@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 /**
  * Memory leak hunter. Walks a tree of objects looking for DOM nodes.
  * Usage:
@@ -11,53 +13,51 @@
  * });
  */
 function leakHunt(root) {
-  var path = [];
-  var seen = [];
+  const path = [];
+  const seen = [];
 
   try {
-    var output = leakHunt.inner(root, path, seen);
-    output.forEach(function (line) {
+    const output = leakHunt.inner(root, path, seen);
+    output.forEach(function(line) {
       dump(line + "\n");
     });
-  }
-  catch (ex) {
+  } catch (ex) {
     dump(ex + "\n");
   }
 }
 
-leakHunt.inner = function LH_inner(root, path, seen) {
-  var prefix = new Array(path.length).join("  ");
+leakHunt.inner = function(root, path, seen) {
+  const prefix = new Array(path.length).join("  ");
 
-  var reply = [];
+  const reply = [];
   function log(msg) {
     reply.push(msg);
   }
 
-  var direct;
+  let direct;
   try {
     direct = Object.keys(root);
-  }
-  catch (ex) {
+  } catch (ex) {
     log(prefix + "  Error enumerating: " + ex);
     return reply;
   }
 
   try {
-    var index = 0;
-    for (var data of root) {
-      var prop = "" + index;
+    let index = 0;
+    for (const data of root) {
+      const prop = "" + index;
       leakHunt.digProperty(prop, data, path, seen, direct, log);
       index++;
     }
+  } catch (ex) {
+    /* Ignore things that are not enumerable */
   }
-  catch (ex) { /* Ignore things that are not enumerable */ }
 
-  for (var prop in root) {
-    var data;
+  for (const prop in root) {
+    let data;
     try {
       data = root[prop];
-    }
-    catch (ex) {
+    } catch (ex) {
       log(prefix + "  " + prop + " = Error: " + ex.toString().substring(0, 30));
       continue;
     }
@@ -68,69 +68,73 @@ leakHunt.inner = function LH_inner(root, path, seen) {
   return reply;
 };
 
-leakHunt.hide = [ /^string$/, /^number$/, /^boolean$/, /^null/, /^undefined/ ];
+leakHunt.hide = [/^string$/, /^number$/, /^boolean$/, /^null/, /^undefined/];
 
 leakHunt.noRecurse = [
-  /^string$/, /^number$/, /^boolean$/, /^null/, /^undefined/,
-  /^Window$/, /^Document$/,
-  /^XULDocument$/, /^XULElement$/,
-  /^DOMWindow$/, /^HTMLDocument$/, /^HTML.*Element$/, /^ChromeWindow$/
+  /^string$/,
+  /^number$/,
+  /^boolean$/,
+  /^null/,
+  /^undefined/,
+  /^Window$/,
+  /^Document$/,
+  /^XULElement$/,
+  /^DOMWindow$/,
+  /^HTMLDocument$/,
+  /^HTML.*Element$/,
+  /^ChromeWindow$/,
 ];
 
-leakHunt.digProperty = function LH_digProperty(prop, data, path, seen, direct, log) {
-  var newPath = path.slice();
+leakHunt.digProperty = function(prop, data, path, seen, direct, log) {
+  const newPath = path.slice();
   newPath.push(prop);
-  var prefix = new Array(newPath.length).join("  ");
+  const prefix = new Array(newPath.length).join("  ");
 
-  var recurse = true;
-  var message = leakHunt.getType(data);
+  let recurse = true;
+  let message = leakHunt.getType(data);
 
   if (leakHunt.matchesAnyPattern(message, leakHunt.hide)) {
     return;
   }
 
-  if (message === "function" && direct.indexOf(prop) == -1) {
+  if (message === "function" && !direct.includes(prop)) {
     return;
   }
 
   if (message === "string") {
-    var extra = data.length > 10 ? data.substring(0, 9) + "_" : data;
+    const extra = data.length > 10 ? data.substring(0, 9) + "_" : data;
     message += ' "' + extra.replace(/\n/g, "|") + '"';
     recurse = false;
-  }
-  else if (leakHunt.matchesAnyPattern(message, leakHunt.noRecurse)) {
+  } else if (leakHunt.matchesAnyPattern(message, leakHunt.noRecurse)) {
     message += " (no recurse)";
     recurse = false;
-  }
-  else if (seen.indexOf(data) !== -1) {
+  } else if (seen.includes(data)) {
     message += " (already seen)";
     recurse = false;
   }
 
   if (recurse) {
     seen.push(data);
-    var lines = leakHunt.inner(data, newPath, seen);
+    const lines = leakHunt.inner(data, newPath, seen);
     if (lines.length == 0) {
       if (message !== "function") {
         log(prefix + prop + " = " + message + " { }");
       }
-    }
-    else {
+    } else {
       log(prefix + prop + " = " + message + " {");
-      lines.forEach(function (line) {
+      lines.forEach(function(line) {
         log(line);
       });
       log(prefix + "}");
     }
-  }
-  else {
+  } else {
     log(prefix + prop + " = " + message);
   }
 };
 
-leakHunt.matchesAnyPattern = function LH_matchesAnyPattern(str, patterns) {
-  var match = false;
-  patterns.forEach(function (pattern) {
+leakHunt.matchesAnyPattern = function(str, patterns) {
+  let match = false;
+  patterns.forEach(function(pattern) {
     if (str.match(pattern)) {
       match = true;
     }
@@ -138,7 +142,7 @@ leakHunt.matchesAnyPattern = function LH_matchesAnyPattern(str, patterns) {
   return match;
 };
 
-leakHunt.getType = function LH_getType(data) {
+leakHunt.getType = function(data) {
   if (data === null) {
     return "null";
   }
@@ -146,7 +150,7 @@ leakHunt.getType = function LH_getType(data) {
     return "undefined";
   }
 
-  var type = typeof data;
+  let type = typeof data;
   if (type === "object" || type === "Object") {
     type = leakHunt.getCtorName(data);
   }
@@ -154,17 +158,16 @@ leakHunt.getType = function LH_getType(data) {
   return type;
 };
 
-leakHunt.getCtorName = function LH_getCtorName(aObj) {
+leakHunt.getCtorName = function(obj) {
   try {
-    if (aObj.constructor && aObj.constructor.name) {
-      return aObj.constructor.name;
+    if (obj.constructor && obj.constructor.name) {
+      return obj.constructor.name;
     }
-  }
-  catch (ex) {
+  } catch (ex) {
     return "UnknownObject";
   }
 
   // If that fails, use Objects toString which sometimes gives something
   // better than 'Object', and at least defaults to Object if nothing better
-  return Object.prototype.toString.call(aObj).slice(8, -1);
+  return Object.prototype.toString.call(obj).slice(8, -1);
 };

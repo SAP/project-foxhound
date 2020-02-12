@@ -1,4 +1,4 @@
-# Taintfox -- a taint-aware Firefox
+# ![Taintfox Logo](https://github.wdf.sap.corp/WebSecResearch/taintfox/raw/master/browser/branding/taintfox/default48.png) Taintfox
 
 You have found Taintfox, a modified Firefox capable of tracking taint information as data flows through the browser.
 
@@ -11,10 +11,11 @@ sinks (e.g. `eval()`, `.innerHTML()`, ...).
 
 Browse websites as usual and check stdout for tainted flows. Alternatively install an extension to report flows.
 
+For example, following this [link](http://demo.owasp-juice.shop/#/search?q=%3Ciframe%20src%3D%22javascript:alert(%60Hello%20Taintfox!%60)%22%3E) should bring up a pop-up, plus a tainted flow message in the browser console and text console.
 
 ## Building
 
-Choose the appropriate mozconfig by copying "taintfox_mozconfig_[mac|win]" to ".mozconfig".
+Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win|ubuntu]" to ".mozconfig".
 
 The default build settings should now work fine:
 
@@ -22,7 +23,7 @@ The default build settings should now work fine:
 ./mach build
 ```
 
-For recommended build settings take a look at taintfox_mozconfig:
+For recommended build settings take a look at taintfox\_mozconfig:
 ```bash
 cp taintfox_mozconfig .mozconfig
 ./mach build
@@ -63,4 +64,13 @@ var b = "def";
 var c = a.toUpperCase() + b;
 print(JSON.stringify(c.taint));
 // [{begin:0, end:3, flow:[{operation:"toUpperCase", arguments:[]}, {operation:"Manual taint source", arguments:["abc"]}]}]
+```
+
+## Tests
+
+The test suite can be run as follows, assuming a release build is available:
+
+```bash
+cd js/src
+./tests/jstests.py ../../obj-tf-release/dist/bin/js taint/
 ```

@@ -14,23 +14,20 @@
         onload="onLoad();"
         title="findbar test - entire words only">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/ChromeUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/ChromeUtils.js"/>
 
   <script type="application/javascript"><![CDATA[
-    const {interfaces: Ci, classes: Cc, results: Cr, utils: Cu} = Components;
-    Cu.import("resource://gre/modules/Task.jsm");
-    Cu.import("resource://testing-common/ContentTask.jsm");
-    ContentTask.setTestScope(window.opener.wrappedJSObject);
+    const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
+    const {ContentTask} = ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+    ContentTask.setTestScope(window.arguments[0]);
 
     var gFindBar = null;
     var gBrowser;
 
     var imports = ["SimpleTest", "SpecialPowers", "ok", "is", "isnot", "info"];
     for (var name of imports) {
-      window[name] = window.opener.wrappedJSObject[name];
+      window[name] = window.arguments[0][name];
     }
     SimpleTest.requestLongerTimeout(2);
 
@@ -104,31 +101,29 @@
     };
 
     function onLoad() {
-      Task.spawn(function* () {
-        yield new Promise(resolve => {
-          SpecialPowers.pushPrefEnv(
-            { set: [["findbar.entireword", true]] }, resolve);
-        });
+      (async function() {
+        await SpecialPowers.pushPrefEnv(
+          { set: [["findbar.entireword", true]] });
 
         gFindBar = document.getElementById("FindToolbar");
         for (let browserId of ["content", "content-remote"]) {
           // XXXmikedeboer: when multiple test samples are available, make this
           //                a nested loop that iterates over them. For now, only
           //                latin is available.
-          yield startTestWithBrowser("latin1", browserId);
+          await startTestWithBrowser("latin1", browserId);
         }
-      }).then(() => {
+      })().then(() => {
         window.close();
         SimpleTest.finish();
       });
     }
 
-    function* startTestWithBrowser(testName, browserId) {
+    async function startTestWithBrowser(testName, browserId) {
       info("Starting test with browser '" + browserId + "'");
       gBrowser = document.getElementById(browserId);
       gFindBar.browser = gBrowser;
 
-      let promise = ContentTask.spawn(gBrowser, null, function* () {
+      let promise = ContentTask.spawn(gBrowser, null, async function() {
         return new Promise(resolve => {
           addEventListener("DOMContentLoaded", function listener() {
             removeEventListener("DOMContentLoaded", listener);
@@ -136,20 +131,20 @@
           });
         });
       });
-      gBrowser.loadURI(kBaseURL + "/sample_entireword_" + testName + ".html");
-      yield promise;
-      yield onDocumentLoaded(testName);
+      BrowserTestUtils.loadURI(gBrowser, kBaseURL + "/sample_entireword_" + testName + ".html");
+      await promise;
+      await onDocumentLoaded(testName);
     }
 
-    function* onDocumentLoaded(testName) {
+    async function onDocumentLoaded(testName) {
       let suite = kTests[testName];
-      yield testSimpleEntireWord(suite.testSimpleEntireWord);
-      yield testCaseSensitive(suite.testCaseSensitive);
-      yield testWordBreakChars(suite.testWordBreakChars);
-      yield testQuickfind(suite.testQuickfind);
+      await testSimpleEntireWord(suite.testSimpleEntireWord);
+      await testCaseSensitive(suite.testCaseSensitive);
+      await testWordBreakChars(suite.testWordBreakChars);
+      await testQuickfind(suite.testQuickfind);
     }
 
-    var enterStringIntoFindField = Task.async(function* (str, waitForResult = true) {
+    var enterStringIntoFindField = async function(str, waitForResult = true) {
       for (let promise, i = 0; i < str.length; i++) {
         if (waitForResult) {
           promise = promiseFindResult();
@@ -157,12 +152,12 @@
         let event = document.createEvent("KeyboardEvent");
         event.initKeyEvent("keypress", true, true, null, false, false,
                            false, false, 0, str.charCodeAt(i));
-        gFindBar._findField.inputField.dispatchEvent(event);
+        gFindBar._findField.dispatchEvent(event);
         if (waitForResult) {
-          yield promise;
+          await promise;
         }
       }
-    });
+    };
 
     function openFindbar() {
       document.getElementById("cmd_find").doCommand();
@@ -186,6 +181,9 @@
             }
             listener = {
               onMatchesCountResult: res => {
+                if (searchString && res.searchString != searchString)
+                  return;
+
                 gFindBar.browser.finder.removeResultListener(listener);
                 data.matches = res;
                 resolve(data);
@@ -199,54 +197,54 @@
       });
     }
 
-    function* testIterator(tests) {
+    async function testIterator(tests) {
       for (let searchString of Object.getOwnPropertyNames(tests)) {
         gFindBar.clear();
 
         let promise = promiseFindResult(searchString);
 
-        yield enterStringIntoFindField(searchString, false);
+        await enterStringIntoFindField(searchString, false);
 
-        let result = yield promise;
+        let result = await promise;
         tests[searchString](result);
       }
     }
 
-    function* testSimpleEntireWord(tests) {
-      yield openFindbar();
+    async function testSimpleEntireWord(tests) {
+      await openFindbar();
       ok(!gFindBar.hidden, "testSimpleEntireWord: findbar should be open");
 
-      yield* testIterator(tests);
+      await testIterator(tests);
 
       gFindBar.close();
     }
 
-    function* testCaseSensitive(tests) {
-      yield openFindbar();
+    async function testCaseSensitive(tests) {
+      await openFindbar();
       ok(!gFindBar.hidden, "testCaseSensitive: findbar should be open");
 
       let matchCaseCheckbox = gFindBar.getElement("find-case-sensitive");
       if (!matchCaseCheckbox.hidden && !matchCaseCheckbox.checked)
         matchCaseCheckbox.click();
 
-      yield* testIterator(tests);
+      await testIterator(tests);
 
       if (!matchCaseCheckbox.hidden)
         matchCaseCheckbox.click();
       gFindBar.close();
     }
 
-    function* testWordBreakChars(tests) {
-      yield openFindbar();
+    async function testWordBreakChars(tests) {
+      await openFindbar();
       ok(!gFindBar.hidden, "testWordBreakChars: findbar should be open");
 
-      yield* testIterator(tests);
+      await testIterator(tests);
 
       gFindBar.close();
     }
 
-    function* testQuickfind(tests) {
-      yield ContentTask.spawn(gBrowser, null, function* () {
+    async function testQuickfind(tests) {
+      await ContentTask.spawn(gBrowser, null, async function() {
         let document = content.document;
         let event = document.createEvent("KeyboardEvent");
         event.initKeyEvent("keypress", true, true, null, false, false,
@@ -255,12 +253,12 @@
       });
 
       ok(!gFindBar.hidden, "testQuickfind: failed to open findbar");
-      ok(document.commandDispatcher.focusedElement == gFindBar._findField.inputField,
+      ok(document.commandDispatcher.focusedElement == gFindBar._findField,
         "testQuickfind: find field is not focused");
       ok(!gFindBar.getElement("entire-word-status").hidden,
         "testQuickfind: entire word mode status text should be visible");
 
-      yield* testIterator(tests);
+      await testIterator(tests);
 
       gFindBar.close();
     }
@@ -269,7 +267,7 @@
   <commandset>
     <command id="cmd_find" oncommand="document.getElementById('FindToolbar').onFindCommand();"/>
   </commandset>
-  <browser type="content-primary" flex="1" id="content" src="about:blank"/>
-  <browser type="content-primary" flex="1" id="content-remote" remote="true" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content" src="about:blank"/>
+  <browser type="content" primary="true" flex="1" id="content-remote" remote="true" src="about:blank"/>
   <findbar id="FindToolbar" browserid="content"/>
 </window>

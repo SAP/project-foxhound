@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -9,26 +8,26 @@
 
 const TEST_URL = "data:text/html;charset=utf-8,<div></div>";
 
-add_task(function* () {
+add_task(async function() {
   let isEditTagNameCalled = false;
 
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
   // Overriding the editTagName walkerActor method here to check that it isn't
   // called when blurring the tagname field.
-  inspector.walker.editTagName = function () {
+  inspector.walker.editTagName = function() {
     isEditTagNameCalled = true;
   };
 
-  let container = yield focusNode("div", inspector);
-  let tagEditor = container.editor.tag;
+  const container = await focusNode("div", inspector);
+  const tagEditor = container.editor.tag;
 
   info("Blurring the tagname field");
   tagEditor.blur();
   is(isEditTagNameCalled, false, "The editTagName method wasn't called");
 
   info("Updating the tagname to uppercase");
-  yield focusNode("div", inspector);
+  await focusNode("div", inspector);
   setEditableFieldValue(tagEditor, "DIV", inspector);
   is(isEditTagNameCalled, false, "The editTagName method wasn't called");
 

@@ -9,25 +9,37 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInTab, initConsoleInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { waitForRecordingStartedEvents, waitForRecordingStoppedEvents } = require("devtools/client/performance/test/helpers/actions");
-const { idleWait } = require("devtools/client/performance/test/helpers/wait-utils");
+const {
+  initPerformanceInTab,
+  initConsoleInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  waitForRecordingStartedEvents,
+  waitForRecordingStoppedEvents,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  idleWait,
+} = require("devtools/client/performance/test/helpers/wait-utils");
+const {
+  getSelectedRecording,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { target, console } = yield initConsoleInNewTab({
+add_task(async function() {
+  const { target, console } = await initConsoleInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { panel } = yield initPerformanceInTab({ tab: target.tab });
-  let { PerformanceController, RecordingsView } = panel.panelWin;
+  const { panel } = await initPerformanceInTab({ tab: target.tab });
+  const { PerformanceController } = panel.panelWin;
 
   let started = waitForRecordingStartedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profile();
-  yield started;
+  await console.profile();
+  await started;
 
   started = waitForRecordingStartedEvents(panel, {
     // only emitted for manual recordings
@@ -38,8 +50,8 @@ add_task(function* () {
     // in-progress recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profile("1");
-  yield started;
+  await console.profile("1");
+  await started;
 
   started = waitForRecordingStartedEvents(panel, {
     // only emitted for manual recordings
@@ -50,23 +62,36 @@ add_task(function* () {
     // in-progress recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profile("2");
-  yield started;
+  await console.profile("2");
+  await started;
 
   let recordings = PerformanceController.getRecordings();
+  let selected = getSelectedRecording(panel);
   is(recordings.length, 3, "Three recordings found in the performance panel.");
   is(recordings[0].getLabel(), "", "Checking label of recording 1");
   is(recordings[1].getLabel(), "1", "Checking label of recording 2");
   is(recordings[2].getLabel(), "2", "Checking label of recording 3");
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should be selected.");
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should be selected."
+  );
 
-  is(recordings[0].isRecording(), true,
-    "All recordings should now be started. (1)");
-  is(recordings[1].isRecording(), true,
-    "All recordings should now be started. (2)");
-  is(recordings[2].isRecording(), true,
-    "All recordings should now be started. (3)");
+  is(
+    recordings[0].isRecording(),
+    true,
+    "All recordings should now be started. (1)"
+  );
+  is(
+    recordings[1].isRecording(),
+    true,
+    "All recordings should now be started. (2)"
+  );
+  is(
+    recordings[2].isRecording(),
+    true,
+    "All recordings should now be started. (3)"
+  );
 
   let stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
@@ -78,36 +103,65 @@ add_task(function* () {
     // finished recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
 
+  selected = getSelectedRecording(panel);
   recordings = PerformanceController.getRecordings();
   is(recordings.length, 3, "Three recordings found in the performance panel.");
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should still be selected.");
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should still be selected."
+  );
 
-  is(recordings[0].isRecording(), true, "The not most recent recording should not stop " +
-    "when calling console.profileEnd with no args.");
-  is(recordings[1].isRecording(), true, "The not most recent recording should not stop " +
-    "when calling console.profileEnd with no args.");
-  is(recordings[2].isRecording(), false, "Only the most recent recording should stop " +
-    "when calling console.profileEnd with no args.");
+  is(
+    recordings[0].isRecording(),
+    true,
+    "The not most recent recording should not stop " +
+      "when calling console.profileEnd with no args."
+  );
+  is(
+    recordings[1].isRecording(),
+    true,
+    "The not most recent recording should not stop " +
+      "when calling console.profileEnd with no args."
+  );
+  is(
+    recordings[2].isRecording(),
+    false,
+    "Only the most recent recording should stop " +
+      "when calling console.profileEnd with no args."
+  );
 
   info("Trying to `profileEnd` a non-existent console recording.");
   console.profileEnd("fxos");
-  yield idleWait(1000);
+  await idleWait(1000);
 
+  selected = getSelectedRecording(panel);
   recordings = PerformanceController.getRecordings();
   is(recordings.length, 3, "Three recordings found in the performance panel.");
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should still be selected.");
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should still be selected."
+  );
 
-  is(recordings[0].isRecording(), true,
-    "The first recording should not be ended yet.");
-  is(recordings[1].isRecording(), true,
-    "The second recording should not be ended yet.");
-  is(recordings[2].isRecording(), false,
-    "The third recording should still be ended.");
+  is(
+    recordings[0].isRecording(),
+    true,
+    "The first recording should not be ended yet."
+  );
+  is(
+    recordings[1].isRecording(),
+    true,
+    "The second recording should not be ended yet."
+  );
+  is(
+    recordings[2].isRecording(),
+    false,
+    "The third recording should still be ended."
+  );
 
   stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
@@ -119,46 +173,75 @@ add_task(function* () {
     // finished recording is selected, which won't happen
     skipWaitingForViewState: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
 
+  selected = getSelectedRecording(panel);
   recordings = PerformanceController.getRecordings();
   is(recordings.length, 3, "Three recordings found in the performance panel.");
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should still be selected.");
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should still be selected."
+  );
 
-  is(recordings[0].isRecording(), true,
-    "The first recording should not be ended yet.");
-  is(recordings[1].isRecording(), false,
-    "The second recording should not be ended yet.");
-  is(recordings[2].isRecording(), false,
-    "The third recording should still be ended.");
+  is(
+    recordings[0].isRecording(),
+    true,
+    "The first recording should not be ended yet."
+  );
+  is(
+    recordings[1].isRecording(),
+    false,
+    "The second recording should not be ended yet."
+  );
+  is(
+    recordings[2].isRecording(),
+    false,
+    "The third recording should still be ended."
+  );
 
   stopped = waitForRecordingStoppedEvents(panel, {
     // only emitted for manual recordings
-    skipWaitingForBackendReady: true
+    skipWaitingForBackendReady: true,
   });
-  yield console.profileEnd();
-  yield stopped;
+  await console.profileEnd();
+  await stopped;
 
+  selected = getSelectedRecording(panel);
   recordings = PerformanceController.getRecordings();
   is(recordings.length, 3, "Three recordings found in the performance panel.");
-  is(RecordingsView.selectedItem.attachment, recordings[0],
-    "The first console recording should be selected.");
+  is(
+    selected,
+    recordings[0],
+    "The first console recording should be selected."
+  );
 
-  is(recordings[0].isRecording(), false,
-    "All recordings should now be ended. (1)");
-  is(recordings[1].isRecording(), false,
-    "All recordings should now be ended. (2)");
-  is(recordings[2].isRecording(), false,
-    "All recordings should now be ended. (3)");
+  is(
+    recordings[0].isRecording(),
+    false,
+    "All recordings should now be ended. (1)"
+  );
+  is(
+    recordings[1].isRecording(),
+    false,
+    "All recordings should now be ended. (2)"
+  );
+  is(
+    recordings[2].isRecording(),
+    false,
+    "All recordings should now be ended. (3)"
+  );
 
   info("Trying to `profileEnd` with no pending recordings.");
   console.profileEnd();
-  yield idleWait(1000);
+  await idleWait(1000);
 
-  ok(true, "Calling console.profileEnd() with no argument and no pending recordings " +
-    "does not throw.");
+  ok(
+    true,
+    "Calling console.profileEnd() with no argument and no pending recordings " +
+      "does not throw."
+  );
 
-  yield teardownToolboxAndRemoveTab(panel);
+  await teardownToolboxAndRemoveTab(panel);
 });

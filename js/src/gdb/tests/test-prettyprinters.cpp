@@ -3,15 +3,15 @@
 typedef int A;
 typedef A B;
 
-class C { };
-class D { };
+class C {};
+class D {};
 typedef C C_;
 typedef D D_;
-class E: C, D { };
+class E : C, D {};
 typedef E E_;
-class F: C_, D_ { };
-class G { };
-class H: F, G { };
+class F : C_, D_ {};
+class G {};
+class H : F, G {};
 
 FRAGMENT(prettyprinters, implemented_types) {
   int i;
@@ -26,13 +26,13 @@ FRAGMENT(prettyprinters, implemented_types) {
 
   breakpoint();
 
-  (void) i;
-  (void) a;
-  (void) b;
-  (void) c;
-  (void) c_;
-  (void) e;
-  (void) e_;
-  (void) f;
-  (void) h;
+  use(i);
+  use(a);
+  use(b);
+  use(c);
+  use(c_);
+  use(e);
+  use(e_);
+  use(f);
+  use(h);
 }

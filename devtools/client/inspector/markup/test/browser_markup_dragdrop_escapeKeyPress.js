@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -8,27 +7,32 @@
 
 const TEST_URL = URL_ROOT + "doc_markup_dragdrop.html";
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
-  let {markup} = inspector;
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
+  const { markup } = inspector;
 
   info("Get a test container");
-  yield selectNode("#test", inspector);
-  let container = yield getContainerForSelector("#test", inspector);
+  await selectNode("#test", inspector);
+  const container = await getContainerForSelector("#test", inspector);
 
   info("Simulate a drag/drop on this container");
-  yield simulateNodeDrag(inspector, "#test");
+  await simulateNodeDrag(inspector, "#test");
 
-  ok(container.isDragging && markup.isDragging,
-     "The container is being dragged");
-  ok(markup.doc.body.classList.contains("dragging"),
-     "The dragging css class was added");
+  ok(
+    container.isDragging && markup.isDragging,
+    "The container is being dragged"
+  );
+  ok(
+    markup.doc.body.classList.contains("dragging"),
+    "The dragging css class was added"
+  );
 
   info("Simulate ESCAPE keypress");
   EventUtils.sendKey("escape", inspector.panelWin);
 
-  ok(!container.isDragging && !markup.isDragging,
-     "The dragging has stopped");
-  ok(!markup.doc.body.classList.contains("dragging"),
-     "The dragging css class was removed");
+  ok(!container.isDragging && !markup.isDragging, "The dragging has stopped");
+  ok(
+    !markup.doc.body.classList.contains("dragging"),
+    "The dragging css class was removed"
+  );
 });

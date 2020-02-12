@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,9 +23,8 @@ class GlobalObject;
 // Implementation of test binding for webidl setlike interfaces, using
 // primitives for key type.
 class TestInterfaceSetlikeNode final : public nsISupports,
-                                       public nsWrapperCache
-{
-public:
+                                       public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TestInterfaceSetlikeNode)
   explicit TestInterfaceSetlikeNode(JSContext* aCx,
@@ -33,14 +32,15 @@ public:
   nsPIDOMWindowInner* GetParentObject() const;
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
-  static already_AddRefed<TestInterfaceSetlikeNode>
-    Constructor(const GlobalObject& aGlobal, ErrorResult& rv);
-private:
+  static already_AddRefed<TestInterfaceSetlikeNode> Constructor(
+      const GlobalObject& aGlobal, ErrorResult& rv);
+
+ private:
   virtual ~TestInterfaceSetlikeNode() {}
   nsCOMPtr<nsPIDOMWindowInner> mParent;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TestInterfaceSetlikeNode_h
+#endif  // mozilla_dom_TestInterfaceSetlikeNode_h

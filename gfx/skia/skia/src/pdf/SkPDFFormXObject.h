@@ -9,45 +9,20 @@
 #ifndef SkPDFFormXObject_DEFINED
 #define SkPDFFormXObject_DEFINED
 
-#include "SkPDFStream.h"
+#include "SkPDFDevice.h"
 #include "SkPDFTypes.h"
-#include "SkRect.h"
-#include "SkRefCnt.h"
-#include "SkString.h"
 
-class SkMatrix;
-class SkPDFDevice;
-class SkPDFObjNumMap;
+class SkPDFDocument;
 
-/** \class SkPDFFormXObject
-
-    A form XObject; a self contained description of graphics objects.  A form
-    XObject is basically a page object with slightly different syntax, that
-    can be drawn onto a page.
+/** A form XObject is a self contained description of a graphics
+    object.  A form XObject is a page object with slightly different
+    syntax, that can be drawn into a page content stream, just like a
+    bitmap XObject can be drawn into a page content stream.
 */
-
-// The caller could keep track of the form XObjects it creates and
-// canonicalize them, but the Skia API doesn't provide enough context to
-// automatically do it (trivially).
-class SkPDFFormXObject final : public SkPDFStream {
-public:
-    /** Create a PDF form XObject. Entries for the dictionary entries are
-     *  automatically added.
-     *  @param device      The set of graphical elements on this form.
-     */
-    explicit SkPDFFormXObject(SkPDFDevice* device);
-    /**
-     * Create a PDF form XObject from a raw content stream and associated
-     * resources.
-     */
-    explicit SkPDFFormXObject(SkStream* content,
-                              SkRect bbox,
-                              SkPDFDict* resourceDict);
-    virtual ~SkPDFFormXObject();
-
-private:
-    void init(const char* colorSpace,
-              SkPDFDict* resourceDict, SkPDFArray* bbox);
-};
-
+SkPDFIndirectReference SkPDFMakeFormXObject(SkPDFDocument* doc,
+                                            std::unique_ptr<SkStreamAsset> content,
+                                            std::unique_ptr<SkPDFArray> mediaBox,
+                                            std::unique_ptr<SkPDFDict> resourceDict,
+                                            const SkMatrix& inverseTransform,
+                                            const char* colorSpace);
 #endif

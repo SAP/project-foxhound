@@ -4,35 +4,38 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["TabState"];
+var EXPORTED_SYMBOLS = ["TabState"];
 
-const Cu = Components.utils;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
-
-XPCOMUtils.defineLazyModuleGetter(this, "PrivacyFilter",
-  "resource:///modules/sessionstore/PrivacyFilter.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabStateCache",
-  "resource:///modules/sessionstore/TabStateCache.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabAttributes",
-  "resource:///modules/sessionstore/TabAttributes.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Utils",
-  "resource:///modules/sessionstore/Utils.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivacyFilter",
+  "resource://gre/modules/sessionstore/PrivacyFilter.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "TabStateCache",
+  "resource:///modules/sessionstore/TabStateCache.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "TabAttributes",
+  "resource:///modules/sessionstore/TabAttributes.jsm"
+);
 
 /**
  * Module that contains tab state collection methods.
  */
-this.TabState = Object.freeze({
-  update: function (browser, data) {
+var TabState = Object.freeze({
+  update(browser, data) {
     TabStateInternal.update(browser, data);
   },
 
-  collect: function (tab) {
-    return TabStateInternal.collect(tab);
+  collect(tab, extData) {
+    return TabStateInternal.collect(tab, extData);
   },
 
-  clone: function (tab) {
-    return TabStateInternal.clone(tab);
+  clone(tab, extData) {
+    return TabStateInternal.clone(tab, extData);
   },
 
   copyFromCache(browser, tabData, options) {
@@ -44,7 +47,7 @@ var TabStateInternal = {
   /**
    * Processes a data update sent by the content script.
    */
-  update: function (browser, {data}) {
+  update(browser, { data }) {
     TabStateCache.update(browser, data);
   },
 
@@ -53,13 +56,15 @@ var TabStateInternal = {
    *
    * @param tab
    *        tabbrowser tab
+   * @param [extData]
+   *        optional dictionary object, containing custom tab values.
    *
    * @returns {TabData} An object with the data for this tab.  If the
    * tab has not been invalidated since the last call to
    * collect(aTab), the same object is returned.
    */
-  collect: function (tab) {
-    return this._collectBaseTabData(tab);
+  collect(tab, extData) {
+    return this._collectBaseTabData(tab, { extData });
   },
 
   /**
@@ -68,13 +73,15 @@ var TabStateInternal = {
    *
    * @param tab
    *        tabbrowser tab
+   * @param [extData]
+   *        optional dictionary object, containing custom tab values.
    *
    * @returns {object} An object with the data for this tab. This data is never
    *                   cached, it will always be read from the tab and thus be
    *                   up-to-date.
    */
-  clone: function (tab) {
-    return this._collectBaseTabData(tab, {includePrivateData: true});
+  clone(tab, extData) {
+    return this._collectBaseTabData(tab, { extData, includePrivateData: true });
   },
 
   /**
@@ -83,11 +90,12 @@ var TabStateInternal = {
    * @param tab
    *        tabbrowser tab
    * @param options (object)
+   *        {extData: object} optional dictionary object, containing custom tab values
    *        {includePrivateData: true} to always include private data
    *
    * @returns {object} An object with the basic data for this tab.
    */
-  _collectBaseTabData: function (tab, options) {
+  _collectBaseTabData(tab, options) {
     let tabData = { entries: [], lastAccessed: tab.lastAccessed };
     let browser = tab.linkedBrowser;
 
@@ -105,8 +113,8 @@ var TabStateInternal = {
     // Save tab attributes.
     tabData.attributes = TabAttributes.get(tab);
 
-    if (tab.__SS_extdata) {
-      tabData.extData = tab.__SS_extdata;
+    if (options.extData) {
+      tabData.extData = options.extData;
     }
 
     // Copy data from the tab state cache only if the tab has fully finished
@@ -124,11 +132,6 @@ var TabStateInternal = {
       tabData.image = tabbrowser.getIcon(tab);
     }
 
-    // Store the serialized contentPrincipal of this tab to use for the icon.
-    if (!("iconLoadingPrincipal" in tabData)) {
-      tabData.iconLoadingPrincipal = Utils.serializePrincipal(browser.contentPrincipal);
-    }
-
     // If there is a userTypedValue set, then either the user has typed something
     // in the URL bar, or a new tab was opened with a URI to load.
     // If so, we also track whether we were still in the process of loading something.
@@ -140,7 +143,9 @@ var TabStateInternal = {
       // the last time the user typed in the URL bar. Mimic this to keep the
       // session store representation in sync, even though we now represent this
       // more explicitly:
-      tabData.userTypedClear = browser.didStartLoadSinceLastUserTyping() ? 1 : 0;
+      tabData.userTypedClear = browser.didStartLoadSinceLastUserTyping()
+        ? 1
+        : 0;
     }
 
     return tabData;
@@ -164,7 +169,6 @@ var TabStateInternal = {
 
     // The caller may explicitly request to omit privacy checks.
     let includePrivateData = options && options.includePrivateData;
-    let isPinned = !!tabData.pinned;
 
     for (let key of Object.keys(data)) {
       let value = data[key];
@@ -179,7 +183,10 @@ var TabStateInternal = {
       }
 
       if (key === "history") {
-        tabData.entries = value.entries;
+        // Make a shallow copy of the entries array. We (currently) don't update
+        // entries in place, so we don't have to worry about performing a deep
+        // copy.
+        tabData.entries = [...value.entries];
 
         if (value.hasOwnProperty("userContextId")) {
           tabData.userContextId = value.userContextId;
@@ -188,9 +195,23 @@ var TabStateInternal = {
         if (value.hasOwnProperty("index")) {
           tabData.index = value.index;
         }
+
+        if (value.hasOwnProperty("requestedIndex")) {
+          tabData.requestedIndex = value.requestedIndex;
+        }
       } else {
         tabData[key] = value;
       }
     }
-  }
+
+    // [Bug 1554512]
+    // If the latest scroll position is on the top, we will delete scroll entry.
+    // When scroll entry is deleted in TabStateCache, it cannot be updated.
+    // To prevent losing the scroll position, we need to add a handing here.
+    if (tabData.scroll) {
+      if (!data.scroll) {
+        delete tabData.scroll;
+      }
+    }
+  },
 };

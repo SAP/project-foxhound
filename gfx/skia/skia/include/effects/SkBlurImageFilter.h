@@ -9,44 +9,25 @@
 #define SkBlurImageFilter_DEFINED
 
 #include "SkImageFilter.h"
-#include "SkSize.h"
 
-class SK_API SkBlurImageFilter : public SkImageFilter {
+class SK_API SkBlurImageFilter {
 public:
-    static sk_sp<SkImageFilter> Make(SkScalar sigmaX, SkScalar sigmaY, sk_sp<SkImageFilter> input,
-                                     const CropRect* cropRect = nullptr) {
-        if (0 == sigmaX && 0 == sigmaY && nullptr == cropRect) {
-            return input;
-        }
-        return sk_sp<SkImageFilter>(new SkBlurImageFilter(sigmaX, sigmaY, input, cropRect));
-    }
+    /*! \enum TileMode */
+    enum TileMode {
+      kClamp_TileMode = 0,    /*!< Clamp to the image's edge pixels. */
+                              /*!< This re-weights the filter so samples outside have no effect */
+      kRepeat_TileMode,       /*!< Wrap around to the image's opposite edge. */
+      kClampToBlack_TileMode, /*!< Fill with transparent black. */
+      kLast_TileMode = kClampToBlack_TileMode,
 
-    SkRect computeFastBounds(const SkRect&) const override;
+      // TODO: remove kMax - it is non-standard but Chromium uses it
+      kMax_TileMode = kClampToBlack_TileMode
+    };
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkBlurImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(SkScalar sigmaX, SkScalar sigmaY, SkImageFilter* input = nullptr,
-                                 const CropRect* cropRect = nullptr) {
-        return Make(sigmaX, sigmaY, sk_ref_sp<SkImageFilter>(input), cropRect).release();
-    }
-#endif
-
-protected:
-    void flatten(SkWriteBuffer&) const override;
-    sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
-                                        SkIPoint* offset) const override;
-    SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix&, MapDirection) const override;
-
-private:
-    SkBlurImageFilter(SkScalar sigmaX,
-                      SkScalar sigmaY,
-                      sk_sp<SkImageFilter> input,
-                      const CropRect* cropRect);
-
-    SkSize   fSigma;
-    typedef SkImageFilter INHERITED;
+    static sk_sp<SkImageFilter> Make(SkScalar sigmaX, SkScalar sigmaY,
+                                     sk_sp<SkImageFilter> input,
+                                     const SkImageFilter::CropRect* cropRect = nullptr,
+                                     TileMode tileMode = TileMode::kClampToBlack_TileMode);
 };
 
 #endif

@@ -1,12 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that we can get the retained sizes of dominator trees.
 
 function run_test() {
   const dominatorTree = saveHeapSnapshotAndComputeDominatorTree();
-  equal(typeof dominatorTree.getRetainedSize, "function",
-        "getRetainedSize should be a function");
+  equal(
+    typeof dominatorTree.getRetainedSize,
+    "function",
+    "getRetainedSize should be a function"
+  );
 
   const size = dominatorTree.getRetainedSize(dominatorTree.root);
   ok(size, "should get a size for the root");

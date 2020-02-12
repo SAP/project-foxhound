@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import json
 import optparse
 import os
@@ -34,11 +36,11 @@ def main():
                       default=False,
                       help='run in debug mode')
     parser.add_option('--ignore-unused-engines',
-                       default=False,
-                       action='store_true',
-                       dest='ignore_unused_engines',
-                       help='If defined, do not load unused engines in individual tests.'
-                            ' Has no effect for pulse monitor.')
+                      default=False,
+                      action='store_true',
+                      dest='ignore_unused_engines',
+                      help='If defined, do not load unused engines in individual tests.'
+                      ' Has no effect for pulse monitor.')
     parser.add_option('--logfile',
                       action='store',
                       type='string',
@@ -93,7 +95,7 @@ def main():
 
     rlock = RLock()
 
-    print 'using result file', options.resultfile
+    print('using result file', options.resultfile)
 
     extensionDir = config.get('extensiondir')
     if not extensionDir or extensionDir == '__EXTENSIONDIR__':
@@ -106,6 +108,10 @@ def main():
             if m:
                 extensionDir = '%s:/%s' % (m.group(0)[1:2], extensionDir[3:])
                 extensionDir = extensionDir.replace('/', '\\')
+    if sys.platform == 'darwin':
+        # Needed to avoid tab crashes on mac due to level 3 sandboxing
+        sourceRoot = os.path.join(extensionDir, '..', '..', '..', '..')
+        os.environ['MOZ_DEVELOPER_REPO_DIR'] = os.path.abspath(sourceRoot)
 
     TPS = TPSTestRunner(extensionDir,
                         binary=options.binary,
@@ -118,11 +124,12 @@ def main():
                         rlock=rlock,
                         testfile=testfile,
                         stop_on_error=options.stop_on_error,
-                      )
+                        )
     TPS.run_tests()
 
     if TPS.numfailed > 0 or TPS.numpassed == 0:
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()

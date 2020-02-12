@@ -7,61 +7,60 @@
  * Tests if the network monitor panes collapse properly.
  */
 
-add_task(function* () {
-  let { monitor } = yield initNetMonitor(SIMPLE_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
   info("Starting test... ");
 
-  let { document, Prefs, NetMonitorView } = monitor.panelWin;
-  let detailsPane = document.getElementById("details-pane");
-  let detailsPaneToggleButton = document.getElementById("details-pane-toggle");
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { Prefs } = windowRequire("devtools/client/netmonitor/src/utils/prefs");
 
-  ok(detailsPane.classList.contains("pane-collapsed") &&
-     detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should initially be hidden.");
+  const wait = waitForNetworkEvents(monitor, 1);
+  tab.linkedBrowser.reload();
+  await wait;
 
-  NetMonitorView.toggleDetailsPane({ visible: true, animated: false });
+  ok(
+    !document.querySelector(".network-details-panel") &&
+      !document.querySelector(".sidebar-toggle"),
+    "The details panel should initially be hidden."
+  );
 
-  let width = ~~(detailsPane.getAttribute("width"));
-  is(width, Prefs.networkDetailsWidth,
-    "The details pane has an incorrect width.");
-  is(detailsPane.style.marginLeft, "0px",
-    "The details pane has an incorrect left margin.");
-  is(detailsPane.style.marginRight, "0px",
-    "The details pane has an incorrect right margin.");
-  ok(!detailsPane.hasAttribute("animated"),
-    "The details pane has an incorrect animated attribute.");
-  ok(!detailsPane.classList.contains("pane-collapsed") &&
-     !detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should at this point be visible.");
+  store.dispatch(Actions.toggleNetworkDetails());
 
-  NetMonitorView.toggleDetailsPane({ visible: false, animated: true });
+  is(
+    ~~document.querySelector(".network-details-panel").clientWidth,
+    Prefs.networkDetailsWidth,
+    "The details panel has an incorrect width."
+  );
+  ok(
+    document.querySelector(".network-details-panel") &&
+      document.querySelector(".sidebar-toggle"),
+    "The details panel should at this point be visible."
+  );
 
-  let margin = -(width + 1) + "px";
-  is(width, Prefs.networkDetailsWidth,
-    "The details pane has an incorrect width after collapsing.");
-  is(detailsPane.style.marginLeft, margin,
-    "The details pane has an incorrect left margin after collapsing.");
-  is(detailsPane.style.marginRight, margin,
-    "The details pane has an incorrect right margin after collapsing.");
-  ok(detailsPane.hasAttribute("animated"),
-    "The details pane has an incorrect attribute after an animated collapsing.");
-  ok(detailsPane.classList.contains("pane-collapsed") &&
-     detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should not be visible after collapsing.");
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector(".sidebar-toggle")
+  );
 
-  NetMonitorView.toggleDetailsPane({ visible: true, animated: false });
+  ok(
+    !document.querySelector(".network-details-panel") &&
+      !document.querySelector(".sidebar-toggle"),
+    "The details panel should not be visible after collapsing."
+  );
 
-  is(width, Prefs.networkDetailsWidth,
-    "The details pane has an incorrect width after uncollapsing.");
-  is(detailsPane.style.marginLeft, "0px",
-    "The details pane has an incorrect left margin after uncollapsing.");
-  is(detailsPane.style.marginRight, "0px",
-    "The details pane has an incorrect right margin after uncollapsing.");
-  ok(!detailsPane.hasAttribute("animated"),
-    "The details pane has an incorrect attribute after an unanimated uncollapsing.");
-  ok(!detailsPane.classList.contains("pane-collapsed") &&
-     !detailsPaneToggleButton.classList.contains("pane-collapsed"),
-    "The details pane should be visible again after uncollapsing.");
+  store.dispatch(Actions.toggleNetworkDetails());
 
-  yield teardown(monitor);
+  is(
+    ~~document.querySelector(".network-details-panel").clientWidth,
+    Prefs.networkDetailsWidth,
+    "The details panel has an incorrect width after uncollapsing."
+  );
+  ok(
+    document.querySelector(".network-details-panel") &&
+      document.querySelector(".sidebar-toggle"),
+    "The details panel should be visible again after uncollapsing."
+  );
+
+  await teardown(monitor);
 });

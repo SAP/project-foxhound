@@ -13,98 +13,88 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestActorPunningParent : public PTestActorPunningParent {
+  friend class PTestActorPunningParent;
 
-class TestActorPunningParent :
-    public PTestActorPunningParent
-{
-public:
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return false; }
+ public:
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return false; }
 
-    void Main();
+  void Main();
 
-protected:
-    PTestActorPunningPunnedParent* AllocPTestActorPunningPunnedParent() override;
-    bool DeallocPTestActorPunningPunnedParent(PTestActorPunningPunnedParent* a) override;
+ protected:
+  PTestActorPunningPunnedParent* AllocPTestActorPunningPunnedParent();
+  bool DeallocPTestActorPunningPunnedParent(PTestActorPunningPunnedParent* a);
 
-    PTestActorPunningSubParent* AllocPTestActorPunningSubParent() override;
-    bool DeallocPTestActorPunningSubParent(PTestActorPunningSubParent* a) override;
+  PTestActorPunningSubParent* AllocPTestActorPunningSubParent();
+  bool DeallocPTestActorPunningSubParent(PTestActorPunningSubParent* a);
 
-    virtual bool RecvPun(PTestActorPunningSubParent* a, const Bad& bad) override;
+  mozilla::ipc::IPCResult RecvPun(PTestActorPunningSubParent* a,
+                                  const Bad& bad);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown == why)
-            fail("should have died from error!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown == why) fail("should have died from error!");
+    passed("ok");
+    QuitParent();
+  }
+
+  virtual void HandleFatalError(const char* aErrorMsg) const override;
 };
 
-class TestActorPunningPunnedParent :
-    public PTestActorPunningPunnedParent
-{
-public:
-    TestActorPunningPunnedParent() {}
-    virtual ~TestActorPunningPunnedParent() {}
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+class TestActorPunningPunnedParent : public PTestActorPunningPunnedParent {
+ public:
+  TestActorPunningPunnedParent() {}
+  virtual ~TestActorPunningPunnedParent() {}
+
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
-class TestActorPunningSubParent :
-    public PTestActorPunningSubParent
-{
-public:
-    TestActorPunningSubParent() {}
-    virtual ~TestActorPunningSubParent() {}
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
+class TestActorPunningSubParent : public PTestActorPunningSubParent {
+ public:
+  TestActorPunningSubParent() {}
+  virtual ~TestActorPunningSubParent() {}
+
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
+class TestActorPunningChild : public PTestActorPunningChild {
+  friend class PTestActorPunningChild;
 
-class TestActorPunningChild :
-    public PTestActorPunningChild
-{
-public:
-    TestActorPunningChild() {}
-    virtual ~TestActorPunningChild() {}
+ public:
+  TestActorPunningChild() {}
+  virtual ~TestActorPunningChild() {}
 
-protected:
-    PTestActorPunningPunnedChild* AllocPTestActorPunningPunnedChild() override;
-    bool DeallocPTestActorPunningPunnedChild(PTestActorPunningPunnedChild* a) override;
+ protected:
+  PTestActorPunningPunnedChild* AllocPTestActorPunningPunnedChild();
+  bool DeallocPTestActorPunningPunnedChild(PTestActorPunningPunnedChild* a);
 
-    PTestActorPunningSubChild* AllocPTestActorPunningSubChild() override;
-    bool DeallocPTestActorPunningSubChild(PTestActorPunningSubChild* a) override;
+  PTestActorPunningSubChild* AllocPTestActorPunningSubChild();
+  bool DeallocPTestActorPunningSubChild(PTestActorPunningSubChild* a);
 
-    virtual bool RecvStart() override;
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        fail("should have been killed off!");
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    fail("should have been killed off!");
+  }
 };
 
-class TestActorPunningPunnedChild :
-    public PTestActorPunningPunnedChild
-{
-public:
-    TestActorPunningPunnedChild() {}
-    virtual ~TestActorPunningPunnedChild() {}
+class TestActorPunningPunnedChild : public PTestActorPunningPunnedChild {
+ public:
+  TestActorPunningPunnedChild() {}
+  virtual ~TestActorPunningPunnedChild() {}
 };
 
-class TestActorPunningSubChild :
-    public PTestActorPunningSubChild
-{
-public:
-    TestActorPunningSubChild() {}
-    virtual ~TestActorPunningSubChild() {}
+class TestActorPunningSubChild : public PTestActorPunningSubChild {
+ public:
+  TestActorPunningSubChild() {}
+  virtual ~TestActorPunningSubChild() {}
 
-    virtual bool RecvBad() override;
+  mozilla::ipc::IPCResult RecvBad();
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestActorPunning_h
+#endif  // ifndef mozilla__ipdltest_TestActorPunning_h

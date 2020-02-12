@@ -7,6 +7,18 @@
 
 %{C++
 #include "nsCOMPtr.h"
+
+/**
+ * Protocol handlers are registered with XPCOM under the following CONTRACTID prefix:
+ */
+#define NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "@mozilla.org/network/protocol;1?name="
+/**
+ * For example, "@mozilla.org/network/protocol;1?name=http"
+ */
+
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+#define IS_ORIGIN_IS_FULL_SPEC_DEFINED 1
+#endif
 %}
 
 interface nsIURI;
@@ -40,7 +52,7 @@ interface nsIProtocolHandler : nsISupports
      */
     readonly attribute ACString scheme;
 
-    /** 
+    /**
      * The default port is the port that this protocol normally uses.
      * If a port does not make sense for the protocol (e.g., "about:")
      * then -1 will be returned.
@@ -48,7 +60,7 @@ interface nsIProtocolHandler : nsISupports
     readonly attribute long defaultPort;
 
     /**
-     * Returns the protocol specific flags (see flag definitions below).  
+     * Returns the protocol specific flags (see flag definitions below).
      */
     readonly attribute unsigned long protocolFlags;
 
@@ -57,58 +69,31 @@ interface nsIProtocolHandler : nsISupports
   nsresult DoGetProtocolFlags(nsIURI* aURI, uint32_t* aFlags)
   {
       nsCOMPtr<nsIProtocolHandlerWithDynamicFlags> dh = do_QueryInterface(this);
-      return dh ? dh->GetFlagsForURI(aURI, aFlags) : GetProtocolFlags(aFlags);
+      nsresult rv = dh ? dh->GetFlagsForURI(aURI, aFlags) : GetProtocolFlags(aFlags);
+      if (NS_SUCCEEDED(rv)) {
+#if !IS_ORIGIN_IS_FULL_SPEC_DEFINED
+        MOZ_RELEASE_ASSERT(!(*aFlags & nsIProtocolHandler::ORIGIN_IS_FULL_SPEC),
+                           "ORIGIN_IS_FULL_SPEC is unsupported but used");
+#endif
+      }
+      return rv;
   }
 %}
-
-    /**
-     * Makes a URI object that is suitable for loading by this protocol,
-     * where the URI string is given as an UTF-8 string.  The caller may
-     * provide the charset from which the URI string originated, so that
-     * the URI string can be translated back to that charset (if necessary)
-     * before communicating with, for example, the origin server of the URI
-     * string.  (Many servers do not support UTF-8 IRIs at the present time,
-     * so we must be careful about tracking the native charset of the origin
-     * server.)
-     *
-     * @param aSpec          - the URI string in UTF-8 encoding. depending
-     *                         on the protocol implementation, unicode character
-     *                         sequences may or may not be %xx escaped.
-     * @param aOriginCharset - the charset of the document from which this URI
-     *                         string originated.  this corresponds to the
-     *                         charset that should be used when communicating
-     *                         this URI to an origin server, for example.  if
-     *                         null, then UTF-8 encoding is assumed (i.e.,
-     *                         no charset transformation from aSpec).
-     * @param aBaseURI       - if null, aSpec must specify an absolute URI.
-     *                         otherwise, aSpec may be resolved relative
-     *                         to aBaseURI, depending on the protocol. 
-     *                         If the protocol has no concept of relative 
-     *                         URI aBaseURI will simply be ignored.
-     */
-    nsIURI newURI(in AUTF8String aSpec,
-                  in string aOriginCharset,
-                  in nsIURI aBaseURI);
 
     /**
      * Constructs a new channel from the given URI for this protocol handler and
      * sets the loadInfo for the constructed channel.
      */
-    nsIChannel newChannel2(in nsIURI aURI, in nsILoadInfo aLoadinfo);
-
-    /**
-     * Constructs a new channel from the given URI for this protocol handler.
-     */
-    nsIChannel newChannel(in nsIURI aURI);
+    nsIChannel newChannel(in nsIURI aURI, in nsILoadInfo aLoadinfo);
 
     /**
      * Allows a protocol to override blacklisted ports.
      *
-     * This method will be called when there is an attempt to connect to a port 
+     * This method will be called when there is an attempt to connect to a port
      * that is blacklisted.  For example, for most protocols, port 25 (Simple Mail
-     * Transfer) is banned.  When a URI containing this "known-to-do-bad-things" 
-     * port number is encountered, this function will be called to ask if the 
-     * protocol handler wants to override the ban.  
+     * Transfer) is banned.  When a URI containing this "known-to-do-bad-things"
+     * port number is encountered, this function will be called to ask if the
+     * protocol handler wants to override the ban.
      */
     boolean allowPort(in long port, in string scheme);
 
@@ -204,7 +189,7 @@ interface nsIProtocolHandler : nsISupports
      * Web-safe protocols like "http" should set this flag.
      */
     const unsigned long URI_LOADABLE_BY_ANYONE = (1<<6);
-    
+
     /**
      * The URIs for this protocol are UNSAFE if loaded by untrusted (web)
      * content and may only be loaded by privileged code (for example, code
@@ -212,7 +197,7 @@ interface nsIProtocolHandler : nsISupports
      * this flag.
      */
     const unsigned long URI_DANGEROUS_TO_LOAD = (1<<7);
-    
+
     /**
      * The URIs for this protocol point to resources that are part of the
      * application's user interface.  There are cases when such resources may
@@ -265,57 +250,61 @@ interface nsIProtocolHandler : nsISupports
     const unsigned long URI_NON_PERSISTABLE = (1<<14);
 
     /**
-     * This protocol handler forbids accessing cookies e.g. for mail related
-     * protocols.
-     */
-    const unsigned long URI_FORBIDS_COOKIE_ACCESS = (1<<15);
-
-    /**
      * URIs for this protocol require the webapps permission on the principal
      * when opening URIs for a different domain. See bug#773886
      */
-    const unsigned long URI_CROSS_ORIGIN_NEEDS_WEBAPPS_PERM = (1<<16);
+    const unsigned long URI_CROSS_ORIGIN_NEEDS_WEBAPPS_PERM = (1<<15);
 
     /**
      * Channels for this protocol don't need to spin the event loop to handle
      * Open() and reads on the resulting stream.
      */
-    const unsigned long URI_SYNC_LOAD_IS_OK = (1<<17);
+    const unsigned long URI_SYNC_LOAD_IS_OK = (1<<16);
 
     /**
-     * URI is secure to load in an https page and should not be blocked
-     * by nsMixedContentBlocker
+     * All the origins whose URI has this scheme are considered potentially
+     * trustworthy.
+     * Per the SecureContext spec, https: and wss: should be considered
+     * a priori secure, and implementations may consider other,
+     * implementation-specific URI schemes as secure.
      */
-    const unsigned long URI_SAFE_TO_LOAD_IN_SECURE_CONTEXT = (1<<18);
+    const unsigned long URI_IS_POTENTIALLY_TRUSTWORTHY = (1<<17);
 
     /**
      * This URI may be fetched and the contents are visible to anyone. This is
      * semantically equivalent to the resource being served with all-access CORS
      * headers.
      */
-    const unsigned long URI_FETCHABLE_BY_ANYONE = (1 << 19);
+    const unsigned long URI_FETCHABLE_BY_ANYONE = (1 << 18);
 
     /**
      * If this flag is set, then the origin for this protocol is the full URI
      * spec, not just the scheme + host + port.
+     *
+     * Note: this is not supported in Firefox.  It is currently only available
+     * in Thunderbird and SeaMonkey.
      */
-    const unsigned long ORIGIN_IS_FULL_SPEC = (1 << 20);
+    const unsigned long ORIGIN_IS_FULL_SPEC = (1 << 19);
 
     /**
      * If this flag is set, the URI does not always allow content using the same
      * protocol to link to it.
      */
-    const unsigned long URI_SCHEME_NOT_SELF_LINKABLE = (1 << 21);
+    const unsigned long URI_SCHEME_NOT_SELF_LINKABLE = (1 << 20);
+
+    /**
+     * The URIs for this protocol can be loaded by extensions.
+     */
+    const unsigned long URI_LOADABLE_BY_EXTENSIONS = (1 << 21);
+
+    /**
+     * The URIs for this protocol can not be loaded into private contexts.
+     */
+    const unsigned long URI_DISALLOW_IN_PRIVATE_CONTEXT = (1 << 22);
+
+    /**
+     * This protocol handler forbids accessing cookies e.g. for mail related
+     * protocols. Only used in Mailnews (comm-central).
+     */
+    const unsigned long URI_FORBIDS_COOKIE_ACCESS = (1 << 23);
 };
-
-%{C++
-/**
- * Protocol handlers are registered with XPCOM under the following CONTRACTID prefix:
- */
-#define NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "@mozilla.org/network/protocol;1?name="
-/**
- * For example, "@mozilla.org/network/protocol;1?name=http"
- */
-
-#define IS_ORIGIN_IS_FULL_SPEC_DEFINED 1
-%}

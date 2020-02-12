@@ -4,53 +4,51 @@
 
 #include "TestShellChild.h"
 
-using mozilla::ipc::TestShellChild;
 using mozilla::ipc::PTestShellCommandChild;
+using mozilla::ipc::TestShellChild;
 using mozilla::ipc::XPCShellEnvironment;
 
 TestShellChild::TestShellChild()
-: mXPCShell(XPCShellEnvironment::CreateEnvironment())
-{
-}
+    : mXPCShell(XPCShellEnvironment::CreateEnvironment()) {}
 
-bool
-TestShellChild::RecvExecuteCommand(const nsString& aCommand)
-{
+mozilla::ipc::IPCResult TestShellChild::RecvExecuteCommand(
+    const nsString& aCommand) {
   if (mXPCShell->IsQuitting()) {
     NS_WARNING("Commands sent after quit command issued!");
-    return false;
+    return IPC_FAIL_NO_REASON(this);
   }
 
-  return mXPCShell->EvaluateString(aCommand);
+  if (!mXPCShell->EvaluateString(aCommand)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-PTestShellCommandChild*
-TestShellChild::AllocPTestShellCommandChild(const nsString& aCommand)
-{
+PTestShellCommandChild* TestShellChild::AllocPTestShellCommandChild(
+    const nsString& aCommand) {
   return new PTestShellCommandChild();
 }
 
-bool
-TestShellChild::DeallocPTestShellCommandChild(PTestShellCommandChild* aCommand)
-{
+bool TestShellChild::DeallocPTestShellCommandChild(
+    PTestShellCommandChild* aCommand) {
   delete aCommand;
   return true;
 }
 
-bool
-TestShellChild::RecvPTestShellCommandConstructor(PTestShellCommandChild* aActor,
-                                                 const nsString& aCommand)
-{
+mozilla::ipc::IPCResult TestShellChild::RecvPTestShellCommandConstructor(
+    PTestShellCommandChild* aActor, const nsString& aCommand) {
   if (mXPCShell->IsQuitting()) {
     NS_WARNING("Commands sent after quit command issued!");
-    return false;
+    return IPC_FAIL_NO_REASON(this);
   }
 
   nsString response;
   if (!mXPCShell->EvaluateString(aCommand, &response)) {
-    return false;
+    return IPC_FAIL_NO_REASON(this);
   }
 
-  return PTestShellCommandChild::Send__delete__(aActor, response);
+  if (!PTestShellCommandChild::Send__delete__(aActor, response)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
-

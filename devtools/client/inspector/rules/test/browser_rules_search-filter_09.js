@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -19,28 +18,32 @@ const TEST_URI = `
   <h1 id='testid'>Styled Node</h1>
 `;
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode("#testid", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode("#testid", inspector);
 
   info("Enter the test value in the search filter");
-  yield setSearchFilter(view, SEARCH);
+  await setSearchFilter(view, SEARCH);
 
   info("Start entering a new property in the rule");
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let rule = ruleEditor.rule;
-  let editor = yield focusNewRuleViewProperty(ruleEditor);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const rule = ruleEditor.rule;
+  let editor = await focusNewRuleViewProperty(ruleEditor);
 
   info("Check that the correct rules are visible");
   is(view.element.children.length, 2, "Should have 2 rules.");
   is(rule.selectorText, "#testid", "Second rule is #testid.");
-  ok(rule.textProps[0].editor.container.classList
-    .contains("ruleview-highlight"),
-    "width text property is correctly highlighted.");
-  ok(!rule.textProps[1].editor.container.classList
-    .contains("ruleview-highlight"),
-    "height text property is not highlighted.");
+  ok(
+    rule.textProps[0].editor.container.classList.contains("ruleview-highlight"),
+    "width text property is correctly highlighted."
+  );
+  ok(
+    !rule.textProps[1].editor.container.classList.contains(
+      "ruleview-highlight"
+    ),
+    "height text property is not highlighted."
+  );
 
   info("Test creating a new property");
 
@@ -52,22 +55,24 @@ add_task(function* () {
   info("Pressing return to commit and focus the new value field");
   let onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
-  yield onRuleViewChanged;
+  await onRuleViewChanged;
 
   // Getting the new value editor after focus
   editor = inplaceEditor(view.styleDocument.activeElement);
-  let propEditor = ruleEditor.rule.textProps[2].editor;
+  const propEditor = ruleEditor.rule.textProps[2].editor;
 
   info("Entering a value and bluring the field to expect a rule change");
   onRuleViewChanged = view.once("ruleview-changed");
   editor.input.value = "100%";
-  view.throttle.flush();
-  yield onRuleViewChanged;
+  view.debounce.flush();
+  await onRuleViewChanged;
 
   onRuleViewChanged = view.once("ruleview-changed");
   editor.input.blur();
-  yield onRuleViewChanged;
+  await onRuleViewChanged;
 
-  ok(propEditor.container.classList.contains("ruleview-highlight"),
-    "margin-left text property is correctly highlighted.");
+  ok(
+    propEditor.container.classList.contains("ruleview-highlight"),
+    "margin-left text property is correctly highlighted."
+  );
 });

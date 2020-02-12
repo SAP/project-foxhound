@@ -3,7 +3,7 @@
  */
 
 function continue_test(status, entry) {
-  do_check_eq(status, Components.results.NS_OK);
+  Assert.equal(status, Cr.NS_OK);
   // TODO - mayhemer: remove this tests completely
   // entry.deviceID;
   // if the above line does not crash, the test was successful
@@ -11,8 +11,12 @@ function continue_test(status, entry) {
 }
 
 function run_test() {
-  asyncOpenCacheEntry("http://some.key/",
-                      "disk", Ci.nsICacheStorage.OPEN_NORMALLY, null,
-                      continue_test);
+  asyncOpenCacheEntry(
+    "http://some.key/",
+    "disk",
+    Ci.nsICacheStorage.OPEN_NORMALLY,
+    null,
+    continue_test
+  );
   do_test_pending();
 }

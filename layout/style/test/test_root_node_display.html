@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=969460
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 969460</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="property_database.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -26,13 +26,13 @@ function test_display_value(val)
 {
   var floatElem = document.getElementById("float");
   floatElem.style.display = val;
-  var floatConversion = window.getComputedStyle(floatElem, null).display;
+  var floatConversion = window.getComputedStyle(floatElem).display;
   floatElem.style.display = "";
 
   var rootNode = document.documentElement;
   rootNode.style.display = val;
   rootNode.offsetHeight; // (Flush layout, to be sure layout can handle 'val')
-  var rootConversion = window.getComputedStyle(rootNode, null).display;
+  var rootConversion = window.getComputedStyle(rootNode).display;
   rootNode.style.display = "";
 
   // Special case: "display:list-item" does not get modified by 'float',
@@ -42,7 +42,14 @@ function test_display_value(val)
   if (val == "list-item") {
     is(floatConversion, val, "'float' shouldn't affect 'display:list-item'");
     is(rootConversion, "block",
-       "We traditionally convert 'display:list-item' on the root node to " +
+       "We traditionally convert '" + val + "' on the root node to " +
+       "'display:block' (though if that changes, it's not technically a bug, " +
+       "as long as we support it properly).");
+} else if (val == "inline list-item" ||
+           val == "inline flow-root list-item") {
+    is(floatConversion, "list-item", "'float' should blockify '" + val + "'");
+    is(rootConversion, "block",
+       "We traditionally convert '" + val + "' on the root node to " +
        "'display:block' (though if that changes, it's not technically a bug, " +
        "as long as we support it properly).");
   } else if (val == "contents") {
@@ -57,7 +64,7 @@ function test_display_value(val)
   }
 }
 
-var displayInfo = gCSSProperties["display"];
+var displayInfo = gCSSProperties.display;
 displayInfo.initial_values.forEach(test_display_value);
 displayInfo.other_values.forEach(test_display_value);
 

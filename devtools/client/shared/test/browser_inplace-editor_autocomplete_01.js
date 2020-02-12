@@ -1,12 +1,11 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_inplace_editor.js */
 
 "use strict";
 
+const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
 const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
-const { AutocompletePopup } = require("devtools/client/shared/autocomplete-popup");
 loadHelperScript("helper_inplace_editor.js");
 
 // Test the inplace-editor autocomplete popup for CSS properties suggestions.
@@ -31,7 +30,7 @@ const testData = [
   ["VK_LEFT", "background", -1, 0],
 ];
 
-const mockGetCSSPropertyList = function () {
+const mockGetCSSPropertyList = function() {
   return [
     "background",
     "border",
@@ -42,20 +41,23 @@ const mockGetCSSPropertyList = function () {
   ];
 };
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," +
-    "inplace editor CSS property autocomplete");
-  let [host, win, doc] = yield createHost();
+add_task(async function() {
+  await addTab(
+    "data:text/html;charset=utf-8," + "inplace editor CSS property autocomplete"
+  );
+  const [host, , doc] = await createHost();
 
-  let xulDocument = win.top.document;
-  let popup = new AutocompletePopup({ doc: xulDocument }, { autoSelect: true });
-  yield new Promise(resolve => {
-    createInplaceEditorAndClick({
-      start: runPropertyAutocompletionTest,
-      contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
-      done: resolve,
-      popup: popup
-    }, doc);
+  const popup = new AutocompletePopup(doc, { autoSelect: true });
+  await new Promise(resolve => {
+    createInplaceEditorAndClick(
+      {
+        start: runPropertyAutocompletionTest,
+        contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
+        done: resolve,
+        popup: popup,
+      },
+      doc
+    );
   });
 
   popup.destroy();
@@ -63,13 +65,13 @@ add_task(function* () {
   gBrowser.removeCurrentTab();
 });
 
-let runPropertyAutocompletionTest = Task.async(function* (editor) {
+const runPropertyAutocompletionTest = async function(editor) {
   info("Starting to test for css property completion");
   editor._getCSSPropertyList = mockGetCSSPropertyList;
 
-  for (let data of testData) {
-    yield testCompletion(data, editor);
+  for (const data of testData) {
+    await testCompletion(data, editor);
   }
 
   EventUtils.synthesizeKey("VK_RETURN", {}, editor.input.defaultView);
-});
+};

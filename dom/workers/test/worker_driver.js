@@ -19,7 +19,6 @@
 // There are also some functions for requesting information that requires
 // SpecialPowers or other main-thread-only resources:
 //
-//  workerTestGetPermissions() - request an array permissions from the MT
 //  workerTestGetVersion() - request the current version string from the MT
 //  workerTestGetUserAgent() - request the user agent string from the MT
 //  workerTestGetOSCPU() - request the navigator.oscpu string from the MT
@@ -28,54 +27,57 @@
 
 function workerTestExec(script) {
   SimpleTest.waitForExplicitFinish();
-  var worker = new Worker('worker_wrapper.js');
+  var worker = new Worker("worker_wrapper.js");
   worker.onmessage = function(event) {
-    if (event.data.type == 'finish') {
+    if (event.data.type == "finish") {
       SimpleTest.finish();
-
-    } else if (event.data.type == 'status') {
+    } else if (event.data.type == "status") {
       ok(event.data.status, event.data.msg);
+    } else if (event.data.type == "getHelperData") {
+      const { AppConstants } = SpecialPowers.Cu.import(
+        "resource://gre/modules/AppConstants.jsm",
+        {}
+      );
+      const isNightly = AppConstants.NIGHTLY_BUILD;
+      const isEarlyBetaOrEarlier = AppConstants.EARLY_BETA_OR_EARLIER;
+      const isRelease = AppConstants.RELEASE_OR_BETA;
+      const isDesktop = !/Mobile|Tablet/.test(navigator.userAgent);
+      const isMac = AppConstants.platform == "macosx";
+      const isWindows = AppConstants.platform == "win";
+      const isAndroid = AppConstants.platform == "android";
+      const isLinux = AppConstants.platform == "linux";
+      const isInsecureContext = !window.isSecureContext;
+      // Currently, MOZ_APP_NAME is always "fennec" for all mobile builds, so we can't use AppConstants for this
+      const isFennec =
+        isAndroid &&
+        SpecialPowers.Cc["@mozilla.org/android/bridge;1"].getService(
+          SpecialPowers.Ci.nsIAndroidBridge
+        ).isFennec;
 
-    } else if (event.data.type == 'getPermissions') {
-      var result = {};
-      event.data.permissions.forEach(function(permission) {
-        result[permission] = SpecialPowers.hasPermission(permission, window.document);
-      });
-      worker.postMessage({
-        type: 'returnPermissions',
-        permissions: event.data.permissions,
-        result: result
-      });
+      const result = {
+        isNightly,
+        isEarlyBetaOrEarlier,
+        isRelease,
+        isDesktop,
+        isMac,
+        isWindows,
+        isAndroid,
+        isLinux,
+        isInsecureContext,
+        isFennec,
+      };
 
-    } else if (event.data.type == 'getVersion') {
-      var result = SpecialPowers.Cc['@mozilla.org/xre/app-info;1'].getService(SpecialPowers.Ci.nsIXULAppInfo).version;
       worker.postMessage({
-        type: 'returnVersion',
-        result: result
-      });
-
-    } else if (event.data.type == 'getUserAgent') {
-      worker.postMessage({
-        type: 'returnUserAgent',
-        result: navigator.userAgent
-      });
-    } else if (event.data.type == 'getOSCPU') {
-      worker.postMessage({
-        type: 'returnOSCPU',
-        result: navigator.oscpu
-      });
-    } else if (event.data.type == 'getIsB2G') {
-      worker.postMessage({
-        type: 'returnIsB2G',
-        result: SpecialPowers.isB2G
+        type: "returnHelperData",
+        result,
       });
     }
-  }
+  };
 
   worker.onerror = function(event) {
-    ok(false, 'Worker had an error: ' + event.data);
+    ok(false, "Worker had an error: " + event.data);
     SimpleTest.finish();
   };
 
-  worker.postMessage({ script: script });
+  worker.postMessage({ script });
 }

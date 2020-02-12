@@ -6,10 +6,8 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -20,14 +18,12 @@
     /**
      * Click checker.
      */
-    function clickChecker(aCaretOffset, aID, aExtraNodeOrID, aExtraCaretOffset)
-    {
+    function clickChecker(aCaretOffset, aID, aExtraNodeOrID, aExtraCaretOffset) {
       this.__proto__ = new caretMoveChecker(aCaretOffset, aID);
 
       this.extraNode = getNode(aExtraNodeOrID);
 
-      this.check = function clickChecker_check(aEvent)
-      {
+      this.check = function clickChecker_check(aEvent) {
         this.__proto__.check(aEvent);
 
         if (this.extraNode) {
@@ -35,7 +31,7 @@
           is(acc.caretOffset, aExtraCaretOffset,
              "Wrong caret offset for " + aExtraNodeOrID);
         }
-      }
+      };
     }
 
     /**
@@ -43,11 +39,9 @@
      */
     var gQueue = null;
 
-    // gA11yEventDumpID = "eventdump"; // debug stuff
-    //gA11yEventDumpToConsole = true;
+    // gA11yEventDumpToConsole = true;
 
-    function doTests()
-    {
+    function doTests() {
       // test caret move events and caret offsets
       gQueue = new eventQueue();
 
@@ -56,6 +50,15 @@
       gQueue.push(new synthSelectAll(id, new caretMoveChecker(5, id)));
       gQueue.push(new synthClick(id, new caretMoveChecker(0, id)));
       gQueue.push(new synthRightKey(id, new caretMoveChecker(1, id)));
+
+      if (!MAC) {
+        gQueue.push(new synthSelectAll(id, new caretMoveChecker(5, id)));
+        gQueue.push(new synthHomeKey(id, new caretMoveChecker(0, id)));
+        gQueue.push(new synthRightKey(id, new caretMoveChecker(1, id)));
+      }
+      else {
+        todo(false, "Make these tests pass on OSX (bug 650294)");
+      }
 
       id = "textarea";
       gQueue.push(new synthClick(id, new caretMoveChecker(0, id)));
@@ -124,6 +127,7 @@
   </pre>
 
   <input id="textbox" value="hello"/>
+
   <textarea id="textarea">text<br>text</textarea>
   <p id="p" contentEditable="true"><span>text</span><br/>text</p>
   <div id="div" contentEditable="true"><p id="p1_in_div">text</p><p id="p2_in_div">text</p></div>
@@ -134,7 +138,5 @@
   <p contentEditable="true" id="test4"><span id="test4_span"></span></p>
 
   <textarea id="textarea_wrapped" cols="5">hey friend</textarea>
-
-  <div id="eventdump"></div>
 </body>
 </html>

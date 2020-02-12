@@ -1,123 +1,76 @@
 {
-    "talos.zip": {
-        "url": "http://talos-bundles.pvt.build.mozilla.org/zips/talos.a6052c33d420.zip",
-        "path": ""
-    },
-    "extra_options": {
-        "android": [ "--apkPath=%(apk_path)s" ]
-    },
     "suites": {
-        "chromez": {
-            "tests": ["tresize", "tcanvasmark"],
-            "talos_options": ["--disable-e10s"]
+        "bcv": {
+            "tests": ["basic_compositor_video"]
         },
-        "chromez-e10s": {
-            "tests": ["tresize", "tcanvasmark"]
+        "chromez": {
+            "tests": ["about_preferences_basic", "tresize"]
         },
         "dromaeojs": {
-            "tests": ["dromaeo_css", "kraken"],
-            "talos_options": ["--disable-e10s"]
-        },
-        "dromaeojs-e10s": {
             "tests": ["dromaeo_css", "kraken"]
         },
+        "flex": {
+            "tests": ["tart_flex", "ts_paint_flex"]
+        },
         "other": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"],
-            "talos_options": ["--disable-e10s"]
+            "tests": ["a11yr", "ts_paint", "twinopen", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint", "cpstartup", "startup_about_home_paint", "pdfpaint"]
         },
-        "other-e10s": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"]
-        },
-        "other_nol64": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"],
-            "talos_options": ["--disable-e10s"]
-        },
-        "other-e10s_nol64": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"]
-        },
-        "other_l64": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"],
-            "talos_options": ["--disable-e10s"]
-        },
-        "other-e10s_l64": {
-            "tests": ["a11yr", "ts_paint", "tpaint", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint"]
+        "sessionrestore-many-windows": {
+            "tests": ["sessionrestore_many_windows"]
         },
         "g1": {
             "tests": ["tp5o_scroll", "glterrain"],
-            "talos_options": ["--disable-e10s"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
+            "pagesets_name": "tp5n.zip"
         },
-        "g1-e10s": {
-            "tests": ["tp5o_scroll", "glterrain"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
+        "damp": {
+            "tests": ["damp"],
+            "pagesets_name": "tp5n.zip"
         },
-        "g2": {
-            "tests": ["damp", "tps"],
-            "talos_options": ["--disable-e10s"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
-        },
-        "g2-e10s": {
-            "tests": ["damp", "tps"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
+        "tabswitch": {
+            "tests": ["tabswitch"],
+            "pagesets_name": "tp5n.zip"
         },
         "g3": {
-            "tests": ["dromaeo_dom"],
-            "talos_options": ["--disable-e10s"]
-        },
-        "g3-e10s": {
             "tests": ["dromaeo_dom"]
         },
         "g4": {
-            "tests": ["basic_compositor_video"],
-            "talos_options": ["--disable-e10s"]
+            "tests": ["glvideo", "displaylist_mutate", "rasterflood_svg", "rasterflood_gradient"]
         },
-        "g4-e10s": {
-            "tests": ["basic_compositor_video"]
+        "g5": {
+            "tests": ["ts_paint_webext", "tp5o_webext"],
+            "pagesets_name": "tp5n.zip"
+        },
+        "motionmark": {
+            "tests": ["motionmark_animometer", "motionmark_htmlsuite", "JetStream", "ARES6"],
+            "benchmark_zip": "jetstream.zip"
         },
         "svgr": {
-            "tests": ["tsvgx", "tsvgr_opacity", "tart", "tscrollx", "cart"],
-            "talos_options": ["--disable-e10s"]
+            "tests": ["tsvgx", "tsvgr_opacity", "tart", "tscrollx", "tsvg_static"]
         },
-        "svgr-e10s": {
-            "tests": ["tsvgx", "tsvgr_opacity", "tart", "tscrollx", "cart"]
+        "perf-reftest": {
+            "tests": ["perf_reftest"]
+        },
+        "perf-reftest-singletons": {
+            "tests": ["perf_reftest_singletons"]
         },
         "tp5o": {
             "tests": ["tp5o"],
-            "talos_options": ["--disable-e10s"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
-        },
-        "tp5o-e10s": {
-            "tests": ["tp5o"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip"
+            "pagesets_name": "tp5n.zip"
         },
         "xperf": {
             "tests": ["tp5n"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip",
-            "talos_options": [
-                "--disable-e10s",
-                "--xperf_path",
-                "\"c:/Program Files/Microsoft Windows Performance Toolkit/xperf.exe\""
-            ]
-        },
-        "xperf-e10s": {
-            "tests": ["tp5n"],
-            "pagesets_url": "http://talos-bundles.pvt.build.mozilla.org/zips/tp5n.zip",
+            "pagesets_name": "tp5n.zip",
             "talos_options": [
                 "--xperf_path",
-                "\"c:/Program Files/Microsoft Windows Performance Toolkit/xperf.exe\""
-            ]
-        }
-    },
-    "mobile-suites": {
-        "remote-tsvgx": {
-            "tests": ["tsvgm"],
-            "talos_options": [
-                "--noChrome",
-                "--tppagecycles", "7"
+                "\"c:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/xperf.exe\""
             ]
         },
-        "remote-tp4m_nochrome": {
-            "tests": ["tp4m"]
+        "h1": {
+            "tests": ["ts_paint_heavy"]
+        },
+        "realworld-webextensions": {
+            "tests": ["startup_about_home_paint_realworld_webextensions"],
+            "webextensions_zip": "webextensions.zip"
         }
     }
 }

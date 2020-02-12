@@ -13,7 +13,7 @@ const wchar_t kNtdllName[] = L"ntdll.dll";
 const wchar_t kKerneldllName[] = L"kernel32.dll";
 const wchar_t kKernelBasedllName[] = L"kernelbase.dll";
 
-// Defines the supported C++ types encoding to numeric id. Like a poor's man
+// Defines the supported C++ types encoding to numeric id. Like a simplified
 // RTTI. Note that true C++ RTTI will not work because the types are not
 // polymorphic anyway.
 enum ArgType {
@@ -34,9 +34,7 @@ class CountedBuffer {
 
   uint32_t Size() const { return size_; }
 
-  void* Buffer() const {
-    return buffer_;
-  }
+  void* Buffer() const { return buffer_; }
 
  private:
   uint32_t size_;
@@ -47,27 +45,21 @@ class CountedBuffer {
 // 32 and 64 bit builds. This construct is non-portable.
 class IPCInt {
  public:
-  explicit IPCInt(void* buffer) {
-    buffer_.vp = buffer;
-  }
+  explicit IPCInt(void* buffer) { buffer_.vp = buffer; }
 
-  explicit IPCInt(unsigned __int32 i32) {
-    buffer_.vp = NULL;
+  explicit IPCInt(uint32_t i32) {
+    buffer_.vp = nullptr;
     buffer_.i32 = i32;
   }
 
-  unsigned __int32 As32Bit() const {
-    return buffer_.i32;
-  }
+  uint32_t As32Bit() const { return buffer_.i32; }
 
-  void* AsVoidPtr() const {
-    return buffer_.vp;
-  }
+  void* AsVoidPtr() const { return buffer_.vp; }
 
  private:
   union U {
     void* vp;
-    unsigned __int32 i32;
+    uint32_t i32;
   } buffer_;
 };
 

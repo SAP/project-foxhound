@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=473400
 -->
 <head>
   <title>Test for Bug 473400</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="run()">
@@ -15,7 +15,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=473400
   
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript; version=1.7">
+<script class="testbody" type="application/javascript">
 
 /** Test for Bug 473400 **/
 
@@ -40,12 +40,12 @@ function run() {
     var e = subdoc.createElement("div");
     e.id = "e" + i;
     subdoc.body.appendChild(e);
-    var cs = subdoc.defaultView.getComputedStyle(e, "");
+    var cs = subdoc.defaultView.getComputedStyle(e);
     cs._originalQueryText = q;
     return cs;
   }
   function query_applies(cs) {
-    return cs.getPropertyValue("text-decoration") == "underline";
+    return cs.getPropertyValue("text-decoration-line") == "underline";
   }
 
   function should_apply(cs) {
@@ -121,10 +121,10 @@ function run() {
   }
 
   var utils = SpecialPowers.getDOMWindowUtils(subwin);
-  var elementsRestyled, framesConstructed, framesReflowed;
+  var restyleGeneration, framesConstructed, framesReflowed;
   function reset_change_counters()
   {
-    elementsRestyled = utils.elementsRestyled;
+    restyleGeneration = utils.restyleGeneration;
     framesConstructed = utils.framesConstructed;
     framesReflowed = utils.framesReflowed;
   }
@@ -139,11 +139,11 @@ function run() {
       return;
     }
 
-    var restyles = utils.elementsRestyled - elementsRestyled;
+    var didRestyle = utils.restyleGeneration != restyleGeneration;
     var constructs = utils.framesConstructed - framesConstructed;
     var reflows = utils.framesReflowed - framesReflowed;
 
-    (expected.restyle ? isnot : is)(restyles, 0, "restyle count: " + desc);
+    (expected.restyle ? isnot : is)(didRestyle, false, "restyle: " + desc);
     (expected.construct ? isnot : is)(constructs, 0,
                                       "frame construct count: " + desc);
     (expected.reflow ? isnot : is)(reflows, 0, "reflow count: " + desc);
@@ -168,7 +168,7 @@ function run() {
   sheet.insertRule("@media (min-width: 150px) { div { display:flex } }", 0);
   flush_and_assert_change_counters("add non-matching media query",
     // FIXME: We restyle here because
-    // nsIPresShell::RestyleForCSSRuleChanges posts a restyle, but it's
+    // PresShell::NextRestyleIsForCSSRuleChanges() posts a restyle, but it's
     // probably avoidable if we wanted to avoid it.
     { restyle: true, construct: false, reflow: false });
 
@@ -199,7 +199,7 @@ function run() {
   sheet.deleteRule(0);
   flush_and_assert_change_counters("remove non-matching media query",
     // FIXME: We restyle here because
-    // nsIPresShell::RestyleForCSSRuleChanges posts a restyle, but it's
+    // PresShell::NextRestyleIsForCSSRuleChanges() posts a restyle, but it's
     // probably avoidable if we wanted to avoid it.
     { restyle: true, construct: false, reflow: false });
 

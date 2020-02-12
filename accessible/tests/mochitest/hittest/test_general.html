@@ -4,10 +4,8 @@
   <title>nsIAccessible::childAtPoint() tests</title>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -17,13 +15,11 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function doPreTest()
-    {
+    function doPreTest() {
       waitForImageMap("imgmap", doTest);
     }
 
-    function doTest()
-    {
+    function doTest() {
       // Not specific case, child and deepchild testing.
       var list = getAccessible("list");
       var listitem = getAccessible("listitem");
@@ -48,9 +44,8 @@ if (!MAC) {
 
       // Not specific case, point is inside of btn accessible.
       var btn = getAccessible("btn");
-      var btnText = btn.firstChild;
       testChildAtPoint(btn, 1, 1, btn, btn);
-  
+
       // Not specific case, point is outside of btn accessible.
       testChildAtPoint(btn, -1, 1, null, null);
 

@@ -1,6 +1,6 @@
 load(libdir + "asm.js");
 
-var g = newGlobal();
+var g = newGlobal({newCompartment: true});
 g.parent = this;
 g.eval("dbg = new Debugger(parent);");
 
@@ -19,14 +19,6 @@ assertEq(asmLink(asmCompile(asmFunStr))(), undefined);
 
 // Toggling back should inhibit again.
 g.dbg.allowUnobservedAsmJS = false;
-assertAsmTypeFail(asmFunStr);
-
-// Disabling the debugger should uninhibit.
-g.dbg.enabled = false;
-assertEq(asmLink(asmCompile(asmFunStr))(), undefined);
-
-// Enabling it should inhibit again.
-g.dbg.enabled = true;
 assertAsmTypeFail(asmFunStr);
 
 // Removing the global should lift the inhibition.

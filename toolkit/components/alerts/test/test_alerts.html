@@ -4,7 +4,7 @@
 <html>
 <head>
   <title>Test for Alerts Service</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script> 
+  <script src="/tests/SimpleTest/SimpleTest.js"></script> 
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 
@@ -21,7 +21,7 @@
 
 var observer = {
   alertShow: false,
-  observe: function (aSubject, aTopic, aData) {
+  observe(aSubject, aTopic, aData) {
     is(aData, "foobarcookie", "Checking whether the alert cookie was passed correctly");
     if (aTopic == "alertclickcallback") {
       todo(false, "Did someone click the notification while running mochitests? (Please don't.)");
@@ -32,7 +32,7 @@ var observer = {
       is(aTopic, "alertfinished", "Checking the topic for a finished notification");
       SimpleTest.finish();
     }
-  }
+  },
 };
 
 function runTest() {
@@ -81,6 +81,7 @@ function runTest() {
   }
 }
 
+SimpleTest.requestCompleteLog(); // Bug 1407296
 runTest();
 
 </script>

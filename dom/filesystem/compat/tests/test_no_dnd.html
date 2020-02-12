@@ -2,13 +2,12 @@
 <html>
 <head>
   <title>Test for Blink FileSystem API - no DND == no webkitEntries</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 
 <body>
-<script type="application/javascript;version=1.7">
-
+<script type="application/javascript">
 var fileEntry;
 var directoryEntry;
 var script;
@@ -16,12 +15,13 @@ var entries;
 
 function setup_tests() {
   SpecialPowers.pushPrefEnv({"set": [["dom.webkitBlink.dirPicker.enabled", true],
+                                     ["dom.filesystem.pathcheck.disabled", true],
                                      ["dom.webkitBlink.filesystem.enabled", true]]}, next);
 }
 
 function populate_entries() {
-  entries = document.createElement('input');
-  entries.setAttribute('type', 'file');
+  entries = document.createElement("input");
+  entries.setAttribute("type", "file");
   document.body.appendChild(entries);
 
   var url = SimpleTest.getTestFileURL("script_entries.js");

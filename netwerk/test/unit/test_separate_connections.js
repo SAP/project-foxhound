@@ -1,6 +1,4 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -27,7 +25,7 @@ function handler(metadata, response) {
 
 function makeChan(url, userContextId) {
   let chan = NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
-  chan.loadInfo.originAttributes = { userContextId: userContextId };
+  chan.loadInfo.originAttributes = { userContextId };
   return chan;
 }
 
@@ -39,11 +37,15 @@ function Listener(userContextId) {
 
 let gTestsRun = 0;
 Listener.prototype = {
-  onStartRequest: function(request, context) {
-    request.QueryInterface(Ci.nsIHttpChannel)
-           .QueryInterface(Ci.nsIHttpChannelInternal);
+  onStartRequest(request) {
+    request
+      .QueryInterface(Ci.nsIHttpChannel)
+      .QueryInterface(Ci.nsIHttpChannelInternal);
 
-    do_check_eq(request.loadInfo.originAttributes.userContextId, this.userContextId);
+    Assert.equal(
+      request.loadInfo.originAttributes.userContextId,
+      this.userContextId
+    );
 
     let hashKey = request.connectionInfoHashKey;
     if (gSecondRoundStarted) {
@@ -51,9 +53,9 @@ Listener.prototype = {
       // Hash keys should match if and only if their userContextId are the same.
       for (let userContextId = 0; userContextId < 3; userContextId++) {
         if (userContextId == this.userContextId) {
-          do_check_eq(hashKey, previousHashKeys[userContextId]);
+          Assert.equal(hashKey, previousHashKeys[userContextId]);
         } else {
-          do_check_neq(hashKey, previousHashKeys[userContextId]);
+          Assert.notEqual(hashKey, previousHashKeys[userContextId]);
         }
       }
     } else {
@@ -61,10 +63,10 @@ Listener.prototype = {
       previousHashKeys[this.userContextId] = hashKey;
     }
   },
-  onDataAvailable: function(request, ctx, stream, off, cnt) {
+  onDataAvailable(request, stream, off, cnt) {
     read_stream(stream, cnt);
   },
-  onStopRequest: function() {
+  onStopRequest() {
     gTestsRun++;
     if (gTestsRun == 3) {
       gTestsRun = 0;
@@ -84,7 +86,7 @@ function doTest() {
   for (let userContextId = 0; userContextId < 3; userContextId++) {
     let chan = makeChan(URL, userContextId);
     let listener = new Listener(userContextId);
-    chan.asyncOpen2(listener);
+    chan.asyncOpen(listener);
   }
 }
 
@@ -96,4 +98,3 @@ function run_test() {
 
   doTest();
 }
-

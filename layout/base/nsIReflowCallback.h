@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,14 +13,14 @@
  * Protocol: objects will either get a ReflowFinished() call when a reflow
  * has finished or a ReflowCallbackCanceled() call if the shell is destroyed,
  * whichever happens first. If the object is explicitly removed from the shell
- * (using nsIPresShell::CancelReflowCallback()) before that occurs then neither
+ * (using PresShell::CancelReflowCallback()) before that occurs then neither
  * of the callback methods are called.
  */
 class nsIReflowCallback {
-public:
+ public:
   /**
    * The presshell calls this when reflow has finished. Return true if
-   * you need a Flush_Layout to happen after this.
+   * you need a FlushType::Layout to happen after this.
    */
   virtual bool ReflowFinished() = 0;
   /**

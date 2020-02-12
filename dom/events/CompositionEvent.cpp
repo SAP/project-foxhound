@@ -14,12 +14,10 @@ namespace dom {
 CompositionEvent::CompositionEvent(EventTarget* aOwner,
                                    nsPresContext* aPresContext,
                                    WidgetCompositionEvent* aEvent)
-  : UIEvent(aOwner, aPresContext,
-            aEvent ? aEvent :
-                     new WidgetCompositionEvent(false, eVoidEvent, nullptr))
-{
-  NS_ASSERTION(mEvent->mClass == eCompositionEventClass,
-               "event type mismatch");
+    : UIEvent(aOwner, aPresContext,
+              aEvent ? aEvent
+                     : new WidgetCompositionEvent(false, eVoidEvent, nullptr)) {
+  NS_ASSERTION(mEvent->mClass == eCompositionEventClass, "event type mismatch");
 
   if (aEvent) {
     mEventIsInternal = false;
@@ -38,40 +36,48 @@ CompositionEvent::CompositionEvent(EventTarget* aOwner,
   // TODO: Native event should have locale information.
 }
 
+// static
+already_AddRefed<CompositionEvent> CompositionEvent::Constructor(
+    const GlobalObject& aGlobal, const nsAString& aType,
+    const CompositionEventInit& aParam) {
+  nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
+  RefPtr<CompositionEvent> e = new CompositionEvent(t, nullptr, nullptr);
+  bool trusted = e->Init(t);
+  e->InitCompositionEvent(aType, aParam.mBubbles, aParam.mCancelable,
+                          aParam.mView, aParam.mData, EmptyString());
+  e->mDetail = aParam.mDetail;
+  e->SetTrusted(trusted);
+  e->SetComposed(aParam.mComposed);
+  return e.forget();
+}
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(CompositionEvent, UIEvent, mRanges)
+
 NS_IMPL_ADDREF_INHERITED(CompositionEvent, UIEvent)
 NS_IMPL_RELEASE_INHERITED(CompositionEvent, UIEvent)
 
-NS_INTERFACE_MAP_BEGIN(CompositionEvent)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CompositionEvent)
 NS_INTERFACE_MAP_END_INHERITING(UIEvent)
 
-void
-CompositionEvent::GetData(nsAString& aData) const
-{
-  aData = mData;
-}
+void CompositionEvent::GetData(nsAString& aData) const { aData = mData; }
 
-void
-CompositionEvent::GetLocale(nsAString& aLocale) const
-{
+void CompositionEvent::GetLocale(nsAString& aLocale) const {
   aLocale = mLocale;
 }
 
-void
-CompositionEvent::InitCompositionEvent(const nsAString& aType,
-                                       bool aCanBubble,
-                                       bool aCancelable,
-                                       nsGlobalWindow* aView,
-                                       const nsAString& aData,
-                                       const nsAString& aLocale)
-{
+void CompositionEvent::InitCompositionEvent(const nsAString& aType,
+                                            bool aCanBubble, bool aCancelable,
+                                            nsGlobalWindowInner* aView,
+                                            const nsAString& aData,
+                                            const nsAString& aLocale) {
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
+
   UIEvent::InitUIEvent(aType, aCanBubble, aCancelable, aView, 0);
   mData = aData;
   mLocale = aLocale;
 }
 
-void
-CompositionEvent::GetRanges(TextClauseArray& aRanges)
-{
+void CompositionEvent::GetRanges(TextClauseArray& aRanges) {
   // If the mRanges is not empty, we return the cached value.
   if (!mRanges.IsEmpty()) {
     aRanges = mRanges;
@@ -90,18 +96,16 @@ CompositionEvent::GetRanges(TextClauseArray& aRanges)
   aRanges = mRanges;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 using namespace mozilla;
 using namespace mozilla::dom;
 
-already_AddRefed<CompositionEvent>
-NS_NewDOMCompositionEvent(EventTarget* aOwner,
-                          nsPresContext* aPresContext,
-                          WidgetCompositionEvent* aEvent)
-{
+already_AddRefed<CompositionEvent> NS_NewDOMCompositionEvent(
+    EventTarget* aOwner, nsPresContext* aPresContext,
+    WidgetCompositionEvent* aEvent) {
   RefPtr<CompositionEvent> event =
-    new CompositionEvent(aOwner, aPresContext, aEvent);
+      new CompositionEvent(aOwner, aPresContext, aEvent);
   return event.forget();
 }

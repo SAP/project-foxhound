@@ -106,13 +106,11 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "Integration",
-];
+var EXPORTED_SYMBOLS = ["Integration"];
 
-const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 /**
  * Maps integration point names to IntegrationPoint objects.
@@ -126,33 +124,38 @@ const gIntegrationPoints = new Map();
  *   Integration.downloads.register(...);
  *   Integration["addon-provided-integration"].register(...);
  */
-this.Integration = new Proxy({}, {
-  get(target, name) {
-    let integrationPoint = gIntegrationPoints.get(name);
-    if (!integrationPoint) {
-      integrationPoint = new IntegrationPoint();
-      gIntegrationPoints.set(name, integrationPoint);
-    }
-    return integrationPoint;
-  },
-});
+var Integration = new Proxy(
+  {},
+  {
+    get(target, name) {
+      let integrationPoint = gIntegrationPoints.get(name);
+      if (!integrationPoint) {
+        integrationPoint = new IntegrationPoint();
+        gIntegrationPoints.set(name, integrationPoint);
+      }
+      return integrationPoint;
+    },
+  }
+);
 
 /**
  * Individual integration point for which overrides can be registered.
  */
-this.IntegrationPoint = function () {
+var IntegrationPoint = function() {
   this._overrideFns = new Set();
   this._combined = {
-    QueryInterface: function() {
+    // eslint-disable-next-line mozilla/use-chromeutils-generateqi
+    QueryInterface() {
       let ex = new Components.Exception(
-                   "Integration objects should not be used with XPCOM because" +
-                   " they change when new overrides are registered.",
-                   Cr.NS_ERROR_NO_INTERFACE);
+        "Integration objects should not be used with XPCOM because" +
+          " they change when new overrides are registered.",
+        Cr.NS_ERROR_NO_INTERFACE
+      );
       Cu.reportError(ex);
       throw ex;
     },
   };
-}
+};
 
 this.IntegrationPoint.prototype = {
   /**
@@ -233,7 +236,7 @@ this.IntegrationPoint.prototype = {
       try {
         // Obtain a new set of methods from the next override function in the
         // list, specifying the current combined object as the base argument.
-        let override = overrideFn.call(null, combined);
+        let override = overrideFn(combined);
 
         // Retrieve a list of property descriptors from the returned object, and
         // use them to build a new combined object whose prototype points to the
@@ -250,7 +253,7 @@ this.IntegrationPoint.prototype = {
     }
 
     this._combinedIsCurrent = true;
-    return this._combined = combined;
+    return (this._combined = combined);
   },
 
   /**

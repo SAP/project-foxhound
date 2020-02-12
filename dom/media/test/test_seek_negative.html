@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: seeking to a negative time with readyState HAVE_NOTHING</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -40,7 +40,7 @@ function startTest(test, token) {
     Log(e.target.token, "got " + e.type + " with currentTime = " + v.currentTime);
   }
   events.forEach(function(e) {
-    v.addEventListener(e, logEvent, false);
+    v.addEventListener(e, logEvent);
   });
 
   once(v, "seeking", function() {

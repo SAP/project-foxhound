@@ -2,86 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { interfaces: Ci, classes: Cc, results: Cr, utils: Cu } = Components;
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource://gre/modules/Services.jsm");
+let loadContext = Cu.createLoadContext();
+let privateLoadContext = Cu.createPrivateLoadContext();
 
-var cps;
-var asyncRunner;
-var next;
+// There has to be a profile directory before the CPS service is gotten.
+do_get_profile();
+let cps = Cc["@mozilla.org/content-pref/service;1"].getService(
+  Ci.nsIContentPrefService2
+);
 
-(function init() {
-  // There has to be a profile directory before the CPS service is gotten.
-  do_get_profile();
-})();
-
-function runAsyncTests(tests, dontResetBefore = false) {
-  do_test_pending();
-
-  cps = Cc["@mozilla.org/content-pref/service;1"].
-        getService(Ci.nsIContentPrefService2);
-
-  let s = {};
-  Cu.import("resource://test/AsyncRunner.jsm", s);
-  asyncRunner = new s.AsyncRunner({
-    done: do_test_finished,
-    error: function (err) {
-      // xpcshell test functions like equal throw NS_ERROR_ABORT on
-      // failure.  Ignore those and catch only uncaught exceptions.
-      if (err !== Cr.NS_ERROR_ABORT) {
-        if (err.stack) {
-          err = err + "\n\nTraceback (most recent call first):\n" + err.stack +
-                      "\nUseless do_throw stack:";
-        }
-        do_throw(err);
-      }
-    },
-    consoleError: function (scriptErr) {
-      // Previously, this code checked for console errors related to the test,
-      // and treated them as failures. This was problematic, because our current
-      // very-broken exception reporting machinery in XPCWrappedJSClass reports
-      // errors to the console even if there's actually JS on the stack above
-      // that will catch them. And a lot of the tests here intentionally trigger
-      // error conditions on the JS-implemented XPCOM component (see erroneous()
-      // in test_getSubdomains.js, for example). In the old world, we got lucky,
-      // and the errors were never reported to the console due to happenstantial
-      // JSContext reasons that aren't really worth going into.
-      //
-      // So. We make sure to dump this stuff so that it shows up in the logs, but
-      // don't turn them into duplicate failures of the exception that was already
-      // propagated to the caller.
-      dump("AsyncRunner.jsm observed console error: " +  scriptErr + "\n");
-    }
-  });
-
-  next = asyncRunner.next.bind(asyncRunner);
-
-  do_register_cleanup(function () {
-    asyncRunner.destroy();
-    asyncRunner = null;
-  });
-
-  tests.forEach(function (test) {
-    function* gen() {
-      do_print("Running " + test.name);
-      yield test();
-      yield reset();
-    }
-    asyncRunner.appendIterator(gen());
-  });
-
-  // reset() ends up calling asyncRunner.next(), starting the tests.
-  if (dontResetBefore) {
-    next();
-  } else {
-    reset();
-  }
-}
-
-function makeCallback(callbacks, success = null) {
+function makeCallback(resolve, callbacks, success = null) {
   callbacks = callbacks || {};
   if (!callbacks.handleError) {
-    callbacks.handleError = function (error) {
+    callbacks.handleError = function(error) {
       do_throw("handleError call was not expected, error: " + error);
     };
   }
@@ -90,24 +25,24 @@ function makeCallback(callbacks, success = null) {
       do_throw("handleResult call was not expected");
     };
   }
-  if (!callbacks.handleCompletion)
-    callbacks.handleCompletion = function (reason) {
+  if (!callbacks.handleCompletion) {
+    callbacks.handleCompletion = function(reason) {
       equal(reason, Ci.nsIContentPrefCallback2.COMPLETE_OK);
       if (success) {
         success();
       } else {
-        next();
+        resolve();
       }
     };
+  }
   return callbacks;
 }
 
-function do_check_throws(fn) {
+async function do_check_throws(fn) {
   let threw = false;
   try {
-    fn();
-  }
-  catch (err) {
+    await fn();
+  } catch (err) {
     threw = true;
   }
   ok(threw);
@@ -121,171 +56,190 @@ function sendMessage(msg, callback) {
 }
 
 function reset() {
-  sendMessage("reset", next);
+  return new Promise(resolve => {
+    sendMessage("reset", resolve);
+  });
 }
 
 function setWithDate(group, name, val, timestamp, context) {
-  function updateDate() {
-    let db = sendMessage("db");
-    let stmt = db.createAsyncStatement(`
-      UPDATE prefs SET timestamp = :timestamp
+  return new Promise(resolve => {
+    async function updateDate() {
+      let conn = await sendMessage("db");
+      await conn.execute(
+        `
+        UPDATE prefs SET timestamp = :timestamp
+        WHERE
+          settingID = (SELECT id FROM settings WHERE name = :name)
+          AND groupID = (SELECT id FROM groups WHERE name = :group)
+      `,
+        { name, group, timestamp: timestamp / 1000 }
+      );
+
+      resolve();
+    }
+
+    cps.set(group, name, val, context, makeCallback(null, null, updateDate));
+  });
+}
+
+async function getDate(group, name, context) {
+  let conn = await sendMessage("db");
+  let [result] = await conn.execute(
+    `
+      SELECT timestamp FROM prefs
       WHERE
         settingID = (SELECT id FROM settings WHERE name = :name)
         AND groupID = (SELECT id FROM groups WHERE name = :group)
-    `);
-    stmt.params.timestamp = timestamp / 1000;
-    stmt.params.name = name;
-    stmt.params.group = group;
+  `,
+    { name, group }
+  );
 
-    stmt.executeAsync({
-      handleCompletion: function (reason) {
-        next();
-      },
-      handleError: function (err) {
-        do_throw(err);
-      }
-    });
-    stmt.finalize();
-  }
-
-  cps.set(group, name, val, context, makeCallback(null, updateDate));
-}
-
-function getDate(group, name, context) {
-  let db = sendMessage("db");
-  let stmt = db.createAsyncStatement(`
-    SELECT timestamp FROM prefs
-    WHERE
-      settingID = (SELECT id FROM settings WHERE name = :name)
-      AND groupID = (SELECT id FROM groups WHERE name = :group)
-  `);
-  stmt.params.name = name;
-  stmt.params.group = group;
-
-  let res;
-  stmt.executeAsync({
-    handleResult: function (results) {
-      let row = results.getNextRow();
-      res = row.getResultByName("timestamp");
-    },
-    handleCompletion: function (reason) {
-      next(res * 1000);
-    },
-    handleError: function (err) {
-      do_throw(err);
-    }
-  });
-  stmt.finalize();
+  return result.getResultByName("timestamp") * 1000;
 }
 
 function set(group, name, val, context) {
-  cps.set(group, name, val, context, makeCallback());
+  return new Promise(resolve => {
+    cps.set(group, name, val, context, makeCallback(resolve));
+  });
 }
 
 function setGlobal(name, val, context) {
-  cps.setGlobal(name, val, context, makeCallback());
+  return new Promise(resolve => {
+    cps.setGlobal(name, val, context, makeCallback(resolve));
+  });
 }
 
 function prefOK(actual, expected, strict) {
   ok(actual instanceof Ci.nsIContentPref);
   equal(actual.domain, expected.domain);
   equal(actual.name, expected.name);
-  if (strict)
+  if (strict) {
     strictEqual(actual.value, expected.value);
-  else
+  } else {
     equal(actual.value, expected.value);
+  }
 }
 
-function* getOK(args, expectedVal, expectedGroup, strict) {
-  if (args.length == 2)
+async function getOK(args, expectedVal, expectedGroup, strict) {
+  if (args.length == 2) {
     args.push(undefined);
-  let expectedPrefs = expectedVal === undefined ? [] :
-                      [{ domain: expectedGroup || args[0],
-                         name: args[1],
-                         value: expectedVal }];
-  yield getOKEx("getByDomainAndName", args, expectedPrefs, strict);
+  }
+  let expectedPrefs =
+    expectedVal === undefined
+      ? []
+      : [
+          {
+            domain: expectedGroup || args[0],
+            name: args[1],
+            value: expectedVal,
+          },
+        ];
+  await getOKEx("getByDomainAndName", args, expectedPrefs, strict);
 }
 
-function* getSubdomainsOK(args, expectedGroupValPairs) {
-  if (args.length == 2)
+async function getSubdomainsOK(args, expectedGroupValPairs) {
+  if (args.length == 2) {
     args.push(undefined);
-  let expectedPrefs = expectedGroupValPairs.map(function ([group, val]) {
+  }
+  let expectedPrefs = expectedGroupValPairs.map(function([group, val]) {
     return { domain: group, name: args[1], value: val };
   });
-  yield getOKEx("getBySubdomainAndName", args, expectedPrefs);
+  await getOKEx("getBySubdomainAndName", args, expectedPrefs);
 }
 
-function* getGlobalOK(args, expectedVal) {
-  if (args.length == 1)
+async function getGlobalOK(args, expectedVal) {
+  if (args.length == 1) {
     args.push(undefined);
-  let expectedPrefs = expectedVal === undefined ? [] :
-                      [{ domain: null, name: args[0], value: expectedVal }];
-  yield getOKEx("getGlobal", args, expectedPrefs);
+  }
+  let expectedPrefs =
+    expectedVal === undefined
+      ? []
+      : [{ domain: null, name: args[0], value: expectedVal }];
+  await getOKEx("getGlobal", args, expectedPrefs);
 }
 
-function* getOKEx(methodName, args, expectedPrefs, strict, context) {
+async function getOKEx(methodName, args, expectedPrefs, strict, context) {
   let actualPrefs = [];
-  args.push(makeCallback({
-    handleResult: pref => actualPrefs.push(pref)
-  }));
-  yield cps[methodName].apply(cps, args);
-  arraysOfArraysOK([actualPrefs], [expectedPrefs], function (actual, expected) {
+  await new Promise(resolve => {
+    args.push(
+      makeCallback(resolve, {
+        handleResult: pref => actualPrefs.push(pref),
+      })
+    );
+    cps[methodName].apply(cps, args);
+  });
+  arraysOfArraysOK([actualPrefs], [expectedPrefs], function(actual, expected) {
     prefOK(actual, expected, strict);
   });
 }
 
-function getCachedOK(args, expectedIsCached, expectedVal, expectedGroup,
-                     strict) {
-  if (args.length == 2)
+function getCachedOK(
+  args,
+  expectedIsCached,
+  expectedVal,
+  expectedGroup,
+  strict
+) {
+  if (args.length == 2) {
     args.push(undefined);
-  let expectedPref = !expectedIsCached ? null : {
-    domain: expectedGroup || args[0],
-    name: args[1],
-    value: expectedVal
-  };
+  }
+  let expectedPref = !expectedIsCached
+    ? null
+    : {
+        domain: expectedGroup || args[0],
+        name: args[1],
+        value: expectedVal,
+      };
   getCachedOKEx("getCachedByDomainAndName", args, expectedPref, strict);
 }
 
 function getCachedSubdomainsOK(args, expectedGroupValPairs) {
-  if (args.length == 2)
+  if (args.length == 2) {
     args.push(undefined);
-  let len = {};
-  args.push(len);
+  }
   let actualPrefs = cps.getCachedBySubdomainAndName.apply(cps, args);
-  actualPrefs = actualPrefs.sort(function (a, b) {
+  actualPrefs = actualPrefs.sort(function(a, b) {
     return a.domain.localeCompare(b.domain);
   });
-  equal(actualPrefs.length, len.value);
-  let expectedPrefs = expectedGroupValPairs.map(function ([group, val]) {
+  let expectedPrefs = expectedGroupValPairs.map(function([group, val]) {
     return { domain: group, name: args[1], value: val };
   });
   arraysOfArraysOK([actualPrefs], [expectedPrefs], prefOK);
 }
 
 function getCachedGlobalOK(args, expectedIsCached, expectedVal) {
-  if (args.length == 1)
+  if (args.length == 1) {
     args.push(undefined);
-  let expectedPref = !expectedIsCached ? null : {
-    domain: null,
-    name: args[0],
-    value: expectedVal
-  };
+  }
+  let expectedPref = !expectedIsCached
+    ? null
+    : {
+        domain: null,
+        name: args[0],
+        value: expectedVal,
+      };
   getCachedOKEx("getCachedGlobal", args, expectedPref);
 }
 
 function getCachedOKEx(methodName, args, expectedPref, strict) {
   let actualPref = cps[methodName].apply(cps, args);
-  if (expectedPref)
+  if (expectedPref) {
     prefOK(actualPref, expectedPref, strict);
-  else
+  } else {
     strictEqual(actualPref, null);
+  }
 }
 
 function arraysOK(actual, expected, cmp) {
   if (actual.length != expected.length) {
-    do_throw("Length is not equal: " + JSON.stringify(actual) + "==" + JSON.stringify(expected));
+    do_throw(
+      "Length is not equal: " +
+        JSON.stringify(actual) +
+        "==" +
+        JSON.stringify(expected)
+    );
   } else {
-    actual.forEach(function (actualElt, j) {
+    actual.forEach(function(actualElt, j) {
       let expectedElt = expected[j];
       cmp(actualElt, expectedElt);
     });
@@ -294,14 +248,14 @@ function arraysOK(actual, expected, cmp) {
 
 function arraysOfArraysOK(actual, expected, cmp) {
   cmp = cmp || equal;
-  arraysOK(actual, expected, function (act, exp) {
-    arraysOK(act, exp, cmp)
+  arraysOK(actual, expected, function(act, exp) {
+    arraysOK(act, exp, cmp);
   });
 }
 
-function dbOK(expectedRows) {
-  let db = sendMessage("db");
-  let stmt = db.createAsyncStatement(`
+async function dbOK(expectedRows) {
+  let conn = await sendMessage("db");
+  let stmt = `
     SELECT groups.name AS grp, settings.name AS name, prefs.value AS value
     FROM prefs
     LEFT JOIN groups ON groups.id = prefs.groupID
@@ -330,48 +284,52 @@ function dbOK(expectedRows) {
     )
 
     ORDER BY value ASC, grp ASC, name ASC
-  `);
+  `;
 
-  let actualRows = [];
   let cols = ["grp", "name", "value"];
 
-  db.executeAsync([stmt], 1, {
-    handleCompletion: function (reason) {
-      arraysOfArraysOK(actualRows, expectedRows);
-      next();
-    },
-    handleResult: function (results) {
-      let row = null;
-      while (row = results.getNextRow()) {
-        actualRows.push(cols.map(c => row.getResultByName(c)));
-      }
-    },
-    handleError: function (err) {
-      do_throw(err);
-    }
-  });
-  stmt.finalize();
+  let actualRows = (await conn.execute(stmt)).map(row =>
+    cols.map(c => row.getResultByName(c))
+  );
+  arraysOfArraysOK(actualRows, expectedRows);
 }
 
 function on(event, names, dontRemove) {
+  return onEx(event, names, dontRemove).promise;
+}
+
+function onEx(event, names, dontRemove) {
   let args = {
-    reset: function () {
+    reset() {
       for (let prop in this) {
-        if (Array.isArray(this[prop]))
+        if (Array.isArray(this[prop])) {
           this[prop].splice(0, this[prop].length);
+        }
       }
     },
   };
 
   let observers = {};
+  let deferred = null;
+  let triggered = false;
 
-  names.forEach(function (name) {
+  names.forEach(function(name) {
     let obs = {};
-    ["onContentPrefSet", "onContentPrefRemoved"].forEach(function (meth) {
-      obs[meth] = () => do_throw(meth + " should not be called");
+    ["onContentPrefSet", "onContentPrefRemoved"].forEach(function(meth) {
+      obs[meth] = () => do_throw(meth + " should not be called for " + name);
     });
-    obs["onContentPref" + event] = function () {
-      args[name].push(Array.slice(arguments));
+    obs["onContentPref" + event] = function() {
+      args[name].push(Array.from(arguments));
+
+      if (!triggered) {
+        triggered = true;
+        executeSoon(function() {
+          if (!dontRemove) {
+            names.forEach(n => cps.removeObserverForName(n, observers[n]));
+          }
+          deferred.resolve(args);
+        });
+      }
     };
     observers[name] = obs;
     args[name] = [];
@@ -379,20 +337,21 @@ function on(event, names, dontRemove) {
     cps.addObserverForName(name, obs);
   });
 
-  do_execute_soon(function () {
-    if (!dontRemove)
-      names.forEach(n => cps.removeObserverForName(n, observers[n]));
-    next(args);
-  });
+  return {
+    observers,
+    promise: new Promise(resolve => {
+      deferred = { resolve };
+    }),
+  };
 }
 
-function schemaVersionIs(expectedVersion) {
-  let db = sendMessage("db");
-  equal(db.schemaVersion, expectedVersion);
+async function schemaVersionIs(expectedVersion) {
+  let db = await sendMessage("db");
+  equal(await db.getSchemaVersion(), expectedVersion);
 }
 
 function wait() {
-  do_execute_soon(next);
+  return new Promise(resolve => executeSoon(resolve));
 }
 
 function observerArgsOK(actualArgs, expectedArgs) {

@@ -8,49 +8,47 @@
 #include "gfx2DGlue.h"
 #include "ImageContainer.h"
 #include "Layers.h"
+#include "VideoUtils.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 
 using namespace layers;
 
-VideoFrame::VideoFrame(already_AddRefed<Image>& aImage,
+VideoFrame::VideoFrame(already_AddRefed<Image> aImage,
                        const gfx::IntSize& aIntrinsicSize)
-  : mImage(aImage), mIntrinsicSize(aIntrinsicSize), mForceBlack(false),
-    mPrincipalHandle(PRINCIPAL_HANDLE_NONE)
-{}
+    : mImage(aImage),
+      mIntrinsicSize(aIntrinsicSize),
+      mForceBlack(false),
+      mPrincipalHandle(PRINCIPAL_HANDLE_NONE) {}
 
 VideoFrame::VideoFrame()
-  : mIntrinsicSize(0, 0), mForceBlack(false), mPrincipalHandle(PRINCIPAL_HANDLE_NONE)
-{}
+    : mIntrinsicSize(0, 0),
+      mForceBlack(false),
+      mPrincipalHandle(PRINCIPAL_HANDLE_NONE) {}
 
-VideoFrame::~VideoFrame()
-{}
+VideoFrame::~VideoFrame() {}
 
-void
-VideoFrame::SetNull() {
+void VideoFrame::SetNull() {
   mImage = nullptr;
   mIntrinsicSize = gfx::IntSize(0, 0);
   mPrincipalHandle = PRINCIPAL_HANDLE_NONE;
 }
 
-void
-VideoFrame::TakeFrom(VideoFrame* aFrame)
-{
+void VideoFrame::TakeFrom(VideoFrame* aFrame) {
   mImage = aFrame->mImage.forget();
   mIntrinsicSize = aFrame->mIntrinsicSize;
   mForceBlack = aFrame->GetForceBlack();
   mPrincipalHandle = aFrame->mPrincipalHandle;
 }
 
-/* static */ already_AddRefed<Image>
-VideoFrame::CreateBlackImage(const gfx::IntSize& aSize)
-{
+/* static */
+already_AddRefed<Image> VideoFrame::CreateBlackImage(
+    const gfx::IntSize& aSize) {
   RefPtr<ImageContainer> container =
-    LayerManager::CreateImageContainer(ImageContainer::ASYNCHRONOUS);
+      LayerManager::CreateImageContainer(ImageContainer::ASYNCHRONOUS);
   RefPtr<PlanarYCbCrImage> image = container->CreatePlanarYCbCrImage();
   if (!image) {
-    MOZ_ASSERT(false);
     return nullptr;
   }
 
@@ -70,8 +68,8 @@ VideoFrame::CreateBlackImage(const gfx::IntSize& aSize)
   layers::PlanarYCbCrData data;
   data.mYChannel = frame.get();
   data.mYSize = gfx::IntSize(aSize.width, aSize.height);
-  data.mYStride = (int32_t) (aSize.width * lumaBpp / 8.0);
-  data.mCbCrStride = (int32_t) (aSize.width * chromaBpp / 8.0);
+  data.mYStride = (int32_t)(aSize.width * lumaBpp / 8.0);
+  data.mCbCrStride = (int32_t)(aSize.width * chromaBpp / 8.0);
   data.mCbChannel = frame.get() + aSize.height * data.mYStride;
   data.mCrChannel = data.mCbChannel + aSize.height * data.mCbCrStride / 2;
   data.mCbCrSize = gfx::IntSize(aSize.width / 2, aSize.height / 2);
@@ -79,43 +77,38 @@ VideoFrame::CreateBlackImage(const gfx::IntSize& aSize)
   data.mPicY = 0;
   data.mPicSize = gfx::IntSize(aSize.width, aSize.height);
   data.mStereoMode = StereoMode::MONO;
+  data.mYUVColorSpace = gfx::YUVColorSpace::BT601;
+  // This could be made FULL once bug 1568745 is complete. A black pixel being
+  // 0x00, 0x80, 0x80
+  data.mColorRange = gfx::ColorRange::LIMITED;
 
   // Copies data, so we can free data.
   if (!image->CopyData(data)) {
-    MOZ_ASSERT(false);
     return nullptr;
   }
 
   return image.forget();
 }
 
-VideoChunk::VideoChunk()
-{}
-
-VideoChunk::~VideoChunk()
-{}
-
-void
-VideoSegment::AppendFrame(already_AddRefed<Image>&& aImage,
-                          StreamTime aDuration,
-                          const IntSize& aIntrinsicSize,
-                          const PrincipalHandle& aPrincipalHandle,
-                          bool aForceBlack,
-                          TimeStamp aTimeStamp)
-{
-  VideoChunk* chunk = AppendChunk(aDuration);
+void VideoSegment::AppendFrame(already_AddRefed<Image>&& aImage,
+                               const IntSize& aIntrinsicSize,
+                               const PrincipalHandle& aPrincipalHandle,
+                               bool aForceBlack, TimeStamp aTimeStamp) {
+  VideoChunk* chunk = AppendChunk(0);
   chunk->mTimeStamp = aTimeStamp;
-  VideoFrame frame(aImage, aIntrinsicSize);
+  VideoFrame frame(std::move(aImage), aIntrinsicSize);
+  MOZ_ASSERT_IF(!IsNull(), !aTimeStamp.IsNull());
   frame.SetForceBlack(aForceBlack);
   frame.SetPrincipalHandle(aPrincipalHandle);
   chunk->mFrame.TakeFrom(&frame);
 }
 
 VideoSegment::VideoSegment()
-  : MediaSegmentBase<VideoSegment, VideoChunk>(VIDEO)
-{}
+    : MediaSegmentBase<VideoSegment, VideoChunk>(VIDEO) {}
 
-VideoSegment::~VideoSegment()
-{}
+VideoSegment::VideoSegment(VideoSegment&& aSegment)
+    : MediaSegmentBase<VideoSegment, VideoChunk>(std::move(aSegment)) {}
 
-} // namespace mozilla
+VideoSegment::~VideoSegment() {}
+
+}  // namespace mozilla

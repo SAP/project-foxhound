@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -8,31 +8,53 @@
  * request.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { $, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
-  RequestsMenu.lazyUpdate = false;
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CUSTOM_GET_URL);
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
 
-  let wait = waitForNetworkEvents(monitor, 2);
-  yield ContentTask.spawn(tab.linkedBrowser, HTTPS_REDIRECT_SJS, function* (url) {
+  store.dispatch(Actions.batchEnable(false));
+
+  const wait = waitForNetworkEvents(monitor, 2);
+  await ContentTask.spawn(tab.linkedBrowser, HTTPS_REDIRECT_SJS, async function(
+    url
+  ) {
     content.wrappedJSObject.performRequests(1, url);
   });
-  yield wait;
+  await wait;
 
-  is(RequestsMenu.itemCount, 2, "There were two requests due to redirect.");
+  is(
+    store.getState().requests.requests.size,
+    2,
+    "There were two requests due to redirect."
+  );
 
-  let initial = RequestsMenu.items[0];
-  let redirect = RequestsMenu.items[1];
+  const [
+    initialDomainSecurityIcon,
+    initialUrlSecurityIcon,
+    redirectDomainSecurityIcon,
+    redirectUrlSecurityIcon,
+  ] = document.querySelectorAll(".requests-security-state-icon");
 
-  let initialSecurityIcon = $(".requests-security-state-icon", initial.target);
-  let redirectSecurityIcon = $(".requests-security-state-icon", redirect.target);
+  ok(
+    initialDomainSecurityIcon.classList.contains("security-state-insecure"),
+    "Initial request was marked insecure for domain column."
+  );
 
-  ok(initialSecurityIcon.classList.contains("security-state-insecure"),
-     "Initial request was marked insecure.");
+  ok(
+    redirectDomainSecurityIcon.classList.contains("security-state-secure"),
+    "Redirected request was marked secure for domain column."
+  );
 
-  ok(redirectSecurityIcon.classList.contains("security-state-secure"),
-     "Redirected request was marked secure.");
+  ok(
+    initialUrlSecurityIcon.classList.contains("security-state-insecure"),
+    "Initial request was marked insecure for URL column."
+  );
 
-  yield teardown(monitor);
+  ok(
+    redirectUrlSecurityIcon.classList.contains("security-state-secure"),
+    "Redirected request was marked secure for URL column."
+  );
+
+  await teardown(monitor);
 });

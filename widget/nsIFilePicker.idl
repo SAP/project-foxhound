@@ -58,6 +58,11 @@ interface nsIFilePicker : nsISupports
                                                 // *.rm; *.rmvb; *.smil; *.webm;
                                                 // *.wmv; *.xvid
 
+  const short captureNone     = 0;              // No capture target specified.
+  const short captureDefault  = 1;              // Missing/invalid value default.
+  const short captureUser     = 2;              // "user" capture target specified.
+  const short captureEnv      = 3;              // "environment" capture target specified.
+
  /**
   * Initialize the file picker widget.  The file picker is not valid until this
   * method is called.
@@ -88,6 +93,16 @@ interface nsIFilePicker : nsISupports
   void appendFilter(in AString title,
                     in AString filter);
 
+  /**
+   * Add a raw filter (eg, add a MIME type without transforming it to a list of
+   * extensions).
+   *
+   * @param     filter   a filter taken directly from the accept attribute
+   *                     without processing
+   *
+   */
+  void appendRawFilter(in AString filter);
+
  /**
   * The filename that should be suggested to the user as a default. This should
   * include the extension.
@@ -99,24 +114,37 @@ interface nsIFilePicker : nsISupports
  /**
   * The extension that should be associated with files of the type we
   * want to work with.  On some platforms, this extension will be
-  * automatically appended to filenames the user enters, if needed.  
+  * automatically appended to filenames the user enters, if needed.
   */
   attribute AString defaultExtension;
-  
+
  /**
   * The filter which is currently selected in the File Picker dialog
   *
-  * @return Returns the index (0 based) of the selected filter in the filter list. 
+  * @return Returns the index (0 based) of the selected filter in the filter list.
   */
   attribute long filterIndex;
 
  /**
   * Set the directory that the file open/save dialog initially displays
+  * Note that, if displaySpecialDirectory has been already set, this value will
+  * be ignored.
   *
   * @param      displayDirectory  the name of the directory
   *
   */
   attribute nsIFile displayDirectory;
+
+ /**
+  * Set the directory that the file open/save dialog initially displays using
+  * one of the special name as such as 'Desk', 'TmpD', and so on.
+  * Note that, if displayDirectory has been already set, this value will be
+  * ignored.
+  *
+  * @param      displaySpecialDirectory  the name of the special directory
+  *
+  */
+  attribute AString displaySpecialDirectory;
 
 
  /**
@@ -165,15 +193,6 @@ interface nsIFilePicker : nsISupports
   attribute boolean addToRecentDocs;
 
  /**
-  * Show File Dialog. The dialog is displayed modally.
-  *
-  * @return returnOK if the user selects OK, returnCancel if the user selects cancel
-  *
-  */
-  [deprecated] short show();
-
-
- /**
   * Opens the file dialog asynchrounously.
   * The passed in object's done method will be called upon completion.
   */
@@ -191,4 +210,6 @@ interface nsIFilePicker : nsISupports
    * file selection.
    */
   attribute AString okButtonLabel;
+
+  attribute short capture;
 };

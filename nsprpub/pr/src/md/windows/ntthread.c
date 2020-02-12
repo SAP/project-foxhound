@@ -27,6 +27,9 @@ PRUint32                        _nt_idleCount;
 extern __declspec(thread) PRThread *_pr_io_restarted_io;
 extern DWORD _pr_io_restartedIOIndex;
 
+typedef HRESULT (WINAPI *SETTHREADDESCRIPTION)(HANDLE, PCWSTR);
+static SETTHREADDESCRIPTION sSetThreadDescription = NULL;
+
 /* Must check the restarted_io *before* decrementing no_sched to 0 */
 #define POST_SWITCH_WORK() \
     PR_BEGIN_MACRO \
@@ -79,6 +82,8 @@ _nt_handle_restarted_io(PRThread *restarted_io)
 void
 _PR_MD_EARLY_INIT()
 {
+    HMODULE hModule;
+
     _MD_NEW_LOCK( &_nt_idleLock );
     _nt_idleCount = 0;
     PR_INIT_CLIST(&_nt_idleList);
@@ -97,6 +102,15 @@ _PR_MD_EARLY_INIT()
         _pr_currentCPUIndex = TlsAlloc();
         _pr_intsOffIndex = TlsAlloc();
         _pr_io_restartedIOIndex = TlsAlloc();
+    }
+
+    // SetThreadDescription is Windows 10 build 1607+
+    hModule = GetModuleHandleW(L"kernel32.dll");
+    if (hModule) {
+        sSetThreadDescription =
+            (SETTHREADDESCRIPTION) GetProcAddress(
+                hModule,
+                "SetThreadDescription");
     }
 }
 
@@ -133,13 +147,13 @@ _PR_MD_INIT_THREAD(PRThread *thread)
             ** the pseudo handle via DuplicateHandle(...)
             */
             DuplicateHandle(
-                    GetCurrentProcess(),     /* Process of source handle */
-                    GetCurrentThread(),      /* Pseudo Handle to dup */
-                    GetCurrentProcess(),     /* Process of handle */
-                    &(thread->md.handle),    /* resulting handle */
-                    0L,                      /* access flags */
-                    FALSE,                   /* Inheritable */
-                    DUPLICATE_SAME_ACCESS);  /* Options */
+                GetCurrentProcess(),     /* Process of source handle */
+                GetCurrentThread(),      /* Pseudo Handle to dup */
+                GetCurrentProcess(),     /* Process of handle */
+                &(thread->md.handle),    /* resulting handle */
+                0L,                      /* access flags */
+                FALSE,                   /* Inheritable */
+                DUPLICATE_SAME_ACCESS);  /* Options */
         }
 
         /* Create the blocking IO semaphore */
@@ -147,13 +161,13 @@ _PR_MD_INIT_THREAD(PRThread *thread)
         if (thread->md.blocked_sema == NULL) {
             return PR_FAILURE;
         }
-		if (_native_threads_only) {
-			/* Create the blocking IO semaphore */
-			thread->md.thr_event = CreateEvent(NULL, TRUE, FALSE, NULL);
-			if (thread->md.thr_event == NULL) {
-				return PR_FAILURE;
-			}
-		}
+        if (_native_threads_only) {
+            /* Create the blocking IO semaphore */
+            thread->md.thr_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+            if (thread->md.thr_event == NULL) {
+                return PR_FAILURE;
+            }
+        }
     }
 
     return PR_SUCCESS;
@@ -167,23 +181,23 @@ pr_root(void *arg)
     return 0;
 }
 
-PRStatus 
-_PR_MD_CREATE_THREAD(PRThread *thread, 
-                  void (*start)(void *), 
-                  PRThreadPriority priority, 
-                  PRThreadScope scope, 
-                  PRThreadState state, 
-                  PRUint32 stackSize)
+PRStatus
+_PR_MD_CREATE_THREAD(PRThread *thread,
+                     void (*start)(void *),
+                     PRThreadPriority priority,
+                     PRThreadScope scope,
+                     PRThreadState state,
+                     PRUint32 stackSize)
 {
 
     thread->md.start = start;
     thread->md.handle = (HANDLE) _beginthreadex(
-                    NULL,
-                    thread->stack->stackSize,
-                    pr_root,
-                    (void *)thread,
-                    CREATE_SUSPENDED | STACK_SIZE_PARAM_IS_A_RESERVATION,
-                    &(thread->id));
+                            NULL,
+                            thread->stack->stackSize,
+                            pr_root,
+                            (void *)thread,
+                            CREATE_SUSPENDED | STACK_SIZE_PARAM_IS_A_RESERVATION,
+                            &(thread->id));
     if(!thread->md.handle) {
         PRErrorCode prerror;
         thread->md.fiber_last_error = GetLastError();
@@ -214,8 +228,9 @@ _PR_MD_CREATE_THREAD(PRThread *thread,
     }
 
     /* Activate the thread */
-    if ( ResumeThread( thread->md.handle ) != -1)
+    if ( ResumeThread( thread->md.handle ) != -1) {
         return PR_SUCCESS;
+    }
 
     PR_SetError(PR_UNKNOWN_ERROR, GetLastError());
     return PR_FAILURE;
@@ -236,14 +251,14 @@ _PR_MD_END_THREAD(void)
     _endthreadex(0);
 }
 
-void    
+void
 _PR_MD_YIELD(void)
 {
     /* Can NT really yield at all? */
     Sleep(0);
 }
 
-void     
+void
 _PR_MD_SET_PRIORITY(_MDThread *thread, PRThreadPriority newPri)
 {
     int nativePri;
@@ -270,8 +285,8 @@ _PR_MD_SET_PRIORITY(_MDThread *thread, PRThreadPriority newPri)
     rv = SetThreadPriority(thread->handle, nativePri);
     PR_ASSERT(rv);
     if (!rv) {
-	PR_LOG(_pr_thread_lm, PR_LOG_MIN,
-                ("PR_SetThreadPriority: can't set thread priority\n"));
+        PR_LOG(_pr_thread_lm, PR_LOG_MIN,
+               ("PR_SetThreadPriority: can't set thread priority\n"));
     }
     return;
 }
@@ -281,10 +296,10 @@ const DWORD MS_VC_EXCEPTION = 0x406D1388;
 #pragma pack(push,8)
 typedef struct tagTHREADNAME_INFO
 {
-   DWORD dwType; // Must be 0x1000.
-   LPCSTR szName; // Pointer to name (in user addr space).
-   DWORD dwThreadID; // Thread ID (-1=caller thread).
-   DWORD dwFlags; // Reserved for future use, must be zero.
+    DWORD dwType; // Must be 0x1000.
+    LPCSTR szName; // Pointer to name (in user addr space).
+    DWORD dwThreadID; // Thread ID (-1=caller thread).
+    DWORD dwFlags; // Reserved for future use, must be zero.
 } THREADNAME_INFO;
 #pragma pack(pop)
 
@@ -292,23 +307,33 @@ void
 _PR_MD_SET_CURRENT_THREAD_NAME(const char *name)
 {
 #ifdef _MSC_VER
-   THREADNAME_INFO info;
+    THREADNAME_INFO info;
+#endif
 
-   if (!IsDebuggerPresent())
-      return;
+    if (sSetThreadDescription) {
+        WCHAR wideName[MAX_PATH];
+        if (MultiByteToWideChar(CP_ACP, 0, name, -1, wideName, MAX_PATH)) {
+            sSetThreadDescription(GetCurrentThread(), wideName);
+        }
+    }
 
-   info.dwType = 0x1000;
-   info.szName = (char*) name;
-   info.dwThreadID = -1;
-   info.dwFlags = 0;
+#ifdef _MSC_VER
+    if (!IsDebuggerPresent()) {
+        return;
+    }
 
-   __try {
-      RaiseException(MS_VC_EXCEPTION,
-                     0,
-                     sizeof(info) / sizeof(ULONG_PTR),
-                     (ULONG_PTR*)&info);
-   } __except(EXCEPTION_CONTINUE_EXECUTION) {
-   }
+    info.dwType = 0x1000;
+    info.szName = (char*) name;
+    info.dwThreadID = -1;
+    info.dwFlags = 0;
+
+    __try {
+        RaiseException(MS_VC_EXCEPTION,
+                       0,
+                       sizeof(info) / sizeof(ULONG_PTR),
+                       (ULONG_PTR*)&info);
+    } __except(EXCEPTION_CONTINUE_EXECUTION) {
+    }
 #endif
 }
 
@@ -330,13 +355,13 @@ _PR_MD_CLEAN_THREAD(PRThread *thread)
         PR_ASSERT(rv);
         thread->md.blocked_sema = 0;
     }
-	if (_native_threads_only) {
-		if (thread->md.thr_event) {
-			rv = CloseHandle(thread->md.thr_event);
-			PR_ASSERT(rv);
-			thread->md.thr_event = 0;
-		}
-	}
+    if (_native_threads_only) {
+        if (thread->md.thr_event) {
+            rv = CloseHandle(thread->md.thr_event);
+            PR_ASSERT(rv);
+            thread->md.thr_event = 0;
+        }
+    }
 
     if (thread->md.handle) {
         rv = CloseHandle(thread->md.handle);
@@ -376,13 +401,13 @@ _PR_MD_EXIT_THREAD(PRThread *thread)
         thread->md.blocked_sema = 0;
     }
 
-	if (_native_threads_only) {
-		if (thread->md.thr_event) {
-			rv = CloseHandle(thread->md.thr_event);
-			PR_ASSERT(rv);
-			thread->md.thr_event = 0;
-		}
-	}
+    if (_native_threads_only) {
+        if (thread->md.thr_event) {
+            rv = CloseHandle(thread->md.thr_event);
+            PR_ASSERT(rv);
+            thread->md.thr_event = 0;
+        }
+    }
 
     if (thread->md.handle) {
         rv = CloseHandle(thread->md.handle);
@@ -405,7 +430,7 @@ _PR_MD_EXIT(PRIntn status)
 #ifdef HAVE_FIBERS
 
 void
-_pr_fiber_mainline(void *unused) 
+_pr_fiber_mainline(void *unused)
 {
     PRThread *fiber = _PR_MD_CURRENT_THREAD();
 
@@ -422,7 +447,7 @@ PRThread *_PR_MD_CREATE_USER_THREAD(
     if ( (thread = PR_NEW(PRThread)) == NULL ) {
         return NULL;
     }
-    
+
     memset(thread, 0, sizeof(PRThread));
     thread->md.fiber_fn = start;
     thread->md.fiber_arg = arg;
@@ -445,10 +470,11 @@ void
 _PR_MD_INIT_CONTEXT(PRThread *thread, char *top, void (*start) (void), PRBool *status)
 {
     thread->md.fiber_fn = (void (*)(void *))start;
-    thread->md.fiber_id = CreateFiber(thread->md.fiber_stacksize, 
-        (LPFIBER_START_ROUTINE)_pr_fiber_mainline, NULL);
-    if (thread->md.fiber_id != 0)
+    thread->md.fiber_id = CreateFiber(thread->md.fiber_stacksize,
+                                      (LPFIBER_START_ROUTINE)_pr_fiber_mainline, NULL);
+    if (thread->md.fiber_id != 0) {
         *status = PR_TRUE;
+    }
     else {
         DWORD oserror = GetLastError();
         PRErrorCode prerror;
@@ -479,7 +505,7 @@ _PR_MD_RESTORE_CONTEXT(PRThread *thread)
     PR_ASSERT( !_PR_IS_NATIVE_THREAD(thread) );
 
     /* The user-level code for yielding will happily add ourselves to the runq
-     * and then switch to ourselves; the NT fibers can't handle switching to 
+     * and then switch to ourselves; the NT fibers can't handle switching to
      * ourselves.
      */
     if (thread != me) {
@@ -509,12 +535,12 @@ PRInt32 _PR_MD_GETTHREADAFFINITYMASK(PRThread *thread, PRUint32 *mask)
     PRInt32 rv, system_mask;
 
     rv = GetProcessAffinityMask(GetCurrentProcess(), mask, &system_mask);
-    
+
     return rv?0:-1;
 }
 
-void 
-_PR_MD_SUSPEND_CPU(_PRCPU *cpu) 
+void
+_PR_MD_SUSPEND_CPU(_PRCPU *cpu)
 {
     _PR_MD_SUSPEND_THREAD(cpu->thread);
 }
@@ -550,15 +576,15 @@ _PR_MD_RESUME_THREAD(PRThread *thread)
 PRThread*
 _MD_CURRENT_THREAD(void)
 {
-PRThread *thread;
+    PRThread *thread;
 
-	thread = _MD_GET_ATTACHED_THREAD();
+    thread = _MD_GET_ATTACHED_THREAD();
 
-   	if (NULL == thread) {
-		thread = _PRI_AttachThread(
-            PR_USER_THREAD, PR_PRIORITY_NORMAL, NULL, 0);
-	}
-	PR_ASSERT(thread != NULL);
-	return thread;
+    if (NULL == thread) {
+        thread = _PRI_AttachThread(
+                     PR_USER_THREAD, PR_PRIORITY_NORMAL, NULL, 0);
+    }
+    PR_ASSERT(thread != NULL);
+    return thread;
 }
 

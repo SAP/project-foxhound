@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import os
 import unittest
 
@@ -40,20 +42,20 @@ class TestContext(unittest.TestCase):
 
         self.assertEqual(test['foo'], 0)
 
-        self.assertEqual(set(test.keys()), { 'foo' })
+        self.assertEqual(set(test.keys()), {'foo'})
 
         self.assertEqual(test['bar'], False)
 
-        self.assertEqual(set(test.keys()), { 'foo', 'bar' })
+        self.assertEqual(set(test.keys()), {'foo', 'bar'})
 
         self.assertEqual(test['baz'], {})
 
-        self.assertEqual(set(test.keys()), { 'foo', 'bar', 'baz' })
+        self.assertEqual(set(test.keys()), {'foo', 'bar', 'baz'})
 
         with self.assertRaises(KeyError):
             test['qux']
 
-        self.assertEqual(set(test.keys()), { 'foo', 'bar', 'baz' })
+        self.assertEqual(set(test.keys()), {'foo', 'bar', 'baz'})
 
     def test_type_check(self):
         test = Context({
@@ -75,7 +77,7 @@ class TestContext(unittest.TestCase):
 
         test['baz'] = [('a', 1), ('b', 2)]
 
-        self.assertEqual(test['baz'], { 'a': 1, 'b': 2 })
+        self.assertEqual(test['baz'], {'a': 1, 'b': 2})
 
     def test_update(self):
         test = Context({
@@ -93,7 +95,7 @@ class TestContext(unittest.TestCase):
 
         test.update(bar=True, foo=1)
 
-        self.assertEqual(set(test.keys()), { 'foo', 'bar' })
+        self.assertEqual(set(test.keys()), {'foo', 'bar'})
         self.assertEqual(test['foo'], 1)
         self.assertEqual(test['bar'], True)
 
@@ -101,13 +103,13 @@ class TestContext(unittest.TestCase):
         self.assertEqual(test['foo'], 2)
         self.assertEqual(test['bar'], False)
 
-        test.update([('foo', 0), ('baz', { 'a': 1, 'b': 2 })])
+        test.update([('foo', 0), ('baz', {'a': 1, 'b': 2})])
         self.assertEqual(test['foo'], 0)
-        self.assertEqual(test['baz'], { 'a': 1, 'b': 2 })
+        self.assertEqual(test['baz'], {'a': 1, 'b': 2})
 
         test.update([('foo', 42), ('baz', [('c', 3), ('d', 4)])])
         self.assertEqual(test['foo'], 42)
-        self.assertEqual(test['baz'], { 'c': 3, 'd': 4 })
+        self.assertEqual(test['baz'], {'c': 3, 'd': 4})
 
     def test_context_paths(self):
         test = Context()
@@ -214,7 +216,8 @@ class TestContext(unittest.TestCase):
         self.assertEqual(test.source_stack, [foo, bar, bar, foo])
 
     def test_context_dirs(self):
-        class Config(object): pass
+        class Config(object):
+            pass
         config = Config()
         config.topsrcdir = mozpath.abspath(os.curdir)
         config.topobjdir = mozpath.abspath('obj')
@@ -277,7 +280,8 @@ class TestSymbols(unittest.TestCase):
 class TestPaths(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        class Config(object): pass
+        class Config(object):
+            pass
         cls.config = config = Config()
         config.topsrcdir = mozpath.abspath(os.curdir)
         config.topobjdir = mozpath.abspath('obj')
@@ -663,7 +667,7 @@ class TestFiles(unittest.TestCase):
     def test_aggregate_empty(self):
         c = Context({})
 
-        files = {'moz.build': Files(c, pattern='**')}
+        files = {'moz.build': Files(c, '**')}
 
         self.assertEqual(Files.aggregate(files), {
             'bug_component_counts': [],
@@ -672,7 +676,7 @@ class TestFiles(unittest.TestCase):
 
     def test_single_bug_component(self):
         c = Context({})
-        f = Files(c, pattern='**')
+        f = Files(c, '**')
         f['BUG_COMPONENT'] = (u'Product1', u'Component1')
 
         files = {'moz.build': f}
@@ -683,10 +687,10 @@ class TestFiles(unittest.TestCase):
 
     def test_multiple_bug_components(self):
         c = Context({})
-        f1 = Files(c, pattern='**')
+        f1 = Files(c, '**')
         f1['BUG_COMPONENT'] = (u'Product1', u'Component1')
 
-        f2 = Files(c, pattern='**')
+        f2 = Files(c, '**')
         f2['BUG_COMPONENT'] = (u'Product2', u'Component2')
 
         files = {'a': f1, 'b': f2, 'c': f1}
@@ -701,10 +705,10 @@ class TestFiles(unittest.TestCase):
     def test_no_recommended_bug_component(self):
         """If there is no clear count winner, we don't recommend a bug component."""
         c = Context({})
-        f1 = Files(c, pattern='**')
+        f1 = Files(c, '**')
         f1['BUG_COMPONENT'] = (u'Product1', u'Component1')
 
-        f2 = Files(c, pattern='**')
+        f2 = Files(c, '**')
         f2['BUG_COMPONENT'] = (u'Product2', u'Component2')
 
         files = {'a': f1, 'b': f2}
@@ -714,6 +718,22 @@ class TestFiles(unittest.TestCase):
                 ((u'Product2', u'Component2'), 1),
             ],
             'recommended_bug_component': None,
+        })
+
+    def test_multiple_patterns(self):
+        c = Context({})
+        f1 = Files(c, 'a/**')
+        f1['BUG_COMPONENT'] = (u'Product1', u'Component1')
+        f2 = Files(c, 'b/**', 'a/bar')
+        f2['BUG_COMPONENT'] = (u'Product2', u'Component2')
+
+        files = {'a/foo': f1, 'a/bar': f2, 'b/foo': f2}
+        self.assertEqual(Files.aggregate(files), {
+            'bug_component_counts': [
+                ((u'Product2', u'Component2'), 2),
+                ((u'Product1', u'Component1'), 1),
+            ],
+            'recommended_bug_component': (u'Product2', u'Component2'),
         })
 
 

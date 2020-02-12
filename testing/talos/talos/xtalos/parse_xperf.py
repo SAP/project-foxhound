@@ -3,12 +3,46 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import, print_function
 
 import os
-import sys
-import xtalos
 import subprocess
+import sys
+
 import etlparser
+import mozfile
+import xtalos
+from xperf_analyzer import (ProcessStart, SessionStoreWindowRestored,
+                            XPerfAttribute, XPerfFile, XPerfInterval)
+
+
+def run_session_restore_analysis(debug=False, **kwargs):
+    required = ('csv_filename', 'outputFile')
+    for r in required:
+        if r not in kwargs:
+            raise xtalos.XTalosError('%s required' % r)
+
+    final_output_file = "%s_session_restore_stats%s" % os.path.splitext(
+        kwargs['outputFile'])
+
+    output = 'time_to_session_store_window_restored_ms\n'
+
+    with XPerfFile(csvfile=kwargs['csv_filename'], debug=debug) as xperf:
+        fx_start = ProcessStart('firefox.exe')
+        ss_window_restored = SessionStoreWindowRestored()
+
+        interval = XPerfInterval(fx_start, ss_window_restored)
+        xperf.add_attr(interval)
+
+        xperf.analyze()
+
+        output += "%.3f\n" % (interval.get_results()[XPerfAttribute.RESULT])
+
+    with open(final_output_file, 'w') as out:
+        out.write(output)
+
+    if debug:
+        etlparser.uploadFile(final_output_file)
 
 
 def stop(xperf_path, debug=False):
@@ -55,6 +89,12 @@ def stop_from_config(config_file=None, debug=False, **kwargs):
                                     error_filename=kwargs['error_filename'],
                                     processID=kwargs['processID'])
 
+    csv_base = '%s.csv' % kwargs['etl_filename']
+    run_session_restore_analysis(csv_filename=csv_base, debug=debug, **kwargs)
+
+    if not debug:
+        mozfile.remove(csv_base)
+
 
 def main(args=sys.argv[1:]):
 
@@ -62,13 +102,14 @@ def main(args=sys.argv[1:]):
     parser = xtalos.XtalosOptions()
     args = parser.parse_args(args)
 
-    # start xperf
+    # stop xperf
     try:
         stop_from_config(config_file=args.configFile,
                          debug=args.debug_level >= xtalos.DEBUG_INFO,
                          **args.__dict__)
     except xtalos.XTalosError as e:
         parser.error(str(e))
+
 
 if __name__ == "__main__":
     main()

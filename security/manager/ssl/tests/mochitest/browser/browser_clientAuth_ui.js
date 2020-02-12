@@ -11,8 +11,9 @@ const TEST_ORG = "Test Org";
 const TEST_ISSUER_ORG = "Test Issuer Org";
 const TEST_PORT = 123;
 
-var certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
+var certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+  Ci.nsIX509CertDB
+);
 /**
  * Test certificate (i.e. build/pgo/certs/mochitest.client).
  * @type nsIX509Cert
@@ -27,30 +28,34 @@ var cert;
  *          A promise that resolves when the dialog has finished loading, with
  *          an array consisting of:
  *            1. The window of the opened dialog.
- *            2. The nsIDialogParamBlock passed to the dialog.
+ *            2. The return value nsIWritablePropertyBag2 passed to the dialog.
  */
 function openClientAuthDialog(cert) {
-  let params = Cc["@mozilla.org/embedcomp/dialogparam;1"]
-                 .createInstance(Ci.nsIDialogParamBlock);
-
   let certList = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-  certList.appendElement(cert, false);
-  let array = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-  array.appendElement(certList, false);
-  params.objects = array;
+  certList.appendElement(cert);
 
-  params.SetString(0, TEST_HOSTNAME);
-  params.SetString(1, TEST_ORG);
-  params.SetString(2, TEST_ISSUER_ORG);
-  params.SetInt(0, TEST_PORT);
-
-  let win = window.openDialog("chrome://pippki/content/clientauthask.xul", "",
-                              "", params);
+  let returnVals = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+    Ci.nsIWritablePropertyBag2
+  );
+  let win = window.openDialog(
+    "chrome://pippki/content/clientauthask.xul",
+    "",
+    "",
+    TEST_HOSTNAME,
+    TEST_ORG,
+    TEST_ISSUER_ORG,
+    TEST_PORT,
+    certList,
+    returnVals
+  );
   return new Promise((resolve, reject) => {
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad);
-      resolve([win, params]);
-    });
+    win.addEventListener(
+      "load",
+      function() {
+        executeSoon(() => resolve([win, returnVals]));
+      },
+      { once: true }
+    );
   });
 }
 
@@ -65,81 +70,130 @@ function openClientAuthDialog(cert) {
  *        The notAfterLocalTime attribute of mochitest.client.
  */
 function checkDialogContents(win, notBefore, notAfter) {
-  Assert.equal(win.document.getElementById("hostname").textContent,
-               `${TEST_HOSTNAME}:${TEST_PORT}`,
-               "Actual and expected hostname and port should be equal");
-  // “ and ” don't seem to work when embedded in the following literals, which
-  // is why escape codes are used instead.
-  Assert.equal(win.document.getElementById("organization").textContent,
-               `Organization: \u201C${TEST_ORG}\u201D`,
-               "Actual and expected organization should be equal");
-  Assert.equal(win.document.getElementById("issuer").textContent,
-               `Issued Under: \u201C${TEST_ISSUER_ORG}\u201D`,
-               "Actual and expected issuer organization should be equal");
+  is(
+    win.document.getElementById("hostname").textContent,
+    `${TEST_HOSTNAME}:${TEST_PORT}`,
+    "Actual and expected hostname and port should be equal"
+  );
+  is(
+    win.document.getElementById("organization").textContent,
+    `Organization: “${TEST_ORG}”`,
+    "Actual and expected organization should be equal"
+  );
+  is(
+    win.document.getElementById("issuer").textContent,
+    `Issued Under: “${TEST_ISSUER_ORG}”`,
+    "Actual and expected issuer organization should be equal"
+  );
 
-  Assert.equal(win.document.getElementById("nicknames").label,
-               "test client certificate [03]",
-               "Actual and expected selected cert nickname and serial should " +
-               "be equal");
+  is(
+    win.document.getElementById("nicknames").label,
+    "Mochitest client [03]",
+    "Actual and expected selected cert nickname and serial should be equal"
+  );
+  is(
+    win.document.getElementById("nicknames").itemCount,
+    1,
+    "correct number of items"
+  );
 
-  let [subject, serialNum, validity, issuer, tokenName] =
-    win.document.getElementById("details").value.split("\n");
-  Assert.equal(subject, "Issued to: CN=Mochitest client",
-               "Actual and expected subject should be equal");
-  Assert.equal(serialNum, "Serial number: 03",
-               "Actual and expected serial number should be equal");
-  Assert.equal(validity, `Valid from ${notBefore} to ${notAfter}`,
-               "Actual and expected validity should be equal");
-  Assert.equal(issuer,
-               "Issued by: CN=Temporary Certificate Authority,O=Mozilla " +
-               "Testing,OU=Profile Guided Optimization",
-               "Actual and expected issuer should be equal");
-  Assert.equal(tokenName, "Stored on: Software Security Device",
-               "Actual and expected token name should be equal");
+  let [
+    subject,
+    serialNum,
+    validity,
+    issuer,
+    tokenName,
+  ] = win.document.getElementById("details").value.split("\n");
+  is(
+    subject,
+    "Issued to: CN=Mochitest client",
+    "Actual and expected subject should be equal"
+  );
+  is(
+    serialNum,
+    "Serial number: 03",
+    "Actual and expected serial number should be equal"
+  );
+  is(
+    validity,
+    `Valid from ${notBefore} to ${notAfter}`,
+    "Actual and expected validity should be equal"
+  );
+  is(
+    issuer,
+    "Issued by: OU=Profile Guided Optimization,O=Mozilla Testing,CN=Temporary Certificate Authority",
+    "Actual and expected issuer should be equal"
+  );
+  is(
+    tokenName,
+    "Stored on: Software Security Device",
+    "Actual and expected token name should be equal"
+  );
 }
 
-add_task(function* setup() {
-  cert = certDB.findCertByNickname("test client certificate");
-  Assert.notEqual(cert, null, "Should be able to find the test client cert");
+function findCertByCommonName(commonName) {
+  for (let cert of certDB.getCerts()) {
+    if (cert.commonName == commonName) {
+      return cert;
+    }
+  }
+  return null;
+}
+
+add_task(async function setup() {
+  cert = findCertByCommonName("Mochitest client");
+  isnot(cert, null, "Should be able to find the test client cert");
 });
 
 // Test that the contents of the dialog correspond to the details of the
 // provided cert.
-add_task(function* testContents() {
-  let [win, params] = yield openClientAuthDialog(cert);
-  checkDialogContents(win, cert.validity.notBeforeLocalTime,
-                      cert.validity.notAfterLocalTime);
-  yield BrowserTestUtils.closeWindow(win);
+add_task(async function testContents() {
+  let [win] = await openClientAuthDialog(cert);
+  checkDialogContents(
+    win,
+    cert.validity.notBeforeLocalTime,
+    cert.validity.notAfterLocalTime
+  );
+  await BrowserTestUtils.closeWindow(win);
 });
 
 // Test that the right values are returned when the dialog is accepted.
-add_task(function* testAcceptDialogReturnValues() {
-  let [win, params] = yield openClientAuthDialog(cert);
+add_task(async function testAcceptDialogReturnValues() {
+  let [win, retVals] = await openClientAuthDialog(cert);
   win.document.getElementById("rememberBox").checked = true;
   info("Accepting dialog");
   win.document.getElementById("certAuthAsk").acceptDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
-  Assert.equal(params.GetInt(0), 1,
-               "1 should be returned to signal user accepted");
-  Assert.equal(params.GetInt(1), 0,
-               "0 should be returned as the selected index");
-  Assert.equal(params.GetInt(2), 1,
-               "1 should be returned as the state of the 'Remember this " +
-               "decision' checkbox");
+  ok(
+    retVals.get("certChosen"),
+    "Return value should signal user chose a certificate"
+  );
+  is(
+    retVals.get("selectedIndex"),
+    0,
+    "0 should be returned as the selected index"
+  );
+  ok(
+    retVals.get("rememberSelection"),
+    "Return value should signal 'Remember this decision' checkbox was checked"
+  );
 });
 
 // Test that the right values are returned when the dialog is canceled.
-add_task(function* testCancelDialogReturnValues() {
-  let [win, params] = yield openClientAuthDialog(cert);
+add_task(async function testCancelDialogReturnValues() {
+  let [win, retVals] = await openClientAuthDialog(cert);
   win.document.getElementById("rememberBox").checked = false;
   info("Canceling dialog");
   win.document.getElementById("certAuthAsk").cancelDialog();
-  yield BrowserTestUtils.windowClosed(win);
+  await BrowserTestUtils.windowClosed(win);
 
-  Assert.equal(params.GetInt(0), 0,
-               "0 should be returned to signal user canceled");
-  Assert.equal(params.GetInt(2), 0,
-               "0 should be returned as the state of the 'Remember this " +
-               "decision' checkbox");
+  ok(
+    !retVals.get("certChosen"),
+    "Return value should signal user did not choose a certificate"
+  );
+  ok(
+    !retVals.get("rememberSelection"),
+    "Return value should signal 'Remember this decision' checkbox was unchecked"
+  );
 });

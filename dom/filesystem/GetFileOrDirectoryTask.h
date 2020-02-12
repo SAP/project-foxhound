@@ -15,69 +15,53 @@ namespace mozilla {
 namespace dom {
 
 class BlobImpl;
+class FileSystemGetFileOrDirectoryParams;
 
-class GetFileOrDirectoryTaskChild final : public FileSystemTaskChildBase
-{
-public:
-  static already_AddRefed<GetFileOrDirectoryTaskChild>
-  Create(FileSystemBase* aFileSystem,
-         nsIFile* aTargetPath,
-         bool aDirectoryOnly,
-         ErrorResult& aRv);
+class GetFileOrDirectoryTaskChild final : public FileSystemTaskChildBase {
+ public:
+  static already_AddRefed<GetFileOrDirectoryTaskChild> Create(
+      FileSystemBase* aFileSystem, nsIFile* aTargetPath, ErrorResult& aRv);
 
-  virtual
-  ~GetFileOrDirectoryTaskChild();
+  virtual ~GetFileOrDirectoryTaskChild();
 
-  already_AddRefed<Promise>
-  GetPromise();
+  already_AddRefed<Promise> GetPromise();
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
+ protected:
+  virtual FileSystemParams GetRequestParams(const nsString& aSerializedDOMPath,
+                                            ErrorResult& aRv) const override;
 
-protected:
-  virtual FileSystemParams
-  GetRequestParams(const nsString& aSerializedDOMPath,
-                   ErrorResult& aRv) const override;
+  virtual void SetSuccessRequestResult(const FileSystemResponseValue& aValue,
+                                       ErrorResult& aRv) override;
+  virtual void HandlerCallback() override;
 
-  virtual void
-  SetSuccessRequestResult(const FileSystemResponseValue& aValue,
-                          ErrorResult& aRv) override;
-  virtual void
-  HandlerCallback() override;
-
-private:
-  // If aDirectoryOnly is set, we should ensure that the target is a directory.
-  GetFileOrDirectoryTaskChild(FileSystemBase* aFileSystem,
-                              nsIFile* aTargetPath,
-                              bool aDirectoryOnly);
+ private:
+  GetFileOrDirectoryTaskChild(nsIGlobalObject* aGlobalObject,
+                              FileSystemBase* aFileSystem,
+                              nsIFile* aTargetPath);
 
   RefPtr<Promise> mPromise;
   nsCOMPtr<nsIFile> mTargetPath;
 
-  // Whether we get a directory.
-  bool mIsDirectory;
+  RefPtr<File> mResultFile;
+  RefPtr<Directory> mResultDirectory;
 };
 
-class GetFileOrDirectoryTaskParent final : public FileSystemTaskParentBase
-{
-public:
-  static already_AddRefed<GetFileOrDirectoryTaskParent>
-  Create(FileSystemBase* aFileSystem,
-         const FileSystemGetFileOrDirectoryParams& aParam,
-         FileSystemRequestParent* aParent,
-         ErrorResult& aRv);
+class GetFileOrDirectoryTaskParent final : public FileSystemTaskParentBase {
+ public:
+  static already_AddRefed<GetFileOrDirectoryTaskParent> Create(
+      FileSystemBase* aFileSystem,
+      const FileSystemGetFileOrDirectoryParams& aParam,
+      FileSystemRequestParent* aParent, ErrorResult& aRv);
 
-  virtual void
-  GetPermissionAccessType(nsCString& aAccess) const override;
+  nsresult GetTargetPath(nsAString& aPath) const override;
 
-protected:
-  virtual FileSystemResponseValue
-  GetSuccessRequestResult(ErrorResult& aRv) const override;
+ protected:
+  virtual FileSystemResponseValue GetSuccessRequestResult(
+      ErrorResult& aRv) const override;
 
-  virtual nsresult
-  IOWork() override;
+  virtual nsresult IOWork() override;
 
-private:
+ private:
   GetFileOrDirectoryTaskParent(FileSystemBase* aFileSystem,
                                const FileSystemGetFileOrDirectoryParams& aParam,
                                FileSystemRequestParent* aParent);
@@ -88,7 +72,7 @@ private:
   bool mIsDirectory;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_GetFileOrDirectory_h
+#endif  // mozilla_dom_GetFileOrDirectory_h

@@ -10,11 +10,19 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
-interface MediaElementAudioSourceNode : AudioNode {
+dictionary MediaElementAudioSourceOptions {
+    required HTMLMediaElement mediaElement;
+};
 
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface MediaElementAudioSourceNode : AudioNode {
+  [Throws]
+  constructor(AudioContext context, MediaElementAudioSourceOptions options);
+
+  readonly attribute HTMLMediaElement mediaElement;
 };
 
 // Mozilla extensions
-MediaElementAudioSourceNode implements AudioNodePassThrough;
+MediaElementAudioSourceNode includes AudioNodePassThrough;
 

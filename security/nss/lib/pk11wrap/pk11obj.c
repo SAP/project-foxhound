@@ -4,6 +4,8 @@
 /*
  * This file manages object type indepentent functions.
  */
+#include <limits.h>
+
 #include "seccomon.h"
 #include "secmod.h"
 #include "secmodi.h"
@@ -11,7 +13,7 @@
 #include "pkcs11.h"
 #include "pkcs11t.h"
 #include "pk11func.h"
-#include "key.h"
+#include "keyhi.h"
 #include "secitem.h"
 #include "secerr.h"
 #include "sslerr.h"
@@ -156,8 +158,8 @@ PK11_ReadULongAttribute(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
  * check to see if a bool has been set.
  */
 CK_BBOOL
-PK11_HasAttributeSet(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
-                     CK_ATTRIBUTE_TYPE type, PRBool haslock)
+pk11_HasAttributeSet_Lock(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
+                          CK_ATTRIBUTE_TYPE type, PRBool haslock)
 {
     CK_BBOOL ckvalue = CK_FALSE;
     CK_ATTRIBUTE theTemplate;
@@ -181,6 +183,14 @@ PK11_HasAttributeSet(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
     return ckvalue;
 }
 
+CK_BBOOL
+PK11_HasAttributeSet(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
+                     CK_ATTRIBUTE_TYPE type, PRBool haslock)
+{
+    PR_ASSERT(haslock == PR_FALSE);
+    return pk11_HasAttributeSet_Lock(slot, id, type, PR_FALSE);
+}
+
 /*
  * returns a full list of attributes. Allocate space for them. If an arena is
  * provided, allocate space out of the arena.
@@ -193,7 +203,6 @@ PK11_GetAttributes(PLArenaPool *arena, PK11SlotInfo *slot,
     /* make pedantic happy... note that it's only used arena != NULL */
     void *mark = NULL;
     CK_RV crv;
-    PORT_Assert(slot->session != CK_INVALID_SESSION);
     if (slot->session == CK_INVALID_SESSION)
         return CKR_SESSION_HANDLE_INVALID;
 
@@ -926,11 +935,11 @@ PK11_Decrypt(PK11SymKey *symKey,
     if (haslock)
         PK11_ExitSlotMonitor(slot);
     pk11_CloseSession(slot, session, owner);
-    *outLen = len;
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         return SECFailure;
     }
+    *outLen = len;
     return SECSuccess;
 }
 
@@ -972,11 +981,11 @@ PK11_Encrypt(PK11SymKey *symKey,
     if (haslock)
         PK11_ExitSlotMonitor(slot);
     pk11_CloseSession(slot, session, owner);
-    *outLen = len;
     if (crv != CKR_OK) {
         PORT_SetError(PK11_MapError(crv));
         return SECFailure;
     }
+    *outLen = len;
     return SECSuccess;
 }
 
@@ -1498,6 +1507,7 @@ PK11_FindGenericObjects(PK11SlotInfo *slot, CK_OBJECT_CLASS objClass)
         /* initialize it */
         obj->slot = PK11_ReferenceSlot(slot);
         obj->objectID = objectIDs[i];
+        obj->owner = PR_FALSE;
         obj->next = NULL;
         obj->prev = NULL;
 
@@ -1578,6 +1588,9 @@ PK11_DestroyGenericObject(PK11GenericObject *object)
 
     PK11_UnlinkGenericObject(object);
     if (object->slot) {
+        if (object->owner) {
+            PK11_DestroyObject(object->slot, object->objectID);
+        }
         PK11_FreeSlot(object->slot);
     }
     PORT_Free(object);
@@ -1619,8 +1632,9 @@ PK11_DestroyGenericObjects(PK11GenericObject *objects)
  * Hand Create a new object and return the Generic object for our new object.
  */
 PK11GenericObject *
-PK11_CreateGenericObject(PK11SlotInfo *slot, const CK_ATTRIBUTE *pTemplate,
-                         int count, PRBool token)
+pk11_CreateGenericObjectHelper(PK11SlotInfo *slot,
+                               const CK_ATTRIBUTE *pTemplate,
+                               int count, PRBool token, PRBool owner)
 {
     CK_OBJECT_HANDLE objectID;
     PK11GenericObject *obj;
@@ -1644,9 +1658,38 @@ PK11_CreateGenericObject(PK11SlotInfo *slot, const CK_ATTRIBUTE *pTemplate,
     /* initialize it */
     obj->slot = PK11_ReferenceSlot(slot);
     obj->objectID = objectID;
+    obj->owner = owner;
     obj->next = NULL;
     obj->prev = NULL;
     return obj;
+}
+
+/* This is the classic interface. Applications would call this function to
+ * create new object that would not be destroyed later. This lead to resource
+ * leaks (and thus memory leaks in the PKCS #11 module).  To solve this we have
+ * a new interface that automatically marks objects created on the fly to be
+ * destroyed later.
+ * The old interface is preserved because applications like Mozilla purposefully
+ * leak the reference to be found later with PK11_FindGenericObjects. New
+ * applications should use the new interface PK11_CreateManagedGenericObject */
+PK11GenericObject *
+PK11_CreateGenericObject(PK11SlotInfo *slot, const CK_ATTRIBUTE *pTemplate,
+                         int count, PRBool token)
+{
+    return pk11_CreateGenericObjectHelper(slot, pTemplate, count, token,
+                                          PR_FALSE);
+}
+
+/* Use this interface. It will automatically destroy any temporary objects
+ * (token = PR_FALSE) when the PK11GenericObject is freed. Permanent objects still
+ * need to be destroyed by hand with PK11_DestroyTokenObject.
+ */
+PK11GenericObject *
+PK11_CreateManagedGenericObject(PK11SlotInfo *slot,
+                                const CK_ATTRIBUTE *pTemplate, int count, PRBool token)
+{
+    return pk11_CreateGenericObjectHelper(slot, pTemplate, count, token,
+                                          !token);
 }
 
 /*
@@ -1842,6 +1885,96 @@ pk11_FindObjectsByTemplate(PK11SlotInfo *slot, CK_ATTRIBUTE *findTemplate,
         *object_count = -1;
     return objID;
 }
+
+SECStatus
+PK11_FindRawCertsWithSubject(PK11SlotInfo *slot, SECItem *derSubject,
+                             CERTCertificateList **results)
+{
+    if (!slot || !derSubject || !results) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+    *results = NULL;
+
+    // derSubject->data may be null. If so, derSubject->len must be 0.
+    if (!derSubject->data && derSubject->len != 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    CK_CERTIFICATE_TYPE ckc_x_509 = CKC_X_509;
+    CK_OBJECT_CLASS cko_certificate = CKO_CERTIFICATE;
+    CK_ATTRIBUTE subjectTemplate[] = {
+        { CKA_CERTIFICATE_TYPE, &ckc_x_509, sizeof(ckc_x_509) },
+        { CKA_CLASS, &cko_certificate, sizeof(cko_certificate) },
+        { CKA_SUBJECT, derSubject->data, derSubject->len },
+    };
+    int templateCount = sizeof(subjectTemplate) / sizeof(subjectTemplate[0]);
+    int handleCount = 0;
+    CK_OBJECT_HANDLE *handles =
+        pk11_FindObjectsByTemplate(slot, subjectTemplate, templateCount,
+                                   &handleCount);
+    if (!handles) {
+        // pk11_FindObjectsByTemplate indicates there was an error by setting
+        // handleCount to -1 (and it has set an error with PORT_SetError).
+        if (handleCount == -1) {
+            return SECFailure;
+        }
+        return SECSuccess;
+    }
+    PORT_Assert(handleCount > 0);
+    if (handleCount <= 0) {
+        PORT_Free(handles);
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
+    }
+    if (handleCount > INT_MAX / sizeof(SECItem)) {
+        PORT_Free(handles);
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
+    }
+    PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
+    if (!arena) {
+        PORT_Free(handles);
+        return SECFailure;
+    }
+    CERTCertificateList *rawCertificates =
+        PORT_ArenaNew(arena, CERTCertificateList);
+    if (!rawCertificates) {
+        PORT_Free(handles);
+        PORT_FreeArena(arena, PR_FALSE);
+        return SECFailure;
+    }
+    rawCertificates->arena = arena;
+    rawCertificates->certs = PORT_ArenaNewArray(arena, SECItem, handleCount);
+    if (!rawCertificates->certs) {
+        PORT_Free(handles);
+        PORT_FreeArena(arena, PR_FALSE);
+        return SECFailure;
+    }
+    rawCertificates->len = handleCount;
+    int handleIndex;
+    for (handleIndex = 0; handleIndex < handleCount; handleIndex++) {
+        SECStatus rv =
+            PK11_ReadAttribute(slot, handles[handleIndex], CKA_VALUE, arena,
+                               &rawCertificates->certs[handleIndex]);
+        if (rv != SECSuccess) {
+            PORT_Free(handles);
+            PORT_FreeArena(arena, PR_FALSE);
+            return SECFailure;
+        }
+        if (!rawCertificates->certs[handleIndex].data) {
+            PORT_Free(handles);
+            PORT_FreeArena(arena, PR_FALSE);
+            PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+            return SECFailure;
+        }
+    }
+    PORT_Free(handles);
+    *results = rawCertificates;
+    return SECSuccess;
+}
+
 /*
  * given a PKCS #11 object, match it's peer based on the KeyID. searchID
  * is typically a privateKey or a certificate while the peer is the opposite
@@ -2020,6 +2153,9 @@ PK11_FindObjectsFromNickname(char *nickname, PK11SlotInfo **slotptr,
     if ((delimit = PORT_Strchr(nickname, ':')) != NULL) {
         int len = delimit - nickname;
         tokenName = (char *)PORT_Alloc(len + 1);
+        if (!tokenName) {
+            return CK_INVALID_HANDLE;
+        }
         PORT_Memcpy(tokenName, nickname, len);
         tokenName[len] = 0;
 

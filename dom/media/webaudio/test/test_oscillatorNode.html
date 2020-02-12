@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test the OscillatorNode interface</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="webaudio.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -14,7 +14,7 @@ SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
 
   var context = new AudioContext();
-  var osc = context.createOscillator();
+  var osc = new OscillatorNode(context);
 
   is(osc.channelCount, 2, "Oscillator node has 2 input channels by default");
   is(osc.channelCountMode, "max", "Correct channelCountMode for the Oscillator node");

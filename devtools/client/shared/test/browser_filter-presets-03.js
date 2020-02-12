@@ -5,34 +5,38 @@
 
 // Tests deleting presets
 
-const {CSSFilterEditorWidget} = require("devtools/client/shared/widgets/FilterWidget");
+const {
+  CSSFilterEditorWidget,
+} = require("devtools/client/shared/widgets/FilterWidget");
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   const container = doc.querySelector("#filter-container");
-  let widget = new CSSFilterEditorWidget(container, "none");
+  const widget = new CSSFilterEditorWidget(container, "none");
   // First render
-  yield widget.once("render");
+  await widget.once("render");
 
   const NAME = "Test";
   const VALUE = "blur(2px) contrast(150%)";
 
-  yield showFilterPopupPresetsAndCreatePreset(widget, NAME, VALUE);
+  await showFilterPopupPresetsAndCreatePreset(widget, NAME, VALUE);
 
-  let removeButton = widget.el.querySelector(".preset .remove-button");
-  let onRender = widget.once("render");
+  const removeButton = widget.el.querySelector(".preset .remove-button");
+  const onRender = widget.once("render");
   widget._presetClick({
-    target: removeButton
+    target: removeButton,
   });
 
-  yield onRender;
-  is(widget.el.querySelector(".preset"), null,
-     "Should re-render after removing preset");
+  await onRender;
+  is(
+    widget.el.querySelector(".preset"),
+    null,
+    "Should re-render after removing preset"
+  );
 
-  let list = yield widget.getPresets();
-  is(list.length, 0,
-     "Should remove presets from asyncStorage");
+  const list = await widget.getPresets();
+  is(list.length, 0, "Should remove presets from asyncStorage");
 });

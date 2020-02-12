@@ -2,9 +2,9 @@
 <html style="font-size: 32px;">
 <head>
   <title>Test for D3E WheelEvent</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -722,9 +722,9 @@ function* testOnWheelAttr()
   yield synthesizeWheel(gScrollableElement, 10, 10,
                         { deltaMode: WheelEvent.DOM_DELTA_LINE,
                         deltaX: 1.0, deltaY: 2.0 });
-  ok(gOnWheelAttrHandled['html'], "html element's onwheel attribute isn't performed");
-  ok(gOnWheelAttrHandled['body'], "body element's onwheel attribute isn't performed");
-  ok(gOnWheelAttrHandled['div'], "div element's onwheel attribute isn't performed");
+  ok(gOnWheelAttrHandled.html, "html element's onwheel attribute isn't performed");
+  ok(gOnWheelAttrHandled.body, "body element's onwheel attribute isn't performed");
+  ok(gOnWheelAttrHandled.div, "div element's onwheel attribute isn't performed");
 }
 
 var gOnWheelPropHandled = new Array;
@@ -751,11 +751,11 @@ function* testOnWheelProperty()
                         { deltaMode: WheelEvent.DOM_DELTA_LINE,
                           deltaX: 1.0, deltaY: 2.0 });
 
-  ok(gOnWheelPropHandled['window'], "window's onwheel property isn't performed");
-  ok(gOnWheelPropHandled['document'], "document's onwheel property isn't performed");
-  ok(gOnWheelPropHandled['html'], "html element's onwheel property isn't performed");
-  ok(gOnWheelPropHandled['body'], "body element's onwheel property isn't performed");
-  ok(gOnWheelPropHandled['div'], "div element's onwheel property isn't performed");
+  ok(gOnWheelPropHandled.window, "window's onwheel property isn't performed");
+  ok(gOnWheelPropHandled.document, "document's onwheel property isn't performed");
+  ok(gOnWheelPropHandled.html, "html element's onwheel property isn't performed");
+  ok(gOnWheelPropHandled.body, "body element's onwheel property isn't performed");
+  ok(gOnWheelPropHandled.div, "div element's onwheel property isn't performed");
 }
 
 function* testBody()

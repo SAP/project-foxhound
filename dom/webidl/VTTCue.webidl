@@ -36,8 +36,11 @@ enum DirectionSetting {
   "lr"
 };
 
-[Constructor(double startTime, double endTime, DOMString text)]
+[Exposed=Window]
 interface VTTCue : TextTrackCue {
+  [Throws]
+  constructor(double startTime, double endTime, DOMString text);
+
   [Pref="media.webvtt.regions.enabled"]
   attribute VTTRegion? region;
   attribute DirectionSetting vertical;
@@ -68,4 +71,6 @@ partial interface VTTCue {
   readonly attribute double computedPosition;
   [ChromeOnly]
   readonly attribute PositionAlignSetting computedPositionAlign;
+  [ChromeOnly]
+  readonly attribute boolean getActive;
 };

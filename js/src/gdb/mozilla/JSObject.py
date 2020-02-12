@@ -1,13 +1,17 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Pretty-printers for SpiderMonkey JSObjects.
 
 import re
 import gdb
-import mozilla.JSString
 import mozilla.prettyprinters as prettyprinters
 from mozilla.prettyprinters import ptr_pretty_printer, ref_pretty_printer
 from mozilla.Root import deref
 
 prettyprinters.clear_module_printers(__name__)
+
 
 class JSObjectTypeCache(object):
     def __init__(self, value, cache):
@@ -16,12 +20,15 @@ class JSObjectTypeCache(object):
         self.func_ptr_type = gdb.lookup_type('JSFunction').pointer()
         self.class_NON_NATIVE = gdb.parse_and_eval('js::Class::NON_NATIVE')
         self.NativeObject_ptr_t = gdb.lookup_type('js::NativeObject').pointer()
+        self.Shape_ptr_t = gdb.lookup_type('js::Shape').pointer()
 
 # There should be no need to register this for JSFunction as well, since we
 # search for pretty-printers under the names of base classes, and
 # JSFunction has JSObject as a base class.
 
+
 gdb_string_regexp = re.compile(r'(?:0x[0-9a-z]+ )?(?:<.*> )?"(.*)"', re.I)
+
 
 @ptr_pretty_printer('JSObject')
 class JSObjectPtrOrRef(prettyprinters.Pointer):
@@ -47,7 +54,7 @@ class JSObjectPtrOrRef(prettyprinters.Pointer):
             return '[object {}]'.format(class_name)
         else:
             native = self.value.cast(self.otc.NativeObject_ptr_t)
-            shape = deref(native['shape_'])
+            shape = native['shape_'].cast(self.otc.Shape_ptr_t)
             baseshape = deref(shape['base_'])
             flags = baseshape['flags']
             is_delegate = bool(flags & self.otc.flag_DELEGATE)
@@ -63,6 +70,7 @@ class JSObjectPtrOrRef(prettyprinters.Pointer):
             return '[object {}{}]{}'.format(class_name,
                                             ' ' + name if name else '',
                                             ' delegate' if is_delegate else '')
+
 
 @ref_pretty_printer('JSObject')
 def JSObjectRef(value, cache): return JSObjectPtrOrRef(value, cache)

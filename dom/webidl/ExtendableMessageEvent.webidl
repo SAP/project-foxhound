@@ -4,12 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * For more information on this interface, please see
- * http://www.whatwg.org/specs/web-apps/current-work/#messageevent
+ * https://w3c.github.io/ServiceWorker/#extendablemessage-event-section
  */
 
-[Constructor(DOMString type, optional ExtendableMessageEventInit eventInitDict),
- Exposed=(ServiceWorker)]
+[Exposed=(ServiceWorker)]
 interface ExtendableMessageEvent : ExtendableEvent {
+  constructor(DOMString type,
+              optional ExtendableMessageEventInit eventInitDict = {});
+
   /**
    * Custom data associated with this event.
    */
@@ -31,13 +33,14 @@ interface ExtendableMessageEvent : ExtendableEvent {
    */
   readonly attribute (Client or ServiceWorker or MessagePort)? source;
 
-  [SameObject] readonly attribute MessagePortList? ports;
+  [Constant, Cached, Frozen]
+  readonly attribute sequence<MessagePort> ports;
 };
 
 dictionary ExtendableMessageEventInit : ExtendableEventInit {
-  any data;
+  any data = null;
   DOMString origin = "";
   DOMString lastEventId = "";
-  (Client or ServiceWorker or MessagePort)? source;
-  sequence<MessagePort>? ports;
+  (Client or ServiceWorker or MessagePort)? source = null;
+  sequence<MessagePort> ports = [];
 };

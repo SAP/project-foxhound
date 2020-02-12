@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=477700
 -->
 <head>
   <title>Test for Bug 477700</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -33,11 +33,11 @@ addLoadEvent(function() {
 
   $("i").style.display = "none";
   document.body.offsetWidth;
-  is(document.defaultView.getComputedStyle($("i"), "").display, "none",
+  is(document.defaultView.getComputedStyle($("i")).display, "none",
      "toggling display failed");
   $("i").style.display = "";
   document.body.offsetWidth;
-  is(document.defaultView.getComputedStyle($("i"), "").display, "inline",
+  is(document.defaultView.getComputedStyle($("i")).display, "inline",
      "toggling display back failed");
 
   $("i").contentWindow.postMessage("start", "*");
@@ -51,8 +51,7 @@ window.addEventListener("message",
     } else if (arr[0] == 'f') {
       SimpleTest.finish();
     }
-  },
-  false);
+  });
 
 </script>
 </pre>

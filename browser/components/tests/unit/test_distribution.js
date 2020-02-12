@@ -5,20 +5,44 @@
  * Tests that preferences are properly set by distribution.ini
  */
 
-var Ci = Components.interfaces;
-var Cc = Components.classes;
-var Cr = Components.results;
-var Cu = Components.utils;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/LoadContextInfo.jsm");
-
 // Import common head.
-var commonFile = do_get_file("../../../../toolkit/components/places/tests/head_common.js", false);
+var commonFile = do_get_file(
+  "../../../../toolkit/components/places/tests/head_common.js",
+  false
+);
+/* import-globals-from ../../../../toolkit/components/places/tests/head_common.js */
 if (commonFile) {
   let uri = Services.io.newFileURI(commonFile);
   Services.scriptloader.loadSubScript(uri.spec, this);
 }
+
+const { AddonTestUtils } = ChromeUtils.import(
+  "resource://testing-common/AddonTestUtils.jsm"
+);
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
+
+AddonTestUtils.init(this);
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "42",
+  "42"
+);
+
+add_task(async function setup() {
+  await AddonTestUtils.promiseStartupManager();
+});
+
+// This test causes BrowserGlue to start but not fully initialise, when the
+// AddonManager shuts down BrowserGlue will then try to uninit which will
+// cause AutoComplete.jsm to throw an error.
+// TODO: Fix in https://bugzilla.mozilla.org/show_bug.cgi?id=1543112.
+PromiseTestUtils.whitelistRejectionsGlobally(/A request was aborted/);
+PromiseTestUtils.whitelistRejectionsGlobally(
+  /The operation failed for reasons unrelated/
+);
 
 const TOPICDATA_DISTRIBUTION_CUSTOMIZATION = "force-distribution-customization";
 const TOPIC_BROWSERGLUE_TEST = "browser-glue-test";
@@ -30,8 +54,6 @@ const TOPIC_BROWSERGLUE_TEST = "browser-glue-test";
  */
 function installDistributionEngine() {
   const XRE_APP_DISTRIBUTION_DIR = "XREAppDist";
-
-  const gProfD = do_get_profile().QueryInterface(Ci.nsILocalFile);
 
   let dir = gProfD.clone();
   dir.append("distribution");
@@ -53,16 +75,26 @@ function installDistributionEngine() {
   do_get_file("data/engine-de-DE.xml").copyTo(localeDir, "engine-de-DE.xml");
 
   Services.dirsvc.registerProvider({
-    getFile: function(aProp, aPersistent) {
+    getFile(aProp, aPersistent) {
       aPersistent.value = true;
-      if (aProp == XRE_APP_DISTRIBUTION_DIR)
+      if (aProp == XRE_APP_DISTRIBUTION_DIR) {
         return distDir.clone();
+      }
       return null;
-    }
+    },
   });
 }
 
-function run_test() {
+registerCleanupFunction(async function() {
+  // Remove the distribution dir, even if the test failed, otherwise all
+  // next tests will use it.
+  let folderPath = OS.Path.join(OS.Constants.Path.profileDir, "distribution");
+  await OS.File.removeDir(folderPath, { ignoreAbsent: true });
+  Assert.ok(!(await OS.File.exists(folderPath)));
+  Services.prefs.clearUserPref("distribution.testing.loadFromProfile");
+});
+
+add_task(async function() {
   // Set special pref to load distribution.ini from the profile folder.
   Services.prefs.setBoolPref("distribution.testing.loadFromProfile", true);
 
@@ -82,78 +114,176 @@ function run_test() {
   Assert.ok(testDistributionFile.exists());
 
   installDistributionEngine();
-
-  run_next_test();
-}
-
-do_register_cleanup(function () {
-  // Remove the distribution dir, even if the test failed, otherwise all
-  // next tests will use it.
-  let distDir = gProfD.clone();
-  distDir.append("distribution");
-  distDir.remove(true);
-  Assert.ok(!distDir.exists());
 });
 
-add_task(function* () {
+add_task(async function() {
   // Force distribution.
-  let glue = Cc["@mozilla.org/browser/browserglue;1"].getService(Ci.nsIObserver)
-  glue.observe(null, TOPIC_BROWSERGLUE_TEST, TOPICDATA_DISTRIBUTION_CUSTOMIZATION);
+  let glue = Cc["@mozilla.org/browser/browserglue;1"].getService(
+    Ci.nsIObserver
+  );
+  glue.observe(
+    null,
+    TOPIC_BROWSERGLUE_TEST,
+    TOPICDATA_DISTRIBUTION_CUSTOMIZATION
+  );
 
   var defaultBranch = Services.prefs.getDefaultBranch(null);
 
   Assert.equal(defaultBranch.getCharPref("distribution.id"), "disttest");
   Assert.equal(defaultBranch.getCharPref("distribution.version"), "1.0");
-  Assert.equal(defaultBranch.getComplexValue("distribution.about", Ci.nsISupportsString).data, "Tèƨƭ δïƨƭřïβúƭïôñ ƒïℓè");
+  Assert.equal(
+    defaultBranch.getStringPref("distribution.about"),
+    "Tèƨƭ δïƨƭřïβúƭïôñ ƒïℓè"
+  );
 
-  Assert.equal(defaultBranch.getCharPref("distribution.test.string"), "Test String");
-  Assert.equal(defaultBranch.getCharPref("distribution.test.string.noquotes"), "Test String");
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.string"),
+    "Test String"
+  );
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.string.noquotes"),
+    "Test String"
+  );
   Assert.equal(defaultBranch.getIntPref("distribution.test.int"), 777);
   Assert.equal(defaultBranch.getBoolPref("distribution.test.bool.true"), true);
-  Assert.equal(defaultBranch.getBoolPref("distribution.test.bool.false"), false);
+  Assert.equal(
+    defaultBranch.getBoolPref("distribution.test.bool.false"),
+    false
+  );
 
-  Assert.throws(() => defaultBranch.getCharPref("distribution.test.empty"));
-  Assert.throws(() => defaultBranch.getIntPref("distribution.test.empty"));
-  Assert.throws(() => defaultBranch.getBoolPref("distribution.test.empty"));
+  Assert.throws(
+    () => defaultBranch.getCharPref("distribution.test.empty"),
+    /NS_ERROR_UNEXPECTED/
+  );
+  Assert.throws(
+    () => defaultBranch.getIntPref("distribution.test.empty"),
+    /NS_ERROR_UNEXPECTED/
+  );
+  Assert.throws(
+    () => defaultBranch.getBoolPref("distribution.test.empty"),
+    /NS_ERROR_UNEXPECTED/
+  );
 
-  Assert.equal(defaultBranch.getCharPref("distribution.test.pref.locale"), "en-US");
-  Assert.equal(defaultBranch.getCharPref("distribution.test.pref.language.en"), "en");
-  Assert.equal(defaultBranch.getCharPref("distribution.test.pref.locale.en-US"), "en-US");
-  Assert.throws(() => defaultBranch.getCharPref("distribution.test.pref.language.de"));
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.pref.locale"),
+    "en-US"
+  );
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.pref.language.en"),
+    "en"
+  );
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.pref.locale.en-US"),
+    "en-US"
+  );
+  Assert.throws(
+    () => defaultBranch.getCharPref("distribution.test.pref.language.de"),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was never set because of the empty language specific pref
-  Assert.throws(() => defaultBranch.getCharPref("distribution.test.pref.language.reset"));
+  Assert.throws(
+    () => defaultBranch.getCharPref("distribution.test.pref.language.reset"),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was never set because of the empty locale specific pref
-  Assert.throws(() => defaultBranch.getCharPref("distribution.test.pref.locale.reset"));
+  Assert.throws(
+    () => defaultBranch.getCharPref("distribution.test.pref.locale.reset"),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was overridden by a locale specific setting
-  Assert.equal(defaultBranch.getCharPref("distribution.test.pref.locale.set"), "Locale Set");
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.pref.locale.set"),
+    "Locale Set"
+  );
   // This value was overridden by a language specific setting
-  Assert.equal(defaultBranch.getCharPref("distribution.test.pref.language.set"), "Language Set");
+  Assert.equal(
+    defaultBranch.getCharPref("distribution.test.pref.language.set"),
+    "Language Set"
+  );
   // Language should not override locale
-  Assert.notEqual(defaultBranch.getCharPref("distribution.test.pref.locale.set"), "Language Set");
+  Assert.notEqual(
+    defaultBranch.getCharPref("distribution.test.pref.locale.set"),
+    "Language Set"
+  );
 
-  Assert.equal(defaultBranch.getComplexValue("distribution.test.locale", Ci.nsIPrefLocalizedString).data, "en-US");
-  Assert.equal(defaultBranch.getComplexValue("distribution.test.language.en", Ci.nsIPrefLocalizedString).data, "en");
-  Assert.equal(defaultBranch.getComplexValue("distribution.test.locale.en-US", Ci.nsIPrefLocalizedString).data, "en-US");
-  Assert.throws(() => defaultBranch.getComplexValue("distribution.test.language.de", Ci.nsIPrefLocalizedString));
+  Assert.equal(
+    defaultBranch.getComplexValue(
+      "distribution.test.locale",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "en-US"
+  );
+  Assert.equal(
+    defaultBranch.getComplexValue(
+      "distribution.test.language.en",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "en"
+  );
+  Assert.equal(
+    defaultBranch.getComplexValue(
+      "distribution.test.locale.en-US",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "en-US"
+  );
+  Assert.throws(
+    () =>
+      defaultBranch.getComplexValue(
+        "distribution.test.language.de",
+        Ci.nsIPrefLocalizedString
+      ),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was never set because of the empty language specific pref
-  Assert.throws(() => defaultBranch.getComplexValue("distribution.test.language.reset", Ci.nsIPrefLocalizedString));
+  Assert.throws(
+    () =>
+      defaultBranch.getComplexValue(
+        "distribution.test.language.reset",
+        Ci.nsIPrefLocalizedString
+      ),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was never set because of the empty locale specific pref
-  Assert.throws(() => defaultBranch.getComplexValue("distribution.test.locale.reset", Ci.nsIPrefLocalizedString));
+  Assert.throws(
+    () =>
+      defaultBranch.getComplexValue(
+        "distribution.test.locale.reset",
+        Ci.nsIPrefLocalizedString
+      ),
+    /NS_ERROR_UNEXPECTED/
+  );
   // This value was overridden by a locale specific setting
-  Assert.equal(defaultBranch.getComplexValue("distribution.test.locale.set", Ci.nsIPrefLocalizedString).data, "Locale Set");
+  Assert.equal(
+    defaultBranch.getComplexValue(
+      "distribution.test.locale.set",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "Locale Set"
+  );
   // This value was overridden by a language specific setting
-  Assert.equal(defaultBranch.getComplexValue("distribution.test.language.set", Ci.nsIPrefLocalizedString).data, "Language Set");
+  Assert.equal(
+    defaultBranch.getComplexValue(
+      "distribution.test.language.set",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "Language Set"
+  );
   // Language should not override locale
-  Assert.notEqual(defaultBranch.getComplexValue("distribution.test.locale.set", Ci.nsIPrefLocalizedString).data, "Language Set");
+  Assert.notEqual(
+    defaultBranch.getComplexValue(
+      "distribution.test.locale.set",
+      Ci.nsIPrefLocalizedString
+    ).data,
+    "Language Set"
+  );
 
-  do_test_pending();
+  Services.prefs.setCharPref(
+    "distribution.searchplugins.defaultLocale",
+    "de-DE"
+  );
 
-  Services.prefs.setCharPref("distribution.searchplugins.defaultLocale", "de-DE");
-
-  Services.search.init(function() {
-    Assert.equal(Services.search.isInitialized, true);
-    var engine = Services.search.getEngineByName("Google");
-    Assert.equal(engine.description, "override-de-DE");
-    do_test_finished();
-  });
+  await Services.search.init();
+  var engine = Services.search.getEngineByName("Google");
+  Assert.equal(engine.description, "override-de-DE");
 });

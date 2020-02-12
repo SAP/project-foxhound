@@ -7,6 +7,8 @@
 #ifndef mozilla_css_SheetParsingMode_h
 #define mozilla_css_SheetParsingMode_h
 
+#include <stdint.h>
+
 namespace mozilla {
 namespace css {
 
@@ -24,6 +26,10 @@ namespace css {
  * exposure on the public Web, but are very useful for expressing
  * user style overrides, such as @-moz-document rules.
  *
+ * XXX: eUserSheetFeatures was added in bug 1035091, but some patches in
+ * that bug never landed to use this enum value. Currently, all the features
+ * in user sheet are also available in author sheet.
+ *
  * Agent sheets have access to all author- and user-sheet features
  * plus more extensions that are necessary for internal use but,
  * again, not yet suitable for exposure on the public Web.  Some of
@@ -31,13 +37,13 @@ namespace css {
  * styling of anonymous box pseudo-elements can violate layout
  * invariants.
  */
-enum SheetParsingMode {
+enum SheetParsingMode : uint8_t {
   eAuthorSheetFeatures = 0,
   eUserSheetFeatures,
-  eAgentSheetFeatures
+  eAgentSheetFeatures,
 };
 
-} // namespace css
-} // namespace mozilla
+}  // namespace css
+}  // namespace mozilla
 
-#endif // mozilla_css_SheetParsingMode_h
+#endif  // mozilla_css_SheetParsingMode_h

@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1253683
 -->
 <head>
   <title>Test to ensure non-scrollable frames don't get layerized</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -19,15 +19,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1253683
   <div style="height: 5000px">spacer to make the 'container' div the root scrollable element</div>
  </div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 function* test(testDriver) {
-  var container = document.getElementById('container');
-  var no_layer = document.getElementById('no_layer');
+  var container = document.getElementById("container");
+  var no_layer = document.getElementById("no_layer");
 
   // Check initial state
   is(container.scrollTop, 0, "Initial scrollY should be 0");
-  ok(!isLayerized('no_layer'), "initially 'no_layer' should not be layerized");
+  ok(!isLayerized("no_layer"), "initially 'no_layer' should not be layerized");
 
   // Scrolling over outer1 should layerize outer1, but not inner1.
   yield moveMouseAndScrollWheelOver(no_layer, 10, 10, testDriver, true);
@@ -36,7 +36,7 @@ function* test(testDriver) {
   });
 
   ok(container.scrollTop > 0, "We should have scrolled the body");
-  ok(!isLayerized('no_layer'), "no_layer should still not be layerized");
+  ok(!isLayerized("no_layer"), "no_layer should still not be layerized");
 }
 
 if (isApzEnabled()) {
@@ -49,6 +49,7 @@ if (isApzEnabled()) {
   pushPrefs([["apz.displayport_expiry_ms", 0],
              ["apz.test.logging_enabled", true]])
   .then(waitUntilApzStable)
+  .then(forceLayerTreeToCompositor)
   .then(runContinuation(test))
   .then(SimpleTest.finish);
 }

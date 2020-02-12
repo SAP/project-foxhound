@@ -8,15 +8,14 @@
 <!DOCTYPE dialog SYSTEM "chrome://global/locale/commonDialog.dtd">
 
 <dialog xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-      onload="dialogOnLoad()"
-      ondialogaccept="return dialogOK();">
+      onload="dialogOnLoad()">
 
-  <script type="application/javascript" src="chrome://global/content/selectDialog.js" />
+  <script src="chrome://global/content/selectDialog.js" />
   <keyset id="dialogKeys"/>
   <vbox style="width: 24em;margin: 5px;">
     <label id="info.txt"/>
     <vbox>
-      <listbox id="list" rows="4" flex="1"/>
+      <richlistbox id="list" class="theme-listbox" style="height: 8em;"/>
     </vbox>
   </vbox>
 </dialog>

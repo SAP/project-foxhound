@@ -21,8 +21,28 @@ enum DistanceModelType {
   "exponential"
 };
 
-[Pref="dom.webaudio.enabled"]
+dictionary PannerOptions : AudioNodeOptions {
+             PanningModelType  panningModel = "equalpower";
+             DistanceModelType distanceModel = "inverse";
+             float             positionX = 0;
+             float             positionY = 0;
+             float             positionZ = 0;
+             float             orientationX = 1;
+             float             orientationY = 0;
+             float             orientationZ = 0;
+             double            refDistance = 1;
+             double            maxDistance = 10000;
+             double            rolloffFactor = 1;
+             double            coneInnerAngle = 360;
+             double            coneOuterAngle = 360;
+             double            coneOuterGain = 0;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface PannerNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context, optional PannerOptions options = {});
 
     // Default for stereo is equalpower
     attribute PanningModelType panningModel;
@@ -30,8 +50,6 @@ interface PannerNode : AudioNode {
     // Uses a 3D cartesian coordinate system
     void setPosition(double x, double y, double z);
     void setOrientation(double x, double y, double z);
-    [Deprecated="PannerNodeDoppler"]
-    void setVelocity(double x, double y, double z);
 
     // Cartesian coordinate for position
     readonly attribute AudioParam positionX;
@@ -45,17 +63,21 @@ interface PannerNode : AudioNode {
 
     // Distance model and attributes
     attribute DistanceModelType distanceModel;
+    [SetterThrows]
     attribute double refDistance;
+    [SetterThrows]
     attribute double maxDistance;
+    [SetterThrows]
     attribute double rolloffFactor;
 
     // Directional sound cone
     attribute double coneInnerAngle;
     attribute double coneOuterAngle;
+    [SetterThrows]
     attribute double coneOuterGain;
 
 };
 
 // Mozilla extension
-PannerNode implements AudioNodePassThrough;
+PannerNode includes AudioNodePassThrough;
 

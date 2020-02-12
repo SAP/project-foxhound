@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <head>
   <title>Test MediaStreamAudioSourceNode passthrough</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="webaudio.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -23,7 +23,7 @@ function createBuffer(context, delay) {
 var gTest = {
   length: 2048,
   skipOfflineContextTests: true,
-  createGraph: function(context) {
+  createGraph(context) {
     var sourceGraph = new AudioContext();
     var source = sourceGraph.createBufferSource();
     source.buffer = createBuffer(context, 0);
@@ -42,7 +42,7 @@ var gTest = {
 
     return mediaStreamSource;
   },
-  createExpectedBuffers: function(context) {
+  createExpectedBuffers(context) {
     return context.createBuffer(2, 2048, context.sampleRate);
   },
 };

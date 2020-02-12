@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -19,32 +18,33 @@ const expectedText = `
   }
   `;
 
-add_task(function* () {
-  yield addTab(TESTCASE_URI);
+add_task(async function() {
+  await addTab(TESTCASE_URI);
 
-  let { inspector, view, toolbox } = yield openRuleView();
+  const { inspector, view, toolbox } = await openRuleView();
 
   // In this test, make sure the style editor is open before making
   // changes in the inspector.
-  let { ui } = yield openStyleEditor();
-  let editor = yield ui.editors[0].getSourceEditor();
+  const { ui } = await openStyleEditor();
+  const editor = await ui.editors[0].getSourceEditor();
 
-  let onEditorChange = defer();
-  editor.sourceEditor.on("change", onEditorChange.resolve);
+  const onEditorChange = new Promise(resolve => {
+    editor.sourceEditor.on("change", resolve);
+  });
 
-  yield toolbox.getPanel("inspector");
-  yield selectNode("#testid", inspector);
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
+  await toolbox.getPanel("inspector");
+  await selectNode("#testid", inspector);
+  const ruleEditor = getRuleViewRuleEditor(view, 1);
 
   // Disable the "font-size" property.
-  let propEditor = ruleEditor.rule.textProps[0].editor;
-  let onModification = view.once("ruleview-changed");
+  const propEditor = ruleEditor.rule.textProps[0].editor;
+  const onModification = view.once("ruleview-changed");
   propEditor.enable.click();
-  yield onModification;
+  await onModification;
 
-  yield openStyleEditor();
-  yield onEditorChange.promise;
+  await openStyleEditor();
+  await onEditorChange;
 
-  let text = editor.sourceEditor.getText();
+  const text = editor.sourceEditor.getText();
   is(text, expectedText, "style inspector changes are synced");
 });

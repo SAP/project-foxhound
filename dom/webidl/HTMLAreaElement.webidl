@@ -13,31 +13,34 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-area-element
+[Exposed=Window]
 interface HTMLAreaElement : HTMLElement {
-           [SetterThrows]
+  [HTMLConstructor] constructor();
+
+           [CEReactions, SetterThrows]
            attribute DOMString alt;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString coords;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString shape;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString target;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString download;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString ping;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString rel;
-           [SetterThrows, Pref="network.http.enablePerElementReferrer"]
+           [CEReactions, SetterThrows]
            attribute DOMString referrerPolicy;
            [PutForwards=value]
   readonly attribute DOMTokenList relList;
 };
 
-HTMLAreaElement implements HTMLHyperlinkElementUtils;
+HTMLAreaElement includes HTMLHyperlinkElementUtils;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLAreaElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute boolean noHref;
 };

@@ -2,8 +2,8 @@
 <html>
 <head>
 <title>selection preventDefault test</title>
-<script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-<script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 
 <style type="text/css">
@@ -20,6 +20,7 @@
     width: 80px;
     margin: 0;
     padding: 0;
+    -moz-appearance: none;
   }
 </style>
 
@@ -39,10 +40,7 @@ function test()
 {
   function getSelectionForEditor(aEditorElement)
   {
-    const nsIDOMNSEditableElement =
-      SpecialPowers.Ci.nsIDOMNSEditableElement;
-    return SpecialPowers.wrap(aEditorElement)
-             .QueryInterface(nsIDOMNSEditableElement).editor.selection;
+    return SpecialPowers.wrap(aEditorElement).editor.selection;
   }
 
   function clear()
@@ -72,12 +70,12 @@ function test()
       var f = aSouldBeSelected & kToDo ? todo : ok;
       var str = aSelectedText.replace('\n', '\\n');
       if (boolvalue) {
-        f(aSelectedText.indexOf(aShouldBeIncludedCharacter) >= 0,
+        f(aSelectedText.includes(aShouldBeIncludedCharacter),
           "The contents of " + aElementName +
           " aren't selected (" + aTestingDescription +
           "): Selected String: \"" + str + "\"");
       } else {
-        f(aSelectedText.indexOf(aShouldBeIncludedCharacter) < 0,
+        f(!aSelectedText.includes(aShouldBeIncludedCharacter),
           "The contents of " + aElementName +
           " are selected (" + aTestingDescription +
           "): Selected String: \"" + str + "\"");

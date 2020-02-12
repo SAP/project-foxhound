@@ -4,11 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Networking")
+
 EXPORTS.mozilla.dom += [
+    'BodyExtractor.h',
     'ChannelInfo.h',
     'Fetch.h',
     'FetchDriver.h',
     'FetchIPCTypes.h',
+    'FetchObserver.h',
+    'FetchStreamReader.h',
     'FetchUtil.h',
     'Headers.h',
     'InternalHeaders.h',
@@ -19,9 +25,13 @@ EXPORTS.mozilla.dom += [
 ]
 
 UNIFIED_SOURCES += [
+    'BodyExtractor.cpp',
     'ChannelInfo.cpp',
+    'EmptyBody.cpp',
     'Fetch.cpp',
     'FetchDriver.cpp',
+    'FetchObserver.cpp',
+    'FetchStreamReader.cpp',
     'FetchUtil.cpp',
     'Headers.cpp',
     'InternalHeaders.cpp',
@@ -37,7 +47,8 @@ IPDL_SOURCES += [
 ]
 
 LOCAL_INCLUDES += [
-    '../workers',
+    # For nsDOMSerializer
+    '/dom/base',
     # For HttpBaseChannel.h dependencies
     '/netwerk/base',
     # For nsDataHandler.h
@@ -45,6 +56,9 @@ LOCAL_INCLUDES += [
     # For HttpBaseChannel.h
     '/netwerk/protocol/http',
 ]
+
+BROWSER_CHROME_MANIFESTS += [ 'tests/browser.ini' ]
+MOCHITEST_MANIFESTS += [ 'tests/mochitest.ini' ]
 
 FINAL_LIBRARY = 'xul'
 

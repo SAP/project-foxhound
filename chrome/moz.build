@@ -13,6 +13,10 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'chrome'
 
+EXPORTS += [
+    'nsChromeProtocolHandler.h',
+]
+
 EXPORTS.mozilla.chrome += [
     'RegistryMessageUtils.h',
 ]
@@ -36,5 +40,8 @@ LOCAL_INCLUDES += [
     '/xpcom/components'
 ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     CXXFLAGS += CONFIG['TK_CFLAGS']
+
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "Startup and Profile System")

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Testcase for AudioNode channel up-mix/down-mix rules</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript" src="webaudio.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -102,6 +102,7 @@ function discreteSum(sourceBuffer, destBuffer) {
 
 // Speaker channel interpretation mixing:
 // https://dvcs.w3.org/hg/audio/raw-file/tip/webaudio/specification.html#UpMix
+// eslint-disable-next-line complexity
 function speakersSum(sourceBuffer, destBuffer)
 {
     var numberOfSourceChannels = sourceBuffer.numberOfChannels;

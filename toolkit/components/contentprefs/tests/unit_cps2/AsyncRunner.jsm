@@ -2,24 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var EXPORTED_SYMBOLS = [
-  "AsyncRunner",
-];
+var EXPORTED_SYMBOLS = ["AsyncRunner"];
 
-const { interfaces: Ci, classes: Cc } = Components;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function AsyncRunner(callbacks) {
   this._callbacks = callbacks;
   this._iteratorQueue = [];
 
   // This catches errors reported to the console, e.g., via Cu.reportError.
-  Cc["@mozilla.org/consoleservice;1"].
-    getService(Ci.nsIConsoleService).
-    registerListener(this);
+  Services.console.registerListener(this);
 }
 
 AsyncRunner.prototype = {
-
   appendIterator: function AR_appendIterator(iter) {
     this._iteratorQueue.push(iter);
   },
@@ -38,31 +33,30 @@ AsyncRunner.prototype = {
         this.next();
         return;
       }
-    }
-    catch (err) {
+    } catch (err) {
       this._callbacks.error(err);
     }
 
     // val is truthy => call next
     // val is an iterator => prepend it to the queue and start on it
     if (value) {
-      if (typeof(value) != "boolean")
+      if (typeof value != "boolean") {
         this._iteratorQueue.unshift(value);
+      }
       this.next();
     }
   },
 
   destroy: function AR_destroy() {
-    Cc["@mozilla.org/consoleservice;1"].
-      getService(Ci.nsIConsoleService).
-      unregisterListener(this);
+    Services.console.unregisterListener(this);
     this.destroy = function AR_alreadyDestroyed() {};
   },
 
   observe: function AR_consoleServiceListener(msg) {
-    if (msg instanceof Ci.nsIScriptError &&
-        !(msg.flags & Ci.nsIScriptError.warningFlag))
-    {
+    if (
+      msg instanceof Ci.nsIScriptError &&
+      !(msg.flags & Ci.nsIScriptError.warningFlag)
+    ) {
       this._callbacks.consoleError(msg);
     }
   },

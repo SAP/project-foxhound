@@ -10,29 +10,32 @@
 #include "FFmpegLog.h"
 #include "prlink.h"
 
-namespace mozilla
-{
+namespace mozilla {
 
 FFmpegRuntimeLinker::LinkStatus FFmpegRuntimeLinker::sLinkStatus =
-  LinkStatus_INIT;
+    LinkStatus_INIT;
 const char* FFmpegRuntimeLinker::sLinkStatusLibraryName = "";
 
-template <int V> class FFmpegDecoderModule
-{
-public:
+template <int V>
+class FFmpegDecoderModule {
+ public:
   static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
 };
 
 static FFmpegLibWrapper sLibAV;
 
 static const char* sLibs[] = {
+// clang-format off
 #if defined(XP_DARWIN)
+  "libavcodec.58.dylib",
   "libavcodec.57.dylib",
   "libavcodec.56.dylib",
   "libavcodec.55.dylib",
   "libavcodec.54.dylib",
   "libavcodec.53.dylib",
 #else
+  "libavcodec.so.58",
+  "libavcodec-ffmpeg.so.58",
   "libavcodec-ffmpeg.so.57",
   "libavcodec-ffmpeg.so.56",
   "libavcodec.so.57",
@@ -41,11 +44,11 @@ static const char* sLibs[] = {
   "libavcodec.so.54",
   "libavcodec.so.53",
 #endif
+    // clang-format on
 };
 
-/* static */ bool
-FFmpegRuntimeLinker::Init()
-{
+/* static */
+bool FFmpegRuntimeLinker::Init() {
   if (sLinkStatus != LinkStatus_INIT) {
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
@@ -59,7 +62,8 @@ FFmpegRuntimeLinker::Init()
     PRLibSpec lspec;
     lspec.type = PR_LibSpec_Pathname;
     lspec.value.pathname = lib;
-    sLibAV.mAVCodecLib = PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
+    sLibAV.mAVCodecLib =
+        PR_LoadLibraryWithFlags(lspec, PR_LD_NOW | PR_LD_LOCAL);
     if (sLibAV.mAVCodecLib) {
       sLibAV.mAVUtilLib = sLibAV.mAVCodecLib;
       switch (sLibAV.Link()) {
@@ -121,27 +125,37 @@ FFmpegRuntimeLinker::Init()
   return false;
 }
 
-/* static */ already_AddRefed<PlatformDecoderModule>
-FFmpegRuntimeLinker::CreateDecoderModule()
-{
+/* static */
+already_AddRefed<PlatformDecoderModule>
+FFmpegRuntimeLinker::CreateDecoderModule() {
   if (!Init()) {
     return nullptr;
   }
   RefPtr<PlatformDecoderModule> module;
   switch (sLibAV.mVersion) {
-    case 53: module = FFmpegDecoderModule<53>::Create(&sLibAV); break;
-    case 54: module = FFmpegDecoderModule<54>::Create(&sLibAV); break;
+    case 53:
+      module = FFmpegDecoderModule<53>::Create(&sLibAV);
+      break;
+    case 54:
+      module = FFmpegDecoderModule<54>::Create(&sLibAV);
+      break;
     case 55:
-    case 56: module = FFmpegDecoderModule<55>::Create(&sLibAV); break;
-    case 57: module = FFmpegDecoderModule<57>::Create(&sLibAV); break;
-    default: module = nullptr;
+    case 56:
+      module = FFmpegDecoderModule<55>::Create(&sLibAV);
+      break;
+    case 57:
+      module = FFmpegDecoderModule<57>::Create(&sLibAV);
+      break;
+    case 58:
+      module = FFmpegDecoderModule<58>::Create(&sLibAV);
+      break;
+    default:
+      module = nullptr;
   }
   return module.forget();
 }
 
-/* static */ const char*
-FFmpegRuntimeLinker::LinkStatusString()
-{
+/* static */ const char* FFmpegRuntimeLinker::LinkStatusString() {
   switch (sLinkStatus) {
     case LinkStatus_INIT:
       return "Libavcodec not initialized yet";
@@ -166,4 +180,4 @@ FFmpegRuntimeLinker::LinkStatusString()
   return "?";
 }
 
-} // namespace mozilla
+}  // namespace mozilla

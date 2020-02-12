@@ -5,14 +5,33 @@
  * found in the LICENSE file.
  */
 
-#include "SkMilestone.h"
 #include "SkPDFMetadata.h"
+
+#include "SkMD5.h"
+#include "SkMilestone.h"
 #include "SkPDFTypes.h"
+#include "SkTo.h"
+#include "SkUtils.h"
+
 #include <utility>
 
-#ifdef SK_PDF_GENERATE_PDFA
-#include "SkMD5.h"
-#endif
+#define SKPDF_STRING(X) SKPDF_STRING_IMPL(X)
+#define SKPDF_STRING_IMPL(X) #X
+#define SKPDF_PRODUCER "Skia/PDF m" SKPDF_STRING(SK_MILESTONE)
+#define SKPDF_CUSTOM_PRODUCER_KEY "ProductionLibrary"
+
+static constexpr SkTime::DateTime kZeroTime = {0, 0, 0, 0, 0, 0, 0, 0};
+
+static bool operator!=(const SkTime::DateTime& u, const SkTime::DateTime& v) {
+    return u.fTimeZoneMinutes != v.fTimeZoneMinutes ||
+           u.fYear != v.fYear ||
+           u.fMonth != v.fMonth ||
+           u.fDayOfWeek != v.fDayOfWeek ||
+           u.fDay != v.fDay ||
+           u.fHour != v.fHour ||
+           u.fMinute != v.fMinute ||
+           u.fSecond != v.fSecond;
+}
 
 static SkString pdf_date(const SkTime::DateTime& dt) {
     int timeZoneMinutes = SkToInt(dt.fTimeZoneMinutes);
@@ -28,52 +47,128 @@ static SkString pdf_date(const SkTime::DateTime& dt) {
             timeZoneMinutes);
 }
 
-#define SKPDF_STRING(X) SKPDF_STRING_IMPL(X)
-#define SKPDF_STRING_IMPL(X) #X
-
-SkPDFObject* SkPDFMetadata::createDocumentInformationDict() const {
-    auto dict = sk_make_sp<SkPDFDict>();
-    static const char* keys[] = {
-            "Title", "Author", "Subject", "Keywords", "Creator"};
-    for (const char* key : keys) {
-        for (const SkDocument::Attribute& keyValue : fInfo) {
-            if (keyValue.fKey.equals(key)) {
-                dict->insertString(key, keyValue.fValue);
-            }
+static bool utf8_is_pdfdocencoding(const char* src, size_t len) {
+    const uint8_t* end = (const uint8_t*)src + len;
+    for (const uint8_t* ptr = (const uint8_t*)src; ptr < end; ++ptr) {
+        uint8_t v = *ptr;
+        // See Table D.2 (PDFDocEncoding Character Set) in the PDF3200_2008 spec.
+        if ((v > 23 && v < 32) || v > 126) {
+            return false;
         }
     }
-    dict->insertString("Producer", "Skia/PDF m" SKPDF_STRING(SK_MILESTONE));
-    if (fCreation) {
-        dict->insertString("CreationDate", pdf_date(*fCreation.get()));
-    }
-    if (fModified) {
-        dict->insertString("ModDate", pdf_date(*fModified.get()));
-    }
-    return dict.release();
+    return true;
 }
 
-#ifdef SK_PDF_GENERATE_PDFA
-SkPDFMetadata::UUID SkPDFMetadata::uuid() const {
+void write_utf16be(char** ptr, uint16_t value) {
+    *(*ptr)++ = (value >> 8);
+    *(*ptr)++ = (value & 0xFF);
+}
+
+// Please Note:  This "abuses" the SkString, which "should" only hold UTF8.
+// But the SkString is written as if it is really just a ref-counted array of
+// chars, so this works, as long as we handle endiness and conversions ourselves.
+//
+// Input:  UTF-8
+// Output  UTF-16-BE
+static SkString to_utf16be(const char* src, size_t len) {
+    SkString ret;
+    const char* const end = src + len;
+    size_t n = 1;  // BOM
+    for (const char* ptr = src; ptr < end;) {
+        SkUnichar u = SkUTF::NextUTF8(&ptr, end);
+        if (u < 0) {
+            break;
+        }
+        n += SkUTF::ToUTF16(u);
+    }
+    ret.resize(2 * n);
+    char* out = ret.writable_str();
+    write_utf16be(&out, 0xFEFF);  // BOM
+    for (const char* ptr = src; ptr < end;) {
+        SkUnichar u = SkUTF::NextUTF8(&ptr, end);
+        if (u < 0) {
+            break;
+        }
+        uint16_t utf16[2];
+        size_t l = SkUTF::ToUTF16(u, utf16);
+        write_utf16be(&out, utf16[0]);
+        if (l == 2) {
+            write_utf16be(&out, utf16[1]);
+        }
+    }
+    SkASSERT(out == ret.writable_str() + 2 * n);
+    return ret;
+}
+
+// Input:  UTF-8
+// Output  UTF-16-BE OR PDFDocEncoding (if that encoding is identical to ASCII encoding).
+//
+// See sections 14.3.3 (Document Information Dictionary) and 7.9.2.2 (Text String Type)
+// of the PDF32000_2008 spec.
+static SkString convert(const SkString& s) {
+    return utf8_is_pdfdocencoding(s.c_str(), s.size()) ? s : to_utf16be(s.c_str(), s.size());
+}
+static SkString convert(const char* src) {
+    size_t len = strlen(src);
+    return utf8_is_pdfdocencoding(src, len) ? SkString(src, len) : to_utf16be(src, len);
+}
+
+namespace {
+static const struct {
+    const char* const key;
+    SkString SkPDF::Metadata::*const valuePtr;
+} gMetadataKeys[] = {
+        {"Title", &SkPDF::Metadata::fTitle},
+        {"Author", &SkPDF::Metadata::fAuthor},
+        {"Subject", &SkPDF::Metadata::fSubject},
+        {"Keywords", &SkPDF::Metadata::fKeywords},
+        {"Creator", &SkPDF::Metadata::fCreator},
+};
+}  // namespace
+
+std::unique_ptr<SkPDFObject> SkPDFMetadata::MakeDocumentInformationDict(
+        const SkPDF::Metadata& metadata) {
+    auto dict = SkPDFMakeDict();
+    for (const auto keyValuePtr : gMetadataKeys) {
+        const SkString& value = metadata.*(keyValuePtr.valuePtr);
+        if (value.size() > 0) {
+            dict->insertString(keyValuePtr.key, convert(value));
+        }
+    }
+    if (metadata.fProducer.isEmpty()) {
+        dict->insertString("Producer", convert(SKPDF_PRODUCER));
+    } else {
+        dict->insertString("Producer", convert(metadata.fProducer));
+        dict->insertString(SKPDF_CUSTOM_PRODUCER_KEY, convert(SKPDF_PRODUCER));
+    }
+    if (metadata.fCreation != kZeroTime) {
+        dict->insertString("CreationDate", pdf_date(metadata.fCreation));
+    }
+    if (metadata.fModified != kZeroTime) {
+        dict->insertString("ModDate", pdf_date(metadata.fModified));
+    }
+    return std::move(dict);
+}
+
+SkUUID SkPDFMetadata::CreateUUID(const SkPDF::Metadata& metadata) {
     // The main requirement is for the UUID to be unique; the exact
     // format of the data that will be hashed is not important.
     SkMD5 md5;
     const char uuidNamespace[] = "org.skia.pdf\n";
-    md5.write(uuidNamespace, strlen(uuidNamespace));
+    md5.writeText(uuidNamespace);
     double msec = SkTime::GetMSecs();
     md5.write(&msec, sizeof(msec));
     SkTime::DateTime dateTime;
     SkTime::GetDateTime(&dateTime);
     md5.write(&dateTime, sizeof(dateTime));
-    if (fCreation) {
-        md5.write(fCreation.get(), sizeof(fCreation));
-    }
-    if (fModified) {
-        md5.write(fModified.get(), sizeof(fModified));
-    }
-    for (const auto& kv : fInfo) {
-        md5.write(kv.fKey.c_str(), kv.fKey.size());
+    md5.write(&metadata.fCreation, sizeof(metadata.fCreation));
+    md5.write(&metadata.fModified, sizeof(metadata.fModified));
+
+    for (const auto keyValuePtr : gMetadataKeys) {
+        md5.writeText(keyValuePtr.key);
         md5.write("\037", 1);
-        md5.write(kv.fValue.c_str(), kv.fValue.size());
+        const SkString& value = metadata.*(keyValuePtr.valuePtr);
+        md5.write(value.c_str(), value.size());
         md5.write("\036", 1);
     }
     SkMD5::Digest digest;
@@ -81,131 +176,73 @@ SkPDFMetadata::UUID SkPDFMetadata::uuid() const {
     // See RFC 4122, page 6-7.
     digest.data[6] = (digest.data[6] & 0x0F) | 0x30;
     digest.data[8] = (digest.data[6] & 0x3F) | 0x80;
-    static_assert(sizeof(digest) == sizeof(UUID), "uuid_size");
-    SkPDFMetadata::UUID uuid;
+    static_assert(sizeof(digest) == sizeof(SkUUID), "uuid_size");
+    SkUUID uuid;
     memcpy(&uuid, &digest, sizeof(digest));
     return uuid;
 }
 
-SkPDFObject* SkPDFMetadata::CreatePdfId(const UUID& doc, const UUID& instance) {
+std::unique_ptr<SkPDFObject> SkPDFMetadata::MakePdfId(const SkUUID& doc,
+                                            const SkUUID& instance) {
     // /ID [ <81b14aafa313db63dbd6f981e49f94f4>
     //       <81b14aafa313db63dbd6f981e49f94f4> ]
-    auto array = sk_make_sp<SkPDFArray>();
-    static_assert(sizeof(UUID) == 16, "uuid_size");
+    auto array = SkPDFMakeArray();
+    static_assert(sizeof(SkUUID) == 16, "uuid_size");
     array->appendString(
-            SkString(reinterpret_cast<const char*>(&doc), sizeof(UUID)));
+            SkString(reinterpret_cast<const char*>(&doc), sizeof(SkUUID)));
     array->appendString(
-            SkString(reinterpret_cast<const char*>(&instance), sizeof(UUID)));
-    return array.release();
+            SkString(reinterpret_cast<const char*>(&instance), sizeof(SkUUID)));
+    return std::move(array);
 }
 
-// Improvement on SkStringPrintf to allow for arbitrarily long output.
-// TODO: replace SkStringPrintf.
-static SkString sk_string_printf(const char* format, ...) {
-#ifdef SK_BUILD_FOR_WIN
-    va_list args;
-    va_start(args, format);
-    char buffer[1024];
-    int length = _vsnprintf_s(buffer, sizeof(buffer), _TRUNCATE, format, args);
-    va_end(args);
-    if (length >= 0 && length < (int)sizeof(buffer)) {
-        return SkString(buffer, length);
+// Convert a block of memory to hexadecimal.  Input and output pointers will be
+// moved to end of the range.
+static void hexify(const uint8_t** inputPtr, char** outputPtr, int count) {
+    SkASSERT(inputPtr && *inputPtr);
+    SkASSERT(outputPtr && *outputPtr);
+    while (count-- > 0) {
+        uint8_t value = *(*inputPtr)++;
+        *(*outputPtr)++ = SkHexadecimalDigits::gLower[value >> 4];
+        *(*outputPtr)++ = SkHexadecimalDigits::gLower[value & 0xF];
     }
-    va_start(args, format);
-    length = _vscprintf(format, args);
-    va_end(args);
-
-    SkString string((size_t)length);
-    va_start(args, format);
-    SkDEBUGCODE(int check = ) _vsnprintf_s(string.writable_str(), length + 1,
-                                           _TRUNCATE, format, args);
-    va_end(args);
-    SkASSERT(check == length);
-    SkASSERT(string[length] == '\0');
-    return std::move(string);
-#else  // C99/C++11 standard vsnprintf
-    // TODO: When all compilers support this, remove windows-specific code.
-    va_list args;
-    va_start(args, format);
-    char buffer[1024];
-    int length = vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    if (length < 0) {
-        return SkString();
-    }
-    if (length < (int)sizeof(buffer)) {
-        return SkString(buffer, length);
-    }
-    SkString string((size_t)length);
-    va_start(args, format);
-    SkDEBUGCODE(int check = )
-            vsnprintf(string.writable_str(), length + 1, format, args);
-    va_end(args);
-    SkASSERT(check == length);
-    SkASSERT(string[length] == '\0');
-    return std::move(string);
-#endif
 }
 
-static const SkString get(const SkTArray<SkDocument::Attribute>& info,
-                          const char* key) {
-    for (const auto& keyValue : info) {
-        if (keyValue.fKey.equals(key)) {
-            return keyValue.fValue;
-        }
-    }
-    return SkString();
-}
-
-#define HEXIFY(INPUT_PTR, OUTPUT_PTR, HEX_STRING, BYTE_COUNT) \
-    do {                                                      \
-        for (int i = 0; i < (BYTE_COUNT); ++i) {              \
-            uint8_t value = *(INPUT_PTR)++;                   \
-            *(OUTPUT_PTR)++ = (HEX_STRING)[value >> 4];       \
-            *(OUTPUT_PTR)++ = (HEX_STRING)[value & 0xF];      \
-        }                                                     \
-    } while (false)
-static SkString uuid_to_string(const SkPDFMetadata::UUID& uuid) {
+static SkString uuid_to_string(const SkUUID& uuid) {
     //  8-4-4-4-12
     char buffer[36];  // [32 + 4]
-    static const char gHex[] = "0123456789abcdef";
-    SkASSERT(strlen(gHex) == 16);
     char* ptr = buffer;
     const uint8_t* data = uuid.fData;
-    HEXIFY(data, ptr, gHex, 4);
+    hexify(&data, &ptr, 4);
     *ptr++ = '-';
-    HEXIFY(data, ptr, gHex, 2);
+    hexify(&data, &ptr, 2);
     *ptr++ = '-';
-    HEXIFY(data, ptr, gHex, 2);
+    hexify(&data, &ptr, 2);
     *ptr++ = '-';
-    HEXIFY(data, ptr, gHex, 2);
+    hexify(&data, &ptr, 2);
     *ptr++ = '-';
-    HEXIFY(data, ptr, gHex, 6);
+    hexify(&data, &ptr, 6);
     SkASSERT(ptr == buffer + 36);
     SkASSERT(data == uuid.fData + 16);
     return SkString(buffer, 36);
 }
-#undef HEXIFY
 
 namespace {
 class PDFXMLObject final : public SkPDFObject {
 public:
     PDFXMLObject(SkString xml) : fXML(std::move(xml)) {}
-    void emitObject(SkWStream* stream,
-                    const SkPDFObjNumMap& omap,
-                    const SkPDFSubstituteMap& smap) const override {
+    void emitObject(SkWStream* stream) const override {
         SkPDFDict dict("Metadata");
         dict.insertName("Subtype", "XML");
         dict.insertInt("Length", fXML.size());
-        dict.emitObject(stream, omap, smap);
+        dict.emitObject(stream);
         static const char streamBegin[] = " stream\n";
-        stream->write(streamBegin, strlen(streamBegin));
+        stream->writeText(streamBegin);
         // Do not compress this.  The standard requires that a
         // program that does not understand PDF can grep for
-        // "<?xpacket" and extracť the entire XML.
+        // "<?xpacket" and extract the entire XML.
         stream->write(fXML.c_str(), fXML.size());
         static const char streamEnd[] = "\nendstream";
-        stream->write(streamEnd, strlen(streamEnd));
+        stream->writeText(streamEnd);
     }
 
 private:
@@ -266,8 +303,11 @@ const SkString escape_xml(const SkString& input,
     return output;
 }
 
-SkPDFObject* SkPDFMetadata::createXMPObject(const UUID& doc,
-                                            const UUID& instance) const {
+SkPDFIndirectReference SkPDFMetadata::MakeXMPObject(
+        const SkPDF::Metadata& metadata,
+        const SkUUID& doc,
+        const SkUUID& instance,
+        SkPDFDocument* docPtr) {
     static const char templateString[] =
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n"
             "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"\n"
@@ -293,7 +333,7 @@ SkPDFObject* SkPDFMetadata::createXMPObject(const UUID& doc,
             "%s"  // keywords
             "<xmpMM:DocumentID>uuid:%s</xmpMM:DocumentID>\n"
             "<xmpMM:InstanceID>uuid:%s</xmpMM:InstanceID>\n"
-            "<pdf:Producer>Skia/PDF m" SKPDF_STRING(SK_MILESTONE) "</pdf:Producer>\n"
+            "%s"  // pdf:Producer
             "%s"  // pdf:Keywords
             "</rdf:Description>\n"
             "</rdf:RDF>\n"
@@ -302,56 +342,72 @@ SkPDFObject* SkPDFMetadata::createXMPObject(const UUID& doc,
 
     SkString creationDate;
     SkString modificationDate;
-    if (fCreation) {
+    if (metadata.fCreation != kZeroTime) {
         SkString tmp;
-        fCreation->toISO8601(&tmp);
+        metadata.fCreation.toISO8601(&tmp);
         SkASSERT(0 == count_xml_escape_size(tmp));
         // YYYY-mm-ddTHH:MM:SS[+|-]ZZ:ZZ; no need to escape
-        creationDate = sk_string_printf("<xmp:CreateDate>%s</xmp:CreateDate>\n",
-                                        tmp.c_str());
+        creationDate = SkStringPrintf("<xmp:CreateDate>%s</xmp:CreateDate>\n",
+                                      tmp.c_str());
     }
-    if (fModified) {
+    if (metadata.fModified != kZeroTime) {
         SkString tmp;
-        fModified->toISO8601(&tmp);
+        metadata.fModified.toISO8601(&tmp);
         SkASSERT(0 == count_xml_escape_size(tmp));
-        modificationDate = sk_string_printf(
+        modificationDate = SkStringPrintf(
                 "<xmp:ModifyDate>%s</xmp:ModifyDate>\n", tmp.c_str());
     }
-    SkString title = escape_xml(
-            get(fInfo, "Title"),
-            "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">",
-            "</rdf:li></rdf:Alt></dc:title>\n");
-    SkString author = escape_xml(
-            get(fInfo, "Author"), "<dc:creator><rdf:Bag><rdf:li>",
-            "</rdf:li></rdf:Bag></dc:creator>\n");
+    SkString title =
+            escape_xml(metadata.fTitle,
+                       "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">",
+                       "</rdf:li></rdf:Alt></dc:title>\n");
+    SkString author =
+            escape_xml(metadata.fAuthor, "<dc:creator><rdf:Bag><rdf:li>",
+                       "</rdf:li></rdf:Bag></dc:creator>\n");
     // TODO: in theory, XMP can support multiple authors.  Split on a delimiter?
     SkString subject = escape_xml(
-            get(fInfo, "Subject"),
+            metadata.fSubject,
             "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">",
             "</rdf:li></rdf:Alt></dc:description>\n");
-    SkString keywords1 = escape_xml(
-            get(fInfo, "Keywords"), "<dc:subject><rdf:Bag><rdf:li>",
-            "</rdf:li></rdf:Bag></dc:subject>\n");
-    SkString keywords2 = escape_xml(
-            get(fInfo, "Keywords"), "<pdf:Keywords>",
-            "</pdf:Keywords>\n");
-
+    SkString keywords1 =
+            escape_xml(metadata.fKeywords, "<dc:subject><rdf:Bag><rdf:li>",
+                       "</rdf:li></rdf:Bag></dc:subject>\n");
+    SkString keywords2 = escape_xml(metadata.fKeywords, "<pdf:Keywords>",
+                                    "</pdf:Keywords>\n");
     // TODO: in theory, keywords can be a list too.
-    SkString creator = escape_xml(get(fInfo, "Creator"), "<xmp:CreatorTool>",
+
+    SkString producer("<pdf:Producer>" SKPDF_PRODUCER "</pdf:Producer>\n");
+    if (!metadata.fProducer.isEmpty()) {
+        // TODO: register a developer prefix to make
+        // <skia:SKPDF_CUSTOM_PRODUCER_KEY> a real XML tag.
+        producer = escape_xml(
+                metadata.fProducer, "<pdf:Producer>",
+                "</pdf:Producer>\n<!-- <skia:" SKPDF_CUSTOM_PRODUCER_KEY ">"
+                SKPDF_PRODUCER "</skia:" SKPDF_CUSTOM_PRODUCER_KEY "> -->\n");
+    }
+
+    SkString creator = escape_xml(metadata.fCreator, "<xmp:CreatorTool>",
                                   "</xmp:CreatorTool>\n");
     SkString documentID = uuid_to_string(doc);  // no need to escape
     SkASSERT(0 == count_xml_escape_size(documentID));
     SkString instanceID = uuid_to_string(instance);
     SkASSERT(0 == count_xml_escape_size(instanceID));
-    return new PDFXMLObject(sk_string_printf(
+
+
+    auto value = SkStringPrintf(
             templateString, modificationDate.c_str(), creationDate.c_str(),
-            creator.c_str(), title.c_str(),
-            subject.c_str(), author.c_str(), keywords1.c_str(),
-            documentID.c_str(), instanceID.c_str(), keywords2.c_str()));
+            creator.c_str(), title.c_str(), subject.c_str(), author.c_str(),
+            keywords1.c_str(), documentID.c_str(), instanceID.c_str(),
+            producer.c_str(), keywords2.c_str());
+
+    std::unique_ptr<SkPDFDict> dict = SkPDFMakeDict("Metadata");
+    dict->insertName("Subtype", "XML");
+    return SkPDFStreamOut(std::move(dict),
+                          SkMemoryStream::MakeCopy(value.c_str(), value.size()),
+                          docPtr, false);
 }
 
-#endif  // SK_PDF_GENERATE_PDFA
-
+#undef SKPDF_CUSTOM_PRODUCER_KEY
+#undef SKPDF_PRODUCER
 #undef SKPDF_STRING
 #undef SKPDF_STRING_IMPL
-

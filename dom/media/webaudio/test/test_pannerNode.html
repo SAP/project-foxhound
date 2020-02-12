@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test PannerNode</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -25,7 +25,7 @@ addLoadEvent(function() {
 
   var source = context.createBufferSource();
 
-  var panner = context.createPanner();
+  var panner = new PannerNode(context);
 
   source.buffer = buffer;
 
@@ -54,8 +54,6 @@ addLoadEvent(function() {
   near(panner.orientationX.value, 0, "setOrientation sets AudioParam properly");
   near(panner.orientationY.value, 1, "setOrientation sets AudioParam properly");
   near(panner.orientationZ.value, 0, "setOrientation sets AudioParam properly");
-
-  panner.setVelocity(1, 1, 1);
 
   source.start(0);
   SimpleTest.executeSoon(function() {

@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {interfaces: Ci, classes: Cc, utils: Cu, manager: Cm, results: Cr} = Components;
+const Cm = Components.manager;
 
-Cu.import("resource:///modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function getConsoleMessages() {
   let consoleService = Cc["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService);
@@ -16,7 +16,7 @@ function getConsoleMessages() {
 
 function run_test() {
   // Load the component manifests.
-  registerAppManifest(do_get_file('../components/native/chrome.manifest'));
+  registerXPCTestComponents();
   registerAppManifest(do_get_file('../components/js/xpctest.manifest'));
 
   // and the tests.
@@ -39,7 +39,7 @@ function test_simple() {
 
   let messages = getConsoleMessages();
   Assert.equal(messages.length, 1, "got a console message from the exception");
-  Assert.ok(messages[0].indexOf("a requested error") != -1, "got the message text");
+  Assert.ok(messages[0].includes("a requested error"), "got the message text");
 
   // Ask the C++ to call the JS object which will return success.
   result = parent.callChild(Ci.nsIXPCTestReturnCodeChild.CHILD_SHOULD_RETURN_SUCCESS);

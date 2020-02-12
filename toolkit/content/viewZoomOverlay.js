@@ -6,55 +6,54 @@
 
 /** Document Zoom Management Code
  *
- * To use this, you'll need to have a getBrowser() function or use the methods
- * that accept a browser to be modified.
+ * To use this, you'll need to have a global gBrowser variable
+ * or use the methods that accept a browser to be modified.
  **/
 
-var ZoomManager = {
-  get _prefBranch() {
-    delete this._prefBranch;
-    return this._prefBranch = Components.classes["@mozilla.org/preferences-service;1"]
-                                        .getService(Components.interfaces.nsIPrefBranch);
-  },
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+var ZoomManager = {
   get MIN() {
     delete this.MIN;
-    return this.MIN = this._prefBranch.getIntPref("zoom.minPercent") / 100;
+    return (this.MIN = Services.prefs.getIntPref("zoom.minPercent") / 100);
   },
 
   get MAX() {
     delete this.MAX;
-    return this.MAX = this._prefBranch.getIntPref("zoom.maxPercent") / 100;
+    return (this.MAX = Services.prefs.getIntPref("zoom.maxPercent") / 100);
   },
 
   get useFullZoom() {
-    return this._prefBranch.getBoolPref("browser.zoom.full");
+    return Services.prefs.getBoolPref("browser.zoom.full");
   },
 
   set useFullZoom(aVal) {
-    this._prefBranch.setBoolPref("browser.zoom.full", aVal);
+    Services.prefs.setBoolPref("browser.zoom.full", aVal);
     return aVal;
   },
 
   get zoom() {
-    return this.getZoomForBrowser(getBrowser());
+    return this.getZoomForBrowser(gBrowser);
   },
 
   getZoomForBrowser: function ZoomManager_getZoomForBrowser(aBrowser) {
-    let zoom = (this.useFullZoom || aBrowser.isSyntheticDocument)
-               ? aBrowser.fullZoom : aBrowser.textZoom;
+    let zoom =
+      this.useFullZoom || aBrowser.isSyntheticDocument
+        ? aBrowser.fullZoom
+        : aBrowser.textZoom;
     // Round to remove any floating-point error.
-    return Number(zoom.toFixed(2));
+    return Number(zoom ? zoom.toFixed(2) : 1);
   },
 
   set zoom(aVal) {
-    this.setZoomForBrowser(getBrowser(), aVal);
+    this.setZoomForBrowser(gBrowser, aVal);
     return aVal;
   },
 
   setZoomForBrowser: function ZoomManager_setZoomForBrowser(aBrowser, aVal) {
-    if (aVal < this.MIN || aVal > this.MAX)
-      throw Components.results.NS_ERROR_INVALID_ARG;
+    if (aVal < this.MIN || aVal > this.MAX) {
+      throw Cr.NS_ERROR_INVALID_ARG;
+    }
 
     if (this.useFullZoom || aBrowser.isSyntheticDocument) {
       aBrowser.textZoom = 1;
@@ -66,30 +65,36 @@ var ZoomManager = {
   },
 
   get zoomValues() {
-    var zoomValues = this._prefBranch.getCharPref("toolkit.zoomManager.zoomValues")
-                                     .split(",").map(parseFloat);
+    var zoomValues = Services.prefs
+      .getCharPref("toolkit.zoomManager.zoomValues")
+      .split(",")
+      .map(parseFloat);
     zoomValues.sort((a, b) => a - b);
 
-    while (zoomValues[0] < this.MIN)
+    while (zoomValues[0] < this.MIN) {
       zoomValues.shift();
+    }
 
-    while (zoomValues[zoomValues.length - 1] > this.MAX)
+    while (zoomValues[zoomValues.length - 1] > this.MAX) {
       zoomValues.pop();
+    }
 
     delete this.zoomValues;
-    return this.zoomValues = zoomValues;
+    return (this.zoomValues = zoomValues);
   },
 
   enlarge: function ZoomManager_enlarge() {
     var i = this.zoomValues.indexOf(this.snap(this.zoom)) + 1;
-    if (i < this.zoomValues.length)
+    if (i < this.zoomValues.length) {
       this.zoom = this.zoomValues[i];
+    }
   },
 
   reduce: function ZoomManager_reduce() {
     var i = this.zoomValues.indexOf(this.snap(this.zoom)) - 1;
-    if (i >= 0)
+    if (i >= 0) {
       this.zoom = this.zoomValues[i];
+    }
   },
 
   reset: function ZoomManager_reset() {
@@ -107,11 +112,12 @@ var ZoomManager = {
     var values = this.zoomValues;
     for (var i = 0; i < values.length; i++) {
       if (values[i] >= aVal) {
-        if (i > 0 && aVal - values[i - 1] < values[i] - aVal)
+        if (i > 0 && aVal - values[i - 1] < values[i] - aVal) {
           i--;
+        }
         return values[i];
       }
     }
     return values[i - 1];
-  }
+  },
 };

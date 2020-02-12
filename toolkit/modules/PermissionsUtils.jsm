@@ -2,45 +2,43 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-this.EXPORTED_SYMBOLS = ["PermissionsUtils"];
+var EXPORTED_SYMBOLS = ["PermissionsUtils"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/BrowserUtils.jsm")
-
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var gImportedPrefBranches = new Set();
 
 function importPrefBranch(aPrefBranch, aPermission, aAction) {
-  let list = Services.prefs.getChildList(aPrefBranch, {});
+  let list = Services.prefs.getChildList(aPrefBranch);
 
   for (let pref of list) {
-    let origins = "";
-    try {
-      origins = Services.prefs.getCharPref(pref);
-    } catch (e) {}
+    let origins = Services.prefs.getCharPref(pref, "");
 
-    if (!origins)
+    if (!origins) {
       continue;
+    }
 
     origins = origins.split(",");
 
     for (let origin of origins) {
       let principals = [];
       try {
-        principals = [ Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin) ];
+        principals = [
+          Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+            origin
+          ),
+        ];
       } catch (e) {
         // This preference used to contain a list of hosts. For back-compat
         // reasons, we convert these hosts into http:// and https:// permissions
         // on default ports.
         try {
-          let httpURI = Services.io.newURI("http://" + origin, null, null);
-          let httpsURI = Services.io.newURI("https://" + origin, null, null);
+          let httpURI = Services.io.newURI("http://" + origin);
+          let httpsURI = Services.io.newURI("https://" + origin);
 
           principals = [
-            Services.scriptSecurityManager.createCodebasePrincipal(httpURI, {}),
-            Services.scriptSecurityManager.createCodebasePrincipal(httpsURI, {})
+            Services.scriptSecurityManager.createContentPrincipal(httpURI, {}),
+            Services.scriptSecurityManager.createContentPrincipal(httpsURI, {}),
           ];
         } catch (e2) {}
       }
@@ -56,8 +54,7 @@ function importPrefBranch(aPrefBranch, aPermission, aAction) {
   }
 }
 
-
-this.PermissionsUtils = {
+var PermissionsUtils = {
   /**
    * Import permissions from perferences to the Permissions Manager. After being
    * imported, all processed permissions will be set to an empty string.
@@ -81,19 +78,27 @@ this.PermissionsUtils = {
    * @param aPermission Permission name to be passsed to the Permissions
    *                    Manager.
    */
-  importFromPrefs: function(aPrefBranch, aPermission) {
-    if (!aPrefBranch.endsWith("."))
+  importFromPrefs(aPrefBranch, aPermission) {
+    if (!aPrefBranch.endsWith(".")) {
       aPrefBranch += ".";
+    }
 
     // Ensure we only import this pref branch once.
-    if (gImportedPrefBranches.has(aPrefBranch))
-     return;
+    if (gImportedPrefBranches.has(aPrefBranch)) {
+      return;
+    }
 
-    importPrefBranch(aPrefBranch + "whitelist.add", aPermission,
-                     Services.perms.ALLOW_ACTION);
-    importPrefBranch(aPrefBranch + "blacklist.add", aPermission,
-                     Services.perms.DENY_ACTION);
+    importPrefBranch(
+      aPrefBranch + "whitelist.add",
+      aPermission,
+      Services.perms.ALLOW_ACTION
+    );
+    importPrefBranch(
+      aPrefBranch + "blacklist.add",
+      aPermission,
+      Services.perms.DENY_ACTION
+    );
 
     gImportedPrefBranches.add(aPrefBranch);
-  }
+  },
 };

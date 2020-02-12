@@ -14,56 +14,42 @@
 namespace mozilla {
 namespace dom {
 
-class GamepadButton : public nsISupports,
-                      public nsWrapperCache
-{
-public:
-  explicit GamepadButton(nsISupports* aParent) : mParent(aParent),
-                                                 mPressed(false),
-                                                 mValue(0)
-  {
-  }
+class GamepadButton : public nsISupports, public nsWrapperCache {
+ public:
+  explicit GamepadButton(nsISupports* aParent)
+      : mParent(aParent), mValue(0), mPressed(false), mTouched(false) {}
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(GamepadButton)
 
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  void SetPressed(bool aPressed)
-  {
-    mPressed = aPressed;
-  }
+  void SetPressed(bool aPressed) { mPressed = aPressed; }
 
-  void SetValue(double aValue)
-  {
-    mValue = aValue;
-  }
+  void SetTouched(bool aTouched) { mTouched = aTouched; }
 
-  bool Pressed() const
-  {
-    return mPressed;
-  }
+  void SetValue(double aValue) { mValue = aValue; }
 
-  double Value() const
-  {
-    return mValue;
-  }
+  bool Pressed() const { return mPressed; }
 
-private:
+  bool Touched() const { return mTouched; }
+
+  double Value() const { return mValue; }
+
+ private:
   virtual ~GamepadButton() {}
 
-protected:
+ protected:
   nsCOMPtr<nsISupports> mParent;
-  bool mPressed;
   double mValue;
+  bool mPressed;
+  bool mTouched;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_gamepad_GamepadButton_h
+#endif  // mozilla_dom_gamepad_GamepadButton_h

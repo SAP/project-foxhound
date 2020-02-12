@@ -10,19 +10,25 @@
  * liability, trademark and document use rules apply.
  */
 
-callback LifecycleCreatedCallback = void();
-callback LifecycleAttachedCallback = void();
-callback LifecycleDetachedCallback = void();
-callback LifecycleAttributeChangedCallback = void(DOMString attrName, DOMString? oldValue, DOMString? newValue);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleConnectedCallback = void();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleDisconnectedCallback = void();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleAdoptedCallback = void(Document? oldDocument,
+                                         Document? newDocment);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleAttributeChangedCallback = void(DOMString attrName,
+                                                  DOMString? oldValue,
+                                                  DOMString? newValue,
+                                                  DOMString? namespaceURI);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleGetCustomInterfaceCallback = object?(any iid);
 
 dictionary LifecycleCallbacks {
-  LifecycleCreatedCallback? createdCallback;
-  LifecycleAttachedCallback? attachedCallback;
-  LifecycleDetachedCallback? detachedCallback;
-  LifecycleAttributeChangedCallback? attributeChangedCallback;
-};
-
-dictionary ElementRegistrationOptions {
-  object? prototype = null;
-  DOMString? extends = null;
+  LifecycleConnectedCallback connectedCallback;
+  LifecycleDisconnectedCallback disconnectedCallback;
+  LifecycleAdoptedCallback adoptedCallback;
+  LifecycleAttributeChangedCallback attributeChangedCallback;
+  [ChromeOnly] LifecycleGetCustomInterfaceCallback getCustomInterfaceCallback;
 };

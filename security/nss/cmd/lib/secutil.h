@@ -9,7 +9,7 @@
 #include "secport.h"
 #include "prerror.h"
 #include "base64.h"
-#include "key.h"
+#include "keyhi.h"
 #include "secpkcs7.h"
 #include "secasn1.h"
 #include "secder.h"
@@ -18,6 +18,7 @@
 #include "basicutil.h"
 #include "sslerr.h"
 #include "sslt.h"
+#include "blapi.h"
 
 #define SEC_CT_PRIVATE_KEY "private-key"
 #define SEC_CT_PUBLIC_KEY "public-key"
@@ -402,11 +403,26 @@ SECStatus
 SECU_ParseSSLVersionRangeString(const char *input,
                                 const SSLVersionRange defaultVersionRange,
                                 SSLVersionRange *vrange);
-/*
-** Read a hex string into a SecItem.
-*/
-extern SECItem *SECU_HexString2SECItem(PLArenaPool *arena, SECItem *item,
-                                       const char *str);
+
+SECStatus parseGroupList(const char *arg, SSLNamedGroup **enabledGroups,
+                         unsigned int *enabledGroupsCount);
+SECStatus parseSigSchemeList(const char *arg,
+                             const SSLSignatureScheme **enabledSigSchemes,
+                             unsigned int *enabledSigSchemeCount);
+typedef struct {
+    SECItem label;
+    PRBool hasContext;
+    SECItem context;
+    unsigned int outputLength;
+} secuExporter;
+
+SECStatus parseExporters(const char *arg,
+                         const secuExporter **enabledExporters,
+                         unsigned int *enabledExporterCount);
+
+SECStatus exportKeyingMaterials(PRFileDesc *fd,
+                                const secuExporter *exporters,
+                                unsigned int exporterCount);
 
 /*
  *

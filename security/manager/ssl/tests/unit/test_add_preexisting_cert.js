@@ -9,37 +9,38 @@
 // in the new trust bits being ignored.
 
 do_get_profile();
-var certDB = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
+var certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+  Ci.nsIX509CertDB
+);
 
 function load_cert(cert, trust) {
   let file = "test_intermediate_basic_usage_constraints/" + cert + ".pem";
-  addCertFromFile(certDB, file, trust);
+  return addCertFromFile(certDB, file, trust);
 }
 
-function getDERString(cert) {
-  let derString = "";
-  for (let rawByte of cert.getRawDER({})) {
-    derString += String.fromCharCode(rawByte);
-  }
-  return derString;
-}
-
-function run_test() {
+add_task(async function() {
   load_cert("ca", "CTu,CTu,CTu");
-  load_cert("int-limited-depth", "CTu,CTu,CTu");
-  let file = "test_intermediate_basic_usage_constraints/ee-int-limited-depth.pem";
+  let int_cert = load_cert("int-limited-depth", "CTu,CTu,CTu");
+  let file =
+    "test_intermediate_basic_usage_constraints/ee-int-limited-depth.pem";
   let cert_pem = readFile(do_get_file(file));
   let ee = certDB.constructX509FromBase64(pemToBase64(cert_pem));
-  checkCertErrorGeneric(certDB, ee, PRErrorCodeSuccess,
-                        certificateUsageSSLServer);
+  await checkCertErrorGeneric(
+    certDB,
+    ee,
+    PRErrorCodeSuccess,
+    certificateUsageSSLServer
+  );
   // Change the already existing intermediate certificate's trust using
-  // addCertFromBase64(). We use findCertByNickname first to ensure that the
-  // certificate already exists.
-  let int_cert = certDB.findCertByNickname("int-limited-depth");
+  // addCertFromBase64().
   notEqual(int_cert, null, "Intermediate cert should be in the cert DB");
-  let base64_cert = btoa(getDERString(int_cert));
-  certDB.addCertFromBase64(base64_cert, "p,p,p", "ignored_argument");
-  checkCertErrorGeneric(certDB, ee, SEC_ERROR_UNTRUSTED_ISSUER,
-                        certificateUsageSSLServer);
-}
+  let base64_cert = int_cert.getBase64DERString();
+  let returnedEE = certDB.addCertFromBase64(base64_cert, "p,p,p");
+  notEqual(returnedEE, null, "addCertFromBase64 should return a certificate");
+  await checkCertErrorGeneric(
+    certDB,
+    ee,
+    SEC_ERROR_UNTRUSTED_ISSUER,
+    certificateUsageSSLServer
+  );
+});

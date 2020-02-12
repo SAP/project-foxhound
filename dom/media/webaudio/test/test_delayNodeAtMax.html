@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test DelayNode with maxDelayTime delay - bug 890528</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -22,7 +22,7 @@ function applySignal(buffer, offset) {
 
 var gTest = {
   numberOfChannels: 1,
-  createGraph: function(context) {
+  createGraph(context) {
     var buffer = context.createBuffer(1, signalLength, context.sampleRate);
     applySignal(buffer, 0);
 
@@ -38,7 +38,7 @@ var gTest = {
     source.start(0);
     return delay;
   },
-  createExpectedBuffers: function(context) {
+  createExpectedBuffers(context) {
     var expectedBuffer = context.createBuffer(1, outputLength, context.sampleRate);
     applySignal(expectedBuffer, delayLength);
     return expectedBuffer;

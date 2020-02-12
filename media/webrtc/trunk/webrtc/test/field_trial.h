@@ -8,10 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_TEST_FIELD_TRIAL_H_
-#define WEBRTC_TEST_FIELD_TRIAL_H_
+#ifndef TEST_FIELD_TRIAL_H_
+#define TEST_FIELD_TRIAL_H_
 
 #include <string>
+#include <map>
 
 namespace webrtc {
 namespace test {
@@ -31,7 +32,18 @@ namespace test {
 // passed to it. That can be used to find out if a binary is parsing the flags.
 void InitFieldTrialsFromString(const std::string& config);
 
+// This class is used to override field-trial configs within specific tests.
+// After this class goes out of scope previous field trials will be restored.
+class ScopedFieldTrials {
+ public:
+  explicit ScopedFieldTrials(const std::string& config);
+  ~ScopedFieldTrials();
+ private:
+  std::string current_field_trials_;
+  const char* previous_field_trials_;
+};
+
 }  // namespace test
 }  // namespace webrtc
 
-#endif  // WEBRTC_TEST_FIELD_TRIAL_H_
+#endif  // TEST_FIELD_TRIAL_H_

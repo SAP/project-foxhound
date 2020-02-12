@@ -4,9 +4,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-// [LegacyUnenumerableNamedProperties]
-// Named properties enumerable for now; see
-// https://bugzilla.mozilla.org/show_bug.cgi?id=1270366
+[LegacyUnenumerableNamedProperties,
+ Exposed=Window]
 interface Plugin {
   readonly attribute DOMString description;
   readonly attribute DOMString filename;

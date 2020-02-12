@@ -28,16 +28,23 @@
 #include "hasht.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Vector.h"
-#include "pkix/Result.h"
-#include "pkix/Time.h"
+#include "mozpkix/Result.h"
+#include "mozpkix/Time.h"
 #include "prerror.h"
 #include "seccomon.h"
 
-namespace mozilla { namespace pkix {
-struct CertID;
-} } // namespace mozilla::pkix
+namespace mozilla {
+class OriginAttributes;
+}
 
-namespace mozilla { namespace psm {
+namespace mozilla {
+namespace pkix {
+struct CertID;
+}
+}  // namespace mozilla
+
+namespace mozilla {
+namespace psm {
 
 // make SHA384Buffer be of type "array of uint8_t of length SHA384_LENGTH"
 typedef uint8_t SHA384Buffer[SHA384_LENGTH];
@@ -48,9 +55,8 @@ typedef uint8_t SHA384Buffer[SHA384_LENGTH];
 // issuer public key, much like in an encoded OCSP response itself). A maximum
 // of 1024 distinct entries can be stored.
 // OCSPCache is thread-safe.
-class OCSPCache
-{
-public:
+class OCSPCache {
+ public:
   OCSPCache();
   ~OCSPCache();
 
@@ -58,7 +64,11 @@ public:
   // issuer) is in the cache, and false otherwise.
   // If it is in the cache, returns by reference the error code of the cached
   // status and the time through which the status is considered trustworthy.
+  // The passed in origin attributes are used to isolate the OCSP cache.
+  // We currently only use the first party domain portion of the attributes, and
+  // it is non-empty only when "privacy.firstParty.isolate" is enabled.
   bool Get(const mozilla::pkix::CertID& aCertID,
+           const OriginAttributes& aOriginAttributes,
            /*out*/ mozilla::pkix::Result& aResult,
            /*out*/ mozilla::pkix::Time& aValidThrough);
 
@@ -71,7 +81,11 @@ public:
   // A status with a more recent thisUpdate will not be replaced with a
   // status with a less recent thisUpdate unless the less recent status
   // indicates the certificate is revoked.
+  // The passed in origin attributes are used to isolate the OCSP cache.
+  // We currently only use the first party domain portion of the attributes, and
+  // it is non-empty only when "privacy.firstParty.isolate" is enabled.
   mozilla::pkix::Result Put(const mozilla::pkix::CertID& aCertID,
+                            const OriginAttributes& aOriginAttributes,
                             mozilla::pkix::Result aResult,
                             mozilla::pkix::Time aThisUpdate,
                             mozilla::pkix::Time aValidThrough);
@@ -79,31 +93,31 @@ public:
   // Removes everything from the cache.
   void Clear();
 
-private:
-  class Entry
-  {
-  public:
-    Entry(mozilla::pkix::Result aResult,
-          mozilla::pkix::Time aThisUpdate,
+ private:
+  class Entry {
+   public:
+    Entry(mozilla::pkix::Result aResult, mozilla::pkix::Time aThisUpdate,
           mozilla::pkix::Time aValidThrough)
-      : mResult(aResult)
-      , mThisUpdate(aThisUpdate)
-      , mValidThrough(aValidThrough)
-    {
-    }
-    mozilla::pkix::Result Init(const mozilla::pkix::CertID& aCertID);
+        : mResult(aResult),
+          mThisUpdate(aThisUpdate),
+          mValidThrough(aValidThrough) {}
+    mozilla::pkix::Result Init(const mozilla::pkix::CertID& aCertID,
+                               const OriginAttributes& aOriginAttributes);
 
     mozilla::pkix::Result mResult;
     mozilla::pkix::Time mThisUpdate;
     mozilla::pkix::Time mValidThrough;
     // The SHA-384 hash of the concatenation of the DER encodings of the
-    // issuer name and issuer key, followed by the serial number.
+    // issuer name and issuer key, followed by the length of the serial number,
+    // the serial number, the length of the first party domain, and the first
+    // party domain (if "privacy.firstparty.isolate" is enabled).
     // See the documentation for CertIDHash in OCSPCache.cpp.
     SHA384Buffer mIDHash;
   };
 
-  bool FindInternal(const mozilla::pkix::CertID& aCertID, /*out*/ size_t& index,
-                    const MutexAutoLock& aProofOfLock);
+  bool FindInternal(const mozilla::pkix::CertID& aCertID,
+                    const OriginAttributes& aOriginAttributes,
+                    /*out*/ size_t& index, const MutexAutoLock& aProofOfLock);
   void MakeMostRecentlyUsed(size_t aIndex, const MutexAutoLock& aProofOfLock);
 
   Mutex mMutex;
@@ -116,6 +130,7 @@ private:
   Vector<Entry*, 256> mEntries;
 };
 
-} } // namespace mozilla::psm
+}  // namespace psm
+}  // namespace mozilla
 
-#endif // mozilla_psm_OCSPCache_h
+#endif  // mozilla_psm_OCSPCache_h

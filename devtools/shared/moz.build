@@ -8,12 +8,11 @@ include('../templates.mozbuild')
 
 DIRS += [
     'acorn',
-    'apps',
+    'adb',
     'client',
     'css',
     'discovery',
     'fronts',
-    'gcli',
     'heapsnapshot',
     'inspector',
     'jsbeautify',
@@ -22,46 +21,60 @@ DIRS += [
     'node-properties',
     'performance',
     'platform',
-    'pretty-fast',
+    'protocol',
     'qrcode',
+    'screenshot',
     'security',
-    'sourcemap',
     'sprintfjs',
-    'shims',
     'specs',
-    'touch',
     'transport',
     'webconsole',
     'worker',
 ]
 
-BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
+    BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+
+BROWSER_CHROME_MANIFESTS += ['test-helpers/browser.ini']
+
 MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
 JAR_MANIFESTS += ['jar.mn']
 
 DevToolsModules(
+    'accessibility.js',
     'async-storage.js',
     'async-utils.js',
+    'base-loader.js',
     'builtin-modules.js',
+    'constants.js',
     'content-observer.js',
+    'debounce.js',
     'defer.js',
-    'deprecated-sync-thenables.js',
     'DevToolsUtils.js',
     'dom-node-constants.js',
     'dom-node-filter-constants.js',
     'event-emitter.js',
+    'execution-point-utils.js',
+    'extend.js',
     'flags.js',
+    'generate-uuid.js',
     'indentation.js',
+    'indexed-db.js',
     'l10n.js',
     'loader-plugin-raw.jsm',
     'Loader.jsm',
-    'Parser.jsm',
+    'natural-sort.js',
     'path.js',
     'plural-form.js',
     'protocol.js',
+    'service-workers-debug-helper.js',
     'system.js',
     'task.js',
     'ThreadSafeDevToolsUtils.js',
+    'throttle.js',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('DevTools', 'General')

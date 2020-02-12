@@ -6,7 +6,6 @@
 
 #include "PerformanceEntry.h"
 #include "MainThreadUtils.h"
-#include "mozilla/dom/PerformanceEntryBinding.h"
 #include "nsIURI.h"
 
 using namespace mozilla::dom;
@@ -21,23 +20,19 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PerformanceEntry)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-PerformanceEntry::PerformanceEntry(nsISupports* aParent,
-                                   const nsAString& aName,
+PerformanceEntry::PerformanceEntry(nsISupports* aParent, const nsAString& aName,
                                    const nsAString& aEntryType)
-: mParent(aParent),
-  mName(aName),
-  mEntryType(aEntryType)
-{
-  // mParent is null in workers.
-  MOZ_ASSERT(mParent || !NS_IsMainThread());
+    : mParent(aParent), mName(aName), mEntryType(aEntryType) {}
+
+PerformanceEntry::~PerformanceEntry() {}
+
+size_t PerformanceEntry::SizeOfExcludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return mName.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
+         mEntryType.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
 }
 
-PerformanceEntry::~PerformanceEntry()
-{
-}
-
-JSObject*
-PerformanceEntry::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return mozilla::dom::PerformanceEntryBinding::Wrap(aCx, this, aGivenProto);
+size_t PerformanceEntry::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }

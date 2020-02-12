@@ -6,7 +6,7 @@
 <html>
 <head>
   <title>Test for URL exceptions in workers</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -20,9 +20,9 @@
   worker.onmessage = function(event) {
     is(event.target, worker);
 
-    if (event.data.type == 'finish') {
+    if (event.data.type == "finish") {
       SimpleTest.finish();
-    } else if (event.data.type == 'status') {
+    } else if (event.data.type == "status") {
       ok(event.data.status, event.data.msg);
     }
   };

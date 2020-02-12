@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_SVGRect_h
 #define mozilla_dom_SVGRect_h
 
-#include "mozilla/dom/SVGIRect.h"
+#include "mozilla/dom/SVGElement.h"
 #include "mozilla/gfx/Rect.h"
-#include "nsSVGElement.h"
 
 ////////////////////////////////////////////////////////////////////////
 // SVGRect class
@@ -17,76 +16,71 @@
 namespace mozilla {
 namespace dom {
 
-class SVGRect final : public SVGIRect
-{
-public:
-  explicit SVGRect(nsIContent* aParent, float x=0.0f, float y=0.0f, float w=0.0f,
-                   float h=0.0f);
+class SVGSVGElement;
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(SVGRect)
+class SVGRect final : public nsWrapperCache {
+ public:
+  typedef enum { BaseValue, AnimValue, CreatedValue } RectType;
 
-  // WebIDL
-  virtual float X() const override final
-  {
-    return mX;
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(SVGRect)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(SVGRect)
+
+  /**
+   * Generic ctor for objects that are created for an attribute.
+   */
+  SVGRect(SVGAnimatedViewBox* aVal, SVGElement* aSVGElement, RectType aType)
+      : mVal(aVal), mParent(aSVGElement), mType(aType) {
+    MOZ_ASSERT(mParent);
+    MOZ_ASSERT(mType == BaseValue || mType == AnimValue);
   }
 
-  virtual void SetX(float aX, ErrorResult& aRv) final
-  {
-    mX = aX;
+  /**
+   * Ctor for creating the objects returned by SVGSVGElement.createSVGRect(),
+   * which do not initially belong to an attribute.
+   */
+  explicit SVGRect(SVGSVGElement* aSVGElement);
+
+  /**
+   * Ctor for all other non-attribute usage i.e getBBox, getExtentOfChar etc.
+   */
+  SVGRect(nsIContent* aParent, const gfx::Rect& aRect)
+      : mVal(nullptr), mRect(aRect), mParent(aParent), mType(CreatedValue) {
+    MOZ_ASSERT(mParent);
   }
 
-  virtual float Y() const override final
-  {
-    return mY;
-  }
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual void SetY(float aY, ErrorResult& aRv) final
-  {
-    mY = aY;
-  }
+  float X();
+  float Y();
+  float Width();
+  float Height();
 
-  virtual float Width() const override final
-  {
-    return mWidth;
-  }
+  void SetX(float aX, mozilla::ErrorResult& aRv);
+  void SetY(float aY, mozilla::ErrorResult& aRv);
+  void SetWidth(float aWidth, mozilla::ErrorResult& aRv);
+  void SetHeight(float aHeight, mozilla::ErrorResult& aRv);
 
-  virtual void SetWidth(float aWidth, ErrorResult& aRv) final
-  {
-    mWidth = aWidth;
-  }
-
-  virtual float Height() const override final
-  {
-    return mHeight;
-  }
-
-  virtual void SetHeight(float aHeight, ErrorResult& aRv) final
-  {
-    mHeight = aHeight;
-  }
-
-  virtual nsIContent* GetParentObject() const override
-  {
+  nsIContent* GetParentObject() const {
+    MOZ_ASSERT(mParent);
     return mParent;
   }
 
-protected:
-  ~SVGRect() {}
+ private:
+  virtual ~SVGRect();
 
-  nsCOMPtr<nsIContent> mParent;
-  float mX, mY, mWidth, mHeight;
+  // If we're actually representing a viewBox rect then our value
+  // will come from that element's viewBox attribute's value.
+  SVGAnimatedViewBox* mVal;  // kept alive because it belongs to content
+  gfx::Rect mRect;
+
+  // If mType is AnimValue or BaseValue this will be an element that
+  // has a viewBox, otherwise it could be any nsIContent.
+  RefPtr<nsIContent> mParent;
+  const RectType mType;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-already_AddRefed<mozilla::dom::SVGRect>
-NS_NewSVGRect(nsIContent* aParent, float x=0.0f, float y=0.0f,
-              float width=0.0f, float height=0.0f);
-
-already_AddRefed<mozilla::dom::SVGRect>
-NS_NewSVGRect(nsIContent* aParent, const mozilla::gfx::Rect& rect);
-
-#endif //mozilla_dom_SVGRect_h
+#endif  // mozilla_dom_SVGRect_h

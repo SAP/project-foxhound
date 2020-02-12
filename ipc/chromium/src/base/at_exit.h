@@ -10,7 +10,8 @@
 #include <stack>
 
 #include "base/basictypes.h"
-#include "base/lock.h"
+
+#include "mozilla/Mutex.h"
 
 namespace base {
 
@@ -58,12 +59,12 @@ class AtExitManager {
  private:
   struct CallbackAndParam {
     CallbackAndParam(AtExitCallbackType func, void* param)
-        : func_(func), param_(param) { }
+        : func_(func), param_(param) {}
     AtExitCallbackType func_;
     void* param_;
   };
 
-  Lock lock_;
+  mozilla::Mutex lock_;
   std::stack<CallbackAndParam> stack_;
   AtExitManager* next_manager_;  // Stack of managers to allow shadowing.
 

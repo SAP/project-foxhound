@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1095660
 <head>
   <meta charset="utf-8">
   <title>Test for Bug </title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://global/skin"/>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
@@ -29,6 +29,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1095660
 
 </div>
 <pre id="test" style="-moz-binding: url(file_fieldScopeChain.xml#foo)">
+<form>
+  <input name="document">
+  <input type="text" id="input-test" style="-moz-binding: url(file_fieldScopeChain.xml#foo)">
+</form>
 </pre>
 </body>
 </html>

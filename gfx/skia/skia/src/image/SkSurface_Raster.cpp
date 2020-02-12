@@ -6,25 +6,23 @@
  */
 
 #include "SkSurface_Base.h"
+#include "SkImageInfoPriv.h"
 #include "SkImagePriv.h"
 #include "SkCanvas.h"
 #include "SkDevice.h"
 #include "SkMallocPixelRef.h"
 
-static const size_t kIgnoreRowBytesValue = (size_t)~0;
-
 class SkSurface_Raster : public SkSurface_Base {
 public:
-    static bool Valid(const SkImageInfo&, size_t rb = kIgnoreRowBytesValue);
-
     SkSurface_Raster(const SkImageInfo&, void*, size_t rb,
                      void (*releaseProc)(void* pixels, void* context), void* context,
                      const SkSurfaceProps*);
-    SkSurface_Raster(SkPixelRef*, const SkSurfaceProps*);
+    SkSurface_Raster(const SkImageInfo& info, sk_sp<SkPixelRef>, const SkSurfaceProps*);
 
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
-    sk_sp<SkImage> onNewImageSnapshot(SkBudgeted, ForceCopyMode) override;
+    sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
+    void onWritePixels(const SkPixmap&, int x, int y) override;
     void onDraw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*) override;
     void onCopyOnWrite(ContentChangeMode) override;
     void onRestoreBackingMutability() override;
@@ -39,34 +37,16 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool SkSurface_Raster::Valid(const SkImageInfo& info, size_t rowBytes) {
-    if (info.isEmpty()) {
+bool SkSurfaceValidateRasterInfo(const SkImageInfo& info, size_t rowBytes) {
+    if (!SkImageInfoIsValid(info)) {
         return false;
-    }
-
-    static const size_t kMaxTotalSize = SK_MaxS32;
-
-    int shift = 0;
-    switch (info.colorType()) {
-        case kAlpha_8_SkColorType:
-            shift = 0;
-            break;
-        case kRGB_565_SkColorType:
-            shift = 1;
-            break;
-        case kN32_SkColorType:
-            shift = 2;
-            break;
-        case kRGBA_F16_SkColorType:
-            shift = 3;
-            break;
-        default:
-            return false;
     }
 
     if (kIgnoreRowBytesValue == rowBytes) {
         return true;
     }
+
+    int shift = info.shiftPerPixel();
 
     uint64_t minRB = (uint64_t)info.width() << shift;
     if (minRB > rowBytes) {
@@ -79,6 +59,7 @@ bool SkSurface_Raster::Valid(const SkImageInfo& info, size_t rowBytes) {
     }
 
     uint64_t size = sk_64_mul(info.height(), rowBytes);
+    static const size_t kMaxTotalSize = SK_MaxS32;
     if (size > kMaxTotalSize) {
         return false;
     }
@@ -91,19 +72,18 @@ SkSurface_Raster::SkSurface_Raster(const SkImageInfo& info, void* pixels, size_t
                                    const SkSurfaceProps* props)
     : INHERITED(info, props)
 {
-    fBitmap.installPixels(info, pixels, rb, nullptr, releaseProc, context);
+    fBitmap.installPixels(info, pixels, rb, releaseProc, context);
     fRowBytes = 0;              // don't need to track the rowbytes
     fWeOwnThePixels = false;    // We are "Direct"
 }
 
-SkSurface_Raster::SkSurface_Raster(SkPixelRef* pr, const SkSurfaceProps* props)
-    : INHERITED(pr->info().width(), pr->info().height(), props)
+SkSurface_Raster::SkSurface_Raster(const SkImageInfo& info, sk_sp<SkPixelRef> pr,
+                                   const SkSurfaceProps* props)
+    : INHERITED(pr->width(), pr->height(), props)
 {
-    const SkImageInfo& info = pr->info();
-
     fBitmap.setInfo(info, pr->rowBytes());
-    fBitmap.setPixelRef(pr);
     fRowBytes = pr->rowBytes(); // we track this, so that subsequent re-allocs will match
+    fBitmap.setPixelRef(std::move(pr), 0, 0);
     fWeOwnThePixels = true;
 }
 
@@ -118,7 +98,17 @@ void SkSurface_Raster::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
     canvas->drawBitmap(fBitmap, x, y, paint);
 }
 
-sk_sp<SkImage> SkSurface_Raster::onNewImageSnapshot(SkBudgeted, ForceCopyMode forceCopyMode) {
+sk_sp<SkImage> SkSurface_Raster::onNewImageSnapshot(const SkIRect* subset) {
+    if (subset) {
+        SkASSERT(SkIRect::MakeWH(fBitmap.width(), fBitmap.height()).contains(*subset));
+        SkBitmap dst;
+        dst.allocPixels(fBitmap.info().makeWH(subset->width(), subset->height()));
+        SkAssertResult(fBitmap.readPixels(dst.pixmap(), subset->left(), subset->top()));
+        dst.setImmutable(); // key, so MakeFromBitmap doesn't make a copy of the buffer
+        return SkImage::MakeFromBitmap(dst);
+    }
+
+    SkCopyPixelsMode cpm = kIfMutable_SkCopyPixelsMode;
     if (fWeOwnThePixels) {
         // SkImage_raster requires these pixels are immutable for its full lifetime.
         // We'll undo this via onRestoreBackingMutability() if we can avoid the COW.
@@ -126,12 +116,16 @@ sk_sp<SkImage> SkSurface_Raster::onNewImageSnapshot(SkBudgeted, ForceCopyMode fo
             pr->setTemporarilyImmutable();
         }
     } else {
-        forceCopyMode = kYes_ForceCopyMode;
+        cpm = kAlways_SkCopyPixelsMode;
     }
 
     // Our pixels are in memory, so read access on the snapshot SkImage could be cheap.
     // Lock the shared pixel ref to ensure peekPixels() is usable.
-    return SkMakeImageFromRasterBitmap(fBitmap, forceCopyMode);
+    return SkMakeImageFromRasterBitmap(fBitmap, cpm);
+}
+
+void SkSurface_Raster::onWritePixels(const SkPixmap& src, int x, int y) {
+    fBitmap.writePixels(src, x, y);
 }
 
 void SkSurface_Raster::onRestoreBackingMutability() {
@@ -143,7 +137,7 @@ void SkSurface_Raster::onRestoreBackingMutability() {
 
 void SkSurface_Raster::onCopyOnWrite(ContentChangeMode mode) {
     // are we sharing pixelrefs with the image?
-    sk_sp<SkImage> cached(this->refCachedImage(SkBudgeted::kNo, kNo_ForceUnique));
+    sk_sp<SkImage> cached(this->refCachedImage());
     SkASSERT(cached);
     if (SkBitmapImageGetPixelRef(cached.get()) == fBitmap.pixelRef()) {
         SkASSERT(fWeOwnThePixels);
@@ -152,10 +146,9 @@ void SkSurface_Raster::onCopyOnWrite(ContentChangeMode mode) {
         } else {
             SkBitmap prev(fBitmap);
             fBitmap.allocPixels();
-            prev.lockPixels();
             SkASSERT(prev.info() == fBitmap.info());
             SkASSERT(prev.rowBytes() == fBitmap.rowBytes());
-            memcpy(fBitmap.getPixels(), prev.getPixels(), fBitmap.getSafeSize());
+            memcpy(fBitmap.getPixels(), prev.getPixels(), fBitmap.computeByteSize());
         }
         SkASSERT(fBitmap.rowBytes() == fRowBytes);  // be sure we always use the same value
 
@@ -175,7 +168,7 @@ sk_sp<SkSurface> SkSurface::MakeRasterDirectReleaseProc(const SkImageInfo& info,
     if (nullptr == releaseProc) {
         context = nullptr;
     }
-    if (!SkSurface_Raster::Valid(info, rb)) {
+    if (!SkSurfaceValidateRasterInfo(info, rb)) {
         return nullptr;
     }
     if (nullptr == pixels) {
@@ -192,20 +185,21 @@ sk_sp<SkSurface> SkSurface::MakeRasterDirect(const SkImageInfo& info, void* pixe
 
 sk_sp<SkSurface> SkSurface::MakeRaster(const SkImageInfo& info, size_t rowBytes,
                                        const SkSurfaceProps* props) {
-    if (!SkSurface_Raster::Valid(info)) {
+    if (!SkSurfaceValidateRasterInfo(info)) {
         return nullptr;
     }
 
-    SkAutoTUnref<SkPixelRef> pr(SkMallocPixelRef::NewZeroed(info, rowBytes, nullptr));
-    if (nullptr == pr.get()) {
+    sk_sp<SkPixelRef> pr = SkMallocPixelRef::MakeZeroed(info, rowBytes);
+    if (!pr) {
         return nullptr;
     }
     if (rowBytes) {
         SkASSERT(pr->rowBytes() == rowBytes);
     }
-    return sk_make_sp<SkSurface_Raster>(pr, props);
+    return sk_make_sp<SkSurface_Raster>(info, std::move(pr), props);
 }
 
-sk_sp<SkSurface> SkSurface::MakeRaster(const SkImageInfo& info, const SkSurfaceProps* props) {
-    return MakeRaster(info, 0, props);
+sk_sp<SkSurface> SkSurface::MakeRasterN32Premul(int width, int height,
+                                                const SkSurfaceProps* surfaceProps) {
+    return MakeRaster(SkImageInfo::MakeN32Premul(width, height), surfaceProps);
 }

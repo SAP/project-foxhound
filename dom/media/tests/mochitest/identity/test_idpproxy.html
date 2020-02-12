@@ -2,7 +2,7 @@
 <head>
 <meta charset="utf-8" />
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
-<script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
 </head>
 <body>
   <script class="testbody" type="application/javascript">
@@ -18,7 +18,7 @@ var dummyPayload = JSON.stringify({
 
 function test_domain_sandbox() {
   var diabolical = {
-    toString : function() {
+    toString() {
       return 'example.com/path';
     }
   };
@@ -63,7 +63,8 @@ function makeSandbox(js) {
 function test_generate_assertion() {
   return makeSandbox()
     .then(idp => idp.generateAssertion(dummyPayload,
-                                       'https://example.net'))
+                                       'https://example.net',
+                                        {}))
     .then(response => {
       response = SpecialPowers.wrap(response);
       is(response.idp.domain, 'example.com', 'domain is correct');
@@ -79,7 +80,8 @@ function test_generate_assertion() {
 function test_validate_assertion() {
   return makeSandbox()
     .then(idp => idp.generateAssertion(dummyPayload,
-                                       'https://example.net', 'user'))
+                                       'https://example.net',
+                                       { usernameHint: 'user' }))
     .then(assertion => {
       var wrapped = SpecialPowers.wrap(assertion);
       return makeSandbox()
@@ -97,7 +99,7 @@ function test_validate_assertion() {
 function test_assertion_failure(reason) {
   return () => {
     return makeSandbox(idpName(reason))
-      .then(idp => idp.generateAssertion('hello', 'example.net'))
+      .then(idp => idp.generateAssertion('hello', 'example.net', {}))
       .then(r => ok(false, 'should not succeed on ' + reason),
             e => ok(true, 'failed correctly on ' + reason));
   };

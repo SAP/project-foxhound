@@ -12,8 +12,9 @@
 // the rest of the certificate.
 
 do_get_profile(); // must be called before getting nsIX509CertDB
-var certdb = Cc["@mozilla.org/security/x509certdb;1"]
-               .getService(Ci.nsIX509CertDB);
+var certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+  Ci.nsIX509CertDB
+);
 
 // Reads a PEM-encoded certificate, modifies the nth byte (0-indexed), and
 // returns the base64-encoded bytes of the certificate. Negative indices may be
@@ -25,9 +26,9 @@ function readAndTamperWithNthByte(certificatePath, n) {
     // remember, n is negative at this point
     n = der.length + n;
   }
-  let replacement = '\x22';
+  let replacement = "\x22";
   if (der.charCodeAt(n) == replacement) {
-    replacement = '\x23';
+    replacement = "\x23";
   }
   der = der.substring(0, n) + replacement + der.substring(n + 1);
   return btoa(der);
@@ -39,20 +40,28 @@ function readAndTamperWithNthByte(certificatePath, n) {
 const BYTE_IN_SIGNATURE = -8;
 function addSignatureTamperedCertificate(certificatePath) {
   let base64 = readAndTamperWithNthByte(certificatePath, BYTE_IN_SIGNATURE);
-  certdb.addCertFromBase64(base64, ",,", null);
+  certdb.addCertFromBase64(base64, ",,");
 }
 
 function ensureSignatureVerificationFailure(certificatePath) {
   let cert = constructCertFromFile(certificatePath);
-  checkCertErrorGeneric(certdb, cert, SEC_ERROR_BAD_SIGNATURE,
-                        certificateUsageSSLServer);
+  return checkCertErrorGeneric(
+    certdb,
+    cert,
+    SEC_ERROR_BAD_SIGNATURE,
+    certificateUsageSSLServer
+  );
 }
 
 function tamperWithSignatureAndEnsureVerificationFailure(certificatePath) {
   let base64 = readAndTamperWithNthByte(certificatePath, BYTE_IN_SIGNATURE);
   let cert = certdb.constructX509FromBase64(base64);
-  checkCertErrorGeneric(certdb, cert, SEC_ERROR_BAD_SIGNATURE,
-                        certificateUsageSSLServer);
+  return checkCertErrorGeneric(
+    certdb,
+    cert,
+    SEC_ERROR_BAD_SIGNATURE,
+    certificateUsageSSLServer
+  );
 }
 
 // The beginning of a certificate looks like this (in hex, using DER):
@@ -72,20 +81,22 @@ function tamperWithSignatureAndEnsureVerificationFailure(certificatePath) {
 // issues there. Thus byte 17 is a good byte to modify.
 const BYTE_IN_SERIAL_NUMBER = 17;
 function addSerialNumberTamperedCertificate(certificatePath) {
-  let base64 = readAndTamperWithNthByte(certificatePath,
-                                        BYTE_IN_SERIAL_NUMBER);
-  certdb.addCertFromBase64(base64, ",,", null);
+  let base64 = readAndTamperWithNthByte(certificatePath, BYTE_IN_SERIAL_NUMBER);
+  certdb.addCertFromBase64(base64, ",,");
 }
 
 function tamperWithSerialNumberAndEnsureVerificationFailure(certificatePath) {
-  let base64 = readAndTamperWithNthByte(certificatePath,
-                                        BYTE_IN_SERIAL_NUMBER);
+  let base64 = readAndTamperWithNthByte(certificatePath, BYTE_IN_SERIAL_NUMBER);
   let cert = certdb.constructX509FromBase64(base64);
-  checkCertErrorGeneric(certdb, cert, SEC_ERROR_BAD_SIGNATURE,
-                        certificateUsageSSLServer);
+  return checkCertErrorGeneric(
+    certdb,
+    cert,
+    SEC_ERROR_BAD_SIGNATURE,
+    certificateUsageSSLServer
+  );
 }
 
-function run_test() {
+add_task(async function() {
   addCertFromFile(certdb, "test_cert_signatures/ca-rsa.pem", "CTu,,");
   addCertFromFile(certdb, "test_cert_signatures/ca-secp384r1.pem", "CTu,,");
 
@@ -94,28 +105,36 @@ function run_test() {
   // successfully.
   addSignatureTamperedCertificate("test_cert_signatures/int-rsa.pem");
   addSignatureTamperedCertificate("test_cert_signatures/int-secp384r1.pem");
-  ensureSignatureVerificationFailure("test_cert_signatures/ee-rsa.pem");
-  ensureSignatureVerificationFailure("test_cert_signatures/ee-secp384r1.pem");
+  await ensureSignatureVerificationFailure("test_cert_signatures/ee-rsa.pem");
+  await ensureSignatureVerificationFailure(
+    "test_cert_signatures/ee-secp384r1.pem"
+  );
 
   // Tamper with the signatures on end-entity certificates and ensure that they
   // do not validate successfully.
-  tamperWithSignatureAndEnsureVerificationFailure(
-    "test_cert_signatures/ee-rsa-direct.pem");
-  tamperWithSignatureAndEnsureVerificationFailure(
-    "test_cert_signatures/ee-secp384r1-direct.pem");
+  await tamperWithSignatureAndEnsureVerificationFailure(
+    "test_cert_signatures/ee-rsa-direct.pem"
+  );
+  await tamperWithSignatureAndEnsureVerificationFailure(
+    "test_cert_signatures/ee-secp384r1-direct.pem"
+  );
 
   // Tamper with the serial numbers of intermediate certificates and ensure
   // that end-entity certificates issued by those intermediates do not validate
   // successfully.
   addSerialNumberTamperedCertificate("test_cert_signatures/int-rsa.pem");
   addSerialNumberTamperedCertificate("test_cert_signatures/int-secp384r1.pem");
-  ensureSignatureVerificationFailure("test_cert_signatures/ee-rsa.pem");
-  ensureSignatureVerificationFailure("test_cert_signatures/ee-secp384r1.pem");
+  await ensureSignatureVerificationFailure("test_cert_signatures/ee-rsa.pem");
+  await ensureSignatureVerificationFailure(
+    "test_cert_signatures/ee-secp384r1.pem"
+  );
 
   // Tamper with the serial numbers of end-entity certificates and ensure that
   // they do not validate successfully.
-  tamperWithSerialNumberAndEnsureVerificationFailure(
-    "test_cert_signatures/ee-rsa-direct.pem");
-  tamperWithSerialNumberAndEnsureVerificationFailure(
-    "test_cert_signatures/ee-secp384r1-direct.pem");
-}
+  await tamperWithSerialNumberAndEnsureVerificationFailure(
+    "test_cert_signatures/ee-rsa-direct.pem"
+  );
+  await tamperWithSerialNumberAndEnsureVerificationFailure(
+    "test_cert_signatures/ee-secp384r1-direct.pem"
+  );
+});

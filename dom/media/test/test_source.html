@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: append source child</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -55,8 +55,8 @@ function loaded(e) {
   }
 }
 
-v1.addEventListener('loadeddata', loaded, false);
-a1.addEventListener('loadeddata', loaded, false);
+v1.addEventListener('loadeddata', loaded);
+a1.addEventListener('loadeddata', loaded);
 
 var videoSource = newSource(/^video/);
 if (videoSource) {

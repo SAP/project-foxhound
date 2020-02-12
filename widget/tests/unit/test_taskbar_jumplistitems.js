@@ -4,251 +4,318 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This tests taskbar jump list functionality available on win7 and up.
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+function test_basics() {
+  var item = Cc["@mozilla.org/windows-jumplistitem;1"].createInstance(
+    Ci.nsIJumpListItem
+  );
 
-function test_basics()
-{
-  var item = Cc["@mozilla.org/windows-jumplistitem;1"].
-  createInstance(Ci.nsIJumpListItem);
+  var sep = Cc["@mozilla.org/windows-jumplistseparator;1"].createInstance(
+    Ci.nsIJumpListSeparator
+  );
 
-  var sep = Cc["@mozilla.org/windows-jumplistseparator;1"].
-  createInstance(Ci.nsIJumpListSeparator);
+  var shortcut = Cc["@mozilla.org/windows-jumplistshortcut;1"].createInstance(
+    Ci.nsIJumpListShortcut
+  );
 
-  var shortcut = Cc["@mozilla.org/windows-jumplistshortcut;1"].
-  createInstance(Ci.nsIJumpListShortcut);
+  var link = Cc["@mozilla.org/windows-jumplistlink;1"].createInstance(
+    Ci.nsIJumpListLink
+  );
 
-  var link = Cc["@mozilla.org/windows-jumplistlink;1"].
-  createInstance(Ci.nsIJumpListLink);
+  Assert.ok(!item.equals(sep));
+  Assert.ok(!item.equals(shortcut));
+  Assert.ok(!item.equals(link));
 
-  do_check_false(item.equals(sep));
-  do_check_false(item.equals(shortcut));
-  do_check_false(item.equals(link));
+  Assert.ok(!sep.equals(item));
+  Assert.ok(!sep.equals(shortcut));
+  Assert.ok(!sep.equals(link));
 
-  do_check_false(sep.equals(item));
-  do_check_false(sep.equals(shortcut));
-  do_check_false(sep.equals(link));
+  Assert.ok(!shortcut.equals(item));
+  Assert.ok(!shortcut.equals(sep));
+  Assert.ok(!shortcut.equals(link));
 
-  do_check_false(shortcut.equals(item));
-  do_check_false(shortcut.equals(sep));
-  do_check_false(shortcut.equals(link));
+  Assert.ok(!link.equals(item));
+  Assert.ok(!link.equals(sep));
+  Assert.ok(!link.equals(shortcut));
 
-  do_check_false(link.equals(item));
-  do_check_false(link.equals(sep));
-  do_check_false(link.equals(shortcut));
-
-  do_check_true(item.equals(item));
-  do_check_true(sep.equals(sep));
-  do_check_true(link.equals(link));
-  do_check_true(shortcut.equals(shortcut));
+  Assert.ok(item.equals(item));
+  Assert.ok(sep.equals(sep));
+  Assert.ok(link.equals(link));
+  Assert.ok(shortcut.equals(shortcut));
 }
 
-function test_separator()
-{
+function test_separator() {
   // separators:
 
-  var item = Cc["@mozilla.org/windows-jumplistseparator;1"].
-  createInstance(Ci.nsIJumpListSeparator);
+  var item = Cc["@mozilla.org/windows-jumplistseparator;1"].createInstance(
+    Ci.nsIJumpListSeparator
+  );
 
-  do_check_true(item.type == Ci.nsIJumpListItem.JUMPLIST_ITEM_SEPARATOR);
+  Assert.ok(item.type == Ci.nsIJumpListItem.JUMPLIST_ITEM_SEPARATOR);
 }
 
-function test_hashes()
-{
-  var link = Cc["@mozilla.org/windows-jumplistlink;1"]
-             .createInstance(Ci.nsIJumpListLink);
-  var uri1 = Cc["@mozilla.org/network/simple-uri;1"]
-            .createInstance(Ci.nsIURI);
-  var uri2 = Cc["@mozilla.org/network/simple-uri;1"]
-            .createInstance(Ci.nsIURI);
-
-  uri1.spec = "http://www.123.com/";
-  uri2.spec = "http://www.123.com/";
+function test_hashes() {
+  var link = Cc["@mozilla.org/windows-jumplistlink;1"].createInstance(
+    Ci.nsIJumpListLink
+  );
+  var uri1 = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec("http://www.123.com/")
+    .finalize();
+  var uri2 = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec("http://www.123.com/")
+    .finalize();
 
   link.uri = uri1;
 
-  do_check_true(link.compareHash(uri2))
-  uri2.spec = "http://www.456.com/";
-  do_check_false(link.compareHash(uri2))
-  uri2.spec = "http://www.123.com/";
-  do_check_true(link.compareHash(uri2))
-  uri2.spec = "https://www.123.com/";
-  do_check_false(link.compareHash(uri2))
-  uri2.spec = "http://www.123.com/test/";
-  do_check_false(link.compareHash(uri2))
-  uri1.spec = "http://www.123.com/test/";
-  uri2.spec = "http://www.123.com/test/";
-  do_check_true(link.compareHash(uri2))
-  uri1.spec = "https://www.123.com/test/";
-  uri2.spec = "https://www.123.com/test/";
-  do_check_true(link.compareHash(uri2))
-  uri2.spec = "ftp://www.123.com/test/";
-  do_check_false(link.compareHash(uri2))
-  uri2.spec = "http://123.com/test/";
-  do_check_false(link.compareHash(uri2))
-  uri1.spec = "https://www.123.com/test/";
-  uri2.spec = "https://www.123.com/Test/";
-  do_check_false(link.compareHash(uri2))
+  Assert.ok(link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://www.456.com/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://www.123.com/")
+    .finalize();
+  Assert.ok(link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("https://www.123.com/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://www.123.com/test/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
+  uri1 = uri1
+    .mutate()
+    .setSpec("http://www.123.com/test/")
+    .finalize();
+  link.uri = uri1;
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://www.123.com/test/")
+    .finalize();
+  Assert.ok(link.compareHash(uri2));
+  uri1 = uri1
+    .mutate()
+    .setSpec("https://www.123.com/test/")
+    .finalize();
+  link.uri = uri1;
+  uri2 = uri2
+    .mutate()
+    .setSpec("https://www.123.com/test/")
+    .finalize();
+  Assert.ok(link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("ftp://www.123.com/test/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://123.com/test/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
+  uri1 = uri1
+    .mutate()
+    .setSpec("https://www.123.com/test/")
+    .finalize();
+  link.uri = uri1;
+  uri2 = uri2
+    .mutate()
+    .setSpec("https://www.123.com/Test/")
+    .finalize();
+  Assert.ok(!link.compareHash(uri2));
 
-  uri1.spec = "http://www.123.com/";
-  do_check_eq(link.uriHash, "QGLmWuwuTozr3tOfXSf5mg==");
-  uri1.spec = "http://www.123.com/test/";
-  do_check_eq(link.uriHash, "AG87Ls+GmaUYSUJFETRr3Q==");
-  uri1.spec = "https://www.123.com/";
-  do_check_eq(link.uriHash, "iSx6UH1a9enVPzUA9JZ42g==");
-
-  var uri3 = Cc["@mozilla.org/network/simple-uri;1"]
-            .createInstance(Ci.nsIURI);
-  link.uri = uri3;
-  do_check_eq(link.uriHash, "hTrpDwNRMkvXPqYV5kh1Fw==");
+  uri1 = uri1
+    .mutate()
+    .setSpec("http://www.123.com/")
+    .finalize();
+  link.uri = uri1;
+  Assert.equal(link.uriHash, "QGLmWuwuTozr3tOfXSf5mg==");
+  uri1 = uri1
+    .mutate()
+    .setSpec("http://www.123.com/test/")
+    .finalize();
+  link.uri = uri1;
+  Assert.equal(link.uriHash, "AG87Ls+GmaUYSUJFETRr3Q==");
+  uri1 = uri1
+    .mutate()
+    .setSpec("https://www.123.com/")
+    .finalize();
+  link.uri = uri1;
+  Assert.equal(link.uriHash, "iSx6UH1a9enVPzUA9JZ42g==");
 }
 
-function test_links()
-{
+function test_links() {
   // links:
-  var link1 = Cc["@mozilla.org/windows-jumplistlink;1"]
-             .createInstance(Ci.nsIJumpListLink);
-  var link2 = Cc["@mozilla.org/windows-jumplistlink;1"]
-              .createInstance(Ci.nsIJumpListLink);
+  var link1 = Cc["@mozilla.org/windows-jumplistlink;1"].createInstance(
+    Ci.nsIJumpListLink
+  );
+  var link2 = Cc["@mozilla.org/windows-jumplistlink;1"].createInstance(
+    Ci.nsIJumpListLink
+  );
 
-  var uri1 = Cc["@mozilla.org/network/simple-uri;1"]
-            .createInstance(Ci.nsIURI);
-  var uri2 = Cc["@mozilla.org/network/simple-uri;1"]
-            .createInstance(Ci.nsIURI);
-
-  uri1.spec = "http://www.test.com/";
-  uri2.spec = "http://www.test.com/";
+  var uri1 = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec("http://www.test.com/")
+    .finalize();
+  var uri2 = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec("http://www.test.com/")
+    .finalize();
 
   link1.uri = uri1;
   link1.uriTitle = "Test";
   link2.uri = uri2;
   link2.uriTitle = "Test";
 
-  do_check_true(link1.equals(link2));
+  Assert.ok(link1.equals(link2));
 
   link2.uriTitle = "Testing";
 
-  do_check_false(link1.equals(link2));
+  Assert.ok(!link1.equals(link2));
 
   link2.uriTitle = "Test";
-  uri2.spec = "http://www.testing.com/";
+  uri2 = uri2
+    .mutate()
+    .setSpec("http://www.testing.com/")
+    .finalize();
+  link2.uri = uri2;
 
-  do_check_false(link1.equals(link2));
+  Assert.ok(!link1.equals(link2));
 }
 
-function test_shortcuts()
-{
+function test_shortcuts() {
   // shortcuts:
-  var sc = Cc["@mozilla.org/windows-jumplistshortcut;1"]
-           .createInstance(Ci.nsIJumpListShortcut);
+  var sc = Cc["@mozilla.org/windows-jumplistshortcut;1"].createInstance(
+    Ci.nsIJumpListShortcut
+  );
 
-  var handlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"]
-                   .createInstance(Ci.nsILocalHandlerApp);
+  var handlerApp = Cc[
+    "@mozilla.org/uriloader/local-handler-app;1"
+  ].createInstance(Ci.nsILocalHandlerApp);
 
   handlerApp.name = "TestApp";
   handlerApp.detailedDescription = "TestApp detailed description.";
   handlerApp.appendParameter("-test");
 
   sc.iconIndex = 1;
-  do_check_eq(sc.iconIndex, 1);
+  Assert.equal(sc.iconIndex, 1);
 
-  var faviconPageUri = Cc["@mozilla.org/network/simple-uri;1"]
-                    .createInstance(Ci.nsIURI);
-  faviconPageUri.spec = "http://www.123.com/";
+  var faviconPageUri = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec("http://www.123.com/")
+    .finalize();
   sc.faviconPageUri = faviconPageUri;
-  do_check_eq(sc.faviconPageUri, faviconPageUri);
+  Assert.equal(sc.faviconPageUri, faviconPageUri);
 
-  var dirSvc = Cc["@mozilla.org/file/directory_service;1"].
-                  getService(Ci.nsIProperties).
-                  QueryInterface(Ci.nsIDirectoryService);
-  var notepad = dirSvc.get("WinD", Ci.nsIFile);
+  var notepad = Services.dirsvc.get("WinD", Ci.nsIFile);
   notepad.append("notepad.exe");
   if (notepad.exists()) {
     handlerApp.executable = notepad;
     sc.app = handlerApp;
-    do_check_eq(sc.app.detailedDescription, "TestApp detailed description.");
-    do_check_eq(sc.app.name, "TestApp");
-    do_check_true(sc.app.parameterExists("-test"));
-    do_check_false(sc.app.parameterExists("-notset"));
+    Assert.equal(sc.app.detailedDescription, "TestApp detailed description.");
+    Assert.equal(sc.app.name, "TestApp");
+    Assert.ok(sc.app.parameterExists("-test"));
+    Assert.ok(!sc.app.parameterExists("-notset"));
   }
 }
 
-function test_jumplist()
-{
+async function test_jumplist() {
   // Jump lists can't register links unless the application is the default
   // protocol handler for the protocol of the link, so we skip off testing
   // those in these tests. We'll init the jump list for the xpc shell harness,
   // add a task item, and commit it.
- 
-  // not compiled in
-  if (Ci.nsIWinTaskbar == null)
-    return;
 
-  var taskbar = Cc["@mozilla.org/windows-taskbar;1"]
-                .getService(Ci.nsIWinTaskbar);
+  // not compiled in
+  if (Ci.nsIWinTaskbar == null) {
+    return;
+  }
+
+  var taskbar = Cc["@mozilla.org/windows-taskbar;1"].getService(
+    Ci.nsIWinTaskbar
+  );
 
   var builder = taskbar.createJumpListBuilder();
 
-  do_check_neq(builder, null);
+  Assert.notEqual(builder, null);
 
   // Win7 and up only
   try {
-    var sysInfo = Cc["@mozilla.org/system-info;1"].
-                  getService(Ci.nsIPropertyBag2);
+    var sysInfo = Cc["@mozilla.org/system-info;1"].getService(
+      Ci.nsIPropertyBag2
+    );
     var ver = parseFloat(sysInfo.getProperty("version"));
     if (ver < 6.1) {
-      do_check_false(builder.available, false);
+      Assert.ok(!builder.available);
       return;
     }
-  } catch (ex) { }
+  } catch (ex) {}
 
-  do_check_true(taskbar.available);
+  Assert.ok(taskbar.available);
 
   builder.deleteActiveList();
 
-  var items = Cc["@mozilla.org/array;1"]
-              .createInstance(Ci.nsIMutableArray);
+  var items = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
 
-  var sc = Cc["@mozilla.org/windows-jumplistshortcut;1"]
-           .createInstance(Ci.nsIJumpListShortcut);
+  var sc = Cc["@mozilla.org/windows-jumplistshortcut;1"].createInstance(
+    Ci.nsIJumpListShortcut
+  );
 
-  var handlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"]
-                   .createInstance(Ci.nsILocalHandlerApp);
+  var handlerApp = Cc[
+    "@mozilla.org/uriloader/local-handler-app;1"
+  ].createInstance(Ci.nsILocalHandlerApp);
 
   handlerApp.name = "Notepad";
   handlerApp.detailedDescription = "Testing detailed description.";
 
-  var dirSvc = Cc["@mozilla.org/file/directory_service;1"].
-                  getService(Ci.nsIProperties).
-                  QueryInterface(Ci.nsIDirectoryService);
-  var notepad = dirSvc.get("WinD", Ci.nsIFile);
+  var notepad = Services.dirsvc.get("WinD", Ci.nsIFile);
   notepad.append("notepad.exe");
   if (notepad.exists()) {
+    // To ensure "profile-before-change" will fire before
+    // "xpcom-shutdown-threads"
+    do_get_profile();
+
     handlerApp.executable = notepad;
     sc.app = handlerApp;
-    items.appendElement(sc, false);
+    items.appendElement(sc);
 
-    var removed = Cc["@mozilla.org/array;1"]
-                  .createInstance(Ci.nsIMutableArray);
-    do_check_true(builder.initListBuild(removed));
-    do_check_true(builder.addListToBuild(builder.JUMPLIST_CATEGORY_TASKS, items));
-    do_check_true(builder.addListToBuild(builder.JUMPLIST_CATEGORY_RECENT));
-    do_check_true(builder.addListToBuild(builder.JUMPLIST_CATEGORY_FREQUENT));
-    do_check_true(builder.commitListBuild());
+    var removed = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+    Assert.ok(builder.initListBuild(removed));
+    Assert.ok(builder.addListToBuild(builder.JUMPLIST_CATEGORY_TASKS, items));
+    Assert.ok(builder.addListToBuild(builder.JUMPLIST_CATEGORY_RECENT));
+    Assert.ok(builder.addListToBuild(builder.JUMPLIST_CATEGORY_FREQUENT));
+    let rv = new Promise(resolve => {
+      builder.commitListBuild(resolve);
+    });
+    Assert.ok(await rv);
 
     builder.deleteActiveList();
 
-    do_check_true(builder.initListBuild(removed));
-    do_check_true(builder.addListToBuild(builder.JUMPLIST_CATEGORY_CUSTOM, items, "Custom List"));
-    do_check_true(builder.commitListBuild());
+    Assert.ok(builder.initListBuild(removed));
+    Assert.ok(
+      builder.addListToBuild(
+        builder.JUMPLIST_CATEGORY_CUSTOMLIST,
+        items,
+        "Custom List"
+      )
+    );
+    rv = new Promise(resolve => {
+      builder.commitListBuild(resolve);
+    });
+    Assert.ok(await rv);
 
     builder.deleteActiveList();
   }
 }
 
-function run_test()
-{
+function run_test() {
   if (mozinfo.os != "win") {
     return;
   }
@@ -257,5 +324,8 @@ function run_test()
   test_hashes();
   test_links();
   test_shortcuts();
-  test_jumplist();
+
+  run_next_test();
 }
+
+add_task(test_jumplist);

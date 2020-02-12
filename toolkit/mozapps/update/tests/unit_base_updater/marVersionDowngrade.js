@@ -5,7 +5,7 @@
 
 /* Test version downgrade MAR security check */
 
-function run_test() {
+async function run_test() {
   if (!MOZ_VERIFY_MAR_SIGNATURE) {
     return;
   }
@@ -16,36 +16,26 @@ function run_test() {
   gTestFiles = gTestFilesCompleteSuccess;
   gTestDirs = gTestDirsCompleteSuccess;
   setTestFilesAndDirsForFailure();
-  setupUpdaterTest(FILE_OLD_VERSION_MAR, false);
-}
-
-/**
- * Called after the call to setupUpdaterTest finishes.
- */
-function setupUpdaterTestFinished() {
+  await setupUpdaterTest(FILE_OLD_VERSION_MAR, false);
   // If execv is used the updater process will turn into the callback process
   // and the updater's return code will be that of the callback process.
-  runUpdateUsingUpdater(STATE_FAILED_VERSION_DOWNGRADE_ERROR, false,
-                        (USE_EXECV ? 0 : 1));
-}
-
-/**
- * Called after the call to runUpdateUsingUpdater finishes.
- */
-function runUpdateFinished() {
+  runUpdate(
+    STATE_FAILED_VERSION_DOWNGRADE_ERROR,
+    false,
+    USE_EXECV ? 0 : 1,
+    false
+  );
   standardInit();
-  Assert.equal(readStatusState(), STATE_NONE,
-               "the status file state" + MSG_SHOULD_EQUAL);
-  Assert.ok(!gUpdateManager.activeUpdate,
-            "the active update should not be defined");
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_FAILED,
-               "the update state" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).errorCode, VERSION_DOWNGRADE_ERROR,
-               "the update errorCode" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateFailure(getApplyDirFile);
   checkUpdateLogContains(STATE_FAILED_VERSION_DOWNGRADE_ERROR);
+  await waitForUpdateXMLFiles();
+  checkUpdateManager(
+    STATE_NONE,
+    false,
+    STATE_FAILED,
+    VERSION_DOWNGRADE_ERROR,
+    1
+  );
   waitForFilesInUse();
 }

@@ -2,15 +2,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import sys
+from __future__ import print_function
+
 import os
-import time
+import posixpath
+import psutil
+import signal
+import sys
 import tempfile
+import time
 import traceback
 import urllib2
+from contextlib import closing
 
-import mozdevice
-import mozinfo
+from mozdevice import ADBDevice, ADBTimeoutError
 from automation import Automation
 from remoteautomation import RemoteAutomation, fennecLogcatFilters
 
@@ -30,13 +35,13 @@ class RemoteReftestResolver(ReftestResolver):
         elif os.path.exists(os.path.abspath(path)):
             rv = os.path.abspath(path)
         else:
-            print >> sys.stderr, "Could not find manifest %s" % script_abs_path
+            print("Could not find manifest %s" % script_abs_path, file=sys.stderr)
             sys.exit(1)
         return os.path.normpath(rv)
 
     def manifestURL(self, options, path):
-        # Dynamically build the reftest URL if possible, beware that args[0] should exist 'inside' the webroot
-        # It's possible for this url to have a leading "..", but reftest.js will fix that up
+        # Dynamically build the reftest URL if possible, beware that args[0] should exist 'inside'
+        # webroot. It's possible for this url to have a leading "..", but reftest.js will fix that
         relPath = os.path.relpath(path, SCRIPT_DIRECTORY)
         return "http://%s:%s/%s" % (options.remoteWebServer, options.httpPort, relPath)
 
@@ -50,32 +55,39 @@ class ReftestServer:
 
     def __init__(self, automation, options, scriptDir):
         self.automation = automation
-        self._utilityPath = options.utilityPath
-        self._xrePath = options.xrePath
-        self._profileDir = options.serverProfilePath
+        self.utilityPath = options.utilityPath
+        self.xrePath = options.xrePath
+        self.profileDir = options.serverProfilePath
         self.webServer = options.remoteWebServer
         self.httpPort = options.httpPort
         self.scriptDir = scriptDir
-        self.pidFile = options.pidFile
-        self._httpdPath = os.path.abspath(options.httpdPath)
-        self.shutdownURL = "http://%(server)s:%(port)s/server/shutdown" % { "server" : self.webServer, "port" : self.httpPort }
+        self.httpdPath = os.path.abspath(options.httpdPath)
+        if options.remoteWebServer == "10.0.2.2":
+            # probably running an Android emulator and 10.0.2.2 will
+            # not be visible from host
+            shutdownServer = "127.0.0.1"
+        else:
+            shutdownServer = self.webServer
+        self.shutdownURL = "http://%(server)s:%(port)s/server/shutdown" % {
+                           "server": shutdownServer, "port": self.httpPort}
 
     def start(self):
         "Run the Refest server, returning the process ID of the server."
 
-        env = self.automation.environment(xrePath = self._xrePath)
+        env = self.automation.environment(xrePath=self.xrePath)
         env["XPCOM_DEBUG_BREAK"] = "warn"
         if self.automation.IS_WIN32:
-            env["PATH"] = env["PATH"] + ";" + self._xrePath
+            env["PATH"] = env["PATH"] + ";" + self.xrePath
 
-        args = ["-g", self._xrePath,
-                "-v", "170",
-                "-f", os.path.join(self._httpdPath, "httpd.js"),
-                "-e", "const _PROFILE_PATH = '%(profile)s';const _SERVER_PORT = '%(port)s'; const _SERVER_ADDR ='%(server)s';" %
-                       {"profile" : self._profileDir.replace('\\', '\\\\'), "port" : self.httpPort, "server" : self.webServer },
+        args = ["-g", self.xrePath,
+                "-f", os.path.join(self.httpdPath, "httpd.js"),
+                "-e", "const _PROFILE_PATH = '%(profile)s';const _SERVER_PORT = "
+                      "'%(port)s'; const _SERVER_ADDR ='%(server)s';" % {
+                      "profile": self.profileDir.replace('\\', '\\\\'), "port": self.httpPort,
+                      "server": self.webServer},
                 "-f", os.path.join(self.scriptDir, "server.js")]
 
-        xpcshell = os.path.join(self._utilityPath,
+        xpcshell = os.path.join(self.utilityPath,
                                 "xpcshell" + self.automation.BIN_SUFFIX)
 
         if not os.access(xpcshell, os.F_OK):
@@ -85,22 +97,17 @@ class ReftestServer:
                             'the --utility-path argument to specify the path '
                             'to a desktop version.' % xpcshell)
 
-        self._process = self.automation.Process([xpcshell] + args, env = env)
+        self._process = self.automation.Process([xpcshell] + args, env=env)
         pid = self._process.pid
         if pid < 0:
-            print "TEST-UNEXPECTED-FAIL | remotereftests.py | Error starting server."
+            print("TEST-UNEXPECTED-FAIL | remotereftests.py | Error starting server.")
             return 2
         self.automation.log.info("INFO | remotereftests.py | Server pid: %d", pid)
-
-        if (self.pidFile != ""):
-            f = open(self.pidFile + ".xpcshell.pid", 'w')
-            f.write("%s" % pid)
-            f.close()
 
     def ensureReady(self, timeout):
         assert timeout >= 0
 
-        aliveFile = os.path.join(self._profileDir, "server_alive.txt")
+        aliveFile = os.path.join(self.profileDir, "server_alive.txt")
         i = 0
         while i < timeout:
             if os.path.exists(aliveFile):
@@ -108,54 +115,98 @@ class ReftestServer:
             time.sleep(1)
             i += 1
         else:
-            print "TEST-UNEXPECTED-FAIL | remotereftests.py | Timed out while waiting for server startup."
+            print("TEST-UNEXPECTED-FAIL | remotereftests.py | "
+                  "Timed out while waiting for server startup.")
             self.stop()
             return 1
 
     def stop(self):
         if hasattr(self, '_process'):
             try:
-                c = urllib2.urlopen(self.shutdownURL)
-                c.read()
-                c.close()
+                with closing(urllib2.urlopen(self.shutdownURL)) as c:
+                    c.read()
 
                 rtncode = self._process.poll()
-                if (rtncode == None):
+                if (rtncode is None):
                     self._process.terminate()
-            except:
+            except Exception:
+                self.automation.log.info("Failed to shutdown server at %s" %
+                                         self.shutdownURL)
+                traceback.print_exc()
                 self._process.kill()
+
 
 class RemoteReftest(RefTest):
     use_marionette = False
-    remoteApp = ''
     resolver_cls = RemoteReftestResolver
 
-    def __init__(self, automation, devicemanager, options, scriptDir):
-        RefTest.__init__(self)
-        self.automation = automation
-        self._devicemanager = devicemanager
+    def __init__(self, options, scriptDir):
+        RefTest.__init__(self, options.suite)
+        self.run_by_manifest = False
         self.scriptDir = scriptDir
-        self.remoteApp = options.app
+        self.localLogName = options.localLogName
+
+        verbose = False
+        if options.log_tbpl_level == 'debug' or options.log_mach_level == 'debug':
+            verbose = True
+            print("set verbose!")
+        self.device = ADBDevice(adb=options.adb_path or 'adb',
+                                device=options.deviceSerial,
+                                test_root=options.remoteTestRoot,
+                                verbose=verbose)
+        if options.remoteTestRoot is None:
+            options.remoteTestRoot = posixpath.join(self.device.test_root, "reftest")
+        options.remoteProfile = posixpath.join(options.remoteTestRoot, "profile")
+        options.remoteLogFile = posixpath.join(options.remoteTestRoot, "reftest.log")
+        options.logFile = options.remoteLogFile
         self.remoteProfile = options.remoteProfile
         self.remoteTestRoot = options.remoteTestRoot
-        self.remoteLogFile = options.remoteLogFile
-        self.localLogName = options.localLogName
-        self.pidFile = options.pidFile
+
+        if not options.ignoreWindowSize:
+            parts = self.device.get_info(
+                'screen')['screen'][0].split()
+            width = int(parts[0].split(':')[1])
+            height = int(parts[1].split(':')[1])
+            if (width < 1366 or height < 1050):
+                self.error("ERROR: Invalid screen resolution %sx%s, "
+                           "please adjust to 1366x1050 or higher" % (
+                            width, height))
+
+        self._populate_logger(options)
+        self.outputHandler = OutputHandler(self.log, options.utilityPath, options.symbolsPath)
+        # RemoteAutomation.py's 'messageLogger' is also used by mochitest. Mimic a mochitest
+        # MessageLogger object to re-use this code path.
+        self.outputHandler.write = self.outputHandler.__call__
+        args = {'messageLogger': self.outputHandler}
+        self.automation = RemoteAutomation(self.device,
+                                           appName=options.app,
+                                           remoteProfile=self.remoteProfile,
+                                           remoteLog=options.remoteLogFile,
+                                           processArgs=args)
+
+        self.environment = self.automation.environment
         if self.automation.IS_DEBUG_BUILD:
             self.SERVER_STARTUP_TIMEOUT = 180
         else:
             self.SERVER_STARTUP_TIMEOUT = 90
-        self.automation.deleteANRs()
-        self.automation.deleteTombstones()
 
-        self._populate_logger(options)
-        outputHandler = OutputHandler(self.log, options.utilityPath, options.symbolsPath)
-        # RemoteAutomation.py's 'messageLogger' is also used by mochitest. Mimic a mochitest
-        # MessageLogger object to re-use this code path.
-        outputHandler.write = outputHandler.__call__
-        self.automation._processArgs['messageLogger'] = outputHandler
+        self.remoteCache = os.path.join(options.remoteTestRoot, "cache/")
 
-    def findPath(self, paths, filename = None):
+        # Check that Firefox is installed
+        expected = options.app.split('/')[-1]
+        if not self.device.is_app_installed(expected):
+            raise Exception("%s is not installed on this device" % expected)
+
+        self.device.clear_logcat()
+
+        self.device.rm(self.remoteCache, force=True, recursive=True)
+
+        procName = options.app.split('/')[-1]
+        self.device.stop_application(procName)
+        if self.device.process_exist(procName):
+            self.log.error("unable to kill %s before starting tests!" % procName)
+
+    def findPath(self, paths, filename=None):
         for path in paths:
             p = path
             if filename:
@@ -174,7 +225,7 @@ class RemoteReftest(RefTest):
         localAutomation.IS_MAC = False
         localAutomation.UNIXISH = False
         hostos = sys.platform
-        if (hostos == 'mac' or  hostos == 'darwin'):
+        if (hostos == 'mac' or hostos == 'darwin'):
             localAutomation.IS_MAC = True
         elif (hostos == 'linux' or hostos == 'linux2'):
             localAutomation.IS_LINUX = True
@@ -183,10 +234,11 @@ class RemoteReftest(RefTest):
             localAutomation.BIN_SUFFIX = ".exe"
             localAutomation.IS_WIN32 = True
 
-        paths = [options.xrePath, localAutomation.DIST_BIN, self.automation._product, os.path.join('..', self.automation._product)]
+        paths = [options.xrePath, localAutomation.DIST_BIN]
         options.xrePath = self.findPath(paths)
-        if options.xrePath == None:
-            print "ERROR: unable to find xulrunner path for %s, please specify with --xre-path" % (os.name)
+        if options.xrePath is None:
+            print("ERROR: unable to find xulrunner path for %s, "
+                  "please specify with --xre-path" % (os.name))
             return 1
         paths.append("bin")
         paths.append(os.path.join("..", "bin"))
@@ -198,8 +250,9 @@ class RemoteReftest(RefTest):
         if (options.utilityPath):
             paths.insert(0, options.utilityPath)
         options.utilityPath = self.findPath(paths, xpcshell)
-        if options.utilityPath == None:
-            print "ERROR: unable to find utility path for %s, please specify with --utility-path" % (os.name)
+        if options.utilityPath is None:
+            print("ERROR: unable to find utility path for %s, "
+                  "please specify with --utility-path" % (os.name))
             return 1
 
         options.serverProfilePath = tempfile.mkdtemp()
@@ -218,19 +271,39 @@ class RemoteReftest(RefTest):
     def stopWebServer(self, options):
         self.server.stop()
 
-    def createReftestProfile(self, options, manifest):
+    def killNamedProc(self, pname, orphans=True):
+        """ Kill processes matching the given command name """
+        self.log.info("Checking for %s processes..." % pname)
+
+        for proc in psutil.process_iter():
+            try:
+                if proc.name() == pname:
+                    procd = proc.as_dict(attrs=['pid', 'ppid', 'name', 'username'])
+                    if proc.ppid() == 1 or not orphans:
+                        self.log.info("killing %s" % procd)
+                        try:
+                            os.kill(proc.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+                        except Exception as e:
+                            self.log.info("Failed to kill process %d: %s" % (proc.pid, str(e)))
+                    else:
+                        self.log.info("NOT killing %s (not an orphan?)" % procd)
+            except Exception:
+                # may not be able to access process info for all processes
+                continue
+
+    def createReftestProfile(self, options, **kwargs):
         profile = RefTest.createReftestProfile(self,
                                                options,
-                                               manifest,
                                                server=options.remoteWebServer,
-                                               port=options.httpPort)
+                                               port=options.httpPort,
+                                               **kwargs)
         profileDir = profile.profile
-
         prefs = {}
         prefs["app.update.url.android"] = ""
-        prefs["browser.firstrun.show.localepicker"] = False
         prefs["reftest.remote"] = True
         prefs["datareporting.policy.dataSubmissionPolicyBypassAcceptance"] = True
+        # move necko cache to a location that can be cleaned up
+        prefs["browser.cache.disk.parent_directory"] = self.remoteCache
 
         prefs["layout.css.devPixelsPerPx"] = "1.0"
         # Because Fennec is a little wacky (see bug 1156817) we need to load the
@@ -241,41 +314,36 @@ class RemoteReftest(RefTest):
         profile.set_preferences(prefs)
 
         try:
-            self._devicemanager.pushDir(profileDir, options.remoteProfile)
-            self._devicemanager.chmodDir(options.remoteProfile)
-        except mozdevice.DMError:
-            print "Automation Error: Failed to copy profiledir to device"
+            self.device.push(profileDir, options.remoteProfile)
+            self.device.chmod(options.remoteProfile, recursive=True, root=True)
+        except Exception:
+            print("Automation Error: Failed to copy profiledir to device")
             raise
 
         return profile
 
-    def copyExtraFilesToProfile(self, options, profile):
-        profileDir = profile.profile
-        RefTest.copyExtraFilesToProfile(self, options, profile)
-        try:
-            self._devicemanager.pushDir(profileDir, options.remoteProfile)
-            self._devicemanager.chmodDir(options.remoteProfile)
-        except mozdevice.DMError:
-            print "Automation Error: Failed to copy extra files to device"
-            raise
-
     def printDeviceInfo(self, printLogcat=False):
         try:
             if printLogcat:
-                logcat = self._devicemanager.getLogcat(filterOutRegexps=fennecLogcatFilters)
-                print ''.join(logcat)
-            print "Device info:"
-            devinfo = self._devicemanager.getInfo()
+                logcat = self.device.get_logcat(filter_out_regexps=fennecLogcatFilters)
+                for l in logcat:
+                    ul = l.decode('utf-8', errors='replace')
+                    sl = ul.encode('iso8859-1', errors='replace')
+                    print("%s\n" % sl)
+            print("Device info:")
+            devinfo = self.device.get_info()
             for category in devinfo:
                 if type(devinfo[category]) is list:
-                    print "  %s:" % category
+                    print("  %s:" % category)
                     for item in devinfo[category]:
-                        print "     %s" % item
+                        print("     %s" % item)
                 else:
-                    print "  %s: %s" % (category, devinfo[category])
-            print "Test root: %s" % self._devicemanager.deviceRoot
-        except mozdevice.DMError:
-            print "WARNING: Error getting device information"
+                    print("  %s: %s" % (category, devinfo[category]))
+            print("Test root: %s" % self.device.test_root)
+        except ADBTimeoutError:
+            raise
+        except Exception as e:
+            print("WARNING: Error getting device information: %s" % str(e))
 
     def environment(self, **kwargs):
         return self.automation.environment(**kwargs)
@@ -287,121 +355,81 @@ class RemoteReftest(RefTest):
             del browserEnv["XPCOM_MEM_BLOAT_LOG"]
         return browserEnv
 
-    def runApp(self, profile, binary, cmdargs, env,
-               timeout=None, debuggerInfo=None,
-               symbolsPath=None, options=None,
-               valgrindPath=None, valgrindArgs=None, valgrindSuppFiles=None):
-        status = self.automation.runApp(None, env,
-                                        binary,
-                                        profile.profile,
-                                        cmdargs,
-                                        utilityPath=options.utilityPath,
-                                        xrePath=options.xrePath,
-                                        debuggerInfo=debuggerInfo,
-                                        symbolsPath=symbolsPath,
-                                        timeout=timeout)
+    def runApp(self, options, cmdargs=None, timeout=None, debuggerInfo=None, symbolsPath=None,
+               valgrindPath=None, valgrindArgs=None, valgrindSuppFiles=None, **profileArgs):
+        if cmdargs is None:
+            cmdargs = []
+
+        if self.use_marionette:
+            cmdargs.append('-marionette')
+
+        binary = options.app
+        profile = self.createReftestProfile(options, **profileArgs)
+
+        # browser environment
+        env = self.buildBrowserEnv(options, profile.profile)
+
+        self.log.info("Running with e10s: {}".format(options.e10s))
+        status, self.lastTestSeen = self.automation.runApp(None, env,
+                                                           binary,
+                                                           profile.profile,
+                                                           cmdargs,
+                                                           utilityPath=options.utilityPath,
+                                                           xrePath=options.xrePath,
+                                                           debuggerInfo=debuggerInfo,
+                                                           symbolsPath=symbolsPath,
+                                                           timeout=timeout,
+                                                           e10s=options.e10s)
+
+        self.cleanup(profile.profile)
         return status
 
     def cleanup(self, profileDir):
-        # Pull results back from device
-        if self.remoteLogFile and \
-                self._devicemanager.fileExists(self.remoteLogFile):
-            self._devicemanager.getFile(self.remoteLogFile, self.localLogName)
-        else:
-            print "WARNING: Unable to retrieve log file (%s) from remote " \
-                "device" % self.remoteLogFile
-        self._devicemanager.removeDir(self.remoteProfile)
-        self._devicemanager.removeDir(self.remoteTestRoot)
+        self.device.rm(self.remoteTestRoot,  force=True, recursive=True)
+        self.device.rm(self.remoteProfile, force=True, recursive=True)
+        self.device.rm(self.remoteCache, force=True, recursive=True)
         RefTest.cleanup(self, profileDir)
-        if (self.pidFile != ""):
-            try:
-                os.remove(self.pidFile)
-                os.remove(self.pidFile + ".xpcshell.pid")
-            except:
-                print "Warning: cleaning up pidfile '%s' was unsuccessful from the test harness" % self.pidFile
 
 
 def run_test_harness(parser, options):
-    if options.dm_trans == 'sut' and options.deviceIP == None:
-        print "Error: If --dm_trans = sut, you must provide a device IP to connect to via the --deviceIP option"
-        return 1
-
-    dm_args = {
-        'deviceRoot': options.remoteTestRoot,
-        'host': options.deviceIP,
-        'port': options.devicePort,
-    }
-
-    dm_cls = mozdevice.DroidSUT
-    if options.dm_trans == 'adb':
-        dm_args['adbPath'] = options.adb_path
-        if not dm_args['host']:
-            dm_args['deviceSerial'] = options.deviceSerial
-        dm_cls = mozdevice.DroidADB
-
-    try:
-        dm = dm_cls(**dm_args)
-    except mozdevice.DMError:
-        traceback.print_exc()
-        print "Automation Error: exception while initializing devicemanager.  Most likely the device is not in a testable state."
-        return 1
-
-    automation = RemoteAutomation(None)
-    automation.setDeviceManager(dm)
-
-    if options.remoteProductName:
-        automation.setProduct(options.remoteProductName)
-
-    # Set up the defaults and ensure options are set
-    parser.validate_remote(options, automation)
-
-    # Check that Firefox is installed
-    expected = options.app.split('/')[-1]
-    installed = dm.shellCheckOutput(['pm', 'list', 'packages', expected])
-    if expected not in installed:
-        print "%s is not installed on this device" % expected
-        return 1
-
-    automation.setAppName(options.app)
-    automation.setRemoteProfile(options.remoteProfile)
-    automation.setRemoteLog(options.remoteLogFile)
-    reftest = RemoteReftest(automation, dm, options, SCRIPT_DIRECTORY)
+    reftest = RemoteReftest(options, SCRIPT_DIRECTORY)
+    parser.validate_remote(options, reftest.automation)
     parser.validate(options, reftest)
-
-    if mozinfo.info['debug']:
-        print "changing timeout for remote debug reftests from %s to 600 seconds" % options.timeout
-        options.timeout = 600
 
     # Hack in a symbolic link for jsreftest
     os.system("ln -s ../jsreftest " + str(os.path.join(SCRIPT_DIRECTORY, "jsreftest")))
+
+    # Despite our efforts to clean up servers started by this script, in practice
+    # we still see infrequent cases where a process is orphaned and interferes
+    # with future tests, typically because the old server is keeping the port in use.
+    # Try to avoid those failures by checking for and killing servers before
+    # trying to start new ones.
+    reftest.killNamedProc('ssltunnel')
+    reftest.killNamedProc('xpcshell')
 
     # Start the webserver
     retVal = reftest.startWebServer(options)
     if retVal:
         return retVal
 
-    procName = options.app.split('/')[-1]
-    if (dm.processExist(procName)):
-        dm.killProcess(procName)
-
-    if options.printDeviceInfo:
+    if options.printDeviceInfo and not options.verify:
         reftest.printDeviceInfo()
 
-#an example manifest name to use on the cli
-#    manifest = "http://" + options.remoteWebServer + "/reftests/layout/reftests/reftest-sanity/reftest.list"
     retVal = 0
     try:
-        dm.recordLogcat()
-        retVal = reftest.runTests(options.tests, options)
-    except:
-        print "Automation Error: Exception caught while running tests"
+        if options.verify:
+            retVal = reftest.verifyTests(options.tests, options)
+        else:
+            retVal = reftest.runTests(options.tests, options)
+    except Exception:
+        print("Automation Error: Exception caught while running tests")
         traceback.print_exc()
         retVal = 1
 
     reftest.stopWebServer(options)
 
-    if options.printDeviceInfo:
-        reftest.printDeviceInfo(printLogcat=True)
+    if options.printDeviceInfo and not options.verify:
+        reftest.printDeviceInfo(printLogcat=(retVal != 0))
 
     return retVal
 

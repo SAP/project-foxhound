@@ -2,19 +2,25 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-function* testTabsCreateInvalidURL(tabsCreateURL) {
+async function testTabsCreateInvalidURL(tabsCreateURL) {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "permissions": ["tabs"],
+      permissions: ["tabs"],
     },
 
     background: function() {
       browser.test.sendMessage("ready");
       browser.test.onMessage.addListener((msg, tabsCreateURL) => {
-        browser.tabs.create({url: tabsCreateURL}, (tab) => {
-          browser.test.assertEq(undefined, tab, "on error tab should be undefined");
-          browser.test.assertTrue(/Illegal URL/.test(browser.runtime.lastError.message),
-                                  "runtime.lastError should report the expected error message");
+        browser.tabs.create({ url: tabsCreateURL }, tab => {
+          browser.test.assertEq(
+            undefined,
+            tab,
+            "on error tab should be undefined"
+          );
+          browser.test.assertTrue(
+            /Illegal URL/.test(browser.runtime.lastError.message),
+            "runtime.lastError should report the expected error message"
+          );
 
           // Remove the opened tab is any.
           if (tab) {
@@ -26,19 +32,19 @@ function* testTabsCreateInvalidURL(tabsCreateURL) {
     },
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitMessage("ready");
+  await extension.awaitMessage("ready");
 
   info(`test tab.create on invalid URL "${tabsCreateURL}"`);
 
   extension.sendMessage("start", tabsCreateURL);
-  yield extension.awaitMessage("done");
+  await extension.awaitMessage("done");
 
-  yield extension.unload();
+  await extension.unload();
 }
 
-add_task(function* () {
+add_task(async function() {
   info("Start testing tabs.create on invalid URLs");
 
   let dataURLPage = `data:text/html,
@@ -53,13 +59,15 @@ add_task(function* () {
     </html>`;
 
   let testCases = [
-    {tabsCreateURL: "about:addons"},
-    {tabsCreateURL: "javascript:console.log('tabs.update execute javascript')"},
-    {tabsCreateURL: dataURLPage},
+    { tabsCreateURL: "about:addons" },
+    {
+      tabsCreateURL: "javascript:console.log('tabs.update execute javascript')",
+    },
+    { tabsCreateURL: dataURLPage },
   ];
 
-  for (let {tabsCreateURL} of testCases) {
-    yield* testTabsCreateInvalidURL(tabsCreateURL);
+  for (let { tabsCreateURL } of testCases) {
+    await testTabsCreateInvalidURL(tabsCreateURL);
   }
 
   info("done");

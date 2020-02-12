@@ -9,7 +9,7 @@ Tests of DOM Worker Threads
 -->
 <head>
   <title>Test for DOM Worker Threads</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -23,7 +23,7 @@ Tests of DOM Worker Threads
     worker.onmessage = null;
 
     // 1 second should be enough to crash.
-    window.setTimeout(function(event) {
+    window.setTimeout(function() {
       ok(true, "Didn't crash!");
       SimpleTest.finish();
     }, 1000);
@@ -45,4 +45,3 @@ Tests of DOM Worker Threads
 </pre>
 </body>
 </html>
-

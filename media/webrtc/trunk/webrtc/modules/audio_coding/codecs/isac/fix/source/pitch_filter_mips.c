@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_coding/codecs/isac/fix/source/pitch_estimator.h"
+#include "modules/audio_coding/codecs/isac/fix/source/pitch_estimator.h"
 
 void WebRtcIsacfix_PitchFilterCore(int loopNumber,
                                    int16_t gain,
-                                   int index,
+                                   size_t index,
                                    int16_t sign,
                                    int16_t* inputState,
                                    int16_t* outputBuf2,

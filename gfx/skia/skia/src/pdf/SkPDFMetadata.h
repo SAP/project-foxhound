@@ -8,26 +8,22 @@
 #ifndef SkPDFMetadata_DEFINED
 #define SkPDFMetadata_DEFINED
 
-#include "SkDocument.h"
-#include "SkTime.h"
+#include "SkPDFDocument.h"
+#include "SkPDFTypes.h"
+#include "SkUUID.h"
 
 class SkPDFObject;
 
-struct SkPDFMetadata {
-    SkTArray<SkDocument::Attribute> fInfo;
-    std::unique_ptr<const SkTime::DateTime> fCreation;
-    std::unique_ptr<const SkTime::DateTime> fModified;
+namespace SkPDFMetadata {
+std::unique_ptr<SkPDFObject> MakeDocumentInformationDict(const SkPDF::Metadata&);
 
-    SkPDFObject* createDocumentInformationDict() const;
+SkUUID CreateUUID(const SkPDF::Metadata&);
 
-#ifdef SK_PDF_GENERATE_PDFA
-    struct UUID {
-        uint8_t fData[16];
-    };
-    UUID uuid() const;
-    static SkPDFObject* CreatePdfId(const UUID& doc, const UUID& instance);
-    SkPDFObject* createXMPObject(const UUID& doc, const UUID& instance) const;
-#endif  // SK_PDF_GENERATE_PDFA
-};
+std::unique_ptr<SkPDFObject> MakePdfId(const SkUUID& doc, const SkUUID& instance);
 
+SkPDFIndirectReference MakeXMPObject(const SkPDF::Metadata& metadata,
+                                     const SkUUID& doc,
+                                     const SkUUID& instance,
+                                     SkPDFDocument*);
+}
 #endif  // SkPDFMetadata_DEFINED

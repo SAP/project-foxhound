@@ -14,10 +14,11 @@ This test is using a resumable response.
 
 */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
+var httpProtocolHandler = Cc[
+  "@mozilla.org/network/protocol;1?name=http"
+].getService(Ci.nsIHttpProtocolHandler);
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -26,7 +27,7 @@ XPCOMUtils.defineLazyGetter(this, "URL", function() {
 var httpServer = null;
 
 function make_channel(url, callback, ctx) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
 // need something bigger than 1024 bytes
@@ -43,8 +44,7 @@ const responseBody =
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" +
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-function contentHandler(metadata, response)
-{
+function contentHandler(metadata, response) {
   response.setHeader("Content-Type", "text/plain");
   response.setHeader("ETag", "Just testing");
   response.setHeader("Cache-Control", "max-age=99999");
@@ -53,38 +53,35 @@ function contentHandler(metadata, response)
   response.bodyOutputStream.write(responseBody, responseBody.length);
 }
 
-function run_test()
-{
+function run_test() {
   // Static check
-  do_check_true(responseBody.length > 1024);
+  Assert.ok(responseBody.length > 1024);
 
   do_get_profile();
 
-  if (!newCacheBackEndUsed()) {
-    do_check_true(true, "This test doesn't run when the old cache back end is used since the behavior is different");
-    return;
-  }
-
   Services.prefs.setIntPref("browser.cache.disk.max_entry_size", 1);
+  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   httpServer = new HttpServer();
   httpServer.registerPathHandler("/content", contentHandler);
   httpServer.start(-1);
 
-  var chan1 = make_channel(URL + "/content");
-  chan1.asyncOpen2(new ChannelListener(firstTimeThrough, null));
-  var chan2 = make_channel(URL + "/content");
-  chan2.asyncOpen2(new ChannelListener(secondTimeThrough, null, CL_EXPECT_FAILURE));
+  httpProtocolHandler.EnsureHSTSDataReady().then(function() {
+    var chan1 = make_channel(URL + "/content");
+    chan1.asyncOpen(new ChannelListener(firstTimeThrough, null));
+    var chan2 = make_channel(URL + "/content");
+    chan2.asyncOpen(
+      new ChannelListener(secondTimeThrough, null, CL_EXPECT_FAILURE)
+    );
+  });
 
   do_test_pending();
 }
 
-function firstTimeThrough(request, buffer)
-{
-  do_check_eq(buffer, responseBody);
+function firstTimeThrough(request, buffer) {
+  Assert.equal(buffer, responseBody);
 }
 
-function secondTimeThrough(request, buffer)
-{
+function secondTimeThrough(request, buffer) {
   httpServer.stop(do_test_finished);
 }

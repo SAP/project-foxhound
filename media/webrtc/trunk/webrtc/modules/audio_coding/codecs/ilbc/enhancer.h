@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENHANCER_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENHANCER_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENHANCER_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_ENHANCER_H_
 
 #include "defines.h"
 
@@ -29,11 +29,11 @@
 void WebRtcIlbcfix_Enhancer(
     int16_t *odata,   /* (o) smoothed block, dimension blockl */
     int16_t *idata,   /* (i) data buffer used for enhancing */
-    int16_t idatal,   /* (i) dimension idata */
-    int16_t centerStartPos, /* (i) first sample current block within idata */
-    int16_t *period,   /* (i) pitch period array (pitch bward-in time) */
-    int16_t *plocs,   /* (i) locations where period array values valid */
-    int16_t periodl   /* (i) dimension of period and plocs */
+    size_t idatal,   /* (i) dimension idata */
+    size_t centerStartPos, /* (i) first sample current block within idata */
+    size_t *period,   /* (i) pitch period array (pitch bward-in time) */
+    const size_t *plocs,   /* (i) locations where period array values valid */
+    size_t periodl   /* (i) dimension of period and plocs */
                             );
 
 #endif

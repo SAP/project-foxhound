@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,84 +8,102 @@
 #include "nsDataChannel.h"
 
 #include "mozilla/Base64.h"
-#include "nsIOService.h"
 #include "nsDataHandler.h"
-#include "nsIPipe.h"
 #include "nsIInputStream.h"
-#include "nsIOutputStream.h"
 #include "nsEscape.h"
+#include "nsStringStream.h"
 
 using namespace mozilla;
 
-nsresult
-nsDataChannel::OpenContentStream(bool async, nsIInputStream **result,
-                                 nsIChannel** channel)
-{
-    NS_ENSURE_TRUE(URI(), NS_ERROR_NOT_INITIALIZED);
+/**
+ * Helper for performing a fallible unescape.
+ *
+ * @param aStr The string to unescape.
+ * @param aBuffer Buffer to unescape into if necessary.
+ * @param rv Out: nsresult indicating success or failure of unescaping.
+ * @return Reference to the string containing the unescaped data.
+ */
+const nsACString& Unescape(const nsACString& aStr, nsACString& aBuffer,
+                           nsresult* rv) {
+  MOZ_ASSERT(rv);
 
-    nsresult rv;
+  bool appended = false;
+  *rv = NS_UnescapeURL(aStr.Data(), aStr.Length(), /* aFlags = */ 0, aBuffer,
+                       appended, mozilla::fallible);
+  if (NS_FAILED(*rv) || !appended) {
+    return aStr;
+  }
 
-    nsAutoCString spec;
-    rv = URI()->GetAsciiSpec(spec);
-    if (NS_FAILED(rv)) return rv;
+  return aBuffer;
+}
 
-    nsCString contentType, contentCharset, dataBuffer;
-    bool lBase64;
-    rv = nsDataHandler::ParseURI(spec, contentType, &contentCharset,
-                                 lBase64, &dataBuffer);
-    if (NS_FAILED(rv))
-        return rv;
+nsresult nsDataChannel::OpenContentStream(bool async, nsIInputStream** result,
+                                          nsIChannel** channel) {
+  NS_ENSURE_TRUE(URI(), NS_ERROR_NOT_INITIALIZED);
 
-    NS_UnescapeURL(dataBuffer);
+  nsresult rv;
 
-    if (lBase64) {
-        // Don't allow spaces in base64-encoded content. This is only
-        // relevant for escaped spaces; other spaces are stripped in
-        // NewURI.
-        dataBuffer.StripWhitespace();
+  // In order to avoid potentially building up a new path including the
+  // ref portion of the URI, which we don't care about, we clone a version
+  // of the URI that does not have a ref and in most cases should share
+  // string buffers with the original URI.
+  nsCOMPtr<nsIURI> uri;
+  rv = NS_GetURIWithoutRef(URI(), getter_AddRefs(uri));
+  if (NS_FAILED(rv)) return rv;
+
+  nsAutoCString path;
+  rv = uri->GetPathQueryRef(path);
+  if (NS_FAILED(rv)) return rv;
+
+  nsCString contentType, contentCharset;
+  nsDependentCSubstring dataRange;
+  bool lBase64;
+  rv = nsDataHandler::ParsePathWithoutRef(path, contentType, &contentCharset,
+                                          lBase64, &dataRange);
+  if (NS_FAILED(rv)) return rv;
+
+  // This will avoid a copy if nothing needs to be unescaped.
+  nsAutoCString unescapedBuffer;
+  const nsACString& data = Unescape(dataRange, unescapedBuffer, &rv);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (lBase64 && &data == &unescapedBuffer) {
+    // Don't allow spaces in base64-encoded content. This is only
+    // relevant for escaped spaces; other spaces are stripped in
+    // NewURI. We know there were no escaped spaces if the data buffer
+    // wasn't used in |Unescape|.
+    unescapedBuffer.StripWhitespace();
+  }
+
+  nsCOMPtr<nsIInputStream> bufInStream;
+  uint32_t contentLen;
+  if (lBase64) {
+    nsAutoCString decodedData;
+    rv = Base64Decode(data, decodedData);
+    if (NS_FAILED(rv)) {
+      // Returning this error code instead of what Base64Decode returns
+      // (NS_ERROR_ILLEGAL_VALUE) will prevent rendering of redirect response
+      // content by HTTP channels.  It's also more logical error to return.
+      // Here we know the URL is actually corrupted.
+      return NS_ERROR_MALFORMED_URI;
     }
-    
-    nsCOMPtr<nsIInputStream> bufInStream;
-    nsCOMPtr<nsIOutputStream> bufOutStream;
-    
-    // create an unbounded pipe.
-    rv = NS_NewPipe(getter_AddRefs(bufInStream),
-                    getter_AddRefs(bufOutStream),
-                    nsIOService::gDefaultSegmentSize,
-                    UINT32_MAX,
-                    async, true);
-    if (NS_FAILED(rv))
-        return rv;
 
-    uint32_t contentLen;
-    if (lBase64) {
-        const uint32_t dataLen = dataBuffer.Length();
-        int32_t resultLen = 0;
-        if (dataLen >= 1 && dataBuffer[dataLen-1] == '=') {
-            if (dataLen >= 2 && dataBuffer[dataLen-2] == '=')
-                resultLen = dataLen-2;
-            else
-                resultLen = dataLen-1;
-        } else {
-            resultLen = dataLen;
-        }
-        resultLen = ((resultLen * 3) / 4);
+    contentLen = decodedData.Length();
+    rv = NS_NewCStringInputStream(getter_AddRefs(bufInStream), decodedData);
+  } else {
+    contentLen = data.Length();
+    rv = NS_NewCStringInputStream(getter_AddRefs(bufInStream), data);
+  }
 
-        nsAutoCString decodedData;
-        rv = Base64Decode(dataBuffer, decodedData);
-        NS_ENSURE_SUCCESS(rv, rv);
-        rv = bufOutStream->Write(decodedData.get(), resultLen, &contentLen);
-    } else {
-        rv = bufOutStream->Write(dataBuffer.get(), dataBuffer.Length(), &contentLen);
-    }
-    if (NS_FAILED(rv))
-        return rv;
+  if (NS_FAILED(rv)) return rv;
 
-    SetContentType(contentType);
-    SetContentCharset(contentCharset);
-    mContentLength = contentLen;
+  SetContentType(contentType);
+  SetContentCharset(contentCharset);
+  mContentLength = contentLen;
 
-    bufInStream.forget(result);
+  bufInStream.forget(result);
 
-    return NS_OK;
+  return NS_OK;
 }

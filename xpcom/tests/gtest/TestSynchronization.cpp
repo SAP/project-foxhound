@@ -12,16 +12,9 @@
 
 using namespace mozilla;
 
-static PRThread*
-spawn(void (*run)(void*), void* arg)
-{
-  return PR_CreateThread(PR_SYSTEM_THREAD,
-                         run,
-                         arg,
-                         PR_PRIORITY_NORMAL,
-                         PR_GLOBAL_THREAD,
-                         PR_JOINABLE_THREAD,
-                         0);
+static PRThread* spawn(void (*run)(void*), void* arg) {
+  return PR_CreateThread(PR_SYSTEM_THREAD, run, arg, PR_PRIORITY_NORMAL,
+                         PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
 }
 
 //-----------------------------------------------------------------------------
@@ -41,9 +34,7 @@ TEST(Synchronization, Sanity)
 
   lock.Lock();
   lock.AssertCurrentThreadOwns();
-  {
-    MutexAutoUnlock autounlock(lock);
-  }
+  { MutexAutoUnlock autounlock(lock); }
   lock.AssertCurrentThreadOwns();
   lock.Unlock();
 
@@ -67,9 +58,7 @@ TEST(Synchronization, Sanity)
 //
 static Mutex* gLock1;
 
-static void
-MutexContention_thread(void* /*arg*/)
-{
+static void MutexContention_thread(void* /*arg*/) {
   for (int i = 0; i < 100000; ++i) {
     gLock1->Lock();
     gLock1->AssertCurrentThreadOwns();
@@ -98,9 +87,7 @@ TEST(Synchronization, MutexContention)
 //
 static Monitor* gMon1;
 
-static void
-MonitorContention_thread(void* /*arg*/)
-{
+static void MonitorContention_thread(void* /*arg*/) {
   for (int i = 0; i < 100000; ++i) {
     gMon1->Lock();
     gMon1->AssertCurrentThreadOwns();
@@ -123,12 +110,9 @@ TEST(Synchronization, MonitorContention)
   delete gMon1;
 }
 
-
 static ReentrantMonitor* gMon2;
 
-static void
-MonitorContention2_thread(void* /*arg*/)
-{
+static void MonitorContention2_thread(void* /*arg*/) {
   for (int i = 0; i < 100000; ++i) {
     gMon2->Enter();
     gMon2->AssertCurrentThreadIn();
@@ -157,13 +141,10 @@ TEST(Synchronization, MonitorContention2)
   delete gMon2;
 }
 
-
 static ReentrantMonitor* gMon3;
 static int32_t gMonFirst;
 
-static void
-MonitorSyncSanity_thread(void* /*arg*/)
-{
+static void MonitorSyncSanity_thread(void* /*arg*/) {
   gMon3->Enter();
   gMon3->AssertCurrentThreadIn();
   if (gMonFirst) {
@@ -202,9 +183,7 @@ static Mutex* gCvlock1;
 static CondVar* gCv1;
 static int32_t gCvFirst;
 
-static void
-CondVarSanity_thread(void* /*arg*/)
-{
+static void CondVarSanity_thread(void* /*arg*/) {
   gCvlock1->Lock();
   gCvlock1->AssertCurrentThreadOwns();
   if (gCvFirst) {

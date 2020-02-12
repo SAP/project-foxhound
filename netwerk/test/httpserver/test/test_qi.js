@@ -3,6 +3,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* eslint-disable no-control-regex */
 
 /*
  * Verify the presence of explicit QueryInterface methods on XPCOM objects
@@ -12,26 +13,29 @@
 
 XPCOMUtils.defineLazyGetter(this, "tests", function() {
   return [
-    new Test("http://localhost:" + srv.identity.primaryPort + "/test",
-        null, start_test, null),
-    new Test("http://localhost:" + srv.identity.primaryPort + "/sjs/qi.sjs",
-        null, start_sjs_qi, null),
+    new Test(
+      "http://localhost:" + srv.identity.primaryPort + "/test",
+      null,
+      start_test,
+      null
+    ),
+    new Test(
+      "http://localhost:" + srv.identity.primaryPort + "/sjs/qi.sjs",
+      null,
+      start_sjs_qi,
+      null
+    ),
   ];
 });
 
 var srv;
 
-function run_test()
-{
+function run_test() {
   srv = createServer();
 
-  var qi;
-  try
-  {
-    qi = srv.identity.QueryInterface(Ci.nsIHttpServerIdentity);
-  }
-  catch (e)
-  {
+  try {
+    srv.identity.QueryInterface(Ci.nsIHttpServerIdentity);
+  } catch (e) {
     var exstr = ("" + e).split(/[\x09\x20-\x7f\x81-\xff]+/)[0];
     do_throw("server identity didn't QI: " + exstr);
     return;
@@ -45,63 +49,56 @@ function run_test()
   runHttpTests(tests, testComplete(srv));
 }
 
-
 // TEST DATA
 
-function start_test(ch, cx)
-{
-  do_check_eq(ch.responseStatusText, "QI Tests Passed");
-  do_check_eq(ch.responseStatus, 200);
+function start_test(ch) {
+  Assert.equal(ch.responseStatusText, "QI Tests Passed");
+  Assert.equal(ch.responseStatus, 200);
 }
 
-function start_sjs_qi(ch, cx)
-{
-  do_check_eq(ch.responseStatusText, "SJS QI Tests Passed");
-  do_check_eq(ch.responseStatus, 200);
+function start_sjs_qi(ch) {
+  Assert.equal(ch.responseStatusText, "SJS QI Tests Passed");
+  Assert.equal(ch.responseStatus, 200);
 }
 
-
-function testHandler(request, response)
-{
+function testHandler(request, response) {
   var exstr;
   var qid;
 
   response.setStatusLine(request.httpVersion, 500, "FAIL");
 
   var passed = false;
-  try
-  {
+  try {
     qid = request.QueryInterface(Ci.nsIHttpRequest);
     passed = qid === request;
-  }
-  catch (e)
-  {
+  } catch (e) {
     exstr = ("" + e).split(/[\x09\x20-\x7f\x81-\xff]+/)[0];
-    response.setStatusLine(request.httpVersion, 500,
-                           "request doesn't QI: " + exstr);
+    response.setStatusLine(
+      request.httpVersion,
+      500,
+      "request doesn't QI: " + exstr
+    );
     return;
   }
-  if (!passed)
-  {
+  if (!passed) {
     response.setStatusLine(request.httpVersion, 500, "request QI'd wrongly?");
     return;
   }
 
   passed = false;
-  try
-  {
+  try {
     qid = response.QueryInterface(Ci.nsIHttpResponse);
     passed = qid === response;
-  }
-  catch (e)
-  {
+  } catch (e) {
     exstr = ("" + e).split(/[\x09\x20-\x7f\x81-\xff]+/)[0];
-    response.setStatusLine(request.httpVersion, 500,
-                           "response doesn't QI: " + exstr);
+    response.setStatusLine(
+      request.httpVersion,
+      500,
+      "response doesn't QI: " + exstr
+    );
     return;
   }
-  if (!passed)
-  {
+  if (!passed) {
     response.setStatusLine(request.httpVersion, 500, "response QI'd wrongly?");
     return;
   }

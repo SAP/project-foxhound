@@ -1,21 +1,19 @@
-if (typeof(classifierHelper) == "undefined") {
+if (typeof classifierHelper == "undefined") {
   var classifierHelper = {};
 }
 
 const CLASSIFIER_COMMON_URL = SimpleTest.getTestFileURL("classifierCommon.js");
 var gScript = SpecialPowers.loadChromeScript(CLASSIFIER_COMMON_URL);
 
-const ADD_CHUNKNUM = 524;
-const SUB_CHUNKNUM = 523;
-const HASHLEN = 32;
-
 const PREFS = {
-  PROVIDER_LISTS : "browser.safebrowsing.provider.mozilla.lists",
-  DISALLOW_COMPLETIONS : "urlclassifier.disallow_completions",
-  PROVIDER_GETHASHURL : "browser.safebrowsing.provider.mozilla.gethashURL"
+  PROVIDER_LISTS: "browser.safebrowsing.provider.mozilla.lists",
+  DISALLOW_COMPLETIONS: "urlclassifier.disallow_completions",
+  PROVIDER_GETHASHURL: "browser.safebrowsing.provider.mozilla.gethashURL",
 };
 
-// addUrlToDB & removeUrlFromDB are asynchronous, queue the task to ensure
+classifierHelper._curAddChunkNum = 1;
+
+// addUrlToDB is asynchronous, queue the task to ensure
 // the callback follow correct order.
 classifierHelper._updates = [];
 
@@ -32,28 +30,28 @@ classifierHelper.waitForInit = function() {
     classifierHelper._initsCB.push(resolve);
     gScript.sendAsyncMessage("waitForInit");
   });
-}
+};
 
 // This function is used to allow completion for specific "list",
 // some lists like "test-malware-simple" is default disabled to ask for complete.
 // "list" is the db we would like to allow it
 // "url" is the completion server
-classifierHelper.allowCompletion = function(lists, url) {
+classifierHelper.allowCompletion = async function(lists, url) {
   for (var list of lists) {
     // Add test db to provider
-    var pref = SpecialPowers.getCharPref(PREFS.PROVIDER_LISTS);
+    var pref = await SpecialPowers.getParentCharPref(PREFS.PROVIDER_LISTS);
     pref += "," + list;
-    SpecialPowers.setCharPref(PREFS.PROVIDER_LISTS, pref);
+    await SpecialPowers.setCharPref(PREFS.PROVIDER_LISTS, pref);
 
     // Rename test db so we will not disallow it from completions
-    pref = SpecialPowers.getCharPref(PREFS.DISALLOW_COMPLETIONS);
+    pref = await SpecialPowers.getParentCharPref(PREFS.DISALLOW_COMPLETIONS);
     pref = pref.replace(list, list + "-backup");
-    SpecialPowers.setCharPref(PREFS.DISALLOW_COMPLETIONS, pref);
+    await SpecialPowers.setCharPref(PREFS.DISALLOW_COMPLETIONS, pref);
   }
 
   // Set get hash url
-  SpecialPowers.setCharPref(PREFS.PROVIDER_GETHASHURL, url);
-}
+  await SpecialPowers.setCharPref(PREFS.PROVIDER_GETHASHURL, url);
+};
 
 // Pass { url: ..., db: ... } to add url to database,
 // onsuccess/onerror will be called when update complete.
@@ -66,82 +64,70 @@ classifierHelper.addUrlToDB = function(updateData) {
       var CHUNKLEN = CHUNKDATA.length;
       var HASHLEN = update.len ? update.len : 32;
 
+      update.addChunk = classifierHelper._curAddChunkNum;
+      classifierHelper._curAddChunkNum += 1;
+
       classifierHelper._updatesToCleanup.push(update);
       testUpdate +=
         "n:1000\n" +
-        "i:" + LISTNAME + "\n" +
+        "i:" +
+        LISTNAME +
+        "\n" +
         "ad:1\n" +
-        "a:" + ADD_CHUNKNUM + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
+        "a:" +
+        update.addChunk +
+        ":" +
+        HASHLEN +
+        ":" +
+        CHUNKLEN +
+        "\n" +
         CHUNKDATA;
     }
-
-    classifierHelper._update(testUpdate, resolve, reject);
-  });
-}
-
-// Pass { url: ..., db: ... } to remove url from database,
-// onsuccess/onerror will be called when update complete.
-classifierHelper.removeUrlFromDB = function(updateData) {
-  return new Promise(function(resolve, reject) {
-    var testUpdate = "";
-    for (var update of updateData) {
-      var LISTNAME = update.db;
-      var CHUNKDATA = ADD_CHUNKNUM + ":" + update.url;
-      var CHUNKLEN = CHUNKDATA.length;
-      var HASHLEN = update.len ? update.len : 32;
-
-      testUpdate +=
-        "n:1000\n" +
-        "i:" + LISTNAME + "\n" +
-        "s:" + SUB_CHUNKNUM + ":" + HASHLEN + ":" + CHUNKLEN + "\n" +
-        CHUNKDATA;
-    }
-
-    classifierHelper._updatesToCleanup =
-      classifierHelper._updatesToCleanup.filter((v) => {
-        return updateData.indexOf(v) == -1;
-      });
 
     classifierHelper._update(testUpdate, resolve, reject);
   });
 };
 
 // This API is used to expire all add/sub chunks we have updated
-// by using addUrlToDB and removeUrlFromDB.
-classifierHelper.resetDB = function() {
-  return new Promise(function(resolve, reject) {
-    var testUpdate = "";
-    for (var update of classifierHelper._updatesToCleanup) {
-      if (testUpdate.includes(update.db))
-        continue;
+// by using addUrlToDB.
+classifierHelper.resetDatabase = function() {
+  function removeDatabase() {
+    return new Promise(function(resolve, reject) {
+      var testUpdate = "";
+      for (var update of classifierHelper._updatesToCleanup) {
+        testUpdate +=
+          "n:1000\ni:" + update.db + "\nad:" + update.addChunk + "\n";
+      }
 
-      testUpdate +=
-        "n:1000\n" +
-        "i:" + update.db + "\n" +
-        "ad:" + ADD_CHUNKNUM + "\n" +
-        "sd:" + SUB_CHUNKNUM + "\n"
-    }
+      classifierHelper._update(testUpdate, resolve, reject);
+    });
+  }
 
-    classifierHelper._update(testUpdate, resolve, reject);
-  });
+  // Remove and then reload will ensure both database and cache will
+  // be cleared.
+  return Promise.resolve()
+    .then(removeDatabase)
+    .then(classifierHelper.reloadDatabase);
 };
 
 classifierHelper.reloadDatabase = function() {
   return new Promise(function(resolve, reject) {
     gScript.addMessageListener("reloadSuccess", function handler() {
-      gScript.removeMessageListener('reloadSuccess', handler);
+      gScript.removeMessageListener("reloadSuccess", handler);
       resolve();
     });
 
     gScript.sendAsyncMessage("doReload");
   });
-}
+};
 
 classifierHelper._update = function(testUpdate, onsuccess, onerror) {
   // Queue the task if there is still an on-going update
-  classifierHelper._updates.push({"data": testUpdate,
-                                  "onsuccess": onsuccess,
-                                  "onerror": onerror});
+  classifierHelper._updates.push({
+    data: testUpdate,
+    onsuccess,
+    onerror,
+  });
   if (classifierHelper._updates.length != 1) {
     return;
   }
@@ -170,7 +156,7 @@ classifierHelper._updateError = function(errorCode) {
 };
 
 classifierHelper._inited = function() {
-  classifierHelper._initsCB.forEach(function (cb) {
+  classifierHelper._initsCB.forEach(function(cb) {
     cb();
   });
   classifierHelper._initsCB = [];
@@ -195,7 +181,7 @@ classifierHelper._cleanup = function() {
     return Promise.resolve();
   }
 
-  return classifierHelper.resetDB();
+  return classifierHelper.resetDatabase();
 };
 
 classifierHelper._setup();

@@ -9,83 +9,117 @@
 #include "GrPathRendererChain.h"
 
 #include "GrCaps.h"
-#include "gl/GrGLCaps.h"
-#include "glsl/GrGLSLCaps.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrGpu.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
+#include "GrShaderCaps.h"
+#include "ccpr/GrCoverageCountingPathRenderer.h"
+#include "ops/GrAAConvexPathRenderer.h"
+#include "ops/GrAAHairLinePathRenderer.h"
+#include "ops/GrAALinearizingConvexPathRenderer.h"
+#include "ops/GrSmallPathRenderer.h"
+#include "ops/GrDashLinePathRenderer.h"
+#include "ops/GrDefaultPathRenderer.h"
+#include "ops/GrStencilAndCoverPathRenderer.h"
+#include "ops/GrTessellatingPathRenderer.h"
 
-#include "batches/GrAAConvexPathRenderer.h"
-#include "batches/GrAADistanceFieldPathRenderer.h"
-#include "batches/GrAAHairLinePathRenderer.h"
-#include "batches/GrAALinearizingConvexPathRenderer.h"
-#include "batches/GrDashLinePathRenderer.h"
-#include "batches/GrDefaultPathRenderer.h"
-#include "batches/GrStencilAndCoverPathRenderer.h"
-#include "batches/GrTessellatingPathRenderer.h"
-#include "batches/GrPLSPathRenderer.h"
-
-GrPathRendererChain::GrPathRendererChain(GrContext* context) {
-    const GrCaps& caps = *context->caps();
-    this->addPathRenderer(new GrDashLinePathRenderer)->unref();
-
-    if (GrPathRenderer* pr = GrStencilAndCoverPathRenderer::Create(context->resourceProvider(),
-                                                                   caps)) {
-        this->addPathRenderer(pr)->unref();
+GrPathRendererChain::GrPathRendererChain(GrRecordingContext* context, const Options& options) {
+    const GrCaps& caps = *context->priv().caps();
+    if (options.fGpuPathRenderers & GpuPathRenderers::kDashLine) {
+        fChain.push_back(sk_make_sp<GrDashLinePathRenderer>());
     }
-    this->addPathRenderer(new GrTessellatingPathRenderer)->unref();
-    this->addPathRenderer(new GrAAHairLinePathRenderer)->unref();
-    this->addPathRenderer(new GrAAConvexPathRenderer)->unref();
-    this->addPathRenderer(new GrAALinearizingConvexPathRenderer)->unref();
-    if (caps.shaderCaps()->plsPathRenderingSupport()) {
-        this->addPathRenderer(new GrPLSPathRenderer)->unref();
+    if (options.fGpuPathRenderers & GpuPathRenderers::kStencilAndCover) {
+        auto direct = context->priv().asDirectContext();
+        if (direct) {
+            auto resourceProvider = direct->priv().resourceProvider();
+
+            sk_sp<GrPathRenderer> pr(
+               GrStencilAndCoverPathRenderer::Create(resourceProvider, caps));
+            if (pr) {
+                fChain.push_back(std::move(pr));
+            }
+        }
     }
-    this->addPathRenderer(new GrAADistanceFieldPathRenderer)->unref();
-    this->addPathRenderer(new GrDefaultPathRenderer(caps.twoSidedStencilSupport(),
-                                                    caps.stencilWrapOpsSupport()))->unref();
+    if (options.fGpuPathRenderers & GpuPathRenderers::kAAConvex) {
+        fChain.push_back(sk_make_sp<GrAAConvexPathRenderer>());
+    }
+    if (options.fGpuPathRenderers & GpuPathRenderers::kCoverageCounting) {
+        using AllowCaching = GrCoverageCountingPathRenderer::AllowCaching;
+        if (auto ccpr = GrCoverageCountingPathRenderer::CreateIfSupported(
+                                caps, AllowCaching(options.fAllowPathMaskCaching),
+                                context->priv().contextID())) {
+            fCoverageCountingPathRenderer = ccpr.get();
+            context->priv().addOnFlushCallbackObject(fCoverageCountingPathRenderer);
+            fChain.push_back(std::move(ccpr));
+        }
+    }
+    if (options.fGpuPathRenderers & GpuPathRenderers::kAAHairline) {
+        fChain.push_back(sk_make_sp<GrAAHairLinePathRenderer>());
+    }
+    if (options.fGpuPathRenderers & GpuPathRenderers::kAALinearizing) {
+        fChain.push_back(sk_make_sp<GrAALinearizingConvexPathRenderer>());
+    }
+    if (options.fGpuPathRenderers & GpuPathRenderers::kSmall) {
+        auto spr = sk_make_sp<GrSmallPathRenderer>();
+        context->priv().addOnFlushCallbackObject(spr.get());
+        fChain.push_back(std::move(spr));
+    }
+    if (options.fGpuPathRenderers & GpuPathRenderers::kTessellating) {
+        fChain.push_back(sk_make_sp<GrTessellatingPathRenderer>());
+    }
+
+    // We always include the default path renderer (as well as SW), so we can draw any path
+    fChain.push_back(sk_make_sp<GrDefaultPathRenderer>());
 }
 
-GrPathRendererChain::~GrPathRendererChain() {
-    for (int i = 0; i < fChain.count(); ++i) {
-        fChain[i]->unref();
-    }
-}
-
-GrPathRenderer* GrPathRendererChain::addPathRenderer(GrPathRenderer* pr) {
-    fChain.push_back() = pr;
-    pr->ref();
-    return pr;
-}
-
-GrPathRenderer* GrPathRendererChain::getPathRenderer(const GrPathRenderer::CanDrawPathArgs& args,
-                                                     DrawType drawType,
-                                                     GrPathRenderer::StencilSupport* stencilSupport) {
+GrPathRenderer* GrPathRendererChain::getPathRenderer(
+        const GrPathRenderer::CanDrawPathArgs& args,
+        DrawType drawType,
+        GrPathRenderer::StencilSupport* stencilSupport) {
     GR_STATIC_ASSERT(GrPathRenderer::kNoSupport_StencilSupport <
                      GrPathRenderer::kStencilOnly_StencilSupport);
     GR_STATIC_ASSERT(GrPathRenderer::kStencilOnly_StencilSupport <
                      GrPathRenderer::kNoRestriction_StencilSupport);
     GrPathRenderer::StencilSupport minStencilSupport;
-    if (kStencilOnly_DrawType == drawType) {
+    if (DrawType::kStencil == drawType) {
         minStencilSupport = GrPathRenderer::kStencilOnly_StencilSupport;
-    } else if (kStencilAndColor_DrawType == drawType ||
-               kStencilAndColorAntiAlias_DrawType == drawType) {
+    } else if (DrawType::kStencilAndColor == drawType) {
         minStencilSupport = GrPathRenderer::kNoRestriction_StencilSupport;
     } else {
         minStencilSupport = GrPathRenderer::kNoSupport_StencilSupport;
     }
-
-    for (int i = 0; i < fChain.count(); ++i) {
-        if (fChain[i]->canDrawPath(args)) {
-            if (GrPathRenderer::kNoSupport_StencilSupport != minStencilSupport) {
-                GrPathRenderer::StencilSupport support =
-                                        fChain[i]->getStencilSupport(*args.fPath, *args.fStroke);
-                if (support < minStencilSupport) {
-                    continue;
-                } else if (stencilSupport) {
-                    *stencilSupport = support;
-                }
-            }
-            return fChain[i];
+    if (minStencilSupport != GrPathRenderer::kNoSupport_StencilSupport) {
+        // We don't support (and shouldn't need) stenciling of non-fill paths.
+        if (!args.fShape->style().isSimpleFill()) {
+            return nullptr;
         }
     }
-    return nullptr;
+
+    GrPathRenderer* bestPathRenderer = nullptr;
+    for (const sk_sp<GrPathRenderer>& pr : fChain) {
+        GrPathRenderer::StencilSupport support = GrPathRenderer::kNoSupport_StencilSupport;
+        if (GrPathRenderer::kNoSupport_StencilSupport != minStencilSupport) {
+            support = pr->getStencilSupport(*args.fShape);
+            if (support < minStencilSupport) {
+                continue;
+            }
+        }
+        GrPathRenderer::CanDrawPath canDrawPath = pr->canDrawPath(args);
+        if (GrPathRenderer::CanDrawPath::kNo == canDrawPath) {
+            continue;
+        }
+        if (GrPathRenderer::CanDrawPath::kAsBackup == canDrawPath && bestPathRenderer) {
+            continue;
+        }
+        if (stencilSupport) {
+            *stencilSupport = support;
+        }
+        bestPathRenderer = pr.get();
+        if (GrPathRenderer::CanDrawPath::kYes == canDrawPath) {
+            break;
+        }
+    }
+    return bestPathRenderer;
 }

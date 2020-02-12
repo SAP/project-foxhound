@@ -8,134 +8,110 @@
 #include "mozilla/_ipdltest/PTestSelfManageParent.h"
 #include "mozilla/_ipdltest/PTestSelfManageChild.h"
 
-
 namespace mozilla {
 namespace _ipdltest {
 
 //-----------------------------------------------------------------------------
 // Parent side
 
-class TestSelfManageParent :
-    public PTestSelfManageParent
-{
-public:
-    TestSelfManageParent() {
-        MOZ_COUNT_CTOR(TestSelfManageParent);
-    }
-    virtual ~TestSelfManageParent() {
-        MOZ_COUNT_DTOR(TestSelfManageParent);
-    }
+class TestSelfManageParent : public PTestSelfManageParent {
+  friend class PTestSelfManageParent;
 
-    ActorDestroyReason mWhy;
+ public:
+  TestSelfManageParent() { MOZ_COUNT_CTOR(TestSelfManageParent); }
+  virtual ~TestSelfManageParent() { MOZ_COUNT_DTOR(TestSelfManageParent); }
 
-protected:    
-    virtual PTestSelfManageParent* AllocPTestSelfManageParent() override {
-        return new TestSelfManageParent();
-    }
+  ActorDestroyReason mWhy;
 
-    virtual bool DeallocPTestSelfManageParent(PTestSelfManageParent* a) override {
-        return true;
-    }
+ protected:
+  PTestSelfManageParent* AllocPTestSelfManageParent() {
+    return new TestSelfManageParent();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override {
-        mWhy = why;
-    }
+  bool DeallocPTestSelfManageParent(PTestSelfManageParent* a) { return true; }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override { mWhy = why; }
 };
 
-class TestSelfManageRootParent :
-    public PTestSelfManageRootParent
-{
-public:
-    TestSelfManageRootParent() {
-        MOZ_COUNT_CTOR(TestSelfManageRootParent);
-    }
-    virtual ~TestSelfManageRootParent() {
-        MOZ_COUNT_DTOR(TestSelfManageRootParent);
-    }
+class TestSelfManageRootParent : public PTestSelfManageRootParent {
+  friend class PTestSelfManageRootParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestSelfManageRootParent() { MOZ_COUNT_CTOR(TestSelfManageRootParent); }
+  virtual ~TestSelfManageRootParent() {
+    MOZ_COUNT_DTOR(TestSelfManageRootParent);
+  }
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:    
-    virtual PTestSelfManageParent* AllocPTestSelfManageParent() override {
-        return new TestSelfManageParent();
-    }
+  void Main();
 
-    virtual bool DeallocPTestSelfManageParent(PTestSelfManageParent* a) override {
-        return true;
-    }
+ protected:
+  PTestSelfManageParent* AllocPTestSelfManageParent() {
+    return new TestSelfManageParent();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  bool DeallocPTestSelfManageParent(PTestSelfManageParent* a) { return true; }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
 //-----------------------------------------------------------------------------
 // Child side
 
-class TestSelfManageChild :
-    public PTestSelfManageChild
-{
-public:
-    TestSelfManageChild() {
-        MOZ_COUNT_CTOR(TestSelfManageChild);
-    }
-    virtual ~TestSelfManageChild() {
-        MOZ_COUNT_DTOR(TestSelfManageChild);
-    }
+class TestSelfManageChild : public PTestSelfManageChild {
+  friend class PTestSelfManageChild;
 
-protected:    
-    virtual PTestSelfManageChild* AllocPTestSelfManageChild() override {
-        return new TestSelfManageChild();
-    }
+ public:
+  TestSelfManageChild() { MOZ_COUNT_CTOR(TestSelfManageChild); }
+  virtual ~TestSelfManageChild() { MOZ_COUNT_DTOR(TestSelfManageChild); }
 
-    virtual bool DeallocPTestSelfManageChild(PTestSelfManageChild* a) override {
-        delete a;
-        return true;
-    }
+ protected:
+  PTestSelfManageChild* AllocPTestSelfManageChild() {
+    return new TestSelfManageChild();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override { }
+  bool DeallocPTestSelfManageChild(PTestSelfManageChild* a) {
+    delete a;
+    return true;
+  }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
 };
 
-class TestSelfManageRootChild :
-    public PTestSelfManageRootChild
-{
-public:
-    TestSelfManageRootChild() {
-        MOZ_COUNT_CTOR(TestSelfManageRootChild);
-    }
-    virtual ~TestSelfManageRootChild() {
-        MOZ_COUNT_DTOR(TestSelfManageRootChild);
-    }
+class TestSelfManageRootChild : public PTestSelfManageRootChild {
+  friend class PTestSelfManageRootChild;
 
-    void Main();
+ public:
+  TestSelfManageRootChild() { MOZ_COUNT_CTOR(TestSelfManageRootChild); }
+  virtual ~TestSelfManageRootChild() {
+    MOZ_COUNT_DTOR(TestSelfManageRootChild);
+  }
 
-protected:    
-    virtual PTestSelfManageChild* AllocPTestSelfManageChild() override {
-        return new TestSelfManageChild();
-    }
+  void Main();
 
-    virtual bool DeallocPTestSelfManageChild(PTestSelfManageChild* a) override {
-        delete a;
-        return true;
-    }
+ protected:
+  PTestSelfManageChild* AllocPTestSelfManageChild() {
+    return new TestSelfManageChild();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        QuitChild();
-    }
+  bool DeallocPTestSelfManageChild(PTestSelfManageChild* a) {
+    delete a;
+    return true;
+  }
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
-} // namespace _ipdltest
-} // namespace mozilla
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-
-#endif // ifndef mozilla__ipdltest_TestSelfManageRoot_h
+#endif  // ifndef mozilla__ipdltest_TestSelfManageRoot_h

@@ -9,6 +9,7 @@
 #define SkDropShadowImageFilter_DEFINED
 
 #include "SkColor.h"
+#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkScalar.h"
 
@@ -26,34 +27,21 @@ public:
     static sk_sp<SkImageFilter> Make(SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY,
                                      SkColor color, ShadowMode shadowMode,
                                      sk_sp<SkImageFilter> input,
-                                     const CropRect* cropRect = nullptr) {
-        return sk_sp<SkImageFilter>(new SkDropShadowImageFilter(dx, dy, sigmaX, sigmaY, 
-                                                                color, shadowMode,
-                                                                std::move(input),
-                                                                cropRect));
-    }
+                                     const CropRect* cropRect = nullptr);
 
     SkRect computeFastBounds(const SkRect&) const override;
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDropShadowImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY,
-                                 SkColor color, ShadowMode shadowMode,
-                                 SkImageFilter* input = nullptr,
-                                 const CropRect* cropRect = nullptr) {
-        return Make(dx, dy, sigmaX, sigmaY, color, shadowMode,
-                    sk_ref_sp<SkImageFilter>(input), cropRect).release();
-    }
-#endif
 
 protected:
     void flatten(SkWriteBuffer&) const override;
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
                                         SkIPoint* offset) const override;
-    SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix&, MapDirection) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
+    SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkDropShadowImageFilter)
+
     SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY, SkColor,
                             ShadowMode shadowMode, sk_sp<SkImageFilter> input,
                             const CropRect* cropRect);

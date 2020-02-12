@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>Test for Content Security Policy Frame Ancestors directive</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -39,10 +39,10 @@ var curTest;
 // This is used to watch the blocked data bounce off CSP and allowed data
 // get sent out to the wire.
 function examiner() {
-  SpecialPowers.addObserver(this, "csp-on-violate-policy", false);
+  SpecialPowers.addObserver(this, "csp-on-violate-policy");
 }
 examiner.prototype  = {
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     if (topic !== "csp-on-violate-policy") {
       return;
     }
@@ -56,14 +56,14 @@ examiner.prototype  = {
     }
     window.checkResults("inline-script-blocked");
   },
-  remove: function() {
+  remove() {
     SpecialPowers.removeObserver(this, "csp-on-violate-policy");
   }
 }
 
 function finishTest() {
   window.examiner.remove();
-  window.removeEventListener("message", receiveMessage, false);
+  window.removeEventListener("message", receiveMessage);
   SimpleTest.finish();
 }
 
@@ -88,13 +88,13 @@ var checkResults = function(result) {
 }
 
 // a postMessage handler that is used to bubble up results from the testframe
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 function receiveMessage(event) {
   checkResults(event.data);
 }
 
 function clickit() {
-  document.getElementById("testframe").removeEventListener('load', clickit, false);
+  document.getElementById("testframe").removeEventListener('load', clickit);
   var testframe = document.getElementById('testframe');
   var a = testframe.contentDocument.getElementById('anchortoclick');
   sendMouseEvent({type:'click'}, a, testframe.contentWindow);
@@ -109,7 +109,7 @@ function loadNextTest() {
   src += "&csp=" + escape(curTest.csp);
 
   document.getElementById("testframe").src = src;
-  document.getElementById("testframe").addEventListener("load", clickit, false);
+  document.getElementById("testframe").addEventListener("load", clickit);
 }
 
 // set up the test and go

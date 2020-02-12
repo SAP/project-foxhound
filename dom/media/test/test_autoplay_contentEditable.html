@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: play() method</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -23,14 +23,14 @@ var eventList = ["play", "canplay", "playing", "canplaythrough", "ended"];
 
 function gotPlayEvent(event) {
   var v = event.target;
-  ok(tokens[v._state].indexOf(event.type) >= 0,
+  ok(tokens[v._state].includes(event.type),
      "Check expected event got " + uneval(event.type) +
      " at " + uneval(v._state) + " for " + v._name);
   v._state = event.type;
   if (event.type == 'canplaythrough') {
     // Remove all event listeners to avoid running tests after finishing test case.
     eventList.forEach(function (e) {
-      v.removeEventListener(e, gotPlayEvent, false);
+      v.removeEventListener(e, gotPlayEvent);
     });
     v.pause();
     goToNext(v);
@@ -38,7 +38,7 @@ function gotPlayEvent(event) {
 }
 
 function goToNext(v) {
-  v.parentNode.removeChild(v);
+  v.remove();
   manager.finished(v.token);
 }
 
@@ -50,7 +50,7 @@ function initTest(test, token) {
   v._state = 0;
 
   eventList.forEach(function (e) {
-    v.addEventListener(e, gotPlayEvent, false);
+    v.addEventListener(e, gotPlayEvent);
   });
 
   v.src = test.name;

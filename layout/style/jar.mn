@@ -6,13 +6,11 @@ toolkit.jar:
 *  res/ua.css                                (res/ua.css)
 *  res/html.css                              (res/html.css)
    res/quirk.css                             (res/quirk.css)
-   res/plaintext.css                         (res/plaintext.css)
-   res/viewsource.css                        (res/viewsource.css)
    res/counterstyles.css                     (res/counterstyles.css)
    res/noscript.css                          (res/noscript.css)
    res/noframes.css                          (res/noframes.css)
 *  res/forms.css                             (res/forms.css)
-   res/number-control.css                    (res/number-control.css)
+   res/pluginproblem.css                     (res/pluginproblem.css)
    res/arrow.gif                             (res/arrow.gif)
    res/arrow-left.gif                        (res/arrow-left.gif)
    res/arrow-right.gif                       (res/arrow-right.gif)
@@ -33,3 +31,4 @@ toolkit.jar:
    res/accessiblecaret-tilt-right@2.25x.png  (res/accessiblecaret-tilt-right@2.25x.png)
 
 % resource gre-resources %res/
+% resource content-accessible resource://gre/contentaccessible/ contentaccessible=yes

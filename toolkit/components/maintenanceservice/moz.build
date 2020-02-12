@@ -13,14 +13,9 @@ SOURCES += [
     'workmonitor.cpp',
 ]
 
-if CONFIG['OS_ARCH'] == 'WINNT':
-    USE_LIBS += [
-        'updatecommon-standalone',
-    ]
-else:
-    USE_LIBS += [
-        'updatecommon',
-    ]
+USE_LIBS += [
+    'updatecommon',
+]
 
 # For debugging purposes only
 #DEFINES['DISABLE_UPDATER_AUTHENTICODE_CHECK'] = True
@@ -37,17 +32,24 @@ LOCAL_INCLUDES += [
 
 USE_STATIC_LIBS = True
 
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     WIN32_EXE_LDFLAGS += ['-ENTRY:wmainCRTStartup']
+
+if CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CC_TYPE'] in ('gcc', 'clang'):
+    # This allows us to use wmain as the entry point on mingw
+    LDFLAGS += [
+        '-municode',
+    ]
 
 RCINCLUDE = 'maintenanceservice.rc'
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
 OS_LIBS += [
     'comctl32',
     'ws2_32',
     'shell32',
+    'shlwapi',
 ]
 
 with Files('**'):

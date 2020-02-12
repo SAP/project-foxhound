@@ -4,11 +4,10 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
 
-<page id="frame2"
-      style="background-color:red;"
-      xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+<window id="frame2"
+        style="background-color:red;"
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+<script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <spacer height="10px"/>
 <caption id="cap2" style="background-color:white;" label=""/>
@@ -27,13 +26,13 @@ function mouseMove(e) {
   var element = e.target;
   var el = document.getElementById("cap2");
   el.label = "client: (" + e.clientX + "," + e.clientY + ")";
-  parent.parent.opener.wrappedJSObject.SimpleTest.is(e.clientX, 6, "mouse event clientX on sub frame 2");
-  parent.parent.opener.wrappedJSObject.SimpleTest.is(e.clientY, 5, "mouse event clientY on sub frame 2");
-  parent.parent.opener.wrappedJSObject.SimpleTest.finish();
+  parent.parent.arguments[0].SimpleTest.is(e.clientX, 6, "mouse event clientX on sub frame 2");
+  parent.parent.arguments[0].SimpleTest.is(e.clientY, 5, "mouse event clientY on sub frame 2");
+  parent.parent.arguments[0].SimpleTest.finish();
   parent.parent.close();
 }
 
 window.addEventListener("mousemove",mouseMove, false);
 
 </script>
-</page>
+</window>

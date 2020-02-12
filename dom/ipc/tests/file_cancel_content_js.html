@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Wait for it...</title>
+  </head>
+  <body>
+  Try to go to another page.
+  <script>
+    setTimeout(function() {
+      const start = Date.now();
+      while (Date.now() - start < 5000);
+      window.dispatchEvent(new CustomEvent("LongLoopEnded"));
+    }, 500);
+  </script>
+  </body>
+</html>

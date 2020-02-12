@@ -6,8 +6,7 @@
 
 "use strict";
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var baseURL;
 const kResponseTimeoutPref = "network.http.response.timeout";
@@ -17,8 +16,9 @@ const kShortLivedKeepalivePref =
 const kLongLivedKeepalivePref =
   "network.http.tcp_keepalive.long_lived_connections";
 
-const prefService = Cc["@mozilla.org/preferences-service;1"]
-                       .getService(Ci.nsIPrefBranch);
+const prefService = Cc["@mozilla.org/preferences-service;1"].getService(
+  Ci.nsIPrefBranch
+);
 
 var server = new HttpServer();
 
@@ -27,17 +27,15 @@ function TimeoutListener(expectResponse) {
 }
 
 TimeoutListener.prototype = {
-  onStartRequest: function (request, ctx) {
-  },
+  onStartRequest(request) {},
 
-  onDataAvailable: function (request, ctx, stream) {
-  },
+  onDataAvailable(request, stream) {},
 
-  onStopRequest: function (request, ctx, status) {
+  onStopRequest(request, status) {
     if (this.expectResponse) {
-      do_check_eq(status, Cr.NS_OK);
+      Assert.equal(status, Cr.NS_OK);
     } else {
-      do_check_eq(status, Cr.NS_ERROR_NET_TIMEOUT);
+      Assert.equal(status, Cr.NS_ERROR_NET_TIMEOUT);
     }
 
     run_next_test();
@@ -56,10 +54,12 @@ function testTimeout(timeoutEnabled, expectResponse) {
     prefService.setIntPref(kResponseTimeoutPref, 0);
   }
 
-  var chan = NetUtil.newChannel({uri: baseURL, loadUsingSystemPrincipal: true})
-                    .QueryInterface(Ci.nsIHttpChannel);
+  var chan = NetUtil.newChannel({
+    uri: baseURL,
+    loadUsingSystemPrincipal: true,
+  }).QueryInterface(Ci.nsIHttpChannel);
   var listener = new TimeoutListener(expectResponse);
-  chan.asyncOpen2(listener);
+  chan.asyncOpen(listener);
 }
 
 function testTimeoutEnabled() {
@@ -104,13 +104,13 @@ function setup_tests() {
   // Reset pref in cleanup.
   if (prefService.getBoolPref(kShortLivedKeepalivePref)) {
     prefService.setBoolPref(kShortLivedKeepalivePref, false);
-    do_register_cleanup(function() {
+    registerCleanupFunction(function() {
       prefService.setBoolPref(kShortLivedKeepalivePref, true);
     });
   }
   if (prefService.getBoolPref(kLongLivedKeepalivePref)) {
     prefService.setBoolPref(kLongLivedKeepalivePref, false);
-    do_register_cleanup(function() {
+    registerCleanupFunction(function() {
       prefService.setBoolPref(kLongLivedKeepalivePref, true);
     });
   }
@@ -125,10 +125,10 @@ function setup_tests() {
     // Disable by enabling TCP keepalive for long-lived HTTP connections.
     testTimeoutDisabledByLongLivedKeepalives,
     // Disable by enabling TCP keepalive for both HTTP connection types.
-    testTimeoutDisabledByBothKeepalives
+    testTimeoutDisabledByBothKeepalives,
   ];
 
-  for (var i=0; i < tests.length; i++) {
+  for (var i = 0; i < tests.length; i++) {
     add_test(tests[i]);
   }
 }
@@ -137,18 +137,18 @@ function setup_http_server() {
   // Start server; will be stopped at test cleanup time.
   server.start(-1);
   baseURL = "http://localhost:" + server.identity.primaryPort + "/";
-  do_print("Using baseURL: " + baseURL);
-  server.registerPathHandler('/', function(metadata, response) {
+  info("Using baseURL: " + baseURL);
+  server.registerPathHandler("/", function(metadata, response) {
     // Wait until the timeout should have passed, then respond.
     response.processAsync();
 
-    do_timeout((kResponseTimeout+1)*1000 /* ms */, function() {
+    do_timeout((kResponseTimeout + 1) * 1000 /* ms */, function() {
       response.setStatusLine(metadata.httpVersion, 200, "OK");
       response.write("Hello world");
       response.finish();
     });
   });
-  do_register_cleanup(function() {
+  registerCleanupFunction(function() {
     server.stop(serverStopListener);
   });
 }

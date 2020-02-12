@@ -20,16 +20,18 @@
 #include "HTMLTableAccessibleWrap.h"
 #include "HyperTextAccessibleWrap.h"
 #include "RootAccessible.h"
+#include "StyleInfo.h"
 #include "nsAccUtils.h"
 #include "nsArrayUtils.h"
 #include "nsAttrName.h"
+#include "nsDOMTokenList.h"
 #include "nsEventShell.h"
 #include "nsIURI.h"
+#include "nsTextFormatter.h"
 #include "OuterDocAccessible.h"
-#include "Platform.h"
 #include "Role.h"
 #ifdef MOZ_ACCESSIBILITY_ATK
-#include "RootAccessibleWrap.h"
+#  include "RootAccessibleWrap.h"
 #endif
 #include "States.h"
 #include "Statistics.h"
@@ -39,59 +41,66 @@
 #include "xpcAccessibleDocument.h"
 
 #ifdef MOZ_ACCESSIBILITY_ATK
-#include "AtkSocketAccessible.h"
+#  include "AtkSocketAccessible.h"
 #endif
 
 #ifdef XP_WIN
-#include "mozilla/a11y/Compatibility.h"
-#include "HTMLWin32ObjectAccessible.h"
-#include "mozilla/StaticPtr.h"
+#  include "mozilla/a11y/Compatibility.h"
+#  include "mozilla/dom/ContentChild.h"
+#  include "HTMLWin32ObjectAccessible.h"
+#  include "mozilla/StaticPtr.h"
 #endif
 
 #ifdef A11Y_LOG
-#include "Logging.h"
+#  include "Logging.h"
 #endif
 
-#ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
-#endif
-
 #include "nsImageFrame.h"
+#include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "nsLayoutUtils.h"
 #include "nsPluginFrame.h"
-#include "nsSVGPathGeometryFrame.h"
+#include "SVGGeometryFrame.h"
 #include "nsTreeBodyFrame.h"
 #include "nsTreeColumns.h"
 #include "nsTreeUtils.h"
-#include "nsXBLPrototypeBinding.h"
-#include "nsXBLBinding.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/DOMStringList.h"
+#include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/HTMLTableElement.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "nsDeckFrame.h"
 
 #ifdef MOZ_XUL
-#include "XULAlertAccessible.h"
-#include "XULColorPickerAccessible.h"
-#include "XULComboboxAccessible.h"
-#include "XULElementAccessibles.h"
-#include "XULFormControlAccessible.h"
-#include "XULListboxAccessibleWrap.h"
-#include "XULMenuAccessibleWrap.h"
-#include "XULSliderAccessible.h"
-#include "XULTabAccessible.h"
-#include "XULTreeGridAccessibleWrap.h"
+#  include "XULAlertAccessible.h"
+#  include "XULComboboxAccessible.h"
+#  include "XULElementAccessibles.h"
+#  include "XULFormControlAccessible.h"
+#  include "XULListboxAccessibleWrap.h"
+#  include "XULMenuAccessibleWrap.h"
+#  include "XULTabAccessible.h"
+#  include "XULTreeGridAccessibleWrap.h"
 #endif
 
 #if defined(XP_WIN) || defined(MOZ_ACCESSIBILITY_ATK)
-#include "nsNPAPIPluginInstance.h"
+#  include "nsNPAPIPluginInstance.h"
 #endif
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 using namespace mozilla::dom;
+
+/**
+ * Accessibility service force enable/disable preference.
+ * Supported values:
+ *   Accessibility is force enabled (accessibility should always be enabled): -1
+ *   Accessibility is enabled (will be started upon a request, default value): 0
+ *   Accessibility is force disabled (never enable accessibility):             1
+ */
+#define PREF_ACCESSIBILITY_FORCE_DISABLED "accessibility.force_disabled"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Statics
@@ -100,178 +109,156 @@ using namespace mozilla::dom;
 /**
  * Return true if the element must be accessible.
  */
-static bool
-MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument)
-{
-  if (aContent->GetPrimaryFrame()->IsFocusable())
-    return true;
+static bool MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument) {
+  if (aContent->GetPrimaryFrame()->IsFocusable()) return true;
 
-  uint32_t attrCount = aContent->GetAttrCount();
-  for (uint32_t attrIdx = 0; attrIdx < attrCount; attrIdx++) {
-    const nsAttrName* attr = aContent->GetAttrNameAt(attrIdx);
-    if (attr->NamespaceEquals(kNameSpaceID_None)) {
-      nsIAtom* attrAtom = attr->Atom();
-      nsDependentAtomString attrStr(attrAtom);
-      if (!StringBeginsWith(attrStr, NS_LITERAL_STRING("aria-")))
-        continue; // not ARIA
+  if (aContent->IsElement()) {
+    uint32_t attrCount = aContent->AsElement()->GetAttrCount();
+    for (uint32_t attrIdx = 0; attrIdx < attrCount; attrIdx++) {
+      const nsAttrName* attr = aContent->AsElement()->GetAttrNameAt(attrIdx);
+      if (attr->NamespaceEquals(kNameSpaceID_None)) {
+        nsAtom* attrAtom = attr->Atom();
+        if (attrAtom == nsGkAtoms::title && aContent->IsHTMLElement()) {
+          // If the author provided a title on an element that would not
+          // be accessible normally, assume an intent and make it accessible.
+          return true;
+        }
 
-      // A global state or a property and in case of token defined.
-      uint8_t attrFlags = aria::AttrCharacteristicsFor(attrAtom);
-      if ((attrFlags & ATTR_GLOBAL) && (!(attrFlags & ATTR_VALTOKEN) ||
-           nsAccUtils::HasDefinedARIAToken(aContent, attrAtom))) {
-        return true;
+        nsDependentAtomString attrStr(attrAtom);
+        if (!StringBeginsWith(attrStr, NS_LITERAL_STRING("aria-")))
+          continue;  // not ARIA
+
+        // A global state or a property and in case of token defined.
+        uint8_t attrFlags = aria::AttrCharacteristicsFor(attrAtom);
+        if ((attrFlags & ATTR_GLOBAL) &&
+            (!(attrFlags & ATTR_VALTOKEN) ||
+             nsAccUtils::HasDefinedARIAToken(aContent, attrAtom))) {
+          return true;
+        }
       }
     }
-  }
 
-  // If the given ID is referred by relation attribute then create an accessible
-  // for it.
-  nsAutoString id;
-  if (nsCoreUtils::GetID(aContent, id) && !id.IsEmpty())
-    return aDocument->IsDependentID(id);
+    // If the given ID is referred by relation attribute then create an
+    // accessible for it.
+    nsAutoString id;
+    if (nsCoreUtils::GetID(aContent, id) && !id.IsEmpty()) {
+      return aDocument->IsDependentID(aContent->AsElement(), id);
+    }
+  }
 
   return false;
 }
 
+/**
+ * Used by XULMap.h to map both menupopup and popup elements
+ */
+#ifdef MOZ_XUL
+Accessible* CreateMenupopupAccessible(Element* aElement, Accessible* aContext) {
+#  ifdef MOZ_ACCESSIBILITY_ATK
+  // ATK considers this node to be redundant when within menubars, and it makes
+  // menu navigation with assistive technologies more difficult
+  // XXX In the future we will should this for consistency across the
+  // nsIAccessible implementations on each platform for a consistent scripting
+  // environment, but then strip out redundant accessibles in the AccessibleWrap
+  // class for each platform.
+  nsIContent* parent = aElement->GetParent();
+  if (parent && parent->IsXULElement(nsGkAtoms::menu)) return nullptr;
+#  endif
+
+  return new XULMenupopupAccessible(aElement, aContext->Document());
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible constructors
 
-static Accessible*
-New_HTMLLink(nsIContent* aContent, Accessible* aContext)
-{
-  // Only some roles truly enjoy life as HTMLLinkAccessibles, for details
-  // see closed bug 494807.
-  const nsRoleMapEntry* roleMapEntry = aria::GetRoleMap(aContent->AsElement());
-  if (roleMapEntry && roleMapEntry->role != roles::NOTHING &&
-      roleMapEntry->role != roles::LINK) {
-    return new HyperTextAccessibleWrap(aContent, aContext->Document());
+static Accessible* New_HyperText(Element* aElement, Accessible* aContext) {
+  return new HyperTextAccessibleWrap(aElement, aContext->Document());
+}
+
+template <typename AccClass>
+static Accessible* New_HTMLDtOrDd(Element* aElement, Accessible* aContext) {
+  nsIContent* parent = aContext->GetContent();
+  if (parent->IsHTMLElement(nsGkAtoms::div)) {
+    // It is conforming in HTML to use a div to group dt/dd elements.
+    parent = parent->GetParent();
   }
 
-  return new HTMLLinkAccessible(aContent, aContext->Document());
-}
-
-static Accessible* New_HyperText(nsIContent* aContent, Accessible* aContext)
-  { return new HyperTextAccessibleWrap(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLFigcaption(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLFigcaptionAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLFigure(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLFigureAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLLegend(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLLegendAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLOption(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLSelectOptionAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLOptgroup(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLSelectOptGroupAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLList(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLListAccessible(aContent, aContext->Document()); }
-
-static Accessible*
-New_HTMLListitem(nsIContent* aContent, Accessible* aContext)
-{
-  // If list item is a child of accessible list then create an accessible for
-  // it unconditionally by tag name. nsBlockFrame creates the list item
-  // accessible for other elements styled as list items.
-  if (aContext->IsList() && aContext->GetContent() == aContent->GetParent())
-    return new HTMLLIAccessible(aContent, aContext->Document());
+  if (parent && parent->IsHTMLElement(nsGkAtoms::dl)) {
+    return new AccClass(aElement, aContext->Document());
+  }
 
   return nullptr;
 }
 
-static Accessible*
-New_HTMLDefinition(nsIContent* aContent, Accessible* aContext)
-{
-  if (aContext->IsList())
-    return new HyperTextAccessibleWrap(aContent, aContext->Document());
-  return nullptr;
-}
-
-static Accessible* New_HTMLLabel(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLLabelAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLOutput(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLOutputAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLProgress(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLProgressMeterAccessible(aContent, aContext->Document()); }
-
-static Accessible* New_HTMLSummary(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLSummaryAccessible(aContent, aContext->Document()); }
-
-static Accessible*
-New_HTMLTableAccessible(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLTableAccessible(aContent, aContext->Document()); }
-
-static Accessible*
-New_HTMLTableRowAccessible(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLTableRowAccessible(aContent, aContext->Document()); }
-
-static Accessible*
-New_HTMLTableCellAccessible(nsIContent* aContent, Accessible* aContext)
-  { return new HTMLTableCellAccessible(aContent, aContext->Document()); }
-
-static Accessible*
-New_HTMLTableHeaderCell(nsIContent* aContent, Accessible* aContext)
-{
-  if (aContext->IsTableRow() && aContext->GetContent() == aContent->GetParent())
-    return new HTMLTableHeaderCellAccessibleWrap(aContent, aContext->Document());
-  return nullptr;
-}
-
-static Accessible*
-New_HTMLTableHeaderCellIfScope(nsIContent* aContent, Accessible* aContext)
-{
-  if (aContext->IsTableRow() && aContext->GetContent() == aContent->GetParent() &&
-      aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::scope))
-    return new HTMLTableHeaderCellAccessibleWrap(aContent, aContext->Document());
-  return nullptr;
-}
+/**
+ * Cached value of the PREF_ACCESSIBILITY_FORCE_DISABLED preference.
+ */
+static int32_t sPlatformDisabledState = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Markup maps array.
 
 #define Attr(name, value) \
-  { &nsGkAtoms::name, &nsGkAtoms::value }
+  { nsGkAtoms::name, nsGkAtoms::value }
 
 #define AttrFromDOM(name, DOMAttrName) \
-  { &nsGkAtoms::name, nullptr, &nsGkAtoms::DOMAttrName }
+  { nsGkAtoms::name, nullptr, nsGkAtoms::DOMAttrName }
 
 #define AttrFromDOMIf(name, DOMAttrName, DOMAttrValue) \
-  { &nsGkAtoms::name, nullptr,  &nsGkAtoms::DOMAttrName, &nsGkAtoms::DOMAttrValue }
+  { nsGkAtoms::name, nullptr, nsGkAtoms::DOMAttrName, nsGkAtoms::DOMAttrValue }
 
-#define MARKUPMAP(atom, new_func, r, ... ) \
-  { &nsGkAtoms::atom, new_func, static_cast<a11y::role>(r), { __VA_ARGS__ } },
+#define MARKUPMAP(atom, new_func, r, ...) \
+  {nsGkAtoms::atom, new_func, static_cast<a11y::role>(r), {__VA_ARGS__}},
 
-static const MarkupMapInfo sMarkupMapList[] = {
-  #include "MarkupMap.h"
+static const HTMLMarkupMapInfo sHTMLMarkupMapList[] = {
+#include "MarkupMap.h"
 };
+
+#undef MARKUPMAP
+
+#ifdef MOZ_XUL
+#  define XULMAP(atom, ...) {nsGkAtoms::atom, __VA_ARGS__},
+
+#  define XULMAP_TYPE(atom, new_type)                                         \
+    XULMAP(atom, [](Element* aElement, Accessible* aContext) -> Accessible* { \
+      return new new_type(aElement, aContext->Document());                    \
+    })
+
+static const XULMarkupMapInfo sXULMarkupMapList[] = {
+#  include "XULMap.h"
+};
+
+#  undef XULMAP_TYPE
+#  undef XULMAP
+#endif
 
 #undef Attr
 #undef AttrFromDOM
 #undef AttrFromDOMIf
-#undef MARKUPMAP
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibilityService
 ////////////////////////////////////////////////////////////////////////////////
 
-nsAccessibilityService *nsAccessibilityService::gAccessibilityService = nullptr;
+nsAccessibilityService* nsAccessibilityService::gAccessibilityService = nullptr;
 ApplicationAccessible* nsAccessibilityService::gApplicationAccessible = nullptr;
-xpcAccessibleApplication* nsAccessibilityService::gXPCApplicationAccessible = nullptr;
+xpcAccessibleApplication* nsAccessibilityService::gXPCApplicationAccessible =
+    nullptr;
 uint32_t nsAccessibilityService::gConsumers = 0;
 
-nsAccessibilityService::nsAccessibilityService() :
-  DocManager(), FocusManager(), mMarkupMaps(ArrayLength(sMarkupMapList))
+nsAccessibilityService::nsAccessibilityService()
+    : DocManager(),
+      FocusManager(),
+      mHTMLMarkupMap(ArrayLength(sHTMLMarkupMapList))
+#ifdef MOZ_XUL
+      ,
+      mXULMarkupMap(ArrayLength(sXULMarkupMapList))
+#endif
 {
 }
 
-nsAccessibilityService::~nsAccessibilityService()
-{
+nsAccessibilityService::~nsAccessibilityService() {
   NS_ASSERTION(IsShutdown(), "Accessibility wasn't shutdown!");
   gAccessibilityService = nullptr;
 }
@@ -280,53 +267,35 @@ nsAccessibilityService::~nsAccessibilityService()
 // nsIListenerChangeListener
 
 NS_IMETHODIMP
-nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges)
-{
+nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges) {
   uint32_t targetCount;
   nsresult rv = aEventChanges->GetLength(&targetCount);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  for (uint32_t i = 0 ; i < targetCount ; i++) {
-    nsCOMPtr<nsIEventListenerChange> change = do_QueryElementAt(aEventChanges, i);
+  for (uint32_t i = 0; i < targetCount; i++) {
+    nsCOMPtr<nsIEventListenerChange> change =
+        do_QueryElementAt(aEventChanges, i);
 
-    nsCOMPtr<nsIDOMEventTarget> target;
+    RefPtr<EventTarget> target;
     change->GetTarget(getter_AddRefs(target));
     nsCOMPtr<nsIContent> node(do_QueryInterface(target));
     if (!node || !node->IsHTMLElement()) {
       continue;
     }
-    nsCOMPtr<nsIArray> listenerNames;
-    change->GetChangedListenerNames(getter_AddRefs(listenerNames));
 
     uint32_t changeCount;
-    rv = listenerNames->GetLength(&changeCount);
+    change->GetCountOfEventListenerChangesAffectingAccessibility(&changeCount);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    for (uint32_t i = 0 ; i < changeCount ; i++) {
-      nsCOMPtr<nsIAtom> listenerName = do_QueryElementAt(listenerNames, i);
-
-      // We are only interested in event listener changes which may
-      // make an element accessible or inaccessible.
-      if (listenerName != nsGkAtoms::onclick &&
-          listenerName != nsGkAtoms::onmousedown &&
-          listenerName != nsGkAtoms::onmouseup) {
-        continue;
-      }
-
-      nsIDocument* ownerDoc = node->OwnerDoc();
+    for (uint32_t i = 0; i < changeCount; i++) {
+      Document* ownerDoc = node->OwnerDoc();
       DocAccessible* document = GetExistingDocAccessible(ownerDoc);
 
-      // Always recreate for onclick changes.
-      if (document) {
-        if (nsCoreUtils::HasClickListener(node)) {
-          if (!document->GetAccessible(node)) {
-            document->RecreateAccessible(node);
-          }
-        } else {
-          if (document->GetAccessible(node)) {
-            document->RecreateAccessible(node);
-          }
-        }
+      // Create an accessible for a inaccessible element having click event
+      // handler.
+      if (document && !document->HasAccessible(node) &&
+          nsCoreUtils::HasClickListener(node)) {
+        document->ContentInserted(node, node->GetNextSibling());
         break;
       }
     }
@@ -337,60 +306,52 @@ nsAccessibilityService::ListenersChanged(nsIArray* aEventChanges)
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports
 
-NS_IMPL_ISUPPORTS_INHERITED(nsAccessibilityService,
-                            DocManager,
-                            nsIObserver,
+NS_IMPL_ISUPPORTS_INHERITED(nsAccessibilityService, DocManager, nsIObserver,
                             nsIListenerChangeListener,
-                            nsISelectionListener) // from SelectionManager
+                            nsISelectionListener)  // from SelectionManager
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsIObserver
 
 NS_IMETHODIMP
-nsAccessibilityService::Observe(nsISupports *aSubject, const char *aTopic,
-                         const char16_t *aData)
-{
-  if (!nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID))
+nsAccessibilityService::Observe(nsISupports* aSubject, const char* aTopic,
+                                const char16_t* aData) {
+  if (!nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     Shutdown();
+  }
 
   return NS_OK;
 }
 
-void
-nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode)
-{
-  nsIDocument* documentNode = aTargetNode->GetUncomposedDoc();
+void nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode) {
+  Document* documentNode = aTargetNode->GetUncomposedDoc();
   if (documentNode) {
     DocAccessible* document = GetDocAccessible(documentNode);
-    if (document)
-      document->SetAnchorJump(aTargetNode);
+    if (document) document->SetAnchorJump(aTargetNode);
   }
 }
 
-void
-nsAccessibilityService::FireAccessibleEvent(uint32_t aEvent,
-                                            Accessible* aTarget)
-{
+void nsAccessibilityService::FireAccessibleEvent(uint32_t aEvent,
+                                                 Accessible* aTarget) {
   nsEventShell::FireEvent(aEvent, aTarget);
 }
 
-Accessible*
-nsAccessibilityService::GetRootDocumentAccessible(nsIPresShell* aPresShell,
-                                                  bool aCanCreate)
-{
-  nsIPresShell* ps = aPresShell;
-  nsIDocument* documentNode = aPresShell->GetDocument();
+Accessible* nsAccessibilityService::GetRootDocumentAccessible(
+    PresShell* aPresShell, bool aCanCreate) {
+  PresShell* presShell = aPresShell;
+  Document* documentNode = aPresShell->GetDocument();
   if (documentNode) {
     nsCOMPtr<nsIDocShellTreeItem> treeItem(documentNode->GetDocShell());
     if (treeItem) {
       nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
-      treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
+      treeItem->GetInProcessRootTreeItem(getter_AddRefs(rootTreeItem));
       if (treeItem != rootTreeItem) {
         nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(rootTreeItem));
-        ps = docShell->GetPresShell();
+        presShell = docShell->GetPresShell();
       }
 
-      return aCanCreate ? GetDocAccessible(ps) : ps->GetDocAccessible();
+      return aCanCreate ? GetDocAccessible(presShell)
+                        : presShell->GetDocAccessible();
     }
   }
   return nullptr;
@@ -400,26 +361,24 @@ nsAccessibilityService::GetRootDocumentAccessible(nsIPresShell* aPresShell,
 static StaticAutoPtr<nsTArray<nsCOMPtr<nsIContent> > > sPendingPlugins;
 static StaticAutoPtr<nsTArray<nsCOMPtr<nsITimer> > > sPluginTimers;
 
-class PluginTimerCallBack final : public nsITimerCallback
-{
+class PluginTimerCallBack final : public nsITimerCallback, public nsINamed {
   ~PluginTimerCallBack() {}
 
-public:
-  PluginTimerCallBack(nsIContent* aContent) : mContent(aContent) {}
+ public:
+  explicit PluginTimerCallBack(nsIContent* aContent) : mContent(aContent) {}
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD Notify(nsITimer* aTimer) final
-  {
-    if (!mContent->IsInUncomposedDoc())
-      return NS_OK;
+  NS_IMETHOD Notify(nsITimer* aTimer) final {
+    if (!mContent->IsInUncomposedDoc()) return NS_OK;
 
-    nsIPresShell* ps = mContent->OwnerDoc()->GetShell();
-    if (ps) {
-      DocAccessible* doc = ps->GetDocAccessible();
+    PresShell* presShell = mContent->OwnerDoc()->GetPresShell();
+    if (presShell) {
+      DocAccessible* doc = presShell->GetDocAccessible();
       if (doc) {
         // Make sure that if we created an accessible for the plugin that wasn't
-        // a plugin accessible we remove it before creating the right accessible.
+        // a plugin accessible we remove it before creating the right
+        // accessible.
         doc->RecreateAccessible(mContent);
         sPluginTimers->RemoveElement(aTimer);
         return NS_OK;
@@ -433,35 +392,37 @@ public:
     return NS_OK;
   }
 
-private:
+  NS_IMETHOD GetName(nsACString& aName) final {
+    aName.AssignLiteral("PluginTimerCallBack");
+    return NS_OK;
+  }
+
+ private:
   nsCOMPtr<nsIContent> mContent;
 };
 
-NS_IMPL_ISUPPORTS(PluginTimerCallBack, nsITimerCallback)
+NS_IMPL_ISUPPORTS(PluginTimerCallBack, nsITimerCallback, nsINamed)
 #endif
 
-already_AddRefed<Accessible>
-nsAccessibilityService::CreatePluginAccessible(nsPluginFrame* aFrame,
-                                               nsIContent* aContent,
-                                               Accessible* aContext)
-{
+already_AddRefed<Accessible> nsAccessibilityService::CreatePluginAccessible(
+    nsPluginFrame* aFrame, nsIContent* aContent, Accessible* aContext) {
   // nsPluginFrame means a plugin, so we need to use the accessibility support
   // of the plugin.
-  if (aFrame->GetRect().IsEmpty())
-    return nullptr;
+  if (aFrame->GetRect().IsEmpty()) return nullptr;
 
 #if defined(XP_WIN) || defined(MOZ_ACCESSIBILITY_ATK)
-  RefPtr<nsNPAPIPluginInstance> pluginInstance;
-  if (NS_SUCCEEDED(aFrame->GetPluginInstance(getter_AddRefs(pluginInstance))) &&
-      pluginInstance) {
-#ifdef XP_WIN
+  RefPtr<nsNPAPIPluginInstance> pluginInstance = aFrame->GetPluginInstance();
+  if (pluginInstance) {
+#  ifdef XP_WIN
     if (!sPendingPlugins->Contains(aContent) &&
         (Preferences::GetBool("accessibility.delay_plugins") ||
          Compatibility::IsJAWS() || Compatibility::IsWE())) {
-      nsCOMPtr<nsITimer> timer = do_CreateInstance(NS_TIMER_CONTRACTID);
       RefPtr<PluginTimerCallBack> cb = new PluginTimerCallBack(aContent);
-      timer->InitWithCallback(cb, Preferences::GetUint("accessibility.delay_plugin_time"),
-                              nsITimer::TYPE_ONE_SHOT);
+      nsCOMPtr<nsITimer> timer;
+      NS_NewTimerWithCallback(
+          getter_AddRefs(timer), cb,
+          Preferences::GetUint("accessibility.delay_plugin_time"),
+          nsITimer::TYPE_ONE_SHOT);
       sPluginTimers->AppendElement(timer);
       sPendingPlugins->AppendElement(aContent);
       return nullptr;
@@ -476,44 +437,39 @@ nsAccessibilityService::CreatePluginAccessible(nsPluginFrame* aFrame,
     HWND pluginPort = nullptr;
     aFrame->GetPluginPort(&pluginPort);
 
-    RefPtr<Accessible> accessible =
-      new HTMLWin32ObjectOwnerAccessible(aContent, aContext->Document(),
-                                         pluginPort);
+    RefPtr<Accessible> accessible = new HTMLWin32ObjectOwnerAccessible(
+        aContent, aContext->Document(), pluginPort);
     return accessible.forget();
 
-#elif MOZ_ACCESSIBILITY_ATK
-    if (!AtkSocketAccessible::gCanEmbed)
-      return nullptr;
+#  elif MOZ_ACCESSIBILITY_ATK
+    if (!AtkSocketAccessible::gCanEmbed) return nullptr;
 
     // Note this calls into the plugin, so crazy things may happen and aFrame
     // may go away.
     nsCString plugId;
     nsresult rv = pluginInstance->GetValueFromPlugin(
-      NPPVpluginNativeAccessibleAtkPlugId, &plugId);
+        NPPVpluginNativeAccessibleAtkPlugId, &plugId);
     if (NS_SUCCEEDED(rv) && !plugId.IsEmpty()) {
       RefPtr<AtkSocketAccessible> socketAccessible =
-        new AtkSocketAccessible(aContent, aContext->Document(), plugId);
+          new AtkSocketAccessible(aContent, aContext->Document(), plugId);
 
       return socketAccessible.forget();
     }
-#endif
+#  endif
   }
 #endif
 
   return nullptr;
 }
 
-void
-nsAccessibilityService::DeckPanelSwitched(nsIPresShell* aPresShell,
-                                          nsIContent* aDeckNode,
-                                          nsIFrame* aPrevBoxFrame,
-                                          nsIFrame* aCurrentBoxFrame)
-{
+void nsAccessibilityService::DeckPanelSwitched(PresShell* aPresShell,
+                                               nsIContent* aDeckNode,
+                                               nsIFrame* aPrevBoxFrame,
+                                               nsIFrame* aCurrentBoxFrame) {
   // Ignore tabpanels elements (a deck having an accessible) since their
   // children are accessible not depending on selected tab.
   DocAccessible* document = GetDocAccessible(aPresShell);
-  if (!document || document->HasAccessible(aDeckNode))
-    return;
+  if (!document || document->HasAccessible(aDeckNode)) return;
 
   if (aPrevBoxFrame) {
     nsIContent* panelNode = aPrevBoxFrame->GetContent();
@@ -526,7 +482,7 @@ nsAccessibilityService::DeckPanelSwitched(nsIPresShell* aPresShell,
     }
 #endif
 
-    document->ContentRemoved(aDeckNode, panelNode);
+    document->ContentRemoved(panelNode);
   }
 
   if (aCurrentBoxFrame) {
@@ -540,21 +496,18 @@ nsAccessibilityService::DeckPanelSwitched(nsIPresShell* aPresShell,
     }
 #endif
 
-    document->ContentInserted(aDeckNode, panelNode, panelNode->GetNextSibling());
+    document->ContentInserted(panelNode, panelNode->GetNextSibling());
   }
 }
 
-void
-nsAccessibilityService::ContentRangeInserted(nsIPresShell* aPresShell,
-                                             nsIContent* aContainer,
-                                             nsIContent* aStartChild,
-                                             nsIContent* aEndChild)
-{
+void nsAccessibilityService::ContentRangeInserted(PresShell* aPresShell,
+                                                  nsIContent* aStartChild,
+                                                  nsIContent* aEndChild) {
   DocAccessible* document = GetDocAccessible(aPresShell);
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eTree)) {
     logging::MsgBegin("TREE", "content inserted; doc: %p", document);
-    logging::Node("container", aContainer);
+    logging::Node("container", aStartChild->GetParent());
     for (nsIContent* child = aStartChild; child != aEndChild;
          child = child->GetNextSibling()) {
       logging::Node("content", child);
@@ -565,14 +518,12 @@ nsAccessibilityService::ContentRangeInserted(nsIPresShell* aPresShell,
 #endif
 
   if (document) {
-    document->ContentInserted(aContainer, aStartChild, aEndChild);
+    document->ContentInserted(aStartChild, aEndChild);
   }
 }
 
-void
-nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
-                                       nsIContent* aChildNode)
-{
+void nsAccessibilityService::ContentRemoved(PresShell* aPresShell,
+                                            nsIContent* aChildNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
 #ifdef A11Y_LOG
   if (logging::IsEnabled(logging::eTree)) {
@@ -584,25 +535,7 @@ nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
 #endif
 
   if (document) {
-    // Flatten hierarchy may be broken at this point so we cannot get a true
-    // container by traversing up the DOM tree. Find a parent of first accessible
-    // from the subtree of the given DOM node, that'll be a container. If no
-    // accessibles in subtree then we don't care about the change.
-    Accessible* child = document->GetAccessible(aChildNode);
-    if (!child) {
-      Accessible* container = document->GetContainerAccessible(aChildNode);
-      a11y::TreeWalker walker(container ? container : document, aChildNode,
-                              a11y::TreeWalker::eWalkCache);
-      child = walker.Next();
-    }
-
-    if (child) {
-      document->ContentRemoved(child->Parent(), aChildNode);
-#ifdef A11Y_LOG
-      if (logging::IsEnabled(logging::eTree))
-        logging::AccessibleNNode("real container", child->Parent());
-#endif
-    }
+    document->ContentRemoved(aChildNode);
   }
 
 #ifdef A11Y_LOG
@@ -613,35 +546,27 @@ nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
 #endif
 }
 
-void
-nsAccessibilityService::UpdateText(nsIPresShell* aPresShell,
-                                   nsIContent* aContent)
-{
+void nsAccessibilityService::UpdateText(PresShell* aPresShell,
+                                        nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
-  if (document)
-    document->UpdateText(aContent);
+  if (document) document->UpdateText(aContent);
 }
 
-void
-nsAccessibilityService::TreeViewChanged(nsIPresShell* aPresShell,
-                                        nsIContent* aContent,
-                                        nsITreeView* aView)
-{
+void nsAccessibilityService::TreeViewChanged(PresShell* aPresShell,
+                                             nsIContent* aContent,
+                                             nsITreeView* aView) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) {
     Accessible* accessible = document->GetAccessible(aContent);
     if (accessible) {
       XULTreeAccessible* treeAcc = accessible->AsXULTree();
-      if (treeAcc)
-        treeAcc->TreeViewChanged(aView);
+      if (treeAcc) treeAcc->TreeViewChanged(aView);
     }
   }
 }
 
-void
-nsAccessibilityService::RangeValueChanged(nsIPresShell* aPresShell,
-                                          nsIContent* aContent)
-{
+void nsAccessibilityService::RangeValueChanged(PresShell* aPresShell,
+                                               nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) {
     Accessible* accessible = document->GetAccessible(aContent);
@@ -652,30 +577,24 @@ nsAccessibilityService::RangeValueChanged(nsIPresShell* aPresShell,
   }
 }
 
-void
-nsAccessibilityService::UpdateListBullet(nsIPresShell* aPresShell,
-                                         nsIContent* aHTMLListItemContent,
-                                         bool aHasBullet)
-{
+void nsAccessibilityService::UpdateListBullet(PresShell* aPresShell,
+                                              nsIContent* aHTMLListItemContent,
+                                              bool aHasBullet) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) {
     Accessible* accessible = document->GetAccessible(aHTMLListItemContent);
     if (accessible) {
       HTMLLIAccessible* listItem = accessible->AsHTMLListItem();
-      if (listItem)
-        listItem->UpdateBullet(aHasBullet);
+      if (listItem) listItem->UpdateBullet(aHasBullet);
     }
   }
 }
 
-void
-nsAccessibilityService::UpdateImageMap(nsImageFrame* aImageFrame)
-{
-  nsIPresShell* presShell = aImageFrame->PresContext()->PresShell();
+void nsAccessibilityService::UpdateImageMap(nsImageFrame* aImageFrame) {
+  PresShell* presShell = aImageFrame->PresShell();
   DocAccessible* document = GetDocAccessible(presShell);
   if (document) {
-    Accessible* accessible =
-      document->GetAccessible(aImageFrame->GetContent());
+    Accessible* accessible = document->GetAccessible(aImageFrame->GetContent());
     if (accessible) {
       HTMLImageMapAccessible* imageMap = accessible->AsImageMap();
       if (imageMap) {
@@ -690,11 +609,9 @@ nsAccessibilityService::UpdateImageMap(nsImageFrame* aImageFrame)
   }
 }
 
-void
-nsAccessibilityService::UpdateLabelValue(nsIPresShell* aPresShell,
-                                         nsIContent* aLabelElm,
-                                         const nsString& aNewValue)
-{
+void nsAccessibilityService::UpdateLabelValue(PresShell* aPresShell,
+                                              nsIContent* aLabelElm,
+                                              const nsString& aNewValue) {
   DocAccessible* document = GetDocAccessible(aPresShell);
   if (document) {
     Accessible* accessible = document->GetAccessible(aLabelElm);
@@ -702,40 +619,31 @@ nsAccessibilityService::UpdateLabelValue(nsIPresShell* aPresShell,
       XULLabelAccessible* xulLabel = accessible->AsXULLabel();
       NS_ASSERTION(xulLabel,
                    "UpdateLabelValue was called for wrong accessible!");
-      if (xulLabel)
-        xulLabel->UpdateLabelValue(aNewValue);
+      if (xulLabel) xulLabel->UpdateLabelValue(aNewValue);
     }
   }
 }
 
-void
-nsAccessibilityService::PresShellActivated(nsIPresShell* aPresShell)
-{
+void nsAccessibilityService::PresShellActivated(PresShell* aPresShell) {
   DocAccessible* document = aPresShell->GetDocAccessible();
   if (document) {
     RootAccessible* rootDocument = document->RootAccessible();
     NS_ASSERTION(rootDocument, "Entirely broken tree: no root document!");
-    if (rootDocument)
-      rootDocument->DocumentActivated(document);
+    if (rootDocument) rootDocument->DocumentActivated(document);
   }
 }
 
-void
-nsAccessibilityService::RecreateAccessible(nsIPresShell* aPresShell,
-                                           nsIContent* aContent)
-{
+void nsAccessibilityService::RecreateAccessible(PresShell* aPresShell,
+                                                nsIContent* aContent) {
   DocAccessible* document = GetDocAccessible(aPresShell);
-  if (document)
-    document->RecreateAccessible(aContent);
+  if (document) document->RecreateAccessible(aContent);
 }
 
-void
-nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString)
-{
-#define ROLE(geckoRole, stringRole, atkRole, \
-             macRole, msaaRole, ia2Role, nameRule) \
-  case roles::geckoRole: \
-    CopyUTF8toUTF16(stringRole, aString); \
+void nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString) {
+#define ROLE(geckoRole, stringRole, atkRole, macRole, msaaRole, ia2Role, \
+             androidClass, nameRule)                                     \
+  case roles::geckoRole:                                                 \
+    aString.AssignLiteral(stringRole);                                   \
     return;
 
   switch (aRole) {
@@ -748,160 +656,13 @@ nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString)
 #undef ROLE
 }
 
-void
-nsAccessibilityService::GetStringStates(uint32_t aState, uint32_t aExtraState,
-                                        nsISupports **aStringStates)
-{
-  RefPtr<DOMStringList> stringStates = new DOMStringList();
+void nsAccessibilityService::GetStringStates(uint32_t aState,
+                                             uint32_t aExtraState,
+                                             nsISupports** aStringStates) {
+  RefPtr<DOMStringList> stringStates =
+      GetStringStates(nsAccUtils::To64State(aState, aExtraState));
 
-  uint64_t state = nsAccUtils::To64State(aState, aExtraState);
-
-  // states
-  if (state & states::UNAVAILABLE) {
-    stringStates->Add(NS_LITERAL_STRING("unavailable"));
-  }
-  if (state & states::SELECTED) {
-    stringStates->Add(NS_LITERAL_STRING("selected"));
-  }
-  if (state & states::FOCUSED) {
-    stringStates->Add(NS_LITERAL_STRING("focused"));
-  }
-  if (state & states::PRESSED) {
-    stringStates->Add(NS_LITERAL_STRING("pressed"));
-  }
-  if (state & states::CHECKED) {
-    stringStates->Add(NS_LITERAL_STRING("checked"));
-  }
-  if (state & states::MIXED) {
-    stringStates->Add(NS_LITERAL_STRING("mixed"));
-  }
-  if (state & states::READONLY) {
-    stringStates->Add(NS_LITERAL_STRING("readonly"));
-  }
-  if (state & states::HOTTRACKED) {
-    stringStates->Add(NS_LITERAL_STRING("hottracked"));
-  }
-  if (state & states::DEFAULT) {
-    stringStates->Add(NS_LITERAL_STRING("default"));
-  }
-  if (state & states::EXPANDED) {
-    stringStates->Add(NS_LITERAL_STRING("expanded"));
-  }
-  if (state & states::COLLAPSED) {
-    stringStates->Add(NS_LITERAL_STRING("collapsed"));
-  }
-  if (state & states::BUSY) {
-    stringStates->Add(NS_LITERAL_STRING("busy"));
-  }
-  if (state & states::FLOATING) {
-    stringStates->Add(NS_LITERAL_STRING("floating"));
-  }
-  if (state & states::ANIMATED) {
-    stringStates->Add(NS_LITERAL_STRING("animated"));
-  }
-  if (state & states::INVISIBLE) {
-    stringStates->Add(NS_LITERAL_STRING("invisible"));
-  }
-  if (state & states::OFFSCREEN) {
-    stringStates->Add(NS_LITERAL_STRING("offscreen"));
-  }
-  if (state & states::SIZEABLE) {
-    stringStates->Add(NS_LITERAL_STRING("sizeable"));
-  }
-  if (state & states::MOVEABLE) {
-    stringStates->Add(NS_LITERAL_STRING("moveable"));
-  }
-  if (state & states::SELFVOICING) {
-    stringStates->Add(NS_LITERAL_STRING("selfvoicing"));
-  }
-  if (state & states::FOCUSABLE) {
-    stringStates->Add(NS_LITERAL_STRING("focusable"));
-  }
-  if (state & states::SELECTABLE) {
-    stringStates->Add(NS_LITERAL_STRING("selectable"));
-  }
-  if (state & states::LINKED) {
-    stringStates->Add(NS_LITERAL_STRING("linked"));
-  }
-  if (state & states::TRAVERSED) {
-    stringStates->Add(NS_LITERAL_STRING("traversed"));
-  }
-  if (state & states::MULTISELECTABLE) {
-    stringStates->Add(NS_LITERAL_STRING("multiselectable"));
-  }
-  if (state & states::EXTSELECTABLE) {
-    stringStates->Add(NS_LITERAL_STRING("extselectable"));
-  }
-  if (state & states::PROTECTED) {
-    stringStates->Add(NS_LITERAL_STRING("protected"));
-  }
-  if (state & states::HASPOPUP) {
-    stringStates->Add(NS_LITERAL_STRING("haspopup"));
-  }
-  if (state & states::REQUIRED) {
-    stringStates->Add(NS_LITERAL_STRING("required"));
-  }
-  if (state & states::ALERT) {
-    stringStates->Add(NS_LITERAL_STRING("alert"));
-  }
-  if (state & states::INVALID) {
-    stringStates->Add(NS_LITERAL_STRING("invalid"));
-  }
-  if (state & states::CHECKABLE) {
-    stringStates->Add(NS_LITERAL_STRING("checkable"));
-  }
-
-  // extraStates
-  if (state & states::SUPPORTS_AUTOCOMPLETION) {
-    stringStates->Add(NS_LITERAL_STRING("autocompletion"));
-  }
-  if (state & states::DEFUNCT) {
-    stringStates->Add(NS_LITERAL_STRING("defunct"));
-  }
-  if (state & states::SELECTABLE_TEXT) {
-    stringStates->Add(NS_LITERAL_STRING("selectable text"));
-  }
-  if (state & states::EDITABLE) {
-    stringStates->Add(NS_LITERAL_STRING("editable"));
-  }
-  if (state & states::ACTIVE) {
-    stringStates->Add(NS_LITERAL_STRING("active"));
-  }
-  if (state & states::MODAL) {
-    stringStates->Add(NS_LITERAL_STRING("modal"));
-  }
-  if (state & states::MULTI_LINE) {
-    stringStates->Add(NS_LITERAL_STRING("multi line"));
-  }
-  if (state & states::HORIZONTAL) {
-    stringStates->Add(NS_LITERAL_STRING("horizontal"));
-  }
-  if (state & states::OPAQUE1) {
-    stringStates->Add(NS_LITERAL_STRING("opaque"));
-  }
-  if (state & states::SINGLE_LINE) {
-    stringStates->Add(NS_LITERAL_STRING("single line"));
-  }
-  if (state & states::TRANSIENT) {
-    stringStates->Add(NS_LITERAL_STRING("transient"));
-  }
-  if (state & states::VERTICAL) {
-    stringStates->Add(NS_LITERAL_STRING("vertical"));
-  }
-  if (state & states::STALE) {
-    stringStates->Add(NS_LITERAL_STRING("stale"));
-  }
-  if (state & states::ENABLED) {
-    stringStates->Add(NS_LITERAL_STRING("enabled"));
-  }
-  if (state & states::SENSITIVE) {
-    stringStates->Add(NS_LITERAL_STRING("sensitive"));
-  }
-  if (state & states::EXPANDABLE) {
-    stringStates->Add(NS_LITERAL_STRING("expandable"));
-  }
-
-  //unknown states
+  // unknown state
   if (!stringStates->Length()) {
     stringStates->Add(NS_LITERAL_STRING("unknown"));
   }
@@ -909,30 +670,191 @@ nsAccessibilityService::GetStringStates(uint32_t aState, uint32_t aExtraState,
   stringStates.forget(aStringStates);
 }
 
-void
-nsAccessibilityService::GetStringEventType(uint32_t aEventType,
-                                           nsAString& aString)
-{
-  NS_ASSERTION(nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
-               "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
+already_AddRefed<DOMStringList> nsAccessibilityService::GetStringStates(
+    uint64_t aStates) const {
+  RefPtr<DOMStringList> stringStates = new DOMStringList();
+
+  if (aStates & states::UNAVAILABLE) {
+    stringStates->Add(NS_LITERAL_STRING("unavailable"));
+  }
+  if (aStates & states::SELECTED) {
+    stringStates->Add(NS_LITERAL_STRING("selected"));
+  }
+  if (aStates & states::FOCUSED) {
+    stringStates->Add(NS_LITERAL_STRING("focused"));
+  }
+  if (aStates & states::PRESSED) {
+    stringStates->Add(NS_LITERAL_STRING("pressed"));
+  }
+  if (aStates & states::CHECKED) {
+    stringStates->Add(NS_LITERAL_STRING("checked"));
+  }
+  if (aStates & states::MIXED) {
+    stringStates->Add(NS_LITERAL_STRING("mixed"));
+  }
+  if (aStates & states::READONLY) {
+    stringStates->Add(NS_LITERAL_STRING("readonly"));
+  }
+  if (aStates & states::HOTTRACKED) {
+    stringStates->Add(NS_LITERAL_STRING("hottracked"));
+  }
+  if (aStates & states::DEFAULT) {
+    stringStates->Add(NS_LITERAL_STRING("default"));
+  }
+  if (aStates & states::EXPANDED) {
+    stringStates->Add(NS_LITERAL_STRING("expanded"));
+  }
+  if (aStates & states::COLLAPSED) {
+    stringStates->Add(NS_LITERAL_STRING("collapsed"));
+  }
+  if (aStates & states::BUSY) {
+    stringStates->Add(NS_LITERAL_STRING("busy"));
+  }
+  if (aStates & states::FLOATING) {
+    stringStates->Add(NS_LITERAL_STRING("floating"));
+  }
+  if (aStates & states::ANIMATED) {
+    stringStates->Add(NS_LITERAL_STRING("animated"));
+  }
+  if (aStates & states::INVISIBLE) {
+    stringStates->Add(NS_LITERAL_STRING("invisible"));
+  }
+  if (aStates & states::OFFSCREEN) {
+    stringStates->Add(NS_LITERAL_STRING("offscreen"));
+  }
+  if (aStates & states::SIZEABLE) {
+    stringStates->Add(NS_LITERAL_STRING("sizeable"));
+  }
+  if (aStates & states::MOVEABLE) {
+    stringStates->Add(NS_LITERAL_STRING("moveable"));
+  }
+  if (aStates & states::SELFVOICING) {
+    stringStates->Add(NS_LITERAL_STRING("selfvoicing"));
+  }
+  if (aStates & states::FOCUSABLE) {
+    stringStates->Add(NS_LITERAL_STRING("focusable"));
+  }
+  if (aStates & states::SELECTABLE) {
+    stringStates->Add(NS_LITERAL_STRING("selectable"));
+  }
+  if (aStates & states::LINKED) {
+    stringStates->Add(NS_LITERAL_STRING("linked"));
+  }
+  if (aStates & states::TRAVERSED) {
+    stringStates->Add(NS_LITERAL_STRING("traversed"));
+  }
+  if (aStates & states::MULTISELECTABLE) {
+    stringStates->Add(NS_LITERAL_STRING("multiselectable"));
+  }
+  if (aStates & states::EXTSELECTABLE) {
+    stringStates->Add(NS_LITERAL_STRING("extselectable"));
+  }
+  if (aStates & states::PROTECTED) {
+    stringStates->Add(NS_LITERAL_STRING("protected"));
+  }
+  if (aStates & states::HASPOPUP) {
+    stringStates->Add(NS_LITERAL_STRING("haspopup"));
+  }
+  if (aStates & states::REQUIRED) {
+    stringStates->Add(NS_LITERAL_STRING("required"));
+  }
+  if (aStates & states::ALERT) {
+    stringStates->Add(NS_LITERAL_STRING("alert"));
+  }
+  if (aStates & states::INVALID) {
+    stringStates->Add(NS_LITERAL_STRING("invalid"));
+  }
+  if (aStates & states::CHECKABLE) {
+    stringStates->Add(NS_LITERAL_STRING("checkable"));
+  }
+  if (aStates & states::SUPPORTS_AUTOCOMPLETION) {
+    stringStates->Add(NS_LITERAL_STRING("autocompletion"));
+  }
+  if (aStates & states::DEFUNCT) {
+    stringStates->Add(NS_LITERAL_STRING("defunct"));
+  }
+  if (aStates & states::SELECTABLE_TEXT) {
+    stringStates->Add(NS_LITERAL_STRING("selectable text"));
+  }
+  if (aStates & states::EDITABLE) {
+    stringStates->Add(NS_LITERAL_STRING("editable"));
+  }
+  if (aStates & states::ACTIVE) {
+    stringStates->Add(NS_LITERAL_STRING("active"));
+  }
+  if (aStates & states::MODAL) {
+    stringStates->Add(NS_LITERAL_STRING("modal"));
+  }
+  if (aStates & states::MULTI_LINE) {
+    stringStates->Add(NS_LITERAL_STRING("multi line"));
+  }
+  if (aStates & states::HORIZONTAL) {
+    stringStates->Add(NS_LITERAL_STRING("horizontal"));
+  }
+  if (aStates & states::OPAQUE1) {
+    stringStates->Add(NS_LITERAL_STRING("opaque"));
+  }
+  if (aStates & states::SINGLE_LINE) {
+    stringStates->Add(NS_LITERAL_STRING("single line"));
+  }
+  if (aStates & states::TRANSIENT) {
+    stringStates->Add(NS_LITERAL_STRING("transient"));
+  }
+  if (aStates & states::VERTICAL) {
+    stringStates->Add(NS_LITERAL_STRING("vertical"));
+  }
+  if (aStates & states::STALE) {
+    stringStates->Add(NS_LITERAL_STRING("stale"));
+  }
+  if (aStates & states::ENABLED) {
+    stringStates->Add(NS_LITERAL_STRING("enabled"));
+  }
+  if (aStates & states::SENSITIVE) {
+    stringStates->Add(NS_LITERAL_STRING("sensitive"));
+  }
+  if (aStates & states::EXPANDABLE) {
+    stringStates->Add(NS_LITERAL_STRING("expandable"));
+  }
+
+  return stringStates.forget();
+}
+
+void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
+                                                nsAString& aString) {
+  NS_ASSERTION(
+      nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
+      "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
 
   if (aEventType >= ArrayLength(kEventTypeNames)) {
     aString.AssignLiteral("unknown");
     return;
   }
 
-  CopyUTF8toUTF16(kEventTypeNames[aEventType], aString);
+  aString.AssignASCII(kEventTypeNames[aEventType]);
 }
 
-void
-nsAccessibilityService::GetStringRelationType(uint32_t aRelationType,
-                                              nsAString& aString)
-{
-  NS_ENSURE_TRUE_VOID(aRelationType <= static_cast<uint32_t>(RelationType::LAST));
+void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
+                                                nsACString& aString) {
+  MOZ_ASSERT(
+      nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
+      "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
+
+  if (aEventType >= ArrayLength(kEventTypeNames)) {
+    aString.AssignLiteral("unknown");
+    return;
+  }
+
+  aString = nsDependentCString(kEventTypeNames[aEventType]);
+}
+
+void nsAccessibilityService::GetStringRelationType(uint32_t aRelationType,
+                                                   nsAString& aString) {
+  NS_ENSURE_TRUE_VOID(aRelationType <=
+                      static_cast<uint32_t>(RelationType::LAST));
 
 #define RELATIONTYPE(geckoType, geckoTypeName, atkType, msaaType, ia2Type) \
-  case RelationType::geckoType: \
-    aString.AssignLiteral(geckoTypeName); \
+  case RelationType::geckoType:                                            \
+    aString.AssignLiteral(geckoTypeName);                                  \
     return;
 
   RelationType relationType = static_cast<RelationType>(aRelationType);
@@ -949,27 +871,23 @@ nsAccessibilityService::GetStringRelationType(uint32_t aRelationType,
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibilityService public
 
-Accessible*
-nsAccessibilityService::CreateAccessible(nsINode* aNode,
-                                         Accessible* aContext,
-                                         bool* aIsSubtreeHidden)
-{
+Accessible* nsAccessibilityService::CreateAccessible(nsINode* aNode,
+                                                     Accessible* aContext,
+                                                     bool* aIsSubtreeHidden) {
   MOZ_ASSERT(aContext, "No context provided");
   MOZ_ASSERT(aNode, "No node to create an accessible for");
   MOZ_ASSERT(gConsumers, "No creation after shutdown");
 
-  if (aIsSubtreeHidden)
-    *aIsSubtreeHidden = false;
+  if (aIsSubtreeHidden) *aIsSubtreeHidden = false;
 
   DocAccessible* document = aContext->Document();
   MOZ_ASSERT(!document->GetAccessible(aNode),
              "We already have an accessible for this node.");
 
-  if (aNode->IsNodeOfType(nsINode::eDOCUMENT)) {
+  if (aNode->IsDocument()) {
     // If it's document node then ask accessible document loader for
     // document accessible, otherwise return null.
-    nsCOMPtr<nsIDocument> document(do_QueryInterface(aNode));
-    return GetDocAccessible(document);
+    return GetDocAccessible(aNode->AsDocument());
   }
 
   // We have a content node.
@@ -983,17 +901,38 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
     return nullptr;
   }
 
-  if (!aNode->IsContent())
-    return nullptr;
+  if (!aNode->IsContent()) return nullptr;
 
   nsIContent* content = aNode->AsContent();
-  nsIFrame* frame = content->GetPrimaryFrame();
+  if (aria::HasDefinedARIAHidden(content)) {
+    if (aIsSubtreeHidden) {
+      *aIsSubtreeHidden = true;
+    }
+    return nullptr;
+  }
 
   // Check frame and its visibility. Note, hidden frame allows visible
   // elements in subtree.
+  nsIFrame* frame = content->GetPrimaryFrame();
   if (!frame || !frame->StyleVisibility()->IsVisible()) {
-    if (aIsSubtreeHidden && !frame)
-      *aIsSubtreeHidden = true;
+    // display:contents element doesn't have a frame, but retains the semantics.
+    // All its children are unaffected.
+    if (nsCoreUtils::IsDisplayContents(content)) {
+      const HTMLMarkupMapInfo* markupMap =
+          mHTMLMarkupMap.Get(content->NodeInfo()->NameAtom());
+      if (markupMap && markupMap->new_func) {
+        RefPtr<Accessible> newAcc =
+            markupMap->new_func(content->AsElement(), aContext);
+        if (newAcc) {
+          document->BindToDocument(newAcc,
+                                   aria::GetRoleMap(content->AsElement()));
+        }
+        return newAcc;
+      }
+      return nullptr;
+    }
+
+    if (aIsSubtreeHidden && !frame) *aIsSubtreeHidden = true;
 
     return nullptr;
   }
@@ -1007,9 +946,9 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
     // create area accessible here. Hopefully assertion below will handle that.
 
 #ifdef DEBUG
-  nsImageFrame* imageFrame = do_QueryFrame(frame);
-  NS_ASSERTION(imageFrame && content->IsHTMLElement(nsGkAtoms::area),
-               "Unknown case of not main content for the frame!");
+    nsImageFrame* imageFrame = do_QueryFrame(frame);
+    NS_ASSERTION(imageFrame && content->IsHTMLElement(nsGkAtoms::area),
+                 "Unknown case of not main content for the frame!");
 #endif
     return nullptr;
   }
@@ -1024,16 +963,16 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
   RefPtr<Accessible> newAcc;
 
   // Create accessible for visible text frames.
-  if (content->IsNodeOfType(nsINode::eTEXT)) {
-    nsIFrame::RenderedText text = frame->GetRenderedText(0,
-        UINT32_MAX, nsIFrame::TextOffsetType::OFFSETS_IN_CONTENT_TEXT,
-        nsIFrame::TrailingWhitespace::DONT_TRIM_TRAILING_WHITESPACE);
+  if (content->IsText()) {
+    nsIFrame::RenderedText text = frame->GetRenderedText(
+        0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
+        nsIFrame::TrailingWhitespace::DontTrim);
     // Ignore not rendered text nodes and whitespace text nodes between table
     // cells.
     if (text.mString.IsEmpty() ||
-        (aContext->IsTableRow() && nsCoreUtils::IsWhitespaceString(text.mString))) {
-      if (aIsSubtreeHidden)
-        *aIsSubtreeHidden = true;
+        (aContext->IsTableRow() &&
+         nsCoreUtils::IsWhitespaceString(text.mString))) {
+      if (aIsSubtreeHidden) *aIsSubtreeHidden = true;
 
       return nullptr;
     }
@@ -1053,10 +992,9 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
     // HTML area (HTMLAreaAccessible) the map contains are attached as
     // children of the appropriate accessible for HTML image
     // (ImageAccessible).
-    if (nsLayoutUtils::GetAllInFlowRectsUnion(frame,
-                                              frame->GetParent()).IsEmpty()) {
-      if (aIsSubtreeHidden)
-        *aIsSubtreeHidden = true;
+    if (nsLayoutUtils::GetAllInFlowRectsUnion(frame, frame->GetParent())
+            .IsEmpty()) {
+      if (aIsSubtreeHidden) *aIsSubtreeHidden = true;
 
       return nullptr;
     }
@@ -1071,30 +1009,28 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
   // If the element is focusable or global ARIA attribute is applied to it or
   // it is referenced by ARIA relationship then treat role="presentation" on
   // the element as the role is not there.
-  if (roleMapEntry &&
-      (roleMapEntry->Is(nsGkAtoms::presentation) ||
-       roleMapEntry->Is(nsGkAtoms::none))) {
-    if (!MustBeAccessible(content, document))
-      return nullptr;
+  if (roleMapEntry && (roleMapEntry->Is(nsGkAtoms::presentation) ||
+                       roleMapEntry->Is(nsGkAtoms::none))) {
+    if (!MustBeAccessible(content, document)) return nullptr;
 
     roleMapEntry = nullptr;
   }
 
   if (!newAcc && content->IsHTMLElement()) {  // HTML accessibles
-    bool isARIATablePart = roleMapEntry &&
-      (roleMapEntry->accTypes & (eTableCell | eTableRow | eTable));
+    bool isARIATablePart = roleMapEntry && (roleMapEntry->accTypes &
+                                            (eTableCell | eTableRow | eTable));
 
-    if (!isARIATablePart ||
-        frame->AccessibleType() == eHTMLTableCellType ||
+    if (!isARIATablePart || frame->AccessibleType() == eHTMLTableCellType ||
         frame->AccessibleType() == eHTMLTableRowType ||
         frame->AccessibleType() == eHTMLTableType) {
-      // Prefer to use markup to decide if and what kind of accessible to create,
-      const MarkupMapInfo* markupMap =
-        mMarkupMaps.Get(content->NodeInfo()->NameAtom());
+      // Prefer to use markup to decide if and what kind of accessible to
+      // create,
+      const HTMLMarkupMapInfo* markupMap =
+          mHTMLMarkupMap.Get(content->NodeInfo()->NameAtom());
       if (markupMap && markupMap->new_func)
-        newAcc = markupMap->new_func(content, aContext);
+        newAcc = markupMap->new_func(content->AsElement(), aContext);
 
-      if (!newAcc) // try by frame accessible type.
+      if (!newAcc)  // try by frame accessible type.
         newAcc = CreateAccessibleByFrameType(frame, content, aContext);
     }
 
@@ -1106,8 +1042,10 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
           newAcc = new ARIAGridCellAccessibleWrap(content, document);
 
       } else if (roleMapEntry->IsOfType(eTableRow)) {
-        if (aContext->IsTable())
+        if (aContext->IsTable() ||
+            (aContext->Parent() && aContext->Parent()->IsTable())) {
           newAcc = new ARIARowAccessible(content, document);
+        }
 
       } else if (roleMapEntry->IsOfType(eTable)) {
         newAcc = new ARIAGridAccessibleWrap(content, document);
@@ -1126,8 +1064,7 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
                  aContext->ARIARoleMap() == &aria::gEmptyRoleMap) {
         roleMapEntry = &aria::gEmptyRoleMap;
 
-      } else if (content->IsAnyOfHTMLElements(nsGkAtoms::dt,
-                                              nsGkAtoms::li,
+      } else if (content->IsAnyOfHTMLElements(nsGkAtoms::dt, nsGkAtoms::li,
                                               nsGkAtoms::dd) ||
                  frame->AccessibleType() == eHTMLLiType) {
         const nsRoleMapEntry* contextRoleMap = aContext->ARIARoleMap();
@@ -1137,30 +1074,34 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
     }
   }
 
-  // Accessible XBL types and deck stuff are used in XUL only currently.
+  // XUL accessibles.
   if (!newAcc && content->IsXULElement()) {
     // No accessible for not selected deck panel and its children.
     if (!aContext->IsXULTabpanels()) {
       nsDeckFrame* deckFrame = do_QueryFrame(frame->GetParent());
       if (deckFrame && deckFrame->GetSelectedBox() != frame) {
-        if (aIsSubtreeHidden)
-          *aIsSubtreeHidden = true;
+        if (aIsSubtreeHidden) *aIsSubtreeHidden = true;
 
         return nullptr;
       }
     }
 
-    // XBL bindings may use @role attribute to point the accessible type
-    // they belong to.
-    newAcc = CreateAccessibleByType(content, document);
+#ifdef MOZ_XUL
+    // Prefer to use XUL to decide if and what kind of accessible to create.
+    const XULMarkupMapInfo* xulMap =
+        mXULMarkupMap.Get(content->NodeInfo()->NameAtom());
+    if (xulMap && xulMap->new_func) {
+      newAcc = xulMap->new_func(content->AsElement(), aContext);
+    }
+#endif
 
     // Any XUL box can be used as tabpanel, make sure we create a proper
     // accessible for it.
     if (!newAcc && aContext->IsXULTabpanels() &&
         content->GetParent() == aContext->GetContent()) {
-      nsIAtom* frameType = frame->GetType();
-      if (frameType == nsGkAtoms::boxFrame ||
-          frameType == nsGkAtoms::scrollFrame) {
+      LayoutFrameType frameType = frame->Type();
+      if (frameType == LayoutFrameType::Box ||
+          frameType == LayoutFrameType::Scroll) {
         newAcc = new XULTabpanelAccessible(content, document);
       }
     }
@@ -1168,32 +1109,31 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
 
   if (!newAcc) {
     if (content->IsSVGElement()) {
-      nsSVGPathGeometryFrame* pathGeometryFrame = do_QueryFrame(frame);
-      if (pathGeometryFrame) {
+      SVGGeometryFrame* geometryFrame = do_QueryFrame(frame);
+      if (geometryFrame) {
         // A graphic elements: rect, circle, ellipse, line, path, polygon,
         // polyline and image. A 'use' and 'text' graphic elements require
         // special support.
         newAcc = new EnumRoleAccessible<roles::GRAPHIC>(content, document);
+      } else if (content->IsSVGElement(nsGkAtoms::text)) {
+        newAcc = new HyperTextAccessibleWrap(content->AsElement(), document);
       } else if (content->IsSVGElement(nsGkAtoms::svg)) {
         newAcc = new EnumRoleAccessible<roles::DIAGRAM>(content, document);
       }
 
     } else if (content->IsMathMLElement()) {
-      const MarkupMapInfo* markupMap =
-        mMarkupMaps.Get(content->NodeInfo()->NameAtom());
+      const HTMLMarkupMapInfo* markupMap =
+          mHTMLMarkupMap.Get(content->NodeInfo()->NameAtom());
       if (markupMap && markupMap->new_func)
-        newAcc = markupMap->new_func(content, aContext);
+        newAcc = markupMap->new_func(content->AsElement(), aContext);
 
       // Fall back to text when encountering Content MathML.
-      if (!newAcc && !content->IsAnyOfMathMLElements(nsGkAtoms::annotation_,
-                                                     nsGkAtoms::annotation_xml_,
-                                                     nsGkAtoms::mpadded_,
-                                                     nsGkAtoms::mphantom_,
-                                                     nsGkAtoms::maligngroup_,
-                                                     nsGkAtoms::malignmark_,
-                                                     nsGkAtoms::mspace_,
-                                                     nsGkAtoms::semantics_)) {
-       newAcc = new HyperTextAccessible(content, document);
+      if (!newAcc && !content->IsAnyOfMathMLElements(
+                         nsGkAtoms::annotation_, nsGkAtoms::annotation_xml_,
+                         nsGkAtoms::mpadded_, nsGkAtoms::mphantom_,
+                         nsGkAtoms::maligngroup_, nsGkAtoms::malignmark_,
+                         nsGkAtoms::mspace_, nsGkAtoms::semantics_)) {
+        newAcc = new HyperTextAccessible(content, document);
       }
     }
   }
@@ -1205,13 +1145,14 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
   if (!newAcc && !content->IsHTMLElement(nsGkAtoms::body) &&
       content->GetParent() &&
       (roleMapEntry || MustBeAccessible(content, document) ||
-       (content->IsHTMLElement() &&
-        nsCoreUtils::HasClickListener(content)))) {
-    // This content is focusable or has an interesting dynamic content accessibility property.
-    // If it's interesting we need it in the accessibility hierarchy so that events or
-    // other accessibles can point to it, or so that it can hold a state, etc.
+       (content->IsHTMLElement() && nsCoreUtils::HasClickListener(content)))) {
+    // This content is focusable or has an interesting dynamic content
+    // accessibility property. If it's interesting we need it in the
+    // accessibility hierarchy so that events or other accessibles can point to
+    // it, or so that it can hold a state, etc.
     if (content->IsHTMLElement()) {
-      // Interesting HTML container which may have selectable text and/or embedded objects
+      // Interesting HTML container which may have selectable text and/or
+      // embedded objects
       newAcc = new HyperTextAccessibleWrap(content, document);
     } else {  // XUL, SVG, MathML etc.
       // Interesting generic non-HTML container
@@ -1228,55 +1169,71 @@ nsAccessibilityService::CreateAccessible(nsINode* aNode,
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibilityService private
 
-bool
-nsAccessibilityService::Init()
-{
+bool nsAccessibilityService::Init() {
   // Initialize accessible document manager.
-  if (!DocManager::Init())
-    return false;
+  if (!DocManager::Init()) return false;
 
   // Add observers.
   nsCOMPtr<nsIObserverService> observerService =
-    mozilla::services::GetObserverService();
-  if (!observerService)
-    return false;
+      mozilla::services::GetObserverService();
+  if (!observerService) return false;
 
   observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
 
-  static const char16_t kInitIndicator[] = { '1', 0 };
-  observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown", kInitIndicator);
+#if defined(XP_WIN)
+  // This information needs to be initialized before the observer fires.
+  if (XRE_IsParentProcess()) {
+    Compatibility::Init();
+  }
+#endif  // defined(XP_WIN)
 
   // Subscribe to EventListenerService.
   nsCOMPtr<nsIEventListenerService> eventListenerService =
-    do_GetService("@mozilla.org/eventlistenerservice;1");
-  if (!eventListenerService)
-    return false;
+      do_GetService("@mozilla.org/eventlistenerservice;1");
+  if (!eventListenerService) return false;
 
   eventListenerService->AddListenerChangeListener(this);
 
-  for (uint32_t i = 0; i < ArrayLength(sMarkupMapList); i++)
-    mMarkupMaps.Put(*sMarkupMapList[i].tag, &sMarkupMapList[i]);
+  for (uint32_t i = 0; i < ArrayLength(sHTMLMarkupMapList); i++)
+    mHTMLMarkupMap.Put(sHTMLMarkupMapList[i].tag, &sHTMLMarkupMapList[i]);
+
+#ifdef MOZ_XUL
+  for (uint32_t i = 0; i < ArrayLength(sXULMarkupMapList); i++)
+    mXULMarkupMap.Put(sXULMarkupMapList[i].tag, &sXULMarkupMapList[i]);
+#endif
 
 #ifdef A11Y_LOG
   logging::CheckEnv();
 #endif
 
   gAccessibilityService = this;
-  NS_ADDREF(gAccessibilityService); // will release in Shutdown()
+  NS_ADDREF(gAccessibilityService);  // will release in Shutdown()
 
-  if (XRE_IsParentProcess())
+  if (XRE_IsParentProcess()) {
     gApplicationAccessible = new ApplicationAccessibleWrap();
-  else
-    gApplicationAccessible = new ApplicationAccessible();
+  } else {
+#if defined(XP_WIN)
+    dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
+    MOZ_ASSERT(contentChild);
+    // If we were instantiated by the chrome process, GetMsaaID() will return
+    // a non-zero value and we may safely continue with initialization.
+    if (!contentChild->GetMsaaID()) {
+      // Since we were not instantiated by chrome, we need to synchronously
+      // obtain a MSAA content process id.
+      contentChild->SendGetA11yContentId();
+    }
 
-  NS_ADDREF(gApplicationAccessible); // will release in Shutdown()
+    gApplicationAccessible = new ApplicationAccessibleWrap();
+#else
+    gApplicationAccessible = new ApplicationAccessible();
+#endif  // defined(XP_WIN)
+  }
+
+  NS_ADDREF(gApplicationAccessible);  // will release in Shutdown()
   gApplicationAccessible->Init();
 
-#ifdef MOZ_CRASHREPORTER
-  CrashReporter::
-    AnnotateCrashReport(NS_LITERAL_CSTRING("Accessibility"),
-                        NS_LITERAL_CSTRING("Active"));
-#endif
+  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::Accessibility,
+                                     NS_LITERAL_CSTRING("Active"));
 
 #ifdef XP_WIN
   sPendingPlugins = new nsTArray<nsCOMPtr<nsIContent> >;
@@ -1284,34 +1241,31 @@ nsAccessibilityService::Init()
 #endif
 
   // Now its safe to start platform accessibility.
-  if (XRE_IsParentProcess())
-    PlatformInit();
+  if (XRE_IsParentProcess()) PlatformInit();
 
   statistics::A11yInitialized();
+
+  static const char16_t kInitIndicator[] = {'1', 0};
+  observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown",
+                                   kInitIndicator);
 
   return true;
 }
 
-void
-nsAccessibilityService::Shutdown()
-{
+void nsAccessibilityService::Shutdown() {
   // Application is going to be closed, shutdown accessibility and mark
   // accessibility service as shutdown to prevent calls of its methods.
   // Don't null accessibility service static member at this point to be safe
   // if someone will try to operate with it.
 
   MOZ_ASSERT(gConsumers, "Accessibility was shutdown already");
-
-  gConsumers = 0;
+  UnsetConsumers(eXPCOM | eMainProcess | ePlatformAPI);
 
   // Remove observers.
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
   if (observerService) {
     observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
-
-    static const char16_t kShutdownIndicator[] = { '0', 0 };
-    observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown", kShutdownIndicator);
   }
 
   // Stop accessible document loader.
@@ -1329,8 +1283,7 @@ nsAccessibilityService::Shutdown()
   sPluginTimers = nullptr;
 #endif
 
-  if (XRE_IsParentProcess())
-    PlatformShutdown();
+  if (XRE_IsParentProcess()) PlatformShutdown();
 
   gApplicationAccessible->Shutdown();
   NS_RELEASE(gApplicationAccessible);
@@ -1341,192 +1294,18 @@ nsAccessibilityService::Shutdown()
 
   NS_RELEASE(gAccessibilityService);
   gAccessibilityService = nullptr;
-}
 
-already_AddRefed<Accessible>
-nsAccessibilityService::CreateAccessibleByType(nsIContent* aContent,
-                                               DocAccessible* aDoc)
-{
-  nsAutoString role;
-  nsCoreUtils::XBLBindingRole(aContent, role);
-  if (role.IsEmpty() || role.EqualsLiteral("none"))
-    return nullptr;
-
-  if (role.EqualsLiteral("outerdoc")) {
-    RefPtr<Accessible> accessible = new OuterDocAccessible(aContent, aDoc);
-    return accessible.forget();
+  if (observerService) {
+    static const char16_t kShutdownIndicator[] = {'0', 0};
+    observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown",
+                                     kShutdownIndicator);
   }
-
-  RefPtr<Accessible> accessible;
-#ifdef MOZ_XUL
-  // XUL controls
-  if (role.EqualsLiteral("xul:alert")) {
-    accessible = new XULAlertAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:button")) {
-    accessible = new XULButtonAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:checkbox")) {
-    accessible = new XULCheckboxAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:colorpicker")) {
-    accessible = new XULColorPickerAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:colorpickertile")) {
-    accessible = new XULColorPickerTileAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:combobox")) {
-    accessible = new XULComboboxAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:tabpanels")) {
-      accessible = new XULTabpanelsAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:dropmarker")) {
-      accessible = new XULDropmarkerAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:groupbox")) {
-      accessible = new XULGroupboxAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:image")) {
-    if (aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::onclick)) {
-      accessible = new XULToolbarButtonAccessible(aContent, aDoc);
-
-    } else {
-      // Don't include nameless images in accessible tree.
-      if (!aContent->HasAttr(kNameSpaceID_None,
-                             nsGkAtoms::tooltiptext))
-        return nullptr;
-
-      accessible = new ImageAccessibleWrap(aContent, aDoc);
-    }
-
-  } else if (role.EqualsLiteral("xul:link")) {
-    accessible = new XULLinkAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:listbox")) {
-      accessible = new XULListboxAccessibleWrap(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:listcell")) {
-    // Only create cells if there's more than one per row.
-    nsIContent* listItem = aContent->GetParent();
-    if (!listItem)
-      return nullptr;
-
-    for (nsIContent* child = listItem->GetFirstChild(); child;
-         child = child->GetNextSibling()) {
-      if (child->IsXULElement(nsGkAtoms::listcell) && child != aContent) {
-        accessible = new XULListCellAccessibleWrap(aContent, aDoc);
-        break;
-      }
-    }
-
-  } else if (role.EqualsLiteral("xul:listhead")) {
-    accessible = new XULColumAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:listheader")) {
-    accessible = new XULColumnItemAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:listitem")) {
-    accessible = new XULListitemAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:menubar")) {
-    accessible = new XULMenubarAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:menulist")) {
-    accessible = new XULComboboxAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:menuitem")) {
-    accessible = new XULMenuitemAccessibleWrap(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:menupopup")) {
-#ifdef MOZ_ACCESSIBILITY_ATK
-    // ATK considers this node to be redundant when within menubars, and it makes menu
-    // navigation with assistive technologies more difficult
-    // XXX In the future we will should this for consistency across the nsIAccessible
-    // implementations on each platform for a consistent scripting environment, but
-    // then strip out redundant accessibles in the AccessibleWrap class for each platform.
-    nsIContent *parent = aContent->GetParent();
-    if (parent && parent->IsXULElement(nsGkAtoms::menu))
-      return nullptr;
-#endif
-
-    accessible = new XULMenupopupAccessible(aContent, aDoc);
-
-  } else if(role.EqualsLiteral("xul:menuseparator")) {
-    accessible = new XULMenuSeparatorAccessible(aContent, aDoc);
-
-  } else if(role.EqualsLiteral("xul:pane")) {
-    accessible = new EnumRoleAccessible<roles::PANE>(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:panel")) {
-    if (aContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::noautofocus,
-                              nsGkAtoms::_true, eCaseMatters))
-      accessible = new XULAlertAccessible(aContent, aDoc);
-    else
-      accessible = new EnumRoleAccessible<roles::PANE>(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:progressmeter")) {
-    accessible = new XULProgressMeterAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:statusbar")) {
-    accessible = new XULStatusBarAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:scale")) {
-    accessible = new XULSliderAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:radiobutton")) {
-    accessible = new XULRadioButtonAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:radiogroup")) {
-    accessible = new XULRadioGroupAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:tab")) {
-    accessible = new XULTabAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:tabs")) {
-    accessible = new XULTabsAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:text")) {
-    accessible = new XULLabelAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:textbox")) {
-    accessible = new EnumRoleAccessible<roles::SECTION>(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:thumb")) {
-    accessible = new XULThumbAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:tree")) {
-    accessible = CreateAccessibleForXULTree(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:treecolumns")) {
-    accessible = new XULTreeColumAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:treecolumnitem")) {
-    accessible = new XULColumnItemAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:toolbar")) {
-    accessible = new XULToolbarAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:toolbarseparator")) {
-    accessible = new XULToolbarSeparatorAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:tooltip")) {
-    accessible = new XULTooltipAccessible(aContent, aDoc);
-
-  } else if (role.EqualsLiteral("xul:toolbarbutton")) {
-    accessible = new XULToolbarButtonAccessible(aContent, aDoc);
-
-  }
-#endif // MOZ_XUL
-
-  return accessible.forget();
 }
 
 already_AddRefed<Accessible>
 nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
                                                     nsIContent* aContent,
-                                                    Accessible* aContext)
-{
+                                                    Accessible* aContext) {
   DocAccessible* document = aContext->Document();
 
   RefPtr<Accessible> newAcc;
@@ -1549,7 +1328,7 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       }
       break;
     case eHTMLCheckboxType:
-      newAcc = new HTMLCheckboxAccessible(aContent, document);
+      newAcc = new CheckboxAccessible(aContent, document);
       break;
     case eHTMLComboboxType:
       newAcc = new HTMLComboboxAccessible(aContent, document);
@@ -1616,14 +1395,21 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
         table = aContext->Parent();
 
       if (table) {
-        nsIContent* parentContent = aContent->GetParent();
-        nsIFrame* parentFrame = parentContent->GetPrimaryFrame();
-        if (parentFrame->GetType() != nsGkAtoms::tableWrapperFrame) {
-          parentContent = parentContent->GetParent();
+        nsIContent* parentContent =
+            aContent->GetParentOrShadowHostNode()->AsContent();
+        nsIFrame* parentFrame = nullptr;
+        if (parentContent) {
           parentFrame = parentContent->GetPrimaryFrame();
+          if (!parentFrame || !parentFrame->IsTableWrapperFrame()) {
+            parentContent =
+                parentContent->GetParentOrShadowHostNode()->AsContent();
+            if (parentContent) {
+              parentFrame = parentContent->GetPrimaryFrame();
+            }
+          }
         }
 
-        if (parentFrame->GetType() == nsGkAtoms::tableWrapperFrame &&
+        if (parentFrame && parentFrame->IsTableWrapperFrame() &&
             table->GetContent() == parentContent) {
           newAcc = new HTMLTableRowAccessible(aContent, document);
         }
@@ -1634,8 +1420,10 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       newAcc = new HTMLTextFieldAccessible(aContent, document);
       break;
     case eHyperTextType:
-      if (!aContent->IsAnyOfHTMLElements(nsGkAtoms::dt, nsGkAtoms::dd))
+      if (!aContent->IsAnyOfHTMLElements(nsGkAtoms::dt, nsGkAtoms::dd,
+                                         nsGkAtoms::div)) {
         newAcc = new HyperTextAccessibleWrap(aContent, document);
+      }
       break;
 
     case eImageType:
@@ -1660,122 +1448,133 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
   return newAcc.forget();
 }
 
-void
-nsAccessibilityService::MarkupAttributes(const nsIContent* aContent,
-                                         nsIPersistentProperties* aAttributes) const
-{
-  const mozilla::a11y::MarkupMapInfo* markupMap =
-    mMarkupMaps.Get(aContent->NodeInfo()->NameAtom());
-  if (!markupMap)
-    return;
+void nsAccessibilityService::MarkupAttributes(
+    const nsIContent* aContent, nsIPersistentProperties* aAttributes) const {
+  const mozilla::a11y::HTMLMarkupMapInfo* markupMap =
+      mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+  if (!markupMap) return;
 
   for (uint32_t i = 0; i < ArrayLength(markupMap->attrs); i++) {
     const MarkupAttrInfo* info = markupMap->attrs + i;
-    if (!info->name)
-      break;
+    if (!info->name) break;
 
     if (info->DOMAttrName) {
       if (info->DOMAttrValue) {
-        if (aContent->AttrValueIs(kNameSpaceID_None, *info->DOMAttrName,
-                                  *info->DOMAttrValue, eCaseMatters)) {
-          nsAccUtils::SetAccAttr(aAttributes, *info->name, *info->DOMAttrValue);
+        if (aContent->IsElement() && aContent->AsElement()->AttrValueIs(
+                                         kNameSpaceID_None, info->DOMAttrName,
+                                         info->DOMAttrValue, eCaseMatters)) {
+          nsAccUtils::SetAccAttr(aAttributes, info->name, info->DOMAttrValue);
         }
         continue;
       }
 
       nsAutoString value;
-      aContent->GetAttr(kNameSpaceID_None, *info->DOMAttrName, value);
+
+      if (aContent->IsElement()) {
+        aContent->AsElement()->GetAttr(kNameSpaceID_None, info->DOMAttrName,
+                                       value);
+      }
+
       if (!value.IsEmpty())
-        nsAccUtils::SetAccAttr(aAttributes, *info->name, value);
+        nsAccUtils::SetAccAttr(aAttributes, info->name, value);
 
       continue;
     }
 
-    nsAccUtils::SetAccAttr(aAttributes, *info->name, *info->value);
+    nsAccUtils::SetAccAttr(aAttributes, info->name, info->value);
   }
 }
 
-Accessible*
-nsAccessibilityService::AddNativeRootAccessible(void* aAtkAccessible)
-{
+Accessible* nsAccessibilityService::AddNativeRootAccessible(
+    void* aAtkAccessible) {
 #ifdef MOZ_ACCESSIBILITY_ATK
   ApplicationAccessible* applicationAcc = ApplicationAcc();
-  if (!applicationAcc)
-    return nullptr;
+  if (!applicationAcc) return nullptr;
 
   GtkWindowAccessible* nativeWnd =
-    new GtkWindowAccessible(static_cast<AtkObject*>(aAtkAccessible));
+      new GtkWindowAccessible(static_cast<AtkObject*>(aAtkAccessible));
 
-  if (applicationAcc->AppendChild(nativeWnd))
-    return nativeWnd;
+  if (applicationAcc->AppendChild(nativeWnd)) return nativeWnd;
 #endif
 
   return nullptr;
 }
 
-void
-nsAccessibilityService::RemoveNativeRootAccessible(Accessible* aAccessible)
-{
+void nsAccessibilityService::RemoveNativeRootAccessible(
+    Accessible* aAccessible) {
 #ifdef MOZ_ACCESSIBILITY_ATK
   ApplicationAccessible* applicationAcc = ApplicationAcc();
 
-  if (applicationAcc)
-    applicationAcc->RemoveChild(aAccessible);
+  if (applicationAcc) applicationAcc->RemoveChild(aAccessible);
 #endif
 }
 
-bool
-nsAccessibilityService::HasAccessible(nsIDOMNode* aDOMNode)
-{
-  nsCOMPtr<nsINode> node(do_QueryInterface(aDOMNode));
-  if (!node)
-    return false;
+bool nsAccessibilityService::HasAccessible(nsINode* aDOMNode) {
+  if (!aDOMNode) return false;
 
-  DocAccessible* document = GetDocAccessible(node->OwnerDoc());
-  if (!document)
-    return false;
+  Document* document = aDOMNode->OwnerDoc();
+  if (!document) return false;
 
-  return document->HasAccessible(node);
+  DocAccessible* docAcc = GetExistingDocAccessible(aDOMNode->OwnerDoc());
+  if (!docAcc) return false;
+
+  return docAcc->HasAccessible(aDOMNode);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibilityService private (DON'T put methods here)
 
-#ifdef MOZ_XUL
-already_AddRefed<Accessible>
-nsAccessibilityService::CreateAccessibleForXULTree(nsIContent* aContent,
-                                                   DocAccessible* aDoc)
-{
-  nsIContent* child = nsTreeUtils::GetDescendantChild(aContent,
-                                                      nsGkAtoms::treechildren);
-  if (!child)
-    return nullptr;
-
-  nsTreeBodyFrame* treeFrame = do_QueryFrame(child->GetPrimaryFrame());
-  if (!treeFrame)
-    return nullptr;
-
-  RefPtr<nsTreeColumns> treeCols = treeFrame->Columns();
-  int32_t count = 0;
-  treeCols->GetCount(&count);
-
-  // Outline of list accessible.
-  if (count == 1) {
-    RefPtr<Accessible> accessible =
-      new XULTreeAccessible(aContent, aDoc, treeFrame);
-    return accessible.forget();
+void nsAccessibilityService::SetConsumers(uint32_t aConsumers, bool aNotify) {
+  if (gConsumers & aConsumers) {
+    return;
   }
 
-  // Table or tree table accessible.
-  RefPtr<Accessible> accessible =
-    new XULTreeGridAccessibleWrap(aContent, aDoc, treeFrame);
-  return accessible.forget();
+  gConsumers |= aConsumers;
+  if (aNotify) {
+    NotifyOfConsumersChange();
+  }
 }
-#endif
 
-nsAccessibilityService*
-GetOrCreateAccService(uint32_t aNewConsumer)
-{
+void nsAccessibilityService::UnsetConsumers(uint32_t aConsumers) {
+  if (!(gConsumers & aConsumers)) {
+    return;
+  }
+
+  gConsumers &= ~aConsumers;
+  NotifyOfConsumersChange();
+}
+
+void nsAccessibilityService::GetConsumers(nsAString& aString) {
+  const char16_t* kJSONFmt =
+      u"{ \"XPCOM\": %s, \"MainProcess\": %s, \"PlatformAPI\": %s }";
+  nsString json;
+  nsTextFormatter::ssprintf(json, kJSONFmt,
+                            gConsumers & eXPCOM ? "true" : "false",
+                            gConsumers & eMainProcess ? "true" : "false",
+                            gConsumers & ePlatformAPI ? "true" : "false");
+  aString.Assign(json);
+}
+
+void nsAccessibilityService::NotifyOfConsumersChange() {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  if (!observerService) {
+    return;
+  }
+
+  nsAutoString consumers;
+  GetConsumers(consumers);
+  observerService->NotifyObservers(nullptr, "a11y-consumers-changed",
+                                   consumers.get());
+}
+
+nsAccessibilityService* GetOrCreateAccService(uint32_t aNewConsumer) {
+  // Do not initialize accessibility if it is force disabled.
+  if (PlatformDisabledState() == ePlatformIsDisabled) {
+    return nullptr;
+  }
+
   if (!nsAccessibilityService::gAccessibilityService) {
     RefPtr<nsAccessibilityService> service = new nsAccessibilityService();
     if (!service->Init()) {
@@ -1786,33 +1585,39 @@ GetOrCreateAccService(uint32_t aNewConsumer)
 
   MOZ_ASSERT(nsAccessibilityService::gAccessibilityService,
              "Accessible service is not initialized.");
-  nsAccessibilityService::gConsumers |= aNewConsumer;
+  nsAccessibilityService::gAccessibilityService->SetConsumers(aNewConsumer);
   return nsAccessibilityService::gAccessibilityService;
 }
 
-void
-MaybeShutdownAccService(uint32_t aFormerConsumer)
-{
+void MaybeShutdownAccService(uint32_t aFormerConsumer) {
   nsAccessibilityService* accService =
-    nsAccessibilityService::gAccessibilityService;
+      nsAccessibilityService::gAccessibilityService;
 
-  if (!accService || accService->IsShutdown()) {
+  if (!accService || nsAccessibilityService::IsShutdown()) {
     return;
   }
 
+  // Still used by XPCOM
   if (nsCoreUtils::AccEventObserversExist() ||
-      xpcAccessibilityService::IsInUse()) {
-    // Still used by XPCOM
-    nsAccessibilityService::gConsumers =
-      (nsAccessibilityService::gConsumers & ~aFormerConsumer) |
-      nsAccessibilityService::eXPCOM;
+      xpcAccessibilityService::IsInUse() || accService->HasXPCDocuments()) {
+    // In case the XPCOM flag was unset (possibly because of the shutdown
+    // timer in the xpcAccessibilityService) ensure it is still present. Note:
+    // this should be fixed when all the consumer logic is taken out as a
+    // separate class.
+    accService->SetConsumers(nsAccessibilityService::eXPCOM, false);
+
+    if (aFormerConsumer != nsAccessibilityService::eXPCOM) {
+      // Only unset non-XPCOM consumers.
+      accService->UnsetConsumers(aFormerConsumer);
+    }
     return;
   }
 
   if (nsAccessibilityService::gConsumers & ~aFormerConsumer) {
-    nsAccessibilityService::gConsumers &= ~aFormerConsumer;
+    accService->UnsetConsumers(aFormerConsumer);
   } else {
-    accService->Shutdown(); // Will unset all nsAccessibilityService::gConsumers
+    accService
+        ->Shutdown();  // Will unset all nsAccessibilityService::gConsumers
   }
 }
 
@@ -1823,52 +1628,63 @@ MaybeShutdownAccService(uint32_t aFormerConsumer)
 namespace mozilla {
 namespace a11y {
 
-FocusManager*
-FocusMgr()
-{
+FocusManager* FocusMgr() {
   return nsAccessibilityService::gAccessibilityService;
 }
 
-SelectionManager*
-SelectionMgr()
-{
+SelectionManager* SelectionMgr() {
   return nsAccessibilityService::gAccessibilityService;
 }
 
-ApplicationAccessible*
-ApplicationAcc()
-{
+ApplicationAccessible* ApplicationAcc() {
   return nsAccessibilityService::gApplicationAccessible;
 }
 
-xpcAccessibleApplication*
-XPCApplicationAcc()
-{
+xpcAccessibleApplication* XPCApplicationAcc() {
   if (!nsAccessibilityService::gXPCApplicationAccessible &&
       nsAccessibilityService::gApplicationAccessible) {
     nsAccessibilityService::gXPCApplicationAccessible =
-      new xpcAccessibleApplication(nsAccessibilityService::gApplicationAccessible);
+        new xpcAccessibleApplication(
+            nsAccessibilityService::gApplicationAccessible);
     NS_ADDREF(nsAccessibilityService::gXPCApplicationAccessible);
   }
 
   return nsAccessibilityService::gXPCApplicationAccessible;
 }
 
-EPlatformDisabledState
-PlatformDisabledState()
-{
-  static int disabledState = 0xff;
-
-  if (disabledState == 0xff) {
-    disabledState = Preferences::GetInt("accessibility.force_disabled", 0);
-    if (disabledState < ePlatformIsForceEnabled)
-      disabledState = ePlatformIsForceEnabled;
-    else if (disabledState > ePlatformIsDisabled)
-      disabledState = ePlatformIsDisabled;
+EPlatformDisabledState PlatformDisabledState() {
+  static bool platformDisabledStateCached = false;
+  if (platformDisabledStateCached) {
+    return static_cast<EPlatformDisabledState>(sPlatformDisabledState);
   }
 
-  return (EPlatformDisabledState)disabledState;
+  platformDisabledStateCached = true;
+  Preferences::RegisterCallback(PrefChanged, PREF_ACCESSIBILITY_FORCE_DISABLED);
+  return ReadPlatformDisabledState();
 }
 
+EPlatformDisabledState ReadPlatformDisabledState() {
+  sPlatformDisabledState =
+      Preferences::GetInt(PREF_ACCESSIBILITY_FORCE_DISABLED, 0);
+  if (sPlatformDisabledState < ePlatformIsForceEnabled) {
+    sPlatformDisabledState = ePlatformIsForceEnabled;
+  } else if (sPlatformDisabledState > ePlatformIsDisabled) {
+    sPlatformDisabledState = ePlatformIsDisabled;
+  }
+
+  return static_cast<EPlatformDisabledState>(sPlatformDisabledState);
 }
+
+void PrefChanged(const char* aPref, void* aClosure) {
+  if (ReadPlatformDisabledState() == ePlatformIsDisabled) {
+    // Force shut down accessibility.
+    nsAccessibilityService* accService =
+        nsAccessibilityService::gAccessibilityService;
+    if (accService && !nsAccessibilityService::IsShutdown()) {
+      accService->Shutdown();
+    }
+  }
 }
+
+}  // namespace a11y
+}  // namespace mozilla

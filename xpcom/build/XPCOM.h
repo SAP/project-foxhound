@@ -14,6 +14,10 @@
 
 #include <string.h>
 
+#ifndef MOZILLA_INTERNAL_API
+#  error "MOZILLA_INTERNAL_API must be defined"
+#endif
+
 // core headers required by pretty much everything else
 
 #include "nscore.h"
@@ -30,18 +34,13 @@
 #include "nsISupports.h"
 
 #include "nsTArray.h"
-#include "nsTWeakRef.h"
 
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 
-#ifndef MOZILLA_INTERNAL_API
-#include "nsStringAPI.h"
-#else
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsNativeCharsetUtils.h"
-#endif
 
 #include "nsISupportsUtils.h"
 #include "nsISupportsImpl.h"
@@ -59,11 +58,9 @@
 // interfaces that inherit directly from nsISupports
 
 #include "nsIArray.h"
-#include "nsIAtom.h"
-#include "nsIAtomService.h"
+#include "nsAtom.h"
 #include "nsICategoryManager.h"
 #include "nsIClassInfo.h"
-#include "nsICollection.h"
 #include "nsIComponentManager.h"
 #include "nsIConsoleListener.h"
 #include "nsIConsoleMessage.h"
@@ -76,12 +73,10 @@
 #include "nsIException.h"
 #include "nsIFactory.h"
 #include "nsIFile.h"
-#include "nsIHashable.h"
 #include "nsIINIParser.h"
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILineInputStream.h"
-#include "nsIMemory.h"
 #include "nsIMutable.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
@@ -135,8 +130,8 @@
 #include "nsIPipe.h"
 
 #ifdef MOZ_WIDGET_COCOA
-#include "nsILocalFileMac.h"
-#include "nsIMacUtils.h"
+#  include "nsILocalFileMac.h"
+#  include "nsIMacUtils.h"
 #endif
 
 // xpcom/glue utility headers
@@ -144,7 +139,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 
-#include "nsIWeakReferenceUtils.h"
 #include "nsWeakReference.h"
 
 #include "nsArrayEnumerator.h"
@@ -176,4 +170,4 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 
-#endif // mozilla_XPCOM_h
+#endif  // mozilla_XPCOM_h

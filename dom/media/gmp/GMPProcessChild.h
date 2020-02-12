@@ -15,29 +15,22 @@ namespace gmp {
 class GMPLoader;
 
 class GMPProcessChild final : public mozilla::ipc::ProcessChild {
-protected:
+ protected:
   typedef mozilla::ipc::ProcessChild ProcessChild;
 
-public:
+ public:
   explicit GMPProcessChild(ProcessId aParentPid);
   ~GMPProcessChild();
 
-  bool Init() override;
+  bool Init(int aArgc, char* aArgv[]) override;
   void CleanUp() override;
 
-  // Set/get the GMPLoader singleton for this child process.
-  // Note: The GMPLoader is not deleted by this object, the caller of
-  // SetGMPLoader() must manage the GMPLoader's lifecycle.
-  static void SetGMPLoader(GMPLoader* aHost);
-  static GMPLoader* GetGMPLoader();
-
-private:
+ private:
   GMPChild mPlugin;
-  static GMPLoader* mLoader;
   DISALLOW_COPY_AND_ASSIGN(GMPProcessChild);
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPProcessChild_h_
+#endif  // GMPProcessChild_h_

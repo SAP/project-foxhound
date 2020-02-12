@@ -2,7 +2,7 @@
 <html>
 <head>
  <title>DOM Traversal: NodeIterator: Mutations (3/x)</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
 </head>
 <p id="display"></p>
@@ -12,7 +12,7 @@
 <pre id="test">
 <script class="testbody" type="text/javascript">
   function removeNode(n) {
-    n.parentNode.removeChild(n);
+    n.remove();
   }
   var initInner = $('content').innerHTML;
   var content = $('content');

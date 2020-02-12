@@ -7,17 +7,13 @@
 # Note: build rlz in its own moz.build, so it doesn't pickup any of
 # Chromium IPC's headers used in the moz.build of the parent file.
 
-Library('rlz')
+FINAL_LIBRARY = 'xul'
 
-UNIFIED_SOURCES += [
-    'GMPDeviceBinding.cpp',
-]
-
-if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] in ['WINNT', 'Darwin']:
-    DEFINES['HASH_NODE_ID_WITH_DEVICE_ID'] = 1;
+if CONFIG['OS_TARGET'] in ['WINNT', 'Darwin']:
     UNIFIED_SOURCES += [
+        'lib/crc8.cc',
+        'lib/machine_id.cc',
         'lib/string_utils.cc',
-        'sha256.c',
     ]
 
 if CONFIG['OS_TARGET'] == 'WINNT':
@@ -35,8 +31,4 @@ if CONFIG['OS_TARGET'] == 'Darwin':
 
 LOCAL_INCLUDES += [
     '..',
-]
-
-EXPORTS += [
-    'GMPDeviceBinding.h',
 ]

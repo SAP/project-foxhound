@@ -4,27 +4,20 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "XUL")
+
 XPIDL_SOURCES += [
     'nsIDOMXULButtonElement.idl',
-    'nsIDOMXULCheckboxElement.idl',
     'nsIDOMXULCommandDispatcher.idl',
-    'nsIDOMXULCommandEvent.idl',
     'nsIDOMXULContainerElement.idl',
     'nsIDOMXULControlElement.idl',
-    'nsIDOMXULDescriptionElement.idl',
-    'nsIDOMXULDocument.idl',
-    'nsIDOMXULElement.idl',
-    'nsIDOMXULImageElement.idl',
-    'nsIDOMXULLabeledControlEl.idl',
-    'nsIDOMXULLabelElement.idl',
     'nsIDOMXULMenuListElement.idl',
     'nsIDOMXULMultSelectCntrlEl.idl',
-    'nsIDOMXULPopupElement.idl',
+    'nsIDOMXULRadioGroupElement.idl',
     'nsIDOMXULRelatedElement.idl',
     'nsIDOMXULSelectCntrlEl.idl',
     'nsIDOMXULSelectCntrlItemEl.idl',
-    'nsIDOMXULTextboxElement.idl',
-    'nsIDOMXULTreeElement.idl',
 ]
 
 XPIDL_MODULE = 'dom_xul'

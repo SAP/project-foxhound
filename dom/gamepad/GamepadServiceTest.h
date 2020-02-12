@@ -7,7 +7,8 @@
 #ifndef mozilla_dom_GamepadServiceTest_h_
 #define mozilla_dom_GamepadServiceTest_h_
 
-#include "nsIIPCBackgroundChildCreateCallback.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/dom/GamepadBinding.h"
 
 namespace mozilla {
 namespace dom {
@@ -18,53 +19,51 @@ class GamepadTestChannelChild;
 class Promise;
 
 // Service for testing purposes
-class GamepadServiceTest final : public DOMEventTargetHelper,
-                                 public nsIIPCBackgroundChildCreateCallback
-{
-public:
-  NS_DECL_NSIIPCBACKGROUNDCHILDCREATECALLBACK
+class GamepadServiceTest final : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(GamepadServiceTest,
                                            DOMEventTargetHelper)
 
-  uint32_t NoMapping() const { return 0; }
-  uint32_t StandardMapping() const { return 1; }
+  GamepadMappingType NoMapping() const { return GamepadMappingType::_empty; }
+  GamepadMappingType StandardMapping() const {
+    return GamepadMappingType::Standard;
+  }
+  GamepadHand NoHand() const { return GamepadHand::_empty; }
+  GamepadHand LeftHand() const { return GamepadHand::Left; }
+  GamepadHand RightHand() const { return GamepadHand::Right; }
 
-  already_AddRefed<Promise> AddGamepad(const nsAString& aID,
-                                       uint32_t aMapping,
-                                       uint32_t aNumButtons,
-                                       uint32_t aNumAxes,
-                                       ErrorResult& aRv);
+  already_AddRefed<Promise> AddGamepad(
+      const nsAString& aID, GamepadMappingType aMapping, GamepadHand aHand,
+      uint32_t aNumButtons, uint32_t aNumAxes, uint32_t aNumHaptics,
+      uint32_t aNumLightIndicator, uint32_t aNumTouchEvents, ErrorResult& aRv);
   void RemoveGamepad(uint32_t aIndex);
-  void NewButtonEvent(uint32_t aIndex, uint32_t aButton, bool aPressed);
-  void NewButtonValueEvent(uint32_t aIndex, uint32_t aButton, bool aPressed, double aValue);
+  void NewButtonEvent(uint32_t aIndex, uint32_t aButton, bool aPressed,
+                      bool aTouched);
+  void NewButtonValueEvent(uint32_t aIndex, uint32_t aButton, bool aPressed,
+                           bool aTouched, double aValue);
   void NewAxisMoveEvent(uint32_t aIndex, uint32_t aAxis, double aValue);
+  void NewPoseMove(uint32_t aIndex, const Nullable<Float32Array>& aOrient,
+                   const Nullable<Float32Array>& aPos,
+                   const Nullable<Float32Array>& aAngVelocity,
+                   const Nullable<Float32Array>& aAngAcceleration,
+                   const Nullable<Float32Array>& aLinVelocity,
+                   const Nullable<Float32Array>& aLinAcceleration);
+  void NewTouch(uint32_t aIndex, uint32_t aTouchArrayIndex, uint32_t aTouchId,
+                uint8_t aSurfaceId, const Float32Array& aPos,
+                const Nullable<Float32Array>& aSurfDim);
   void Shutdown();
 
-  static already_AddRefed<GamepadServiceTest> CreateTestService(nsPIDOMWindowInner* aWindow);
+  static already_AddRefed<GamepadServiceTest> CreateTestService(
+      nsPIDOMWindowInner* aWindow);
   nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
   JSObject* WrapObject(JSContext* aCx, JS::HandleObject aGivenProto) override;
 
-private:
-
-  // We need to asynchronously create IPDL channel, it is possible that
-  // we send commands before the channel is created, so we have to buffer
-  // them until the channel is created in that case.
-  struct PendingOperation {
-    explicit PendingOperation(const uint32_t& aID,
-                              const GamepadChangeEvent& aEvent,
-                              Promise* aPromise = nullptr)
-               : mID(aID), mEvent(aEvent), mPromise(aPromise) {}
-    uint32_t mID;
-    const GamepadChangeEvent& mEvent;
-    RefPtr<Promise> mPromise;
-  };
-
+ private:
   // Hold a reference to the gamepad service so we don't have to worry about
   // execution order in tests.
   RefPtr<GamepadManager> mService;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
-  nsTArray<PendingOperation> mPendingOperations;
   uint32_t mEventNumber;
   bool mShuttingDown;
 
@@ -77,11 +76,9 @@ private:
   ~GamepadServiceTest();
   void InitPBackgroundActor();
   void DestroyPBackgroundActor();
-  void FlushPendingOperations();
-
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

@@ -16,12 +16,12 @@ function run_test() {
   // get a TLS connection.
   add_tls_server_setup("OCSPStaplingServer", "ocsp_certs");
 
-  let args = [["good", "default-ee", "unused"]];
+  let args = [["good", "default-ee", "unused", 0]];
   let ocspResponses = generateOCSPResponses(args, "ocsp_certs");
   let goodOCSPResponse = ocspResponses[0];
 
   let ocspResponder = new HttpServer();
-  ocspResponder.registerPrefixHandler("/", function (request, response) {
+  ocspResponder.registerPrefixHandler("/", function(request, response) {
     response.setStatusLine(request.httpVersion, 200, "OK");
     response.setHeader("Content-Type", "application/ocsp-response");
     response.write(goodOCSPResponse);
@@ -35,20 +35,34 @@ function run_test() {
   // upgrade the OCSP request to HTTPS. We specifically prevent this. This
   // test demonstrates that our implementation is correct in this regard.
   add_connection_test("ocsp-stapling-none.example.com", PRErrorCodeSuccess);
-  add_test(function () { run_next_test(); });
+  add_test(function() {
+    run_next_test();
+  });
 
-  add_test(function () { ocspResponder.stop(run_next_test); });
+  add_test(function() {
+    ocspResponder.stop(run_next_test);
+  });
 
-  let SSService = Cc["@mozilla.org/ssservice;1"]
-                    .getService(Ci.nsISiteSecurityService);
-  let uri = Services.io.newURI("http://localhost", null, null);
-  let sslStatus = new FakeSSLStatus();
-  SSService.processHeader(Ci.nsISiteSecurityService.HEADER_HSTS, uri,
-                          "max-age=10000", sslStatus, 0);
-  ok(SSService.isSecureHost(Ci.nsISiteSecurityService.HEADER_HSTS,
-                            "localhost", 0),
-     "Domain for the OCSP AIA URI should be considered a HSTS host, otherwise" +
-     " we wouldn't be testing what we think we're testing");
+  let SSService = Cc["@mozilla.org/ssservice;1"].getService(
+    Ci.nsISiteSecurityService
+  );
+  let uri = Services.io.newURI("http://localhost");
+  let secInfo = Cc[
+    "@mozilla.org/security/transportsecurityinfo;1"
+  ].createInstance(Ci.nsITransportSecurityInfo);
+  SSService.processHeader(
+    Ci.nsISiteSecurityService.HEADER_HSTS,
+    uri,
+    "max-age=10000",
+    secInfo,
+    0,
+    Ci.nsISiteSecurityService.SOURCE_ORGANIC_REQUEST
+  );
+  ok(
+    SSService.isSecureURI(Ci.nsISiteSecurityService.HEADER_HSTS, uri, 0),
+    "Domain for the OCSP AIA URI should be considered a HSTS host, otherwise" +
+      " we wouldn't be testing what we think we're testing"
+  );
 
   run_next_test();
 }

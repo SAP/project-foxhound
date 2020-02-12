@@ -1,25 +1,31 @@
 "use strict";
 
-add_task(function* setup() {
+add_task(async function setup() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "48", "48");
-  startupManager();
+  await promiseStartupManager();
 });
 
 /* eslint-disable no-undef */
 // Shared background function for getSelf tests
 function backgroundGetSelf() {
-  browser.management.getSelf().then(extInfo => {
-    browser.test.sendMessage("management-getSelf", extInfo);
-  }, error => {
-    browser.test.notifyFail(`getSelf rejected with error: ${error}`);
-  });
+  browser.management.getSelf().then(
+    extInfo => {
+      let url = browser.extension.getURL("*");
+      extInfo.hostPermissions = extInfo.hostPermissions.filter(i => i != url);
+      extInfo.url = browser.extension.getURL("");
+      browser.test.sendMessage("management-getSelf", extInfo);
+    },
+    error => {
+      browser.test.notifyFail(`getSelf rejected with error: ${error}`);
+    }
+  );
 }
 /* eslint-enable no-undef */
 
-add_task(function* test_management_get_self_complete() {
+add_task(async function test_management_get_self_complete() {
   const id = "get_self_test_complete@tests.mozilla.com";
   const permissions = ["management", "cookies"];
-  const hostPermissions = ["*://example.org/", "https://foo.example.org/"];
+  const hostPermissions = ["*://example.org/*", "https://foo.example.org/*"];
 
   let manifest = {
     applications: {
@@ -34,7 +40,7 @@ add_task(function* test_management_get_self_complete() {
     version: "1.0",
     homepage_url: "http://www.example.com/",
     options_ui: {
-      "page": "get_self_options.html",
+      page: "get_self_options.html",
     },
     icons: {
       "16": "icons/icon-16.png",
@@ -48,31 +54,85 @@ add_task(function* test_management_get_self_complete() {
     background: backgroundGetSelf,
     useAddonManager: "temporary",
   });
-  yield extension.startup();
-  let extInfo = yield extension.awaitMessage("management-getSelf");
+  await extension.startup();
+  let extInfo = await extension.awaitMessage("management-getSelf");
 
   equal(extInfo.id, id, "getSelf returned the expected id");
-  equal(extInfo.installType, "development", "getSelf returned the expected installType");
+  equal(
+    extInfo.installType,
+    "development",
+    "getSelf returned the expected installType"
+  );
   for (let prop of ["name", "description", "version"]) {
-    equal(extInfo[prop], manifest[prop], `getSelf returned the expected ${prop}`);
+    equal(
+      extInfo[prop],
+      manifest[prop],
+      `getSelf returned the expected ${prop}`
+    );
   }
-  equal(extInfo.shortName, manifest.short_name, "getSelf returned the expected shortName");
-  equal(extInfo.mayDisable, true, "getSelf returned the expected value for mayDisable");
-  equal(extInfo.enabled, true, "getSelf returned the expected value for enabled");
-  equal(extInfo.homepageUrl, manifest.homepage_url, "getSelf returned the expected homepageUrl");
-  equal(extInfo.updateUrl, manifest.applications.gecko.update_url, "getSelf returned the expected updateUrl");
-  ok(extInfo.optionsUrl.endsWith(manifest.options_ui.page), "getSelf returned the expected optionsUrl");
-  for (let [index, size] of Object.keys(manifest.icons).sort().entries()) {
-    equal(extInfo.icons[index].size, +size, "getSelf returned the expected icon size");
-    equal(extInfo.icons[index].url, manifest.icons[size], "getSelf returned the expected icon url");
+  equal(
+    extInfo.shortName,
+    manifest.short_name,
+    "getSelf returned the expected shortName"
+  );
+  equal(
+    extInfo.mayDisable,
+    true,
+    "getSelf returned the expected value for mayDisable"
+  );
+  equal(
+    extInfo.enabled,
+    true,
+    "getSelf returned the expected value for enabled"
+  );
+  equal(
+    extInfo.homepageUrl,
+    manifest.homepage_url,
+    "getSelf returned the expected homepageUrl"
+  );
+  equal(
+    extInfo.updateUrl,
+    manifest.applications.gecko.update_url,
+    "getSelf returned the expected updateUrl"
+  );
+  ok(
+    extInfo.optionsUrl.endsWith(manifest.options_ui.page),
+    "getSelf returned the expected optionsUrl"
+  );
+  for (let [index, size] of Object.keys(manifest.icons)
+    .sort()
+    .entries()) {
+    let iconUrl = `${extInfo.url}${manifest.icons[size]}`;
+    equal(
+      extInfo.icons[index].size,
+      +size,
+      "getSelf returned the expected icon size"
+    );
+    equal(
+      extInfo.icons[index].url,
+      iconUrl,
+      "getSelf returned the expected icon url"
+    );
   }
-  deepEqual(extInfo.permissions.sort(), permissions.sort(), "getSelf returned the expected permissions");
-  deepEqual(extInfo.hostPermissions.sort(), hostPermissions.sort(), "getSelf returned the expected hostPermissions");
-  equal(extInfo.installType, "development", "getSelf returned the expected installType");
-  yield extension.unload();
+  deepEqual(
+    extInfo.permissions.sort(),
+    permissions.sort(),
+    "getSelf returned the expected permissions"
+  );
+  deepEqual(
+    extInfo.hostPermissions.sort(),
+    hostPermissions.sort(),
+    "getSelf returned the expected hostPermissions"
+  );
+  equal(
+    extInfo.installType,
+    "development",
+    "getSelf returned the expected installType"
+  );
+  await extension.unload();
 });
 
-add_task(function* test_management_get_self_minimal() {
+add_task(async function test_management_get_self_minimal() {
   const id = "get_self_test_minimal@tests.mozilla.com";
 
   let manifest = {
@@ -90,27 +150,39 @@ add_task(function* test_management_get_self_minimal() {
     background: backgroundGetSelf,
     useAddonManager: "temporary",
   });
-  yield extension.startup();
-  let extInfo = yield extension.awaitMessage("management-getSelf");
+  await extension.startup();
+  let extInfo = await extension.awaitMessage("management-getSelf");
 
   equal(extInfo.id, id, "getSelf returned the expected id");
-  equal(extInfo.installType, "development", "getSelf returned the expected installType");
+  equal(
+    extInfo.installType,
+    "development",
+    "getSelf returned the expected installType"
+  );
   for (let prop of ["name", "version"]) {
-    equal(extInfo[prop], manifest[prop], `getSelf returned the expected ${prop}`);
+    equal(
+      extInfo[prop],
+      manifest[prop],
+      `getSelf returned the expected ${prop}`
+    );
   }
   for (let prop of ["shortName", "description", "optionsUrl"]) {
     equal(extInfo[prop], "", `getSelf returned the expected ${prop}`);
   }
   for (let prop of ["homepageUrl", " updateUrl", "icons"]) {
-    equal(Reflect.getOwnPropertyDescriptor(extInfo, prop), undefined, `getSelf did not return a ${prop} property`);
+    equal(
+      Reflect.getOwnPropertyDescriptor(extInfo, prop),
+      undefined,
+      `getSelf did not return a ${prop} property`
+    );
   }
   for (let prop of ["permissions", "hostPermissions"]) {
     deepEqual(extInfo[prop], [], `getSelf returned the expected ${prop}`);
   }
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* test_management_get_self_permanent() {
+add_task(async function test_management_get_self_permanent() {
   const id = "get_self_test_permanent@tests.mozilla.com";
 
   let manifest = {
@@ -128,10 +200,14 @@ add_task(function* test_management_get_self_permanent() {
     background: backgroundGetSelf,
     useAddonManager: "permanent",
   });
-  yield extension.startup();
-  let extInfo = yield extension.awaitMessage("management-getSelf");
+  await extension.startup();
+  let extInfo = await extension.awaitMessage("management-getSelf");
 
   equal(extInfo.id, id, "getSelf returned the expected id");
-  equal(extInfo.installType, "normal", "getSelf returned the expected installType");
-  yield extension.unload();
+  equal(
+    extInfo.installType,
+    "normal",
+    "getSelf returned the expected installType"
+  );
+  await extension.unload();
 });

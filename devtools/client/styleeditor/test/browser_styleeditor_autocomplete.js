@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -8,7 +7,7 @@
 const TESTCASE_URI = TEST_BASE_HTTP + "autocomplete.html";
 const MAX_SUGGESTIONS = 15;
 
-const {initCssProperties} = require("devtools/shared/fronts/css-properties");
+const { initCssProperties } = require("devtools/shared/fronts/css-properties");
 
 // Test cases to test that autocompletion works correctly when enabled.
 // Format:
@@ -24,69 +23,92 @@ const {initCssProperties} = require("devtools/shared/fronts/css-properties");
 // ]
 
 function getTestCases(cssProperties) {
-  let keywords = getCSSKeywords(cssProperties);
-  let getSuggestionNumberFor = suggestionNumberGetter(keywords);
+  const keywords = getCSSKeywords(cssProperties);
+  const getSuggestionNumberFor = suggestionNumberGetter(keywords);
 
   return [
     ["VK_RIGHT"],
     ["VK_RIGHT"],
     ["VK_RIGHT"],
     ["VK_RIGHT"],
-    ["Ctrl+Space", {total: 1, current: 0}],
+    ["Ctrl+Space", { total: 1, current: 0 }],
     ["VK_LEFT"],
     ["VK_RIGHT"],
     ["VK_DOWN"],
     ["VK_RIGHT"],
     ["VK_RIGHT"],
     ["VK_RIGHT"],
-    ["Ctrl+Space", { total: getSuggestionNumberFor("font"), current: 0}],
+    ["Ctrl+Space", { total: getSuggestionNumberFor("font"), current: 0 }],
     ["VK_END"],
     ["VK_RETURN"],
-    ["b", {total: getSuggestionNumberFor("b"), current: 0}],
-    ["a", {total: getSuggestionNumberFor("ba"), current: 0}],
-    ["VK_DOWN", {total: getSuggestionNumberFor("ba"), current: 0, inserted: 1}],
-    ["VK_TAB", {total: getSuggestionNumberFor("ba"), current: 1, inserted: 1}],
-    ["VK_RETURN", {current: 1, inserted: 1, entered: 1}],
-    ["b", {total: getSuggestionNumberFor("background", "b"), current: 0}],
-    ["l", {total: getSuggestionNumberFor("background", "bl"), current: 0}],
-    ["VK_TAB", {
-      total: getSuggestionNumberFor("background", "bl"),
-      current: 0, inserted: 1
-    }],
-    ["VK_DOWN", {
-      total: getSuggestionNumberFor("background", "bl"),
-      current: 1, inserted: 1
-    }],
-    ["VK_UP", {
-      total: getSuggestionNumberFor("background", "bl"),
-      current: 0,
-      inserted: 1
-    }],
-    ["VK_TAB", {
-      total: getSuggestionNumberFor("background", "bl"),
-      current: 1,
-      inserted: 1
-    }],
-    ["VK_TAB", {
-      total: getSuggestionNumberFor("background", "bl"),
-      current: 2,
-      inserted: 1
-    }],
+    ["b", { total: getSuggestionNumberFor("b"), current: 0 }],
+    ["a", { total: getSuggestionNumberFor("ba"), current: 0 }],
+    [
+      "VK_DOWN",
+      { total: getSuggestionNumberFor("ba"), current: 0, inserted: 1 },
+    ],
+    [
+      "VK_TAB",
+      { total: getSuggestionNumberFor("ba"), current: 1, inserted: 1 },
+    ],
+    ["VK_RETURN", { current: 1, inserted: 1, entered: 1 }],
+    ["b", { total: getSuggestionNumberFor("background", "b"), current: 0 }],
+    ["l", { total: getSuggestionNumberFor("background", "bl"), current: 0 }],
+    [
+      "VK_TAB",
+      {
+        total: getSuggestionNumberFor("background", "bl"),
+        current: 0,
+        inserted: 1,
+      },
+    ],
+    [
+      "VK_DOWN",
+      {
+        total: getSuggestionNumberFor("background", "bl"),
+        current: 1,
+        inserted: 1,
+      },
+    ],
+    [
+      "VK_UP",
+      {
+        total: getSuggestionNumberFor("background", "bl"),
+        current: 0,
+        inserted: 1,
+      },
+    ],
+    [
+      "VK_TAB",
+      {
+        total: getSuggestionNumberFor("background", "bl"),
+        current: 1,
+        inserted: 1,
+      },
+    ],
+    [
+      "VK_TAB",
+      {
+        total: getSuggestionNumberFor("background", "bl"),
+        current: 2,
+        inserted: 1,
+      },
+    ],
     [";"],
     ["VK_RETURN"],
-    ["c", {total: getSuggestionNumberFor("c"), current: 0}],
-    ["o", {total: getSuggestionNumberFor("co"), current: 0}],
-    ["VK_RETURN", {current: 0, inserted: 1}],
-    ["r", {total: getSuggestionNumberFor("color", "r"), current: 0}],
-    ["VK_RETURN", {current: 0, inserted: 1}],
+    ["c", { total: getSuggestionNumberFor("c"), current: 0 }],
+    ["o", { total: getSuggestionNumberFor("co"), current: 0 }],
+    ["VK_RETURN", { current: 0, inserted: 1 }],
+    ["r", { total: getSuggestionNumberFor("color", "r"), current: 0 }],
+    ["VK_RETURN", { current: 0, inserted: 1 }],
     [";"],
     ["VK_LEFT"],
     ["VK_RIGHT"],
     ["VK_DOWN"],
     ["VK_RETURN"],
-    ["b", {total: 2, current: 0}],
-    ["u", {total: 1, current: 0}],
-    ["VK_RETURN", {current: 0, inserted: 1}],
+    ["b", { total: 2, current: 0 }],
+    ["u", { total: 1, current: 0 }],
+    ["VK_RETURN", { current: 0, inserted: 1 }],
     ["{"],
     ["VK_HOME"],
     ["VK_DOWN"],
@@ -101,26 +123,26 @@ function getTestCases(cssProperties) {
     ["VK_RIGHT"],
     ["VK_RIGHT"],
     ["VK_RIGHT"],
-    ["Ctrl+Space", {total: 1, current: 0}],
+    ["Ctrl+Space", { total: 1, current: 0 }],
   ];
 }
 
-add_task(function* () {
-  let { panel, ui } = yield openStyleEditorForURL(TESTCASE_URI);
-  let { cssProperties } = yield initCssProperties(panel._toolbox);
-  let testCases = getTestCases(cssProperties);
+add_task(async function() {
+  const { panel, ui } = await openStyleEditorForURL(TESTCASE_URI);
+  const { cssProperties } = await initCssProperties(panel._toolbox);
+  const testCases = getTestCases(cssProperties);
 
-  yield ui.selectStyleSheet(ui.editors[1].styleSheet);
-  let editor = yield ui.editors[1].getSourceEditor();
+  await ui.selectStyleSheet(ui.editors[1].styleSheet);
+  const editor = await ui.editors[1].getSourceEditor();
 
-  let sourceEditor = editor.sourceEditor;
-  let popup = sourceEditor.getAutocompletionPopup();
+  const sourceEditor = editor.sourceEditor;
+  const popup = sourceEditor.getAutocompletionPopup();
 
-  yield SimpleTest.promiseFocus(panel.panelWindow);
+  await SimpleTest.promiseFocus(panel.panelWindow);
 
-  for (let index in testCases) {
-    yield testState(testCases, index, sourceEditor, popup, panel.panelWindow);
-    yield checkState(testCases, index, sourceEditor, popup);
+  for (const index in testCases) {
+    await testState(testCases, index, sourceEditor, popup, panel.panelWindow);
+    await checkState(testCases, index, sourceEditor, popup);
   }
 });
 
@@ -130,10 +152,16 @@ function testState(testCases, index, sourceEditor, popup, panelWindow) {
   if (details) {
     entered = details.entered;
   }
-  let mods = {};
+  const mods = {};
 
-  info("pressing key " + key + " to get result: " +
-                JSON.stringify(testCases[index]) + " for index " + index);
+  info(
+    "pressing key " +
+      key +
+      " to get result: " +
+      JSON.stringify(testCases[index]) +
+      " for index " +
+      index
+  );
 
   let evt = "after-suggest";
 
@@ -142,53 +170,66 @@ function testState(testCases, index, sourceEditor, popup, panelWindow) {
     mods.ctrlKey = true;
   } else if (key == "VK_RETURN" && entered) {
     evt = "popup-hidden";
-  } else if (/(left|right|return|home|end)/ig.test(key) ||
-           (key == "VK_DOWN" && !popup.isOpen)) {
+  } else if (
+    /(left|right|return|home|end)/gi.test(key) ||
+    (key == "VK_DOWN" && !popup.isOpen)
+  ) {
     evt = "cursorActivity";
   } else if (key == "VK_TAB" || key == "VK_UP" || key == "VK_DOWN") {
     evt = "suggestion-entered";
   }
 
-  let ready = sourceEditor.once(evt);
+  const ready = sourceEditor.once(evt);
   EventUtils.synthesizeKey(key, mods, panelWindow);
 
   return ready;
 }
 
 function checkState(testCases, index, sourceEditor, popup) {
-  let deferred = defer();
-  executeSoon(() => {
-    let [, details] = testCases[index];
-    details = details || {};
-    let {total, current, inserted} = details;
+  return new Promise(resolve => {
+    executeSoon(() => {
+      let [, details] = testCases[index];
+      details = details || {};
+      const { total, current, inserted } = details;
 
-    if (total != undefined) {
-      ok(popup.isOpen, "Popup is open for index " + index);
-      is(total, popup.itemCount,
-         "Correct total suggestions for index " + index);
-      is(current, popup.selectedIndex,
-         "Correct index is selected for index " + index);
-      if (inserted) {
-        let { text } = popup.getItemAtIndex(current);
-        let { line, ch } = sourceEditor.getCursor();
-        let lineText = sourceEditor.getText(line);
-        is(lineText.substring(ch - text.length, ch), text,
-           "Current suggestion from the popup is inserted into the editor.");
+      if (total != undefined) {
+        ok(popup.isOpen, "Popup is open for index " + index);
+        is(
+          total,
+          popup.itemCount,
+          "Correct total suggestions for index " + index
+        );
+        is(
+          current,
+          popup.selectedIndex,
+          "Correct index is selected for index " + index
+        );
+        if (inserted) {
+          const { text } = popup.getItemAtIndex(current);
+          const { line, ch } = sourceEditor.getCursor();
+          const lineText = sourceEditor.getText(line);
+          is(
+            lineText.substring(ch - text.length, ch),
+            text,
+            "Current suggestion from the popup is inserted into the editor."
+          );
+        }
+      } else {
+        ok(!popup.isOpen, "Popup is closed for index " + index);
+        if (inserted) {
+          const { text } = popup.getItemAtIndex(current);
+          const { line, ch } = sourceEditor.getCursor();
+          const lineText = sourceEditor.getText(line);
+          is(
+            lineText.substring(ch - text.length, ch),
+            text,
+            "Current suggestion from the popup is inserted into the editor."
+          );
+        }
       }
-    } else {
-      ok(!popup.isOpen, "Popup is closed for index " + index);
-      if (inserted) {
-        let { text } = popup.getItemAtIndex(current);
-        let { line, ch } = sourceEditor.getCursor();
-        let lineText = sourceEditor.getText(line);
-        is(lineText.substring(ch - text.length, ch), text,
-           "Current suggestion from the popup is inserted into the editor.");
-      }
-    }
-    deferred.resolve();
+      resolve();
+    });
   });
-
-  return deferred.promise;
 }
 
 /**
@@ -203,14 +244,14 @@ function checkState(testCases, index, sourceEditor, popup) {
  *                     CSS values the property can have.
  */
 function getCSSKeywords(cssProperties) {
-  let props = {};
-  let propNames = cssProperties.getNames();
+  const props = {};
+  const propNames = cssProperties.getNames();
   propNames.forEach(prop => {
     props[prop] = cssProperties.getValues(prop).sort();
   });
   return {
     CSSValues: props,
-    CSSProperties: propNames.sort()
+    CSSProperties: propNames.sort(),
   };
 }
 
@@ -219,13 +260,16 @@ function getCSSKeywords(cssProperties) {
  * property and value. If the value is not null, returns the number of values starting
  * with `value`. Returns the number of properties starting with `property` otherwise.
  */
-function suggestionNumberGetter({CSSProperties, CSSValues}) {
+function suggestionNumberGetter({ CSSProperties, CSSValues }) {
   return (property, value) => {
     if (value == null) {
-      return CSSProperties.filter(prop => prop.startsWith(property))
-                          .slice(0, MAX_SUGGESTIONS).length;
+      return CSSProperties.filter(prop => prop.startsWith(property)).slice(
+        0,
+        MAX_SUGGESTIONS
+      ).length;
     }
-    return CSSValues[property].filter(val => val.startsWith(value))
-                              .slice(0, MAX_SUGGESTIONS).length;
+    return CSSValues[property]
+      .filter(val => val.startsWith(value))
+      .slice(0, MAX_SUGGESTIONS).length;
   };
 }

@@ -13,9 +13,11 @@ class MozbaseMixin(object):
     def _install_mozbase(self, action):
         dirs = self.query_abs_dirs()
 
-        requirements = os.path.join(dirs['abs_test_install_dir'],
-                                    'config',
-                                    'mozbase_requirements.txt')
+        requirements = os.path.join(
+            dirs['abs_test_install_dir'],
+            'config',
+            self.config.get('mozbase_requirements', 'mozbase_requirements.txt')
+        )
         if os.path.isfile(requirements):
             self.register_virtualenv_module(requirements=[requirements],
                                             two_pass=True)
@@ -33,7 +35,7 @@ class MozbaseMixin(object):
 
         for m in ('mozfile', 'mozlog', 'mozinfo', 'moznetwork', 'mozhttpd',
                   'mozcrash', 'mozinstall', 'mozdevice', 'mozprofile',
-                  'mozprocess', 'mozrunner'):
+                  'mozprocess', 'mozproxy', 'mozrunner'):
             self.register_virtualenv_module(
                 m, url=os.path.join(mozbase_dir, m)
             )

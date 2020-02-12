@@ -10,21 +10,22 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface DOMTokenList {
   readonly attribute unsigned long length;
   getter DOMString? item(unsigned long index);
   boolean contains(DOMString token);
-  [Throws]
+  [CEReactions, Throws]
   void add(DOMString... tokens);
-  [Throws]
+  [CEReactions, Throws]
   void remove(DOMString... tokens);
-  [Throws]
-  void replace(DOMString token, DOMString newToken);
-  [Throws]
+  [CEReactions, Throws]
+  boolean replace(DOMString token, DOMString newToken);
+  [CEReactions, Throws]
   boolean toggle(DOMString token, optional boolean force);
   [Throws]
   boolean supports(DOMString token);
-  [SetterThrows]
+  [CEReactions, SetterThrows]
   attribute DOMString value;
   stringifier DOMString ();
   iterable<DOMString?>;

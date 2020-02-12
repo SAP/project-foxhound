@@ -1,14 +1,16 @@
+// |jit-test| skip-if: typeof dumpStringRepresentation !== 'function'
+
 // Try the dumpStringRepresentation shell function on various types of
 // strings, and make sure it doesn't crash.
-
-if (typeof dumpStringRepresentation !== 'function')
-  quit(0);
 
 print("Empty string:");
 dumpStringRepresentation("");
 
 print("\nResult of coercion to string:");
 dumpStringRepresentation();
+
+print("\nString with an index value:");
+dumpStringRepresentation((12345).toString());
 
 print("\ns = Simple short atom:");
 var s = "xxxxxxxx";
@@ -68,3 +70,6 @@ dumpStringRepresentation(r1);
 print("\nt, s: Original leaves, representation unchanged:");
 dumpStringRepresentation(t);
 dumpStringRepresentation(s);
+
+for (var str of representativeStringArray())
+    dumpStringRepresentation(str);

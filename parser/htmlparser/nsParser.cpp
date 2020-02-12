@@ -1,10 +1,10 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=2 et tw=79: */
+/* vim: set sw=2 ts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsParser.h"
 #include "nsString.h"
 #include "nsCRT.h"
@@ -28,29 +28,25 @@
 #include "nsIFragmentContentSink.h"
 #include "nsStreamUtils.h"
 #include "nsHTMLTokenizer.h"
-#include "nsScriptLoader.h"
 #include "nsDataHashtable.h"
 #include "nsXPCOMCIDInternal.h"
 #include "nsMimeTypes.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
-#include "nsParserConstants.h"
 #include "nsCharsetSource.h"
-#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIHTMLContentSink.h"
 
-#include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/BinarySearch.h"
+#include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/Encoding.h"
 
 using namespace mozilla;
-using mozilla::dom::EncodingUtils;
 
-#define NS_PARSER_FLAG_PARSER_ENABLED         0x00000002
-#define NS_PARSER_FLAG_OBSERVERS_ENABLED      0x00000004
+#define NS_PARSER_FLAG_OBSERVERS_ENABLED 0x00000004
 #define NS_PARSER_FLAG_PENDING_CONTINUE_EVENT 0x00000008
-#define NS_PARSER_FLAG_FLUSH_TOKENS           0x00000020
-#define NS_PARSER_FLAG_CAN_TOKENIZE           0x00000040
+#define NS_PARSER_FLAG_FLUSH_TOKENS 0x00000020
+#define NS_PARSER_FLAG_CAN_TOKENIZE 0x00000040
 
 //-------------- Begin ParseContinue Event Definition ------------------------
 /*
@@ -107,18 +103,14 @@ document.write.
 For more details @see bugzilla bug 76722
 */
 
-
-class nsParserContinueEvent : public Runnable
-{
-public:
+class nsParserContinueEvent : public Runnable {
+ public:
   RefPtr<nsParser> mParser;
 
   explicit nsParserContinueEvent(nsParser* aParser)
-    : mParser(aParser)
-  {}
+      : mozilla::Runnable("nsParserContinueEvent"), mParser(aParser) {}
 
-  NS_IMETHOD Run() override
-  {
+  NS_IMETHOD Run() override {
     mParser->HandleParserContinueEvent(this);
     return NS_OK;
   }
@@ -130,23 +122,17 @@ public:
  *  default constructor
  */
 nsParser::nsParser()
-{
+    : mParserContext(nullptr), mCharset(WINDOWS_1252_ENCODING) {
   Initialize(true);
 }
 
-nsParser::~nsParser()
-{
-  Cleanup();
-}
+nsParser::~nsParser() { Cleanup(); }
 
-void
-nsParser::Initialize(bool aConstructor)
-{
+void nsParser::Initialize(bool aConstructor) {
   if (aConstructor) {
     // Raw pointer
     mParserContext = 0;
-  }
-  else {
+  } else {
     // nsCOMPtrs
     mObserver = nullptr;
     mUnusedInput.Truncate();
@@ -154,21 +140,18 @@ nsParser::Initialize(bool aConstructor)
 
   mContinueEvent = nullptr;
   mCharsetSource = kCharsetUninitialized;
-  mCharset.AssignLiteral("ISO-8859-1");
+  mCharset = WINDOWS_1252_ENCODING;
   mInternalState = NS_OK;
   mStreamStatus = NS_OK;
   mCommand = eViewNormal;
-  mFlags = NS_PARSER_FLAG_OBSERVERS_ENABLED |
-           NS_PARSER_FLAG_PARSER_ENABLED |
-           NS_PARSER_FLAG_CAN_TOKENIZE;
+  mBlocked = 0;
+  mFlags = NS_PARSER_FLAG_OBSERVERS_ENABLED | NS_PARSER_FLAG_CAN_TOKENIZE;
 
   mProcessingNetworkData = false;
   mIsAboutBlank = false;
 }
 
-void
-nsParser::Cleanup()
-{
+void nsParser::Cleanup() {
 #ifdef DEBUG
   if (mParserContext && mParserContext->mPrevContext) {
     NS_WARNING("Extra parser contexts still on the parser stack");
@@ -176,7 +159,7 @@ nsParser::Cleanup()
 #endif
 
   while (mParserContext) {
-    CParserContext *pc = mParserContext->mPrevContext;
+    CParserContext* pc = mParserContext->mPrevContext;
     delete mParserContext;
     mParserContext = pc;
   }
@@ -199,7 +182,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsParser)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDTD)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSink)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mObserver)
-  CParserContext *pc = tmp->mParserContext;
+  CParserContext* pc = tmp->mParserContext;
   while (pc) {
     cb.NoteXPCOMChild(pc->mTokenizer);
     pc = pc->mPrevContext;
@@ -221,9 +204,7 @@ NS_INTERFACE_MAP_END
 // and the parser has been interrupted by the content sink
 // because the processing of tokens took too long.
 
-nsresult
-nsParser::PostContinueEvent()
-{
+nsresult nsParser::PostContinueEvent() {
   if (!(mFlags & NS_PARSER_FLAG_PENDING_CONTINUE_EVENT)) {
     // If this flag isn't set, then there shouldn't be a live continue event!
     NS_ASSERTION(!mContinueEvent, "bad");
@@ -232,20 +213,17 @@ nsParser::PostContinueEvent()
     // broken when the event fires.
     nsCOMPtr<nsIRunnable> event = new nsParserContinueEvent(this);
     if (NS_FAILED(NS_DispatchToCurrentThread(event))) {
-        NS_WARNING("failed to dispatch parser continuation event");
+      NS_WARNING("failed to dispatch parser continuation event");
     } else {
-        mFlags |= NS_PARSER_FLAG_PENDING_CONTINUE_EVENT;
-        mContinueEvent = event;
+      mFlags |= NS_PARSER_FLAG_PENDING_CONTINUE_EVENT;
+      mContinueEvent = event;
     }
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP_(void)
-nsParser::GetCommand(nsCString& aCommand)
-{
-  aCommand = mCommandStr;
-}
+nsParser::GetCommand(nsCString& aCommand) { aCommand = mCommandStr; }
 
 /**
  *  Call this method once you've created a parser, and want to instruct it
@@ -255,8 +233,7 @@ nsParser::GetCommand(nsCString& aCommand)
  *  @param   aCommand the command string to set
  */
 NS_IMETHODIMP_(void)
-nsParser::SetCommand(const char* aCommand)
-{
+nsParser::SetCommand(const char* aCommand) {
   mCommandStr.Assign(aCommand);
   if (mCommandStr.EqualsLiteral("view-source")) {
     mCommand = eViewSource;
@@ -275,8 +252,7 @@ nsParser::SetCommand(const char* aCommand)
  *  @param   aParserCommand the command to set
  */
 NS_IMETHODIMP_(void)
-nsParser::SetCommand(eParserCommands aParserCommand)
-{
+nsParser::SetCommand(eParserCommands aParserCommand) {
   mCommand = aParserCommand;
 }
 
@@ -287,19 +263,16 @@ nsParser::SetCommand(eParserCommands aParserCommand)
  *  @param   aCharset- the charset of a document
  *  @param   aCharsetSource- the source of the charset
  */
-NS_IMETHODIMP_(void)
-nsParser::SetDocumentCharset(const nsACString& aCharset, int32_t aCharsetSource)
-{
+void nsParser::SetDocumentCharset(NotNull<const Encoding*> aCharset,
+                                  int32_t aCharsetSource) {
   mCharset = aCharset;
   mCharsetSource = aCharsetSource;
   if (mParserContext && mParserContext->mScanner) {
-     mParserContext->mScanner->SetDocumentCharset(aCharset, aCharsetSource);
+    mParserContext->mScanner->SetDocumentCharset(aCharset, aCharsetSource);
   }
 }
 
-void
-nsParser::SetSinkCharset(nsACString& aCharset)
-{
+void nsParser::SetSinkCharset(NotNull<const Encoding*> aCharset) {
   if (mSink) {
     mSink->SetDocumentCharset(aCharset);
   }
@@ -312,9 +285,8 @@ nsParser::SetSinkCharset(nsACString& aCharset)
  *  @param   nsIContentSink interface for node receiver
  */
 NS_IMETHODIMP_(void)
-nsParser::SetContentSink(nsIContentSink* aSink)
-{
-  NS_PRECONDITION(aSink, "sink cannot be null!");
+nsParser::SetContentSink(nsIContentSink* aSink) {
+  MOZ_ASSERT(aSink, "sink cannot be null!");
   mSink = aSink;
 
   if (mSink) {
@@ -331,422 +303,9 @@ nsParser::SetContentSink(nsIContentSink* aSink)
  * @return  current sink
  */
 NS_IMETHODIMP_(nsIContentSink*)
-nsParser::GetContentSink()
-{
-  return mSink;
-}
+nsParser::GetContentSink() { return mSink; }
 
-/**
- * Determine what DTD mode (and thus what layout nsCompatibility mode)
- * to use for this document based on the first chunk of data received
- * from the network (each parsercontext can have its own mode).  (No,
- * this is not an optimal solution -- we really don't need to know until
- * after we've received the DOCTYPE, and this could easily be part of
- * the regular parsing process if the parser were designed in a way that
- * made such modifications easy.)
- */
-
-// Parse the PS production in the SGML spec (excluding the part dealing
-// with entity references) starting at theIndex into theBuffer, and
-// return the first index after the end of the production.
-static int32_t
-ParsePS(const nsString& aBuffer, int32_t aIndex)
-{
-  for (;;) {
-    char16_t ch = aBuffer.CharAt(aIndex);
-    if ((ch == char16_t(' ')) || (ch == char16_t('\t')) ||
-        (ch == char16_t('\n')) || (ch == char16_t('\r'))) {
-      ++aIndex;
-    } else if (ch == char16_t('-')) {
-      int32_t tmpIndex;
-      if (aBuffer.CharAt(aIndex+1) == char16_t('-') &&
-          kNotFound != (tmpIndex=aBuffer.Find("--",false,aIndex+2,-1))) {
-        aIndex = tmpIndex + 2;
-      } else {
-        return aIndex;
-      }
-    } else {
-      return aIndex;
-    }
-  }
-}
-
-#define PARSE_DTD_HAVE_DOCTYPE          (1<<0)
-#define PARSE_DTD_HAVE_PUBLIC_ID        (1<<1)
-#define PARSE_DTD_HAVE_SYSTEM_ID        (1<<2)
-#define PARSE_DTD_HAVE_INTERNAL_SUBSET  (1<<3)
-
-// return true on success (includes not present), false on failure
-static bool
-ParseDocTypeDecl(const nsString &aBuffer,
-                 int32_t *aResultFlags,
-                 nsString &aPublicID,
-                 nsString &aSystemID)
-{
-  bool haveDoctype = false;
-  *aResultFlags = 0;
-
-  // Skip through any comments and processing instructions
-  // The PI-skipping is a bit of a hack.
-  int32_t theIndex = 0;
-  do {
-    theIndex = aBuffer.FindChar('<', theIndex);
-    if (theIndex == kNotFound) break;
-    char16_t nextChar = aBuffer.CharAt(theIndex+1);
-    if (nextChar == char16_t('!')) {
-      int32_t tmpIndex = theIndex + 2;
-      if (kNotFound !=
-          (theIndex=aBuffer.Find("DOCTYPE", true, tmpIndex, 0))) {
-        haveDoctype = true;
-        theIndex += 7; // skip "DOCTYPE"
-        break;
-      }
-      theIndex = ParsePS(aBuffer, tmpIndex);
-      theIndex = aBuffer.FindChar('>', theIndex);
-    } else if (nextChar == char16_t('?')) {
-      theIndex = aBuffer.FindChar('>', theIndex);
-    } else {
-      break;
-    }
-  } while (theIndex != kNotFound);
-
-  if (!haveDoctype)
-    return true;
-  *aResultFlags |= PARSE_DTD_HAVE_DOCTYPE;
-
-  theIndex = ParsePS(aBuffer, theIndex);
-  theIndex = aBuffer.Find("HTML", true, theIndex, 0);
-  if (kNotFound == theIndex)
-    return false;
-  theIndex = ParsePS(aBuffer, theIndex+4);
-  int32_t tmpIndex = aBuffer.Find("PUBLIC", true, theIndex, 0);
-
-  if (kNotFound != tmpIndex) {
-    theIndex = ParsePS(aBuffer, tmpIndex+6);
-
-    // We get here only if we've read <!DOCTYPE HTML PUBLIC
-    // (not case sensitive) possibly with comments within.
-
-    // Now find the beginning and end of the public identifier
-    // and the system identifier (if present).
-
-    char16_t lit = aBuffer.CharAt(theIndex);
-    if ((lit != char16_t('\"')) && (lit != char16_t('\'')))
-      return false;
-
-    // Start is the first character, excluding the quote, and End is
-    // the final quote, so there are (end-start) characters.
-
-    int32_t PublicIDStart = theIndex + 1;
-    int32_t PublicIDEnd = aBuffer.FindChar(lit, PublicIDStart);
-    if (kNotFound == PublicIDEnd)
-      return false;
-    theIndex = ParsePS(aBuffer, PublicIDEnd + 1);
-    char16_t next = aBuffer.CharAt(theIndex);
-    if (next == char16_t('>')) {
-      // There was a public identifier, but no system
-      // identifier,
-      // so do nothing.
-      // This is needed to avoid the else at the end, and it's
-      // also the most common case.
-    } else if ((next == char16_t('\"')) ||
-               (next == char16_t('\''))) {
-      // We found a system identifier.
-      *aResultFlags |= PARSE_DTD_HAVE_SYSTEM_ID;
-      int32_t SystemIDStart = theIndex + 1;
-      int32_t SystemIDEnd = aBuffer.FindChar(next, SystemIDStart);
-      if (kNotFound == SystemIDEnd)
-        return false;
-      aSystemID =
-        Substring(aBuffer, SystemIDStart, SystemIDEnd - SystemIDStart);
-    } else if (next == char16_t('[')) {
-      // We found an internal subset.
-      *aResultFlags |= PARSE_DTD_HAVE_INTERNAL_SUBSET;
-    } else {
-      // Something's wrong.
-      return false;
-    }
-
-    // Since a public ID is a minimum literal, we must trim
-    // and collapse whitespace
-    aPublicID = Substring(aBuffer, PublicIDStart, PublicIDEnd - PublicIDStart);
-    aPublicID.CompressWhitespace(true, true);
-    *aResultFlags |= PARSE_DTD_HAVE_PUBLIC_ID;
-  } else {
-    tmpIndex=aBuffer.Find("SYSTEM", true, theIndex, 0);
-    if (kNotFound != tmpIndex) {
-      // DOCTYPES with system ID but no Public ID
-      *aResultFlags |= PARSE_DTD_HAVE_SYSTEM_ID;
-
-      theIndex = ParsePS(aBuffer, tmpIndex+6);
-      char16_t next = aBuffer.CharAt(theIndex);
-      if (next != char16_t('\"') && next != char16_t('\''))
-        return false;
-
-      int32_t SystemIDStart = theIndex + 1;
-      int32_t SystemIDEnd = aBuffer.FindChar(next, SystemIDStart);
-
-      if (kNotFound == SystemIDEnd)
-        return false;
-      aSystemID =
-        Substring(aBuffer, SystemIDStart, SystemIDEnd - SystemIDStart);
-      theIndex = ParsePS(aBuffer, SystemIDEnd + 1);
-    }
-
-    char16_t nextChar = aBuffer.CharAt(theIndex);
-    if (nextChar == char16_t('['))
-      *aResultFlags |= PARSE_DTD_HAVE_INTERNAL_SUBSET;
-    else if (nextChar != char16_t('>'))
-      return false;
-  }
-  return true;
-}
-
-struct PubIDInfo
-{
-  enum eMode {
-    eQuirks,         /* always quirks mode, unless there's an internal subset */
-    eAlmostStandards,/* eCompatibility_AlmostStandards */
-    eFullStandards   /* eCompatibility_FullStandards */
-      /*
-       * public IDs that should trigger strict mode are not listed
-       * since we want all future public IDs to trigger strict mode as
-       * well
-       */
-  };
-
-  const char* name;
-  eMode mode_if_no_sysid;
-  eMode mode_if_sysid;
-};
-
-#define ELEMENTS_OF(array_) (sizeof(array_)/sizeof(array_[0]))
-
-// These must be in nsCRT::strcmp order so binary-search can be used.
-// This is verified, |#ifdef DEBUG|, below.
-
-// Even though public identifiers should be case sensitive, we will do
-// all comparisons after converting to lower case in order to do
-// case-insensitive comparison since there are a number of existing web
-// sites that use the incorrect case.  Therefore all of the public
-// identifiers below are in lower case (with the correct case following,
-// in comments).  The case is verified, |#ifdef DEBUG|, below.
-static const PubIDInfo kPublicIDs[] = {
-  {"+//silmaril//dtd html pro v0r11 19970101//en" /* "+//Silmaril//dtd html Pro v0r11 19970101//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//advasoft ltd//dtd html 3.0 aswedit + extensions//en" /* "-//AdvaSoft Ltd//DTD HTML 3.0 asWedit + extensions//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//as//dtd html 3.0 aswedit + extensions//en" /* "-//AS//DTD HTML 3.0 asWedit + extensions//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0 level 1//en" /* "-//IETF//DTD HTML 2.0 Level 1//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0 level 2//en" /* "-//IETF//DTD HTML 2.0 Level 2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0 strict level 1//en" /* "-//IETF//DTD HTML 2.0 Strict Level 1//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0 strict level 2//en" /* "-//IETF//DTD HTML 2.0 Strict Level 2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0 strict//en" /* "-//IETF//DTD HTML 2.0 Strict//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.0//en" /* "-//IETF//DTD HTML 2.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 2.1e//en" /* "-//IETF//DTD HTML 2.1E//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 3.0//en" /* "-//IETF//DTD HTML 3.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 3.0//en//" /* "-//IETF//DTD HTML 3.0//EN//" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 3.2 final//en" /* "-//IETF//DTD HTML 3.2 Final//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 3.2//en" /* "-//IETF//DTD HTML 3.2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html 3//en" /* "-//IETF//DTD HTML 3//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 0//en" /* "-//IETF//DTD HTML Level 0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 0//en//2.0" /* "-//IETF//DTD HTML Level 0//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 1//en" /* "-//IETF//DTD HTML Level 1//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 1//en//2.0" /* "-//IETF//DTD HTML Level 1//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 2//en" /* "-//IETF//DTD HTML Level 2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 2//en//2.0" /* "-//IETF//DTD HTML Level 2//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 3//en" /* "-//IETF//DTD HTML Level 3//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html level 3//en//3.0" /* "-//IETF//DTD HTML Level 3//EN//3.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 0//en" /* "-//IETF//DTD HTML Strict Level 0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 0//en//2.0" /* "-//IETF//DTD HTML Strict Level 0//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 1//en" /* "-//IETF//DTD HTML Strict Level 1//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 1//en//2.0" /* "-//IETF//DTD HTML Strict Level 1//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 2//en" /* "-//IETF//DTD HTML Strict Level 2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 2//en//2.0" /* "-//IETF//DTD HTML Strict Level 2//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 3//en" /* "-//IETF//DTD HTML Strict Level 3//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict level 3//en//3.0" /* "-//IETF//DTD HTML Strict Level 3//EN//3.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict//en" /* "-//IETF//DTD HTML Strict//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict//en//2.0" /* "-//IETF//DTD HTML Strict//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html strict//en//3.0" /* "-//IETF//DTD HTML Strict//EN//3.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html//en" /* "-//IETF//DTD HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html//en//2.0" /* "-//IETF//DTD HTML//EN//2.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//ietf//dtd html//en//3.0" /* "-//IETF//DTD HTML//EN//3.0" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//metrius//dtd metrius presentational//en" /* "-//Metrius//DTD Metrius Presentational//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 2.0 html strict//en" /* "-//Microsoft//DTD Internet Explorer 2.0 HTML Strict//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 2.0 html//en" /* "-//Microsoft//DTD Internet Explorer 2.0 HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 2.0 tables//en" /* "-//Microsoft//DTD Internet Explorer 2.0 Tables//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 3.0 html strict//en" /* "-//Microsoft//DTD Internet Explorer 3.0 HTML Strict//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 3.0 html//en" /* "-//Microsoft//DTD Internet Explorer 3.0 HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//microsoft//dtd internet explorer 3.0 tables//en" /* "-//Microsoft//DTD Internet Explorer 3.0 Tables//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//netscape comm. corp.//dtd html//en" /* "-//Netscape Comm. Corp.//DTD HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//netscape comm. corp.//dtd strict html//en" /* "-//Netscape Comm. Corp.//DTD Strict HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//o'reilly and associates//dtd html 2.0//en" /* "-//O'Reilly and Associates//DTD HTML 2.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//o'reilly and associates//dtd html extended 1.0//en" /* "-//O'Reilly and Associates//DTD HTML Extended 1.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//o'reilly and associates//dtd html extended relaxed 1.0//en" /* "-//O'Reilly and Associates//DTD HTML Extended Relaxed 1.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//softquad software//dtd hotmetal pro 6.0::19990601::extensions to html 4.0//en" /* "-//SoftQuad Software//DTD HoTMetaL PRO 6.0::19990601::extensions to HTML 4.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//softquad//dtd hotmetal pro 4.0::19971010::extensions to html 4.0//en" /* "-//SoftQuad//DTD HoTMetaL PRO 4.0::19971010::extensions to HTML 4.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//spyglass//dtd html 2.0 extended//en" /* "-//Spyglass//DTD HTML 2.0 Extended//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//sq//dtd html 2.0 hotmetal + extensions//en" /* "-//SQ//DTD HTML 2.0 HoTMetaL + extensions//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//sun microsystems corp.//dtd hotjava html//en" /* "-//Sun Microsystems Corp.//DTD HotJava HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//sun microsystems corp.//dtd hotjava strict html//en" /* "-//Sun Microsystems Corp.//DTD HotJava Strict HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 3 1995-03-24//en" /* "-//W3C//DTD HTML 3 1995-03-24//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 3.2 draft//en" /* "-//W3C//DTD HTML 3.2 Draft//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 3.2 final//en" /* "-//W3C//DTD HTML 3.2 Final//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 3.2//en" /* "-//W3C//DTD HTML 3.2//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 3.2s draft//en" /* "-//W3C//DTD HTML 3.2S Draft//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 4.0 frameset//en" /* "-//W3C//DTD HTML 4.0 Frameset//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 4.0 transitional//en" /* "-//W3C//DTD HTML 4.0 Transitional//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html 4.01 frameset//en" /* "-//W3C//DTD HTML 4.01 Frameset//EN" */, PubIDInfo::eQuirks, PubIDInfo::eAlmostStandards},
-  {"-//w3c//dtd html 4.01 transitional//en" /* "-//W3C//DTD HTML 4.01 Transitional//EN" */, PubIDInfo::eQuirks, PubIDInfo::eAlmostStandards},
-  {"-//w3c//dtd html experimental 19960712//en" /* "-//W3C//DTD HTML Experimental 19960712//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd html experimental 970421//en" /* "-//W3C//DTD HTML Experimental 970421//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd w3 html//en" /* "-//W3C//DTD W3 HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3c//dtd xhtml 1.0 frameset//en" /* "-//W3C//DTD XHTML 1.0 Frameset//EN" */, PubIDInfo::eAlmostStandards, PubIDInfo::eAlmostStandards},
-  {"-//w3c//dtd xhtml 1.0 transitional//en" /* "-//W3C//DTD XHTML 1.0 Transitional//EN" */, PubIDInfo::eAlmostStandards, PubIDInfo::eAlmostStandards},
-  {"-//w3o//dtd w3 html 3.0//en" /* "-//W3O//DTD W3 HTML 3.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3o//dtd w3 html 3.0//en//" /* "-//W3O//DTD W3 HTML 3.0//EN//" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//w3o//dtd w3 html strict 3.0//en//" /* "-//W3O//DTD W3 HTML Strict 3.0//EN//" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//webtechs//dtd mozilla html 2.0//en" /* "-//WebTechs//DTD Mozilla HTML 2.0//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-//webtechs//dtd mozilla html//en" /* "-//WebTechs//DTD Mozilla HTML//EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"-/w3c/dtd html 4.0 transitional/en" /* "-/W3C/DTD HTML 4.0 Transitional/EN" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-  {"html" /* "HTML" */, PubIDInfo::eQuirks, PubIDInfo::eQuirks},
-};
-
-#ifdef DEBUG
-static void
-VerifyPublicIDs()
-{
-  static bool gVerified = false;
-  if (!gVerified) {
-    gVerified = true;
-    uint32_t i;
-    for (i = 0; i < ELEMENTS_OF(kPublicIDs) - 1; ++i) {
-      if (nsCRT::strcmp(kPublicIDs[i].name, kPublicIDs[i+1].name) >= 0) {
-        NS_NOTREACHED("doctypes out of order");
-        printf("Doctypes %s and %s out of order.\n",
-               kPublicIDs[i].name, kPublicIDs[i+1].name);
-      }
-    }
-    for (i = 0; i < ELEMENTS_OF(kPublicIDs); ++i) {
-      nsAutoCString lcPubID(kPublicIDs[i].name);
-      ToLowerCase(lcPubID);
-      if (nsCRT::strcmp(kPublicIDs[i].name, lcPubID.get()) != 0) {
-        NS_NOTREACHED("doctype not lower case");
-        printf("Doctype %s not lower case.\n", kPublicIDs[i].name);
-      }
-    }
-  }
-}
-#endif
-
-namespace {
-
-struct PublicIdComparator
-{
-  const nsAutoCString& mPublicId;
-  explicit PublicIdComparator(const nsAutoCString& aPublicId)
-    : mPublicId(aPublicId) {}
-  int operator()(const PubIDInfo& aInfo) const {
-    return nsCRT::strcmp(mPublicId.get(), aInfo.name);
-  }
-};
-
-} // namespace
-
-static void
-DetermineHTMLParseMode(const nsString& aBuffer,
-                       nsDTDMode& aParseMode,
-                       eParserDocType& aDocType)
-{
-#ifdef DEBUG
-  VerifyPublicIDs();
-#endif
-  int32_t resultFlags;
-  nsAutoString publicIDUCS2, sysIDUCS2;
-  if (ParseDocTypeDecl(aBuffer, &resultFlags, publicIDUCS2, sysIDUCS2)) {
-    if (!(resultFlags & PARSE_DTD_HAVE_DOCTYPE)) {
-      // no DOCTYPE
-      aParseMode = eDTDMode_quirks;
-      aDocType = eHTML_Quirks;
-    } else if ((resultFlags & PARSE_DTD_HAVE_INTERNAL_SUBSET) ||
-               !(resultFlags & PARSE_DTD_HAVE_PUBLIC_ID)) {
-      // A doctype with an internal subset is always full_standards.
-      // A doctype without a public ID is always full_standards.
-      aDocType = eHTML_Strict;
-      aParseMode = eDTDMode_full_standards;
-
-      // Special hack for IBM's custom DOCTYPE.
-      if (!(resultFlags & PARSE_DTD_HAVE_INTERNAL_SUBSET) &&
-          sysIDUCS2.EqualsLiteral(
-               "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd")) {
-        aParseMode = eDTDMode_quirks;
-        aDocType = eHTML_Quirks;
-      }
-
-    } else {
-      // We have to check our list of public IDs to see what to do.
-      // Yes, we want UCS2 to ASCII lossy conversion.
-      nsAutoCString publicID;
-      publicID.AssignWithConversion(publicIDUCS2);
-
-      // See comment above definition of kPublicIDs about case
-      // sensitivity.
-      ToLowerCase(publicID);
-
-      // Binary search to see if we can find the correct public ID.
-      size_t index;
-      bool found = BinarySearchIf(kPublicIDs, 0, ArrayLength(kPublicIDs),
-                                  PublicIdComparator(publicID), &index);
-      if (!found) {
-        // The DOCTYPE is not in our list, so it must be full_standards.
-        aParseMode = eDTDMode_full_standards;
-        aDocType = eHTML_Strict;
-        return;
-      }
-
-      switch ((resultFlags & PARSE_DTD_HAVE_SYSTEM_ID)
-                ? kPublicIDs[index].mode_if_sysid
-                : kPublicIDs[index].mode_if_no_sysid)
-      {
-        case PubIDInfo::eQuirks:
-          aParseMode = eDTDMode_quirks;
-          aDocType = eHTML_Quirks;
-          break;
-        case PubIDInfo::eAlmostStandards:
-          aParseMode = eDTDMode_almost_standards;
-          aDocType = eHTML_Strict;
-          break;
-        case PubIDInfo::eFullStandards:
-          aParseMode = eDTDMode_full_standards;
-          aDocType = eHTML_Strict;
-          break;
-        default:
-          NS_NOTREACHED("no other cases!");
-      }
-    }
-  } else {
-    // badly formed DOCTYPE -> quirks
-    aParseMode = eDTDMode_quirks;
-    aDocType = eHTML_Quirks;
-  }
-}
-
-static void
-DetermineParseMode(const nsString& aBuffer, nsDTDMode& aParseMode,
-                   eParserDocType& aDocType, const nsACString& aMimeType)
-{
-  if (aMimeType.EqualsLiteral(TEXT_HTML)) {
-    DetermineHTMLParseMode(aBuffer, aParseMode, aDocType);
-  } else if (nsContentUtils::IsPlainTextType(aMimeType)) {
-    aDocType = ePlainText;
-    aParseMode = eDTDMode_quirks;
-  } else { // Some form of XML
-    aDocType = eXML;
-    aParseMode = eDTDMode_full_standards;
-  }
-}
-
-static nsIDTD*
-FindSuitableDTD(CParserContext& aParserContext)
-{
+static nsIDTD* FindSuitableDTD(CParserContext& aParserContext) {
   // We always find a DTD.
   aParserContext.mAutoDetectStatus = ePrimaryDetect;
 
@@ -762,13 +321,13 @@ FindSuitableDTD(CParserContext& aParserContext)
   }
 
   // If we're here, then we'd better be parsing XML.
-  NS_ASSERTION(aParserContext.mDocType == eXML, "What are you trying to send me, here?");
+  NS_ASSERTION(aParserContext.mDocType == eXML,
+               "What are you trying to send me, here?");
   return new nsExpatDriver();
 }
 
 NS_IMETHODIMP
-nsParser::CancelParsingEvents()
-{
+nsParser::CancelParsingEvents() {
   if (mFlags & NS_PARSER_FLAG_PENDING_CONTINUE_EVENT) {
     NS_ASSERTION(mContinueEvent, "mContinueEvent is null");
     // Revoke the pending continue parsing event
@@ -824,13 +383,14 @@ nsParser::CancelParsingEvents()
  * to mWhatever, nsCaller wants to guarantee that mWhatever->DoThatThing() will
  * be called regardless of how nsSomething::DoThatThing behaves, &c.
  */
-#define PREFER_LATTER_ERROR_CODE(EXPR1, EXPR2, RV) {                          \
-  nsresult RV##__temp = EXPR1;                                                \
-  RV = EXPR2;                                                                 \
-  if (NS_FAILED(RV)) {                                                        \
-    RV = RV##__temp;                                                          \
-  }                                                                           \
-}
+#define PREFER_LATTER_ERROR_CODE(EXPR1, EXPR2, RV) \
+  {                                                \
+    nsresult RV##__temp = EXPR1;                   \
+    RV = EXPR2;                                    \
+    if (NS_FAILED(RV)) {                           \
+      RV = RV##__temp;                             \
+    }                                              \
+  }
 
 /**
  * This gets called just prior to the model actually
@@ -839,26 +399,21 @@ nsParser::CancelParsingEvents()
  * can delay until the last moment the resolution of
  * which DTD to use (unless of course we're assigned one).
  */
-nsresult
-nsParser::WillBuildModel(nsString& aFilename)
-{
-  if (!mParserContext)
-    return kInvalidParserContext;
+nsresult nsParser::WillBuildModel(nsString& aFilename) {
+  if (!mParserContext) return NS_ERROR_HTMLPARSER_INVALIDPARSERCONTEXT;
 
-  if (eUnknownDetect != mParserContext->mAutoDetectStatus)
-    return NS_OK;
+  if (eUnknownDetect != mParserContext->mAutoDetectStatus) return NS_OK;
 
   if (eDTDMode_unknown == mParserContext->mDTDMode ||
       eDTDMode_autodetect == mParserContext->mDTDMode) {
-    char16_t buf[1025];
-    nsFixedString theBuffer(buf, 1024, 0);
-
-    // Grab 1024 characters, starting at the first non-whitespace
-    // character, to look for the doctype in.
-    mParserContext->mScanner->Peek(theBuffer, 1024, mParserContext->mScanner->FirstNonWhitespacePosition());
-    DetermineParseMode(theBuffer, mParserContext->mDTDMode,
-                       mParserContext->mDocType, mParserContext->mMimeType);
-  }
+    if (mIsAboutBlank) {
+      mParserContext->mDTDMode = eDTDMode_quirks;
+      mParserContext->mDocType = eHTML_Quirks;
+    } else {
+      mParserContext->mDTDMode = eDTDMode_full_standards;
+      mParserContext->mDocType = eXML;
+    }
+  }  // else XML fragment with nested parser context
 
   NS_ASSERTION(!mDTD || !mParserContext->mPrevContext,
                "Clobbering DTD for non-root parser context!");
@@ -886,9 +441,7 @@ nsParser::WillBuildModel(nsString& aFilename)
  * Note that the parser may have been called recursively, so we
  * have to check for a prev. context before closing out the DTD/sink.
  */
-nsresult
-nsParser::DidBuildModel(nsresult anErrorCode)
-{
+nsresult nsParser::DidBuildModel(nsresult anErrorCode) {
   nsresult result = anErrorCode;
 
   if (IsComplete()) {
@@ -897,8 +450,8 @@ nsParser::DidBuildModel(nsresult anErrorCode)
       // In that case we don't want it to run deferred scripts.
       bool terminated = mInternalState == NS_ERROR_HTMLPARSER_STOPPARSING;
       if (mDTD && mSink) {
-        nsresult dtdResult =  mDTD->DidBuildModel(anErrorCode),
-                sinkResult = mSink->DidBuildModel(terminated);
+        nsresult dtdResult = mDTD->DidBuildModel(anErrorCode),
+                 sinkResult = mSink->DidBuildModel(terminated);
         // nsIDTD::DidBuildModel used to be responsible for calling
         // nsIContentSink::DidBuildModel, but that obligation isn't expressible
         // in the nsIDTD interface itself, so it's sounder and simpler to give
@@ -909,8 +462,8 @@ nsParser::DidBuildModel(nsresult anErrorCode)
         result = NS_FAILED(sinkResult) ? sinkResult : dtdResult;
       }
 
-      //Ref. to bug 61462.
-      mParserContext->mRequest = 0;
+      // Ref. to bug 61462.
+      mParserContext->mRequest = nullptr;
     }
   }
 
@@ -923,9 +476,7 @@ nsParser::DidBuildModel(nsresult anErrorCode)
  *
  * @param   ptr to new context
  */
-void
-nsParser::PushContext(CParserContext& aContext)
-{
+void nsParser::PushContext(CParserContext& aContext) {
   NS_ASSERTION(aContext.mPrevContext == mParserContext,
                "Trying to push a context whose previous context differs from "
                "the current parser context.");
@@ -939,16 +490,15 @@ nsParser::PushContext(CParserContext& aContext)
  * @update	gess7/22/98
  * @return  prev. context
  */
-CParserContext*
-nsParser::PopContext()
-{
+CParserContext* nsParser::PopContext() {
   CParserContext* oldContext = mParserContext;
   if (oldContext) {
     mParserContext = oldContext->mPrevContext;
     if (mParserContext) {
       // If the old context was blocked, propagate the blocked state
       // back to the new one. Also, propagate the stream listener state
-      // but don't override onStop state to guarantee the call to DidBuildModel().
+      // but don't override onStop state to guarantee the call to
+      // DidBuildModel().
       if (mParserContext->mStreamListenerState != eOnStop) {
         mParserContext->mStreamListenerState = oldContext->mStreamListenerState;
       }
@@ -965,11 +515,7 @@ nsParser::PopContext()
  *  @param   aState determines whether we parse/tokenize or just cache.
  *  @return  current state
  */
-void
-nsParser::SetUnusedInput(nsString& aBuffer)
-{
-  mUnusedInput = aBuffer;
-}
+void nsParser::SetUnusedInput(nsString& aBuffer) { mUnusedInput = aBuffer; }
 
 /**
  *  Call this when you want to *force* the parser to terminate the
@@ -977,8 +523,7 @@ nsParser::SetUnusedInput(nsString& aBuffer)
  *  you can't resume without restarting altogether.
  */
 NS_IMETHODIMP
-nsParser::Terminate(void)
-{
+nsParser::Terminate(void) {
   // We should only call DidBuildModel once, so don't do anything if this is
   // the second time that Terminate has been called.
   if (mInternalState == NS_ERROR_HTMLPARSER_STOPPARSING) {
@@ -995,7 +540,8 @@ nsParser::Terminate(void)
   // @see bug 108049
   // If NS_PARSER_FLAG_PENDING_CONTINUE_EVENT is set then CancelParsingEvents
   // will reset it so DidBuildModel will call DidBuildModel on the DTD. Note:
-  // The IsComplete() call inside of DidBuildModel looks at the pendingContinueEvents flag.
+  // The IsComplete() call inside of DidBuildModel looks at the
+  // pendingContinueEvents flag.
   CancelParsingEvents();
 
   // If we got interrupted in the middle of a document.write, then we might
@@ -1004,7 +550,7 @@ nsParser::Terminate(void)
   // our sink's DidBuildModel and break the reference cycle, causing a leak.
   // Since we're getting terminated, we manually clean up our context stack.
   while (mParserContext && mParserContext->mPrevContext) {
-    CParserContext *prev = mParserContext->mPrevContext;
+    CParserContext* prev = mParserContext->mPrevContext;
     delete mParserContext;
     mParserContext = prev;
   }
@@ -1023,8 +569,7 @@ nsParser::Terminate(void)
 }
 
 NS_IMETHODIMP
-nsParser::ContinueInterruptedParsing()
-{
+nsParser::ContinueInterruptedParsing() {
   // If there are scripts executing, then the content sink is jumping the gun
   // (probably due to a synchronous XMLHttpRequest) and will re-enable us
   // later, see bug 460706.
@@ -1036,42 +581,41 @@ nsParser::ContinueInterruptedParsing()
   // that we might start closing things down when the parser
   // is reenabled. To make sure that we're not deleted across
   // the reenabling process, hold a reference to ourselves.
-  nsresult result=NS_OK;
+  nsresult result = NS_OK;
   nsCOMPtr<nsIParser> kungFuDeathGrip(this);
   nsCOMPtr<nsIContentSink> sinkDeathGrip(mSink);
 
 #ifdef DEBUG
-  if (!(mFlags & NS_PARSER_FLAG_PARSER_ENABLED)) {
+  if (mBlocked) {
     NS_WARNING("Don't call ContinueInterruptedParsing on a blocked parser.");
   }
 #endif
 
-  bool isFinalChunk = mParserContext &&
-                        mParserContext->mStreamListenerState == eOnStop;
+  bool isFinalChunk =
+      mParserContext && mParserContext->mStreamListenerState == eOnStop;
 
   mProcessingNetworkData = true;
   if (sinkDeathGrip) {
     sinkDeathGrip->WillParse();
   }
-  result = ResumeParse(true, isFinalChunk); // Ref. bug 57999
+  result = ResumeParse(true, isFinalChunk);  // Ref. bug 57999
   mProcessingNetworkData = false;
 
   if (result != NS_OK) {
-    result=mInternalState;
+    result = mInternalState;
   }
 
   return result;
 }
 
 /**
- *  Stops parsing temporarily. That's it will prevent the
- *  parser from building up content model.
+ *  Stops parsing temporarily. That is, it will prevent the
+ *  parser from building up content model while scripts
+ *  are being loaded (either an external script from a web
+ *  page, or any number of extension content scripts).
  */
 NS_IMETHODIMP_(void)
-nsParser::BlockParser()
-{
-  mFlags &= ~NS_PARSER_FLAG_PARSER_ENABLED;
-}
+nsParser::BlockParser() { mBlocked++; }
 
 /**
  *  Open up the parser for tokenization, building up content
@@ -1080,45 +624,38 @@ nsParser::BlockParser()
  *  the parsing engine.
  */
 NS_IMETHODIMP_(void)
-nsParser::UnblockParser()
-{
-  if (!(mFlags & NS_PARSER_FLAG_PARSER_ENABLED)) {
-    mFlags |= NS_PARSER_FLAG_PARSER_ENABLED;
-  } else {
-    NS_WARNING("Trying to unblock an unblocked parser.");
+nsParser::UnblockParser() {
+  MOZ_DIAGNOSTIC_ASSERT(mBlocked > 0);
+  if (MOZ_LIKELY(mBlocked > 0)) {
+    mBlocked--;
   }
 }
 
 NS_IMETHODIMP_(void)
-nsParser::ContinueInterruptedParsingAsync()
-{
-  mSink->ContinueInterruptedParsingAsync();
+nsParser::ContinueInterruptedParsingAsync() {
+  MOZ_ASSERT(mSink);
+  if (MOZ_LIKELY(mSink)) {
+    mSink->ContinueInterruptedParsingAsync();
+  }
 }
 
 /**
  * Call this to query whether the parser is enabled or not.
  */
 NS_IMETHODIMP_(bool)
-nsParser::IsParserEnabled()
-{
-  return (mFlags & NS_PARSER_FLAG_PARSER_ENABLED) != 0;
-}
+nsParser::IsParserEnabled() { return !mBlocked; }
 
 /**
  * Call this to query whether the parser thinks it's done with parsing.
  */
 NS_IMETHODIMP_(bool)
-nsParser::IsComplete()
-{
+nsParser::IsComplete() {
   return !(mFlags & NS_PARSER_FLAG_PENDING_CONTINUE_EVENT);
 }
 
-
-void nsParser::HandleParserContinueEvent(nsParserContinueEvent *ev)
-{
+void nsParser::HandleParserContinueEvent(nsParserContinueEvent* ev) {
   // Ignore any revoked continue events...
-  if (mContinueEvent != ev)
-    return;
+  if (mContinueEvent != ev) return;
 
   mFlags &= ~NS_PARSER_FLAG_PENDING_CONTINUE_EVENT;
   mContinueEvent = nullptr;
@@ -1128,32 +665,17 @@ void nsParser::HandleParserContinueEvent(nsParserContinueEvent *ev)
   ContinueInterruptedParsing();
 }
 
-bool
-nsParser::IsInsertionPointDefined()
-{
-  return false;
-}
+bool nsParser::IsInsertionPointDefined() { return false; }
 
-void
-nsParser::PushDefinedInsertionPoint()
-{
-}
+void nsParser::IncrementScriptNestingLevel() {}
 
-void
-nsParser::PopDefinedInsertionPoint()
-{
-}
+void nsParser::DecrementScriptNestingLevel() {}
 
-void
-nsParser::MarkAsNotScriptCreated(const char* aCommand)
-{
-}
+bool nsParser::HasNonzeroScriptNestingLevel() const { return false; }
 
-bool
-nsParser::IsScriptCreated()
-{
-  return false;
-}
+void nsParser::MarkAsNotScriptCreated(const char* aCommand) {}
+
+bool nsParser::IsScriptCreated() { return false; }
 
 /**
  *  This is the main controlling routine in the parsing process.
@@ -1163,15 +685,11 @@ nsParser::IsScriptCreated()
  *  of this method.
  */
 NS_IMETHODIMP
-nsParser::Parse(nsIURI* aURL,
-                nsIRequestObserver* aListener,
-                void* aKey,
-                nsDTDMode aMode)
-{
+nsParser::Parse(nsIURI* aURL, nsIRequestObserver* aListener, void* aKey,
+                nsDTDMode aMode) {
+  MOZ_ASSERT(aURL, "Error: Null URL given");
 
-  NS_PRECONDITION(aURL, "Error: Null URL given");
-
-  nsresult result=kBadURL;
+  nsresult result = NS_ERROR_HTMLPARSER_BADURL;
   mObserver = aListener;
 
   if (aURL) {
@@ -1204,11 +722,8 @@ nsParser::Parse(nsIURI* aURL,
  *
  * @param   aSourceBuffer contains a string-full of real content
  */
-nsresult
-nsParser::Parse(const nsAString& aSourceBuffer,
-                void* aKey,
-                bool aLastCall)
-{
+nsresult nsParser::Parse(const nsAString& aSourceBuffer, void* aKey,
+                         bool aLastCall) {
   nsresult result = NS_OK;
 
   // Don't bother if we're never going to parse this.
@@ -1258,13 +773,13 @@ nsParser::Parse(const nsAString& aSourceBuffer,
         }
       }
 
-      pc = new CParserContext(mParserContext, theScanner, aKey, mCommand,
-                              0, theStatus, aLastCall);
+      pc = new CParserContext(mParserContext, theScanner, aKey, mCommand, 0,
+                              theStatus, aLastCall);
       NS_ENSURE_TRUE(pc, NS_ERROR_OUT_OF_MEMORY);
 
       PushContext(*pc);
 
-      pc->mMultipart = !aLastCall; // By default
+      pc->mMultipart = !aLastCall;  // By default
       if (pc->mPrevContext) {
         pc->mMultipart |= pc->mPrevContext->mMultipart;
       }
@@ -1283,7 +798,7 @@ nsParser::Parse(const nsAString& aSourceBuffer,
       }
       // end fix for 40143
 
-      pc->mContextType=CParserContext::eCTString;
+      pc->mContextType = CParserContext::eCTString;
       pc->SetMimeType(NS_LITERAL_CSTRING("application/xml"));
       pc->mDTDMode = eDTDMode_full_standards;
 
@@ -1295,8 +810,8 @@ nsParser::Parse(const nsAString& aSourceBuffer,
     } else {
       pc->mScanner->Append(aSourceBuffer);
       if (!pc->mPrevContext) {
-        // Set stream listener state to eOnStop, on the final context - Fix 68160,
-        // to guarantee DidBuildModel() call - Fix 36148
+        // Set stream listener state to eOnStop, on the final context - Fix
+        // 68160, to guarantee DidBuildModel() call - Fix 36148
         if (aLastCall) {
           pc->mStreamListenerState = eOnStop;
           pc->mScanner->SetIncremental(false);
@@ -1317,10 +832,9 @@ nsParser::Parse(const nsAString& aSourceBuffer,
 
 NS_IMETHODIMP
 nsParser::ParseFragment(const nsAString& aSourceBuffer,
-                        nsTArray<nsString>& aTagStack)
-{
+                        nsTArray<nsString>& aTagStack) {
   nsresult result = NS_OK;
-  nsAutoString  theContext;
+  nsAutoString theContext;
   uint32_t theCount = aTagStack.Length();
   uint32_t theIndex = 0;
 
@@ -1341,9 +855,7 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
 
   // First, parse the context to build up the DTD's tag stack. Note that we
   // pass false for the aLastCall parameter.
-  result = Parse(theContext,
-                 (void*)&theContext,
-                 false);
+  result = Parse(theContext, (void*)&theContext, false);
   if (NS_FAILED(result)) {
     mFlags |= NS_PARSER_FLAG_OBSERVERS_ENABLED;
     return result;
@@ -1363,22 +875,18 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
   // the end tags.  However, if tagStack is empty, it's the last call
   // for XML as well.
   if (theCount == 0) {
-    result = Parse(aSourceBuffer,
-                   &theContext,
-                   true);
+    result = Parse(aSourceBuffer, &theContext, true);
     fragSink->DidBuildContent();
   } else {
     // Add an end tag chunk, so expat will read the whole source buffer,
     // and not worry about ']]' etc.
-    result = Parse(aSourceBuffer + NS_LITERAL_STRING("</"),
-                   &theContext,
-                   false);
+    result = Parse(aSourceBuffer + NS_LITERAL_STRING("</"), &theContext, false);
     fragSink->DidBuildContent();
 
     if (NS_SUCCEEDED(result)) {
       nsAutoString endContext;
       for (theIndex = 0; theIndex < theCount; theIndex++) {
-         // we already added an end tag chunk above
+        // we already added an end tag chunk above
         if (theIndex > 0) {
           endContext.AppendLiteral("</");
         }
@@ -1389,15 +897,13 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
         if (endOfTag == -1) {
           endContext.Append(thisTag);
         } else {
-          endContext.Append(Substring(thisTag,0,endOfTag));
+          endContext.Append(Substring(thisTag, 0, endOfTag));
         }
 
         endContext.Append('>');
       }
 
-      result = Parse(endContext,
-                     &theContext,
-                     true);
+      result = Parse(endContext, &theContext, true);
     }
   }
 
@@ -1428,15 +934,11 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
  *  @param   aIsFinalChunk : tells us when the last chunk of data is provided.
  *  @return  error code -- 0 if ok, non-zero if error.
  */
-nsresult
-nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
-                      bool aCanInterrupt)
-{
+nsresult nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
+                               bool aCanInterrupt) {
   nsresult result = NS_OK;
 
-  if ((mFlags & NS_PARSER_FLAG_PARSER_ENABLED) &&
-      mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
-
+  if (!mBlocked && mInternalState != NS_ERROR_HTMLPARSER_STOPPARSING) {
     result = WillBuildModel(mParserContext->mScanner->GetFilename());
     if (NS_FAILED(result)) {
       mFlags &= ~NS_PARSER_FLAG_CAN_TOKENIZE;
@@ -1460,15 +962,15 @@ nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
         // Only allow parsing to be interrupted in the subsequent call to
         // build model.
         nsresult theTokenizerResult = (mFlags & NS_PARSER_FLAG_CAN_TOKENIZE)
-                                      ? Tokenize(aIsFinalChunk)
-                                      : NS_OK;
+                                          ? Tokenize(aIsFinalChunk)
+                                          : NS_OK;
         result = BuildModel();
 
         if (result == NS_ERROR_HTMLPARSER_INTERRUPTED && aIsFinalChunk) {
           PostContinueEvent();
         }
 
-        theIterationIsOk = theTokenizerResult != kEOF &&
+        theIterationIsOk = theTokenizerResult != NS_ERROR_HTMLPARSER_EOF &&
                            result != NS_ERROR_HTMLPARSER_INTERRUPTED;
 
         // Make sure not to stop parsing too early. Therefore, before shutting
@@ -1480,7 +982,7 @@ nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
         // (and cache any data coming in) until the parser is re-enabled.
         if (NS_ERROR_HTMLPARSER_BLOCK == result) {
           mSink->WillInterrupt();
-          if (mFlags & NS_PARSER_FLAG_PARSER_ENABLED) {
+          if (!mBlocked) {
             // If we were blocked by a recursive invocation, don't re-block.
             BlockParser();
           }
@@ -1495,10 +997,11 @@ nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
 
           return NS_OK;
         }
-        if ((NS_OK == result && theTokenizerResult == kEOF) ||
-             result == NS_ERROR_HTMLPARSER_INTERRUPTED) {
+        if ((NS_OK == result &&
+             theTokenizerResult == NS_ERROR_HTMLPARSER_EOF) ||
+            result == NS_ERROR_HTMLPARSER_INTERRUPTED) {
           bool theContextIsStringBased =
-            CParserContext::eCTString == mParserContext->mContextType;
+              CParserContext::eCTString == mParserContext->mContextType;
 
           if (mParserContext->mStreamListenerState == eOnStop ||
               !mParserContext->mMultipart || theContextIsStringBased) {
@@ -1528,7 +1031,7 @@ nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
           }
         }
 
-        if (theTokenizerResult == kEOF ||
+        if (theTokenizerResult == NS_ERROR_HTMLPARSER_EOF ||
             result == NS_ERROR_HTMLPARSER_INTERRUPTED) {
           result = (result == NS_ERROR_HTMLPARSER_INTERRUPTED) ? NS_OK : result;
           mSink->WillInterrupt();
@@ -1546,9 +1049,7 @@ nsParser::ResumeParse(bool allowIteration, bool aIsFinalChunk,
  *  This is where we loop over the tokens created in the
  *  tokenization phase, and try to make sense out of them.
  */
-nsresult
-nsParser::BuildModel()
-{
+nsresult nsParser::BuildModel() {
   nsITokenizer* theTokenizer = nullptr;
 
   nsresult result = NS_OK;
@@ -1570,14 +1071,13 @@ nsParser::BuildModel()
   These methods are used to talk to the netlib system...
  *******************************************************************/
 
-nsresult
-nsParser::OnStartRequest(nsIRequest *request, nsISupports* aContext)
-{
-  NS_PRECONDITION(eNone == mParserContext->mStreamListenerState,
-                  "Parser's nsIStreamListener API was not setup "
-                  "correctly in constructor.");
+nsresult nsParser::OnStartRequest(nsIRequest* request) {
+  MOZ_ASSERT(eNone == mParserContext->mStreamListenerState,
+             "Parser's nsIStreamListener API was not setup "
+             "correctly in constructor.");
+
   if (mObserver) {
-    mObserver->OnStartRequest(request, aContext);
+    mObserver->OnStartRequest(request);
   }
   mParserContext->mStreamListenerState = eOnStart;
   mParserContext->mAutoDetectStatus = eUnknownDetect;
@@ -1602,26 +1102,20 @@ nsParser::OnStartRequest(nsIRequest *request, nsISupports* aContext)
   return rv;
 }
 
-static bool
-ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes, int32_t aLen,
-                                 nsCString& oCharset)
-{
+static bool ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes,
+                                             int32_t aLen,
+                                             nsCString& oCharset) {
   // This code is rather pointless to have. Might as well reuse expat as
   // seen in nsHtml5StreamParser. -- hsivonen
   oCharset.Truncate();
-  if ((aLen >= 5) &&
-      ('<' == aBytes[0]) &&
-      ('?' == aBytes[1]) &&
-      ('x' == aBytes[2]) &&
-      ('m' == aBytes[3]) &&
-      ('l' == aBytes[4])) {
+  if ((aLen >= 5) && ('<' == aBytes[0]) && ('?' == aBytes[1]) &&
+      ('x' == aBytes[2]) && ('m' == aBytes[3]) && ('l' == aBytes[4])) {
     int32_t i;
     bool versionFound = false, encodingFound = false;
     for (i = 6; i < aLen && !encodingFound; ++i) {
       // end of XML declaration?
-      if ((((char*) aBytes)[i] == '?') &&
-          ((i + 1) < aLen) &&
-          (((char*) aBytes)[i + 1] == '>')) {
+      if ((((char*)aBytes)[i] == '?') && ((i + 1) < aLen) &&
+          (((char*)aBytes)[i + 1] == '>')) {
         break;
       }
       // Version is required.
@@ -1631,13 +1125,12 @@ ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes, int32_t aLen,
         // foolproof, but fast.
         // The shortest string allowed before this is  (strlen==13):
         // <?xml version
-        if ((((char*) aBytes)[i] == 'n') &&
-            (i >= 12) &&
-            (0 == PL_strncmp("versio", (char*) (aBytes + i - 6), 6))) {
+        if ((((char*)aBytes)[i] == 'n') && (i >= 12) &&
+            (0 == PL_strncmp("versio", (char*)(aBytes + i - 6), 6))) {
           // Fast forward through version
           char q = 0;
           for (++i; i < aLen; ++i) {
-            char qi = ((char*) aBytes)[i];
+            char qi = ((char*)aBytes)[i];
             if (qi == '\'' || qi == '"') {
               if (q && q == qi) {
                 //  ending quote
@@ -1657,19 +1150,20 @@ ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes, int32_t aLen,
         // foolproof, but fast.
         // The shortest allowed string before this (strlen==26):
         // <?xml version="1" encoding
-        if ((((char*) aBytes)[i] == 'g') && (i >= 25) && (0 == PL_strncmp(
-            "encodin", (char*) (aBytes + i - 7), 7))) {
+        if ((((char*)aBytes)[i] == 'g') && (i >= 25) &&
+            (0 == PL_strncmp("encodin", (char*)(aBytes + i - 7), 7))) {
           int32_t encStart = 0;
           char q = 0;
           for (++i; i < aLen; ++i) {
-            char qi = ((char*) aBytes)[i];
+            char qi = ((char*)aBytes)[i];
             if (qi == '\'' || qi == '"') {
               if (q && q == qi) {
                 int32_t count = i - encStart;
                 // encoding value is invalid if it is UTF-16
-                if (count > 0 && PL_strncasecmp("UTF-16",
-                    (char*) (aBytes + encStart), count)) {
-                  oCharset.Assign((char*) (aBytes + encStart), count);
+                if (count > 0 &&
+                    PL_strncasecmp("UTF-16", (char*)(aBytes + encStart),
+                                   count)) {
+                  oCharset.Assign((char*)(aBytes + encStart), count);
                 }
                 encodingFound = true;
                 break;
@@ -1680,28 +1174,22 @@ ExtractCharsetFromXmlDeclaration(const unsigned char* aBytes, int32_t aLen,
             }
           }
         }
-      } // if (!versionFound)
-    } // for
+      }  // if (!versionFound)
+    }    // for
   }
   return !oCharset.IsEmpty();
 }
 
-inline char
-GetNextChar(nsACString::const_iterator& aStart,
-            nsACString::const_iterator& aEnd)
-{
+inline char GetNextChar(nsACString::const_iterator& aStart,
+                        nsACString::const_iterator& aEnd) {
   NS_ASSERTION(aStart != aEnd, "end of buffer");
   return (++aStart != aEnd) ? *aStart : '\0';
 }
 
-static nsresult
-NoOpParserWriteFunc(nsIInputStream* in,
-                void* closure,
-                const char* fromRawSegment,
-                uint32_t toOffset,
-                uint32_t count,
-                uint32_t *writeCount)
-{
+static nsresult NoOpParserWriteFunc(nsIInputStream* in, void* closure,
+                                    const char* fromRawSegment,
+                                    uint32_t toOffset, uint32_t count,
+                                    uint32_t* writeCount) {
   *writeCount = count;
   return NS_OK;
 }
@@ -1719,18 +1207,13 @@ typedef struct {
  * of data in the underlying stream or pipe. Using ReadSegments
  * allows us to avoid copying data to read out of the stream.
  */
-static nsresult
-ParserWriteFunc(nsIInputStream* in,
-                void* closure,
-                const char* fromRawSegment,
-                uint32_t toOffset,
-                uint32_t count,
-                uint32_t *writeCount)
-{
+static nsresult ParserWriteFunc(nsIInputStream* in, void* closure,
+                                const char* fromRawSegment, uint32_t toOffset,
+                                uint32_t count, uint32_t* writeCount) {
   nsresult result;
   ParserWriteStruct* pws = static_cast<ParserWriteStruct*>(closure);
   const unsigned char* buf =
-    reinterpret_cast<const unsigned char*> (fromRawSegment);
+      reinterpret_cast<const unsigned char*>(fromRawSegment);
   uint32_t theNumRead = count;
 
   if (!pws) {
@@ -1740,23 +1223,27 @@ ParserWriteFunc(nsIInputStream* in,
   if (pws->mNeedCharsetCheck) {
     pws->mNeedCharsetCheck = false;
     int32_t source;
-    nsAutoCString preferred;
-    nsAutoCString maybePrefer;
-    pws->mParser->GetDocumentCharset(preferred, source);
+    auto preferred = pws->mParser->GetDocumentCharset(source);
 
     // This code was bogus when I found it. It expects the BOM or the XML
     // declaration to be entirely in the first network buffer. -- hsivonen
-    if (nsContentUtils::CheckForBOM(buf, count, maybePrefer)) {
+    const Encoding* encoding;
+    size_t bomLength;
+    Tie(encoding, bomLength) = Encoding::ForBOM(MakeSpan(buf, count));
+    Unused << bomLength;
+    if (encoding) {
       // The decoder will swallow the BOM. The UTF-16 will re-sniff for
-      // endianness. The value of preferred is now either "UTF-8" or "UTF-16".
-      preferred.Assign(maybePrefer);
+      // endianness. The value of preferred is now "UTF-8", "UTF-16LE"
+      // or "UTF-16BE".
+      preferred = WrapNotNull(encoding);
       source = kCharsetFromByteOrderMark;
     } else if (source < kCharsetFromChannel) {
       nsAutoCString declCharset;
 
       if (ExtractCharsetFromXmlDeclaration(buf, count, declCharset)) {
-        if (EncodingUtils::FindEncodingForLabel(declCharset, maybePrefer)) {
-          preferred.Assign(maybePrefer);
+        encoding = Encoding::ForLabel(declCharset);
+        if (encoding) {
+          preferred = WrapNotNull(encoding);
           source = kCharsetFromMetaTag;
         }
       }
@@ -1764,10 +1251,9 @@ ParserWriteFunc(nsIInputStream* in,
 
     pws->mParser->SetDocumentCharset(preferred, source);
     pws->mParser->SetSinkCharset(preferred);
-
   }
 
-  result = pws->mScanner->Append(fromRawSegment, theNumRead, pws->mRequest);
+  result = pws->mScanner->Append(fromRawSegment, theNumRead);
   if (NS_SUCCEEDED(result)) {
     *writeCount = count;
   }
@@ -1775,16 +1261,14 @@ ParserWriteFunc(nsIInputStream* in,
   return result;
 }
 
-nsresult
-nsParser::OnDataAvailable(nsIRequest *request, nsISupports* aContext,
-                          nsIInputStream *pIStream, uint64_t sourceOffset,
-                          uint32_t aLength)
-{
-  NS_PRECONDITION((eOnStart == mParserContext->mStreamListenerState ||
-                   eOnDataAvail == mParserContext->mStreamListenerState),
-            "Error: OnStartRequest() must be called before OnDataAvailable()");
-  NS_PRECONDITION(NS_InputStreamIsBuffered(pIStream),
-                  "Must have a buffered input stream");
+nsresult nsParser::OnDataAvailable(nsIRequest* request,
+                                   nsIInputStream* pIStream,
+                                   uint64_t sourceOffset, uint32_t aLength) {
+  MOZ_ASSERT((eOnStart == mParserContext->mStreamListenerState ||
+              eOnDataAvail == mParserContext->mStreamListenerState),
+             "Error: OnStartRequest() must be called before OnDataAvailable()");
+  MOZ_ASSERT(NS_InputStreamIsBuffered(pIStream),
+             "Must have a buffered input stream");
 
   nsresult rv = NS_OK;
 
@@ -1793,14 +1277,12 @@ nsParser::OnDataAvailable(nsIRequest *request, nsISupports* aContext,
     // ... but if an extension tries to feed us data for about:blank in a
     // release build, silently ignore the data.
     uint32_t totalRead;
-    rv = pIStream->ReadSegments(NoOpParserWriteFunc,
-                                nullptr,
-                                aLength,
+    rv = pIStream->ReadSegments(NoOpParserWriteFunc, nullptr, aLength,
                                 &totalRead);
     return rv;
   }
 
-  CParserContext *theContext = mParserContext;
+  CParserContext* theContext = mParserContext;
 
   while (theContext && theContext->mRequest != request) {
     theContext = theContext->mPrevContext;
@@ -1829,10 +1311,7 @@ nsParser::OnDataAvailable(nsIRequest *request, nsISupports* aContext,
       return rv;
     }
 
-    // Don't bother to start parsing until we've seen some
-    // non-whitespace data
-    if (IsOkToProcessNetworkData() &&
-        theContext->mScanner->FirstNonWhitespacePosition() >= 0) {
+    if (IsOkToProcessNetworkData()) {
       nsCOMPtr<nsIParser> kungFuDeathGrip(this);
       nsCOMPtr<nsIContentSink> sinkDeathGrip(mSink);
       mProcessingNetworkData = true;
@@ -1853,13 +1332,10 @@ nsParser::OnDataAvailable(nsIRequest *request, nsISupports* aContext,
  *  This is called by the networking library once the last block of data
  *  has been collected from the net.
  */
-nsresult
-nsParser::OnStopRequest(nsIRequest *request, nsISupports* aContext,
-                        nsresult status)
-{
+nsresult nsParser::OnStopRequest(nsIRequest* request, nsresult status) {
   nsresult rv = NS_OK;
 
-  CParserContext *pc = mParserContext;
+  CParserContext* pc = mParserContext;
   while (pc) {
     if (pc->mRequest == request) {
       pc->mStreamListenerState = eOnStop;
@@ -1884,30 +1360,25 @@ nsParser::OnStopRequest(nsIRequest *request, nsISupports* aContext,
   // If the parser isn't enabled, we don't finish parsing till
   // it is reenabled.
 
-
   // XXX Should we wait to notify our observers as well if the
   // parser isn't yet enabled?
   if (mObserver) {
-    mObserver->OnStopRequest(request, aContext, status);
+    mObserver->OnStopRequest(request, status);
   }
 
   return rv;
 }
 
-
 /*******************************************************************
   Here come the tokenization methods...
  *******************************************************************/
-
 
 /**
  *  Part of the code sandwich, this gets called right before
  *  the tokenization process begins. The main reason for
  *  this call is to allow the delegate to do initialization.
  */
-bool
-nsParser::WillTokenize(bool aIsFinalChunk)
-{
+bool nsParser::WillTokenize(bool aIsFinalChunk) {
   if (!mParserContext) {
     return true;
   }
@@ -1918,14 +1389,12 @@ nsParser::WillTokenize(bool aIsFinalChunk)
   return NS_SUCCEEDED(theTokenizer->WillTokenize(aIsFinalChunk));
 }
 
-
 /**
  * This is the primary control routine to consume tokens.
  * It iteratively consumes tokens until an error occurs or
  * you run out of data.
  */
-nsresult nsParser::Tokenize(bool aIsFinalChunk)
-{
+nsresult nsParser::Tokenize(bool aIsFinalChunk) {
   nsITokenizer* theTokenizer;
 
   nsresult result = NS_ERROR_NOT_AVAILABLE;
@@ -1941,11 +1410,11 @@ nsresult nsParser::Tokenize(bool aIsFinalChunk)
     WillTokenize(aIsFinalChunk);
     while (NS_SUCCEEDED(result)) {
       mParserContext->mScanner->Mark();
-      result = theTokenizer->ConsumeToken(*mParserContext->mScanner,
-                                          flushTokens);
+      result =
+          theTokenizer->ConsumeToken(*mParserContext->mScanner, flushTokens);
       if (NS_FAILED(result)) {
         mParserContext->mScanner->RewindToMark();
-        if (kEOF == result){
+        if (NS_ERROR_HTMLPARSER_EOF == result) {
           break;
         }
         if (NS_ERROR_HTMLPARSER_STOPPARSING == result) {
@@ -1954,8 +1423,8 @@ nsresult nsParser::Tokenize(bool aIsFinalChunk)
           break;
         }
       } else if (flushTokens && (mFlags & NS_PARSER_FLAG_OBSERVERS_ENABLED)) {
-        // I added the extra test of NS_PARSER_FLAG_OBSERVERS_ENABLED to fix Bug# 23931.
-        // Flush tokens on seeing </SCRIPT> -- Ref: Bug# 22485 --
+        // I added the extra test of NS_PARSER_FLAG_OBSERVERS_ENABLED to fix
+        // Bug# 23931. Flush tokens on seeing </SCRIPT> -- Ref: Bug# 22485 --
         // Also remember to update the marked position.
         mFlags |= NS_PARSER_FLAG_FLUSH_TOKENS;
         mParserContext->mScanner->Mark();
@@ -1980,8 +1449,7 @@ nsresult nsParser::Tokenize(bool aIsFinalChunk)
  * @return NS_OK if successful
  */
 NS_IMETHODIMP
-nsParser::GetChannel(nsIChannel** aChannel)
-{
+nsParser::GetChannel(nsIChannel** aChannel) {
   nsresult result = NS_ERROR_NOT_AVAILABLE;
   if (mParserContext && mParserContext->mRequest) {
     result = CallQueryInterface(mParserContext->mRequest, aChannel);
@@ -1993,8 +1461,7 @@ nsParser::GetChannel(nsIChannel** aChannel)
  * Get the DTD associated with this parser
  */
 NS_IMETHODIMP
-nsParser::GetDTD(nsIDTD** aDTD)
-{
+nsParser::GetDTD(nsIDTD** aDTD) {
   if (mParserContext) {
     NS_IF_ADDREF(*aDTD = mDTD);
   }
@@ -2005,8 +1472,4 @@ nsParser::GetDTD(nsIDTD** aDTD)
 /**
  * Get this as nsIStreamListener
  */
-nsIStreamListener*
-nsParser::GetStreamListener()
-{
-  return this;
-}
+nsIStreamListener* nsParser::GetStreamListener() { return this; }

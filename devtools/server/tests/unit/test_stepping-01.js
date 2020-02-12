@@ -1,83 +1,95 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 /**
- * Check basic step-over functionality.
+ * Check scenarios where we're leaving function a and
+ * going to the function b's call-site.
  */
 
-var gDebuggee;
-var gClient;
-var gThreadClient;
-var gCallback;
+async function testFinish({ threadFront, debuggerClient }) {
+  await close(debuggerClient);
 
-function run_test()
-{
-  run_test_with_server(DebuggerServer, function () {
-    run_test_with_server(WorkerDebuggerServer, do_test_finished);
-  });
-  do_test_pending();
+  do_test_finished();
 }
 
-function run_test_with_server(aServer, aCallback)
-{
-  gCallback = aCallback;
-  initTestDebuggerServer(aServer);
-  gDebuggee = addTestGlobal("test-stack", aServer);
-  gClient = new DebuggerClient(aServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-stack", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      test_simple_stepping();
-    });
-  });
+async function invokeAndPause({ global, threadFront }, expression) {
+  return executeOnNextTickAndWaitForPause(
+    () => Cu.evalInSandbox(expression, global),
+    threadFront
+  );
 }
 
-function test_simple_stepping()
-{
-  gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-    gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-      // Check the return value.
-      do_check_eq(aPacket.type, "paused");
-      do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 2);
-      do_check_eq(aPacket.why.type, "resumeLimit");
-      // Check that stepping worked.
-      do_check_eq(gDebuggee.a, undefined);
-      do_check_eq(gDebuggee.b, undefined);
+async function step(threadFront, cmd) {
+  return cmd(threadFront);
+}
 
-      gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-        // Check the return value.
-        do_check_eq(aPacket.type, "paused");
-        do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 3);
-        do_check_eq(aPacket.why.type, "resumeLimit");
-        // Check that stepping worked.
-        do_check_eq(gDebuggee.a, 1);
-        do_check_eq(gDebuggee.b, undefined);
+function getPauseLocation(packet) {
+  const { line, column } = packet.frame.where;
+  return { line, column };
+}
 
-        gThreadClient.addOneTimeListener("paused", function (aEvent, aPacket) {
-          // Check the return value.
-          do_check_eq(aPacket.type, "paused");
-          // When leaving a stack frame the line number doesn't change.
-          do_check_eq(aPacket.frame.where.line, gDebuggee.line0 + 3);
-          do_check_eq(aPacket.why.type, "resumeLimit");
-          // Check that stepping worked.
-          do_check_eq(gDebuggee.a, 1);
-          do_check_eq(gDebuggee.b, 2);
+function getPauseReturn(packet) {
+  return packet.why.frameFinished.return;
+}
 
-          gThreadClient.resume(function () {
-            gClient.close().then(gCallback);
-          });
-        });
-        gThreadClient.stepOver();
-      });
-      gThreadClient.stepOver();
+async function steps(threadFront, sequence) {
+  const locations = [];
+  for (const cmd of sequence) {
+    const packet = await step(threadFront, cmd);
+    locations.push(getPauseLocation(packet));
+  }
+  return locations;
+}
 
-    });
-    gThreadClient.stepOver();
+async function stepOutOfA(dbg, func, expectedLocation) {
+  await invokeAndPause(dbg, `${func}()`);
+  const { threadFront } = dbg;
+  await steps(threadFront, [stepOver, stepIn]);
 
-  });
+  const packet = await stepOut(threadFront);
 
-  gDebuggee.eval("var line0 = Error().lineNumber;\n" +
-                 "debugger;\n" +   // line0 + 1
-                 "var a = 1;\n" +  // line0 + 2
-                 "var b = 2;\n");  // line0 + 3
+  deepEqual(
+    getPauseLocation(packet),
+    expectedLocation,
+    `step out location in ${func}`
+  );
+
+  await threadFront.resume();
+}
+
+async function stepOverInA(dbg, func, expectedLocation) {
+  await invokeAndPause(dbg, `${func}()`);
+  const { threadFront } = dbg;
+  await steps(threadFront, [stepOver, stepIn]);
+
+  let packet = await stepOver(threadFront);
+  equal(getPauseReturn(packet).ownPropertyLength, 1, "a() is returning obj");
+
+  packet = await stepOver(threadFront);
+  deepEqual(
+    getPauseLocation(packet),
+    expectedLocation,
+    `step out location in ${func}`
+  );
+  await dbg.threadFront.resume();
+}
+
+async function testStep(dbg, func, expectedValue) {
+  await stepOverInA(dbg, func, expectedValue);
+  await stepOutOfA(dbg, func, expectedValue);
+}
+
+function run_test() {
+  return (async function() {
+    const dbg = await setupTestFromUrl("stepping.js");
+
+    await testStep(dbg, "arithmetic", { line: 16, column: 8 });
+    await testStep(dbg, "composition", { line: 21, column: 3 });
+    await testStep(dbg, "chaining", { line: 26, column: 6 });
+
+    await testFinish(dbg);
+  })();
 }

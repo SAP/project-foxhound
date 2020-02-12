@@ -4,20 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is a stub, for platforms that do not yet support out-of-process
-// compositing or do not need specialized types to do so.
+include HeadlessWidgetTypes;
 
 using mozilla::LayoutDeviceIntSize from "Units.h";
 
 namespace mozilla {
 namespace widget {
 
-struct CompositorWidgetInitData
+struct GtkCompositorWidgetInitData
 {
   uintptr_t           XWindow;
   nsCString           XDisplayString;
+  bool                Shaped;
 
   LayoutDeviceIntSize InitialClientSize;
+};
+
+union CompositorWidgetInitData
+{
+  GtkCompositorWidgetInitData;
+  HeadlessCompositorWidgetInitData;
 };
 
 } // namespace widget

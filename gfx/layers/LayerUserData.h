@@ -18,11 +18,11 @@ namespace layers {
  * Everything else in Layers.h should be forward-declarable.
  */
 class LayerUserData {
-public:
-  virtual ~LayerUserData() {}
+ public:
+  virtual ~LayerUserData() = default;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* GFX_LAYERUSERDATA_H */

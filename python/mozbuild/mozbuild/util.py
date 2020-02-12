@@ -17,14 +17,12 @@ import hashlib
 import itertools
 import os
 import re
+import six
 import stat
 import sys
 import time
-import types
 
 from collections import (
-    defaultdict,
-    Iterable,
     OrderedDict,
 )
 from io import (
@@ -33,14 +31,12 @@ from io import (
 )
 
 
-if sys.version_info[0] == 3:
-    str_type = str
-else:
-    str_type = basestring
-
 if sys.platform == 'win32':
     _kernel32 = ctypes.windll.kernel32
     _FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 0x2000
+    system_encoding = 'mbcs'
+else:
+    system_encoding = 'utf-8'
 
 
 def exec_(object, globals=None, locals=None):
@@ -78,21 +74,23 @@ def hash_file(path, hasher=None):
     return h.hexdigest()
 
 
-class EmptyValue(unicode):
+class EmptyValue(six.text_type):
     """A dummy type that behaves like an empty string and sequence.
 
     This type exists in order to support
     :py:class:`mozbuild.frontend.reader.EmptyConfig`. It should likely not be
     used elsewhere.
     """
+
     def __init__(self):
         super(EmptyValue, self).__init__()
 
 
 class ReadOnlyNamespace(object):
     """A class for objects with immutable attributes set at initialization."""
+
     def __init__(self, **kwargs):
-        for k, v in kwargs.iteritems():
+        for k, v in six.iteritems(kwargs):
             super(ReadOnlyNamespace, self).__setattr__(k, v)
 
     def __delattr__(self, key):
@@ -114,6 +112,7 @@ class ReadOnlyNamespace(object):
 
 class ReadOnlyDict(dict):
     """A read-only dictionary."""
+
     def __init__(self, *args, **kwargs):
         dict.__init__(self, *args, **kwargs)
 
@@ -136,6 +135,7 @@ undefined = undefined_default()
 
 class ReadOnlyDefaultDict(ReadOnlyDict):
     """A read-only dictionary that supports default values on retrieval."""
+
     def __init__(self, default_factory, *args, **kwargs):
         ReadOnlyDict.__init__(self, *args, **kwargs)
         self._default_factory = default_factory
@@ -152,7 +152,7 @@ def ensureParentDir(path):
     if d and not os.path.exists(path):
         try:
             os.makedirs(d)
-        except OSError, error:
+        except OSError as error:
             if error.errno != errno.EEXIST:
                 raise
 
@@ -171,7 +171,7 @@ def mkdir(path, not_indexed=False):
 
     if not_indexed:
         if sys.platform == 'win32':
-            if isinstance(path, str_type):
+            if isinstance(path, six.string_types):
                 fn = _kernel32.SetFileAttributesW
             else:
                 fn = _kernel32.SetFileAttributesA
@@ -215,18 +215,25 @@ class FileAvoidWrite(BytesIO):
     out, but reports whether the file was existing and would have been updated
     still occur, as well as diff capture if requested.
     """
-    def __init__(self, filename, capture_diff=False, dry_run=False, mode='rU'):
+
+    def __init__(self, filename, capture_diff=False, dry_run=False, readmode='rU'):
         BytesIO.__init__(self)
         self.name = filename
+        assert type(capture_diff) == bool
+        assert type(dry_run) == bool
+        assert 'r' in readmode
         self._capture_diff = capture_diff
-        self._dry_run = dry_run
+        self._write_to_file = not dry_run
         self.diff = None
-        self.mode = mode
+        self.mode = readmode
 
     def write(self, buf):
-        if isinstance(buf, unicode):
+        if isinstance(buf, six.text_type):
             buf = buf.encode('utf-8')
         BytesIO.write(self, buf)
+
+    def avoid_writing_to_file(self):
+        self._write_to_file = False
 
     def close(self):
         """Stop accepting writes, compare file contents, and rewrite if needed.
@@ -259,7 +266,7 @@ class FileAvoidWrite(BytesIO):
             finally:
                 existing.close()
 
-        if not self._dry_run:
+        if self._write_to_file:
             ensureParentDir(self.name)
             # Maintain 'b' if specified.  'U' only applies to modes starting with
             # 'r', so it is dropped.
@@ -289,6 +296,7 @@ class FileAvoidWrite(BytesIO):
 
     def __enter__(self):
         return self
+
     def __exit__(self, type, value, traceback):
         if not self.closed:
             self.close()
@@ -381,7 +389,7 @@ class ListMixin(object):
     def __add__(self, other):
         # Allow None and EmptyValue is a special case because it makes undefined
         # variable references in moz.build behave better.
-        other = [] if isinstance(other, (types.NoneType, EmptyValue)) else other
+        other = [] if isinstance(other, (type(None), EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError('Only lists can be appended to lists.')
 
@@ -390,7 +398,7 @@ class ListMixin(object):
         return new_list
 
     def __iadd__(self, other):
-        other = [] if isinstance(other, (types.NoneType, EmptyValue)) else other
+        other = [] if isinstance(other, (type(None), EmptyValue)) else other
         if not isinstance(other, list):
             raise ValueError('Only lists can be appended to lists.')
 
@@ -425,7 +433,7 @@ class UnsortedError(Exception):
 
         s.write('An attempt was made to add an unsorted sequence to a list. ')
         s.write('The incoming list is unsorted starting at element %d. ' %
-            self.i)
+                self.i)
         s.write('We expected "%s" but got "%s"' % (
             self.sorted[self.i], self.original[self.i]))
 
@@ -464,7 +472,7 @@ class StrictOrderingOnAppendListMixin(object):
         StrictOrderingOnAppendListMixin.ensure_sorted(sequence)
 
         return super(StrictOrderingOnAppendListMixin, self).__setslice__(i, j,
-            sequence)
+                                                                         sequence)
 
     def __add__(self, other):
         StrictOrderingOnAppendListMixin.ensure_sorted(other)
@@ -478,15 +486,37 @@ class StrictOrderingOnAppendListMixin(object):
 
 
 class StrictOrderingOnAppendList(ListMixin, StrictOrderingOnAppendListMixin,
-        list):
+                                 list):
     """A list specialized for moz.build environments.
 
     We overload the assignment and append operations to require that incoming
     elements be ordered. This enforces cleaner style in moz.build files.
     """
 
+
+class ImmutableStrictOrderingOnAppendList(StrictOrderingOnAppendList):
+    """Like StrictOrderingOnAppendList, but not allowing mutations of the value.
+    """
+
+    def append(self, elt):
+        raise Exception("cannot use append on this type")
+
+    def extend(self, iterable):
+        raise Exception("cannot use extend on this type")
+
+    def __setslice__(self, i, j, iterable):
+        raise Exception("cannot assign to slices on this type")
+
+    def __setitem__(self, i, elt):
+        raise Exception("cannot assign to indexes on this type")
+
+    def __iadd__(self, other):
+        raise Exception("cannot use += on this type")
+
+
 class ListWithActionMixin(object):
     """Mixin to create lists with pre-processing. See ListWithAction."""
+
     def __init__(self, iterable=None, action=None):
         if iterable is None:
             iterable = []
@@ -510,8 +540,9 @@ class ListWithActionMixin(object):
         other = [self._action(i) for i in other]
         return super(ListWithActionMixin, self).__iadd__(other)
 
+
 class StrictOrderingOnAppendListWithAction(StrictOrderingOnAppendListMixin,
-    ListMixin, ListWithActionMixin, list):
+                                           ListMixin, ListWithActionMixin, list):
     """An ordered list that accepts a callable to be applied to each item.
 
     A callable (action) passed to the constructor is run on each item of input.
@@ -520,6 +551,7 @@ class StrictOrderingOnAppendListWithAction(StrictOrderingOnAppendListMixin,
     Note that the order of superclasses is therefore significant.
     """
 
+
 class ListWithAction(ListMixin, ListWithActionMixin, list):
     """A list that accepts a callable to be applied to each item.
 
@@ -527,6 +559,7 @@ class ListWithAction(ListMixin, ListWithActionMixin, list):
     each item of input. The result of calling the callable on each item will be
     stored in place of the original input.
     """
+
 
 class MozbuildDeletionError(Exception):
     pass
@@ -549,7 +582,7 @@ def FlagsFactory(flags):
         _flags = flags
 
         def update(self, **kwargs):
-            for k, v in kwargs.iteritems():
+            for k, v in six.iteritems(kwargs):
                 setattr(self, k, v)
 
         def __getattr__(self, name):
@@ -627,8 +660,10 @@ def StrictOrderingOnAppendListWithFlagsFactory(flags):
                                  (self._flags_type._flags, other._flags_type._flags))
             intersection = set(self._flags.keys()) & set(other._flags.keys())
             if intersection:
-                raise ValueError('Cannot update flags: both lists of strings with flags configure %s' %
-                                 intersection)
+                raise ValueError(
+                    'Cannot update flags: both lists of strings with flags configure %s' %
+                    intersection
+                    )
             self._flags.update(other._flags)
 
         def extend(self, l):
@@ -785,7 +820,7 @@ class HierarchicalStringList(object):
         if not isinstance(value, list):
             raise ValueError('Expected a list of strings, not %s' % type(value))
         for v in value:
-            if not isinstance(v, str_type):
+            if not isinstance(v, six.string_types):
                 raise ValueError(
                     'Expected a list of strings, not an element of %s' % type(v))
 
@@ -812,12 +847,12 @@ class LockFile(object):
                     # (but we need to let some other process close the file
                     # first).
                     time.sleep(0.1)
-            else:
-                # Re-raise unknown errors
-                raise
+                else:
+                    # Re-raise unknown errors
+                    raise
 
 
-def lock_file(lockfile, max_wait = 600):
+def lock_file(lockfile, max_wait=600):
     """Create and hold a lockfile of the given name, with the given timeout.
 
     To release the lock, delete the returned object.
@@ -845,8 +880,8 @@ def lock_file(lockfile, max_wait = 600):
             s = os.stat(lockfile)
         except EnvironmentError as e:
             if e.errno == errno.ENOENT or e.errno == errno.EACCES:
-            # We didn't create the lockfile, so it did exist, but it's
-            # gone now. Just try again
+                # We didn't create the lockfile, so it did exist, but it's
+                # gone now. Just try again
                 continue
 
             raise Exception('{0} exists but stat() failed: {1}'.format(
@@ -858,7 +893,7 @@ def lock_file(lockfile, max_wait = 600):
         if now - s[stat.ST_MTIME] > max_wait:
             pid = f.readline().rstrip()
             raise Exception('{0} has been locked for more than '
-                '{1} seconds (PID {2})'.format(lockfile, max_wait, pid))
+                            '{1} seconds (PID {2})'.format(lockfile, max_wait, pid))
 
         # It's not been locked too long, wait a while and retry
         f.close()
@@ -875,6 +910,7 @@ def lock_file(lockfile, max_wait = 600):
 
 class OrderedDefaultDict(OrderedDict):
     '''A combination of OrderedDict and defaultdict.'''
+
     def __init__(self, default_factory, *args, **kwargs):
         OrderedDict.__init__(self, *args, **kwargs)
         self._default_factory = default_factory
@@ -887,6 +923,7 @@ class OrderedDefaultDict(OrderedDict):
 class KeyedDefaultDict(dict):
     '''Like a defaultdict, but the default_factory function takes the key as
     argument'''
+
     def __init__(self, default_factory, *args, **kwargs):
         dict.__init__(self, *args, **kwargs)
         self._default_factory = default_factory
@@ -907,6 +944,7 @@ class memoize(dict):
     Both functions and instance methods are handled, although in the
     instance method case, the results are cache in the instance itself.
     '''
+
     def __init__(self, func):
         self.func = func
         functools.update_wrapper(self, func)
@@ -934,6 +972,7 @@ class memoized_property(object):
     '''A specialized version of the memoize decorator that works for
     class instance properties.
     '''
+
     def __init__(self, func):
         self.func = func
 
@@ -985,7 +1024,7 @@ def TypedNamedTuple(name, fields):
                 if not isinstance(value, ftype):
                     raise TypeError('field in tuple not of proper type: %s; '
                                     'got %s, expected %s' % (fname,
-                                    type(value), ftype))
+                                                             type(value), ftype))
 
             super(TypedTuple, self).__init__(*args, **kwargs)
 
@@ -1019,7 +1058,7 @@ class TypedListMixin(object):
         sequence = self._ensure_type(sequence)
 
         return super(TypedListMixin, self).__setslice__(i, j,
-            sequence)
+                                                        sequence)
 
     def __add__(self, other):
         other = self._ensure_type(other)
@@ -1056,6 +1095,7 @@ def TypedList(type, base_class=List):
 
     return _TypedList
 
+
 def group_unified_files(files, unified_prefix, unified_suffix,
                         files_per_unified_file):
     """Return an iterator of (unified_filename, source_filenames) tuples.
@@ -1079,6 +1119,7 @@ def group_unified_files(files, unified_prefix, unified_suffix,
     # don't want the fill value inserted by izip_longest to be an
     # issue.  So we do a little dance to filter it out ourselves.
     dummy_fill_value = ("dummy",)
+
     def filter_out_dummy(iterable):
         return itertools.ifilter(lambda x: x != dummy_fill_value,
                                  iterable)
@@ -1122,7 +1163,7 @@ def expand_variables(s, variables):
         value = variables.get(name)
         if not value:
             continue
-        if not isinstance(value, types.StringTypes):
+        if not isinstance(value, six.string_types):
             value = ' '.join(value)
         result += value
     return result
@@ -1130,6 +1171,7 @@ def expand_variables(s, variables):
 
 class DefinesAction(argparse.Action):
     '''An ArgumentParser action to handle -Dvar[=value] type of arguments.'''
+
     def __call__(self, parser, namespace, values, option_string):
         defines = getattr(namespace, self.dest)
         if defines is None:
@@ -1149,7 +1191,7 @@ class EnumStringComparisonError(Exception):
     pass
 
 
-class EnumString(unicode):
+class EnumString(six.text_type):
     '''A string type that only can have a limited set of values, similarly to
     an Enum, and can only be compared against that set of values.
 
@@ -1158,6 +1200,7 @@ class EnumString(unicode):
     subclasses.
     '''
     POSSIBLE_VALUES = ()
+
     def __init__(self, value):
         if value not in self.POSSIBLE_VALUES:
             raise ValueError("'%s' is not a valid value for %s"
@@ -1185,19 +1228,21 @@ def _escape_char(c):
     # quoting could be done with either ' or ".
     if c == "'":
         return "\\'"
-    return unicode(c.encode('unicode_escape'))
+    return six.text_type(c.encode('unicode_escape'))
 
-# Mapping table between raw characters below \x80 and their escaped
-# counterpart, when they differ
-_INDENTED_REPR_TABLE = {
-    c: e
-    for c, e in map(lambda x: (x, _escape_char(x)),
-                    map(unichr, range(128)))
-    if c != e
-}
-# Regexp matching all characters to escape.
-_INDENTED_REPR_RE = re.compile(
-    '([' + ''.join(_INDENTED_REPR_TABLE.values()) + ']+)')
+
+if six.PY2:  # Not supported for py3 yet
+    # Mapping table between raw characters below \x80 and their escaped
+    # counterpart, when they differ
+    _INDENTED_REPR_TABLE = {
+        c: e
+        for c, e in map(lambda x: (x, _escape_char(x)),
+                        map(unichr, range(128)))
+        if c != e
+    }
+    # Regexp matching all characters to escape.
+    _INDENTED_REPR_RE = re.compile(
+        '([' + ''.join(_INDENTED_REPR_TABLE.values()) + ']+)')
 
 
 def indented_repr(o, indent=4):
@@ -1206,7 +1251,10 @@ def indented_repr(o, indent=4):
     One notable difference with repr is that the returned representation
     assumes `from __future__ import unicode_literals`.
     '''
+    if six.PY3:
+        raise NotImplementedError("indented_repr is not yet supported on py3")
     one_indent = ' ' * indent
+
     def recurse_indented_repr(o, level):
         if isinstance(o, dict):
             yield '{\n'
@@ -1223,7 +1271,7 @@ def indented_repr(o, indent=4):
         elif isinstance(o, bytes):
             yield 'b'
             yield repr(o)
-        elif isinstance(o, unicode):
+        elif isinstance(o, six.text_type):
             yield "'"
             # We want a readable string (non escaped unicode), but some
             # special characters need escaping (e.g. \n, \t, etc.)
@@ -1248,17 +1296,120 @@ def indented_repr(o, indent=4):
     return ''.join(recurse_indented_repr(o, 0))
 
 
-def encode(obj, encoding='utf-8'):
-    '''Recursively encode unicode strings with the given encoding.'''
-    if isinstance(obj, dict):
-        return {
-            encode(k, encoding): encode(v, encoding)
-            for k, v in obj.iteritems()
-        }
-    if isinstance(obj, bytes):
-        return obj
-    if isinstance(obj, unicode):
-        return obj.encode(encoding)
-    if isinstance(obj, Iterable):
-        return [encode(i, encoding) for i in obj]
-    return obj
+def patch_main():
+    '''This is a hack to work around the fact that Windows multiprocessing needs
+    to import the original main module, and assumes that it corresponds to a file
+    ending in .py.
+
+    We do this by a sort of two-level function interposing. The first
+    level interposes forking.get_command_line() with our version defined
+    in my_get_command_line(). Our version of get_command_line will
+    replace the command string with the contents of the fork_interpose()
+    function to be used in the subprocess.
+
+    The subprocess then gets an interposed imp.find_module(), which we
+    hack up to find the main module name multiprocessing will assume, since we
+    know what this will be based on the main module in the parent. If we're not
+    looking for our main module, then the original find_module will suffice.
+
+    See also: http://bugs.python.org/issue19946
+    And: https://bugzilla.mozilla.org/show_bug.cgi?id=914563
+    '''
+    # XXX In Python 3.4 the multiprocessing module was re-written and the below
+    # code is no longer valid. The Python issue19946 also claims to be fixed in
+    # this version. It's not clear whether this hack is still needed in 3.4+ or
+    # not, but at least some basic mach commands appear to work without it. So
+    # skip it in 3.4+ until we determine it's still needed.
+    if sys.platform == 'win32' and sys.version_info < (3, 4):
+        import inspect
+        import os
+        from multiprocessing import forking
+        global orig_command_line
+
+        # Figure out what multiprocessing will assume our main module
+        # is called (see python/Lib/multiprocessing/forking.py).
+        main_path = getattr(sys.modules['__main__'], '__file__', None)
+        if main_path is None:
+            # If someone deleted or modified __main__, there's nothing left for
+            # us to do.
+            return
+        main_file_name = os.path.basename(main_path)
+        main_module_name, ext = os.path.splitext(main_file_name)
+        if ext == '.py':
+            # If main is a .py file, everything ought to work as expected.
+            return
+
+        def fork_interpose():
+            import imp
+            import os
+            import sys
+            orig_find_module = imp.find_module
+
+            def my_find_module(name, dirs):
+                if name == main_module_name:
+                    path = os.path.join(dirs[0], main_file_name)
+                    f = open(path)
+                    return (f, path, ('', 'r', imp.PY_SOURCE))
+                return orig_find_module(name, dirs)
+
+            # Don't allow writing bytecode file for the main module.
+            orig_load_module = imp.load_module
+
+            def my_load_module(name, file, path, description):
+                # multiprocess.forking invokes imp.load_module manually and
+                # hard-codes the name __parents_main__ as the module name.
+                if name == '__parents_main__':
+                    old_bytecode = sys.dont_write_bytecode
+                    sys.dont_write_bytecode = True
+                    try:
+                        return orig_load_module(name, file, path, description)
+                    finally:
+                        sys.dont_write_bytecode = old_bytecode
+
+                return orig_load_module(name, file, path, description)
+
+            imp.find_module = my_find_module
+            imp.load_module = my_load_module
+            from multiprocessing.forking import main
+            main()
+
+        def my_get_command_line():
+            fork_code, lineno = inspect.getsourcelines(fork_interpose)
+            # Remove the first line (for 'def fork_interpose():') and the three
+            # levels of indentation (12 spaces), add our relevant globals.
+            fork_string = ("main_file_name = '%s'\n" % main_file_name +
+                           "main_module_name = '%s'\n" % main_module_name +
+                           ''.join(x[12:] for x in fork_code[1:]))
+            cmdline = orig_command_line()
+            cmdline[2] = fork_string
+            return cmdline
+        orig_command_line = forking.get_command_line
+        forking.get_command_line = my_get_command_line
+
+
+def ensure_bytes(value, encoding='utf-8'):
+    if isinstance(value, six.text_type):
+        return value.encode(encoding)
+    return value
+
+
+def ensure_unicode(value, encoding='utf-8'):
+    if isinstance(value, six.binary_type):
+        return value.decode(encoding)
+    return value
+
+
+def ensure_subprocess_env(env, encoding='utf-8'):
+    """Ensure the environment is in the correct format for the `subprocess`
+    module.
+
+    This will convert all keys and values to bytes on Python 2, and text on
+    Python 3.
+
+    Args:
+        env (dict): Environment to ensure.
+        encoding (str): Encoding to use when converting to/from bytes/text
+                        (default: utf-8).
+    """
+    ensure = ensure_bytes if sys.version_info[0] < 3 else ensure_unicode
+    return {ensure(k, encoding): ensure(v, encoding) for k, v in six.iteritems(env)}

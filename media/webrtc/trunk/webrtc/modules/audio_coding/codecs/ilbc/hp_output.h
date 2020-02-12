@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_HP_OUTPUT_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_HP_OUTPUT_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_HP_OUTPUT_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_HP_OUTPUT_H_
 
 #include "defines.h"
 
@@ -29,6 +29,6 @@ void WebRtcIlbcfix_HpOutput(
     int16_t *y,      /* (i/o) Filter state yhi[n-1] ylow[n-1]
                               yhi[n-2] ylow[n-2] */
     int16_t *x,      /* (i/o) Filter state x[n-1] x[n-2] */
-    int16_t len);      /* (i)   Number of samples to filter */
+    size_t len);      /* (i)   Number of samples to filter */
 
 #endif

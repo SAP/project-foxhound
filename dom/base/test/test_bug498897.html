@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=498897
 -->
 <head>
   <title>Test for Bug 498897</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -29,7 +29,7 @@ var policyID = SpecialPowers.wrap(SpecialPowers.Components).ID("{65944d64-2390-4
 var policyName = "@mozilla.org/498897_testpolicy;1";
 var policy = {
   // nsISupports implementation
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsISupports) ||
         iid.equals(Ci.nsIFactory) ||
         iid.equals(Ci.nsIContentPolicy))
@@ -39,14 +39,17 @@ var policy = {
   },
 
   // nsIFactory implementation
-  createInstance: function(outer, iid) {
+  createInstance(outer, iid) {
     return this.QueryInterface(iid);
   },
 
   // nsIContentPolicy implementation
-  shouldLoad: function(contentType, contentLocation, requestOrigin, context,
-                       mimeTypeGuess, extra) {
+  shouldLoad(contentLocation, loadInfo, mimeTypeGuess) {
     var url = window.location.href.substr(0, window.location.href.indexOf('test_bug498897'));
+    let loadingPrincipal = loadInfo.loadingPrincipal;
+    if (loadingPrincipal) {
+      requestOrigin = loadingPrincipal.URI;
+    }
     if (contentLocation.spec == url + "file_bug498897.css" &&
         requestOrigin.spec == url + "file_bug498897.html") {
       checkedLoad = true;
@@ -55,8 +58,7 @@ var policy = {
     return Ci.nsIContentPolicy.ACCEPT;
   },
 
-  shouldProcess: function(contentType, contentLocation, requestOrigin, context,
-                          mimeTypeGuess, extra) {
+  shouldProcess(contentLocation, loadInfo, mimeTypeGuess) {
     return Ci.nsIContentPolicy.ACCEPT;
   }
 }

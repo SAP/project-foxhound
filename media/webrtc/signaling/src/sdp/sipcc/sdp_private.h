@@ -324,9 +324,6 @@ extern sdp_result_e sdp_build_attribute(sdp_t *sdp_p, uint16_t token, flex_strin
 
 extern void sdp_parse_payload_types(sdp_t *sdp_p, sdp_mca_t *mca_p,
                                      const char *ptr);
-extern sdp_result_e sdp_parse_multiple_profile_payload_types(sdp_t *sdp_p,
-                                               sdp_mca_t *mca_p,
-                                               const char *ptr);
 extern sdp_result_e
 sdp_parse_attr_sdescriptions(sdp_t *sdp_p, sdp_attr_t *attr_p,
                              const char *ptr);
@@ -347,8 +344,6 @@ extern uint32_t sdp_getnextnumtok(const char *str, const char **str_end,
 extern uint32_t sdp_getnextnumtok_or_null(const char *str, const char **str_end,
                                      const char *delim, tinybool *null_ind,
                                      sdp_result_e *result);
-extern tinybool sdp_getchoosetok(const char *str, const char **str_end,
-                                 const char *delim, sdp_result_e *result);
 
 extern
 tinybool verify_sdescriptions_mki(char *buf, char *mkiVal, uint16_t *mkiLen);

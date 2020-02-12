@@ -13,33 +13,35 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-embed-element
-[NeedResolve]
+[NeedResolve,
+ Exposed=Window]
 interface HTMLEmbedElement : HTMLElement {
-  [Pure, SetterThrows]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString src;
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString type;
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString width;
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString height;
-  [Throws]
-  legacycaller any (any... arguments);
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#HTMLEmbedElement-partial
 partial interface HTMLEmbedElement {
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString align;
-  [Pure, SetterThrows]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString name;
 };
 
 partial interface HTMLEmbedElement {
   // GetSVGDocument
+  [NeedsSubjectPrincipal]
   Document? getSVGDocument();
 };
 
-HTMLEmbedElement implements MozImageLoadingContent;
-HTMLEmbedElement implements MozFrameLoaderOwner;
-HTMLEmbedElement implements MozObjectLoadingContent;
+HTMLEmbedElement includes MozImageLoadingContent;
+HTMLEmbedElement includes MozFrameLoaderOwner;
+HTMLEmbedElement includes MozObjectLoadingContent;

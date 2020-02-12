@@ -3,6 +3,31 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+ifndef ENABLE_TESTS
+# We can't package tests if they aren't enabled.
+MOZ_AUTOMATION_PACKAGE_TESTS = 0
+endif
+
+ifdef CROSS_COMPILE
+# Narrow the definition of cross compilation to not include win32 builds
+# on win64 and linux32 builds on linux64.
+ifeq ($(HOST_OS_ARCH),$(OS_TARGET))
+ifneq (,$(filter x86%,$(CPU_ARCH)))
+FUZZY_CROSS_COMPILE =
+else
+FUZZY_CROSS_COMPILE = 1
+endif
+else
+FUZZY_CROSS_COMPILE = 1
+endif
+endif
+
+# Don't run make check when cross compiling, when doing artifact builds
+# or when building instrumented builds for PGO.
+ifneq (,$(USE_ARTIFACT)$(FUZZY_CROSS_COMPILE)$(MOZ_PROFILE_GENERATE))
+MOZ_AUTOMATION_CHECK := 0
+endif
+
 ifneq (,$(filter automation/%,$(MAKECMDGOALS)))
 ifeq (4.0,$(firstword $(sort 4.0 $(MAKE_VERSION))))
 MAKEFLAGS += --output-sync=target
@@ -23,18 +48,12 @@ endif
 # corresponding the make target
 tier_MOZ_AUTOMATION_BUILD_SYMBOLS = buildsymbols
 tier_MOZ_AUTOMATION_L10N_CHECK = l10n-check
-tier_MOZ_AUTOMATION_PRETTY_L10N_CHECK = pretty-l10n-check
-tier_MOZ_AUTOMATION_INSTALLER = installer
-tier_MOZ_AUTOMATION_PRETTY_INSTALLER = pretty-installer
 tier_MOZ_AUTOMATION_PACKAGE = package
-tier_MOZ_AUTOMATION_PRETTY_PACKAGE = pretty-package
 tier_MOZ_AUTOMATION_PACKAGE_TESTS = package-tests
-tier_MOZ_AUTOMATION_PRETTY_PACKAGE_TESTS = pretty-package-tests
-tier_MOZ_AUTOMATION_UPDATE_PACKAGING = update-packaging
-tier_MOZ_AUTOMATION_PRETTY_UPDATE_PACKAGING = pretty-update-packaging
+tier_MOZ_AUTOMATION_PACKAGE_GENERATED_SOURCES = package-generated-sources
 tier_MOZ_AUTOMATION_UPLOAD_SYMBOLS = uploadsymbols
 tier_MOZ_AUTOMATION_UPLOAD = upload
-tier_MOZ_AUTOMATION_SDK = sdk
+tier_MOZ_AUTOMATION_CHECK = check
 
 # Automation build steps. Everything in MOZ_AUTOMATION_TIERS also gets used in
 # TIERS for mach display. As such, the MOZ_AUTOMATION_TIERS are roughly sorted
@@ -42,66 +61,37 @@ tier_MOZ_AUTOMATION_SDK = sdk
 # dependencies between them).
 moz_automation_symbols = \
   MOZ_AUTOMATION_PACKAGE_TESTS \
-  MOZ_AUTOMATION_PRETTY_PACKAGE_TESTS \
   MOZ_AUTOMATION_BUILD_SYMBOLS \
   MOZ_AUTOMATION_UPLOAD_SYMBOLS \
   MOZ_AUTOMATION_PACKAGE \
-  MOZ_AUTOMATION_PRETTY_PACKAGE \
-  MOZ_AUTOMATION_INSTALLER \
-  MOZ_AUTOMATION_PRETTY_INSTALLER \
-  MOZ_AUTOMATION_UPDATE_PACKAGING \
-  MOZ_AUTOMATION_PRETTY_UPDATE_PACKAGING \
+  MOZ_AUTOMATION_PACKAGE_GENERATED_SOURCES \
   MOZ_AUTOMATION_L10N_CHECK \
-  MOZ_AUTOMATION_PRETTY_L10N_CHECK \
   MOZ_AUTOMATION_UPLOAD \
-  MOZ_AUTOMATION_SDK \
+  MOZ_AUTOMATION_CHECK \
   $(NULL)
 MOZ_AUTOMATION_TIERS := $(foreach sym,$(moz_automation_symbols),$(if $(filter 1,$($(sym))),$(tier_$(sym))))
 
 # Dependencies between automation build steps
-automation/uploadsymbols: automation/buildsymbols
+automation-start/uploadsymbols: automation/buildsymbols
 
-automation/update-packaging: automation/package
-automation/update-packaging: automation/installer
-automation/pretty-update-packaging: automation/pretty-package
-automation/pretty-update-packaging: automation/pretty-installer
+automation-start/l10n-check: automation/package
 
-automation/l10n-check: automation/package
-automation/l10n-check: automation/installer
-automation/pretty-l10n-check: automation/pretty-package
-automation/pretty-l10n-check: automation/pretty-installer
+automation-start/upload: automation/package
+automation-start/upload: automation/package-tests
+automation-start/upload: automation/buildsymbols
+automation-start/upload: automation/package-generated-sources
 
-automation/upload: automation/installer
-automation/upload: automation/package
-automation/upload: automation/package-tests
-automation/upload: automation/buildsymbols
-automation/upload: automation/update-packaging
-automation/upload: automation/sdk
-
-# automation/{pretty-}package should depend on build (which is implicit due to
-# the way client.mk invokes automation/build), but buildsymbols changes the
-# binaries/libs, and that's what we package/test.
-automation/pretty-package: automation/buildsymbols
-
-# The installer, sdk and packager all run stage-package, and may conflict
-# with each other.
-automation/installer: automation/package
-automation/sdk: automation/installer automation/package
-
-# The 'pretty' versions of targets run before the regular ones to avoid
-# conflicts in writing to the same files.
-automation/installer: automation/pretty-installer
-automation/package: automation/pretty-package
-automation/package-tests: automation/pretty-package-tests
-automation/l10n-check: automation/pretty-l10n-check
-automation/update-packaging: automation/pretty-update-packaging
+# Run the check tier after everything else.
+automation-start/check: $(addprefix automation/,$(filter-out check,$(MOZ_AUTOMATION_TIERS)))
 
 automation/build: $(addprefix automation/,$(MOZ_AUTOMATION_TIERS))
 	@echo Automation steps completed.
 
 # Note: We have to force -j1 here, at least until bug 1036563 is fixed.
 AUTOMATION_EXTRA_CMDLINE-l10n-check = -j1
-AUTOMATION_EXTRA_CMDLINE-pretty-l10n-check = -j1
+
+# Run as many tests as possible, even in case of one of them failing.
+AUTOMATION_EXTRA_CMDLINE-check = --keep-going
 
 # The commands only run if the corresponding MOZ_AUTOMATION_* variable is
 # enabled. This means, for example, if we enable MOZ_AUTOMATION_UPLOAD, then
@@ -109,7 +99,7 @@ AUTOMATION_EXTRA_CMDLINE-pretty-l10n-check = -j1
 # However, the target automation/buildsymbols will still be executed in this
 # case because it is a prerequisite of automation/upload.
 define automation_commands
-@+$(MAKE) $1 $(AUTOMATION_EXTRA_CMDLINE-$1)
+@+$(PYTHON) $(topsrcdir)/config/run-and-prefix.py $1 $(MAKE) $1 $(AUTOMATION_EXTRA_CMDLINE-$1)
 $(call BUILDSTATUS,TIER_FINISH $1)
 endef
 

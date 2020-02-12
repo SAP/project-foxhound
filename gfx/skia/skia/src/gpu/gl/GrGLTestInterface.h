@@ -24,6 +24,7 @@ public:
     virtual GrGLvoid bindBuffer(GrGLenum target, GrGLuint buffer) {}
     virtual GrGLvoid bindFramebuffer(GrGLenum target, GrGLuint framebuffer) {}
     virtual GrGLvoid bindRenderbuffer(GrGLenum target, GrGLuint renderbuffer) {}
+    virtual GrGLvoid bindSampler(GrGLuint unit, GrGLuint sampler) {}
     virtual GrGLvoid bindTexture(GrGLenum target, GrGLuint texture) {}
     virtual GrGLvoid bindFragDataLocation(GrGLuint program, GrGLuint colorNumber, const GrGLchar* name) {}
     virtual GrGLvoid bindFragDataLocationIndexed(GrGLuint program, GrGLuint colorNumber, GrGLuint index, const GrGLchar * name) {}
@@ -52,6 +53,7 @@ public:
     virtual GrGLvoid deleteProgram(GrGLuint program) {}
     virtual GrGLvoid deleteQueries(GrGLsizei n, const GrGLuint *ids) {}
     virtual GrGLvoid deleteRenderbuffers(GrGLsizei n, const GrGLuint *renderbuffers) {}
+    virtual GrGLvoid deleteSamplers(GrGLsizei n, const GrGLuint* samplers) {}
     virtual GrGLvoid deleteShader(GrGLuint shader) {}
     virtual GrGLvoid deleteTextures(GrGLsizei n, const GrGLuint* textures) {}
     virtual GrGLvoid deleteVertexArrays(GrGLsizei n, const GrGLuint *arrays) {}
@@ -60,12 +62,13 @@ public:
     virtual GrGLvoid disableVertexAttribArray(GrGLuint index) {}
     virtual GrGLvoid drawArrays(GrGLenum mode, GrGLint first, GrGLsizei count) {}
     virtual GrGLvoid drawArraysInstanced(GrGLenum mode, GrGLint first, GrGLsizei count, GrGLsizei primcount) {}
-    virtual GrGLvoid drawArraysIndirect(GrGLenum mode, GrGLvoid* indirect) {}
+    virtual GrGLvoid drawArraysIndirect(GrGLenum mode, const GrGLvoid* indirect) {}
     virtual GrGLvoid drawBuffer(GrGLenum mode) {}
     virtual GrGLvoid drawBuffers(GrGLsizei n, const GrGLenum* bufs) {}
     virtual GrGLvoid drawElements(GrGLenum mode, GrGLsizei count, GrGLenum type, const GrGLvoid* indices) {}
     virtual GrGLvoid drawElementsInstanced(GrGLenum mode, GrGLsizei count, GrGLenum type, const GrGLvoid *indices, GrGLsizei primcount) {}
-    virtual GrGLvoid drawElementsIndirect(GrGLenum mode, GrGLenum type, GrGLvoid* indirect) {}
+    virtual GrGLvoid drawElementsIndirect(GrGLenum mode, GrGLenum type, const GrGLvoid* indirect) {}
+    virtual GrGLvoid drawRangeElements(GrGLenum mode, GrGLuint start, GrGLuint end, GrGLsizei count, GrGLenum type, const GrGLvoid* indices) {}
     virtual GrGLvoid enable(GrGLenum cap) {}
     virtual GrGLvoid enableVertexAttribArray(GrGLuint index) {}
     virtual GrGLvoid endQuery(GrGLenum target) {}
@@ -81,6 +84,7 @@ public:
     virtual GrGLvoid generateMipmap(GrGLenum target) {}
     virtual GrGLvoid genQueries(GrGLsizei n, GrGLuint *ids) {}
     virtual GrGLvoid genRenderbuffers(GrGLsizei n, GrGLuint *renderbuffers) {}
+    virtual GrGLvoid genSamplers(GrGLsizei n, GrGLuint *samplers) {}
     virtual GrGLvoid genTextures(GrGLsizei n, GrGLuint* textures) {}
     virtual GrGLvoid genVertexArrays(GrGLsizei n, GrGLuint *arrays) {}
     virtual GrGLvoid getBufferParameteriv(GrGLenum target, GrGLenum pname, GrGLint* params) {}
@@ -117,8 +121,8 @@ public:
     virtual GrGLvoid* mapBufferRange(GrGLenum target, GrGLintptr offset, GrGLsizeiptr length, GrGLbitfield access) { return nullptr; }
     virtual GrGLvoid* mapBufferSubData(GrGLuint target, GrGLintptr offset, GrGLsizeiptr size, GrGLenum access) { return nullptr; }
     virtual GrGLvoid* mapTexSubImage2D(GrGLenum target, GrGLint level, GrGLint xoffset, GrGLint yoffset, GrGLsizei width, GrGLsizei height, GrGLenum format, GrGLenum type, GrGLenum access) { return nullptr; }
-    virtual GrGLvoid minSampleShading(GrGLfloat value) {}
     virtual GrGLvoid pixelStorei(GrGLenum pname, GrGLint param) {}
+    virtual GrGLvoid polygonMode(GrGLenum face, GrGLenum mode) {}
     virtual GrGLvoid popGroupMarker() {}
     virtual GrGLvoid pushGroupMarker(GrGLsizei length, const char* marker) {}
     virtual GrGLvoid queryCounter(GrGLuint id, GrGLenum target) {}
@@ -128,13 +132,11 @@ public:
     virtual GrGLvoid renderbufferStorage(GrGLenum target, GrGLenum internalformat, GrGLsizei width, GrGLsizei height) {}
     virtual GrGLvoid renderbufferStorageMultisample(GrGLenum target, GrGLsizei samples, GrGLenum internalformat, GrGLsizei width, GrGLsizei height) {}
     virtual GrGLvoid resolveMultisampleFramebuffer() {}
+    virtual GrGLvoid samplerParameteri(GrGLuint sampler, GrGLenum pname, GrGLint param) {}
+    virtual GrGLvoid samplerParameteriv(GrGLuint sampler, GrGLenum pname, const GrGLint* param) {}
     virtual GrGLvoid scissor(GrGLint x, GrGLint y, GrGLsizei width, GrGLsizei height) {}
     virtual GrGLvoid bindUniformLocation(GrGLuint program, GrGLint location, const char* name) {}
-#if GR_GL_USE_NEW_SHADER_SOURCE_SIGNATURE
     virtual GrGLvoid shaderSource(GrGLuint shader, GrGLsizei count, const char* const * str, const GrGLint* length) {}
-#else
-    virtual GrGLvoid shaderSource(GrGLuint shader, GrGLsizei count, const char** str, const GrGLint* length) {}
-#endif
     virtual GrGLvoid stencilFunc(GrGLenum func, GrGLint ref, GrGLuint mask) {}
     virtual GrGLvoid stencilFuncSeparate(GrGLenum face, GrGLenum func, GrGLint ref, GrGLuint mask) {}
     virtual GrGLvoid stencilMask(GrGLuint mask) {}
@@ -143,6 +145,8 @@ public:
     virtual GrGLvoid stencilOpSeparate(GrGLenum face, GrGLenum fail, GrGLenum zfail, GrGLenum zpass) {}
     virtual GrGLvoid texBuffer(GrGLenum target, GrGLenum internalformat, GrGLuint buffer) {}
     virtual GrGLvoid texImage2D(GrGLenum target, GrGLint level, GrGLint internalformat, GrGLsizei width, GrGLsizei height, GrGLint border, GrGLenum format, GrGLenum type, const GrGLvoid* pixels) {}
+    virtual GrGLvoid texParameterf(GrGLenum target, GrGLenum pname, GrGLfloat param) {}
+    virtual GrGLvoid texParameterfv(GrGLenum target, GrGLenum pname, const GrGLfloat* params) {}
     virtual GrGLvoid texParameteri(GrGLenum target, GrGLenum pname, GrGLint param) {}
     virtual GrGLvoid texParameteriv(GrGLenum target, GrGLenum pname, const GrGLint* params) {}
     virtual GrGLvoid texStorage2D(GrGLenum target, GrGLsizei levels, GrGLenum internalformat, GrGLsizei width, GrGLsizei height) {}
@@ -316,6 +320,11 @@ public:
     virtual GrGLvoid* mapNamedBufferRange(GrGLuint buffer, GrGLintptr offset, GrGLsizeiptr length, GrGLbitfield access) { return nullptr; }
     virtual GrGLvoid flushMappedNamedBufferRange(GrGLuint buffer, GrGLintptr offset, GrGLsizeiptr length) {}
     virtual GrGLvoid textureBuffer(GrGLuint texture, GrGLenum target, GrGLenum internalformat, GrGLuint buffer) {}
+    virtual GrGLsync fenceSync(GrGLenum condition, GrGLbitfield flags) { return nullptr;  }
+    virtual GrGLboolean isSync(GrGLsync) { return false;  }
+    virtual GrGLenum clientWaitSync(GrGLsync sync, GrGLbitfield flags, GrGLuint64 timeout) { return GR_GL_WAIT_FAILED;  }
+    virtual GrGLvoid waitSync(GrGLsync sync, GrGLbitfield flags, GrGLuint64 timeout) {}
+    virtual GrGLvoid deleteSync(GrGLsync sync) {}
     virtual GrGLvoid debugMessageControl(GrGLenum source, GrGLenum type, GrGLenum severity, GrGLsizei count, const GrGLuint* ids, GrGLboolean enabled) {}
     virtual GrGLvoid debugMessageInsert(GrGLenum source, GrGLenum type, GrGLuint id, GrGLenum severity, GrGLsizei length,  const GrGLchar* buf) {}
     virtual GrGLvoid debugMessageCallback(GRGLDEBUGPROC callback, const GrGLvoid* userParam) {}
@@ -323,6 +332,10 @@ public:
     virtual GrGLvoid pushDebugGroup(GrGLenum source, GrGLuint id, GrGLsizei length,  const GrGLchar * message) {}
     virtual GrGLvoid popDebugGroup() {}
     virtual GrGLvoid objectLabel(GrGLenum identifier, GrGLuint name, GrGLsizei length, const GrGLchar *label) {}
+    virtual GrGLvoid getInternalformativ(GrGLenum target, GrGLenum internalformat, GrGLenum pname, GrGLsizei bufSize, GrGLint *params) {}
+    virtual GrGLvoid programBinary(GrGLuint program, GrGLenum binaryFormat, void *binary, GrGLsizei length) {}
+    virtual GrGLvoid getProgramBinary(GrGLuint program, GrGLsizei bufsize, GrGLsizei* length, GrGLenum *binaryFormat, void *binary) {}
+    virtual GrGLvoid programParameteri(GrGLuint program, GrGLenum pname, GrGLint value) {}
 
 protected:
     // This must be called by leaf class

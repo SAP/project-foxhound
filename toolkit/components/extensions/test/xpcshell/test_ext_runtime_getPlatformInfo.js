@@ -4,11 +4,14 @@
 
 function backgroundScript() {
   browser.runtime.getPlatformInfo(info => {
-    let validOSs = ["mac", "win", "android", "cros", "linux", "openbsd", "gonk"];
-    let validArchs = ["arm", "x86-32", "x86-64"];
+    let validOSs = ["mac", "win", "android", "cros", "linux", "openbsd"];
+    let validArchs = ["arm", "x86-32", "x86-64", "aarch64"];
 
-    browser.test.assertTrue(validOSs.indexOf(info.os) != -1, "OS is valid");
-    browser.test.assertTrue(validArchs.indexOf(info.arch) != -1, "Architecture is valid");
+    browser.test.assertTrue(validOSs.includes(info.os), "OS is valid");
+    browser.test.assertTrue(
+      validArchs.includes(info.arch),
+      "Architecture is valid"
+    );
     browser.test.notifyPass("runtime.getPlatformInfo");
   });
 }
@@ -17,9 +20,9 @@ let extensionData = {
   background: backgroundScript,
 };
 
-add_task(function* test_contentscript() {
+add_task(async function() {
   let extension = ExtensionTestUtils.loadExtension(extensionData);
-  yield extension.startup();
-  yield extension.awaitFinish("runtime.getPlatformInfo");
-  yield extension.unload();
+  await extension.startup();
+  await extension.awaitFinish("runtime.getPlatformInfo");
+  await extension.unload();
 });

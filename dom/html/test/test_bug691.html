@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=691
 -->
 <head>
   <title>Test for Bug 691</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 <script type="text/javascript">
 
@@ -23,7 +23,7 @@ function remove() {
   var stage = document.getElementById("stage");
   var body = document.getElementsByTagName("BODY")[0];
   while (stage.firstChild) {
-    stage.removeChild(stage.firstChild);
+    stage.firstChild.remove();
   }
 }
 

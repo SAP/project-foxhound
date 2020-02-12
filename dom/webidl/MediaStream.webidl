@@ -23,23 +23,37 @@ dictionary MediaStreamConstraints {
     DOMString? peerIdentity = null;
 };
 
-[Exposed=Window,
- Constructor,
- Constructor (MediaStream stream),
- Constructor (sequence<MediaStreamTrack> tracks)]
+dictionary DisplayMediaStreamConstraints {
+    (boolean or MediaTrackConstraints) video = true;
+    (boolean or MediaTrackConstraints) audio = false;
+};
+
+[Exposed=Window]
 interface MediaStream : EventTarget {
+    [Throws]
+    constructor();
+    [Throws]
+    constructor(MediaStream stream);
+    [Throws]
+    constructor(sequence<MediaStreamTrack> tracks);
+
     readonly    attribute DOMString    id;
-    sequence<AudioStreamTrack> getAudioTracks ();
-    sequence<VideoStreamTrack> getVideoTracks ();
+    sequence<MediaStreamTrack> getAudioTracks ();
+    sequence<MediaStreamTrack> getVideoTracks ();
     sequence<MediaStreamTrack> getTracks ();
     MediaStreamTrack?          getTrackById (DOMString trackId);
     void                       addTrack (MediaStreamTrack track);
     void                       removeTrack (MediaStreamTrack track);
     MediaStream                clone ();
-    // readonly    attribute boolean      active;
-    //             attribute EventHandler onactive;
-    //             attribute EventHandler oninactive;
+    readonly    attribute boolean      active;
                 attribute EventHandler onaddtrack;
-    //             attribute EventHandler onremovetrack;
-    readonly attribute double currentTime;
+                attribute EventHandler onremovetrack;
+
+    [ChromeOnly, Throws]
+    static Promise<long> countUnderlyingStreams();
+
+    // Webrtc allows the remote side to name a stream whatever it wants, and we
+    // need to surface this to content.
+    [ChromeOnly]
+    void assignId(DOMString id);
 };

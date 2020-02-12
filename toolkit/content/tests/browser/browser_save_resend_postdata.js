@@ -17,11 +17,15 @@ MockFilePicker.init(window);
 function test() {
   waitForExplicitFinish();
 
-  gBrowser.loadURI("http://mochi.test:8888/browser/toolkit/content/tests/browser/data/post_form_outer.sjs");
+  BrowserTestUtils.loadURI(
+    gBrowser,
+    "http://mochi.test:8888/browser/toolkit/content/tests/browser/data/post_form_outer.sjs"
+  );
 
   gBrowser.addEventListener("pageshow", function pageShown(event) {
-    if (event.target.location == "about:blank")
+    if (event.target.location == "about:blank") {
       return;
+    }
     gBrowser.removeEventListener("pageshow", pageShown);
 
     // Submit the form in the outer page, then wait for both the outer
@@ -34,8 +38,9 @@ function test() {
   var innerFrame;
 
   function handleOuterSubmit() {
-    if (++framesLoaded < 2)
+    if (++framesLoaded < 2) {
       return;
+    }
 
     gBrowser.removeEventListener("DOMContentLoaded", handleOuterSubmit);
 
@@ -53,7 +58,7 @@ function test() {
     var destDir = createTemporarySaveDirectory();
     var file = destDir.clone();
     file.append("no_default_file_name");
-    MockFilePicker.returnFiles = [file];
+    MockFilePicker.setFiles([file]);
     MockFilePicker.showCallback = function(fp) {
       MockFilePicker.filterIndex = 1; // kSaveAsType_URL
     };
@@ -61,7 +66,7 @@ function test() {
     mockTransferCallback = onTransferComplete;
     mockTransferRegisterer.register();
 
-    registerCleanupFunction(function () {
+    registerCleanupFunction(function() {
       mockTransferRegisterer.unregister();
       MockFilePicker.cleanup();
       destDir.remove(true);
@@ -70,43 +75,62 @@ function test() {
     var docToSave = innerFrame.contentDocument;
     // We call internalSave instead of saveDocument to bypass the history
     // cache.
-    internalSave(docToSave.location.href, docToSave, null, null,
-                 docToSave.contentType, false, null, null,
-                 docToSave.referrer ? makeURI(docToSave.referrer) : null,
-                 docToSave, false, null);
+    internalSave(
+      docToSave.location.href,
+      docToSave,
+      null,
+      null,
+      docToSave.contentType,
+      false,
+      null,
+      null,
+      docToSave.referrer ? makeURI(docToSave.referrer) : null,
+      docToSave,
+      false,
+      null
+    );
   }
 
   function onTransferComplete(downloadSuccess) {
-    ok(downloadSuccess, "The inner frame should have been downloaded successfully");
+    ok(
+      downloadSuccess,
+      "The inner frame should have been downloaded successfully"
+    );
 
     // Read the entire saved file.
-    var file = MockFilePicker.returnFiles[0];
+    var file = MockFilePicker.getNsIFile();
     var fileContents = readShortFile(file);
 
     // Check if outer POST data is found (bug 471962).
-    is(fileContents.indexOf("inputfield=outer"), -1,
-       "The saved inner frame does not contain outer POST data");
+    is(
+      fileContents.indexOf("inputfield=outer"),
+      -1,
+      "The saved inner frame does not contain outer POST data"
+    );
 
     // Check if inner POST data is found (bug 485196).
-    isnot(fileContents.indexOf("inputfield=inner"), -1,
-          "The saved inner frame was generated using the correct POST data");
+    isnot(
+      fileContents.indexOf("inputfield=inner"),
+      -1,
+      "The saved inner frame was generated using the correct POST data"
+    );
 
     finish();
   }
 }
 
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
-                 this);
+/* import-globals-from common/mockTransfer.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
+  this
+);
 
 function createTemporarySaveDirectory() {
-  var saveDir = Cc["@mozilla.org/file/directory_service;1"]
-                  .getService(Ci.nsIProperties)
-                  .get("TmpD", Ci.nsIFile);
+  var saveDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
   saveDir.append("testsavedir");
-  if (!saveDir.exists())
+  if (!saveDir.exists()) {
     saveDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
+  }
   return saveDir;
 }
 
@@ -120,24 +144,24 @@ function createTemporarySaveDirectory() {
  *        String containing the raw octets read from the file.
  */
 function readShortFile(aFile) {
-  var inputStream = Cc["@mozilla.org/network/file-input-stream;1"]
-                      .createInstance(Ci.nsIFileInputStream);
+  var inputStream = Cc[
+    "@mozilla.org/network/file-input-stream;1"
+  ].createInstance(Ci.nsIFileInputStream);
   inputStream.init(aFile, -1, 0, 0);
   try {
-    var scrInputStream = Cc["@mozilla.org/scriptableinputstream;1"]
-                           .createInstance(Ci.nsIScriptableInputStream);
+    var scrInputStream = Cc[
+      "@mozilla.org/scriptableinputstream;1"
+    ].createInstance(Ci.nsIScriptableInputStream);
     scrInputStream.init(inputStream);
     try {
       // Assume that the file is much shorter than 1 MiB.
       return scrInputStream.read(1048576);
-    }
-    finally {
+    } finally {
       // Close the scriptable stream after reading, even if the operation
       // failed.
       scrInputStream.close();
     }
-  }
-  finally {
+  } finally {
     // Close the stream after reading, if it is still open, even if the read
     // operation failed.
     inputStream.close();

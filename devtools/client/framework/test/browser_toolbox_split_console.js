@@ -1,7 +1,7 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
 
 // Tests that these toolbox split console APIs work:
 //  * toolbox.useKeyWithSplitConsole()
@@ -11,30 +11,23 @@ let gToolbox = null;
 let panelWin = null;
 
 const URL = "data:text/html;charset=utf8,test split console key delegation";
-const XULNS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
-// Force the old debugger UI since it's directly used (see Bug 1301705)
-Services.prefs.setBoolPref("devtools.debugger.new-debugger-frontend", false);
-registerCleanupFunction(function* () {
-  Services.prefs.clearUserPref("devtools.debugger.new-debugger-frontend");
-});
-
-add_task(function* () {
-  let tab = yield addTab(URL);
-  let target = TargetFactory.forTab(tab);
-  gToolbox = yield gDevTools.showToolbox(target, "jsdebugger");
+add_task(async function() {
+  const tab = await addTab(URL);
+  const target = await TargetFactory.forTab(tab);
+  gToolbox = await gDevTools.showToolbox(target, "jsdebugger");
   panelWin = gToolbox.getPanel("jsdebugger").panelWin;
 
-  yield gToolbox.openSplitConsole();
-  yield testIsSplitConsoleFocused();
-  yield testUseKeyWithSplitConsole();
-  yield testUseKeyWithSplitConsoleWrongTool();
+  await gToolbox.openSplitConsole();
+  await testIsSplitConsoleFocused();
+  await testUseKeyWithSplitConsole();
+  await testUseKeyWithSplitConsoleWrongTool();
 
-  yield cleanup();
+  await cleanup();
 });
 
-function* testIsSplitConsoleFocused() {
-  yield gToolbox.openSplitConsole();
+async function testIsSplitConsoleFocused() {
+  await gToolbox.openSplitConsole();
   // The newly opened split console should have focus
   ok(gToolbox.isSplitConsoleFocused(), "Split console is focused");
   panelWin.focus();
@@ -42,49 +35,51 @@ function* testIsSplitConsoleFocused() {
 }
 
 // A key bound to the selected tool should trigger it's command
-function* testUseKeyWithSplitConsole() {
+function testUseKeyWithSplitConsole() {
   let commandCalled = false;
 
-  let keyElm = panelWin.document.createElementNS(XULNS, "key");
-  keyElm.setAttribute("keycode", "VK_F3");
-  keyElm.addEventListener("command", () => {commandCalled = true;}, false);
-  panelWin.document.getElementsByTagName("keyset")[0].appendChild(keyElm);
-
   info("useKeyWithSplitConsole on debugger while debugger is focused");
-  gToolbox.useKeyWithSplitConsole(keyElm, "jsdebugger");
+  gToolbox.useKeyWithSplitConsole(
+    "F3",
+    () => {
+      commandCalled = true;
+    },
+    "jsdebugger"
+  );
 
   info("synthesizeKey with the console focused");
-  let consoleInput = gToolbox.getPanel("webconsole").hud.jsterm.inputNode;
-  consoleInput.focus();
-  synthesizeKeyElement(keyElm);
+  focusConsoleInput();
+  synthesizeKeyShortcut("F3", panelWin);
 
   ok(commandCalled, "Shortcut key should trigger the command");
 }
 
 // A key bound to a *different* tool should not trigger it's command
-function* testUseKeyWithSplitConsoleWrongTool() {
+function testUseKeyWithSplitConsoleWrongTool() {
   let commandCalled = false;
 
-  let keyElm = panelWin.document.createElementNS(XULNS, "key");
-  keyElm.setAttribute("keycode", "VK_F4");
-  keyElm.addEventListener("command", () => {commandCalled = true;}, false);
-  panelWin.document.getElementsByTagName("keyset")[0].appendChild(keyElm);
-
   info("useKeyWithSplitConsole on inspector while debugger is focused");
-  gToolbox.useKeyWithSplitConsole(keyElm, "inspector");
+  gToolbox.useKeyWithSplitConsole(
+    "F4",
+    () => {
+      commandCalled = true;
+    },
+    "inspector"
+  );
 
   info("synthesizeKey with the console focused");
-  let consoleInput = gToolbox.getPanel("webconsole").hud.jsterm.inputNode;
-  consoleInput.focus();
-  synthesizeKeyElement(keyElm);
+  focusConsoleInput();
+  synthesizeKeyShortcut("F4", panelWin);
 
   ok(!commandCalled, "Shortcut key shouldn't trigger the command");
 }
 
-function* cleanup() {
-  // We don't want the open split console to confuse other tests..
-  Services.prefs.clearUserPref("devtools.toolbox.splitconsoleEnabled");
-  yield gToolbox.destroy();
+async function cleanup() {
+  await gToolbox.destroy();
   gBrowser.removeCurrentTab();
   gToolbox = panelWin = null;
+}
+
+function focusConsoleInput() {
+  gToolbox.getPanel("webconsole").hud.jsterm.focus();
 }

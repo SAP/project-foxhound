@@ -52,8 +52,6 @@ struct nr_ice_peer_ctx_ {
   UCHAR controlling_conflict_resolved;
   UINT8 tiebreaker;
 
-  char *peer_ufrag;
-  char *peer_pwd;
   int peer_lite;
   int peer_ice_mismatch;
 
@@ -62,8 +60,8 @@ struct nr_ice_peer_ctx_ {
   int waiting_pairs;
   UCHAR checks_started;
 
-  void *done_cb_timer;
-  UCHAR reported_done;
+  void *connected_cb_timer;
+  UCHAR reported_connected;
   void *trickle_grace_period_timer;
 
   STAILQ_ENTRY(nr_ice_peer_ctx_) entry;
@@ -76,16 +74,20 @@ int nr_ice_peer_ctx_destroy(nr_ice_peer_ctx **pctxp);
 int nr_ice_peer_ctx_parse_stream_attributes(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, char **attrs, int attr_ct);
 int nr_ice_peer_ctx_find_pstream(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream **pstreamp);
 int nr_ice_peer_ctx_remove_pstream(nr_ice_peer_ctx *pctx, nr_ice_media_stream **pstreamp);
-int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, char *cand);
+int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, char *cand, const char *mdns_addr);
 
 int nr_ice_peer_ctx_pair_candidates(nr_ice_peer_ctx *pctx);
 int nr_ice_peer_ctx_parse_global_attributes(nr_ice_peer_ctx *pctx, char **attrs, int attr_ct);
 int nr_ice_peer_ctx_start_checks(nr_ice_peer_ctx *pctx);
 int nr_ice_peer_ctx_start_checks2(nr_ice_peer_ctx *pctx, int allow_non_first);
 void nr_ice_peer_ctx_stream_started_checks(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream);
-int nr_ice_peer_ctx_dump_state(nr_ice_peer_ctx *pctx,FILE *out);
+void nr_ice_peer_ctx_refresh_consent_all_streams(nr_ice_peer_ctx *pctx);
+void nr_ice_peer_ctx_disconnect_all_streams(nr_ice_peer_ctx *pctx);
+void nr_ice_peer_ctx_disconnected(nr_ice_peer_ctx *pctx);
+void nr_ice_peer_ctx_connected(nr_ice_peer_ctx *pctx);
+void nr_ice_peer_ctx_dump_state(nr_ice_peer_ctx *pctx, int log_level);
 int nr_ice_peer_ctx_log_state(nr_ice_peer_ctx *pctx);
-int nr_ice_peer_ctx_check_if_done(nr_ice_peer_ctx *pctx);
+void nr_ice_peer_ctx_check_if_connected(nr_ice_peer_ctx *pctx);
 int nr_ice_peer_ctx_find_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, int component_id, nr_ice_component **compp);
 int nr_ice_peer_ctx_deliver_packet_maybe(nr_ice_peer_ctx *pctx, nr_ice_component *comp, nr_transport_addr *source_addr, UCHAR *data, int len);
 int nr_ice_peer_ctx_disable_component(nr_ice_peer_ctx *pctx, nr_ice_media_stream *lstream, int component_id);

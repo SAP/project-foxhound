@@ -3,47 +3,58 @@
 
 "use strict";
 
-add_task(function*() {
+add_task(async function() {
   const URI = "data:text/html;charset=utf-8,<iframe id='test-iframe'></iframe>";
 
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: URI }, function* (browser) {
-    yield ContentTask.spawn(browser, null, test_body);
+  await BrowserTestUtils.withNewTab({ gBrowser, url: URI }, async function(
+    browser
+  ) {
+    await ContentTask.spawn(browser, null, test_body);
   });
 });
 
-function* test_body() {
+async function test_body() {
   let docshell = docShell;
 
-  is(docshell.touchEventsOverride, Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_NONE,
-    "touchEventsOverride flag should be initially set to NONE");
+  is(
+    docshell.touchEventsOverride,
+    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_NONE,
+    "touchEventsOverride flag should be initially set to NONE"
+  );
 
   docshell.touchEventsOverride = Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED;
-  is(docshell.touchEventsOverride, Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
-    "touchEventsOverride flag should be changed to DISABLED");
+  is(
+    docshell.touchEventsOverride,
+    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    "touchEventsOverride flag should be changed to DISABLED"
+  );
 
   let frameWin = content.document.querySelector("#test-iframe").contentWindow;
-  docshell = frameWin.QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIWebNavigation)
-                     .QueryInterface(Ci.nsIDocShell);
-  is(docshell.touchEventsOverride, Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
-    "touchEventsOverride flag should be passed on to frames.");
+  docshell = frameWin.docShell;
+  is(
+    docshell.touchEventsOverride,
+    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    "touchEventsOverride flag should be passed on to frames."
+  );
 
   let newFrame = content.document.createElement("iframe");
   content.document.body.appendChild(newFrame);
 
   let newFrameWin = newFrame.contentWindow;
-  docshell = newFrameWin.QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIWebNavigation)
-                        .QueryInterface(Ci.nsIDocShell);
-  is(docshell.touchEventsOverride, Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
-    "Newly created frames should use the new touchEventsOverride flag");
+  docshell = newFrameWin.docShell;
+  is(
+    docshell.touchEventsOverride,
+    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    "Newly created frames should use the new touchEventsOverride flag"
+  );
 
   newFrameWin.location.reload();
-  yield ContentTaskUtils.waitForEvent(newFrameWin, "load");
+  await ContentTaskUtils.waitForEvent(newFrameWin, "load");
 
-  docshell = newFrameWin.QueryInterface(Ci.nsIInterfaceRequestor)
-                        .getInterface(Ci.nsIWebNavigation)
-                        .QueryInterface(Ci.nsIDocShell);
-  is(docshell.touchEventsOverride, Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
-    "New touchEventsOverride flag should persist across reloads");
+  docshell = newFrameWin.docShell;
+  is(
+    docshell.touchEventsOverride,
+    Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_DISABLED,
+    "New touchEventsOverride flag should persist across reloads"
+  );
 }

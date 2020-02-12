@@ -1,8 +1,8 @@
 <html>
 <head>
   <title>Test for Bug 624127</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="setTimeout('runTest()', 0)">
@@ -28,7 +28,7 @@ function runTest() {
 </pre>
 
 <p id="text">Normal text</p>
-<iframe src="data:text/plain,text in iframe"></iframe>
+<iframe srcdoc="text in iframe"></iframe>
 <p id="text2">Normal text</p>
 
 </body>

@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_UTIL_UTILITY_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_UTIL_UTILITY_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_UTIL_UTILITY_H_
+#define MODULES_AUDIO_CODING_CODECS_ISAC_MAIN_UTIL_UTILITY_H_
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -99,7 +99,7 @@ extern "C" {
 
   void get_arrival_time(
       int              current_framesamples,   /* samples */
-      int              packet_size,            /* bytes */
+      size_t           packet_size,            /* bytes */
       int              bottleneck,             /* excluding headers; bits/s */
       BottleNeckModel* BN_data,
       short            senderSampFreqHz,

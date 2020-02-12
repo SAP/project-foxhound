@@ -3,10 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIContentPolicy.idl"
 
 interface nsIURI;
-interface nsIDOMNode;
 interface nsISimpleEnumerator;
+interface nsIReferrerInfo;
+
+webidl Node;
 
 [scriptable, uuid(422a1807-4e7f-463d-b8d7-ca2ceb9b5d53)]
 interface nsIPrefetchService : nsISupports
@@ -15,15 +18,29 @@ interface nsIPrefetchService : nsISupports
      * Enqueue a request to prefetch the specified URI.
      *
      * @param aURI the URI of the document to prefetch
-     * @param aReferrerURI the URI of the referring page
+     * @param aReferrerInfo the referrerInfo of the request
      * @param aSource the DOM node (such as a <link> tag) that requested this
      *        fetch, or null if the prefetch was not requested by a DOM node.
      * @param aExplicit the link element has an explicit prefetch link type
      */
     void prefetchURI(in nsIURI aURI,
-                     in nsIURI aReferrerURI,
-                     in nsIDOMNode aSource,
+                     in nsIReferrerInfo aReferrerInfo,
+                     in Node aSource,
                      in boolean aExplicit);
+
+    /**
+     * Start a preload of the specified URI.
+     *
+     * @param aURI the URI of the document to preload
+     * @param aReferrerInfo the referrerInfo of the request
+     * @param aSource the DOM node (such as a <link> tag) that requested this
+     *        fetch, or null if the prefetch was not requested by a DOM node.
+     * @param aPolicyType content policy to be used for this load.
+     */
+    void preloadURI(in nsIURI aURI,
+                    in nsIReferrerInfo aReferrerInfo,
+                    in Node aSource,
+                    in nsContentPolicyType aPolicyType);
 
     /**
      * Find out if there are any prefetches running or queued
@@ -31,7 +48,7 @@ interface nsIPrefetchService : nsISupports
     boolean hasMoreElements();
 
     /**
-     * Cancel prefetch
+     * Cancel prefetch or preload for a Node.
      */
-    void cancelPrefetchURI(in nsIURI aURI, in nsIDOMNode aSource);
+    void cancelPrefetchPreloadURI(in nsIURI aURI, in Node aSource);
 };

@@ -8,44 +8,73 @@
  */
 
 const { SIMPLE_URL } = require("devtools/client/performance/test/helpers/urls");
-const { initPerformanceInNewTab, teardownToolboxAndRemoveTab } = require("devtools/client/performance/test/helpers/panel-utils");
-const { startRecording, stopRecording } = require("devtools/client/performance/test/helpers/actions");
-const { once } = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  initPerformanceInNewTab,
+  teardownToolboxAndRemoveTab,
+} = require("devtools/client/performance/test/helpers/panel-utils");
+const {
+  startRecording,
+  stopRecording,
+} = require("devtools/client/performance/test/helpers/actions");
+const {
+  once,
+} = require("devtools/client/performance/test/helpers/event-utils");
+const {
+  getSelectedRecording,
+  getDurationLabelText,
+} = require("devtools/client/performance/test/helpers/recording-utils");
 
-add_task(function* () {
-  let { panel } = yield initPerformanceInNewTab({
+add_task(async function() {
+  const { panel } = await initPerformanceInNewTab({
     url: SIMPLE_URL,
-    win: window
+    win: window,
   });
 
-  let { EVENTS, L10N, $, PerformanceController, RecordingsView } = panel.panelWin;
+  const { EVENTS, PerformanceController } = panel.panelWin;
+  const { L10N } = require("devtools/client/performance/modules/global");
 
-  yield startRecording(panel);
+  await startRecording(panel);
 
-  let durationLabel = $(".recording-item-duration", RecordingsView.selectedItem.target);
-  is(durationLabel.getAttribute("value"),
+  is(
+    getDurationLabelText(panel, 0),
     L10N.getStr("recordingsList.recordingLabel"),
-    "The duration node should show the 'recording' message while recording");
+    "The duration node should show the 'recording' message while recording"
+  );
 
-  let recordingStopping = once(PerformanceController, EVENTS.RECORDING_STATE_CHANGE, {
-    expectedArgs: { "1": "recording-stopping" }
-  });
-  let recordingStopped = once(PerformanceController, EVENTS.RECORDING_STATE_CHANGE, {
-    expectedArgs: { "1": "recording-stopped" }
-  });
-  let everythingStopped = stopRecording(panel);
+  const recordingStopping = once(
+    PerformanceController,
+    EVENTS.RECORDING_STATE_CHANGE,
+    {
+      expectedArgs: ["recording-stopping"],
+    }
+  );
+  const recordingStopped = once(
+    PerformanceController,
+    EVENTS.RECORDING_STATE_CHANGE,
+    {
+      expectedArgs: ["recording-stopped"],
+    }
+  );
+  const everythingStopped = stopRecording(panel);
 
-  yield recordingStopping;
-  is(durationLabel.getAttribute("value"),
+  await recordingStopping;
+  is(
+    getDurationLabelText(panel, 0),
     L10N.getStr("recordingsList.loadingLabel"),
-    "The duration node should show the 'loading' message while stopping");
+    "The duration node should show the 'loading' message while stopping"
+  );
 
-  yield recordingStopped;
-  is(durationLabel.getAttribute("value"),
-    L10N.getFormatStr("recordingsList.durationLabel",
-    RecordingsView.selectedItem.attachment.getDuration().toFixed(0)),
-    "The duration node should show the duration after the record has stopped");
+  await recordingStopped;
+  const selected = getSelectedRecording(panel);
+  is(
+    getDurationLabelText(panel, 0),
+    L10N.getFormatStr(
+      "recordingsList.durationLabel",
+      selected.getDuration().toFixed(0)
+    ),
+    "The duration node should show the duration after the record has stopped"
+  );
 
-  yield everythingStopped;
-  yield teardownToolboxAndRemoveTab(panel);
+  await everythingStopped;
+  await teardownToolboxAndRemoveTab(panel);
 });

@@ -11,8 +11,11 @@
  * and create derivative works of this document.
  */
 
-[Constructor(USVString url, optional EventSourceInit eventSourceInitDict)]
+[Exposed=(Window,DedicatedWorker,SharedWorker)]
 interface EventSource : EventTarget {
+  [Throws]
+  constructor(USVString url, optional EventSourceInit eventSourceInitDict = {});
+
   [Constant]
   readonly attribute DOMString url;
   [Constant]

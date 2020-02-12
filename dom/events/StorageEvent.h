@@ -13,79 +13,69 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/StorageEventBinding.h"
 
-// Helper for EventDispatcher.
-already_AddRefed<mozilla::dom::StorageEvent>
-NS_NewDOMStorageEvent(mozilla::dom::EventTarget* aOwner);
+class nsIPrincipal;
 
 namespace mozilla {
 namespace dom {
 
-class DOMStorage;
+class Storage;
 
-class StorageEvent : public Event
-{
-public:
+class StorageEvent : public Event {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(StorageEvent, Event)
 
   explicit StorageEvent(EventTarget* aOwner);
 
-protected:
+ protected:
   virtual ~StorageEvent();
 
   nsString mKey;
   nsString mOldValue;
   nsString mNewValue;
   nsString mUrl;
-  RefPtr<DOMStorage> mStorageArea;
+  RefPtr<Storage> mStorageArea;
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 
-public:
+ public:
   virtual StorageEvent* AsStorageEvent();
 
-  virtual JSObject* WrapObjectInternal(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObjectInternal(
+      JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
-  static already_AddRefed<StorageEvent>
-  Constructor(EventTarget* aOwner, const nsAString& aType,
-              const StorageEventInit& aEventInitDict);
+  static already_AddRefed<StorageEvent> Constructor(
+      EventTarget* aOwner, const nsAString& aType,
+      const StorageEventInit& aEventInitDict);
 
-  static already_AddRefed<StorageEvent>
-  Constructor(const GlobalObject& aGlobal, const nsAString& aType,
-              const StorageEventInit& aEventInitDict, ErrorResult& aRv);
+  static already_AddRefed<StorageEvent> Constructor(
+      const GlobalObject& aGlobal, const nsAString& aType,
+      const StorageEventInit& aEventInitDict);
 
   void InitStorageEvent(const nsAString& aType, bool aCanBubble,
                         bool aCancelable, const nsAString& aKey,
-                        const nsAString& aOldValue,
-                        const nsAString& aNewValue,
-                        const nsAString& aURL,
-                        DOMStorage* aStorageArea);
+                        const nsAString& aOldValue, const nsAString& aNewValue,
+                        const nsAString& aURL, Storage* aStorageArea);
 
-  void GetKey(nsString& aRetVal) const
-  {
-    aRetVal = mKey;
+  void GetKey(nsString& aRetVal) const { aRetVal = mKey; }
+
+  void GetOldValue(nsString& aRetVal) const { aRetVal = mOldValue; }
+
+  void GetNewValue(nsString& aRetVal) const { aRetVal = mNewValue; }
+
+  void GetUrl(nsString& aRetVal) const { aRetVal = mUrl; }
+
+  Storage* GetStorageArea() const { return mStorageArea; }
+
+  // Non WebIDL methods
+  void SetPrincipal(nsIPrincipal* aPrincipal) {
+    MOZ_ASSERT(!mPrincipal);
+    mPrincipal = aPrincipal;
   }
 
-  void GetOldValue(nsString& aRetVal) const
-  {
-    aRetVal = mOldValue;
-  }
-
-  void GetNewValue(nsString& aRetVal) const
-  {
-    aRetVal = mNewValue;
-  }
-
-  void GetUrl(nsString& aRetVal) const
-  {
-    aRetVal = mUrl;
-  }
-
-  DOMStorage* GetStorageArea() const
-  {
-    return mStorageArea;
-  }
+  nsIPrincipal* GetPrincipal() const { return mPrincipal; }
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_StorageEvent_h
+#endif  // mozilla_dom_StorageEvent_h

@@ -1,15 +1,19 @@
 function strEscapeTest() {
-    var str = randomMultiTaintedString();
+    var str = randomMultiTaintedString(20) + randomMultiTaintedStringWithEscapables(20);
 
     var encodedStr = escape(str);
+    // NB: We need to keep the asserts in this order, otherwise
+    //     the "assertLastTaintOperationEquals" will appear in
+    //     the taint operation list!
+    assertLastTaintOperationEquals(encodedStr, 'escape');
     assertTainted(encodedStr);
-    assertHasTaintOperation(encodedStr, 'escape');
+    assertNotHasTaintOperation(str, 'escape');
 
     var decodedStr = unescape(encodedStr);
+    assertLastTaintOperationEquals(decodedStr, 'unescape');
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
-    assertHasTaintOperation(encodedStr, 'escape');
-    assertHasTaintOperation(encodedStr, 'unescape');
+    assertNotHasTaintOperation(encodedStr, 'unescape');
 }
 
 runTaintTest(strEscapeTest);

@@ -1,22 +1,32 @@
+/* import-globals-from ../unit/head_crashreporter.js */
 load("../unit/head_crashreporter.js");
 
-function run_test()
-{
-  if (!("@mozilla.org/toolkit/crash-reporter;1" in Components.classes)) {
-    dump("INFO | test_content_annotation.js | Can't test crashreporter in a non-libxul build.\n");
+function run_test() {
+  if (!("@mozilla.org/toolkit/crash-reporter;1" in Cc)) {
+    dump(
+      "INFO | test_content_annotation.js | Can't test crashreporter in a non-libxul build.\n"
+    );
     return;
   }
 
+  // TelemetrySession setup will trigger the session annotation
+  let scope = {};
+  ChromeUtils.import("resource://gre/modules/TelemetryController.jsm", scope);
+  scope.TelemetryController.testSetup();
+
   // Try crashing with a runtime abort
-  do_content_crash(function() {
-                     crashType = CrashTestUtils.CRASH_RUNTIMEABORT;
-                     crashReporter.annotateCrashReport("TestKey", "TestValue");
-                     crashReporter.appendAppNotesToCrashReport("!!!foo!!!");
-                   },
-                   function(mdump, extra) {
-                     do_check_eq(extra.TestKey, "TestValue");
-                     do_check_true('StartupTime' in extra);
-                     do_check_true('ProcessType' in extra);
-                     do_check_neq(extra.Notes.indexOf("!!!foo!!!"), -1);
-                   });
+  do_content_crash(
+    function() {
+      crashType = CrashTestUtils.CRASH_MOZ_CRASH;
+      crashReporter.annotateCrashReport("TestKey", "TestValue");
+      crashReporter.appendAppNotesToCrashReport("!!!foo!!!");
+    },
+    function(mdump, extra) {
+      Assert.equal(extra.TestKey, "TestValue");
+      Assert.ok("ProcessType" in extra);
+      Assert.ok("StartupTime" in extra);
+      Assert.ok("TelemetrySessionId" in extra);
+      Assert.notEqual(extra.Notes.indexOf("!!!foo!!!"), -1);
+    }
+  );
 }

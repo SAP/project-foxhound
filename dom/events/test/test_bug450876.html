@@ -4,7 +4,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=450876
 -->
 <head>
   <title>Test for Bug 450876 - Crash [@ nsEventStateManager::GetNextTabbableMapArea] with img usemap and tabindex</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -19,12 +20,17 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=450876
 
 /** Test for Bug 450876 **/
 
+function setTabFocus() {
+  // Override tab focus behavior on Mac */
+  SpecialPowers.pushPrefEnv({ set: [[ "accessibility.tabfocus", 7 ]] }, doTest);
+}
+
 function doTest() {
   is(document.activeElement, document.body, "body element should be focused");
   document.getElementById('a').focus();
   is(document.activeElement, document.getElementById('a'), "link should have focus");
   is(document.hasFocus(), true, "document should be focused");
-  SpecialPowers.DOMWindowUtils.sendKeyEvent('keypress',  9, 0, 0);
+  synthesizeKey("KEY_Tab");
   is(document.activeElement, document.getElementById('a'), "body element should be focused");
   is(document.hasFocus(), false, "document should not be focused");
 
@@ -32,7 +38,7 @@ function doTest() {
 }
 
 SimpleTest.waitForExplicitFinish();
-addLoadEvent(doTest);
+addLoadEvent(setTabFocus);
 
 </script>
 </pre>

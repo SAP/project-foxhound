@@ -9,60 +9,47 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestHighestPrioParent : public PTestHighestPrioParent {
+ public:
+  TestHighestPrioParent();
+  virtual ~TestHighestPrioParent();
 
-class TestHighestPrioParent :
-    public PTestHighestPrioParent
-{
-public:
-    TestHighestPrioParent();
-    virtual ~TestHighestPrioParent();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return false; }
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return false; }
+  void Main();
 
-    void Main();
+  mozilla::ipc::IPCResult RecvMsg1();
+  mozilla::ipc::IPCResult RecvMsg2();
+  mozilla::ipc::IPCResult RecvMsg3();
+  mozilla::ipc::IPCResult RecvMsg4();
 
-    bool RecvMsg1() override;
-    bool RecvMsg2() override;
-    bool RecvMsg3() override;
-    bool RecvMsg4() override;
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    if (msg_num_ != 4) fail("missed IPC call");
+    passed("ok");
+    QuitParent();
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        if (msg_num_ != 4)
-            fail("missed IPC call");
-        passed("ok");
-        QuitParent();
-    }
-
-private:
-    int msg_num_;
+ private:
+  int msg_num_;
 };
 
+class TestHighestPrioChild : public PTestHighestPrioChild {
+ public:
+  TestHighestPrioChild();
+  virtual ~TestHighestPrioChild();
 
-class TestHighestPrioChild :
-    public PTestHighestPrioChild
-{
-public:
-    TestHighestPrioChild();
-    virtual ~TestHighestPrioChild();
+  mozilla::ipc::IPCResult RecvStart();
+  mozilla::ipc::IPCResult RecvStartInner();
 
-    bool RecvStart() override;
-    bool RecvStartInner() override;
-
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestHighestPrio_h
+#endif  // ifndef mozilla__ipdltest_TestHighestPrio_h

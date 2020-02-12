@@ -4,9 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ['test/extensions']
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: IndexedDB")
 
-MOCHITEST_MANIFESTS += ['test/mochitest.ini']
+MOCHITEST_MANIFESTS += [
+    'test/mochitest-intl-api.ini',
+    'test/mochitest.ini',
+]
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
@@ -17,8 +21,7 @@ XPCSHELL_TESTS_MANIFESTS += [
     'test/unit/xpcshell-parent-process.ini'
 ]
 
-if CONFIG['ENABLE_INTL_API']:
-    MOCHITEST_MANIFESTS += ['test/mochitest-intl-api.ini']
+TEST_DIRS += ['test/gtest']
 
 EXPORTS.mozilla.dom += [
     'IDBCursor.h',
@@ -33,7 +36,6 @@ EXPORTS.mozilla.dom += [
     'IDBObjectStore.h',
     'IDBRequest.h',
     'IDBTransaction.h',
-    'IDBWrapperCache.h',
     'IndexedDatabase.h',
     'IndexedDatabaseManager.h',
 ]
@@ -41,8 +43,10 @@ EXPORTS.mozilla.dom += [
 EXPORTS.mozilla.dom.indexedDB += [
     'ActorsParent.h',
     'FileSnapshot.h',
+    'IDBResult.h',
     'Key.h',
     'KeyPath.h',
+    'PermissionRequestBase.h',
     'SerializationHelpers.h',
 ]
 
@@ -62,7 +66,6 @@ UNIFIED_SOURCES += [
     'IDBObjectStore.cpp',
     'IDBRequest.cpp',
     'IDBTransaction.cpp',
-    'IDBWrapperCache.cpp',
     'IndexedDatabaseManager.cpp',
     'KeyPath.cpp',
     'PermissionRequestBase.cpp',
@@ -87,25 +90,28 @@ IPDL_SOURCES += [
     'PBackgroundIDBTransaction.ipdl',
     'PBackgroundIDBVersionChangeTransaction.ipdl',
     'PBackgroundIndexedDBUtils.ipdl',
-    'PIndexedDBPermissionRequest.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     # Suppress gcc warning about a comparison being always false due to the
     # range of the data type
     SOURCES['Key.cpp'].flags += ['-Wno-error=type-limits']
     CXXFLAGS += ['-Wno-error=shadow']
 
 LOCAL_INCLUDES += [
-    '/db/sqlite3/src',
     '/dom/base',
     '/dom/storage',
-    '/dom/workers',
     '/ipc/glue',
+    '/third_party/sqlite3/src',
     '/xpcom/build',
-    '/xpcom/threads',
 ]
+
+XPIDL_SOURCES += [
+    'nsIIDBPermissionsRequest.idl',
+]
+
+XPIDL_MODULE = 'dom_indexeddb'

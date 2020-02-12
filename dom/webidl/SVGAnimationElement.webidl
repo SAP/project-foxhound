@@ -10,12 +10,14 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGAnimationElement : SVGElement {
 
   readonly attribute SVGElement? targetElement;
 
   [Throws]
   float getStartTime();
+  [BinaryName="getCurrentTimeAsFloat"]
   float getCurrentTime();
   [Throws]
   float getSimpleDuration();
@@ -30,5 +32,5 @@ interface SVGAnimationElement : SVGElement {
   void endElementAt(float offset);
 };
 
-SVGAnimationElement implements SVGTests;
+SVGAnimationElement includes SVGTests;
 

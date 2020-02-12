@@ -10,7 +10,7 @@
 #include "mozilla/plugins/PluginMessageUtils.h"
 
 #ifndef XP_WIN
-#error "This header is for Windows only."
+#  error "This header is for Windows only."
 #endif
 
 class gfxASurface;
@@ -18,23 +18,21 @@ class gfxASurface;
 namespace mozilla {
 namespace plugins {
 
-class PluginSurfaceParent : public PPluginSurfaceParent
-{
-public:
+class PluginSurfaceParent : public PPluginSurfaceParent {
+ public:
   PluginSurfaceParent(const WindowsSharedMemoryHandle& handle,
-                      const gfx::IntSize& size,
-                      const bool transparent);
+                      const gfx::IntSize& size, const bool transparent);
   ~PluginSurfaceParent();
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
   gfxASurface* Surface() { return mSurface; }
 
-private:
+ private:
   RefPtr<gfxASurface> mSurface;
 };
 
-} // namespace plugins
-} // namespace mozilla
+}  // namespace plugins
+}  // namespace mozilla
 
-#endif // dom_plugin_PluginSurfaceParent_h
+#endif  // dom_plugin_PluginSurfaceParent_h

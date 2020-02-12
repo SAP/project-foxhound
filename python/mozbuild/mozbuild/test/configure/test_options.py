@@ -14,6 +14,7 @@ from mozbuild.configure.options import (
     InvalidOptionError,
     NegativeOptionValue,
     Option,
+    OptionValue,
     PositiveOptionValue,
 )
 
@@ -249,7 +250,7 @@ class TestOption(unittest.TestCase):
         self.assertEquals(PositiveOptionValue(('c',)), value)
 
         value = option.get_value('--with-option=-b,+d')
-        self.assertEquals(PositiveOptionValue(('c','d')), value)
+        self.assertEquals(PositiveOptionValue(('c', 'd')), value)
 
         # Adding something that is in the default is fine
         value = option.get_value('--with-option=+b')
@@ -275,6 +276,40 @@ class TestOption(unittest.TestCase):
             option.get_value('--with-option=e')
         self.assertEquals(e.exception.message,
                           "'e' is not one of 'a', 'b', 'c', 'd'")
+
+    def test_option_value_compare(self):
+        # OptionValue are tuple and equivalence should compare as tuples.
+        val = PositiveOptionValue(('foo',))
+
+        self.assertEqual(val[0], 'foo')
+        self.assertEqual(val, PositiveOptionValue(('foo',)))
+        self.assertNotEqual(val, PositiveOptionValue(('foo', 'bar')))
+
+        # Can compare a tuple to an OptionValue.
+        self.assertEqual(val, ('foo',))
+        self.assertNotEqual(val, ('foo', 'bar'))
+
+        # Different OptionValue types are never equal.
+        self.assertNotEqual(val, OptionValue(('foo',)))
+
+        # For usability reasons, we raise TypeError when attempting to compare
+        # against a non-tuple.
+        with self.assertRaisesRegexp(TypeError, 'cannot compare a'):
+            val == 'foo'
+
+        # But we allow empty option values to compare otherwise we can't
+        # easily compare value-less types like PositiveOptionValue and
+        # NegativeOptionValue.
+        empty_positive = PositiveOptionValue()
+        empty_negative = NegativeOptionValue()
+        self.assertEqual(empty_positive, ())
+        self.assertEqual(empty_positive, PositiveOptionValue())
+        self.assertEqual(empty_negative, ())
+        self.assertEqual(empty_negative, NegativeOptionValue())
+        self.assertNotEqual(empty_positive, 'foo')
+        self.assertNotEqual(empty_positive, ('foo',))
+        self.assertNotEqual(empty_negative, 'foo')
+        self.assertNotEqual(empty_negative, ('foo',))
 
     def test_option_value_format(self):
         val = PositiveOptionValue()
@@ -665,6 +700,9 @@ class TestCommandLineHelper(unittest.TestCase):
         self.assertEquals(NegativeOptionValue(), value)
         self.assertEquals(None, option)
 
+        with self.assertRaises(AssertionError):
+            CommandLineHelper({}, ['--foo', '--bar'])
+
     def test_precedence(self):
         foo = Option('--with-foo', nargs='*')
         helper = CommandLineHelper({}, ['cmd', '--with-foo=a,b'])
@@ -837,14 +875,18 @@ class TestCommandLineHelper(unittest.TestCase):
 
         bar = Option('--bar',
                      possible_origins=('mozconfig',))
-        with self.assertRaisesRegexp(InvalidOptionError,
-            "--bar can not be set by command-line. Values are accepted from: mozconfig"):
+        with self.assertRaisesRegexp(
+            InvalidOptionError,
+            "--bar can not be set by command-line. Values are accepted from: mozconfig"
+        ):
             helper.handle(bar)
 
         baz = Option(env='BAZ',
                      possible_origins=('implied',))
-        with self.assertRaisesRegexp(InvalidOptionError,
-            "BAZ=1 can not be set by environment. Values are accepted from: implied"):
+        with self.assertRaisesRegexp(
+            InvalidOptionError,
+            "BAZ=1 can not be set by environment. Values are accepted from: implied"
+        ):
             helper.handle(baz)
 
 

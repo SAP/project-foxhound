@@ -3,16 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {RetVal, generateActorSpec} = require("devtools/shared/protocol");
-
+const { Arg, RetVal, generateActorSpec } = require("devtools/shared/protocol");
 const deviceSpec = generateActorSpec({
   typeName: "device",
 
+  events: {
+    "can-debug-sw-updated": {
+      type: "can-debug-sw-updated",
+      canDebugServiceWorkers: Arg(0, "boolean"),
+    },
+  },
+
   methods: {
-    getDescription: {request: {}, response: { value: RetVal("json")}},
-    getWallpaper: {request: {}, response: { value: RetVal("longstring")}},
-    screenshotToDataURL: {request: {}, response: { value: RetVal("longstring")}},
-    getRawPermissionsTable: {request: {}, response: { value: RetVal("json")}},
+    getDescription: { request: {}, response: { value: RetVal("json") } },
+    screenshotToDataURL: {
+      request: {},
+      response: { value: RetVal("longstring") },
+    },
   },
 });
 

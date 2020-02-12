@@ -16,27 +16,22 @@
     }
   </style>
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
 
-  <script type="application/javascript"
-	  src="chrome://mochikit/content/chrome-harness.js"></script>
+  <script src="chrome://mochikit/content/chrome-harness.js"></script>
 
   <script type="application/javascript">
-    function doTest()
-    {
-      function testValue(aID, aValue)
-      {
+    function doTest() {
+      function testValue(aID, aValue) {
         var acc = getAccessible(aID);
         if (!acc)
           return;
         is(acc.value, aValue, "Wrong value for " + aID + "!");
       }
 
-      var rootDir = getRootDirectory(window.location.href);
       var href = getRootDirectory(window.location.href) + "foo";
 
       // roles that can't live as HTMLLinkAccessibles
@@ -44,18 +39,18 @@
       testValue("aria_button_link", "");
       testValue("aria_checkbox_link", "");
       testValue("aria_application_link", "");
+      testValue("aria_main_link", "");
+      testValue("aria_navigation_link", "");
 
       // roles that can live as HTMLLinkAccessibles
       testValue("aria_link_link", href);
-      testValue("aria_main_link", href);
-      testValue("aria_navigation_link", href);
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA textboxes
 
       testValue("aria_textbox1", "helo");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // ARIA comboboxes
 
       // aria-activedescendant defines a current item the value is computed from
@@ -69,7 +64,7 @@
       // list control is a child of combobox.
       testValue("aria_combobox3", kDiscBulletText + "2");
 
-      //////////////////////////////////////////////////////////////////////////
+      // ////////////////////////////////////////////////////////////////////////
       // HTML controls
       testValue("combobox1", "item1");
       testValue("combobox2", "item2");

@@ -28,9 +28,6 @@ throws an exception. Note that frames only become inactive at times that
 are predictable for the debugger: when the debuggee runs, or when the
 debugger removes frames from the stack itself.
 
-Stack frames that represent the control state of generator-iterator objects
-behave in a special way, described in [Generator Frames][generator] below.
-
 
 ## Visible Frames
 
@@ -96,6 +93,70 @@ Pushing a `"debugger"` frame makes this continuation explicit, and makes it
 easier to find the extent of the stack created for the invocation.
 
 
+## <span id='suspended'>Suspended</span> Frames
+
+Some frames can be *suspended*.
+
+When a generator `yield`s a value, or when an async function `await`s a
+value, the current frame is suspended and removed from the stack, and
+other JS code has a chance to run. Later (if the `await`ed promise
+becomes resolved, for example), SpiderMonkey will *resume* the frame. It
+will be put back onto the stack, and execution will continue where it
+left off. Only generator and async function call frames can be suspended
+and resumed.
+
+Currently, a frame's `live` property is `false` while it's suspended
+([bug 1448880](https://bugzilla.mozilla.org/show_bug.cgi?id=1448880)).
+
+SpiderMonkey uses the same `Debugger.Frame` object each time a generator
+or async function call is put back onto the stack. This means that the
+`onStep` handler can be used to step over `yield` and `await`.
+
+The `frame.onPop` handler is called each time a frame is suspended, and
+the `Debugger.onEnterFrame` handler is called each time a frame is
+resumed. (This means these events can fire multiple times for the same
+`Frame` object, which is odd, but accurately conveys what's happening.)
+
+The [completion value][cv] passed to the `frame.onPop` handler for a suspension
+contains additional properties to clarify what's going on. See the documentation
+for completion values for details.
+
+
+## Stepping Into Generators: The "Initial Yield"
+
+When a debuggee generator is called, something weird happens. The
+`.onEnterFrame` hook fires, as though we're stepping into the generator.
+But the code inside the generator doesn't run. Instead it immediately
+returns. Then we sometimes get *another* `.onEnterFrame` event for the
+same generator. What's going on?
+
+To explain this, we first have to describe how generator calls work,
+according to the ECMAScript language specification. Note that except for
+step 3, it's exactly like a regular function call.
+
+1.  An "execution context" (what we call a `Frame`) is pushed to the stack.
+2.  An environment is created (for arguments and local variables).
+    Argument-default-value-expressions, if any, are evaluated.
+3.  A generator object is created, initially suspended at the start of the generator body.
+4.  The stack frame is popped, and the generator object is returned to the caller.
+
+The JavaScript engine actually carries out these steps, in this order.
+So when a debuggee generator is called, here's what you'll observe:
+
+1.  The `debugger.onEnterFrame` hook fires.
+2.  The debugger can step through the argument-default-value code, if any.
+3.  The body of the generator does not run yet. Instead, a generator object
+    is created and suspended (which does not fire any debugger events).
+4.  The `frame.onPop` hook fires, with a completion value of
+    `{return:` *(the new generator object)* `}`.
+
+In SpiderMonkey, this process of suspending and returning a new
+generator object is called the "initial yield".
+
+If the caller then uses the generator's `.next()` method, which may or
+may not happen right away depending on the debuggee code, the suspended
+generator will be resumed, firing `.onEnterFrame` again.
+
 ## Accessor Properties of the Debugger.Frame Prototype Object
 
 A `Debugger.Frame` instance inherits the following accessor properties from
@@ -114,6 +175,8 @@ its prototype:
 
     * `"module"`: a frame running code at the top level of a module.
 
+    * `"wasmcall"`: a frame running a WebAssembly function call.
+
     * `"debugger"`: a frame for a call to user code invoked by the debugger
       (see the `eval` method below).
 
@@ -127,14 +190,15 @@ its prototype:
 
     * `"ion"`: a frame running in the optimizing JIT.
 
+    * `"wasm"`: a frame running in WebAssembly baseline JIT.
+
 `this`
-:   The value of `this` for this frame (a debuggee value).
+:   The value of `this` for this frame (a debuggee value). For a `wasmcall`
+    frame, this property throws a `TypeError`.
 
 `older`
 :   The next-older visible frame, in which control will resume when this
-    frame completes. If there is no older frame, this is `null`. (On a
-    suspended generator frame, the value of this property is `null`; see
-    [Generator Frames][generator].)
+    frame completes. If there is no older frame, this is `null`.
 
 `depth`
 :   The depth of this frame, counting from oldest to youngest; the oldest
@@ -142,8 +206,7 @@ its prototype:
 
 `live`
 :   True if the frame this `Debugger.Frame` instance refers to is still on
-    the stack (or, in the case of generator-iterator objects, has not yet
-    finished its iteration); false if it has completed execution or been
+    the stack; false if it has completed execution or been
     popped in some other way.
 
 `script`
@@ -155,6 +218,7 @@ its prototype:
 `offset`
 :   The offset of the bytecode instruction currently being executed in
     `script`, or `undefined` if the frame's `script` property is `null`.
+    For a `wasmcall` frame, this property throws a `TypeError`.
 
 `environment`
 :   The lexical environment within which evaluation is taking place (a
@@ -219,19 +283,19 @@ the compartment to which the handler method belongs.
     frames.
 
 `onPop`
-:   This property must be either `undefined` or a function. If it is a
-    function, SpiderMonkey calls it just before this frame is popped,
-    passing a [completion value][cv] indicating how this frame's execution
-    completed, and providing this `Debugger.Frame` instance as the `this`
-    value. The function should return a [resumption value][rv] indicating
-    how execution should proceed. On newly created frames, this property's
-    value is `undefined`.
+:   This property must be either `undefined` or a function. If it is a function,
+    SpiderMonkey calls it just before this frame is popped or suspended, passing
+    a [completion value][cv] indicating the reason, and providing this
+    `Debugger.Frame` instance as the `this` value. The function should return a
+    [resumption value][rv] indicating how execution should proceed. On newly
+    created frames, this property's value is `undefined`.
 
     When this handler is called, this frame's current execution location, as
     reflected in its `offset` and `environment` properties, is the operation
-    which caused it to be unwound. In frames returning or throwing an
-    exception, the location is often a return or a throw statement. In frames
-    propagating exceptions, the location is a call.
+    which caused it to be unwound. In frames returning or throwing an exception,
+    the location is often a return or a throw statement. In frames propagating
+    exceptions, the location is a call. In generator or async function frames,
+    the location may be a `yield` or `await` expression.
 
     When an `onPop` call reports the completion of a construction call
     (that is, a function called via the `new` operator), the completion
@@ -254,31 +318,20 @@ the compartment to which the handler method belongs.
     an `undefined` resumption value leaves the frame's throwing and
     termination process undisturbed.
 
-    <i>(Not yet implemented.)</i> When a generator frame yields a value,
-    SpiderMonkey calls its `Debugger.Frame` instance's `onPop` handler
-    method, if present, passing a `yield` resumption value; however, the
-    `Debugger.Frame` instance remains live.
-
     If multiple [`Debugger`][debugger-object] instances each have
     `Debugger.Frame` instances for a given stack frame with `onPop`
     handlers set, their handlers are run in an unspecified order. The
     resumption value each handler returns establishes the completion value
     reported to the next handler.
 
+    The `onPop` handler is typically called only once for a given
+    `Debugger.Frame`, after which the frame becomes inactive. However, in the
+    case of [generators and async functions](#suspended), `onPop` fires each
+    time the frame is suspended.
+
     This handler is not called on `"debugger"` frames. It is also not called
     when unwinding a frame due to an over-recursion or out-of-memory
     exception.
-
-`onResume`
-:   This property must be either `undefined` or a function. If it is a
-    function, SpiderMonkey calls it if the current frame is a generator
-    frame whose execution has just been resumed. The function should return
-    a [resumption value][rv] indicating how execution should proceed. On
-    newly created frames, this property's value is `undefined`.
-
-    If the program resumed the generator by calling its `send` method and
-    passing a value, then <i>value</i> is that value. Otherwise,
-    <i>value</i> is `undefined`.
 
 
 ## Function Properties of the Debugger.Frame Prototype Object
@@ -290,9 +343,9 @@ methods of other kinds of objects.
 <code id="eval">eval(<i>code</i>, [<i>options</i>])</code>
 :   Evaluate <i>code</i> in the execution context of this frame, and return
     a [completion value][cv] describing how it completed. <i>Code</i> is a
-    string. If this frame's `environment` property is `null`, throw a
-    `TypeError`. All extant handler methods, breakpoints, watchpoints, and
-    so on remain active during the call. This function follows the
+    string. If this frame's `environment` property is `null` or `type` property
+    is `wasmcall`, throw a `TypeError`. All extant handler methods, breakpoints,
+    and so on remain active during the call. This function follows the
     [invocation function conventions][inv fr].
 
     <i>Code</i> is interpreted as strict mode code when it contains a Use
@@ -348,59 +401,5 @@ methods of other kinds of objects.
 
     The <i>options</i> argument is as for
     [`Debugger.Frame.prototype.eval`][fr eval], described above.
-
-
-## Generator Frames
-
-<i>Not all behavior described in this section has been implemented
-yet.</i>
-
-SpiderMonkey supports generator-iterator objects, which produce a series of
-values by repeatedly suspending the execution of a function or expression.
-For example, calling a function that uses `yield` produces a
-generator-iterator object, as does evaluating a generator expression like
-`(i*i for each (i in [1,2,3]))`.
-
-A generator-iterator object refers to a stack frame with no fixed
-continuation frame. While the generator's code is running, its continuation
-is whatever frame called its `next` method; while the generator is
-suspended, it has no particular continuation frame; and when it resumes
-again, the continuation frame for that resumption could be different from
-that of the previous resumption.
-
-A `Debugger.Frame` instance representing a generator frame differs from an
-ordinary stack frame as follows:
-
-* A generator frame's `generator` property is true.
-
-* A generator frame disappears from the stack each time the generator
-  yields a value and is suspended, and reappears atop the stack when it is
-  resumed to produce the generator's next value. The same `Debugger.Frame`
-  instance refers to the generator frame until it returns, throws an
-  exception, or is terminated.
-
-* A generator frame's `older` property refers to the frame's continuation
-  frame while the generator is running, and is `null` while the generator
-  is suspended.
-
-* A generator frame's `depth` property reflects the frame's position on
-  the stack when the generator is resumed, and is `null` while the
-  generator is suspended.
-
-* A generator frame's `live` property remains true until the frame
-  returns, throws an exception, or is terminated. Thus, generator frames
-  can be live while not present on the stack.
-
-The other `Debugger.Frame` methods and accessor properties work as
-described on generator frames, even when the generator frame is suspended.
-You may examine a suspended generator frame's variables, and use its
-`script` and `offset` members to see which `yield` it is suspended at.
-
-A `Debugger.Frame` instance referring to a generator-iterator frame has a
-strong reference to the generator-iterator object; the frame (and its
-object) will live as long as the `Debugger.Frame` instance does. However,
-when the generator function returns, throws an exception, or is terminated,
-thus ending the iteration, the `Debugger.Frame` instance becomes inactive
-and its `live` property becomes `false`, just as would occur for any other
-sort of frame that is popped. A non-live `Debugger.Frame` instance no
-longer holds a strong reference to the generator-iterator object.
+    Also like `eval`, if this frame's `environment` property is `null` or
+    `type` property is `wasmcall`, throw a `TypeError`.

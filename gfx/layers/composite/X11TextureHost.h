@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,50 +16,42 @@
 namespace mozilla {
 namespace layers {
 
-class X11TextureSource : public TextureSource
-{
-public:
+class X11TextureSource : public TextureSource {
+ public:
   // Called when the underlying X surface has been changed.
   // Useful for determining whether to rebind a GLXPixmap to a texture.
   virtual void Updated() = 0;
 
-  virtual const char* Name() const override { return "X11TextureSource"; }
+  const char* Name() const override { return "X11TextureSource"; }
 };
 
 // TextureHost for Xlib-backed TextureSources.
-class X11TextureHost : public TextureHost
-{
-public:
-  X11TextureHost(TextureFlags aFlags,
-                 const SurfaceDescriptorX11& aDescriptor);
+class X11TextureHost : public TextureHost {
+ public:
+  X11TextureHost(TextureFlags aFlags, const SurfaceDescriptorX11& aDescriptor);
 
-  virtual void SetCompositor(Compositor* aCompositor) override;
+  void SetTextureSourceProvider(TextureSourceProvider* aProvider) override;
 
-  virtual Compositor* GetCompositor() override { return mCompositor; }
+  bool Lock() override;
 
-  virtual bool Lock() override;
+  gfx::SurfaceFormat GetFormat() const override;
 
-  virtual gfx::SurfaceFormat GetFormat() const override;
+  gfx::IntSize GetSize() const override;
 
-  virtual gfx::IntSize GetSize() const override;
-
-  virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override
-  {
+  bool BindTextureSource(CompositableTextureSourceRef& aTexture) override {
     aTexture = mTextureSource;
     return !!aTexture;
   }
 
-  virtual already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
+  already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
 #ifdef MOZ_LAYERS_HAVE_LOG
-  virtual const char* Name() override { return "X11TextureHost"; }
+  const char* Name() override { return "X11TextureHost"; }
 #endif
 
-protected:
-  virtual void UpdatedInternal(const nsIntRegion*) override
-  {
-    if (mTextureSource)
-      mTextureSource->Updated();
+ protected:
+  void UpdatedInternal(const nsIntRegion*) override {
+    if (mTextureSource) mTextureSource->Updated();
   }
 
   RefPtr<Compositor> mCompositor;
@@ -66,7 +59,7 @@ protected:
   RefPtr<gfxXlibSurface> mSurface;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // MOZILLA_GFX_X11TEXTUREHOST__H
+#endif  // MOZILLA_GFX_X11TEXTUREHOST__H

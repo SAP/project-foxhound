@@ -10,13 +10,13 @@
 // "Community Additions" comment on MSDN here:
 // http://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
 #define SystemFunction036 NTAPI SystemFunction036
-#include <NTSecAPI.h>
+#include <ntsecapi.h>
 #undef SystemFunction036
 
 namespace sandbox {
 
 bool GetRandom(unsigned int* random_value) {
-  return RtlGenRandom(random_value, sizeof(unsigned int)) != FALSE;
+  return RtlGenRandom(random_value, sizeof(unsigned int)) != false;
 }
 
 }  // namespace sandbox

@@ -1,3 +1,9 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef GDKVERSIONMACROS_WRAPPER_H
 #define GDKVERSIONMACROS_WRAPPER_H
 
@@ -20,7 +26,7 @@
 
 /* GDK_AVAILABLE_IN_ALL was introduced in 3.10 */
 #ifndef GDK_AVAILABLE_IN_ALL
-#define GDK_AVAILABLE_IN_ALL
+#  define GDK_AVAILABLE_IN_ALL
 #endif
 
 #undef GDK_DEPRECATED

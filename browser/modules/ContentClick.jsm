@@ -5,90 +5,104 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+var EXPORTED_SYMBOLS = ["ContentClick"];
 
-this.EXPORTED_SYMBOLS = [ "ContentClick" ];
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-Cu.import("resource:///modules/PlacesUIUtils.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "E10SUtils",
+  "resource://gre/modules/E10SUtils.jsm"
+);
 
 var ContentClick = {
-  init: function() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("Content:Click", this);
-  },
-
-  receiveMessage: function (message) {
+  // Listeners are added in BrowserGlue.jsm
+  receiveMessage(message) {
     switch (message.name) {
       case "Content:Click":
-        this.contentAreaClick(message.json, message.target)
+        this.contentAreaClick(message.json, message.target);
         break;
     }
   },
 
-  contentAreaClick: function (json, browser) {
+  /**
+   * Handles clicks in the content area.
+   *
+   * @param json {Object} JSON object that looks like an Event
+   * @param browser {Element<browser>}
+   */
+  contentAreaClick(json, browser) {
     // This is heavily based on contentAreaClick from browser.js (Bug 903016)
     // The json is set up in a way to look like an Event.
     let window = browser.ownerGlobal;
 
     if (!json.href) {
       // Might be middle mouse navigation.
-      if (Services.prefs.getBoolPref("middlemouse.contentLoadURL") &&
-          !Services.prefs.getBoolPref("general.autoScroll")) {
+      if (
+        Services.prefs.getBoolPref("middlemouse.contentLoadURL") &&
+        !Services.prefs.getBoolPref("general.autoScroll")
+      ) {
         window.middleMousePaste(json);
       }
       return;
     }
 
-    if (json.bookmark) {
-      // This is the Opera convention for a special link that, when clicked,
-      // allows to add a sidebar panel.  The link's title attribute contains
-      // the title that should be used for the sidebar panel.
-      PlacesUIUtils.showBookmarkDialog({ action: "add"
-                                       , type: "bookmark"
-                                       , uri: Services.io.newURI(json.href, null, null)
-                                       , title: json.title
-                                       , loadBookmarkInSidebar: true
-                                       , hiddenRows: [ "description"
-                                                     , "location"
-                                                     , "keyword" ]
-                                       }, window);
+    // If the browser is not in a place where we can open links, bail out.
+    // This can happen in osx sheets, dialogs, etc. that are not browser
+    // windows.  Specifically the payments UI is in an osx sheet.
+    if (window.openLinkIn === undefined) {
       return;
     }
-
-    // Note: We don't need the sidebar code here.
 
     // Mark the page as a user followed link.  This is done so that history can
     // distinguish automatic embed visits from user activated ones.  For example
     // pages loaded in frames are embed visits and lost with the session, while
     // visits across frames should be preserved.
     try {
-      if (!PrivateBrowsingUtils.isWindowPrivate(window))
+      if (!PrivateBrowsingUtils.isWindowPrivate(window)) {
         PlacesUIUtils.markPageAsFollowedLink(json.href);
-    } catch (ex) { /* Skip invalid URIs. */ }
+      }
+    } catch (ex) {
+      /* Skip invalid URIs. */
+    }
 
     // This part is based on handleLinkClick.
     var where = window.whereToOpenLink(json);
-    if (where == "current")
+    if (where == "current") {
       return;
+    }
 
     // Todo(903022): code for where == save
 
-    let params = { charset: browser.characterSet,
-                   referrerURI: browser.documentURI,
-                   referrerPolicy: json.referrerPolicy,
-                   noReferrer: json.noReferrer,
-                   allowMixedContent: json.allowMixedContent,
-                   isContentWindowPrivate: json.isContentWindowPrivate};
+    let params = {
+      charset: browser.characterSet,
+      referrerInfo: E10SUtils.deserializeReferrerInfo(json.referrerInfo),
+      allowMixedContent: json.allowMixedContent,
+      isContentWindowPrivate: json.isContentWindowPrivate,
+      originPrincipal: json.originPrincipal,
+      originStoragePrincipal: json.originStoragePrincipal,
+      triggeringPrincipal: json.triggeringPrincipal,
+      csp: json.csp ? E10SUtils.deserializeCSP(json.csp) : null,
+      frameOuterWindowID: json.frameOuterWindowID,
+    };
 
     // The new tab/window must use the same userContextId.
     if (json.originAttributes.userContextId) {
       params.userContextId = json.originAttributes.userContextId;
     }
 
+    params.allowInheritPrincipal = true;
+
     window.openLinkIn(json.href, where, params);
-  }
+  },
 };

@@ -11,13 +11,10 @@ SOURCES += [
 ]
 
 EXPORTS += [
+    'nsXPTCUtils.h',
     'xptcall.h',
     'xptcstubsdecl.inc',
     'xptcstubsdef.inc',
-]
-
-LOCAL_INCLUDES += [
-    '/xpcom/reflect/xptinfo',
 ]
 
 FINAL_LIBRARY = 'xul'

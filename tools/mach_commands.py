@@ -2,28 +2,63 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import sys
-import os
-import stat
-import platform
-import errno
-import subprocess
 
 from mach.decorators import (
     CommandArgument,
     CommandProvider,
     Command,
+    SubCommand,
 )
 
 from mozbuild.base import MachCommandBase, MozbuildObject
 
 
 @CommandProvider
+class BustedProvider(object):
+    @Command('busted', category='misc',
+             description='Query known bugs in our tooling, and file new ones.')
+    def busted_default(self):
+        import requests
+        payload = {'include_fields': 'id,summary,last_change_time',
+                   'blocks': 1543241,
+                   'resolution': '---'}
+        response = requests.get('https://bugzilla.mozilla.org/rest/bug', payload)
+        response.raise_for_status()
+        json_response = response.json()
+        if 'bugs' in json_response and len(json_response['bugs']) > 0:
+            # Display most recently modifed bugs first.
+            bugs = sorted(json_response['bugs'], key=lambda item: item['last_change_time'],
+                          reverse=True)
+            for bug in bugs:
+                print("Bug %s - %s" % (bug['id'], bug['summary']))
+        else:
+            print("No known tooling issues found.")
+
+    @SubCommand('busted',
+                'file',
+                description='File a bug for busted tooling.')
+    def busted_file(self):
+        import webbrowser
+        uri = ('https://bugzilla.mozilla.org/enter_bug.cgi?'
+               'product=Firefox%20Build%20System&component=General&blocked=1543241')
+        webbrowser.open_new_tab(uri)
+
+
+@CommandProvider
 class SearchProvider(object):
+    @Command('searchfox', category='misc',
+             description='Search for something in Searchfox.')
+    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
+    def searchfox(self, term):
+        import webbrowser
+        term = ' '.join(term)
+        uri = 'https://searchfox.org/mozilla-central/search?q=%s' % term
+        webbrowser.open_new_tab(uri)
     @Command('dxr', category='misc',
-        description='Search for something in DXR.')
+             description='Search for something in DXR.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
     def dxr(self, term):
         import webbrowser
@@ -32,7 +67,7 @@ class SearchProvider(object):
         webbrowser.open_new_tab(uri)
 
     @Command('mdn', category='misc',
-        description='Search for something on MDN.')
+             description='Search for something on MDN.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
     def mdn(self, term):
         import webbrowser
@@ -41,7 +76,7 @@ class SearchProvider(object):
         webbrowser.open_new_tab(uri)
 
     @Command('google', category='misc',
-        description='Search for something on Google.')
+             description='Search for something on Google.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
     def google(self, term):
         import webbrowser
@@ -50,20 +85,21 @@ class SearchProvider(object):
         webbrowser.open_new_tab(uri)
 
     @Command('search', category='misc',
-        description='Search for something on the Internets. '
-        'This will open 3 new browser tabs and search for the term on Google, '
-        'MDN, and DXR.')
+             description='Search for something on the Internets. '
+             'This will open 4 new browser tabs and search for the term on Google, '
+             'MDN, DXR, and Searchfox.')
     @CommandArgument('term', nargs='+', help='Term(s) to search for.')
     def search(self, term):
         self.google(term)
         self.mdn(term)
         self.dxr(term)
+        self.searchfox(term)
 
 
 @CommandProvider
 class UUIDProvider(object):
     @Command('uuid', category='misc',
-        description='Generate a uuid.')
+             description='Generate a uuid.')
     @CommandArgument('--format', '-f', choices=['idl', 'cpp', 'c++'],
                      help='Output format for the generated uuid.')
     def uuid(self, format=None):
@@ -80,231 +116,229 @@ class UUIDProvider(object):
             print(('  { ' + '0x%s, ' * 7 + '0x%s } }') % pairs)
 
 
-@CommandProvider
-class RageProvider(MachCommandBase):
-    @Command('rage', category='misc',
-             description='Express your frustration')
-    def rage(self):
-        """Have a bad experience developing Firefox? Run this command to
-        express your frustration.
+MACH_PASTEBIN_DURATIONS = {
+    'onetime': 'onetime',
+    'hour': '3600',
+    'day': '86400',
+    'week': '604800',
+    'month': '2073600',
+}
 
-        This command will open your default configured web browser to a short
-        form where you can submit feedback. Just close the tab when done.
-        """
-        import getpass
-        import urllib
-        import webbrowser
+EXTENSION_TO_HIGHLIGHTER = {
+    '.hgrc': 'ini',
+    'Dockerfile': 'docker',
+    'Makefile': 'make',
+    'applescript': 'applescript',
+    'arduino': 'arduino',
+    'bash': 'bash',
+    'bat': 'bat',
+    'c': 'c',
+    'clojure': 'clojure',
+    'cmake': 'cmake',
+    'coffee': 'coffee-script',
+    'console': 'console',
+    'cpp': 'cpp',
+    'cs': 'csharp',
+    'css': 'css',
+    'cu': 'cuda',
+    'cuda': 'cuda',
+    'dart': 'dart',
+    'delphi': 'delphi',
+    'diff': 'diff',
+    'django': 'django',
+    'docker': 'docker',
+    'elixir': 'elixir',
+    'erlang': 'erlang',
+    'go': 'go',
+    'h': 'c',
+    'handlebars': 'handlebars',
+    'haskell': 'haskell',
+    'hs': 'haskell',
+    'html': 'html',
+    'ini': 'ini',
+    'ipy': 'ipythonconsole',
+    'ipynb': 'ipythonconsole',
+    'irc': 'irc',
+    'j2': 'django',
+    'java': 'java',
+    'js': 'js',
+    'json': 'json',
+    'jsx': 'jsx',
+    'kt': 'kotlin',
+    'less': 'less',
+    'lisp': 'common-lisp',
+    'lsp': 'common-lisp',
+    'lua': 'lua',
+    'm': 'objective-c',
+    'make': 'make',
+    'matlab': 'matlab',
+    'md': '_markdown',
+    'nginx': 'nginx',
+    'numpy': 'numpy',
+    'patch': 'diff',
+    'perl': 'perl',
+    'php': 'php',
+    'pm': 'perl',
+    'postgresql': 'postgresql',
+    'py': 'python',
+    'rb': 'rb',
+    'rs': 'rust',
+    'rst': 'rst',
+    'sass': 'sass',
+    'scss': 'scss',
+    'sh': 'bash',
+    'sol': 'sol',
+    'sql': 'sql',
+    'swift': 'swift',
+    'tex': 'tex',
+    'typoscript': 'typoscript',
+    'vim': 'vim',
+    'xml': 'xml',
+    'xslt': 'xslt',
+    'yaml': 'yaml',
+    'yml': 'yaml'
+}
 
-        # Try to resolve the current user.
-        user = None
-        with open(os.devnull, 'wb') as null:
-            if os.path.exists(os.path.join(self.topsrcdir, '.hg')):
-                try:
-                    user = subprocess.check_output(['hg', 'config',
-                                                    'ui.username'],
-                                                   cwd=self.topsrcdir,
-                                                   stderr=null)
 
-                    i = user.find('<')
-                    if i >= 0:
-                        user = user[i + 1:-2]
-                except subprocess.CalledProcessError:
-                    pass
-            elif os.path.exists(os.path.join(self.topsrcdir, '.git')):
-                try:
-                    user = subprocess.check_output(['git', 'config', '--get',
-                                                    'user.email'],
-                                                   cwd=self.topsrcdir,
-                                                   stderr=null)
-                except subprocess.CalledProcessError:
-                    pass
+def guess_highlighter_from_path(path):
+    '''Return a known highlighter from a given path
 
-        if not user:
-            try:
-                user = getpass.getuser()
-            except Exception:
-                pass
+    Attempt to select a highlighter by checking the file extension in the mapping
+    of extensions to highlighter. If that fails, attempt to pass the basename of
+    the file. Return `_code` as the default highlighter if that fails.
+    '''
+    import os
 
-        url = 'https://docs.google.com/a/mozilla.com/forms/d/e/1FAIpQLSeDVC3IXJu5d33Hp_ZTCOw06xEUiYH1pBjAqJ1g_y63sO2vvA/viewform'
-        if user:
-            url += '?entry.1281044204=%s' % urllib.quote(user)
+    _name, ext = os.path.splitext(path)
 
-        print('Please leave your feedback in the opened web form')
-        webbrowser.open_new_tab(url)
+    if ext.startswith('.'):
+        ext = ext[1:]
+
+    if ext in EXTENSION_TO_HIGHLIGHTER:
+        return EXTENSION_TO_HIGHLIGHTER[ext]
+
+    basename = os.path.basename(path)
+
+    return EXTENSION_TO_HIGHLIGHTER.get(basename, '_code')
+
+
+PASTEMO_MAX_CONTENT_LENGTH = 250 * 1024 * 1024
+
+PASTEMO_URL = 'https://paste.mozilla.org/api/'
+
+MACH_PASTEBIN_DESCRIPTION = '''
+Command line interface to paste.mozilla.org.
+
+Takes either a filename whose content should be pasted, or reads
+content from standard input. If a highlighter is specified it will
+be used, otherwise the file name will be used to determine an
+appropriate highlighter.
+'''
 
 
 @CommandProvider
 class PastebinProvider(object):
     @Command('pastebin', category='misc',
-        description='Command line interface to pastebin.mozilla.org.')
-    @CommandArgument('--language', default=None,
-                     help='Language to use for syntax highlighting')
-    @CommandArgument('--poster', default='',
-                     help='Specify your name for use with pastebin.mozilla.org')
-    @CommandArgument('--duration', default='day',
-                     choices=['d', 'day', 'm', 'month', 'f', 'forever'],
-                     help='Keep for specified duration (default: %(default)s)')
-    @CommandArgument('file', nargs='?', default=None,
-                     help='Specify the file to upload to pastebin.mozilla.org')
+             description=MACH_PASTEBIN_DESCRIPTION)
+    @CommandArgument('--list-highlighters', action='store_true',
+                     help='List known highlighters and exit')
+    @CommandArgument('--highlighter', default=None,
+                     help='Syntax highlighting to use for paste')
+    @CommandArgument('--expires', default='week',
+                     choices=sorted(MACH_PASTEBIN_DURATIONS.keys()),
+                     help='Expire paste after given time duration (default: %(default)s)')
+    @CommandArgument('--verbose', action='store_true',
+                     help='Print extra info such as selected syntax highlighter')
+    @CommandArgument('path', nargs='?', default=None,
+                     help='Path to file for upload to paste.mozilla.org')
+    def pastebin(self, list_highlighters, highlighter, expires, verbose, path):
+        import requests
 
-    def pastebin(self, language, poster, duration, file):
-        import urllib
-        import urllib2
+        def verbose_print(*args, **kwargs):
+            '''Print a string if `--verbose` flag is set'''
+            if verbose:
+                print(*args, **kwargs)
 
-        URL = 'https://pastebin.mozilla.org/'
+        # Show known highlighters and exit.
+        if list_highlighters:
+            lexers = set(EXTENSION_TO_HIGHLIGHTER.values())
+            print('Available lexers:\n'
+                  '    - %s' % '\n    - '.join(sorted(lexers)))
+            return 0
 
-        FILE_TYPES = [{'value': 'text', 'name': 'None', 'extension': 'txt'},
-        {'value': 'bash', 'name': 'Bash', 'extension': 'sh'},
-        {'value': 'c', 'name': 'C', 'extension': 'c'},
-        {'value': 'cpp', 'name': 'C++', 'extension': 'cpp'},
-        {'value': 'html4strict', 'name': 'HTML', 'extension': 'html'},
-        {'value': 'javascript', 'name': 'Javascript', 'extension': 'js'},
-        {'value': 'javascript', 'name': 'Javascript', 'extension': 'jsm'},
-        {'value': 'lua', 'name': 'Lua', 'extension': 'lua'},
-        {'value': 'perl', 'name': 'Perl', 'extension': 'pl'},
-        {'value': 'php', 'name': 'PHP', 'extension': 'php'},
-        {'value': 'python', 'name': 'Python', 'extension': 'py'},
-        {'value': 'ruby', 'name': 'Ruby', 'extension': 'rb'},
-        {'value': 'css', 'name': 'CSS', 'extension': 'css'},
-        {'value': 'diff', 'name': 'Diff', 'extension': 'diff'},
-        {'value': 'ini', 'name': 'INI file', 'extension': 'ini'},
-        {'value': 'java', 'name': 'Java', 'extension': 'java'},
-        {'value': 'xml', 'name': 'XML', 'extension': 'xml'},
-        {'value': 'xml', 'name': 'XML', 'extension': 'xul'}]
+        # Get a correct expiry value.
+        try:
+            verbose_print('Setting expiry from %s' % expires)
+            expires = MACH_PASTEBIN_DURATIONS[expires]
+            verbose_print('Using %s as expiry' % expires)
+        except KeyError:
+            print('%s is not a valid duration.\n'
+                  '(hint: try one of %s)' %
+                  (expires, ', '.join(MACH_PASTEBIN_DURATIONS.keys())))
+            return 1
 
-        lang = ''
+        data = {
+            'format': 'json',
+            'expires': expires,
+        }
 
-        if file:
+        # Get content to be pasted.
+        if path:
+            verbose_print('Reading content from %s' % path)
             try:
-                with open(file, 'r') as f:
+                with open(path, 'r') as f:
                     content = f.read()
-                # TODO: Use mime-types instead of extensions; suprocess('file <f_name>')
-                # Guess File-type based on file extension
-                extension = file.split('.')[-1]
-                for l in FILE_TYPES:
-                    if extension == l['extension']:
-                        print('Identified file as %s' % l['name'])
-                        lang = l['value']
             except IOError:
-                print('ERROR. No such file')
+                print('ERROR. No such file %s' % path)
                 return 1
+
+            lexer = guess_highlighter_from_path(path)
+            if lexer:
+                data['lexer'] = lexer
         else:
+            verbose_print('Reading content from stdin')
             content = sys.stdin.read()
-        duration = duration[0]
 
-        if language:
-            lang = language
-
-
-        params = [
-            ('parent_pid', ''),
-            ('format', lang),
-            ('code2', content),
-            ('poster', poster),
-            ('expiry', duration),
-            ('paste', 'Send')]
-
-        data = urllib.urlencode(params)
-        print('Uploading ...')
-        try:
-            req = urllib2.Request(URL, data)
-            response = urllib2.urlopen(req)
-            http_response_code = response.getcode()
-            if http_response_code == 200:
-                print(response.geturl())
-            else:
-                print('Could not upload the file, '
-                      'HTTP Response Code %s' %(http_response_code))
-        except urllib2.URLError:
-            print('ERROR. Could not connect to pastebin.mozilla.org.')
-            return 1
-        return 0
-
-
-@CommandProvider
-class FormatProvider(MachCommandBase):
-    @Command('clang-format', category='misc',
-        description='Run clang-format on current changes')
-    @CommandArgument('--show', '-s', action = 'store_true',
-        help = 'Show diff output on instead of applying changes')
-    def clang_format(self, show=False):
-        import urllib2
-
-        plat = platform.system()
-        fmt = plat.lower() + "/clang-format-3.5"
-        fmt_diff = "clang-format-diff-3.5"
-
-        # We are currently using a modified version of clang-format hosted on people.mozilla.org.
-        # This is a temporary work around until we upstream the necessary changes and we can use
-        # a system version of clang-format. See bug 961541.
-        if plat == "Windows":
-            fmt += ".exe"
-        else:
-            arch = os.uname()[4]
-            if (plat != "Linux" and plat != "Darwin") or arch != 'x86_64':
-                print("Unsupported platform " + plat + "/" + arch +
-                      ". Supported platforms are Windows/*, Linux/x86_64 and Darwin/x86_64")
-                return 1
-
-        os.chdir(self.topsrcdir)
-        self.prompt = True
-
-        try:
-            if not self.locate_or_fetch(fmt):
-                return 1
-            clang_format_diff = self.locate_or_fetch(fmt_diff)
-            if not clang_format_diff:
-                return 1
-
-        except urllib2.HTTPError as e:
-            print("HTTP error {0}: {1}".format(e.code, e.reason))
+        # Assert the length of content to be posted does not exceed the maximum.
+        content_length = len(content)
+        verbose_print('Checking size of content is okay (%d)' % content_length)
+        if content_length > PASTEMO_MAX_CONTENT_LENGTH:
+            print('Paste content is too large (%d, maximum %d)' %
+                  (content_length, PASTEMO_MAX_CONTENT_LENGTH))
             return 1
 
-        from subprocess import Popen, PIPE
+        data['content'] = content
 
-        if os.path.exists(".hg"):
-            diff_process = Popen(["hg", "diff", "-U0", "-r", "tip^",
-                                  "--include", "glob:**.c", "--include", "glob:**.cpp", "--include", "glob:**.h",
-                                  "--exclude", "listfile:.clang-format-ignore"], stdout=PIPE)
-        else:
-            git_process = Popen(["git", "diff", "-U0", "HEAD^"], stdout=PIPE)
-            try:
-                diff_process = Popen(["filterdiff", "--include=*.h", "--include=*.cpp",
-                                      "--exclude-from-file=.clang-format-ignore"],
-                                     stdin=git_process.stdout, stdout=PIPE)
-            except OSError as e:
-                if e.errno == errno.ENOENT:
-                    print("Can't find filterdiff. Please install patchutils.")
-                else:
-                    print("OSError {0}: {1}".format(e.code, e.reason))
+        # Highlight as specified language, overwriting value set from filename.
+        if highlighter:
+            verbose_print('Setting %s as highlighter' % highlighter)
+            data['lexer'] = highlighter
+
+        try:
+            verbose_print('Sending request to %s' % PASTEMO_URL)
+            resp = requests.post(PASTEMO_URL, data=data)
+
+            # Error code should always be 400.
+            # Response content will include a helpful error message,
+            # so print it here (for example, if an invalid highlighter is
+            # provided, it will return a list of valid highlighters).
+            if resp.status_code >= 400:
+                print('Error code %d: %s' % (resp.status_code, resp.content))
                 return 1
 
+            verbose_print('Pasted successfully')
 
-        args = [sys.executable, clang_format_diff, "-p1"]
-        if not show:
-           args.append("-i")
-        cf_process = Popen(args, stdin=diff_process.stdout)
-        return cf_process.communicate()[0]
+            response_json = resp.json()
 
-    def locate_or_fetch(self, root):
-        target = os.path.join(self._mach_context.state_dir, os.path.basename(root))
-        if not os.path.exists(target):
-            site = "https://people.mozilla.org/~ajones/clang-format/"
-            if self.prompt and raw_input("Download clang-format executables from {0} (yN)? ".format(site)).lower() != 'y':
-                print("Download aborted.")
-                return 1
-            self.prompt = False
+            verbose_print('Paste highlighted as %s' % response_json['lexer'])
+            print(response_json['url'])
 
-            u = site + root
-            print("Downloading {0} to {1}".format(u, target))
-            data = urllib2.urlopen(url=u).read()
-            temp = target + ".tmp"
-            with open(temp, "wb") as fh:
-                fh.write(data)
-                fh.close()
-            os.chmod(temp, os.stat(temp).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            os.rename(temp, target)
-        return target
+            return 0
+        except Exception as e:
+            print('ERROR. Paste failed.')
+            print('%s' % e)
+        return 1
+
 
 def mozregression_import():
     # Lazy loading of mozregression.

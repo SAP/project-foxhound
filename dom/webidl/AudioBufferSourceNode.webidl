@@ -10,8 +10,20 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
-interface AudioBufferSourceNode : AudioNode {
+dictionary AudioBufferSourceOptions {
+             AudioBuffer? buffer;
+             float        detune = 0;
+             boolean      loop = false;
+             double       loopEnd = 0;
+             double       loopStart = 0;
+             float        playbackRate = 1;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
+interface AudioBufferSourceNode : AudioScheduledSourceNode {
+    constructor(BaseAudioContext context,
+                optional AudioBufferSourceOptions options = {});
 
     attribute AudioBuffer? buffer;
 
@@ -22,14 +34,10 @@ interface AudioBufferSourceNode : AudioNode {
     attribute double loopStart;
     attribute double loopEnd;
 
-    [Throws, UnsafeInPrerendering]
+    [Throws]
     void start(optional double when = 0, optional double grainOffset = 0,
                optional double grainDuration);
-    [Throws, UnsafeInPrerendering]
-    void stop(optional double when = 0);
-
-    attribute EventHandler onended;
 };
 
 // Mozilla extensions
-AudioBufferSourceNode implements AudioNodePassThrough;
+AudioBufferSourceNode includes AudioNodePassThrough;

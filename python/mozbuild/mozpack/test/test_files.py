@@ -2,7 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozbuild.util import ensureParentDir
+from __future__ import absolute_import, print_function, unicode_literals
+
+from mozbuild.util import (
+    ensureParentDir,
+    ensure_bytes,
+)
 
 from mozpack.errors import (
     ErrorMessage,
@@ -18,6 +23,7 @@ from mozpack.files import (
     FileFinder,
     File,
     GeneratedFile,
+    HardlinkFile,
     JarFinder,
     TarFinder,
     ManifestFile,
@@ -26,7 +32,6 @@ from mozpack.files import (
     MinifiedJavaScript,
     MinifiedProperties,
     PreprocessedFile,
-    XPTFile,
 )
 
 # We don't have hglib installed everywhere.
@@ -55,14 +60,12 @@ import mozfile
 import mozunit
 import os
 import random
-import string
+import six
 import sys
 import tarfile
 import mozpack.path as mozpath
 from tempfile import mkdtemp
 from io import BytesIO
-from StringIO import StringIO
-from xpt import Typelib
 
 
 class TestWithTmpDir(unittest.TestCase):
@@ -70,24 +73,37 @@ class TestWithTmpDir(unittest.TestCase):
         self.tmpdir = mkdtemp()
 
         self.symlink_supported = False
+        self.hardlink_supported = False
 
-        if not hasattr(os, 'symlink'):
-            return
+        if hasattr(os, 'symlink'):
+            dummy_path = self.tmppath('dummy_file')
+            with open(dummy_path, 'a'):
+                pass
 
-        dummy_path = self.tmppath('dummy_file')
-        with open(dummy_path, 'a'):
-            pass
+            try:
+                os.symlink(dummy_path, self.tmppath('dummy_symlink'))
+                os.remove(self.tmppath('dummy_symlink'))
+            except EnvironmentError:
+                pass
+            finally:
+                os.remove(dummy_path)
 
-        try:
-            os.symlink(dummy_path, self.tmppath('dummy_symlink'))
-            os.remove(self.tmppath('dummy_symlink'))
-        except EnvironmentError:
-            pass
-        finally:
-            os.remove(dummy_path)
+            self.symlink_supported = True
 
-        self.symlink_supported = True
+        if hasattr(os, 'link'):
+            dummy_path = self.tmppath('dummy_file')
+            with open(dummy_path, 'a'):
+                pass
 
+            try:
+                os.link(dummy_path, self.tmppath('dummy_hardlink'))
+                os.remove(self.tmppath('dummy_hardlink'))
+            except EnvironmentError:
+                pass
+            finally:
+                os.remove(dummy_path)
+
+            self.hardlink_supported = True
 
     def tearDown(self):
         mozfile.rmtree(self.tmpdir)
@@ -146,18 +162,20 @@ class TestDest(TestWithTmpDir):
         dest.write('qux')
         self.assertEqual(dest.read(), 'qux')
 
-rand = ''.join(random.choice(string.letters) for i in xrange(131597))
+
+rand = bytes(random.choice(b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+             for i in six.moves.xrange(131597))
 samples = [
-    '',
-    'test',
-    'fooo',
-    'same',
-    'same',
-    'Different and longer',
+    b'',
+    b'test',
+    b'fooo',
+    b'same',
+    b'same',
+    b'Different and longer',
     rand,
     rand,
-    rand[:-1] + '_',
-    'test'
+    rand[:-1] + b'_',
+    b'test',
 ]
 
 
@@ -352,6 +370,98 @@ class TestAbsoluteSymlinkFile(TestWithTmpDir):
         link = os.readlink(dest)
         self.assertEqual(link, source)
 
+
+class TestHardlinkFile(TestWithTmpDir):
+    def test_absolute_relative(self):
+        HardlinkFile('/foo')
+        HardlinkFile('./foo')
+
+    def test_hardlink_file(self):
+        source = self.tmppath('test_path')
+        with open(source, 'wt') as fh:
+            fh.write('Hello world')
+
+        s = HardlinkFile(source)
+        dest = self.tmppath('hardlink')
+        self.assertTrue(s.copy(dest))
+
+        if self.hardlink_supported:
+            source_stat = os.stat(source)
+            dest_stat = os.stat(dest)
+            self.assertEqual(source_stat.st_dev, dest_stat.st_dev)
+            self.assertEqual(source_stat.st_ino, dest_stat.st_ino)
+        else:
+            self.assertTrue(os.path.isfile(dest))
+            with open(dest) as f:
+                content = f.read()
+            self.assertEqual(content, 'Hello world')
+
+    def test_replace_file_with_hardlink(self):
+        # If hardlink are supported, an existing file should be replaced by a
+        # symlink.
+        source = self.tmppath('test_path')
+        with open(source, 'wt') as fh:
+            fh.write('source')
+
+        dest = self.tmppath('dest')
+        with open(dest, 'a'):
+            pass
+
+        s = HardlinkFile(source)
+        s.copy(dest, skip_if_older=False)
+
+        if self.hardlink_supported:
+            source_stat = os.stat(source)
+            dest_stat = os.stat(dest)
+            self.assertEqual(source_stat.st_dev, dest_stat.st_dev)
+            self.assertEqual(source_stat.st_ino, dest_stat.st_ino)
+        else:
+            self.assertTrue(os.path.isfile(dest))
+            with open(dest) as f:
+                content = f.read()
+            self.assertEqual(content, 'source')
+
+    def test_replace_hardlink(self):
+        if not self.hardlink_supported:
+            raise unittest.SkipTest('hardlink not supported')
+
+        source = self.tmppath('source')
+        with open(source, 'a'):
+            pass
+
+        dest = self.tmppath('dest')
+
+        os.link(source, dest)
+
+        s = HardlinkFile(source)
+        self.assertFalse(s.copy(dest))
+
+        source_stat = os.lstat(source)
+        dest_stat = os.lstat(dest)
+        self.assertEqual(source_stat.st_dev, dest_stat.st_dev)
+        self.assertEqual(source_stat.st_ino, dest_stat.st_ino)
+
+    def test_noop(self):
+        if not self.hardlink_supported:
+            raise unittest.SkipTest('hardlink not supported')
+
+        source = self.tmppath('source')
+        dest = self.tmppath('dest')
+
+        with open(source, 'a'):
+            pass
+
+        os.link(source, dest)
+
+        s = HardlinkFile(source)
+        self.assertFalse(s.copy(dest))
+
+        source_stat = os.lstat(source)
+        dest_stat = os.lstat(dest)
+        self.assertEqual(source_stat.st_dev, dest_stat.st_dev)
+        self.assertEqual(source_stat.st_ino, dest_stat.st_ino)
+
+
 class TestPreprocessedFile(TestWithTmpDir):
     def test_preprocess(self):
         '''
@@ -468,12 +578,13 @@ class TestPreprocessedFile(TestWithTmpDir):
             tmp.write('#define FOO\nPREPROCESSED')
 
         f = PreprocessedFile(pp_source, depfile_path=deps, marker='#',
-            defines={'FOO': True})
+                             defines={'FOO': True})
         self.assertTrue(f.copy(dest))
 
         self.assertEqual('PREPROCESSED', open(dest, 'rb').read())
         self.assertFalse(os.path.islink(dest))
         self.assertEqual('', open(source, 'rb').read())
+
 
 class TestExistingFile(TestWithTmpDir):
     def test_required_missing_dest(self):
@@ -521,7 +632,7 @@ class TestGeneratedFile(TestWithTmpDir):
         Test whether GeneratedFile.open returns an appropriately reset file
         object.
         '''
-        content = ''.join(samples)
+        content = b''.join(samples)
         f = GeneratedFile(content)
         self.assertEqual(content[:42], f.open().read(42))
         self.assertEqual(content, f.open().read())
@@ -534,22 +645,58 @@ class TestGeneratedFile(TestWithTmpDir):
         dest = self.tmppath('dest')
 
         # Initial copy
-        f = GeneratedFile('test')
+        f = GeneratedFile(b'test')
         f.copy(dest)
 
         # Ensure subsequent copies won't trigger writes
         f.copy(DestNoWrite(dest))
-        self.assertEqual('test', open(dest, 'rb').read())
+        self.assertEqual(b'test', open(dest, 'rb').read())
 
         # When using a new instance with the same content, no copy should occur
-        f = GeneratedFile('test')
+        f = GeneratedFile(b'test')
         f.copy(DestNoWrite(dest))
-        self.assertEqual('test', open(dest, 'rb').read())
+        self.assertEqual(b'test', open(dest, 'rb').read())
 
         # Double check that under conditions where a copy occurs, we would get
         # an exception.
-        f = GeneratedFile('fooo')
+        f = GeneratedFile(b'fooo')
         self.assertRaises(RuntimeError, f.copy, DestNoWrite(dest))
+
+    def test_generated_file_function(self):
+        '''
+        Test GeneratedFile behavior with functions.
+        '''
+        dest = self.tmppath('dest')
+        data = {
+            'num_calls': 0,
+        }
+
+        def content():
+            data['num_calls'] += 1
+            return b'content'
+
+        f = GeneratedFile(content)
+        self.assertEqual(data['num_calls'], 0)
+        f.copy(dest)
+        self.assertEqual(data['num_calls'], 1)
+        self.assertEqual(b'content', open(dest, 'rb').read())
+        self.assertEqual(b'content', f.open().read())
+        self.assertEqual(b'content', f.read())
+        self.assertEqual(len(b'content'), f.size())
+        self.assertEqual(data['num_calls'], 1)
+
+        f.content = b'modified'
+        f.copy(dest)
+        self.assertEqual(data['num_calls'], 1)
+        self.assertEqual(b'modified', open(dest, 'rb').read())
+        self.assertEqual(b'modified', f.open().read())
+        self.assertEqual(b'modified', f.read())
+        self.assertEqual(len(b'modified'), f.size())
+
+        f.content = content
+        self.assertEqual(data['num_calls'], 1)
+        self.assertEqual(b'content', f.read())
+        self.assertEqual(data['num_calls'], 2)
 
 
 class TestDeflatedFile(TestWithTmpDir):
@@ -565,8 +712,9 @@ class TestDeflatedFile(TestWithTmpDir):
         contents = {}
         with JarWriter(src) as jar:
             for content in samples:
-                name = ''.join(random.choice(string.letters)
-                               for i in xrange(8))
+                name = b''.join(random.choice(
+                    b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    for i in range(8))
                 jar.add(name, content, compress=True)
                 contents[name] = content
 
@@ -581,7 +729,7 @@ class TestDeflatedFile(TestWithTmpDir):
         object.
         '''
         src = self.tmppath('src.jar')
-        content = ''.join(samples)
+        content = b''.join(samples)
         with JarWriter(src) as jar:
             jar.add('content', content)
 
@@ -598,9 +746,9 @@ class TestDeflatedFile(TestWithTmpDir):
         dest = self.tmppath('dest')
 
         with JarWriter(src) as jar:
-            jar.add('test', 'test')
-            jar.add('test2', 'test')
-            jar.add('fooo', 'fooo')
+            jar.add('test', b'test')
+            jar.add('test2', b'test')
+            jar.add('fooo', b'fooo')
 
         jar = JarReader(src)
         # Initial copy
@@ -609,13 +757,13 @@ class TestDeflatedFile(TestWithTmpDir):
 
         # Ensure subsequent copies won't trigger writes
         f.copy(DestNoWrite(dest))
-        self.assertEqual('test', open(dest, 'rb').read())
+        self.assertEqual(b'test', open(dest, 'rb').read())
 
         # When using a different file with the same content, no copy should
         # occur
         f = DeflatedFile(jar['test2'])
         f.copy(DestNoWrite(dest))
-        self.assertEqual('test', open(dest, 'rb').read())
+        self.assertEqual(b'test', open(dest, 'rb').read())
 
         # Double check that under conditions where a copy occurs, we would get
         # an exception.
@@ -667,6 +815,7 @@ class TestManifestFile(TestWithTmpDir):
         self.assertEqual(content[:42], f.open().read(42))
         self.assertEqual(content, f.open().read())
 
+
 # Compiled typelib for the following IDL:
 #     interface foo;
 #     [scriptable, uuid(5f70da76-519c-4858-b71e-e3c92333e2d6)]
@@ -717,61 +866,15 @@ foo2_xpt = GeneratedFile(
 )
 
 
-def read_interfaces(file):
-    return dict((i.name, i) for i in Typelib.read(file).interfaces)
-
-
-class TestXPTFile(TestWithTmpDir):
-    def test_xpt_file(self):
-        x = XPTFile()
-        x.add(foo_xpt)
-        x.add(bar_xpt)
-        x.copy(self.tmppath('interfaces.xpt'))
-
-        foo = read_interfaces(foo_xpt.open())
-        foo2 = read_interfaces(foo2_xpt.open())
-        bar = read_interfaces(bar_xpt.open())
-        linked = read_interfaces(self.tmppath('interfaces.xpt'))
-        self.assertEqual(foo['foo'], linked['foo'])
-        self.assertEqual(bar['bar'], linked['bar'])
-
-        x.remove(foo_xpt)
-        x.copy(self.tmppath('interfaces2.xpt'))
-        linked = read_interfaces(self.tmppath('interfaces2.xpt'))
-        self.assertEqual(bar['foo'], linked['foo'])
-        self.assertEqual(bar['bar'], linked['bar'])
-
-        x.add(foo_xpt)
-        x.copy(DestNoWrite(self.tmppath('interfaces.xpt')))
-        linked = read_interfaces(self.tmppath('interfaces.xpt'))
-        self.assertEqual(foo['foo'], linked['foo'])
-        self.assertEqual(bar['bar'], linked['bar'])
-
-        x = XPTFile()
-        x.add(foo2_xpt)
-        x.add(bar_xpt)
-        x.copy(self.tmppath('interfaces.xpt'))
-        linked = read_interfaces(self.tmppath('interfaces.xpt'))
-        self.assertEqual(foo2['foo'], linked['foo'])
-        self.assertEqual(bar['bar'], linked['bar'])
-
-        x = XPTFile()
-        x.add(foo_xpt)
-        x.add(foo2_xpt)
-        x.add(bar_xpt)
-        from xpt import DataError
-        self.assertRaises(DataError, x.copy, self.tmppath('interfaces.xpt'))
-
-
 class TestMinifiedProperties(TestWithTmpDir):
     def test_minified_properties(self):
         propLines = [
-            '# Comments are removed',
-            'foo = bar',
-            '',
-            '# Another comment',
+            b'# Comments are removed',
+            b'foo = bar',
+            b'',
+            b'# Another comment',
         ]
-        prop = GeneratedFile('\n'.join(propLines))
+        prop = GeneratedFile(b'\n'.join(propLines))
         self.assertEqual(MinifiedProperties(prop).open().readlines(),
                          ['foo = bar\n', '\n'])
         open(self.tmppath('prop'), 'wb').write('\n'.join(propLines))
@@ -783,15 +886,15 @@ class TestMinifiedProperties(TestWithTmpDir):
 
 class TestMinifiedJavaScript(TestWithTmpDir):
     orig_lines = [
-        '// Comment line',
-        'let foo = "bar";',
-        'var bar = true;',
-        '',
-        '// Another comment',
+        b'// Comment line',
+        b'let foo = "bar";',
+        b'var bar = true;',
+        b'',
+        b'// Another comment',
     ]
 
     def test_minified_javascript(self):
-        orig_f = GeneratedFile('\n'.join(self.orig_lines))
+        orig_f = GeneratedFile(b'\n'.join(self.orig_lines))
         min_f = MinifiedJavaScript(orig_f)
 
         mini_lines = min_f.open().readlines()
@@ -807,26 +910,26 @@ class TestMinifiedJavaScript(TestWithTmpDir):
         ]
 
     def test_minified_verify_success(self):
-        orig_f = GeneratedFile('\n'.join(self.orig_lines))
+        orig_f = GeneratedFile(b'\n'.join(self.orig_lines))
         min_f = MinifiedJavaScript(orig_f,
-            verify_command=self._verify_command('0'))
+                                   verify_command=self._verify_command('0'))
 
         mini_lines = min_f.open().readlines()
         self.assertTrue(mini_lines)
         self.assertTrue(len(mini_lines) < len(self.orig_lines))
 
     def test_minified_verify_failure(self):
-        orig_f = GeneratedFile('\n'.join(self.orig_lines))
-        errors.out = StringIO()
+        orig_f = GeneratedFile(b'\n'.join(self.orig_lines))
+        errors.out = six.StringIO()
         min_f = MinifiedJavaScript(orig_f,
-            verify_command=self._verify_command('1'))
+                                   verify_command=self._verify_command('1'))
 
         mini_lines = min_f.open().readlines()
         output = errors.out.getvalue()
         errors.out = sys.stderr
         self.assertEqual(output,
-            'Warning: JS minification verification failed for <unknown>:\n'
-            'Warning: Error message\n')
+                         'Warning: JS minification verification failed for <unknown>:\n'
+                         'Warning: Error message\n')
         self.assertEqual(mini_lines, orig_f.open().readlines())
 
 
@@ -966,9 +1069,9 @@ class TestFileFinder(MatchTestTemplate, TestWithTmpDir):
 
         self.finder = FileFinder(self.tmpdir, ignore=['foo/bar', 'bar'])
         self.do_check('**', ['barz', 'foo/baz', 'foo/qux/1', 'foo/qux/2/test',
-            'foo/qux/2/test2', 'foo/qux/bar'])
+                             'foo/qux/2/test2', 'foo/qux/bar'])
         self.do_check('foo/**', ['foo/baz', 'foo/qux/1', 'foo/qux/2/test',
-            'foo/qux/2/test2', 'foo/qux/bar'])
+                                 'foo/qux/2/test2', 'foo/qux/bar'])
 
     def test_ignored_patterns(self):
         """Ignore entries with patterns should be honored."""
@@ -985,20 +1088,20 @@ class TestFileFinder(MatchTestTemplate, TestWithTmpDir):
         self.prepare_match_test(with_dotfiles=True)
         self.finder = FileFinder(self.tmpdir, find_dotfiles=True)
         self.do_check('**', ['bar', 'foo/.foo', 'foo/.bar/foo',
-            'foo/bar', 'foo/baz', 'foo/qux/1', 'foo/qux/bar',
-            'foo/qux/2/test', 'foo/qux/2/test2'])
+                             'foo/bar', 'foo/baz', 'foo/qux/1', 'foo/qux/bar',
+                             'foo/qux/2/test', 'foo/qux/2/test2'])
 
     def test_dotfiles_plus_ignore(self):
         self.prepare_match_test(with_dotfiles=True)
         self.finder = FileFinder(self.tmpdir, find_dotfiles=True,
                                  ignore=['foo/.bar/**'])
         self.do_check('foo/**', ['foo/.foo', 'foo/bar', 'foo/baz',
-            'foo/qux/1', 'foo/qux/bar', 'foo/qux/2/test', 'foo/qux/2/test2'])
+                                 'foo/qux/1', 'foo/qux/bar', 'foo/qux/2/test', 'foo/qux/2/test2'])
 
 
 class TestJarFinder(MatchTestTemplate, TestWithTmpDir):
     def add(self, path):
-        self.jar.add(path, path, compress=True)
+        self.jar.add(path, ensure_bytes(path), compress=True)
 
     def do_check(self, pattern, result):
         do_check(self, self.finder, pattern, result)
@@ -1013,6 +1116,7 @@ class TestJarFinder(MatchTestTemplate, TestWithTmpDir):
 
         self.assertIsNone(self.finder.get('does-not-exist'))
         self.assertIsInstance(self.finder.get('bar'), DeflatedFile)
+
 
 class TestTarFinder(MatchTestTemplate, TestWithTmpDir):
     def add(self, path):
@@ -1074,24 +1178,51 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
     def setUp(self):
         super(TestMercurialRevisionFinder, self).setUp()
         hglib.init(self.tmpdir)
+        self._clients = []
+
+    def tearDown(self):
+        # Ensure the hg client process is closed. Otherwise, Windows
+        # may have trouble removing the repo directory because the process
+        # has an open handle on it.
+        for client in getattr(self, '_clients', []):
+            if client.server:
+                client.close()
+
+        self._clients[:] = []
+
+        super(TestMercurialRevisionFinder, self).tearDown()
+
+    def _client(self):
+        configs = (
+            # b'' because py2 needs !unicode
+            b'ui.username="Dummy User <dummy@example.com>"',
+        )
+        client = hglib.open(self.tmpdir,
+                            encoding=b'UTF-8',  # b'' because py2 needs !unicode
+                            configs=configs)
+        self._clients.append(client)
+        return client
 
     def add(self, path):
-        c = hglib.open(self.tmpdir)
-        ensureParentDir(self.tmppath(path))
-        with open(self.tmppath(path), 'wb') as fh:
-            fh.write(path)
-        c.add(self.tmppath(path))
+        with self._client() as c:
+            ensureParentDir(self.tmppath(path))
+            with open(self.tmppath(path), 'wb') as fh:
+                fh.write(path)
+            c.add(self.tmppath(path))
 
     def do_check(self, pattern, result):
         do_check(self, self.finder, pattern, result)
 
     def _get_finder(self, *args, **kwargs):
-        return MercurialRevisionFinder(*args, **kwargs)
+        f = MercurialRevisionFinder(*args, **kwargs)
+        self._clients.append(f._client)
+        return f
 
     def test_default_revision(self):
         self.prepare_match_test()
-        c = hglib.open(self.tmpdir)
-        c.commit('initial commit')
+        with self._client() as c:
+            c.commit('initial commit')
+
         self.finder = self._get_finder(self.tmpdir)
         self.do_match_test()
 
@@ -1099,21 +1230,21 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         self.assertIsInstance(self.finder.get('bar'), MercurialFile)
 
     def test_old_revision(self):
-        c = hglib.open(self.tmpdir)
-        with open(self.tmppath('foo'), 'wb') as fh:
-            fh.write('foo initial')
-        c.add(self.tmppath('foo'))
-        c.commit('initial')
+        with self._client() as c:
+            with open(self.tmppath('foo'), 'wb') as fh:
+                fh.write('foo initial')
+            c.add(self.tmppath('foo'))
+            c.commit('initial')
 
-        with open(self.tmppath('foo'), 'wb') as fh:
-            fh.write('foo second')
-        with open(self.tmppath('bar'), 'wb') as fh:
-            fh.write('bar second')
-        c.add(self.tmppath('bar'))
-        c.commit('second')
-        # This wipes out the working directory, ensuring the finder isn't
-        # finding anything from the filesystem.
-        c.rawcommand(['update', 'null'])
+            with open(self.tmppath('foo'), 'wb') as fh:
+                fh.write('foo second')
+            with open(self.tmppath('bar'), 'wb') as fh:
+                fh.write('bar second')
+            c.add(self.tmppath('bar'))
+            c.commit('second')
+            # This wipes out the working directory, ensuring the finder isn't
+            # finding anything from the filesystem.
+            c.rawcommand(['update', 'null'])
 
         finder = self._get_finder(self.tmpdir, 0)
         f = finder.get('foo')
@@ -1121,19 +1252,20 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         self.assertEqual(f.read(), 'foo initial', 'read again for good measure')
         self.assertIsNone(finder.get('bar'))
 
-        finder = MercurialRevisionFinder(self.tmpdir, rev=1)
+        finder = self._get_finder(self.tmpdir, rev=1)
         f = finder.get('foo')
         self.assertEqual(f.read(), 'foo second')
         f = finder.get('bar')
         self.assertEqual(f.read(), 'bar second')
+        f = None
 
     def test_recognize_repo_paths(self):
-        c = hglib.open(self.tmpdir)
-        with open(self.tmppath('foo'), 'wb') as fh:
-            fh.write('initial')
-        c.add(self.tmppath('foo'))
-        c.commit('initial')
-        c.rawcommand(['update', 'null'])
+        with self._client() as c:
+            with open(self.tmppath('foo'), 'wb') as fh:
+                fh.write('initial')
+            c.add(self.tmppath('foo'))
+            c.commit('initial')
+            c.rawcommand(['update', 'null'])
 
         finder = self._get_finder(self.tmpdir, 0,
                                   recognize_repo_paths=True)
@@ -1148,6 +1280,7 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         f = finder.get(self.tmppath('foo'))
         self.assertIsInstance(f, MercurialFile)
         self.assertEqual(f.read(), 'initial')
+        f = None
 
 
 @unittest.skipUnless(MercurialNativeRevisionFinder, 'hgnative not available')

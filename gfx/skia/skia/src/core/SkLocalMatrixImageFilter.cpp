@@ -5,10 +5,26 @@
  * found in the LICENSE file.
  */
 
+#include "SkColorSpaceXformer.h"
+#include "SkImageFilterPriv.h"
 #include "SkLocalMatrixImageFilter.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
 #include "SkString.h"
+
+sk_sp<SkImageFilter> SkLocalMatrixImageFilter::Make(const SkMatrix& localM,
+                                                    sk_sp<SkImageFilter> input) {
+    if (!input) {
+        return nullptr;
+    }
+    if (localM.getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)) {
+        return nullptr;
+    }
+    if (localM.isIdentity()) {
+        return input;
+    }
+    return sk_sp<SkImageFilter>(new SkLocalMatrixImageFilter(localM, input));
+}
 
 SkLocalMatrixImageFilter::SkLocalMatrixImageFilter(const SkMatrix& localM,
                                                    sk_sp<SkImageFilter> input)
@@ -31,18 +47,23 @@ void SkLocalMatrixImageFilter::flatten(SkWriteBuffer& buffer) const {
 sk_sp<SkSpecialImage> SkLocalMatrixImageFilter::onFilterImage(SkSpecialImage* source,
                                                               const Context& ctx,
                                                               SkIPoint* offset) const {
-    Context localCtx(SkMatrix::Concat(ctx.ctm(), fLocalM), ctx.clipBounds(), ctx.cache());
+    Context localCtx(SkMatrix::Concat(ctx.ctm(), fLocalM), ctx.clipBounds(), ctx.cache(),
+                     ctx.outputProperties());
     return this->filterInput(0, source, localCtx, offset);
 }
 
-SkIRect SkLocalMatrixImageFilter::onFilterBounds(const SkIRect& src, const SkMatrix& matrix,
-                                                 MapDirection direction) const {
-    return this->getInput(0)->filterBounds(src, SkMatrix::Concat(matrix, fLocalM), direction);
+SkIRect SkLocalMatrixImageFilter::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
+                                                 MapDirection dir, const SkIRect* inputRect) const {
+    return this->getInput(0)->filterBounds(src, SkMatrix::Concat(ctm, fLocalM), dir, inputRect);
 }
 
-#ifndef SK_IGNORE_TO_STRING
-void SkLocalMatrixImageFilter::toString(SkString* str) const {
-    str->append("SkLocalMatrixImageFilter: (");
-    str->append(")");
+sk_sp<SkImageFilter> SkLocalMatrixImageFilter::onMakeColorSpace(SkColorSpaceXformer* xformer)
+const {
+    SkASSERT(1 == this->countInputs() && this->getInput(0));
+
+    auto input = xformer->apply(this->getInput(0));
+    if (input.get() != this->getInput(0)) {
+        return SkLocalMatrixImageFilter::Make(fLocalM, std::move(input));
+    }
+    return this->refMe();
 }
-#endif

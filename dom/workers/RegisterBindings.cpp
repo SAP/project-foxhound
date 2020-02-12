@@ -9,41 +9,47 @@
 #include "RuntimeService.h"
 
 #include "jsapi.h"
+#include "mozilla/dom/DebuggerNotificationObserverBinding.h"
 #include "mozilla/dom/RegisterWorkerBindings.h"
 #include "mozilla/dom/RegisterWorkerDebuggerBindings.h"
 #include "mozilla/OSFileConstants.h"
 
-USING_WORKERS_NAMESPACE
 using namespace mozilla::dom;
 
-bool
-WorkerPrivate::RegisterBindings(JSContext* aCx, JS::Handle<JSObject*> aGlobal)
-{
+bool WorkerPrivate::RegisterBindings(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGlobal) {
   // Init Web IDL bindings
   if (!RegisterWorkerBindings(aCx, aGlobal)) {
     return false;
   }
 
   if (IsChromeWorker()) {
-    if (!DefineChromeWorkerFunctions(aCx, aGlobal) ||
-        !DefineOSFileConstants(aCx, aGlobal)) {
+    if (!DefineChromeWorkerFunctions(aCx, aGlobal)) {
       return false;
     }
-  }
 
-  if (!JS_DefineProfilingFunctions(aCx, aGlobal)) {
-    return false;
+    RefPtr<OSFileConstantsService> service =
+        OSFileConstantsService::GetOrCreate();
+    if (!service->DefineOSFileConstants(aCx, aGlobal)) {
+      return false;
+    }
   }
 
   return true;
 }
 
-bool
-WorkerPrivate::RegisterDebuggerBindings(JSContext* aCx,
-                                        JS::Handle<JSObject*> aGlobal)
-{
+bool WorkerPrivate::RegisterDebuggerBindings(JSContext* aCx,
+                                             JS::Handle<JSObject*> aGlobal) {
   // Init Web IDL bindings
   if (!RegisterWorkerDebuggerBindings(aCx, aGlobal)) {
+    return false;
+  }
+
+  if (!ChromeUtils_Binding::GetConstructorObject(aCx)) {
+    return false;
+  }
+
+  if (!DebuggerNotificationObserver_Binding::GetConstructorObject(aCx)) {
     return false;
   }
 

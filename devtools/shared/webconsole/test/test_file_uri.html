@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf8">
   <title>Test for file activity tracking</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript;version=1.8" src="common.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script type="text/javascript" src="common.js"></script>
   <!-- Any copyright is dedicated to the Public Domain.
      - http://creativecommons.org/publicdomain/zero/1.0/ -->
 </head>
 <body>
 <p>Test for file activity tracking</p>
 
-<script class="testbody" type="text/javascript;version=1.8">
+<script class="testbody" type="text/javascript">
 SimpleTest.waitForExplicitFinish();
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://gre/modules/FileUtils.jsm");
+const {NetUtil} = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
 
 let gState;
 let gTmpFile;
@@ -59,15 +59,13 @@ function startTest()
 function onAttach(aState, aResponse)
 {
   gState = aState;
-  gState.dbgClient.addListener("fileActivity", onFileActivity);
+  gState.webConsoleFront.on("fileActivity", onFileActivity);
   doFileActivity();
 }
 
-function onFileActivity(aType, aPacket)
+function onFileActivity(aPacket)
 {
-  is(aPacket.from, gState.actor, "fileActivity actor");
-
-  gState.dbgClient.removeListener("fileActivity", onFileActivity);
+  gState.webConsoleFront.off("fileActivity", onFileActivity);
 
   info("aPacket.uri: " + aPacket.uri);
   ok(/\bbug798764\b.*\.html$/.test(aPacket.uri), "file URI match");
@@ -82,7 +80,10 @@ function testEnd()
       try {
         gTmpFile.remove(false);
       }
-      catch (ex if (ex.name == "NS_ERROR_FILE_IS_LOCKED")) {
+      catch (ex) {
+        if (ex.name != "NS_ERROR_FILE_IS_LOCKED") {
+          throw ex;
+        }
         // Sometimes remove() throws because the file is not unlocked soon
         // enough.
       }

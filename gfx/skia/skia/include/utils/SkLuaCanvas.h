@@ -10,6 +10,7 @@
 
 #include "SkCanvas.h"
 #include "SkString.h"
+#include "SkVertices.h"
 
 struct lua_State;
 
@@ -18,25 +19,18 @@ public:
     void pushThis();
 
     SkLuaCanvas(int width, int height, lua_State*, const char function[]);
-    virtual ~SkLuaCanvas();
+    ~SkLuaCanvas() override;
 
 protected:
     void willSave() override;
     SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec&) override;
+    bool onDoSaveBehind(const SkRect*) override;
     void willRestore() override;
 
     void didConcat(const SkMatrix&) override;
     void didSetMatrix(const SkMatrix&) override;
 
     void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) override;
-    virtual void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                            const SkPaint&) override;
-    virtual void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                               const SkPaint&) override;
-    virtual void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                                SkScalar constY, const SkPaint&) override;
-    virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                  const SkMatrix* matrix, const SkPaint&) override;
     virtual void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                 const SkPaint& paint) override;
 
@@ -44,6 +38,7 @@ protected:
     void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
     void onDrawRect(const SkRect&, const SkPaint&) override;
     void onDrawOval(const SkRect&, const SkPaint&) override;
+    void onDrawArc(const SkRect&, SkScalar, SkScalar, bool, const SkPaint&) override;
     void onDrawRRect(const SkRRect&, const SkPaint&) override;
     void onDrawPath(const SkPath&, const SkPaint&) override;
     void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;
@@ -54,18 +49,16 @@ protected:
                          const SkPaint*, SrcRectConstraint) override;
     void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
                           const SkPaint*) override;
-    void onDrawVertices(VertexMode vmode, int vertexCount,
-                        const SkPoint vertices[], const SkPoint texs[],
-                        const SkColor colors[], SkXfermode* xmode,
-                        const uint16_t indices[], int indexCount,
-                        const SkPaint&) override;
+    void onDrawVerticesObject(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode, const SkPaint&) override;
 
-    void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) override;
-    void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) override;
-    void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) override;
-    void onClipRegion(const SkRegion&, SkRegion::Op) override;
+    void onClipRect(const SkRect&, SkClipOp, ClipEdgeStyle) override;
+    void onClipRRect(const SkRRect&, SkClipOp, ClipEdgeStyle) override;
+    void onClipPath(const SkPath&, SkClipOp, ClipEdgeStyle) override;
+    void onClipRegion(const SkRegion&, SkClipOp) override;
 
     void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) override;
+    void onDrawDrawable(SkDrawable*, const SkMatrix*) override;
 
 private:
     lua_State*  fL;

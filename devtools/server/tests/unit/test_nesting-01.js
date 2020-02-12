@@ -1,6 +1,7 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
 
 // Test that we can nest event loops when needed in
 // ThreadActor.prototype.unsafeSynchronize.
@@ -10,12 +11,19 @@ var gThreadActor;
 
 function run_test() {
   initTestDebuggerServer();
-  let gDebuggee = addTestGlobal("test-nesting");
+  addTestGlobal("test-nesting");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-nesting", function (aResponse, aTabClient, aThreadClient) {
+  gClient.connect().then(function() {
+    attachTestTabAndResume(gClient, "test-nesting", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
       // Reach over the protocol connection and get a reference to the thread actor.
-      gThreadActor = aThreadClient._transport._serverConnection.getActor(aThreadClient._actor);
+      // TODO: rewrite the test so we don't do this..
+      gThreadActor = gClient._transport._serverConnection.getActor(
+        threadFront.actorID
+      );
 
       test_nesting();
     });
@@ -25,24 +33,24 @@ function run_test() {
 
 function test_nesting() {
   const thread = gThreadActor;
-  const { resolve, reject, promise: p } = promise.defer();
+  const { resolve, promise: p } = defer();
 
   let currentStep = 0;
 
-  executeSoon(function () {
+  executeSoon(function() {
     // Should be on the first step
-    do_check_eq(++currentStep, 1);
+    Assert.equal(++currentStep, 1);
     // We should have one nested event loop from unsfeSynchronize
-    do_check_eq(thread._nestedEventLoops.size, 1);
+    Assert.equal(thread._nestedEventLoops.size, 1);
     resolve(true);
   });
 
-  do_check_eq(thread.unsafeSynchronize(p), true);
+  Assert.equal(thread.unsafeSynchronize(p), true);
 
   // Should be on the second step
-  do_check_eq(++currentStep, 2);
+  Assert.equal(++currentStep, 2);
   // There shouldn't be any nested event loops anymore
-  do_check_eq(thread._nestedEventLoops.size, 0);
+  Assert.equal(thread._nestedEventLoops.size, 0);
 
   finishClient(gClient);
 }

@@ -5,14 +5,16 @@
 
 "use strict";
 
+/* global browserElementTestHelpers */
+
 SimpleTest.waitForExplicitFinish();
 browserElementTestHelpers.setEnabledPref(true);
 browserElementTestHelpers.addPermission();
 
 var iframe = null;
 function runTest() {
-  iframe = document.createElement('iframe');
-  iframe.setAttribute('mozbrowser', 'true');
+  iframe = document.createElement("iframe");
+  iframe.setAttribute("mozbrowser", "true");
   document.body.appendChild(iframe);
 
   checkForDnsError();
@@ -22,7 +24,12 @@ function checkForDnsError() {
   iframe.addEventListener("mozbrowsererror", function onDnsError(e) {
     iframe.removeEventListener(e.type, onDnsError);
     ok(true, "Got mozbrowsererror event.");
-    ok(e.detail.type == "dnsNotFound", "Event's detail has a |type| param with the value '" + e.detail.type + "'.");
+    ok(
+      e.detail.type == "dnsNotFound",
+      "Event's detail has a |type| param with the value '" +
+        e.detail.type +
+        "'."
+    );
 
     checkForExpiredCertificateError();
   });
@@ -34,7 +41,12 @@ function checkForExpiredCertificateError() {
   iframe.addEventListener("mozbrowsererror", function onCertError(e) {
     iframe.removeEventListener(e.type, onCertError);
     ok(true, "Got mozbrowsererror event.");
-    ok(e.detail.type == "certerror", "Event's detail has a |type| param with the value '" + e.detail.type + "'.");
+    ok(
+      e.detail.type == "certerror",
+      "Event's detail has a |type| param with the value '" +
+        e.detail.type +
+        "'."
+    );
 
     checkForNoCertificateError();
   });
@@ -42,12 +54,16 @@ function checkForExpiredCertificateError() {
   iframe.src = "https://expired.example.com";
 }
 
-
 function checkForNoCertificateError() {
   iframe.addEventListener("mozbrowsererror", function onCertError(e) {
     iframe.removeEventListener(e.type, onCertError);
     ok(true, "Got mozbrowsererror event.");
-    ok(e.detail.type == "certerror", "Event's detail has a |type| param with the value '" + e.detail.type + "'.");
+    ok(
+      e.detail.type == "certerror",
+      "Event's detail has a |type| param with the value '" +
+        e.detail.type +
+        "'."
+    );
 
     SimpleTest.finish();
   });
@@ -55,4 +71,4 @@ function checkForNoCertificateError() {
   iframe.src = "https://nocert.example.com";
 }
 
-addEventListener('testready', runTest);
+addEventListener("testready", runTest);

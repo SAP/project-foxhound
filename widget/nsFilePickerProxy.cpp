@@ -7,30 +7,26 @@
 #include "nsFilePickerProxy.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIFile.h"
+#include "nsSimpleEnumerator.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/dom/TabChild.h"
-#include "mozilla/dom/ipc/BlobChild.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/IPCBlobUtils.h"
 
 using namespace mozilla::dom;
 
 NS_IMPL_ISUPPORTS(nsFilePickerProxy, nsIFilePicker)
 
 nsFilePickerProxy::nsFilePickerProxy()
-  : mSelectedType(0)
-{
-}
+    : mSelectedType(0), mCapture(captureNone), mIPCActive(false) {}
 
-nsFilePickerProxy::~nsFilePickerProxy()
-{
-}
+nsFilePickerProxy::~nsFilePickerProxy() {}
 
 NS_IMETHODIMP
 nsFilePickerProxy::Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
-                        int16_t aMode)
-{
-  TabChild* tabChild = TabChild::GetFrom(aParent);
-  if (!tabChild) {
+                        int16_t aMode) {
+  BrowserChild* browserChild = BrowserChild::GetFrom(aParent);
+  if (!browserChild) {
     return NS_ERROR_FAILURE;
   }
 
@@ -39,96 +35,97 @@ nsFilePickerProxy::Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
   mMode = aMode;
 
   NS_ADDREF_THIS();
-  tabChild->SendPFilePickerConstructor(this, nsString(aTitle), aMode);
+  browserChild->SendPFilePickerConstructor(this, nsString(aTitle), aMode);
+
+  mIPCActive = true;
   return NS_OK;
 }
 
-void
-nsFilePickerProxy::InitNative(nsIWidget* aParent, const nsAString& aTitle)
-{
-}
+void nsFilePickerProxy::InitNative(nsIWidget* aParent,
+                                   const nsAString& aTitle) {}
 
 NS_IMETHODIMP
-nsFilePickerProxy::AppendFilter(const nsAString& aTitle, const nsAString& aFilter)
-{
+nsFilePickerProxy::AppendFilter(const nsAString& aTitle,
+                                const nsAString& aFilter) {
   mFilterNames.AppendElement(aTitle);
   mFilters.AppendElement(aFilter);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetDefaultString(nsAString& aDefaultString)
-{
+nsFilePickerProxy::GetCapture(int16_t* aCapture) {
+  *aCapture = mCapture;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFilePickerProxy::SetCapture(int16_t aCapture) {
+  mCapture = aCapture;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFilePickerProxy::GetDefaultString(nsAString& aDefaultString) {
   aDefaultString = mDefault;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::SetDefaultString(const nsAString& aDefaultString)
-{
+nsFilePickerProxy::SetDefaultString(const nsAString& aDefaultString) {
   mDefault = aDefaultString;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetDefaultExtension(nsAString& aDefaultExtension)
-{
+nsFilePickerProxy::GetDefaultExtension(nsAString& aDefaultExtension) {
   aDefaultExtension = mDefaultExtension;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::SetDefaultExtension(const nsAString& aDefaultExtension)
-{
+nsFilePickerProxy::SetDefaultExtension(const nsAString& aDefaultExtension) {
   mDefaultExtension = aDefaultExtension;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetFilterIndex(int32_t* aFilterIndex)
-{
+nsFilePickerProxy::GetFilterIndex(int32_t* aFilterIndex) {
   *aFilterIndex = mSelectedType;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::SetFilterIndex(int32_t aFilterIndex)
-{
+nsFilePickerProxy::SetFilterIndex(int32_t aFilterIndex) {
   mSelectedType = aFilterIndex;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetFile(nsIFile** aFile)
-{
+nsFilePickerProxy::GetFile(nsIFile** aFile) {
   MOZ_ASSERT(false, "GetFile is unimplemented; use GetDomFileOrDirectory");
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetFileURL(nsIURI** aFileURL)
-{
+nsFilePickerProxy::GetFileURL(nsIURI** aFileURL) {
   MOZ_ASSERT(false, "GetFileURL is unimplemented; use GetDomFileOrDirectory");
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetFiles(nsISimpleEnumerator** aFiles)
-{
-  MOZ_ASSERT(false, "GetFiles is unimplemented; use GetDomFileOrDirectoryEnumerator");
+nsFilePickerProxy::GetFiles(nsISimpleEnumerator** aFiles) {
+  MOZ_ASSERT(false,
+             "GetFiles is unimplemented; use GetDomFileOrDirectoryEnumerator");
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP
-nsFilePickerProxy::Show(int16_t* aReturn)
-{
+nsresult nsFilePickerProxy::Show(int16_t* aReturn) {
   MOZ_ASSERT(false, "Show is unimplemented; use Open");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::Open(nsIFilePickerShownCallback* aCallback)
-{
+nsFilePickerProxy::Open(nsIFilePickerShownCallback* aCallback) {
   mCallback = aCallback;
 
   nsString displayDirectory;
@@ -136,45 +133,53 @@ nsFilePickerProxy::Open(nsIFilePickerShownCallback* aCallback)
     mDisplayDirectory->GetPath(displayDirectory);
   }
 
+  if (!mIPCActive) {
+    return NS_ERROR_FAILURE;
+  }
+
   SendOpen(mSelectedType, mAddToRecentDocs, mDefault, mDefaultExtension,
-           mFilters, mFilterNames, displayDirectory, mOkButtonLabel);
+           mFilters, mFilterNames, mRawFilters, displayDirectory,
+           mDisplaySpecialDirectory, mOkButtonLabel, mCapture);
 
   return NS_OK;
 }
 
-bool
-nsFilePickerProxy::Recv__delete__(const MaybeInputData& aData,
-                                  const int16_t& aResult)
-{
+mozilla::ipc::IPCResult nsFilePickerProxy::Recv__delete__(
+    const MaybeInputData& aData, const int16_t& aResult) {
+  nsPIDOMWindowInner* inner =
+      mParent ? mParent->GetCurrentInnerWindow() : nullptr;
+
+  if (NS_WARN_IF(!inner)) {
+    return IPC_OK();
+  }
+
   if (aData.type() == MaybeInputData::TInputBlobs) {
-    const InfallibleTArray<PBlobChild*>& blobs = aData.get_InputBlobs().blobsChild();
+    const nsTArray<IPCBlob>& blobs = aData.get_InputBlobs().blobs();
     for (uint32_t i = 0; i < blobs.Length(); ++i) {
-      BlobChild* actor = static_cast<BlobChild*>(blobs[i]);
-      RefPtr<BlobImpl> blobImpl = actor->GetBlobImpl();
-      NS_ENSURE_TRUE(blobImpl, true);
+      RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(blobs[i]);
+      NS_ENSURE_TRUE(blobImpl, IPC_OK());
 
       if (!blobImpl->IsFile()) {
-        return true;
+        return IPC_OK();
       }
 
-      nsPIDOMWindowInner* inner =
-        mParent ? mParent->GetCurrentInnerWindow() : nullptr;
-      RefPtr<File> file = File::Create(inner, blobImpl);
-      MOZ_ASSERT(file);
+      RefPtr<File> file = File::Create(inner->AsGlobal(), blobImpl);
+      if (NS_WARN_IF(!file)) {
+        return IPC_OK();
+      }
 
       OwningFileOrDirectory* element = mFilesOrDirectories.AppendElement();
       element->SetAsFile() = file;
     }
   } else if (aData.type() == MaybeInputData::TInputDirectory) {
     nsCOMPtr<nsIFile> file;
-    NS_ConvertUTF16toUTF8 path(aData.get_InputDirectory().directoryPath());
-    nsresult rv = NS_NewNativeLocalFile(path, true, getter_AddRefs(file));
+    const nsAString& path(aData.get_InputDirectory().directoryPath());
+    nsresult rv = NS_NewLocalFile(path, true, getter_AddRefs(file));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return true;
+      return IPC_OK();
     }
 
-    RefPtr<Directory> directory =
-      Directory::Create(mParent->GetCurrentInnerWindow(), file);
+    RefPtr<Directory> directory = Directory::Create(inner->AsGlobal(), file);
     MOZ_ASSERT(directory);
 
     OwningFileOrDirectory* element = mFilesOrDirectories.AppendElement();
@@ -186,12 +191,11 @@ nsFilePickerProxy::Recv__delete__(const MaybeInputData& aData,
     mCallback = nullptr;
   }
 
-  return true;
+  return IPC_OK();
 }
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetDomFileOrDirectory(nsISupports** aValue)
-{
+nsFilePickerProxy::GetDomFileOrDirectory(nsISupports** aValue) {
   *aValue = nullptr;
   if (mFilesOrDirectories.IsEmpty()) {
     return NS_OK;
@@ -200,7 +204,7 @@ nsFilePickerProxy::GetDomFileOrDirectory(nsISupports** aValue)
   MOZ_ASSERT(mFilesOrDirectories.Length() == 1);
 
   if (mFilesOrDirectories[0].IsFile()) {
-    nsCOMPtr<nsIDOMBlob> blob = mFilesOrDirectories[0].GetAsFile().get();
+    nsCOMPtr<nsISupports> blob = ToSupports(mFilesOrDirectories[0].GetAsFile());
     blob.forget(aValue);
     return NS_OK;
   }
@@ -213,34 +217,28 @@ nsFilePickerProxy::GetDomFileOrDirectory(nsISupports** aValue)
 
 namespace {
 
-class SimpleEnumerator final : public nsISimpleEnumerator
-{
-public:
-  NS_DECL_ISUPPORTS
-
-  explicit
-  SimpleEnumerator(const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories)
-    : mFilesOrDirectories(aFilesOrDirectories)
-    , mIndex(0)
-  {}
+class SimpleEnumerator final : public nsSimpleEnumerator {
+ public:
+  explicit SimpleEnumerator(
+      const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories)
+      : mFilesOrDirectories(aFilesOrDirectories), mIndex(0) {}
 
   NS_IMETHOD
-  HasMoreElements(bool* aRetvalue) override
-  {
+  HasMoreElements(bool* aRetvalue) override {
     MOZ_ASSERT(aRetvalue);
     *aRetvalue = mIndex < mFilesOrDirectories.Length();
     return NS_OK;
   }
 
   NS_IMETHOD
-  GetNext(nsISupports** aValue) override
-  {
+  GetNext(nsISupports** aValue) override {
     NS_ENSURE_TRUE(mIndex < mFilesOrDirectories.Length(), NS_ERROR_FAILURE);
 
     uint32_t index = mIndex++;
 
     if (mFilesOrDirectories[index].IsFile()) {
-      nsCOMPtr<nsIDOMBlob> blob = mFilesOrDirectories[index].GetAsFile().get();
+      nsCOMPtr<nsISupports> blob =
+          ToSupports(mFilesOrDirectories[index].GetAsFile());
       blob.forget(aValue);
       return NS_OK;
     }
@@ -251,23 +249,27 @@ public:
     return NS_OK;
   }
 
-private:
-  ~SimpleEnumerator()
-  {}
-
+ private:
   nsTArray<mozilla::dom::OwningFileOrDirectory> mFilesOrDirectories;
   uint32_t mIndex;
 };
 
-NS_IMPL_ISUPPORTS(SimpleEnumerator, nsISimpleEnumerator)
-
-} // namespace
+}  // namespace
 
 NS_IMETHODIMP
-nsFilePickerProxy::GetDomFileOrDirectoryEnumerator(nsISimpleEnumerator** aDomfiles)
-{
+nsFilePickerProxy::GetDomFileOrDirectoryEnumerator(
+    nsISimpleEnumerator** aDomfiles) {
   RefPtr<SimpleEnumerator> enumerator =
-    new SimpleEnumerator(mFilesOrDirectories);
+      new SimpleEnumerator(mFilesOrDirectories);
   enumerator.forget(aDomfiles);
   return NS_OK;
+}
+
+void nsFilePickerProxy::ActorDestroy(ActorDestroyReason aWhy) {
+  mIPCActive = false;
+
+  if (mCallback) {
+    mCallback->Done(nsIFilePicker::returnCancel);
+    mCallback = nullptr;
+  }
 }

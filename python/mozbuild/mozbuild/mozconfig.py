@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import filecmp
 import os
@@ -10,9 +10,10 @@ import re
 import sys
 import subprocess
 import traceback
+from textwrap import dedent
 
-from collections import defaultdict
 from mozpack import path as mozpath
+from mozbuild.util import system_encoding
 
 
 MOZ_MYCONFIG_ERROR = '''
@@ -54,6 +55,20 @@ class MozconfigLoadException(Exception):
     def __init__(self, path, message, output=None):
         self.path = path
         self.output = output
+
+        message = dedent("""
+        Error loading mozconfig: {path}
+
+        {message}
+        """).format(path=self.path, message=message).lstrip()
+
+        if self.output:
+            message += dedent("""
+            mozconfig output:
+
+            {output}
+            """).format(output="\n".join(self.output))
+
         Exception.__init__(self, message)
 
 
@@ -66,7 +81,7 @@ class MozconfigLoader(object):
         \s* [?:]?= \s*          # Assignment operator surrounded by optional
                                 # spaces
         (?P<value>.*$)''',      # Everything else (likely the value)
-        re.VERBOSE)
+                                  re.VERBOSE)
 
     # Default mozconfig files in the topsrcdir.
     DEFAULT_TOPSRCDIR_PATHS = ('.mozconfig', 'mozconfig')
@@ -74,7 +89,7 @@ class MozconfigLoader(object):
     DEPRECATED_TOPSRCDIR_PATHS = ('mozconfig.sh', 'myconfig.sh')
     DEPRECATED_HOME_PATHS = ('.mozconfig', '.mozconfig.sh', '.mozmyconfig.sh')
 
-    IGNORE_SHELL_VARIABLES = {'_'}
+    IGNORE_SHELL_VARIABLES = {'_', 'BASH_ARGV', 'BASH_ARGV0', 'BASH_ARGC'}
 
     ENVIRONMENT_VARIABLES = {
         'CC', 'CXX', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS', 'MOZ_OBJDIR',
@@ -145,7 +160,7 @@ class MozconfigLoader(object):
                         'does not exist in any of ' + ', '.join(potential_roots))
 
                 env_path = os.path.join(existing[0], env_path)
-            elif not os.path.exists(env_path): # non-relative path
+            elif not os.path.exists(env_path):  # non-relative path
                 raise MozconfigFindException(
                     'MOZCONFIG environment variable refers to a path that '
                     'does not exist: ' + env_path)
@@ -156,12 +171,12 @@ class MozconfigLoader(object):
                     'non-file: ' + env_path)
 
         srcdir_paths = [os.path.join(self.topsrcdir, p) for p in
-            self.DEFAULT_TOPSRCDIR_PATHS]
+                        self.DEFAULT_TOPSRCDIR_PATHS]
         existing = [p for p in srcdir_paths if os.path.isfile(p)]
 
         if env_path is None and len(existing) > 1:
             raise MozconfigFindException('Multiple default mozconfig files '
-                'present. Remove all but one. ' + ', '.join(existing))
+                                         'present. Remove all but one. ' + ', '.join(existing))
 
         path = None
 
@@ -175,12 +190,12 @@ class MozconfigLoader(object):
             return os.path.abspath(path)
 
         deprecated_paths = [os.path.join(self.topsrcdir, s) for s in
-            self.DEPRECATED_TOPSRCDIR_PATHS]
+                            self.DEPRECATED_TOPSRCDIR_PATHS]
 
         home = env.get('HOME', None)
         if home is not None:
             deprecated_paths.extend([os.path.join(home, s) for s in
-            self.DEPRECATED_HOME_PATHS])
+                                     self.DEPRECATED_HOME_PATHS])
 
         for path in deprecated_paths:
             if os.path.exists(path):
@@ -189,7 +204,7 @@ class MozconfigLoader(object):
 
         return None
 
-    def read_mozconfig(self, path=None, moz_build_app=None):
+    def read_mozconfig(self, path=None):
         """Read the contents of a mozconfig into a data structure.
 
         This takes the path to a mozconfig to load. If the given path is
@@ -235,13 +250,15 @@ class MozconfigLoader(object):
             shell = shell + '.exe'
 
         command = [shell, mozpath.normsep(self._loader_script),
-                   mozpath.normsep(self.topsrcdir), path]
+                   mozpath.normsep(self.topsrcdir), path, sys.executable,
+                   mozpath.join(mozpath.dirname(self._loader_script),
+                                'action', 'dump_env.py')]
 
         try:
             # We need to capture stderr because that's where the shell sends
             # errors if execution fails.
             output = subprocess.check_output(command, stderr=subprocess.STDOUT,
-                cwd=self.topsrcdir, env=env)
+                                             cwd=self.topsrcdir, env=env)
         except subprocess.CalledProcessError as e:
             lines = e.output.splitlines()
 
@@ -304,17 +321,13 @@ class MozconfigLoader(object):
 
         # Environment variables also appear as shell variables, but that's
         # uninteresting duplication of information. Filter them out.
-        filt = lambda x, y: {k: v for k, v in x.items() if k not in y}
+        def filt(x, y): return {k: v for k, v in x.items() if k not in y}
         result['vars'] = diff_vars(
             filt(parsed['vars_before'], parsed['env_before']),
             filt(parsed['vars_after'], parsed['env_after'])
         )
 
         result['configure_args'] = [self._expand(o) for o in parsed['ac']]
-
-        if moz_build_app is not None:
-            result['configure_args'].extend(self._expand(o) for o in
-                parsed['ac_app'][moz_build_app])
 
         if 'MOZ_OBJDIR' in parsed['env_before']:
             result['topobjdir'] = parsed['env_before']['MOZ_OBJDIR']
@@ -345,7 +358,6 @@ class MozconfigLoader(object):
     def _parse_loader_output(self, output):
         mk_options = []
         ac_options = []
-        ac_app_options = defaultdict(list)
         before_source = {}
         after_source = {}
         env_before_source = {}
@@ -360,8 +372,7 @@ class MozconfigLoader(object):
             # XXX This is an ugly hack. Data may be lost from things
             # like environment variable values.
             # See https://bugzilla.mozilla.org/show_bug.cgi?id=831381
-            line = line.decode('mbcs' if sys.platform == 'win32' else 'utf-8',
-                               'ignore')
+            line = line.decode(system_encoding, 'ignore')
 
             if not line:
                 continue
@@ -383,9 +394,6 @@ class MozconfigLoader(object):
                     ac_options.append('\n'.join(current))
                 elif current_type == 'MK_OPTION':
                     mk_options.append('\n'.join(current))
-                elif current_type == 'AC_APP_OPTION':
-                    app = current.pop(0)
-                    ac_app_options[app].append('\n'.join(current))
 
                 current = None
                 current_type = None
@@ -472,7 +480,6 @@ class MozconfigLoader(object):
         return {
             'mk': mk_options,
             'ac': ac_options,
-            'ac_app': ac_app_options,
             'vars_before': before_source,
             'vars_after': after_source,
             'env_before': env_before_source,

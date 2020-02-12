@@ -7,29 +7,25 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1155653
   <meta charset="utf-8">
   <title>Test for Bug 1155653</title>
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
-  <script type="application/javascript;version=1.8" src="inspector-helpers.js"></script>
-  <script type="application/javascript;version=1.8">
-const inspector = require("devtools/shared/fronts/inspector");
+  <script type="application/javascript" src="inspector-helpers.js"></script>
+  <script type="application/javascript">
+"use strict";
 
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();
   runNextTest();
-}
+};
 
-var gWalker;
+let gWalker;
 
-addTest(function() {
-  let url = document.getElementById("inspectorContent").href;
-  attachURL(url, function(err, client, tab, doc) {
-    let {InspectorFront} = require("devtools/shared/fronts/inspector");
-    let inspector = InspectorFront(client, tab);
-
-    promiseDone(inspector.getWalker().then(walker => {
-      gWalker = walker;
-    }).then(runNextTest));
-  });
+addTest(async function() {
+  const url = document.getElementById("inspectorContent").href;
+  const { target } = await attachURL(url);
+  const inspector = await target.getFront("inspector");
+  gWalker = inspector.walker;
+  runNextTest();
 });
 
 addTest(function() {
@@ -60,13 +56,13 @@ addTest(function() {
 addTest(function() {
   info("Try to get a NodeFront from a valid actorID and valid complex path");
   gWalker.getNodeFromActor(gWalker.actorID,
-    ["tabActor", "window", "document", "body"]).then(bodyNode => {
-    ok(bodyNode, "A node was returned");
-    gWalker.querySelector(gWalker.rootNode, "body").then(node => {
-      is(bodyNode, node, "The body node was returned");
-      runNextTest();
+    ["targetActor", "window", "document", "body"]).then(bodyNode => {
+      ok(bodyNode, "A node was returned");
+      gWalker.querySelector(gWalker.rootNode, "body").then(node => {
+        is(bodyNode, node, "The body node was returned");
+        runNextTest();
+      });
     });
-  });
 });
 
 addTest(function() {

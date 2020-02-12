@@ -2,15 +2,10 @@
  * http://creativecommons.org/licenses/publicdomain/  */
 
 function run_test() {
-  const Cc = Components.classes;
-  const Ci = Components.interfaces;
-  const Cr = Components.results;
   const PREF_NAME = "testPref";
 
-  var ps = Cc["@mozilla.org/preferences-service;1"]
-           .getService(Ci.nsIPrefService);
-  var prefs = ps.getDefaultBranch(null);
-  var userprefs = ps.getBranch(null);
+  var prefs = Services.prefs.getDefaultBranch(null);
+  var userprefs = Services.prefs.getBranch(null);
 
   /* First, test to make sure we can parse a float from a string properly. */
   prefs.setCharPref(PREF_NAME, "9.674");
@@ -18,8 +13,8 @@ function run_test() {
   var myFloat = 9.674;
   var fudge = 0.001;
   var floatPref = userprefs.getFloatPref(PREF_NAME);
-  do_check_true(myFloat+fudge >= floatPref);
-  do_check_true(myFloat-fudge <= floatPref);
+  Assert.ok(myFloat + fudge >= floatPref);
+  Assert.ok(myFloat - fudge <= floatPref);
 
   /* Now test some failure conditions. */
   prefs.unlockPref(PREF_NAME);

@@ -30,9 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-static char *RCSSTRING __UNUSED__="$Id: stun_build.c,v 1.2 2008/04/28 18:21:30 ekr Exp $";
-
 #include <csi_platform.h>
 #include <assert.h>
 #include <errno.h>
@@ -75,11 +72,11 @@ nr_stun_form_request_or_indication(int mode, int msg_type, nr_stun_message **msg
 
    switch (mode) {
    default:
-       req->header.magic_cookie = NR_STUN_MAGIC_COOKIE;
-
        if ((r=nr_stun_message_add_fingerprint_attribute(req)))
            ABORT(r);
-
+       /* fall through */
+   case NR_STUN_MODE_STUN_NO_AUTH:
+       req->header.magic_cookie = NR_STUN_MAGIC_COOKIE;
        break;
 
 #ifdef USE_STUND_0_96
@@ -164,7 +161,7 @@ nr_stun_build_req_no_auth(nr_stun_client_stun_binding_request_params *params, nr
    int r,_status;
    nr_stun_message *req = 0;
 
-   if ((r=nr_stun_form_request_or_indication(NR_STUN_MODE_STUN, NR_STUN_MSG_BINDING_REQUEST, &req)))
+   if ((r=nr_stun_form_request_or_indication(NR_STUN_MODE_STUN_NO_AUTH, NR_STUN_MSG_BINDING_REQUEST, &req)))
        ABORT(r);
 
    *msg = req;
@@ -308,7 +305,7 @@ nr_stun_compute_lt_message_integrity_password(const char *username, const char *
                                               Data *password, Data *hmac_key)
 {
   char digest_input[1000];
-  int i;
+  size_t i;
   int r, _status;
   size_t len;
 

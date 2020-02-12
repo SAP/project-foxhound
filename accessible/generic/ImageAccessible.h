@@ -16,37 +16,35 @@ namespace a11y {
  * - gets name, role
  * - support basic state
  */
-class ImageAccessible : public LinkableAccessible
-{
-public:
+class ImageAccessible : public LinkableAccessible {
+ public:
   ImageAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // Accessible
-  virtual a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
   virtual already_AddRefed<nsIPersistentProperties> NativeAttributes() override;
 
   // ActionAccessible
-  virtual uint8_t ActionCount() override;
+  virtual uint8_t ActionCount() const override;
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
-  virtual bool DoAction(uint8_t aIndex) override;
+  virtual bool DoAction(uint8_t aIndex) const override;
 
   // ImageAccessible
   nsIntPoint Position(uint32_t aCoordType);
   nsIntSize Size();
 
-protected:
+ protected:
   virtual ~ImageAccessible();
 
   // Accessible
-  virtual ENameValueFlag NativeName(nsString& aName) override;
+  virtual ENameValueFlag NativeName(nsString& aName) const override;
 
-private:
+ private:
   /**
    * Return whether the element has a longdesc URI.
    */
-  bool HasLongDesc() const
-  {
+  bool HasLongDesc() const {
     nsCOMPtr<nsIURI> uri = GetLongDescURI();
     return uri;
   }
@@ -67,21 +65,17 @@ private:
    *
    * @returns  true if index is valid for longdesc action.
    */
-  inline bool IsLongDescIndex(uint8_t aIndex);
-
+  inline bool IsLongDescIndex(uint8_t aIndex) const;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible downcasting method
 
-inline ImageAccessible*
-Accessible::AsImage()
-{
+inline ImageAccessible* Accessible::AsImage() {
   return IsImage() ? static_cast<ImageAccessible*>(this) : nullptr;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif
-

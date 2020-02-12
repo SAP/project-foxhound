@@ -7,17 +7,14 @@
  * to create a two-way communication channel between chrome and content code.
  */
 
-this.EXPORTED_SYMBOLS = ["WebChannel", "WebChannelBroker"];
+var EXPORTED_SYMBOLS = ["WebChannel", "WebChannelBroker"];
 
-const ERRNO_UNKNOWN_ERROR              = 999;
-const ERROR_UNKNOWN                    = "UNKNOWN_ERROR";
+const ERRNO_MISSING_PRINCIPAL = 1;
+const ERRNO_NO_SUCH_CHANNEL = 2;
+const ERRNO_UNKNOWN_ERROR = 999;
+const ERROR_UNKNOWN = "UNKNOWN_ERROR";
 
-
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * WebChannelBroker is a global object that helps manage WebChannel objects.
@@ -31,7 +28,7 @@ var WebChannelBroker = Object.create({
    *
    * @param channel {WebChannel}
    */
-  registerChannel: function (channel) {
+  registerChannel(channel) {
     if (!this._channelMap.has(channel)) {
       this._channelMap.set(channel);
     } else {
@@ -41,7 +38,10 @@ var WebChannelBroker = Object.create({
     // attach the global message listener if needed
     if (!this._messageListenerAttached) {
       this._messageListenerAttached = true;
-      this._manager.addMessageListener("WebChannelMessageToChrome", this._listener.bind(this));
+      this._manager.addMessageListener(
+        "WebChannelMessageToChrome",
+        this._listener.bind(this)
+      );
     }
   },
 
@@ -53,7 +53,7 @@ var WebChannelBroker = Object.create({
    *
    * Removes the specified channel from the channel map
    */
-  unregisterChannel: function (channelToRemove) {
+  unregisterChannel(channelToRemove) {
     if (!this._channelMap.delete(channelToRemove)) {
       Cu.reportError("Failed to unregister the channel. Channel not found.");
     }
@@ -64,7 +64,7 @@ var WebChannelBroker = Object.create({
    *        Message Manager event
    * @private
    */
-  _listener: function (event) {
+  _listener(event) {
     let data = event.data;
     let sendingContext = {
       browser: event.target,
@@ -83,14 +83,21 @@ var WebChannelBroker = Object.create({
 
     if (data && data.id) {
       if (!event.principal) {
-        this._sendErrorEventToContent(data.id, sendingContext, "Message principal missing");
+        this._sendErrorEventToContent(
+          data.id,
+          sendingContext,
+          ERRNO_MISSING_PRINCIPAL,
+          "Message principal missing"
+        );
       } else {
         let validChannelFound = false;
         data.message = data.message || {};
 
         for (var channel of this._channelMap.keys()) {
-          if (channel.id === data.id &&
-            channel._originCheckCallback(event.principal)) {
+          if (
+            channel.id === data.id &&
+            channel._originCheckCallback(event.principal)
+          ) {
             validChannelFound = true;
             channel.deliver(data, sendingContext);
           }
@@ -98,7 +105,12 @@ var WebChannelBroker = Object.create({
 
         // if no valid origins send an event that there is no such valid channel
         if (!validChannelFound) {
-          this._sendErrorEventToContent(data.id, sendingContext, "No Such Channel");
+          this._sendErrorEventToContent(
+            data.id,
+            sendingContext,
+            ERRNO_NO_SUCH_CHANNEL,
+            "No Such Channel"
+          );
         }
       }
     } else {
@@ -108,7 +120,7 @@ var WebChannelBroker = Object.create({
   /**
    * The global message manager operates on every <browser>
    */
-  _manager: Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager),
+  _manager: Services.mm,
   /**
    * Boolean used to detect if the global message manager event is already attached
    */
@@ -127,16 +139,28 @@ var WebChannelBroker = Object.create({
    *        Error message
    * @private
    */
-  _sendErrorEventToContent: function (id, sendingContext, errorMsg) {
-    let { browser: targetBrowser, eventTarget, principal: targetPrincipal } = sendingContext;
+  _sendErrorEventToContent(id, sendingContext, errorNo, errorMsg) {
+    let {
+      browser: targetBrowser,
+      eventTarget,
+      principal: targetPrincipal,
+    } = sendingContext;
 
     errorMsg = errorMsg || "Web Channel Broker error";
 
     if (targetBrowser && targetBrowser.messageManager) {
-      targetBrowser.messageManager.sendAsyncMessage("WebChannelMessageToContent", {
-        id: id,
-        error: errorMsg,
-      }, { eventTarget: eventTarget }, targetPrincipal);
+      targetBrowser.messageManager.sendAsyncMessage(
+        "WebChannelMessageToContent",
+        {
+          id,
+          message: {
+            errno: errorNo,
+            error: errorMsg,
+          },
+        },
+        { eventTarget },
+        targetPrincipal
+      );
     } else {
       Cu.reportError("Failed to send a WebChannel error. Target invalid.");
     }
@@ -144,21 +168,20 @@ var WebChannelBroker = Object.create({
   },
 });
 
-
 /**
  * Creates a new WebChannel that listens and sends messages over some channel id
  *
  * @param id {String}
  *        WebChannel id
  * @param originOrPermission {nsIURI/string}
- *        If an nsIURI, a valid origin that should be part of requests for
- *        this channel.  If a string, a permission for which the permission
- *        manager will be checked to determine if the request is allowed. Note
- *        that in addition to the permission manager check, the request must
- *        be made over https://
+ *        If an nsIURI, incoming events will be accepted from any origin matching
+ *        that URI's origin.
+ *        If a string, it names a permission, and incoming events will be accepted
+ *        from any https:// origin that has been granted that permission by the
+ *        permission manager.
  * @constructor
  */
-this.WebChannel = function(id, originOrPermission) {
+var WebChannel = function(id, originOrPermission) {
   if (!id || !originOrPermission) {
     throw new Error("WebChannel id and originOrPermission are required.");
   }
@@ -168,29 +191,34 @@ this.WebChannel = function(id, originOrPermission) {
   // permission name.
   if (typeof originOrPermission == "string") {
     this._originCheckCallback = requestPrincipal => {
+      // Accept events from any secure origin having the named permission.
       // The permission manager operates on domain names rather than true
       // origins (bug 1066517).  To mitigate that, we explicitly check that
       // the scheme is https://.
-      let uri = Services.io.newURI(requestPrincipal.originNoSuffix, null, null);
+      let uri = Services.io.newURI(requestPrincipal.originNoSuffix);
       if (uri.scheme != "https") {
         return false;
       }
       // OK - we have https - now we can check the permission.
-      let perm = Services.perms.testExactPermissionFromPrincipal(requestPrincipal,
-                                                                 originOrPermission);
+      let perm = Services.perms.testExactPermissionFromPrincipal(
+        requestPrincipal,
+        originOrPermission
+      );
       return perm == Ci.nsIPermissionManager.ALLOW_ACTION;
-    }
+    };
   } else {
-    // a simple URI, so just check for an exact match.
+    // Accept events from any origin matching the given URI.
+    // We deliberately use `originNoSuffix` here because we only want to
+    // restrict based on the site's origin, not on other origin attributes
+    // such as containers or private browsing.
     this._originCheckCallback = requestPrincipal => {
       return originOrPermission.prePath === requestPrincipal.originNoSuffix;
-    }
+    };
   }
   this._originOrPermission = originOrPermission;
 };
 
 this.WebChannel.prototype = {
-
   /**
    * WebChannel id
    */
@@ -240,7 +268,7 @@ this.WebChannel.prototype = {
    *                      The <Principal> of the EventTarget where the
    *                      message was sent.
    */
-  listen: function (callback) {
+  listen(callback) {
     if (this._deliverCallback) {
       throw new Error("Failed to listen. Listener already attached.");
     } else if (!callback) {
@@ -255,7 +283,7 @@ this.WebChannel.prototype = {
    * Resets the callback for messages on this channel
    * Removes the channel from the WebChannelBroker
    */
-  stopListening: function () {
+  stopListening() {
     this._broker.unregisterChannel(this);
     this._deliverCallback = null;
   },
@@ -278,14 +306,19 @@ this.WebChannel.prototype = {
    *               Optional eventTarget within the browser, use to send to a
    *               specific element, e.g., an iframe.
    */
-  send: function (message, target) {
+  send(message, target) {
     let { browser, principal, eventTarget } = target;
 
     if (message && browser && browser.messageManager && principal) {
-      browser.messageManager.sendAsyncMessage("WebChannelMessageToContent", {
-        id: this.id,
-        message: message
-      }, { eventTarget }, principal);
+      browser.messageManager.sendAsyncMessage(
+        "WebChannelMessageToContent",
+        {
+          id: this.id,
+          message,
+        },
+        { eventTarget },
+        principal
+      );
     } else if (!message) {
       Cu.reportError("Failed to send a WebChannel message. Message not set.");
     } else {
@@ -309,20 +342,23 @@ this.WebChannel.prototype = {
    *               The <Principal> of the EventTarget where the message was sent.
    *
    */
-  deliver: function(data, sendingContext) {
+  deliver(data, sendingContext) {
     if (this._deliverCallback) {
       try {
         this._deliverCallback(data.id, data.message, sendingContext);
       } catch (ex) {
-        this.send({
-          errno: ERRNO_UNKNOWN_ERROR,
-          error: ex.message ? ex.message : ERROR_UNKNOWN
-        }, sendingContext);
+        this.send(
+          {
+            errno: ERRNO_UNKNOWN_ERROR,
+            error: ex.message ? ex.message : ERROR_UNKNOWN,
+          },
+          sendingContext
+        );
         Cu.reportError("Failed to execute WebChannel callback:");
         Cu.reportError(ex);
       }
     } else {
       Cu.reportError("No callback set for this channel.");
     }
-  }
+  },
 };

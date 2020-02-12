@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+from __future__ import print_function
 """
 Run a python script, adding extra directories to the python path.
 """
@@ -47,10 +49,12 @@ def main(args):
 
     execfile(script, frozenglobals)
 
+
 # Freeze scope here ... why this makes things work I have no idea ...
 frozenglobals = globals()
 
-import sys, os
+import sys
+import os
 
 if __name__ == '__main__':
     main(sys.argv[1:])

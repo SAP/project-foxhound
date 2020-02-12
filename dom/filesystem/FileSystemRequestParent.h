@@ -16,52 +16,30 @@ namespace dom {
 class FileSystemParams;
 class FileSystemTaskParentBase;
 
-class FileSystemRequestParent final : public PFileSystemRequestParent
-{
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileSystemRequestParent)
+class FileSystemRequestParent final : public PFileSystemRequestParent {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileSystemRequestParent, final)
 
-public:
+ public:
   FileSystemRequestParent();
 
-  const nsCString&
-  PermissionName() const
-  {
-    return mPermissionName;
-  }
+  bool Initialize(const FileSystemParams& aParams);
 
-  FileSystemBase::ePermissionCheckType
-  PermissionCheckType() const
-  {
-    return mFileSystem ? mFileSystem->PermissionCheckType()
-                       : FileSystemBase::eNotSet;
-  }
+  void Start();
 
-  bool
-  Initialize(const FileSystemParams& aParams);
+  bool Destroyed() const { return mDestroyed; }
 
-  void
-  Start();
+  virtual void ActorDestroy(ActorDestroyReason why) override;
 
-  bool Destroyed() const
-  {
-    return mDestroyed;
-  }
-
-  virtual void
-  ActorDestroy(ActorDestroyReason why) override;
-
-private:
+ private:
   ~FileSystemRequestParent();
 
   RefPtr<FileSystemBase> mFileSystem;
   RefPtr<FileSystemTaskParentBase> mTask;
 
-  nsCString mPermissionName;
-
   bool mDestroyed;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_FileSystemRequestParent_h
+#endif  // mozilla_dom_FileSystemRequestParent_h

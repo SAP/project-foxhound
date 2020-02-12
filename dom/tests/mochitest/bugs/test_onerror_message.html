@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=743049
 <head>
   <meta charset="UTF-8">
   <title>Test for Bug 743049</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -29,7 +29,7 @@ var expected = [
 { name: "", message: "uncaught exception: [object Object]" },
 { name: "", message: "foo", filename: "baz", lineNumber: 123 },
 { name: "", message: "uncaught exception: [object Object]" },
-{ name: "InvalidStateError", message: "An attempt was made to use an object that is not, or is no longer, usable", filename: String(location), lineNumber: 62 },
+{ name: "InvalidStateError", message: "Cannot set 'responseType' property on XMLHttpRequest after 'send()' (when its state is LOADING or DONE).", filename: String(location), lineNumber: 62 },
 { name: "ReferenceError", message: "xxx is not defined", filename: String(location), lineNumber: 64 },
 { name: "ReferenceError", message: "xxx is not defined", filename: String(location), lineNumber: 66 }
 ];

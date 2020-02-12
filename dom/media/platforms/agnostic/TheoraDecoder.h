@@ -4,61 +4,55 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(TheoraDecoder_h_)
-#define TheoraDecoder_h_
+#  define TheoraDecoder_h_
 
-#include "PlatformDecoderModule.h"
-
-#include <stdint.h>
-#include "ogg/ogg.h"
-#include "theora/theoradec.h"
+#  include "PlatformDecoderModule.h"
+#  include "ogg/ogg.h"
+#  include "theora/theoradec.h"
+#  include <stdint.h>
 
 namespace mozilla {
 
-  using namespace layers;
+DDLoggedTypeDeclNameAndBase(TheoraDecoder, MediaDataDecoder);
 
-class TheoraDecoder : public MediaDataDecoder
-{
-public:
+class TheoraDecoder : public MediaDataDecoder,
+                      public DecoderDoctorLifeLogger<TheoraDecoder> {
+ public:
   explicit TheoraDecoder(const CreateDecoderParams& aParams);
 
-  ~TheoraDecoder();
-
   RefPtr<InitPromise> Init() override;
-  void Input(MediaRawData* aSample) override;
-  void Flush() override;
-  void Drain() override;
-  void Shutdown() override;
+  RefPtr<DecodePromise> Decode(MediaRawData* aSample) override;
+  RefPtr<DecodePromise> Drain() override;
+  RefPtr<FlushPromise> Flush() override;
+  RefPtr<ShutdownPromise> Shutdown() override;
 
   // Return true if mimetype is a Theora codec
   static bool IsTheora(const nsACString& aMimeType);
 
-  const char* GetDescriptionName() const override
-  {
-    return "theora video decoder";
+  nsCString GetDescriptionName() const override {
+    return NS_LITERAL_CSTRING("theora video decoder");
   }
 
-private:
+ private:
+  ~TheoraDecoder();
   nsresult DoDecodeHeader(const unsigned char* aData, size_t aLength);
 
-  void ProcessDecode(MediaRawData* aSample);
-  MediaResult DoDecode(MediaRawData* aSample);
-  void ProcessDrain();
+  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
 
-  RefPtr<ImageContainer> mImageContainer;
+  RefPtr<layers::KnowsCompositor> mImageAllocator;
+  RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<TaskQueue> mTaskQueue;
-  MediaDataDecoderCallback* mCallback;
-  Atomic<bool> mIsFlushing;
 
   // Theora header & decoder state
   th_info mTheoraInfo;
   th_comment mTheoraComment;
-  th_setup_info *mTheoraSetupInfo;
-  th_dec_ctx *mTheoraDecoderContext;
+  th_setup_info* mTheoraSetupInfo;
+  th_dec_ctx* mTheoraDecoderContext;
   int mPacketCount;
 
   const VideoInfo& mInfo;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

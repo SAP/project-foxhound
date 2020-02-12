@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=631440
 -->
 <head>
   <title>Test for Bug 631440</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ var w = window.open("about:blank");
 w.addEventListener("load", function() {
   w.close();
   SimpleTest.finish();
-}, false);
+});
 
 try {
   w.history.pushState(null, "title", "pushState.html");

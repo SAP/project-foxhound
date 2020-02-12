@@ -1,15 +1,9 @@
-/* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Task } = require("devtools/shared/task");
-
-loader.lazyRequireGetter(this, "promise");
-loader.lazyRequireGetter(this, "EventEmitter",
-  "devtools/shared/event-emitter");
+loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 
 function PerformancePanel(iframeWindow, toolbox) {
   this.panelWin = iframeWindow;
@@ -28,22 +22,23 @@ PerformancePanel.prototype = {
    *         A promise that is resolved when the Performance tool
    *         completes opening.
    */
-  open: Task.async(function* () {
+  async open() {
     if (this._opening) {
       return this._opening;
     }
-    let deferred = promise.defer();
-    this._opening = deferred.promise;
 
-    this.panelWin.gToolbox = this.toolbox;
-    this.panelWin.gTarget = this.target;
     this._checkRecordingStatus = this._checkRecordingStatus.bind(this);
 
     // Actor is already created in the toolbox; reuse
     // the same front, and the toolbox will also initialize the front,
     // but redo it here so we can hook into the same event to prevent race conditions
     // in the case of the front still being in the process of opening.
-    let front = yield this.panelWin.gToolbox.initPerformance();
+    const front = await this.target.getFront("performance");
+
+    // Keep references on window for toolbox, target and front for tests.
+    this.panelWin.gToolbox = this.toolbox;
+    this.panelWin.gTarget = this.target;
+    this.panelWin.gFront = front;
 
     // This should only happen if this is completely unsupported (when profiler
     // does not exist), and in that case, the tool shouldn't be available,
@@ -52,11 +47,19 @@ PerformancePanel.prototype = {
       console.error("No PerformanceFront found in toolbox.");
     }
 
-    this.panelWin.gFront = front;
-    let { PerformanceController, EVENTS } = this.panelWin;
-    PerformanceController.on(EVENTS.RECORDING_ADDED, this._checkRecordingStatus);
-    PerformanceController.on(EVENTS.RECORDING_STATE_CHANGE, this._checkRecordingStatus);
-    yield this.panelWin.startupPerformance();
+    const { PerformanceController, PerformanceView, EVENTS } = this.panelWin;
+    PerformanceController.on(
+      EVENTS.RECORDING_ADDED,
+      this._checkRecordingStatus
+    );
+    PerformanceController.on(
+      EVENTS.RECORDING_STATE_CHANGE,
+      this._checkRecordingStatus
+    );
+
+    await PerformanceController.initialize(this.toolbox, this.target, front);
+    await PerformanceView.initialize();
+    PerformanceController.enableFrontEventListeners();
 
     // Fire this once incase we have an in-progress recording (console profile)
     // that caused this start up, and no state change yet, so we can highlight the
@@ -66,9 +69,11 @@ PerformancePanel.prototype = {
     this.isReady = true;
     this.emit("ready");
 
-    deferred.resolve(this);
+    this._opening = new Promise(resolve => {
+      resolve(this);
+    });
     return this._opening;
-  }),
+  },
 
   // DevToolPanel API
 
@@ -76,25 +81,35 @@ PerformancePanel.prototype = {
     return this.toolbox.target;
   },
 
-  destroy: Task.async(function* () {
+  async destroy() {
     // Make sure this panel is not already destroyed.
     if (this._destroyed) {
       return;
     }
 
-    let { PerformanceController, EVENTS } = this.panelWin;
-    PerformanceController.off(EVENTS.RECORDING_ADDED, this._checkRecordingStatus);
-    PerformanceController.off(EVENTS.RECORDING_STATE_CHANGE, this._checkRecordingStatus);
-    yield this.panelWin.shutdownPerformance();
+    const { PerformanceController, PerformanceView, EVENTS } = this.panelWin;
+    PerformanceController.off(
+      EVENTS.RECORDING_ADDED,
+      this._checkRecordingStatus
+    );
+    PerformanceController.off(
+      EVENTS.RECORDING_STATE_CHANGE,
+      this._checkRecordingStatus
+    );
+
+    await PerformanceController.destroy();
+    await PerformanceView.destroy();
+    PerformanceController.disableFrontEventListeners();
+
     this.emit("destroyed");
     this._destroyed = true;
-  }),
+  },
 
-  _checkRecordingStatus: function () {
+  _checkRecordingStatus: function() {
     if (this.panelWin.PerformanceController.isRecording()) {
       this.toolbox.highlightTool("performance");
     } else {
       this.toolbox.unhighlightTool("performance");
     }
-  }
+  },
 };

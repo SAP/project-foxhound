@@ -8,45 +8,55 @@
 #ifndef GrVkPipeline_DEFINED
 #define GrVkPipeline_DEFINED
 
-#include "GrTypes.h"
-
+#include "GrTypesPriv.h"
 #include "GrVkResource.h"
+#include "vk/GrVkTypes.h"
 
-#include "vk/GrVkDefines.h"
-
-class GrNonInstancedVertices;
 class GrPipeline;
 class GrPrimitiveProcessor;
+class GrRenderTarget;
+class GrXferProcessor;
+class GrStencilSettings;
 class GrVkCommandBuffer;
 class GrVkGpu;
 class GrVkRenderPass;
+struct SkIRect;
 
 class GrVkPipeline : public GrVkResource {
 public:
-    static GrVkPipeline* Create(GrVkGpu* gpu,
+    static GrVkPipeline* Create(GrVkGpu*,
+                                int numColorSamples,
+                                const GrPrimitiveProcessor&,
                                 const GrPipeline& pipeline,
-                                const GrPrimitiveProcessor& primProc,
+                                const GrStencilSettings&,
                                 VkPipelineShaderStageCreateInfo* shaderStageInfo,
                                 int shaderStageCount,
                                 GrPrimitiveType primitiveType,
-                                const GrVkRenderPass& renderPass,
+                                VkRenderPass compatibleRenderPass,
                                 VkPipelineLayout layout,
                                 VkPipelineCache cache);
 
     VkPipeline pipeline() const { return fPipeline; }
 
-    static void SetDynamicState(GrVkGpu*, GrVkCommandBuffer*, const GrPipeline&);
+    static void SetDynamicScissorRectState(GrVkGpu*, GrVkCommandBuffer*, const GrRenderTarget*,
+                                           GrSurfaceOrigin, SkIRect);
+    static void SetDynamicViewportState(GrVkGpu*, GrVkCommandBuffer*, const GrRenderTarget*);
+    static void SetDynamicBlendConstantState(GrVkGpu*, GrVkCommandBuffer*, GrPixelConfig,
+                                             const GrXferProcessor&);
 
+#ifdef SK_TRACE_VK_RESOURCES
+    void dumpInfo() const override {
+        SkDebugf("GrVkPipeline: %d (%d refs)\n", fPipeline, this->getRefCnt());
+    }
+#endif
 
-private:
+protected:
     GrVkPipeline(VkPipeline pipeline) : INHERITED(), fPipeline(pipeline) {}
 
-    GrVkPipeline(const GrVkPipeline&);
-    GrVkPipeline& operator=(const GrVkPipeline&);
-
-    void freeGPUData(const GrVkGpu* gpu) const override;
-
     VkPipeline  fPipeline;
+
+private:
+    void freeGPUData(GrVkGpu* gpu) const override;
 
     typedef GrVkResource INHERITED;
 };

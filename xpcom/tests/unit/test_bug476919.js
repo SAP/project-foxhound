@@ -1,5 +1,4 @@
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+/* global __LOCATION__ */
 
 function run_test() {
   // skip this test on Windows
@@ -8,20 +7,24 @@ function run_test() {
     // create a test file, then symlink it, then check that we think it's a symlink
     var targetFile = testDir.clone();
     targetFile.append("target.txt");
-    if (!targetFile.exists())
+    if (!targetFile.exists()) {
       targetFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o644);
+    }
 
     var link = testDir.clone();
     link.append("link");
-    if (link.exists())
+    if (link.exists()) {
       link.remove(false);
+    }
 
-    var ln = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+    var ln = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
     ln.initWithPath("/bin/ln");
-    var process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
+    var process = Cc["@mozilla.org/process/util;1"].createInstance(
+      Ci.nsIProcess
+    );
     process.init(ln);
     var args = ["-s", targetFile.path, link.path];
     process.run(true, args, args.length);
-    do_check_true(link.isSymlink());
+    Assert.ok(link.isSymlink());
   }
 }

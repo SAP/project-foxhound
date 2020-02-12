@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_MY_CORR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_MY_CORR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_MY_CORR_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_MY_CORR_H_
 
 #include "defines.h"
 
@@ -26,11 +26,11 @@
  *---------------------------------------------------------------*/
 
 void WebRtcIlbcfix_MyCorr(
-    int32_t *corr,  /* (o) correlation of seq1 and seq2 */
-    int16_t *seq1,  /* (i) first sequence */
-    int16_t dim1,  /* (i) dimension first seq1 */
-    const int16_t *seq2, /* (i) second sequence */
-    int16_t dim2   /* (i) dimension seq2 */
+    int32_t* corr,  /* (o) correlation of seq1 and seq2 */
+    const int16_t* seq1,  /* (i) first sequence */
+    size_t dim1,  /* (i) dimension first seq1 */
+    const int16_t* seq2, /* (i) second sequence */
+    size_t dim2   /* (i) dimension seq2 */
                           );
 
 #endif

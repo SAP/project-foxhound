@@ -24,15 +24,13 @@ var gLocaleCollation;
 // A connection to our in-memory UTF-16-encoded database.
 var gUtf16Conn;
 
-///////////////////////////////////////////////////////////////////////////////
-//// Helper Functions
+// Helper Functions
 
 /**
  * Since we create a UTF-16 database we have to clean it up, in addition to
  * the normal cleanup of Storage tests.
  */
-function cleanupLocaleTests()
-{
+function cleanupLocaleTests() {
   print("-- Cleaning up test_locale_collation.js suite.");
   gUtf16Conn.close();
   cleanup();
@@ -44,20 +42,19 @@ function cleanupLocaleTests()
  *
  * @return A connection to the database.
  */
-function createUtf16Database()
-{
+function createUtf16Database() {
   print("Creating the in-memory UTF-16-encoded database.");
-  let conn = getService().openSpecialDatabase("memory");
+  let conn = Services.storage.openSpecialDatabase("memory");
   conn.executeSimpleSQL("PRAGMA encoding = 'UTF-16'");
 
   print("Make sure the encoding was set correctly and is now UTF-16.");
   let stmt = conn.createStatement("PRAGMA encoding");
-  do_check_true(stmt.executeStep());
+  Assert.ok(stmt.executeStep());
   let enc = stmt.getString(0);
   stmt.finalize();
 
   // The value returned will actually be UTF-16le or UTF-16be.
-  do_check_true(enc === "UTF-16le" || enc === "UTF-16be");
+  Assert.ok(enc === "UTF-16le" || enc === "UTF-16be");
 
   return conn;
 }
@@ -71,14 +68,14 @@ function createUtf16Database()
  * @param aExpected
  *        An array of strings to which aActual should be equivalent.
  */
-function ensureResultsAreCorrect(aActual, aExpected)
-{
+function ensureResultsAreCorrect(aActual, aExpected) {
   print("Actual results:   " + aActual);
   print("Expected results: " + aExpected);
 
-  do_check_eq(aActual.length, aExpected.length);
-  for (let i = 0; i < aActual.length; i++)
-    do_check_eq(aActual[i], aExpected[i]);
+  Assert.equal(aActual.length, aExpected.length);
+  for (let i = 0; i < aActual.length; i++) {
+    Assert.equal(aActual[i], aExpected[i]);
+  }
 }
 
 /**
@@ -92,13 +89,14 @@ function ensureResultsAreCorrect(aActual, aExpected)
  *         A connection to either the UTF-8 database or the UTF-16 database.
  * @return The resulting strings in an array.
  */
-function getResults(aCollation, aConn)
-{
+function getResults(aCollation, aConn) {
   let results = [];
-  let stmt = aConn.createStatement("SELECT t FROM test " +
-                                   "ORDER BY t COLLATE " + aCollation + " ASC");
-  while (stmt.executeStep())
+  let stmt = aConn.createStatement(
+    "SELECT t FROM test ORDER BY t COLLATE " + aCollation + " ASC"
+  );
+  while (stmt.executeStep()) {
     results.push(stmt.row.t);
+  }
   stmt.finalize();
   return results;
 }
@@ -111,14 +109,13 @@ function getResults(aCollation, aConn)
  * @param aConn
  *        A connection to either the UTF-8 database or the UTF-16 database.
  */
-function initTableWithStrings(aStrings, aConn)
-{
+function initTableWithStrings(aStrings, aConn) {
   print("Initializing test table.");
 
   aConn.executeSimpleSQL("DROP TABLE IF EXISTS test");
   aConn.createTable("test", "t TEXT");
   let stmt = aConn.createStatement("INSERT INTO test (t) VALUES (:t)");
-  aStrings.forEach(function (str) {
+  aStrings.forEach(function(str) {
     stmt.params.t = str;
     stmt.execute();
     stmt.reset();
@@ -135,8 +132,7 @@ function initTableWithStrings(aStrings, aConn)
  *         strength is computed from this value.
  * @return A function to use as a sorting callback.
  */
-function localeCompare(aCollation)
-{
+function localeCompare(aCollation) {
   var strength;
 
   switch (aCollation) {
@@ -156,7 +152,7 @@ function localeCompare(aCollation)
       do_throw("Error in test: unknown collation '" + aCollation + "'");
       break;
   }
-  return function (aStr1, aStr2) {
+  return function(aStr1, aStr2) {
     return gLocaleCollation.compareString(strength, aStr1, aStr2);
   };
 }
@@ -167,16 +163,16 @@ function localeCompare(aCollation)
  *
  * @return The test data as an array of strings.
  */
-function readTestData()
-{
+function readTestData() {
   print("Reading in test data.");
 
   let file = do_get_file(DATA_BASENAME);
 
-  let istream = Cc["@mozilla.org/network/file-input-stream;1"].
-                createInstance(Ci.nsIFileInputStream);
+  let istream = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+    Ci.nsIFileInputStream
+  );
   istream.init(file, -1, -1, 0);
-  istream.QueryInterface(Components.interfaces.nsILineInputStream);
+  istream.QueryInterface(Ci.nsILineInputStream);
 
   let line = {};
   let lines = [];
@@ -198,10 +194,11 @@ function readTestData()
  * @param aConn
  *        A connection to either the UTF-8 database or the UTF-16 database.
  */
-function runTest(aCollation, aConn)
-{
-  ensureResultsAreCorrect(getResults(aCollation, aConn),
-                          gStrings.slice(0).sort(localeCompare(aCollation)));
+function runTest(aCollation, aConn) {
+  ensureResultsAreCorrect(
+    getResults(aCollation, aConn),
+    gStrings.slice(0).sort(localeCompare(aCollation))
+  );
 }
 
 /**
@@ -212,8 +209,7 @@ function runTest(aCollation, aConn)
  *        The name of one of our custom locale collations.  The rows from the
  *        database and the expected results are ordered by this collation.
  */
-function runUtf8Test(aCollation)
-{
+function runUtf8Test(aCollation) {
   runTest(aCollation, getOpenedDatabase());
 }
 
@@ -225,16 +221,14 @@ function runUtf8Test(aCollation)
  *        The name of one of our custom locale collations.  The rows from the
  *        database and the expected results are ordered by this collation.
  */
-function runUtf16Test(aCollation)
-{
+function runUtf16Test(aCollation) {
   runTest(aCollation, gUtf16Conn);
 }
 
 /**
  * Sets up the test suite.
  */
-function setup()
-{
+function setup() {
   print("-- Setting up the test_locale_collation.js suite.");
 
   gStrings = readTestData();
@@ -244,63 +238,61 @@ function setup()
   gUtf16Conn = createUtf16Database();
   initTableWithStrings(gStrings, gUtf16Conn);
 
-  let localeSvc = Cc["@mozilla.org/intl/nslocaleservice;1"].
-                  getService(Ci.nsILocaleService);
-  let collFact = Cc["@mozilla.org/intl/collation-factory;1"].
-                 createInstance(Ci.nsICollationFactory);
-  gLocaleCollation = collFact.CreateCollation(localeSvc.getApplicationLocale());
+  let collFact = Cc["@mozilla.org/intl/collation-factory;1"].createInstance(
+    Ci.nsICollationFactory
+  );
+  gLocaleCollation = collFact.CreateCollation();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-//// Test Runs
+// Test Runs
 
 var gTests = [
   {
     desc: "Case and accent sensitive UTF-8",
-    run:   () => runUtf8Test("locale_case_accent_sensitive")
+    run: () => runUtf8Test("locale_case_accent_sensitive"),
   },
 
   {
     desc: "Case sensitive, accent insensitive UTF-8",
-    run:   () => runUtf8Test("locale_case_sensitive")
+    run: () => runUtf8Test("locale_case_sensitive"),
   },
 
   {
     desc: "Case insensitive, accent sensitive UTF-8",
-    run:   () => runUtf8Test("locale_accent_sensitive")
+    run: () => runUtf8Test("locale_accent_sensitive"),
   },
 
   {
     desc: "Case and accent insensitive UTF-8",
-    run:   () => runUtf8Test("locale")
+    run: () => runUtf8Test("locale"),
   },
 
   {
     desc: "Case and accent sensitive UTF-16",
-    run:   () => runUtf16Test("locale_case_accent_sensitive")
+    run: () => runUtf16Test("locale_case_accent_sensitive"),
   },
 
   {
     desc: "Case sensitive, accent insensitive UTF-16",
-    run:   () => runUtf16Test("locale_case_sensitive")
+    run: () => runUtf16Test("locale_case_sensitive"),
   },
 
   {
     desc: "Case insensitive, accent sensitive UTF-16",
-    run:   () => runUtf16Test("locale_accent_sensitive")
+    run: () => runUtf16Test("locale_accent_sensitive"),
   },
 
   {
     desc: "Case and accent insensitive UTF-16",
-    run:   () => runUtf16Test("locale")
+    run: () => runUtf16Test("locale"),
   },
 ];
 
-function run_test()
-{
+function run_test() {
   setup();
-  gTests.forEach(function (test) {
+  gTests.forEach(function(test) {
     print("-- Running test: " + test.desc);
     test.run();
   });
+  cleanupLocaleTests();
 }

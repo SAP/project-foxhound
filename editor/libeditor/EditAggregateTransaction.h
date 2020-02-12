@@ -9,7 +9,7 @@
 #include "mozilla/EditTransactionBase.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 #include "nscore.h"
@@ -22,10 +22,19 @@ namespace mozilla {
  * base class for all document editing transactions that require aggregation.
  * provides a list of child transactions.
  */
-class EditAggregateTransaction : public EditTransactionBase
-{
-public:
+class EditAggregateTransaction : public EditTransactionBase {
+ protected:
   EditAggregateTransaction();
+
+ public:
+  /**
+   * Creates an edit aggregate transaction.  This never returns nullptr.
+   */
+  static already_AddRefed<EditAggregateTransaction> Create() {
+    RefPtr<EditAggregateTransaction> transaction =
+        new EditAggregateTransaction();
+    return transaction.forget();
+  }
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(EditAggregateTransaction,
@@ -44,15 +53,15 @@ public:
   /**
    * Get the name assigned to this transaction.
    */
-  NS_IMETHOD GetName(nsIAtom** aName);
+  NS_IMETHOD GetName(nsAtom** aName);
 
-protected:
+ protected:
   virtual ~EditAggregateTransaction();
 
   nsTArray<RefPtr<EditTransactionBase>> mChildren;
-  nsCOMPtr<nsIAtom> mName;
+  RefPtr<nsAtom> mName;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // #ifndef EditAggregateTransaction_h
+#endif  // #ifndef EditAggregateTransaction_h

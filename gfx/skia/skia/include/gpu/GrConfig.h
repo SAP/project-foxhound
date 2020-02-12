@@ -33,7 +33,7 @@
  */
 
 #if !defined(GR_CACHE_STATS)
-  #if defined(SK_DEVELOPER) || defined(SK_DEBUG) || defined(SK_DUMP_STATS)
+  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS)
       #define GR_CACHE_STATS  1
   #else
       #define GR_CACHE_STATS  0
@@ -41,7 +41,7 @@
 #endif
 
 #if !defined(GR_GPU_STATS)
-  #if defined(SK_DEVELOPER) || defined(SK_DEBUG) || defined(SK_DUMP_STATS)
+  #if defined(SK_DEBUG) || defined(SK_DUMP_STATS) || defined(GR_TEST_UTILS)
       #define GR_GPU_STATS    1
   #else
       #define GR_GPU_STATS    0
@@ -51,7 +51,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 // VC8 doesn't support stdint.h, so we define those types here.
 typedef signed char int8_t;
 typedef unsigned char uint8_t;
@@ -116,7 +116,7 @@ typedef unsigned __int64 uint64_t;
  *  GR_ALWAYSBREAK is an unconditional break in all builds.
  */
 #if !defined(GR_ALWAYSBREAK)
-    #if     defined(SK_BUILD_FOR_WIN32)
+    #if     defined(SK_BUILD_FOR_WIN)
         #define GR_ALWAYSBREAK SkNO_RETURN_HINT(); __debugbreak()
     #else
         // TODO: do other platforms really not have continuable breakpoints?
@@ -172,12 +172,5 @@ typedef unsigned __int64 uint64_t;
  *  be evaluatable at compile time.
  */
 #define GR_STATIC_ASSERT(CONDITION) static_assert(CONDITION, "bug")
-
-/**
- * Set to 1 to enable pixel local storage path rendering on supported devices.
- */
-#if !defined(GR_ENABLE_PLS_PATH_RENDERING)
-    #define GR_ENABLE_PLS_PATH_RENDERING 0
-#endif
 
 #endif

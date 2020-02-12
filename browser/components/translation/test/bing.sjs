@@ -4,10 +4,11 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, Constructor: CC} = Components;
+const CC = Components.Constructor;
 const BinaryInputStream = CC("@mozilla.org/binaryinputstream;1",
                              "nsIBinaryInputStream",
                              "setInputStream");
+Cu.importGlobalProperties(["DOMParser"]);
 
 function handleRequest(req, res) {
   try {
@@ -98,9 +99,8 @@ function sha1(str) {
 }
 
 function parseXml(body) {
-  let DOMParser = Cc["@mozilla.org/xmlextras/domparser;1"]
-                    .createInstance(Ci.nsIDOMParser);
-  let xml = DOMParser.parseFromString(body, "text/xml");
+  let parser = new DOMParser();
+  let xml = parser.parseFromString(body, "text/xml");
   if (xml.documentElement.localName == "parsererror")
     throw new Error("Invalid XML");
   return xml;
@@ -109,7 +109,7 @@ function parseXml(body) {
 function getInputStream(path) {
   let file = Cc["@mozilla.org/file/directory_service;1"]
                .getService(Ci.nsIProperties)
-               .get("CurWorkD", Ci.nsILocalFile);
+               .get("CurWorkD", Ci.nsIFile);
   for (let part of path.split("/"))
     file.append(part);
   let fileStream  = Cc["@mozilla.org/network/file-input-stream;1"]

@@ -9,46 +9,46 @@
 
 #include "MediaEventSource.h"
 #include "MediaInfo.h"
+#include "MediaSegment.h"
 #include "MediaSink.h"
 
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 
 class DecodedStreamData;
-class MediaData;
-class MediaStream;
+class AudioData;
+class VideoData;
 class OutputStreamManager;
 struct PlaybackInfoInit;
-class ProcessedMediaStream;
+class ProcessedMediaTrack;
 class TimeStamp;
 
-template <class T> class MediaQueue;
+template <class T>
+class MediaQueue;
 
-class DecodedStream : public media::MediaSink {
-  using media::MediaSink::PlaybackParams;
+class DecodedStream : public MediaSink {
+  using MediaSink::PlaybackParams;
 
-public:
-  DecodedStream(AbstractThread* aOwnerThread,
-                MediaQueue<MediaData>& aAudioQueue,
-                MediaQueue<MediaData>& aVideoQueue,
-                OutputStreamManager* aOutputStreamManager,
-                const bool& aSameOrigin,
-                const PrincipalHandle& aPrincipalHandle);
+ public:
+  DecodedStream(AbstractThread* aOwnerThread, AbstractThread* aMainThread,
+                MediaQueue<AudioData>& aAudioQueue,
+                MediaQueue<VideoData>& aVideoQueue,
+                OutputStreamManager* aOutputStreamManager);
 
   // MediaSink functions.
   const PlaybackParams& GetPlaybackParams() const override;
   void SetPlaybackParams(const PlaybackParams& aParams) override;
 
-  RefPtr<GenericPromise> OnEnded(TrackType aType) override;
-  int64_t GetEndTime(TrackType aType) const override;
-  int64_t GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
-  bool HasUnplayedFrames(TrackType aType) const override
-  {
+  RefPtr<EndedPromise> OnEnded(TrackType aType) override;
+  media::TimeUnit GetEndTime(TrackType aType) const override;
+  media::TimeUnit GetPosition(TimeStamp* aTimeStamp = nullptr) const override;
+  bool HasUnplayedFrames(TrackType aType) const override {
     // TODO: implement this.
     return false;
   }
@@ -58,29 +58,37 @@ public:
   void SetPreservesPitch(bool aPreservesPitch) override;
   void SetPlaying(bool aPlaying) override;
 
-  void Start(int64_t aStartTime, const MediaInfo& aInfo) override;
+  nsresult Start(const media::TimeUnit& aStartTime,
+                 const MediaInfo& aInfo) override;
   void Stop() override;
   bool IsStarted() const override;
   bool IsPlaying() const override;
+  void Shutdown() override;
+  void GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) override;
 
-protected:
+ protected:
   virtual ~DecodedStream();
 
-private:
-  void DestroyData(UniquePtr<DecodedStreamData> aData);
-  void AdvanceTracks();
-  void SendAudio(double aVolume, bool aIsSameOrigin, const PrincipalHandle& aPrincipalHandle);
-  void SendVideo(bool aIsSameOrigin, const PrincipalHandle& aPrincipalHandle);
+ private:
+  void DestroyData(UniquePtr<DecodedStreamData>&& aData);
+  void SendAudio(double aVolume, const PrincipalHandle& aPrincipalHandle);
+  void SendVideo(const PrincipalHandle& aPrincipalHandle);
+  void ResetVideo(const PrincipalHandle& aPrincipalHandle);
   void SendData();
+  void NotifyOutput(int64_t aTime);
 
   void AssertOwnerThread() const {
     MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   }
 
+  void PlayingChanged();
+
   void ConnectListener();
   void DisconnectListener();
 
   const RefPtr<AbstractThread> mOwnerThread;
+
+  const RefPtr<AbstractThread> mAbstractMainThread;
 
   /*
    * Main thread only members.
@@ -91,27 +99,30 @@ private:
   /*
    * Worker thread only members.
    */
+  WatchManager<DecodedStream> mWatchManager;
   UniquePtr<DecodedStreamData> mData;
-  RefPtr<GenericPromise> mFinishPromise;
+  RefPtr<EndedPromise> mAudioEndedPromise;
+  RefPtr<EndedPromise> mVideoEndedPromise;
 
-  bool mPlaying;
-  const bool& mSameOrigin; // valid until Shutdown() is called.
-  const PrincipalHandle& mPrincipalHandle; // valid until Shutdown() is called.
+  Watchable<bool> mPlaying;
+  Mirror<PrincipalHandle> mPrincipalHandle;
 
   PlaybackParams mParams;
 
-  Maybe<int64_t> mStartTime;
+  media::NullableTimeUnit mStartTime;
+  media::TimeUnit mLastOutputTime;
   MediaInfo mInfo;
 
-  MediaQueue<MediaData>& mAudioQueue;
-  MediaQueue<MediaData>& mVideoQueue;
+  MediaQueue<AudioData>& mAudioQueue;
+  MediaQueue<VideoData>& mVideoQueue;
 
   MediaEventListener mAudioPushListener;
   MediaEventListener mVideoPushListener;
   MediaEventListener mAudioFinishListener;
   MediaEventListener mVideoFinishListener;
+  MediaEventListener mOutputListener;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // DecodedStream_h_
+#endif  // DecodedStream_h_

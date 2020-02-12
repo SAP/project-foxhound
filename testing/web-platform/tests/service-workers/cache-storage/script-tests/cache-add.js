@@ -1,13 +1,13 @@
 if (self.importScripts) {
     importScripts('/resources/testharness.js');
-    importScripts('../resources/testharness-helpers.js');
     importScripts('../resources/test-helpers.js');
 }
 
-cache_test(function(cache) {
-    return assert_promise_rejects(
-      cache.add(),
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.add(),
       'Cache.add should throw a TypeError when no arguments are given.');
   }, 'Cache.add called with no arguments');
 
@@ -29,10 +29,11 @@ cache_test(function(cache) {
         });
   }, 'Cache.add called with relative URL specified as a string');
 
-cache_test(function(cache) {
-    return assert_promise_rejects(
-      cache.add('javascript://this-is-not-http-mmkay'),
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.add('javascript://this-is-not-http-mmkay'),
       'Cache.add should throw a TypeError for non-HTTP/HTTPS URLs.');
   }, 'Cache.add called with non-HTTP/HTTPS URL');
 
@@ -45,12 +46,13 @@ cache_test(function(cache) {
         });
   }, 'Cache.add called with Request object');
 
-cache_test(function(cache) {
+cache_test(function(cache, test) {
     var request = new Request('../resources/simple.txt',
                               {method: 'POST', body: 'This is a body.'});
-    return assert_promise_rejects(
-      cache.add(request),
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.add(request),
       'Cache.add should throw a TypeError for non-GET requests.');
   }, 'Cache.add called with POST request');
 
@@ -81,33 +83,59 @@ cache_test(function(cache) {
         });
   }, 'Cache.add with request with null body (not consumed)');
 
-cache_test(function(cache) {
-    return assert_promise_rejects(
-      cache.add('this-does-not-exist-please-dont-create-it'),
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.add('../resources/fetch-status.py?status=206'),
+      'Cache.add should reject on partial response');
+  }, 'Cache.add with 206 response');
+
+cache_test(function(cache, test) {
+    var urls = ['../resources/fetch-status.py?status=206',
+                '../resources/fetch-status.py?status=200'];
+    var requests = urls.map(function(url) {
+        return new Request(url);
+      });
+    return promise_rejects(
+      test,
+      new TypeError(),
+      cache.addAll(requests),
+      'Cache.addAll should reject with TypeError if any request fails');
+  }, 'Cache.addAll with 206 response');
+
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
+      new TypeError(),
+      cache.add('this-does-not-exist-please-dont-create-it'),
       'Cache.add should reject if response is !ok');
   }, 'Cache.add with request that results in a status of 404');
 
-cache_test(function(cache) {
-    return assert_promise_rejects(
-      cache.add('../resources/fetch-status.php?status=500'),
+
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.add('../resources/fetch-status.py?status=500'),
       'Cache.add should reject if response is !ok');
   }, 'Cache.add with request that results in a status of 500');
 
-cache_test(function(cache) {
-    return assert_promise_rejects(
-      cache.addAll(),
+cache_test(function(cache, test) {
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.addAll(),
       'Cache.addAll with no arguments should throw TypeError.');
   }, 'Cache.addAll with no arguments');
 
-cache_test(function(cache) {
+cache_test(function(cache, test) {
     // Assumes the existence of ../resources/simple.txt and ../resources/blank.html
     var urls = ['../resources/simple.txt', undefined, '../resources/blank.html'];
-    return assert_promise_rejects(
-      cache.addAll(),
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.addAll(),
       'Cache.addAll should throw TypeError for an undefined argument.');
   }, 'Cache.addAll with a mix of valid and undefined arguments');
 
@@ -202,7 +230,7 @@ cache_test(function(cache) {
         });
   }, 'Cache.addAll with Request arguments');
 
-cache_test(function(cache) {
+cache_test(function(cache, test) {
     // Assumes that ../resources/simple.txt and ../resources/blank.html exist.
     // The second resource does not.
     var urls = ['../resources/simple.txt',
@@ -211,12 +239,15 @@ cache_test(function(cache) {
     var requests = urls.map(function(url) {
         return new Request(url);
       });
-    return assert_promise_rejects(
-      cache.addAll(requests),
+    return promise_rejects(
+      test,
       new TypeError(),
+      cache.addAll(requests),
       'Cache.addAll should reject with TypeError if any request fails')
       .then(function() {
-          return Promise.all(urls.map(function(url) { return cache.match(url); }));
+          return Promise.all(urls.map(function(url) {
+              return cache.match(url);
+            }));
       })
       .then(function(matches) {
           assert_array_equals(
@@ -226,13 +257,94 @@ cache_test(function(cache) {
       });
   }, 'Cache.addAll with a mix of succeeding and failing requests');
 
-cache_test(function(cache) {
+cache_test(function(cache, test) {
     var request = new Request('../resources/simple.txt');
-    return assert_promise_rejects(
-      cache.addAll([request, request]),
+    return promise_rejects(
+      test,
       'InvalidStateError',
+      cache.addAll([request, request]),
       'Cache.addAll should throw InvalidStateError if the same request is added ' +
       'twice.');
   }, 'Cache.addAll called with the same Request object specified twice');
+
+cache_test(async function(cache, test) {
+    const url = '../resources/vary.py?vary=x-shape';
+    let requests = [
+      new Request(url, { headers: { 'x-shape': 'circle' }}),
+      new Request(url, { headers: { 'x-shape': 'square' }}),
+    ];
+    let result = await cache.addAll(requests);
+    assert_equals(result, undefined, 'Cache.addAll() should succeed');
+  }, 'Cache.addAll should succeed when entries differ by vary header');
+
+cache_test(async function(cache, test) {
+    const url = '../resources/vary.py?vary=x-shape';
+    let requests = [
+      new Request(url, { headers: { 'x-shape': 'circle' }}),
+      new Request(url, { headers: { 'x-shape': 'circle' }}),
+    ];
+    await promise_rejects(
+      test,
+      'InvalidStateError',
+      cache.addAll(requests),
+      'Cache.addAll() should reject when entries are duplicate by vary header');
+  }, 'Cache.addAll should reject when entries are duplicate by vary header');
+
+// VARY header matching is asymmetric.  Determining if two entries are duplicate
+// depends on which entry's response is used in the comparison.  The target
+// response's VARY header determines what request headers are examined.  This
+// test verifies that Cache.addAll() duplicate checking handles this asymmetric
+// behavior correctly.
+cache_test(async function(cache, test) {
+    const base_url = '../resources/vary.py';
+
+    // Define a request URL that sets a VARY header in the
+    // query string to be echoed back by the server.
+    const url = base_url + '?vary=x-size';
+
+    // Set a cookie to override the VARY header of the response
+    // when the request is made with credentials.  This will
+    // take precedence over the query string vary param.  This
+    // is a bit confusing, but it's necessary to construct a test
+    // where the URL is the same, but the VARY headers differ.
+    //
+    // Note, the test could also pass this information in additional
+    // request headers.  If the cookie approach becomes too unwieldy
+    // this test could be rewritten to use that technique.
+    await fetch(base_url + '?set-vary-value-override-cookie=x-shape');
+    test.add_cleanup(_ => fetch(base_url + '?clear-vary-value-override-cookie'));
+
+    let requests = [
+      // This request will result in a Response with a "Vary: x-shape"
+      // header.  This *will not* result in a duplicate match with the
+      // other entry.
+      new Request(url, { headers: { 'x-shape': 'circle',
+                                    'x-size': 'big' },
+                         credentials: 'same-origin' }),
+
+      // This request will result in a Response with a "Vary: x-size"
+      // header.  This *will* result in a duplicate match with the other
+      // entry.
+      new Request(url, { headers: { 'x-shape': 'square',
+                                    'x-size': 'big' },
+                         credentials: 'omit' }),
+    ];
+    await promise_rejects(
+      test,
+      'InvalidStateError',
+      cache.addAll(requests),
+      'Cache.addAll() should reject when one entry has a vary header ' +
+      'matching an earlier entry.');
+
+    // Test the reverse order now.
+    await promise_rejects(
+      test,
+      'InvalidStateError',
+      cache.addAll(requests.reverse()),
+      'Cache.addAll() should reject when one entry has a vary header ' +
+      'matching a later entry.');
+
+  }, 'Cache.addAll should reject when one entry has a vary header ' +
+     'matching another entry');
 
 done();

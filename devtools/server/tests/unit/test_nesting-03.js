@@ -1,10 +1,12 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable no-shadow, max-nested-callbacks */
+
+"use strict";
 
 // Test that we can detect nested event loops in tabs with the same URL.
 
-var gClient1, gClient2, gThreadClient1, gThreadClient2;
+var gClient1, gClient2, gThreadFront1, gThreadFront2;
 
 function run_test() {
   initTestDebuggerServer();
@@ -12,9 +14,13 @@ function run_test() {
   addTestGlobal("test-nesting1");
   // Conect the first client to the first debuggee.
   gClient1 = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient1.connect(function () {
-    attachTestThread(gClient1, "test-nesting1", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient1 = aThreadClient;
+  gClient1.connect(function() {
+    attachTestThread(gClient1, "test-nesting1", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront1 = threadFront;
       start_second_connection();
     });
   });
@@ -23,29 +29,33 @@ function run_test() {
 
 function start_second_connection() {
   gClient2 = new DebuggerClient(DebuggerServer.connectPipe());
-  gClient2.connect(function () {
-    attachTestThread(gClient2, "test-nesting1", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient2 = aThreadClient;
+  gClient2.connect(function() {
+    attachTestThread(gClient2, "test-nesting1", function(
+      response,
+      targetFront,
+      threadFront
+    ) {
+      gThreadFront2 = threadFront;
       test_nesting();
     });
   });
 }
 
-function test_nesting() {
-  const { resolve, reject, promise: p } = promise.defer();
+async function test_nesting() {
+  let result;
+  try {
+    result = await gThreadFront1.resume();
+  } catch (e) {
+    Assert.ok(e.includes("wrongOrder"), "rejects with the wrong order");
+  }
+  Assert.ok(!result, "no response");
 
-  gThreadClient1.resume(aResponse => {
-    do_check_eq(aResponse.error, "wrongOrder");
-    gThreadClient2.resume(aResponse => {
-      do_check_true(!aResponse.error);
-      do_check_eq(aResponse.from, gThreadClient2.actor);
+  result = await gThreadFront2.resume();
+  Assert.ok(true, "resumed as expected");
 
-      gThreadClient1.resume(aResponse => {
-        do_check_true(!aResponse.error);
-        do_check_eq(aResponse.from, gThreadClient1.actor);
+  gThreadFront1.resume().then(response => {
+    Assert.ok(true, "resumed as expected");
 
-        gClient1.close(() => finishClient(gClient2));
-      });
-    });
+    gClient1.close(() => finishClient(gClient2));
   });
 }

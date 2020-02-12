@@ -3,13 +3,15 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   </head>
   <body onload="start()">
-    <textarea onfocus="done()" style="-moz-appearance: none">س</textarea>
+    <textarea onfocus="done()"
+              style="-moz-appearance: none;
+                     unicode-bidi: bidi-override;">س</textarea>
     <script>
       var textarea = document.querySelector("textarea");
       function start() {
-        textarea.selectionStart = 0;
-        textarea.selectionEnd = 0;
         textarea.focus();
+        textarea.selectionStart = 1; // place caret after the letter
+        textarea.selectionEnd = 1;
       }
       function done() {
         document.documentElement.removeAttribute("class");

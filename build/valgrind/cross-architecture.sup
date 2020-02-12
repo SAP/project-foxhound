@@ -8,14 +8,28 @@
    PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793534.)
    Memcheck:Leak
    ...
-   fun:_ZL9SaveToEnvPKc
+   fun:_ZN7mozilla9SaveToEnvEPKc
+   ...
+}
+{
+   PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793534.)
+   Memcheck:Leak
+   ...
+   fun:SaveToEnv
    ...
 }
 {
    PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793549.)
    Memcheck:Leak
    ...
-   fun:_ZL13SaveWordToEnvPKcRK19nsACString_internal
+   fun:_ZL13SaveWordToEnvPKcRK12nsTSubstringIcE
+   ...
+}
+{
+   PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 793549.)
+   Memcheck:Leak
+   ...
+   fun:SaveWordToEnv
    ...
 }
 {
@@ -30,8 +44,16 @@
    Memcheck:Leak
    fun:malloc
    ...
-   fun:_Z12ToNewCStringRK19nsACString_internal
-   fun:_ZN13CrashReporter14SetupExtraDataEP7nsIFileRK19nsACString_internal
+   fun:_Z12ToNewCStringRK10nsACString
+   fun:_ZN13CrashReporter14SetupExtraDataEP7nsIFileRK10nsACString
+   ...
+}
+{
+   PR_SetEnv requires its argument to be leaked, but does not appear on stacks. (See bug 1345153.)
+   Memcheck:Leak
+   fun:malloc
+   ...
+   fun:_ZN13CrashReporterL27SetupCrashReporterDirectoryEP7nsIFilePKcS3_PS1_
    ...
 }
 {
@@ -120,5 +142,23 @@
    ...
    fun:PK11_InitPin
    fun:_ZN11nsPK11Token12InitPasswordEPKDs
+   ...
+}
+{
+   We intentionally leak TLS data in the global servo thread-pool until we can free it consistently (https://github.com/rayon-rs/rayon/issues/688)
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   fun:_ZN3std6thread5local4fast12Key$LT$T$GT$14try_initialize*
+   fun:_ZN5style5bloom19StyleBloom$LT$E$GT$3new*
+   ...
+}
+{
+   We intentionally leak TLS data in the global servo thread-pool until we can free it consistently (https://github.com/rayon-rs/rayon/issues/688)
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   fun:_ZN3std6thread5local4fast12Key$LT$T$GT$14try_initialize*
+   fun:_ZN5style7sharing26StyleSharingCache$LT$E$GT$3new*
    ...
 }

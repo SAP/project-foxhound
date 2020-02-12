@@ -7,9 +7,8 @@
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Exceptions.h"
-#ifdef SPIDERMONKEY_PROMISE
 #include "mozilla/dom/Promise.h"
-#endif // SPIDERMONKEY_PROMISE
+#include "mozilla/dom/WindowProxyHolder.h"
 #include "nsAString.h"
 #include "nsContentUtils.h"
 #include "nsStringBuffer.h"
@@ -18,14 +17,12 @@
 namespace mozilla {
 namespace dom {
 
-bool
-ToJSValue(JSContext* aCx, const nsAString& aArgument,
-          JS::MutableHandle<JS::Value> aValue)
-{
+bool ToJSValue(JSContext* aCx, const nsAString& aArgument,
+               JS::MutableHandle<JS::Value> aValue) {
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-// XXXkhuey I'd love to use xpc::NonVoidStringToJsval here, but it requires
+  // XXXkhuey I'd love to use xpc::NonVoidStringToJsval here, but it requires
   // a non-const nsAString for silly reasons.
   nsStringBuffer* sharedBuffer;
   if (!XPCStringConvert::ReadableToJSVal(aCx, aArgument, &sharedBuffer,
@@ -40,41 +37,62 @@ ToJSValue(JSContext* aCx, const nsAString& aArgument,
   return true;
 }
 
-
-bool
-ToJSValue(JSContext* aCx,
-          nsresult aArgument,
-          JS::MutableHandle<JS::Value> aValue)
-{
-  RefPtr<Exception> exception = CreateException(aCx, aArgument);
+bool ToJSValue(JSContext* aCx, nsresult aArgument,
+               JS::MutableHandle<JS::Value> aValue) {
+  RefPtr<Exception> exception = CreateException(aArgument);
   return ToJSValue(aCx, exception, aValue);
 }
 
-bool
-ToJSValue(JSContext* aCx,
-          ErrorResult& aArgument,
-          JS::MutableHandle<JS::Value> aValue)
-{
+bool ToJSValue(JSContext* aCx, ErrorResult& aArgument,
+               JS::MutableHandle<JS::Value> aValue) {
   MOZ_ASSERT(aArgument.Failed());
-  MOZ_ASSERT(!aArgument.IsUncatchableException(),
-             "Doesn't make sense to convert uncatchable exception to a JS value!");
-  DebugOnly<bool> throwResult = aArgument.MaybeSetPendingException(aCx);
-  MOZ_ASSERT(throwResult);
-  DebugOnly<bool> getPendingResult = JS_GetPendingException(aCx, aValue);
-  MOZ_ASSERT(getPendingResult);
+  MOZ_ASSERT(
+      !aArgument.IsUncatchableException(),
+      "Doesn't make sense to convert uncatchable exception to a JS value!");
+  MOZ_ALWAYS_TRUE(aArgument.MaybeSetPendingException(aCx));
+  MOZ_ALWAYS_TRUE(JS_GetPendingException(aCx, aValue));
   JS_ClearPendingException(aCx);
   return true;
 }
 
-#ifdef SPIDERMONKEY_PROMISE
-bool
-ToJSValue(JSContext* aCx, Promise& aArgument,
-          JS::MutableHandle<JS::Value> aValue)
-{
+bool ToJSValue(JSContext* aCx, Promise& aArgument,
+               JS::MutableHandle<JS::Value> aValue) {
   aValue.setObject(*aArgument.PromiseObj());
+  return MaybeWrapObjectValue(aCx, aValue);
+}
+
+bool ToJSValue(JSContext* aCx, const WindowProxyHolder& aArgument,
+               JS::MutableHandle<JS::Value> aValue) {
+  BrowsingContext* bc = aArgument.get();
+  if (!bc) {
+    aValue.setNull();
+    return true;
+  }
+  JS::Rooted<JSObject*> windowProxy(aCx);
+  if (bc->IsInProcess()) {
+    windowProxy = bc->GetWindowProxy();
+    if (!windowProxy) {
+      nsPIDOMWindowOuter* window = bc->GetDOMWindow();
+      if (!window) {
+        // Torn down enough that we should just return null.
+        aValue.setNull();
+        return true;
+      }
+      if (!window->EnsureInnerWindow()) {
+        return Throw(aCx, NS_ERROR_UNEXPECTED);
+      }
+      windowProxy = bc->GetWindowProxy();
+    }
+    return ToJSValue(aCx, windowProxy, aValue);
+  }
+
+  if (!GetRemoteOuterWindowProxy(aCx, bc, /* aTransplantTo = */ nullptr,
+                                 &windowProxy)) {
+    return false;
+  }
+  aValue.setObjectOrNull(windowProxy);
   return true;
 }
-#endif // SPIDERMONKEY_PROMISE
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

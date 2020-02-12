@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=289384
 -->
 <head>
   <title>Test for Bug 289384</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -19,11 +19,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=289384
 SimpleTest.waitForExplicitFinish();
 
 addLoadEvent(function() {
-  var win = window.open("data:text/html,<a href=\"data:text/html,<body contenteditable onload='opener.continueTest(window);'>foo bar</body>\">link</a>", "", "test-289384");
-  win.addEventListener("load", function onLoad() {
-    win.removeEventListener("load", onLoad);
+  var win = window.open("file_bug289384-1.html", "", "test-289384");
+  win.addEventListener("load", function() {
     win.document.querySelector("a").click();
-  }, false);
+  }, {once: true});
 });
 
 function continueTest(win) {

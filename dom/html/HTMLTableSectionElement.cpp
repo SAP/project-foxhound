@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTableSectionElement.h"
+#include "mozilla/MappedDeclarations.h"
 #include "nsMappedAttributes.h"
 #include "nsAttrValueInlines.h"
-#include "nsRuleData.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/HTMLTableSectionElementBinding.h"
 #include "nsContentUtils.h"
@@ -19,14 +19,11 @@ namespace dom {
 
 // you will see the phrases "rowgroup" and "section" used interchangably
 
-HTMLTableSectionElement::~HTMLTableSectionElement()
-{
-}
+HTMLTableSectionElement::~HTMLTableSectionElement() {}
 
-JSObject*
-HTMLTableSectionElement::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return HTMLTableSectionElementBinding::Wrap(aCx, this, aGivenProto);
+JSObject* HTMLTableSectionElement::WrapNode(JSContext* aCx,
+                                            JS::Handle<JSObject*> aGivenProto) {
+  return HTMLTableSectionElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLTableSectionElement)
@@ -36,33 +33,22 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLTableSectionElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRows)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_ADDREF_INHERITED(HTMLTableSectionElement, Element)
-NS_IMPL_RELEASE_INHERITED(HTMLTableSectionElement, Element)
-
-// QueryInterface implementation for HTMLTableSectionElement
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(HTMLTableSectionElement)
-NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
-
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLTableSectionElement,
+                                               nsGenericHTMLElement)
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableSectionElement)
 
-nsIHTMLCollection*
-HTMLTableSectionElement::Rows()
-{
+nsIHTMLCollection* HTMLTableSectionElement::Rows() {
   if (!mRows) {
-    mRows = new nsContentList(this,
-                              mNodeInfo->NamespaceID(),
-                              nsGkAtoms::tr,
-                              nsGkAtoms::tr,
-                              false);
+    mRows = new nsContentList(this, mNodeInfo->NamespaceID(), nsGkAtoms::tr,
+                              nsGkAtoms::tr, false);
   }
 
   return mRows;
 }
 
-already_AddRefed<nsGenericHTMLElement>
-HTMLTableSectionElement::InsertRow(int32_t aIndex, ErrorResult& aError)
-{
+already_AddRefed<nsGenericHTMLElement> HTMLTableSectionElement::InsertRow(
+    int32_t aIndex, ErrorResult& aError) {
   if (aIndex < -1) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
@@ -80,11 +66,11 @@ HTMLTableSectionElement::InsertRow(int32_t aIndex, ErrorResult& aError)
 
   // create the row
   RefPtr<mozilla::dom::NodeInfo> nodeInfo;
-  nsContentUtils::NameChanged(mNodeInfo, nsGkAtoms::tr,
-                              getter_AddRefs(nodeInfo));
+  nsContentUtils::QNameChanged(mNodeInfo, nsGkAtoms::tr,
+                               getter_AddRefs(nodeInfo));
 
   RefPtr<nsGenericHTMLElement> rowContent =
-    NS_NewHTMLTableRowElement(nodeInfo.forget());
+      NS_NewHTMLTableRowElement(nodeInfo.forget());
   if (!rowContent) {
     aError.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
@@ -99,9 +85,7 @@ HTMLTableSectionElement::InsertRow(int32_t aIndex, ErrorResult& aError)
   return rowContent.forget();
 }
 
-void
-HTMLTableSectionElement::DeleteRow(int32_t aValue, ErrorResult& aError)
-{
+void HTMLTableSectionElement::DeleteRow(int32_t aValue, ErrorResult& aError) {
   if (aValue < -1) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -117,12 +101,11 @@ HTMLTableSectionElement::DeleteRow(int32_t aValue, ErrorResult& aError)
     }
 
     --refIndex;
-  }
-  else {
+  } else {
     refIndex = (uint32_t)aValue;
   }
 
-  nsINode* row = rows->Item(refIndex);
+  nsCOMPtr<nsINode> row = rows->Item(refIndex);
   if (!row) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -131,21 +114,19 @@ HTMLTableSectionElement::DeleteRow(int32_t aValue, ErrorResult& aError)
   nsINode::RemoveChild(*row, aError);
 }
 
-bool
-HTMLTableSectionElement::ParseAttribute(int32_t aNamespaceID,
-                                        nsIAtom* aAttribute,
-                                        const nsAString& aValue,
-                                        nsAttrValue& aResult)
-{
+bool HTMLTableSectionElement::ParseAttribute(
+    int32_t aNamespaceID, nsAtom* aAttribute, const nsAString& aValue,
+    nsIPrincipal* aMaybeScriptedPrincipal, nsAttrValue& aResult) {
   if (aNamespaceID == kNameSpaceID_None) {
     /* ignore these attributes, stored simply as strings
        ch
     */
-    if (aAttribute == nsGkAtoms::charoff) {
-      return aResult.ParseIntWithBounds(aValue, 0);
-    }
     if (aAttribute == nsGkAtoms::height) {
-      return aResult.ParseSpecialIntValue(aValue);
+      // Per HTML spec there should be nothing special here, but all browsers
+      // implement height mapping to style.  See
+      // <https://github.com/whatwg/html/issues/4718>.  All browsers allow 0, so
+      // keep doing that.
+      return aResult.ParseHTMLDimension(aValue);
     }
     if (aAttribute == nsGkAtoms::align) {
       return ParseTableCellHAlignValue(aValue, aResult);
@@ -158,74 +139,45 @@ HTMLTableSectionElement::ParseAttribute(int32_t aNamespaceID,
     }
   }
 
-  return nsGenericHTMLElement::ParseBackgroundAttribute(aNamespaceID,
-                                                        aAttribute, aValue,
-                                                        aResult) ||
+  return nsGenericHTMLElement::ParseBackgroundAttribute(
+             aNamespaceID, aAttribute, aValue, aResult) ||
          nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
-void
-HTMLTableSectionElement::MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                               nsRuleData* aData)
-{
-  if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Position)) {
-    // height: value
-    nsCSSValue* height = aData->ValueForHeight();
-    if (height->GetUnit() == eCSSUnit_Null) {
-      const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::height);
-      if (value && value->Type() == nsAttrValue::eInteger)
-        height->SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
-    }
+void HTMLTableSectionElement::MapAttributesIntoRule(
+    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+  // height: value
+  if (!aDecls.PropertyIsSet(eCSSProperty_height)) {
+    const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::height);
+    if (value && value->Type() == nsAttrValue::eInteger)
+      aDecls.SetPixelValue(eCSSProperty_height,
+                           (float)value->GetIntegerValue());
   }
-  if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Text)) {
-    nsCSSValue* textAlign = aData->ValueForTextAlign();
-    if (textAlign->GetUnit() == eCSSUnit_Null) {
-      // align: enum
-      const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::align);
-      if (value && value->Type() == nsAttrValue::eEnum)
-        textAlign->SetIntValue(value->GetEnumValue(), eCSSUnit_Enumerated);
-    }
-  }
-  if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Display)) {
-    nsCSSValue* verticalAlign = aData->ValueForVerticalAlign();
-    if (verticalAlign->GetUnit() == eCSSUnit_Null) {
-      // valign: enum
-      const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::valign);
-      if (value && value->Type() == nsAttrValue::eEnum)
-        verticalAlign->SetIntValue(value->GetEnumValue(), eCSSUnit_Enumerated);
-    }
-  }
-
-  nsGenericHTMLElement::MapBackgroundAttributesInto(aAttributes, aData);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
+  nsGenericHTMLElement::MapDivAlignAttributeInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapVAlignAttributeInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapBackgroundAttributesInto(aAttributes, aDecls);
+  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 NS_IMETHODIMP_(bool)
-HTMLTableSectionElement::IsAttributeMapped(const nsIAtom* aAttribute) const
-{
+HTMLTableSectionElement::IsAttributeMapped(const nsAtom* aAttribute) const {
   static const MappedAttributeEntry attributes[] = {
-    { &nsGkAtoms::align },
-    { &nsGkAtoms::valign },
-    { &nsGkAtoms::height },
-    { nullptr }
-  };
+      {nsGkAtoms::align}, {nsGkAtoms::valign}, {nsGkAtoms::height}, {nullptr}};
 
   static const MappedAttributeEntry* const map[] = {
-    attributes,
-    sCommonAttributeMap,
-    sBackgroundAttributeMap,
+      attributes,
+      sCommonAttributeMap,
+      sBackgroundAttributeMap,
   };
 
   return FindAttributeDependence(aAttribute, map);
 }
 
-
-nsMapRuleToAttributesFunc
-HTMLTableSectionElement::GetAttributeMappingFunction() const
-{
+nsMapRuleToAttributesFunc HTMLTableSectionElement::GetAttributeMappingFunction()
+    const {
   return &MapAttributesIntoRule;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

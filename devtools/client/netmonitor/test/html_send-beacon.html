@@ -15,7 +15,10 @@
     <p>Send beacon test</p>
 
     <script type="text/javascript">
-    function performRequest() {
+    /* exported performRequests */
+    "use strict";
+
+    function performRequests() {
       navigator.sendBeacon("beacon_request");
     }
     </script>

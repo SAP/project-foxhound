@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://testing-common/httpd.js");
+var { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var server = new HttpServer();
 server.start(-1);
@@ -22,15 +22,14 @@ function redirectHandler(metadata, response) {
 function headerCheckHandler(metadata, response) {
   try {
     let headerValue = metadata.getHeader("X-Custom-Header");
-    do_check_eq(headerValue, "present");
-  } catch(e) {
+    Assert.equal(headerValue, "present");
+  } catch (e) {
     do_throw("No header present after redirect");
   }
   try {
     metadata.getHeader("X-Unwanted-Header");
     do_throw("Unwanted header present after redirect");
-  } catch (x) {
-  }
+  } catch (x) {}
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.setHeader("Content-Type", "text/plain");
   response.write("");
@@ -41,20 +40,18 @@ function run_test() {
   server.registerPathHandler(headerCheckPath, headerCheckHandler);
 
   do_test_pending();
-  var request = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"]
-                .createInstance(Components.interfaces.nsIXMLHttpRequest);
+  var request = new XMLHttpRequest();
   request.open("GET", redirectURL, true);
   request.setRequestHeader("X-Custom-Header", "present");
   request.addEventListener("readystatechange", function() {
     if (request.readyState == 4) {
-      do_check_eq(request.status, 200);
+      Assert.equal(request.status, 200);
       server.stop(do_test_finished);
     }
-  }, false);
+  });
   request.send();
   try {
     request.setRequestHeader("X-Unwanted-Header", "present");
     do_throw("Shouldn't be able to set a header after send");
-  } catch (x) {
-  }    
+  } catch (x) {}
 }

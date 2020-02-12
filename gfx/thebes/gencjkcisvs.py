@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 import os.path
 import re
 import sys
@@ -17,7 +18,7 @@ while True:
     line = f.readline()
     if not line:
         break
-    if not 'CJK COMPATIBILITY IDEOGRAPH-' in line:
+    if 'CJK COMPATIBILITY IDEOGRAPH-' not in line:
         continue
 
     m = r.search(line)
@@ -25,7 +26,7 @@ while True:
     vs = int(m.group(2), 16)
     compat = int(m.group(3), 16)
 
-    if not vs in vsdict:
+    if vs not in vsdict:
         vsdict[vs] = {}
     vsdict[vs][unified] = compat
 

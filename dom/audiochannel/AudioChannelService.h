@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_audiochannelservice_h__
 #define mozilla_dom_audiochannelservice_h__
 
-#include "nsIAudioChannelService.h"
 #include "nsAutoPtr.h"
 #include "nsIObserver.h"
 #include "nsTObserverArray.h"
@@ -15,68 +14,89 @@
 
 #include "AudioChannelAgent.h"
 #include "nsAttrValue.h"
-#include "mozilla/dom/AudioChannelBinding.h"
-#include "mozilla/Function.h"
+#include "mozilla/Logging.h"
 
-class nsIRunnable;
+#include <functional>
+
 class nsPIDOMWindowOuter;
 struct PRLogModuleInfo;
 
 namespace mozilla {
 namespace dom {
 
-#ifdef MOZ_WIDGET_GONK
-class SpeakerManagerService;
-#endif
-
-class TabParent;
-
-#define NUMBER_OF_AUDIO_CHANNELS (uint32_t)AudioChannel::EndGuard_
-
-class AudioPlaybackConfig
-{
-public:
+class AudioPlaybackConfig {
+ public:
   AudioPlaybackConfig()
-    : mVolume(1.0)
-    , mMuted(false)
-    , mSuspend(nsISuspendedTypes::NONE_SUSPENDED)
-  {}
+      : mVolume(1.0),
+        mMuted(false),
+        mSuspend(nsISuspendedTypes::NONE_SUSPENDED),
+        mNumberOfAgents(0) {}
 
   AudioPlaybackConfig(float aVolume, bool aMuted, uint32_t aSuspended)
-    : mVolume(aVolume)
-    , mMuted(aMuted)
-    , mSuspend(aSuspended)
-  {}
-
-  void SetConfig(float aVolume, bool aMuted, uint32_t aSuspended)
-  {
-    mVolume = aVolume;
-    mMuted = aMuted;
-    mSuspend = aSuspended;
-  }
+      : mVolume(aVolume),
+        mMuted(aMuted),
+        mSuspend(aSuspended),
+        mNumberOfAgents(0) {}
 
   float mVolume;
   bool mMuted;
   uint32_t mSuspend;
+  bool mCapturedAudio = false;
+  uint32_t mNumberOfAgents;
 };
 
-class AudioChannelService final : public nsIAudioChannelService
-                                , public nsIObserver
-{
-public:
+class AudioChannelService final : public nsIObserver {
+ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSIAUDIOCHANNELSERVICE
 
-  enum AudibleState : bool {
-    eAudible = true,
-    eNotAudible = false
+  /**
+   * We use `AudibleState` to represent the audible state of an owner of audio
+   * channel agent. Those information in AudioChannelWindow could help us to
+   * determine if a tab is being audible or not, in order to tell Chrome JS to
+   * show the sound indicator or delayed autoplay icon on the tab bar.
+   *
+   * - Sound indicator
+   * When a tab is playing sound, we would show the sound indicator on tab bar
+   * to tell users that this tab is producing sound now. In addition, the sound
+   * indicator also give users an ablility to mute or unmute tab.
+   *
+   * When an AudioChannelWindow first contains an agent with state `eAudible`,
+   * or an AudioChannelWindow losts its last agent with state `eAudible`, we
+   * would notify Chrome JS about those changes, to tell them that a tab has
+   * been being audible or not, in order to display or remove the indicator for
+   * a corresponding tab.
+   *
+   * - Delayed autoplay icon (Play Tab icon)
+   * When we enable delaying autoplay, which is to postpone the autoplay media
+   * for unvisited tab until it first goes to foreground, or user click the
+   * play tab icon to resume the delayed media.
+   *
+   * When an AudioChannelWindow first contains an agent with state `eAudible` or
+   * `eMaybeAudible`, we would notify Chrome JS about this change, in order to
+   * show the delayed autoplay tab icon to user, which is used to notice user
+   * there is a media being delayed starting, and then user can click the play
+   * tab icon to resume the start of media, or visit that tab to resume delayed
+   * media automatically.
+   *
+   * According to our UX design, we don't show this icon for inaudible media.
+   * The reason of showing the icon for a tab, where the agent starts with state
+   * `eMaybeAudible`, is because some video might be silent in the beginning
+   * but would soon become audible later.
+   *
+   * ---------------------------------------------------------------------------
+   *
+   * eNotAudible : agent is not audible
+   * eMaybeAudible : agent is not audible now, but it might be audible later
+   * eAudible : agent is audible now
+   */
+  enum AudibleState : uint8_t {
+    eNotAudible = 0,
+    eMaybeAudible = 1,
+    eAudible = 2
   };
 
-  enum AudioCaptureState : bool {
-    eCapturing = true,
-    eNotCapturing = false
-  };
+  enum AudioCaptureState : bool { eCapturing = true, eNotCapturing = false };
 
   enum AudibleChangedReasons : uint32_t {
     eVolumeChanged = 0,
@@ -86,14 +106,18 @@ public:
 
   /**
    * Returns the AudioChannelServce singleton.
-   * If AudioChannelServce is not exist, create and return new one.
+   * If AudioChannelService doesn't exist, create and return new one.
    * Only to be called from main thread.
    */
   static already_AddRefed<AudioChannelService> GetOrCreate();
 
-  static bool IsAudioChannelMutedByDefault();
+  /**
+   * Returns the AudioChannelService singleton if one exists.
+   * If AudioChannelService doesn't exist, returns null.
+   */
+  static already_AddRefed<AudioChannelService> Get();
 
-  static PRLogModuleInfo* GetAudioChannelLog();
+  static LogModule* GetAudioChannelLog();
 
   static bool IsEnableAudioCompeting();
 
@@ -111,109 +135,41 @@ public:
   void UnregisterAudioChannelAgent(AudioChannelAgent* aAgent);
 
   /**
-   * For nested iframes.
-   */
-  void RegisterTabParent(TabParent* aTabParent);
-  void UnregisterTabParent(TabParent* aTabParent);
-
-  /**
    * Return the state to indicate this audioChannel for his window should keep
    * playing/muted/suspended.
    */
-  AudioPlaybackConfig GetMediaConfig(nsPIDOMWindowOuter* aWindow,
-                                     uint32_t aAudioChannel) const;
+  AudioPlaybackConfig GetMediaConfig(nsPIDOMWindowOuter* aWindow) const;
 
   /**
    * Called this method when the audible state of the audio playback changed,
    * it would dispatch the playback event to observers which want to know the
    * actual audible state of the window.
    */
-  void AudioAudibleChanged(AudioChannelAgent* aAgent,
-                           AudibleState aAudible,
+  void AudioAudibleChanged(AudioChannelAgent* aAgent, AudibleState aAudible,
                            AudibleChangedReasons aReason);
 
-  /* Methods for the BrowserElementAudioChannel */
-  float GetAudioChannelVolume(nsPIDOMWindowOuter* aWindow, AudioChannel aChannel);
+  bool IsWindowActive(nsPIDOMWindowOuter* aWindow);
 
-  void SetAudioChannelVolume(nsPIDOMWindowOuter* aWindow, AudioChannel aChannel,
-                             float aVolume);
-
-  bool GetAudioChannelMuted(nsPIDOMWindowOuter* aWindow, AudioChannel aChannel);
-
-  void SetAudioChannelMuted(nsPIDOMWindowOuter* aWindow, AudioChannel aChannel,
-                            bool aMuted);
-
-  bool IsAudioChannelActive(nsPIDOMWindowOuter* aWindow, AudioChannel aChannel);
-
-  /**
-   * Return true if there is a telephony channel active in this process
-   * or one of its subprocesses.
-   */
-  bool TelephonyChannelIsActive();
-
-  /**
-   * Return true if a normal or content channel is active for the given
-   * process ID.
-   */
-  bool ProcessContentOrNormalChannelIsActive(uint64_t aChildID);
-
-  /***
-   * AudioChannelManager calls this function to notify the default channel used
-   * to adjust volume when there is no any active channel. if aChannel is -1,
-   * the default audio channel will be used. Otherwise aChannel is casted to
-   * AudioChannel enum.
-   */
-  virtual void SetDefaultVolumeControlChannel(int32_t aChannel,
-                                              bool aVisible);
-
-  bool AnyAudioChannelIsActive();
-
-  void RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow);
+  void RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow, float aVolume,
+                           bool aMuted);
   void RefreshAgentsSuspend(nsPIDOMWindowOuter* aWindow,
                             nsSuspendedTypes aSuspend);
-
-  void RefreshAgentsVolumeAndPropagate(AudioChannel aAudioChannel,
-                                       nsPIDOMWindowOuter* aWindow);
 
   // This method needs to know the inner window that wants to capture audio. We
   // group agents per top outer window, but we can have multiple innerWindow per
   // top outerWindow (subiframes, etc.) and we have to identify all the agents
   // just for a particular innerWindow.
   void SetWindowAudioCaptured(nsPIDOMWindowOuter* aWindow,
-                              uint64_t aInnerWindowID,
-                              bool aCapture);
+                              uint64_t aInnerWindowID, bool aCapture);
 
-#ifdef MOZ_WIDGET_GONK
-  void RegisterSpeakerManager(SpeakerManagerService* aSpeakerManager)
-  {
-    if (!mSpeakerManager.Contains(aSpeakerManager)) {
-      mSpeakerManager.AppendElement(aSpeakerManager);
-    }
-  }
+  void NotifyMediaResumedFromBlock(nsPIDOMWindowOuter* aWindow);
 
-  void UnregisterSpeakerManager(SpeakerManagerService* aSpeakerManager)
-  {
-    mSpeakerManager.RemoveElement(aSpeakerManager);
-  }
-#endif
-
-  static const nsAttrValue::EnumTable* GetAudioChannelTable();
-  static AudioChannel GetAudioChannel(const nsAString& aString);
-  static AudioChannel GetDefaultAudioChannel();
-  static void GetAudioChannelString(AudioChannel aChannel, nsAString& aString);
-  static void GetDefaultAudioChannelString(nsAString& aString);
-
-  void Notify(uint64_t aWindowID);
-
-  void ChildStatusReceived(uint64_t aChildID, bool aTelephonyChannel,
-                           bool aContentOrNormalChannel, bool aAnyChannel);
-
-private:
+ private:
   AudioChannelService();
   ~AudioChannelService();
 
   void RefreshAgents(nsPIDOMWindowOuter* aWindow,
-                     mozilla::function<void(AudioChannelAgent*)> aFunc);
+                     const std::function<void(AudioChannelAgent*)>& aFunc);
 
   static void CreateServiceIfNeeded();
 
@@ -222,52 +178,28 @@ private:
    */
   static void Shutdown();
 
-  void MaybeSendStatusUpdate();
+  void RefreshAgentsAudioFocusChanged(AudioChannelAgent* aAgent);
 
-  bool ContentOrNormalChannelIsActive();
-
-  /* Send the default-volume-channel-changed notification */
-  void SetDefaultVolumeControlChannelInternal(int32_t aChannel,
-                                              bool aVisible, uint64_t aChildID);
-
-  void RefreshAgentsAudioFocusChanged(AudioChannelAgent* aAgent,
-                                      bool aActive);
-
-  class AudioChannelConfig final : public AudioPlaybackConfig
-  {
-  public:
-    AudioChannelConfig()
-      : AudioPlaybackConfig(1.0, IsAudioChannelMutedByDefault(),
-                            nsISuspendedTypes::NONE_SUSPENDED)
-      , mNumberOfAgents(0)
-    {}
-
-    uint32_t mNumberOfAgents;
-  };
-
-  class AudioChannelWindow final
-  {
-  public:
+  class AudioChannelWindow final {
+   public:
     explicit AudioChannelWindow(uint64_t aWindowID)
-      : mWindowID(aWindowID)
-      , mIsAudioCaptured(false)
-      , mOwningAudioFocus(!AudioChannelService::IsEnableAudioCompeting())
-    {
-      // Workaround for bug1183033, system channel type can always playback.
-      mChannels[(int16_t)AudioChannel::System].mMuted = false;
-    }
+        : mWindowID(aWindowID),
+          mIsAudioCaptured(false),
+          mOwningAudioFocus(!AudioChannelService::IsEnableAudioCompeting()),
+          mShouldSendActiveMediaBlockStopEvent(false) {}
 
-    void AudioFocusChanged(AudioChannelAgent* aNewPlayingAgent, bool aActive);
-    void AudioAudibleChanged(AudioChannelAgent* aAgent,
-                             AudibleState aAudible,
+    void AudioFocusChanged(AudioChannelAgent* aNewPlayingAgent);
+    void AudioAudibleChanged(AudioChannelAgent* aAgent, AudibleState aAudible,
                              AudibleChangedReasons aReason);
 
     void AppendAgent(AudioChannelAgent* aAgent, AudibleState aAudible);
     void RemoveAgent(AudioChannelAgent* aAgent);
 
+    void NotifyMediaBlockStop(nsPIDOMWindowOuter* aWindow);
+
     uint64_t mWindowID;
     bool mIsAudioCaptured;
-    AudioChannelConfig mChannels[NUMBER_OF_AUDIO_CHANNELS];
+    AudioPlaybackConfig mConfig;
 
     // Raw pointer because the AudioChannelAgent must unregister itself.
     nsTObserverArray<AudioChannelAgent*> mAgents;
@@ -277,10 +209,12 @@ private:
     // lose audio focus when other windows starts playing.
     bool mOwningAudioFocus;
 
-  private:
-    void AudioCapturedChanged(AudioChannelAgent* aAgent,
-                              AudioCaptureState aCapture);
+    // If we've dispatched "activeMediaBlockStart" event, we must dispatch
+    // another event "activeMediablockStop" when the window is resumed from
+    // suspend-block.
+    bool mShouldSendActiveMediaBlockStopEvent;
 
+   private:
     void AppendAudibleAgentIfNotContained(AudioChannelAgent* aAgent,
                                           AudibleChangedReasons aReason);
     void RemoveAudibleAgentIfContained(AudioChannelAgent* aAgent,
@@ -296,15 +230,15 @@ private:
                                    AudibleState aAudible,
                                    AudibleChangedReasons aReason);
 
-    void NotifyChannelActive(uint64_t aWindowID, AudioChannel aChannel,
-                             bool aActive);
+    void NotifyChannelActive(uint64_t aWindowID, bool aActive);
+    void MaybeNotifyMediaBlockStart(AudioChannelAgent* aAgent);
 
     void RequestAudioFocus(AudioChannelAgent* aAgent);
-    void NotifyAudioCompetingChanged(AudioChannelAgent* aAgent, bool aActive);
 
-    uint32_t GetCompetingBehavior(AudioChannelAgent* aAgent,
-                                  int32_t aIncomingChannelType,
-                                  bool aIncomingChannelActive) const;
+    // We need to do audio competing only when the new incoming agent started.
+    void NotifyAudioCompetingChanged(AudioChannelAgent* aAgent);
+
+    uint32_t GetCompetingBehavior(AudioChannelAgent* aAgent) const;
     bool IsAgentInvolvingInAudioCompeting(AudioChannelAgent* aAgent) const;
     bool IsAudioCompetingInSameTab() const;
     bool IsContainingPlayingAgent(AudioChannelAgent* aAgent) const;
@@ -312,59 +246,20 @@ private:
     bool IsInactiveWindow() const;
   };
 
-  AudioChannelWindow*
-  GetOrCreateWindowData(nsPIDOMWindowOuter* aWindow);
+  AudioChannelWindow* GetOrCreateWindowData(nsPIDOMWindowOuter* aWindow);
 
-  AudioChannelWindow*
-  GetWindowData(uint64_t aWindowID) const;
-
-  struct AudioChannelChildStatus final
-  {
-    explicit AudioChannelChildStatus(uint64_t aChildID)
-      : mChildID(aChildID)
-      , mActiveTelephonyChannel(false)
-      , mActiveContentOrNormalChannel(false)
-    {}
-
-    uint64_t mChildID;
-    bool mActiveTelephonyChannel;
-    bool mActiveContentOrNormalChannel;
-  };
-
-  AudioChannelChildStatus*
-  GetChildStatus(uint64_t aChildID) const;
-
-  void
-  RemoveChildStatus(uint64_t aChildID);
+  AudioChannelWindow* GetWindowData(uint64_t aWindowID) const;
 
   nsTObserverArray<nsAutoPtr<AudioChannelWindow>> mWindows;
-
-  nsTObserverArray<nsAutoPtr<AudioChannelChildStatus>> mPlayingChildren;
-
-#ifdef MOZ_WIDGET_GONK
-  nsTArray<SpeakerManagerService*>  mSpeakerManager;
-#endif
-
-  // Raw pointers because TabParents must unregister themselves.
-  nsTArray<TabParent*> mTabParents;
-
-  nsCOMPtr<nsIRunnable> mRunnable;
-
-  uint64_t mDefChannelChildID;
-
-  // These boolean are used to know if we have to send an status update to the
-  // service running in the main process.
-  bool mTelephonyChannel;
-  bool mContentOrNormalChannel;
-  bool mAnyChannel;
-
-  // This is needed for IPC comunication between
-  // AudioChannelServiceChild and this class.
-  friend class ContentParent;
-  friend class ContentChild;
 };
 
-} // namespace dom
-} // namespace mozilla
+const char* SuspendTypeToStr(const nsSuspendedTypes& aSuspend);
+const char* AudibleStateToStr(
+    const AudioChannelService::AudibleState& aAudible);
+const char* AudibleChangedReasonToStr(
+    const AudioChannelService::AudibleChangedReasons& aReason);
+
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

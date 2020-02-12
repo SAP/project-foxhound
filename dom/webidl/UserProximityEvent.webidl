@@ -4,10 +4,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Constructor(DOMString type, optional UserProximityEventInit eventInitDict)]
+[Pref="device.sensors.proximity.enabled", Func="nsGlobalWindowInner::DeviceSensorsEnabled",
+ Exposed=Window]
 interface UserProximityEvent : Event
 {
-  readonly attribute boolean near;
+    constructor(DOMString type,
+                optional UserProximityEventInit eventInitDict = {});
+
+    readonly attribute boolean near;
 };
 
 dictionary UserProximityEventInit : EventInit

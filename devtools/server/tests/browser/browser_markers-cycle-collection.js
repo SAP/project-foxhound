@@ -5,29 +5,31 @@
  * Test that we get "nsCycleCollector::Collect" and
  * "nsCycleCollector::ForgetSkippable" markers when we force cycle collection.
  */
+"use strict";
 
-const { PerformanceFront } = require("devtools/shared/fronts/performance");
-
-add_task(function* () {
+add_task(async function() {
   // This test runs very slowly on linux32 debug EC2 instances.
   requestLongerTimeout(2);
 
-  let browser = yield addTab(MAIN_DOMAIN + "doc_force_cc.html");
-  let doc = browser.contentDocument;
+  const target = await addTabTarget(MAIN_DOMAIN + "doc_force_cc.html");
+  const front = await target.getFront("performance");
+  const rec = await front.startRecording({ withMarkers: true });
 
-  initDebuggerServer();
-  let client = new DebuggerClient(DebuggerServer.connectPipe());
-  let form = yield connectDebuggerClient(client);
-  let front = PerformanceFront(client, form);
-  yield front.connect();
-  let rec = yield front.startRecording({ withMarkers: true });
+  const markers = await waitForMarkerType(front, [
+    "nsCycleCollector::Collect",
+    "nsCycleCollector::ForgetSkippable",
+  ]);
+  await front.stopRecording(rec);
 
-  let markers = yield waitForMarkerType(front, ["nsCycleCollector::Collect", "nsCycleCollector::ForgetSkippable"]);
-  yield front.stopRecording(rec);
+  ok(
+    markers.some(m => m.name === "nsCycleCollector::Collect"),
+    "got some nsCycleCollector::Collect markers"
+  );
+  ok(
+    markers.some(m => m.name === "nsCycleCollector::ForgetSkippable"),
+    "got some nsCycleCollector::Collect markers"
+  );
 
-  ok(markers.some(m => m.name === "nsCycleCollector::Collect"), "got some nsCycleCollector::Collect markers");
-  ok(markers.some(m => m.name === "nsCycleCollector::ForgetSkippable"), "got some nsCycleCollector::Collect markers");
-
-  yield client.close();
+  await target.destroy();
   gBrowser.removeCurrentTab();
 });

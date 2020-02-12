@@ -10,7 +10,7 @@
  * @see nsIBinaryInputStream
  */
 
-[scriptable, uuid(6c248606-4eae-46fa-9df0-ba58502368eb)]
+[scriptable, builtinclass, uuid(6c248606-4eae-46fa-9df0-ba58502368eb)]
 interface nsIObjectInputStream : nsIBinaryInputStream
 {
     /**
@@ -34,6 +34,9 @@ interface nsIObjectInputStream : nsIBinaryInputStream
 };
 
 %{C++
+
+already_AddRefed<nsIObjectInputStream>
+NS_NewObjectInputStream(nsIInputStream* aOutputStream);
 
 inline nsresult
 NS_ReadOptionalObject(nsIObjectInputStream* aStream, bool aIsStrongRef,

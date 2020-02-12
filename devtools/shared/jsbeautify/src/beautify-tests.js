@@ -91,7 +91,7 @@ function run_beautifier_tests(test_obj, Urlencoded, js_beautify, html_beautify, 
 
         // Test that handlebars non-block {{}} tags act as content and do not
         // get any spacing or line breaks.
-        if (input.indexOf('content') != -1) {
+        if (input.includes('content')) {
             // Just {{field}}
             field_input = input.replace(/content/g, '{{field}}');
             field_expectation = expectation.replace(/content/g, '{{field}}');
@@ -1736,8 +1736,8 @@ function run_beautifier_tests(test_obj, Urlencoded, js_beautify, html_beautify, 
       '<script type="application/javascript">\n' +
       '    var foo = "bar";\n' +
       '</script>');
-    bth('<script type="application/javascript;version=1.8">var foo = "bar";</script>',
-      '<script type="application/javascript;version=1.8">\n' +
+    bth('<script type="application/javascript">var foo = "bar";</script>',
+      '<script type="application/javascript">\n' +
       '    var foo = "bar";\n' +
       '</script>');
     bth('<script type="application/x-javascript">var foo = "bar";</script>',

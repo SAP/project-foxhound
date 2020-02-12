@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import os
 import sys
@@ -10,6 +10,7 @@ import unittest
 
 from mozunit import main
 
+from mozbuild import schedules
 from mozbuild.frontend.context import BugzillaComponent
 from mozbuild.frontend.reader import (
     BuildReaderError,
@@ -71,7 +72,7 @@ class TestBuildReader(unittest.TestCase):
         self.assertTrue(os.path.exists(path))
 
         contexts = list(reader.read_mozbuild(path, reader.config,
-            descend=False))
+                                             descend=False))
 
         self.assertEqual(len(contexts), 1)
 
@@ -115,7 +116,7 @@ class TestBuildReader(unittest.TestCase):
 
         e = bre.exception
         self.assertEqual(e.actual_file, self.file_path('reader-error-basic',
-            'moz.build'))
+                                                       'moz.build'))
 
         self.assertIn('The error occurred while processing the', str(e))
 
@@ -127,9 +128,9 @@ class TestBuildReader(unittest.TestCase):
 
         e = bre.exception
         self.assertEqual(e.actual_file,
-            self.file_path('reader-error-included-from', 'child.build'))
+                         self.file_path('reader-error-included-from', 'child.build'))
         self.assertEqual(e.main_file,
-            self.file_path('reader-error-included-from', 'moz.build'))
+                         self.file_path('reader-error-included-from', 'moz.build'))
 
         self.assertIn('This file was included as part of processing', str(e))
 
@@ -175,13 +176,13 @@ class TestBuildReader(unittest.TestCase):
         e = bre.exception
         self.assertIn('The error was triggered on line 5', str(e))
         self.assertIn('is an attempt to write an illegal value to a special',
-            str(e))
+                      str(e))
 
         self.assertIn('variable whose value was rejected is:\n\n    DIRS',
-            str(e))
+                      str(e))
 
         self.assertIn('written to it was of the following type:\n\n    %s' % text_type,
-            str(e))
+                      str(e))
 
         self.assertIn('expects the following type(s):\n\n    list', str(e))
 
@@ -193,7 +194,7 @@ class TestBuildReader(unittest.TestCase):
 
         e = bre.exception
         self.assertIn('The underlying problem is an illegal file access',
-            str(e))
+                      str(e))
 
     def test_error_missing_include_path(self):
         reader = self.reader('reader-error-missing-include')
@@ -212,7 +213,7 @@ class TestBuildReader(unittest.TestCase):
 
         e = bre.exception
         self.assertIn('The error appears to be the fault of the script',
-            str(e))
+                      str(e))
         self.assertIn('    ["TypeError: unsupported operand', str(e))
 
     def test_error_bad_dir(self):
@@ -246,7 +247,7 @@ class TestBuildReader(unittest.TestCase):
     def test_error_error_func_ok(self):
         reader = self.reader('reader-error-error-func', error_is_fatal=False)
 
-        contexts = list(reader.read_topsrcdir())
+        list(reader.read_topsrcdir())
 
     def test_error_empty_list(self):
         reader = self.reader('reader-error-empty-list')
@@ -264,9 +265,9 @@ class TestBuildReader(unittest.TestCase):
 
         self.assertEqual(len(contexts), 4)
         self.assertEqual([context.relsrcdir for context in contexts],
-            ['', 'foo', 'foo/baz', 'bar'])
+                         ['', 'foo', 'foo/baz', 'bar'])
         self.assertEqual([context['XPIDL_MODULE'] for context in contexts],
-            ['foobar', 'foobar', 'baz', 'foobar'])
+                         ['foobar', 'foobar', 'baz', 'foobar'])
 
     def test_find_relevant_mozbuilds(self):
         reader = self.reader('reader-relevant-mozbuild')
@@ -333,16 +334,16 @@ class TestBuildReader(unittest.TestCase):
         reader = self.reader('reader-relevant-mozbuild')
 
         paths, contexts = reader.read_relevant_mozbuilds(['d1/every-level/a/file',
-            'd1/every-level/b/file', 'd2/file'])
+                                                          'd1/every-level/b/file', 'd2/file'])
         self.assertEqual(len(paths), 3)
         self.assertEqual(len(contexts), 6)
 
         self.assertEqual([ctx.relsrcdir for ctx in paths['d1/every-level/a/file']],
-            ['', 'd1', 'd1/every-level', 'd1/every-level/a'])
+                         ['', 'd1', 'd1/every-level', 'd1/every-level/a'])
         self.assertEqual([ctx.relsrcdir for ctx in paths['d1/every-level/b/file']],
-            ['', 'd1', 'd1/every-level', 'd1/every-level/b'])
+                         ['', 'd1', 'd1/every-level', 'd1/every-level/b'])
         self.assertEqual([ctx.relsrcdir for ctx in paths['d2/file']],
-            ['', 'd2'])
+                         ['', 'd2'])
 
     def test_files_bad_bug_component(self):
         reader = self.reader('files-info')
@@ -370,8 +371,8 @@ class TestBuildReader(unittest.TestCase):
         v = reader.files_info(['bug_component/simple/moz.build'])
         self.assertEqual(len(v), 1)
         flags = v['bug_component/simple/moz.build']
-        self.assertEqual(flags['BUG_COMPONENT'].product, 'Core')
-        self.assertEqual(flags['BUG_COMPONENT'].component, 'Build Config')
+        self.assertEqual(flags['BUG_COMPONENT'].product, 'Firefox Build System')
+        self.assertEqual(flags['BUG_COMPONENT'].component, 'General')
 
     def test_files_bug_component_different_matchers(self):
         reader = self.reader('files-info')
@@ -388,7 +389,8 @@ class TestBuildReader(unittest.TestCase):
 
         self.assertEqual(js_flags['BUG_COMPONENT'], BugzillaComponent('Firefox', 'JS'))
         self.assertEqual(cpp_flags['BUG_COMPONENT'], BugzillaComponent('Firefox', 'C++'))
-        self.assertEqual(misc_flags['BUG_COMPONENT'], BugzillaComponent('default_product', 'default_component'))
+        self.assertEqual(misc_flags['BUG_COMPONENT'], BugzillaComponent(
+            'default_product', 'default_component'))
 
     def test_files_bug_component_final(self):
         reader = self.reader('files-info')
@@ -400,13 +402,13 @@ class TestBuildReader(unittest.TestCase):
             'bug_component/final/subcomponent/bar'])
 
         self.assertEqual(v['bug_component/final/foo']['BUG_COMPONENT'],
-            BugzillaComponent('default_product', 'default_component'))
+                         BugzillaComponent('default_product', 'default_component'))
         self.assertEqual(v['bug_component/final/Makefile.in']['BUG_COMPONENT'],
-            BugzillaComponent('Core', 'Build Config'))
+                         BugzillaComponent('Firefox Build System', 'General'))
         self.assertEqual(v['bug_component/final/subcomponent/Makefile.in']['BUG_COMPONENT'],
-            BugzillaComponent('Core', 'Build Config'))
+                         BugzillaComponent('Firefox Build System', 'General'))
         self.assertEqual(v['bug_component/final/subcomponent/bar']['BUG_COMPONENT'],
-            BugzillaComponent('Another', 'Component'))
+                         BugzillaComponent('Another', 'Component'))
 
     def test_file_test_deps(self):
         reader = self.reader('files-test-metadata')
@@ -479,6 +481,45 @@ class TestBuildReader(unittest.TestCase):
 
         with self.assertRaises(BuildReaderError):
             reader.files_info(['foo.js'])
+
+    def test_schedules(self):
+        reader = self.reader('schedules')
+        info = reader.files_info([
+            'win.and.osx',
+            'somefile',
+            'foo.win',
+            'foo.osx',
+            'subd/aa.py',
+            'subd/yaml.py',
+            'subd/win.js',
+        ])
+        # default: all exclusive, no inclusive
+        self.assertEqual(info['somefile']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['somefile']['SCHEDULES'].exclusive, schedules.EXCLUSIVE_COMPONENTS)
+        # windows-only
+        self.assertEqual(info['foo.win']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['foo.win']['SCHEDULES'].exclusive, ['windows'])
+        # osx-only
+        self.assertEqual(info['foo.osx']['SCHEDULES'].inclusive, [])
+        self.assertEqual(info['foo.osx']['SCHEDULES'].exclusive, ['macosx'])
+        # top-level moz.build specifies subd/**.py with an inclusive option
+        self.assertEqual(info['subd/aa.py']['SCHEDULES'].inclusive, ['py-lint'])
+        self.assertEqual(info['subd/aa.py']['SCHEDULES'].exclusive, schedules.EXCLUSIVE_COMPONENTS)
+        # Files('yaml.py') in subd/moz.build combines with Files('subdir/**.py')
+        self.assertEqual(info['subd/yaml.py']['SCHEDULES'].inclusive, ['py-lint', 'yaml-lint'])
+        self.assertEqual(info['subd/yaml.py']['SCHEDULES'].exclusive,
+                         schedules.EXCLUSIVE_COMPONENTS)
+        # .. but exlusive does not override inclusive
+        self.assertEqual(info['subd/win.js']['SCHEDULES'].inclusive, ['js-lint'])
+        self.assertEqual(info['subd/win.js']['SCHEDULES'].exclusive, ['windows'])
+
+        self.assertEqual(set(info['subd/yaml.py']['SCHEDULES'].components),
+                         set(schedules.EXCLUSIVE_COMPONENTS + ['py-lint', 'yaml-lint']))
+
+        # win.and.osx is defined explicitly, and matches *.osx, and the two have
+        # conflicting SCHEDULES.exclusive settings, so the later one is used
+        self.assertEqual(set(info['win.and.osx']['SCHEDULES'].exclusive),
+                         set(['macosx', 'windows']))
 
 
 if __name__ == '__main__':

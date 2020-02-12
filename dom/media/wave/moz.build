@@ -7,16 +7,17 @@
 EXPORTS += [
     'WaveDecoder.h',
     'WaveDemuxer.h',
-    'WaveReader.h',
 ]
 
 UNIFIED_SOURCES += [
     'WaveDecoder.cpp',
     'WaveDemuxer.cpp',
-    'WaveReader.cpp',
 ]
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

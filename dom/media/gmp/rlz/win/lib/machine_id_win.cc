@@ -1,11 +1,14 @@
-// Copyright 2011 Google Inc. All Rights Reserved.
-// Use of this source code is governed by an Apache-style license that can be
-// found in the COPYING file.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <windows.h>
 #include <sddl.h>  // For ConvertSidToStringSidW.
+
+#include <memory>
 #include <string>
 #include <vector>
+
 #include "mozilla/ArrayUtils.h"
 
 #include "rlz/lib/assert.h"
@@ -41,13 +44,13 @@ bool GetSystemVolumeSerialNumber(int* number) {
 bool GetComputerSid(const wchar_t* account_name, SID* sid, DWORD sid_size) {
   static const DWORD kStartDomainLength = 128;  // reasonable to start with
 
-  std::vector<wchar_t> domain_buffer(kStartDomainLength, 0);
+  std::unique_ptr<wchar_t[]> domain_buffer(new wchar_t[kStartDomainLength]);
   DWORD domain_size = kStartDomainLength;
   DWORD sid_dword_size = sid_size;
   SID_NAME_USE sid_name_use;
 
   BOOL success = ::LookupAccountNameW(NULL, account_name, sid,
-                                      &sid_dword_size, &domain_buffer.front(),
+                                      &sid_dword_size, domain_buffer.get(),
                                       &domain_size, &sid_name_use);
   if (!success && ::GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
     // We could have gotten the insufficient buffer error because
@@ -57,10 +60,10 @@ bool GetComputerSid(const wchar_t* account_name, SID* sid, DWORD sid_size) {
       return false;
 
     if (domain_size > kStartDomainLength)
-      domain_buffer.resize(domain_size);
+      domain_buffer.reset(new wchar_t[domain_size]);
 
     success = ::LookupAccountNameW(NULL, account_name, sid, &sid_dword_size,
-                                   &domain_buffer.front(), &domain_size,
+                                   domain_buffer.get(), &domain_size,
                                    &sid_name_use);
   }
 
@@ -112,13 +115,12 @@ bool GetRawMachineId(std::vector<uint8_t>* sid_bytes, int* volume_id) {
   wchar_t computer_name[MAX_COMPUTERNAME_LENGTH + 1] = {0};
   DWORD size = mozilla::ArrayLength(computer_name);
 
-  if (!GetComputerNameW(computer_name, &size)) {
-    return false;
-  }
-  char sid_buffer[SECURITY_MAX_SID_SIZE];
-  SID* sid = reinterpret_cast<SID*>(sid_buffer);
-  if (GetComputerSid(computer_name, sid, SECURITY_MAX_SID_SIZE)) {
-    *sid_bytes = ConvertSidToBytes(sid);
+  if (GetComputerNameW(computer_name, &size)) {
+    char sid_buffer[SECURITY_MAX_SID_SIZE];
+    SID* sid = reinterpret_cast<SID*>(sid_buffer);
+    if (GetComputerSid(computer_name, sid, SECURITY_MAX_SID_SIZE)) {
+      *sid_bytes = ConvertSidToBytes(sid);
+    }
   }
 
   // Get the system drive volume serial number.

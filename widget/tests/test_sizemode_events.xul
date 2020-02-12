@@ -5,8 +5,7 @@
 <window title="Test for bug 715867"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
 <body  xmlns="http://www.w3.org/1999/xhtml">
 <p id="display"></p>
@@ -48,7 +47,7 @@ function expectSizeModeChange(newMode, duringActionCallback) {
 }
 
 function startTest() {
-  if (navigator.platform.indexOf("Lin") != -1) {
+  if (navigator.platform.includes("Lin")) {
     ok(true, "This test is disabled on Linux because it expects window sizemode changes to be synchronous (which is not the case on Linux).");
     SimpleTest.finish();
     return;
@@ -57,7 +56,8 @@ function startTest() {
 }
 
 function openWindow() {
-  gWindow = open('empty_window.xul', '_blank', 'chrome,screenX=50,screenY=50,width=200,height=200,resizable');
+  gWindow = window.docShell.rootTreeItem.domWindow
+                  .open('empty_window.xul', '_blank', 'chrome,screenX=50,screenY=50,width=200,height=200,resizable');
   SimpleTest.waitForFocus(runTest, gWindow);
 }
 

@@ -23,56 +23,38 @@
 #ifndef nsHtml5ArrayCopy_h
 #define nsHtml5ArrayCopy_h
 
-
-class nsString;
 class nsHtml5StackNode;
-class nsHtml5AttributeName;
 
 // Unfortunately, these don't work as template functions because the arguments
 // would need coercion from a template class, which complicates things.
 class nsHtml5ArrayCopy {
-  public:
+ public:
+  static inline void arraycopy(char16_t* source, int32_t sourceOffset,
+                               char16_t* target, int32_t targetOffset,
+                               int32_t length) {
+    memcpy(&(target[targetOffset]), &(source[sourceOffset]),
+           size_t(length) * sizeof(char16_t));
+  }
 
-    static inline void
-    arraycopy(char16_t* source, int32_t sourceOffset, char16_t* target, int32_t targetOffset, int32_t length)
-    {
-      memcpy(&(target[targetOffset]), &(source[sourceOffset]), size_t(length) * sizeof(char16_t));
-    }
+  static inline void arraycopy(char16_t* source, char16_t* target,
+                               int32_t length) {
+    memcpy(target, source, size_t(length) * sizeof(char16_t));
+  }
 
-    static inline void
-    arraycopy(char16_t* source, char16_t* target, int32_t length)
-    {
-      memcpy(target, source, size_t(length) * sizeof(char16_t));
-    }
+  static inline void arraycopy(int32_t* source, int32_t* target,
+                               int32_t length) {
+    memcpy(target, source, size_t(length) * sizeof(int32_t));
+  }
 
-    static inline void
-    arraycopy(int32_t* source, int32_t* target, int32_t length)
-    {
-      memcpy(target, source, size_t(length) * sizeof(int32_t));
-    }
+  static inline void arraycopy(nsHtml5StackNode** source,
+                               nsHtml5StackNode** target, int32_t length) {
+    memcpy(target, source, size_t(length) * sizeof(nsHtml5StackNode*));
+  }
 
-    static inline void
-    arraycopy(nsString** source, nsString** target, int32_t length)
-    {
-      memcpy(target, source, size_t(length) * sizeof(nsString*));
-    }
-
-    static inline void
-    arraycopy(nsHtml5AttributeName** source, nsHtml5AttributeName** target, int32_t length)
-    {
-      memcpy(target, source, size_t(length) * sizeof(nsHtml5AttributeName*));
-    }
-
-    static inline void
-    arraycopy(nsHtml5StackNode** source, nsHtml5StackNode** target, int32_t length)
-    {
-      memcpy(target, source, size_t(length) * sizeof(nsHtml5StackNode*));
-    }
-
-    static inline void
-    arraycopy(nsHtml5StackNode** arr, int32_t sourceOffset, int32_t targetOffset, int32_t length)
-    {
-      memmove(&(arr[targetOffset]), &(arr[sourceOffset]), size_t(length) * sizeof(nsHtml5StackNode*));
-    }
+  static inline void arraycopy(nsHtml5StackNode** arr, int32_t sourceOffset,
+                               int32_t targetOffset, int32_t length) {
+    memmove(&(arr[targetOffset]), &(arr[sourceOffset]),
+            size_t(length) * sizeof(nsHtml5StackNode*));
+  }
 };
-#endif // nsHtml5ArrayCopy_h
+#endif  // nsHtml5ArrayCopy_h

@@ -13,14 +13,15 @@ SharedLibrary('breakpadinjector')
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
+    '/toolkit/crashreporter/breakpad-client',
     '/toolkit/crashreporter/google-breakpad/src',
 ]
 
 USE_STATIC_LIBS = True
 
-if CONFIG['GNU_CC']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     LDFLAGS += ['-Wl,-e,_DummyEntryPoint@12']
 else:
     LDFLAGS += ['-ENTRY:DummyEntryPoint']
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()

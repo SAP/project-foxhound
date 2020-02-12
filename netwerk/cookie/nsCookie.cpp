@@ -1,44 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsAutoPtr.h"
 #include "nsCookie.h"
-#include "nsUTF8ConverterService.h"
+#include "nsIURLParser.h"
+#include "nsURLHelper.h"
 #include <stdlib.h>
-
-/******************************************************************************
- * nsCookie:
- * string helper impl
- ******************************************************************************/
-
-// copy aSource strings into contiguous storage provided in aDest1,
-// providing terminating nulls for each destination string.
-static inline void
-StrBlockCopy(const nsACString &aSource1,
-             const nsACString &aSource2,
-             const nsACString &aSource3,
-             const nsACString &aSource4,
-             char             *&aDest1,
-             char             *&aDest2,
-             char             *&aDest3,
-             char             *&aDest4,
-             char             *&aDestEnd)
-{
-  char *toBegin = aDest1;
-  nsACString::const_iterator fromBegin, fromEnd;
-
-  *copy_string(aSource1.BeginReading(fromBegin), aSource1.EndReading(fromEnd), toBegin) = char(0);
-  aDest2 = ++toBegin;
-  *copy_string(aSource2.BeginReading(fromBegin), aSource2.EndReading(fromEnd), toBegin) = char(0);
-  aDest3 = ++toBegin;
-  *copy_string(aSource3.BeginReading(fromBegin), aSource3.EndReading(fromEnd), toBegin) = char(0);
-  aDest4 = ++toBegin;
-  *copy_string(aSource4.BeginReading(fromBegin), aSource4.EndReading(fromEnd), toBegin) = char(0);
-  aDestEnd = toBegin;
-}
 
 /******************************************************************************
  * nsCookie:
@@ -54,9 +26,7 @@ StrBlockCopy(const nsACString &aSource1,
 // time, or that the system clock isn't monotonic.
 static int64_t gLastCreationTime;
 
-int64_t
-nsCookie::GenerateUniqueCreationTime(int64_t aCreationTime)
-{
+int64_t nsCookie::GenerateUniqueCreationTime(int64_t aCreationTime) {
   // Check if the creation time given to us is greater than the running maximum
   // (it should always be monotonically increasing).
   if (aCreationTime > gLastCreationTime) {
@@ -68,67 +38,67 @@ nsCookie::GenerateUniqueCreationTime(int64_t aCreationTime)
   return ++gLastCreationTime;
 }
 
-nsCookie *
-nsCookie::Create(const nsACString &aName,
-                 const nsACString &aValue,
-                 const nsACString &aHost,
-                 const nsACString &aPath,
-                 int64_t           aExpiry,
-                 int64_t           aLastAccessed,
-                 int64_t           aCreationTime,
-                 bool              aIsSession,
-                 bool              aIsSecure,
-                 bool              aIsHttpOnly,
-                 const OriginAttributes& aOriginAttributes)
-{
+// static
+already_AddRefed<nsCookie> nsCookie::Create(
+    const nsACString& aName, const nsACString& aValue, const nsACString& aHost,
+    const nsACString& aPath, int64_t aExpiry, int64_t aLastAccessed,
+    int64_t aCreationTime, bool aIsSession, bool aIsSecure, bool aIsHttpOnly,
+    const OriginAttributes& aOriginAttributes, int32_t aSameSite,
+    int32_t aRawSameSite) {
+  mozilla::net::CookieStruct cookieData(
+      nsCString(aName), nsCString(aValue), nsCString(aHost), nsCString(aPath),
+      aExpiry, aLastAccessed, aCreationTime, aIsHttpOnly, aIsSession, aIsSecure,
+      aSameSite, aRawSameSite);
+
+  return Create(cookieData, aOriginAttributes);
+}
+
+already_AddRefed<nsCookie> nsCookie::Create(
+    const mozilla::net::CookieStruct& aCookieData,
+    const OriginAttributes& aOriginAttributes) {
+  RefPtr<nsCookie> cookie = new nsCookie(aCookieData, aOriginAttributes);
+
   // Ensure mValue contains a valid UTF-8 sequence. Otherwise XPConnect will
   // truncate the string after the first invalid octet.
-  RefPtr<nsUTF8ConverterService> converter = new nsUTF8ConverterService();
-  nsAutoCString aUTF8Value;
-  converter->ConvertStringToUTF8(aValue, "UTF-8", false, true, 1, aUTF8Value);
+  UTF_8_ENCODING->DecodeWithoutBOMHandling(aCookieData.value(),
+                                           cookie->mData.value());
 
-  // find the required string buffer size, adding 4 for the terminating nulls
-  const uint32_t stringLength = aName.Length() + aUTF8Value.Length() +
-                                aHost.Length() + aPath.Length() + 4;
+  // If the creationTime given to us is higher than the running maximum,
+  // update our maximum.
+  if (cookie->mData.creationTime() > gLastCreationTime) {
+    gLastCreationTime = cookie->mData.creationTime();
+  }
 
-  // allocate contiguous space for the nsCookie and its strings -
-  // we store the strings in-line with the nsCookie to save allocations
-  void *place = ::operator new(sizeof(nsCookie) + stringLength);
-  if (!place)
-    return nullptr;
+  // If sameSite is not a sensible value, assume strict
+  if (cookie->mData.sameSite() < 0 ||
+      cookie->mData.sameSite() > nsICookie::SAMESITE_STRICT) {
+    cookie->mData.sameSite() = nsICookie::SAMESITE_STRICT;
+  }
 
-  // assign string members
-  char *name, *value, *host, *path, *end;
-  name = static_cast<char *>(place) + sizeof(nsCookie);
-  StrBlockCopy(aName, aUTF8Value, aHost, aPath,
-               name, value, host, path, end);
+  // If rawSameSite is not a sensible value, assume equal to sameSite.
+  if (!nsCookie::ValidateRawSame(cookie->mData)) {
+    cookie->mData.rawSameSite() = nsICookie::SAMESITE_NONE;
+  }
 
-  // If the creationTime given to us is higher than the running maximum, update
-  // our maximum.
-  if (aCreationTime > gLastCreationTime)
-    gLastCreationTime = aCreationTime;
-
-  // construct the cookie. placement new, oh yeah!
-  return new (place) nsCookie(name, value, host, path, end,
-                              aExpiry, aLastAccessed, aCreationTime,
-                              aIsSession, aIsSecure, aIsHttpOnly,
-                              aOriginAttributes);
+  return cookie.forget();
 }
 
-size_t
-nsCookie::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-{
-    // There is no need to measure the sizes of the individual string
-    // members, since the strings are stored in-line with the nsCookie.
-    return aMallocSizeOf(this);
+size_t nsCookie::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) +
+         mData.name().SizeOfExcludingThisIfUnshared(MallocSizeOf) +
+         mData.value().SizeOfExcludingThisIfUnshared(MallocSizeOf) +
+         mData.host().SizeOfExcludingThisIfUnshared(MallocSizeOf) +
+         mData.path().SizeOfExcludingThisIfUnshared(MallocSizeOf) +
+         mFilePathCache.SizeOfExcludingThisIfUnshared(MallocSizeOf);
 }
 
-bool
-nsCookie::IsStale() const
-{
+bool nsCookie::IsStale() const {
   int64_t currentTimeInUsec = PR_Now();
 
-  return currentTimeInUsec - LastAccessed() > mCookieStaleThreshold * PR_USEC_PER_SEC;
+  return currentTimeInUsec - LastAccessed() >
+         mozilla::StaticPrefs::network_cookie_staleThreshold() *
+             PR_USEC_PER_SEC;
 }
 
 /******************************************************************************
@@ -137,35 +107,105 @@ nsCookie::IsStale() const
  ******************************************************************************/
 
 // xpcom getters
-NS_IMETHODIMP nsCookie::GetName(nsACString &aName)         { aName = Name();            return NS_OK; }
-NS_IMETHODIMP nsCookie::GetValue(nsACString &aValue)       { aValue = Value();          return NS_OK; }
-NS_IMETHODIMP nsCookie::GetHost(nsACString &aHost)         { aHost = Host();            return NS_OK; }
-NS_IMETHODIMP nsCookie::GetRawHost(nsACString &aHost)      { aHost = RawHost();         return NS_OK; }
-NS_IMETHODIMP nsCookie::GetPath(nsACString &aPath)         { aPath = Path();            return NS_OK; }
-NS_IMETHODIMP nsCookie::GetExpiry(int64_t *aExpiry)        { *aExpiry = Expiry();       return NS_OK; }
-NS_IMETHODIMP nsCookie::GetIsSession(bool *aIsSession)   { *aIsSession = IsSession(); return NS_OK; }
-NS_IMETHODIMP nsCookie::GetIsDomain(bool *aIsDomain)     { *aIsDomain = IsDomain();   return NS_OK; }
-NS_IMETHODIMP nsCookie::GetIsSecure(bool *aIsSecure)     { *aIsSecure = IsSecure();   return NS_OK; }
-NS_IMETHODIMP nsCookie::GetIsHttpOnly(bool *aHttpOnly)   { *aHttpOnly = IsHttpOnly(); return NS_OK; }
-NS_IMETHODIMP nsCookie::GetStatus(nsCookieStatus *aStatus) { *aStatus = 0;              return NS_OK; }
-NS_IMETHODIMP nsCookie::GetPolicy(nsCookiePolicy *aPolicy) { *aPolicy = 0;              return NS_OK; }
-NS_IMETHODIMP nsCookie::GetCreationTime(int64_t *aCreation){ *aCreation = CreationTime(); return NS_OK; }
-NS_IMETHODIMP nsCookie::GetLastAccessed(int64_t *aTime)    { *aTime = LastAccessed();   return NS_OK; }
+NS_IMETHODIMP nsCookie::GetName(nsACString& aName) {
+  aName = Name();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetValue(nsACString& aValue) {
+  aValue = Value();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetHost(nsACString& aHost) {
+  aHost = Host();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetRawHost(nsACString& aHost) {
+  aHost = RawHost();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetPath(nsACString& aPath) {
+  aPath = Path();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetExpiry(int64_t* aExpiry) {
+  *aExpiry = Expiry();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetIsSession(bool* aIsSession) {
+  *aIsSession = IsSession();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetIsDomain(bool* aIsDomain) {
+  *aIsDomain = IsDomain();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetIsSecure(bool* aIsSecure) {
+  *aIsSecure = IsSecure();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetIsHttpOnly(bool* aHttpOnly) {
+  *aHttpOnly = IsHttpOnly();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetCreationTime(int64_t* aCreation) {
+  *aCreation = CreationTime();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetLastAccessed(int64_t* aTime) {
+  *aTime = LastAccessed();
+  return NS_OK;
+}
+NS_IMETHODIMP nsCookie::GetSameSite(int32_t* aSameSite) {
+  if (mozilla::StaticPrefs::network_cookie_sameSite_laxByDefault()) {
+    *aSameSite = SameSite();
+  } else {
+    *aSameSite = RawSameSite();
+  }
+  return NS_OK;
+}
 
 NS_IMETHODIMP
-nsCookie::GetOriginAttributes(JSContext *aCx, JS::MutableHandle<JS::Value> aVal)
-{
+nsCookie::GetOriginAttributes(JSContext* aCx,
+                              JS::MutableHandle<JS::Value> aVal) {
   if (NS_WARN_IF(!ToJSValue(aCx, mOriginAttributes, aVal))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
+const nsCString& nsCookie::GetFilePath() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+
+  if (Path().IsEmpty()) {
+    // If we don't have a path, just return the (empty) file path cache.
+    return mFilePathCache;
+  }
+  if (!mFilePathCache.IsEmpty()) {
+    // If we've computed the answer before, just return it.
+    return mFilePathCache;
+  }
+
+  nsIURLParser* parser = net_GetStdURLParser();
+  NS_ENSURE_TRUE(parser, mFilePathCache);
+
+  int32_t pathLen = Path().Length(), filepathLen = 0;
+  uint32_t filepathPos = 0;
+
+  nsresult rv = parser->ParsePath(PromiseFlatCString(Path()).get(), pathLen,
+                                  &filepathPos, &filepathLen, nullptr,
+                                  nullptr,            // don't care about query
+                                  nullptr, nullptr);  // don't care about ref
+  NS_ENSURE_SUCCESS(rv, mFilePathCache);
+
+  mFilePathCache = Substring(Path(), filepathPos, filepathLen);
+
+  return mFilePathCache;
+}
+
 // compatibility method, for use with the legacy nsICookie interface.
 // here, expires == 0 denotes a session cookie.
 NS_IMETHODIMP
-nsCookie::GetExpires(uint64_t *aExpires)
-{
+nsCookie::GetExpires(uint64_t* aExpires) {
   if (IsSession()) {
     *aExpires = 0;
   } else {
@@ -174,4 +214,10 @@ nsCookie::GetExpires(uint64_t *aExpires)
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(nsCookie, nsICookie2, nsICookie)
+// static
+bool nsCookie::ValidateRawSame(const mozilla::net::CookieStruct& aCookieData) {
+  return aCookieData.rawSameSite() == aCookieData.sameSite() ||
+         aCookieData.rawSameSite() == nsICookie::SAMESITE_NONE;
+}
+
+NS_IMPL_ISUPPORTS(nsCookie, nsICookie)

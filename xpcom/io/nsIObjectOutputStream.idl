@@ -10,7 +10,7 @@
  * @See nsIBinaryOutputStream
  */
 
-[scriptable, uuid(92c898ac-5fde-4b99-87b3-5d486422094b)]
+[scriptable, builtinclass, uuid(92c898ac-5fde-4b99-87b3-5d486422094b)]
 interface nsIObjectOutputStream : nsIBinaryOutputStream
 {
     /**
@@ -58,6 +58,8 @@ interface nsIObjectOutputStream : nsIBinaryOutputStream
 };
 
 %{C++
+already_AddRefed<nsIObjectOutputStream>
+NS_NewObjectOutputStream(nsIOutputStream* aOutputStream);
 
 inline nsresult
 NS_WriteOptionalObject(nsIObjectOutputStream* aStream, nsISupports* aObject,

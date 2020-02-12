@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,31 +11,38 @@
 #include "WebGLObjectModel.h"
 
 namespace mozilla {
+namespace webgl {
+class AvailabilityRunnable;
+}  // namespace webgl
 
-class WebGLSync final
-    : public nsWrapperCache
-    , public WebGLRefCountedObject<WebGLSync>
-    , public LinkedListElement<WebGLSync>
-{
-    friend class WebGL2Context;
+class WebGLSync final : public nsWrapperCache,
+                        public WebGLRefCountedObject<WebGLSync>,
+                        public LinkedListElement<WebGLSync> {
+  friend class WebGL2Context;
+  friend class webgl::AvailabilityRunnable;
 
-public:
-    WebGLSync(WebGLContext* webgl, GLenum condition, GLbitfield flags);
+  const GLsync mGLName;
+  const uint64_t mFenceId;
+  bool mCanBeAvailable = false;
 
-    void Delete();
-    WebGLContext* GetParentObject() const;
+ public:
+  WebGLSync(WebGLContext* webgl, GLenum condition, GLbitfield flags);
 
-    virtual JSObject* WrapObject(JSContext* cx, JS::Handle<JSObject*> givenProto) override;
+  void Delete();
+  WebGLContext* GetParentObject() const;
 
-    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSync)
-    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLSync)
+  virtual JSObject* WrapObject(JSContext* cx,
+                               JS::Handle<JSObject*> givenProto) override;
 
-private:
-    ~WebGLSync();
+  NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSync)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(WebGLSync)
 
-    GLsync mGLName;
+  void MarkSignaled() const;
+
+ private:
+  ~WebGLSync();
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // WEBGL_SYNC_H_
+#endif  // WEBGL_SYNC_H_

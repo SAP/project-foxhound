@@ -5,8 +5,7 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
   const objectStoreName = "Objects";
 
@@ -21,8 +20,7 @@ function testSteps()
 
   let db = event.target.result;
 
-  let objectStore = db.createObjectStore(objectStoreName,
-                                         { autoIncrement: 1 });
+  let objectStore = db.createObjectStore(objectStoreName, { autoIncrement: 1 });
 
   request = objectStore.put(testString.value);
   request.onerror = errorHandler;
@@ -44,11 +42,10 @@ function testSteps()
     request.onsuccess = function(event) {
       is(event.target.result, testInt.value, "Got the right value");
     };
-  }
+  };
 
   // Wait for success
   yield undefined;
 
   finishTest();
-  yield undefined;
 }

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: play() method via DOM 0 handlers</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -22,7 +22,7 @@ var tokens = {
 
 function gotPlayEvent(event) {
   var v = event.target;
-  ok(tokens[v._state].indexOf(event.type) >= 0,
+  ok(tokens[v._state].includes(event.type),
      "Check expected event got " + event.type + " at " + v._state + " for " + v.src);
   v._state = event.type;
 }

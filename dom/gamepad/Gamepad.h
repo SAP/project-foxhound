@@ -10,6 +10,10 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
+#include "mozilla/dom/GamepadPose.h"
+#include "mozilla/dom/GamepadHapticActuator.h"
+#include "mozilla/dom/GamepadLightIndicator.h"
+#include "mozilla/dom/GamepadTouch.h"
 #include "mozilla/dom/Performance.h"
 #include <stdint.h>
 #include "nsCOMPtr.h"
@@ -33,21 +37,26 @@ const int kLeftStickYAxis = 1;
 const int kRightStickXAxis = 2;
 const int kRightStickYAxis = 3;
 
-class Gamepad final : public nsISupports,
-                      public nsWrapperCache
-{
-public:
-  Gamepad(nsISupports* aParent,
-          const nsAString& aID, uint32_t aIndex,
-          GamepadMappingType aMapping,
-          uint32_t aNumButtons, uint32_t aNumAxes);
+class Gamepad final : public nsISupports, public nsWrapperCache {
+ public:
+  Gamepad(nsISupports* aParent, const nsAString& aID, uint32_t aIndex,
+          uint32_t aHashKey, GamepadMappingType aMapping, GamepadHand aHand,
+          uint32_t aDisplayID, uint32_t aNumButtons, uint32_t aNumAxes,
+          uint32_t aNumHaptics, uint32_t aNumLightIndicator,
+          uint32_t aNumTouchEvents);
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Gamepad)
 
   void SetConnected(bool aConnected);
-  void SetButton(uint32_t aButton, bool aPressed, double aValue);
+  void SetButton(uint32_t aButton, bool aPressed, bool aTouched, double aValue);
   void SetAxis(uint32_t aAxis, double aValue);
   void SetIndex(uint32_t aIndex);
+  void SetPose(const GamepadPoseState& aPose);
+  void SetLightIndicatorType(uint32_t aLightIndex,
+                             GamepadLightIndicatorType aType);
+  void SetTouchEvent(uint32_t aTouchIndex, const GamepadTouchState& aTouch);
+  void SetHand(GamepadHand aHand);
 
   // Make the state of this gamepad equivalent to other.
   void SyncState(Gamepad* aOther);
@@ -56,59 +65,64 @@ public:
   // parented to aParent.
   already_AddRefed<Gamepad> Clone(nsISupports* aParent);
 
-  nsISupports* GetParentObject() const
-  {
-    return mParent;
-  }
+  nsISupports* GetParentObject() const { return mParent; }
 
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
-  void GetId(nsAString& aID) const
-  {
-    aID = mID;
-  }
+  void GetId(nsAString& aID) const { aID = mID; }
 
-  DOMHighResTimeStamp Timestamp() const
-  {
-     return mTimestamp;
-  }
+  DOMHighResTimeStamp Timestamp() const { return mTimestamp; }
 
-  GamepadMappingType Mapping()
-  {
-    return mMapping;
-  }
+  GamepadMappingType Mapping() { return mMapping; }
 
-  bool Connected() const
-  {
-    return mConnected;
-  }
+  uint32_t DisplayId() const { return mDisplayId; }
 
-  uint32_t Index() const
-  {
-    return mIndex;
-  }
+  GamepadHand Hand() { return mHand; }
 
-  void GetButtons(nsTArray<RefPtr<GamepadButton>>& aButtons) const
-  {
+  bool Connected() const { return mConnected; }
+
+  uint32_t Index() const { return mIndex; }
+
+  uint32_t HashKey() const { return mHashKey; }
+
+  void GetButtons(nsTArray<RefPtr<GamepadButton>>& aButtons) const {
     aButtons = mButtons;
   }
 
-  void GetAxes(nsTArray<double>& aAxes) const
-  {
-    aAxes = mAxes;
+  void GetAxes(nsTArray<double>& aAxes) const { aAxes = mAxes; }
+
+  GamepadPose* GetPose() const { return mPose; }
+
+  void GetHapticActuators(
+      nsTArray<RefPtr<GamepadHapticActuator>>& aHapticActuators) const {
+    aHapticActuators = mHapticActuators;
   }
 
-private:
+  void GetLightIndicators(
+      nsTArray<RefPtr<GamepadLightIndicator>>& aLightIndicators) const {
+    aLightIndicators = mLightIndicators;
+  }
+
+  void GetTouchEvents(nsTArray<RefPtr<GamepadTouch>>& aTouchEvents) const {
+    aTouchEvents = mTouchEvents;
+  }
+
+ private:
   virtual ~Gamepad() {}
   void UpdateTimestamp();
 
-protected:
+ protected:
   nsCOMPtr<nsISupports> mParent;
   nsString mID;
   uint32_t mIndex;
-
+  // the gamepad hash key in GamepadManager
+  uint32_t mHashKey;
+  uint32_t mDisplayId;
+  uint32_t mTouchIdHashValue;
   // The mapping in use.
   GamepadMappingType mMapping;
+  GamepadHand mHand;
 
   // true if this gamepad is currently connected.
   bool mConnected;
@@ -117,9 +131,14 @@ protected:
   nsTArray<RefPtr<GamepadButton>> mButtons;
   nsTArray<double> mAxes;
   DOMHighResTimeStamp mTimestamp;
+  RefPtr<GamepadPose> mPose;
+  nsTArray<RefPtr<GamepadHapticActuator>> mHapticActuators;
+  nsTArray<RefPtr<GamepadLightIndicator>> mLightIndicators;
+  nsTArray<RefPtr<GamepadTouch>> mTouchEvents;
+  nsDataHashtable<nsUint32HashKey, uint32_t> mTouchIdHash;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_gamepad_Gamepad_h
+#endif  // mozilla_dom_gamepad_Gamepad_h

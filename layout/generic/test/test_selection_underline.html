@@ -2,17 +2,14 @@
 
 <head>
   <title>Test for selection underline</title>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
-  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
+  <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
 <script type="text/javascript">
 
 // Canvas related code stolen from layout/base/tests/bidi_numeral_test.js which
 // stole from http://developer.mozilla.org/en/docs/Code_snippets:Canvas
-
-var Ci = Components.interfaces;
-var Cc = Components.classes;
 
 var RemoteCanvas = function(aIFrame, aTest) {
   this.iframe = aIFrame;
@@ -141,7 +138,7 @@ var gPrefs = [
   }
 ];
 
-const nsISelectionController = Components.interfaces.nsISelectionController;
+const nsISelectionController = Ci.nsISelectionController;
 
 var gSelectionIndex = -1;
 const kSelections = [

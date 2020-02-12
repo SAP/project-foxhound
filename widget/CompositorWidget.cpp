@@ -10,69 +10,50 @@
 namespace mozilla {
 namespace widget {
 
-CompositorWidget::~CompositorWidget()
-{
-}
+CompositorWidget::CompositorWidget(const layers::CompositorOptions& aOptions)
+    : mOptions(aOptions) {}
 
-already_AddRefed<gfx::DrawTarget>
-CompositorWidget::StartRemoteDrawing()
-{
+CompositorWidget::~CompositorWidget() {}
+
+already_AddRefed<gfx::DrawTarget> CompositorWidget::StartRemoteDrawing() {
   return nullptr;
 }
 
-void
-CompositorWidget::CleanupRemoteDrawing()
-{
-  mLastBackBuffer = nullptr;
-}
+void CompositorWidget::CleanupRemoteDrawing() { mLastBackBuffer = nullptr; }
 
-already_AddRefed<gfx::DrawTarget>
-CompositorWidget::GetBackBufferDrawTarget(gfx::DrawTarget* aScreenTarget,
-                                          const LayoutDeviceIntRect& aRect,
-                                          const LayoutDeviceIntRect& aClearRect)
-{
+already_AddRefed<gfx::DrawTarget> CompositorWidget::GetBackBufferDrawTarget(
+    gfx::DrawTarget* aScreenTarget, const gfx::IntRect& aRect,
+    bool* aOutIsCleared) {
   MOZ_ASSERT(aScreenTarget);
   gfx::SurfaceFormat format =
-    aScreenTarget->GetFormat() == gfx::SurfaceFormat::B8G8R8X8 ? gfx::SurfaceFormat::B8G8R8X8 : gfx::SurfaceFormat::B8G8R8A8;
-  gfx::IntSize size = aRect.ToUnknownRect().Size();
-  gfx::IntSize clientSize(GetClientSize().ToUnknownSize());
+      aScreenTarget->GetFormat() == gfx::SurfaceFormat::B8G8R8X8
+          ? gfx::SurfaceFormat::B8G8R8X8
+          : gfx::SurfaceFormat::B8G8R8A8;
+  gfx::IntSize size = aRect.Size();
+  gfx::IntSize clientSize = Max(size, GetClientSize().ToUnknownSize());
 
-  RefPtr<gfx::DrawTarget> target;
+  *aOutIsCleared = false;
   // Re-use back buffer if possible
-  if (mLastBackBuffer &&
-      mLastBackBuffer->GetBackendType() == aScreenTarget->GetBackendType() &&
-      mLastBackBuffer->GetFormat() == format &&
-      size <= mLastBackBuffer->GetSize() &&
-      mLastBackBuffer->GetSize() <= clientSize) {
-    target = mLastBackBuffer;
-    target->SetTransform(gfx::Matrix());
-    if (!aClearRect.IsEmpty()) {
-      gfx::IntRect clearRect = aClearRect.ToUnknownRect() - aRect.ToUnknownRect().TopLeft();
-      target->ClearRect(gfx::Rect(clearRect.x, clearRect.y, clearRect.width, clearRect.height));
-    }
-  } else {
-    target = aScreenTarget->CreateSimilarDrawTarget(size, format);
-    mLastBackBuffer = target;
+  if (!mLastBackBuffer ||
+      mLastBackBuffer->GetBackendType() != aScreenTarget->GetBackendType() ||
+      mLastBackBuffer->GetFormat() != format ||
+      mLastBackBuffer->GetSize() != clientSize) {
+    mLastBackBuffer =
+        aScreenTarget->CreateSimilarDrawTarget(clientSize, format);
+    *aOutIsCleared = true;
   }
-  return target.forget();
+  return do_AddRef(mLastBackBuffer);
 }
 
-already_AddRefed<gfx::SourceSurface>
-CompositorWidget::EndBackBufferDrawing()
-{
-  RefPtr<gfx::SourceSurface> surface = mLastBackBuffer ? mLastBackBuffer->Snapshot() : nullptr;
+already_AddRefed<gfx::SourceSurface> CompositorWidget::EndBackBufferDrawing() {
+  RefPtr<gfx::SourceSurface> surface =
+      mLastBackBuffer ? mLastBackBuffer->Snapshot() : nullptr;
   return surface.forget();
 }
 
-uint32_t
-CompositorWidget::GetGLFrameBufferFormat()
-{
-  return LOCAL_GL_RGBA;
-}
+uint32_t CompositorWidget::GetGLFrameBufferFormat() { return LOCAL_GL_RGBA; }
 
-RefPtr<VsyncObserver>
-CompositorWidget::GetVsyncObserver() const
-{
+RefPtr<VsyncObserver> CompositorWidget::GetVsyncObserver() const {
   // This should only used when the widget is in the GPU process, and should be
   // implemented by IPDL-enabled CompositorWidgets.
   // GPU process does not have a CompositorVsyncDispatcher.
@@ -80,5 +61,5 @@ CompositorWidget::GetVsyncObserver() const
   return nullptr;
 }
 
-} // namespace widget
-} // namespace mozilla
+}  // namespace widget
+}  // namespace mozilla

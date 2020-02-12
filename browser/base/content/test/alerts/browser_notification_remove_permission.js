@@ -1,29 +1,31 @@
 "use strict";
 
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
 var tab;
-var notificationURL = "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
+var notificationURL =
+  "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 var alertWindowClosed = false;
 var permRemoved = false;
 
-function test () {
+function test() {
   waitForExplicitFinish();
 
-  let pm = Services.perms;
   registerCleanupFunction(function() {
-    pm.remove(makeURI(notificationURL), "desktop-notification");
     gBrowser.removeTab(tab);
     window.restore();
   });
 
-  pm.add(makeURI(notificationURL), "desktop-notification", pm.ALLOW_ACTION);
-
-  tab = gBrowser.addTab(notificationURL);
-  gBrowser.selectedTab = tab;
-  tab.linkedBrowser.addEventListener("load", onLoad, true);
+  addNotificationPermission(notificationURL).then(function openTab() {
+    tab = BrowserTestUtils.addTab(gBrowser, notificationURL);
+    gBrowser.selectedTab = tab;
+    BrowserTestUtils.browserLoaded(tab.linkedBrowser).then(() => onLoad());
+  });
 }
 
 function onLoad() {
-  tab.linkedBrowser.removeEventListener("load", onLoad, true);
   openNotification(tab.linkedBrowser, "showNotification2").then(onAlertShowing);
 }
 
@@ -36,14 +38,21 @@ function onAlertShowing() {
     closeNotification(tab.linkedBrowser).then(finish);
     return;
   }
-  ok(Services.perms.testExactPermission(makeURI(notificationURL), "desktop-notification"),
-     "Permission should exist prior to removal");
-  let disableForOriginMenuItem = alertWindow.document.getElementById("disableForOriginMenuItem");
+  ok(
+    PermissionTestUtils.testExactPermission(
+      notificationURL,
+      "desktop-notification"
+    ),
+    "Permission should exist prior to removal"
+  );
+  let disableForOriginMenuItem = alertWindow.document.getElementById(
+    "disableForOriginMenuItem"
+  );
   is(disableForOriginMenuItem.localName, "menuitem", "menuitem found");
-  Services.obs.addObserver(permObserver, "perm-changed", false);
+  Services.obs.addObserver(permObserver, "perm-changed");
   alertWindow.addEventListener("beforeunload", onAlertClosing);
   disableForOriginMenuItem.click();
-  info("Clicked on disable-for-origin menuitem")
+  info("Clicked on disable-for-origin menuitem");
 }
 
 function permObserver(subject, topic, data) {
@@ -52,7 +61,11 @@ function permObserver(subject, topic, data) {
   }
 
   let permission = subject.QueryInterface(Ci.nsIPermission);
-  is(permission.type, "desktop-notification", "desktop-notification permission changed");
+  is(
+    permission.type,
+    "desktop-notification",
+    "desktop-notification permission changed"
+  );
   is(data, "deleted", "desktop-notification permission deleted");
 
   Services.obs.removeObserver(permObserver, "perm-changed");

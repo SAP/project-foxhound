@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5,40 +7,39 @@
 #include "Scale.h"
 
 #ifdef USE_SKIA
-#include "HelpersSkia.h"
-#include "skia/include/core/SkBitmap.h"
-#include "image_operations.h"
+#  include "HelpersSkia.h"
+#  include "skia/src/core/SkBitmapScaler.h"
 #endif
 
 namespace mozilla {
 namespace gfx {
 
-bool Scale(uint8_t* srcData, int32_t srcWidth, int32_t srcHeight, int32_t srcStride,
-           uint8_t* dstData, int32_t dstWidth, int32_t dstHeight, int32_t dstStride,
-           SurfaceFormat format)
-{
+bool Scale(uint8_t* srcData, int32_t srcWidth, int32_t srcHeight,
+           int32_t srcStride, uint8_t* dstData, int32_t dstWidth,
+           int32_t dstHeight, int32_t dstStride, SurfaceFormat format) {
 #ifdef USE_SKIA
-  SkBitmap imgSrc;
-  imgSrc.installPixels(MakeSkiaImageInfo(IntSize(srcWidth, srcHeight), format),
-                       srcData, srcStride);
+  SkPixmap srcPixmap(MakeSkiaImageInfo(IntSize(srcWidth, srcHeight), format),
+                     srcData, srcStride);
 
-  // Rescaler is compatible with 32 bpp only. Convert to RGB32 if needed.
-  if (imgSrc.colorType() != kBGRA_8888_SkColorType) {
-    imgSrc.copyTo(&imgSrc, kBGRA_8888_SkColorType);
+  // Rescaler is compatible with N32 only. Convert to N32 if needed.
+  SkBitmap tmpBitmap;
+  if (srcPixmap.colorType() != kN32_SkColorType) {
+    if (!tmpBitmap.tryAllocPixels(
+            SkImageInfo::MakeN32Premul(srcWidth, srcHeight)) ||
+        !tmpBitmap.writePixels(srcPixmap) ||
+        !tmpBitmap.peekPixels(&srcPixmap)) {
+      return false;
+    }
   }
 
-  // This returns an SkBitmap backed by dstData; since it also wrote to dstData,
-  // we don't need to look at that SkBitmap.
-  SkBitmap result = skia::ImageOperations::Resize(imgSrc,
-                                                  skia::ImageOperations::RESIZE_BEST,
-                                                  dstWidth, dstHeight,
-                                                  dstData);
-
-  return !result.isNull();
+  SkPixmap dstPixmap(SkImageInfo::MakeN32Premul(dstWidth, dstHeight), dstData,
+                     dstStride);
+  return SkBitmapScaler::Resize(dstPixmap, srcPixmap,
+                                SkBitmapScaler::RESIZE_LANCZOS3);
 #else
   return false;
 #endif
 }
 
-} // namespace gfx
-} // namespace mozilla
+}  // namespace gfx
+}  // namespace mozilla

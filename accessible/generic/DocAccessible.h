@@ -14,9 +14,8 @@
 #include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
-#include "nsIDocument.h"
+#include "mozilla/dom/Document.h"
 #include "nsIDocumentObserver.h"
-#include "nsIEditor.h"
 #include "nsIObserver.h"
 #include "nsIScrollPositionListener.h"
 #include "nsITimer.h"
@@ -27,13 +26,21 @@ class nsAccessiblePivot;
 const uint32_t kDefaultCacheLength = 128;
 
 namespace mozilla {
+
+class PresShell;
+class TextEditor;
+
+namespace dom {
+class Document;
+}
+
 namespace a11y {
 
 class DocManager;
 class NotificationController;
 class DocAccessibleChild;
 class RelatedAccIterator;
-template<class Class, class ... Args>
+template <class Class, class... Args>
 class TNotification;
 
 class DocAccessible : public HyperTextAccessibleWrap,
@@ -41,17 +48,18 @@ class DocAccessible : public HyperTextAccessibleWrap,
                       public nsIObserver,
                       public nsIScrollPositionListener,
                       public nsSupportsWeakReference,
-                      public nsIAccessiblePivotObserver
-{
+                      public nsIAccessiblePivotObserver {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocAccessible, Accessible)
 
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIACCESSIBLEPIVOTOBSERVER
 
-public:
+ protected:
+  typedef mozilla::dom::Document Document;
 
-  DocAccessible(nsIDocument* aDocument, nsIPresShell* aPresShell);
+ public:
+  DocAccessible(Document* aDocument, PresShell* aPresShell);
 
   // nsIScrollPositionListener
   virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) override {}
@@ -65,19 +73,19 @@ public:
   virtual void Shutdown() override;
   virtual nsIFrame* GetFrame() const override;
   virtual nsINode* GetNode() const override { return mDocumentNode; }
-  nsIDocument* DocumentNode() const { return mDocumentNode; }
+  Document* DocumentNode() const { return mDocumentNode; }
 
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) override;
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
   virtual void Description(nsString& aDescription) override;
   virtual Accessible* FocusedChild() override;
-  virtual mozilla::a11y::role NativeRole() override;
-  virtual uint64_t NativeState() override;
+  virtual mozilla::a11y::role NativeRole() const override;
+  virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;
   virtual bool NativelyUnavailable() const override;
   virtual void ApplyARIAState(uint64_t* aState) const override;
   virtual already_AddRefed<nsIPersistentProperties> Attributes() override;
 
-  virtual void TakeFocus() override;
+  virtual void TakeFocus() const override;
 
 #ifdef A11Y_LOG
   virtual nsresult HandleAccEvent(AccEvent* aEvent) override;
@@ -86,7 +94,7 @@ public:
   virtual nsRect RelativeBounds(nsIFrame** aRelativeFrame) const override;
 
   // HyperTextAccessible
-  virtual already_AddRefed<nsIEditor> GetEditor() const override;
+  virtual already_AddRefed<TextEditor> GetEditor() const override;
 
   // DocAccessible
 
@@ -103,7 +111,9 @@ public:
   /**
    * Return DOM document mime type.
    */
-  void MimeType(nsAString& aType) const { mDocumentNode->GetContentType(aType); }
+  void MimeType(nsAString& aType) const {
+    mDocumentNode->GetContentType(aType);
+  }
 
   /**
    * Return DOM document type.
@@ -116,9 +126,17 @@ public:
   nsIAccessiblePivot* VirtualCursor();
 
   /**
+   * Returns true if the instance has shutdown.
+   */
+  bool HasShutdown() const { return !mPresShell; }
+
+  /**
    * Return presentation shell for this document accessible.
    */
-  nsIPresShell* PresShell() const { return mPresShell; }
+  PresShell* PresShellPtr() const {
+    MOZ_DIAGNOSTIC_ASSERT(!HasShutdown());
+    return mPresShell;
+  }
 
   /**
    * Return the presentation shell's context.
@@ -128,14 +146,15 @@ public:
   /**
    * Return true if associated DOM document was loaded and isn't unloading.
    */
-  bool IsContentLoaded() const
-  {
+  bool IsContentLoaded() const {
     // eDOMLoaded flag check is used for error pages as workaround to make this
     // method return correct result since error pages do not receive 'pageshow'
-    // event and as consequence nsIDocument::IsShowing() returns false.
+    // event and as consequence Document::IsShowing() returns false.
     return mDocumentNode && mDocumentNode->IsVisible() &&
-      (mDocumentNode->IsShowing() || HasLoadState(eDOMLoaded));
+           (mDocumentNode->IsShowing() || HasLoadState(eDOMLoaded));
   }
+
+  bool IsHidden() const { return mDocumentNode->Hidden(); }
 
   /**
    * Document load states.
@@ -156,9 +175,10 @@ public:
   /**
    * Return true if the document has given document state.
    */
-  bool HasLoadState(LoadState aState) const
-    { return (mLoadState & static_cast<uint32_t>(aState)) == 
-        static_cast<uint32_t>(aState); }
+  bool HasLoadState(LoadState aState) const {
+    return (mLoadState & static_cast<uint32_t>(aState)) ==
+           static_cast<uint32_t>(aState);
+  }
 
   /**
    * Return a native window handler or pointer depending on platform.
@@ -168,20 +188,21 @@ public:
   /**
    * Return the parent document.
    */
-  DocAccessible* ParentDocument() const
-    { return mParent ? mParent->Document() : nullptr; }
+  DocAccessible* ParentDocument() const {
+    return mParent ? mParent->Document() : nullptr;
+  }
 
   /**
    * Return the child document count.
    */
-  uint32_t ChildDocumentCount() const
-    { return mChildDocuments.Length(); }
+  uint32_t ChildDocumentCount() const { return mChildDocuments.Length(); }
 
   /**
    * Return the child document at the given index.
    */
-  DocAccessible* GetChildDocumentAt(uint32_t aIndex) const
-    { return mChildDocuments.SafeElementAt(aIndex, nullptr); }
+  DocAccessible* GetChildDocumentAt(uint32_t aIndex) const {
+    return mChildDocuments.SafeElementAt(aIndex, nullptr);
+  }
 
   /**
    * Fire accessible event asynchronously.
@@ -198,11 +219,9 @@ public:
   /**
    * Get/set the anchor jump.
    */
-  Accessible* AnchorJump()
-    { return GetAccessibleOrContainer(mAnchorJumpElm); }
+  Accessible* AnchorJump() { return GetAccessibleOrContainer(mAnchorJumpElm); }
 
-  void SetAnchorJump(nsIContent* aTargetNode)
-    { mAnchorJumpElm = aTargetNode; }
+  void SetAnchorJump(nsIContent* aTargetNode) { mAnchorJumpElm = aTargetNode; }
 
   /**
    * Bind the child document to the tree.
@@ -216,10 +235,10 @@ public:
    *          notification is processed.
    * @see   NotificationController::HandleNotification
    */
-  template<class Class, class Arg>
-  void HandleNotification(Class* aInstance,
-                          typename TNotification<Class, Arg>::Callback aMethod,
-                          Arg* aArg);
+  template <class Class, class... Args>
+  void HandleNotification(
+      Class* aInstance,
+      typename TNotification<Class, Args...>::Callback aMethod, Args*... aArgs);
 
   /**
    * Return the cached accessible by the given DOM node if it's in subtree of
@@ -227,10 +246,9 @@ public:
    *
    * @return the accessible object
    */
-  Accessible* GetAccessible(nsINode* aNode) const
-  {
-    return aNode == mDocumentNode ?
-      const_cast<DocAccessible*>(this) : mNodeToAccessibleMap.Get(aNode);
+  Accessible* GetAccessible(nsINode* aNode) const {
+    return aNode == mDocumentNode ? const_cast<DocAccessible*>(this)
+                                  : mNodeToAccessibleMap.Get(aNode);
   }
 
   /**
@@ -245,8 +263,7 @@ public:
   /**
    * Return whether the given DOM node has an accessible or not.
    */
-  bool HasAccessible(nsINode* aNode) const
-    { return GetAccessible(aNode); }
+  bool HasAccessible(nsINode* aNode) const { return GetAccessible(aNode); }
 
   /**
    * Return the cached accessible by the given unique ID within this document.
@@ -255,10 +272,8 @@ public:
    *
    * @param  aUniqueID  [in] the unique ID used to cache the node.
    */
-  Accessible* GetAccessibleByUniqueID(void* aUniqueID)
-  {
-    return UniqueID() == aUniqueID ?
-      this : mAccessibleCache.GetWeak(aUniqueID);
+  Accessible* GetAccessibleByUniqueID(void* aUniqueID) {
+    return UniqueID() == aUniqueID ? this : mAccessibleCache.GetWeak(aUniqueID);
   }
 
   /**
@@ -269,15 +284,17 @@ public:
 
   /**
    * Return an accessible for the given DOM node or container accessible if
-   * the node is not accessible.
+   * the node is not accessible. If aNoContainerIfPruned is true it will return
+   * null if the node is in a pruned subtree (eg. aria-hidden or unselected deck
+   * panel)
    */
-  Accessible* GetAccessibleOrContainer(nsINode* aNode) const;
+  Accessible* GetAccessibleOrContainer(nsINode* aNode,
+                                       bool aNoContainerIfPruned = false) const;
 
   /**
    * Return a container accessible for the given DOM node.
    */
-  Accessible* GetContainerAccessible(nsINode* aNode) const
-  {
+  Accessible* GetContainerAccessible(nsINode* aNode) const {
     return aNode ? GetAccessibleOrContainer(aNode->GetParentNode()) : nullptr;
   }
 
@@ -285,7 +302,8 @@ public:
    * Return an accessible for the given node if any, or an immediate accessible
    * container for it.
    */
-  Accessible* AccessibleOrTrueContainer(nsINode* aNode) const;
+  Accessible* AccessibleOrTrueContainer(
+      nsINode* aNode, bool aNoContainerIfPruned = false) const;
 
   /**
    * Return an accessible for the given node or its first accessible descendant.
@@ -295,36 +313,31 @@ public:
   /**
    * Returns aria-owns seized child at the given index.
    */
-  Accessible* ARIAOwnedAt(Accessible* aParent, uint32_t aIndex) const
-  {
-    nsTArray<RefPtr<Accessible> >* children = mARIAOwnsHash.Get(aParent);
+  Accessible* ARIAOwnedAt(Accessible* aParent, uint32_t aIndex) const {
+    nsTArray<RefPtr<Accessible>>* children = mARIAOwnsHash.Get(aParent);
     if (children) {
       return children->SafeElementAt(aIndex);
     }
     return nullptr;
   }
-  uint32_t ARIAOwnedCount(Accessible* aParent) const
-  {
-    nsTArray<RefPtr<Accessible> >* children = mARIAOwnsHash.Get(aParent);
+  uint32_t ARIAOwnedCount(Accessible* aParent) const {
+    nsTArray<RefPtr<Accessible>>* children = mARIAOwnsHash.Get(aParent);
     return children ? children->Length() : 0;
   }
 
   /**
    * Return true if the given ID is referred by relation attribute.
-   *
-   * @note Different elements may share the same ID if they are hosted inside
-   *       XBL bindings. Be careful the result of this method may be  senseless
-   *       while it's called for XUL elements (where XBL is used widely).
    */
-  bool IsDependentID(const nsAString& aID) const
-    { return mDependentIDsHash.Get(aID, nullptr); }
+  bool IsDependentID(dom::Element* aElement, const nsAString& aID) const {
+    return GetRelProviders(aElement, aID);
+  }
 
   /**
    * Initialize the newly created accessible and put it into document caches.
    *
    * @param  aAccessible    [in] created accessible
-   * @param  aRoleMapEntry  [in] the role map entry role the ARIA role or nullptr
-   *                          if none
+   * @param  aRoleMapEntry  [in] the role map entry role the ARIA role or
+   * nullptr if none
    */
   void BindToDocument(Accessible* aAccessible,
                       const nsRoleMapEntry* aRoleMapEntry);
@@ -337,23 +350,13 @@ public:
   /**
    * Notify the document accessible that content was inserted.
    */
-  void ContentInserted(nsIContent* aContainerNode,
-                       nsIContent* aStartChildNode,
-                       nsIContent* aEndChildNode);
+  void ContentInserted(nsIContent* aStartChildNode, nsIContent* aEndChildNode);
 
   /**
-   * Notify the document accessible that content was removed.
+   * Update the tree on content removal.
    */
-  void ContentRemoved(Accessible* aContainer, nsIContent* aChildNode)
-  {
-    // Update the whole tree of this document accessible when the container is
-    // null (document element is removed).
-    UpdateTreeOnRemoval((aContainer ? aContainer : this), aChildNode);
-  }
-  void ContentRemoved(nsIContent* aContainerNode, nsIContent* aChildNode)
-  {
-    ContentRemoved(GetAccessibleOrContainer(aContainerNode), aChildNode);
-  }
+  void ContentRemoved(Accessible* aAccessible);
+  void ContentRemoved(nsIContent* aContentNode);
 
   /**
    * Updates accessible tree when rendered text is changed.
@@ -382,7 +385,7 @@ public:
    */
   DocAccessibleChild* IPCDoc() const { return mIPCDoc; }
 
-protected:
+ protected:
   virtual ~DocAccessible();
 
   void LastRelease();
@@ -426,8 +429,7 @@ protected:
    * Append the given document accessible to this document's child document
    * accessibles.
    */
-  bool AppendChildDocument(DocAccessible* aChildDocument)
-  {
+  bool AppendChildDocument(DocAccessible* aChildDocument) {
     return mChildDocuments.AppendElement(aChildDocument);
   }
 
@@ -435,8 +437,7 @@ protected:
    * Remove the given document accessible from this document's child document
    * accessibles.
    */
-  void RemoveChildDocument(DocAccessible* aChildDocument)
-  {
+  void RemoveChildDocument(DocAccessible* aChildDocument) {
     mChildDocuments.RemoveElement(aChildDocument);
   }
 
@@ -448,8 +449,7 @@ protected:
    * @param aRelProvider [in] accessible that element has relation attribute
    * @param aRelAttr     [in, optional] relation attribute
    */
-  void AddDependentIDsFor(Accessible* aRelProvider,
-                          nsIAtom* aRelAttr = nullptr);
+  void AddDependentIDsFor(Accessible* aRelProvider, nsAtom* aRelAttr = nullptr);
 
   /**
    * Remove dependent IDs pointed by accessible element by relation attribute
@@ -460,7 +460,7 @@ protected:
    * @param aRelAttr     [in, optional] relation attribute
    */
   void RemoveDependentIDsFor(Accessible* aRelProvider,
-                             nsIAtom* aRelAttr = nullptr);
+                             nsAtom* aRelAttr = nullptr);
 
   /**
    * Update or recreate an accessible depending on a changed attribute.
@@ -470,7 +470,7 @@ protected:
    * @return            true if an action was taken on the attribute change
    */
   bool UpdateAccessibleOnAttrChange(mozilla::dom::Element* aElement,
-                                    nsIAtom* aAttribute);
+                                    nsAtom* aAttribute);
 
   /**
    * Fire accessible events when attribute is changed.
@@ -479,8 +479,8 @@ protected:
    * @param aNameSpaceID  [in] namespace of changed attribute
    * @param aAttribute    [in] changed attribute
    */
-  void AttributeChangedImpl(Accessible* aAccessible,
-                            int32_t aNameSpaceID, nsIAtom* aAttribute);
+  void AttributeChangedImpl(Accessible* aAccessible, int32_t aNameSpaceID,
+                            nsAtom* aAttribute);
 
   /**
    * Fire accessible events when ARIA attribute is changed.
@@ -488,7 +488,7 @@ protected:
    * @param aAccessible  [in] accesislbe the DOM attribute is changed for
    * @param aAttribute   [in] changed attribute
    */
-  void ARIAAttributeChanged(Accessible* aAccessible, nsIAtom* aAttribute);
+  void ARIAAttributeChanged(Accessible* aAccessible, nsAtom* aAttribute);
 
   /**
    * Process ARIA active-descendant attribute change.
@@ -498,8 +498,9 @@ protected:
   /**
    * Update the accessible tree for inserted content.
    */
-  void ProcessContentInserted(Accessible* aContainer,
-                              const nsTArray<nsCOMPtr<nsIContent> >* aInsertedContent);
+  void ProcessContentInserted(
+      Accessible* aContainer,
+      const nsTArray<nsCOMPtr<nsIContent>>* aInsertedContent);
   void ProcessContentInserted(Accessible* aContainer,
                               nsIContent* aInsertedContent);
 
@@ -513,16 +514,6 @@ protected:
   void ProcessInvalidationList();
 
   /**
-   * Update the accessible tree for content removal.
-   */
-  void UpdateTreeOnRemoval(Accessible* aContainer, nsIContent* aChildNode);
-
-  /**
-   * Validates all aria-owns connections and updates the tree accordingly.
-   */
-  void ValidateARIAOwned();
-
-  /**
    * Steals or puts back accessible subtrees.
    */
   void DoARIAOwnsRelocation(Accessible* aOwner);
@@ -530,7 +521,7 @@ protected:
   /**
    * Moves children back under their original parents.
    */
-  void PutChildrenBack(nsTArray<RefPtr<Accessible> >* aChildren,
+  void PutChildrenBack(nsTArray<RefPtr<Accessible>>* aChildren,
                        uint32_t aStartIdx);
 
   bool MoveChild(Accessible* aChild, Accessible* aNewParent,
@@ -575,7 +566,7 @@ protected:
    * Set the object responsible for communicating with the main process on
    * behalf of this document.
    */
-  void SetIPCDoc(DocAccessibleChild* aIPCDoc) { mIPCDoc = aIPCDoc; }
+  void SetIPCDoc(DocAccessibleChild* aIPCDoc);
 
   friend class DocAccessibleChildBase;
 
@@ -587,8 +578,32 @@ protected:
    */
   static void ScrollTimerCallback(nsITimer* aTimer, void* aClosure);
 
-protected:
+  void DispatchScrollingEvent(uint32_t aEventType);
 
+  /**
+   * Check if an id attribute change affects aria-activedescendant and handle
+   * the aria-activedescendant change if appropriate.
+   * If the currently focused element has aria-activedescendant and an
+   * element's id changes to match this, the id was probably moved from the
+   * previous active descendant, thus making this element the new active
+   * descendant. In that case, accessible focus must be changed accordingly.
+   */
+  void ARIAActiveDescendantIDMaybeMoved(dom::Element* aElm);
+
+  /**
+   * Traverse content subtree and for each node do one of 3 things:
+   * 1. Check if content node has an accessible that should be removed and
+   *    remove it.
+   * 2. Check if content node has an accessible that needs to be recreated.
+   *    Remove it and schedule it for reinsertion.
+   * 3. Check if content node has no accessible but needs one. Schedule one for
+   *    insertion.
+   *
+   * Returns true if the root node should be reinserted.
+   */
+  bool PruneOrInsertSubtree(nsIContent* aRoot);
+
+ protected:
   /**
    * State and property flags, kept by mDocFlags.
    */
@@ -605,11 +620,12 @@ protected:
    */
   AccessibleHashtable mAccessibleCache;
   nsDataHashtable<nsPtrHashKey<const nsINode>, Accessible*>
-    mNodeToAccessibleMap;
+      mNodeToAccessibleMap;
 
-  nsIDocument* mDocumentNode;
-    nsCOMPtr<nsITimer> mScrollWatchTimer;
-    uint16_t mScrollPositionChangedTicks; // Used for tracking scroll events
+  Document* mDocumentNode;
+  nsCOMPtr<nsITimer> mScrollWatchTimer;
+  uint16_t mScrollPositionChangedTicks;  // Used for tracking scroll events
+  TimeStamp mLastScrollingDispatch;
 
   /**
    * Bit mask of document load states (@see LoadState).
@@ -637,13 +653,13 @@ protected:
    */
   union {
     // ARIA attribute value
-    nsIAtom* mARIAAttrOldValue;
+    const nsAtom* mARIAAttrOldValue;
 
     // True if the accessible state bit was on
     bool mStateBitWasOn;
   };
 
-  nsTArray<RefPtr<DocAccessible> > mChildDocuments;
+  nsTArray<RefPtr<DocAccessible>> mChildDocuments;
 
   /**
    * The virtual cursor of the document.
@@ -653,27 +669,41 @@ protected:
   /**
    * A storage class for pairing content with one of its relation attributes.
    */
-  class AttrRelProvider
-  {
-  public:
-    AttrRelProvider(nsIAtom* aRelAttr, nsIContent* aContent) :
-      mRelAttr(aRelAttr), mContent(aContent) { }
+  class AttrRelProvider {
+   public:
+    AttrRelProvider(nsAtom* aRelAttr, nsIContent* aContent)
+        : mRelAttr(aRelAttr), mContent(aContent) {}
 
-    nsIAtom* mRelAttr;
+    nsAtom* mRelAttr;
     nsCOMPtr<nsIContent> mContent;
 
-  private:
+   private:
     AttrRelProvider();
     AttrRelProvider(const AttrRelProvider&);
-    AttrRelProvider& operator =(const AttrRelProvider&);
+    AttrRelProvider& operator=(const AttrRelProvider&);
   };
+
+  typedef nsTArray<nsAutoPtr<AttrRelProvider>> AttrRelProviders;
+  typedef nsClassHashtable<nsStringHashKey, AttrRelProviders>
+      DependentIDsHashtable;
+
+  /**
+   * Returns/creates/removes attribute relation providers associated with
+   * a DOM document if the element is in uncomposed document or associated
+   * with shadow DOM the element is in.
+   */
+  AttrRelProviders* GetRelProviders(dom::Element* aElement,
+                                    const nsAString& aID) const;
+  AttrRelProviders* GetOrCreateRelProviders(dom::Element* aElement,
+                                            const nsAString& aID);
+  void RemoveRelProvidersIfEmpty(dom::Element* aElement, const nsAString& aID);
 
   /**
    * The cache of IDs pointed by relation attributes.
    */
-  typedef nsTArray<nsAutoPtr<AttrRelProvider> > AttrRelProviderArray;
-  nsClassHashtable<nsStringHashKey, AttrRelProviderArray>
-    mDependentIDsHash;
+  nsClassHashtable<nsPtrHashKey<dom::DocumentOrShadowRoot>,
+                   DependentIDsHashtable>
+      mDependentIDsHashes;
 
   friend class RelatedAccIterator;
 
@@ -688,8 +718,8 @@ protected:
   /**
    * Holds a list of aria-owns relocations.
    */
-  nsClassHashtable<nsPtrHashKey<Accessible>, nsTArray<RefPtr<Accessible> > >
-    mARIAOwnsHash;
+  nsClassHashtable<nsPtrHashKey<Accessible>, nsTArray<RefPtr<Accessible>>>
+      mARIAOwnsHash;
 
   /**
    * Used to process notification from core and accessible events.
@@ -698,21 +728,18 @@ protected:
   friend class EventTree;
   friend class NotificationController;
 
-private:
-
-  nsIPresShell* mPresShell;
+ private:
+  PresShell* mPresShell;
 
   // Exclusively owned by IPDL so don't manually delete it!
   DocAccessibleChild* mIPCDoc;
 };
 
-inline DocAccessible*
-Accessible::AsDoc()
-{
+inline DocAccessible* Accessible::AsDoc() {
   return IsDoc() ? static_cast<DocAccessible*>(this) : nullptr;
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

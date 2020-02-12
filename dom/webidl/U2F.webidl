@@ -4,15 +4,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is a combination of the FIDO U2F Raw Message Formats:
- * https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-raw-message-formats.html
- * and the U2F JavaScript API v1.1, not yet published. While v1.1 is not published,
- * v1.0, is located here:
- * https://fidoalliance.org/specs/fido-u2f-v1.0-nfc-bt-amendment-20150514/fido-u2f-javascript-api.html
+ * https://www.fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-raw-message-formats-v1.1-id-20160915.html
+ * and the U2F JavaScript API v1.1:
+ * https://www.fidoalliance.org/specs/fido-u2f-v1.1-id-20160915/fido-u2f-javascript-api-v1.1-id-20160915.html
  */
 
-[NoInterfaceObject]
-interface GlobalU2F {
-  [Throws, Pref="security.webauth.u2f"]
+interface mixin GlobalU2F {
+  [SecureContext, Throws, Pref="security.webauth.u2f", Replaceable]
   readonly attribute U2F u2f;
 };
 
@@ -26,7 +24,7 @@ enum Transport {
     "usb"
 };
 
-dictionary ClientData {
+dictionary U2FClientData {
     DOMString             typ; // Spelling is from the specification
     DOMString             challenge;
     DOMString             origin;
@@ -68,7 +66,8 @@ dictionary SignResponse {
 callback U2FRegisterCallback = void(RegisterResponse response);
 callback U2FSignCallback = void(SignResponse response);
 
-[Pref="security.webauth.u2f"]
+[SecureContext, Pref="security.webauth.u2f",
+ Exposed=Window]
 interface U2F {
   // These enumerations are defined in the FIDO U2F Javascript API under the
   // interface "ErrorCode" as constant integers, and also in the U2F.cpp file.
@@ -80,17 +79,29 @@ interface U2F {
   const unsigned short DEVICE_INELIGIBLE = 4;
   const unsigned short TIMEOUT = 5;
 
-  [Throws]
-  void register (DOMString appId,
-                 sequence<RegisterRequest> registerRequests,
-                 sequence<RegisteredKey> registeredKeys,
-                 U2FRegisterCallback callback,
-                 optional long? opt_timeoutSeconds);
+  // Returns a Function.  It's readonly + [LenientSetter] to keep the Google
+  // U2F polyfill from stomping on the value.
+  [LenientSetter, Pure, Cached, Throws]
+  readonly attribute object register;
 
-  [Throws]
-  void sign (DOMString appId,
-             DOMString challenge,
-             sequence<RegisteredKey> registeredKeys,
-             U2FSignCallback callback,
-             optional long? opt_timeoutSeconds);
+  // A way to generate the actual implementation of register()
+  [Unexposed, Throws, BinaryName="Register"]
+  void register_impl(DOMString appId,
+                     sequence<RegisterRequest> registerRequests,
+                     sequence<RegisteredKey> registeredKeys,
+                     U2FRegisterCallback callback,
+                     optional long? opt_timeoutSeconds);
+
+  // Returns a Function.  It's readonly + [LenientSetter] to keep the Google
+  // U2F polyfill from stomping on the value.
+  [LenientSetter, Pure, Cached, Throws]
+  readonly attribute object sign;
+
+  // A way to generate the actual implementation of sign()
+  [Unexposed, Throws, BinaryName="Sign"]
+  void sign_impl (DOMString appId,
+                  DOMString challenge,
+                  sequence<RegisteredKey> registeredKeys,
+                  U2FSignCallback callback,
+                  optional long? opt_timeoutSeconds);
 };

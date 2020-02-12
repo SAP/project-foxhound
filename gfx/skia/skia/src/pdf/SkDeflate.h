@@ -9,8 +9,6 @@
 #ifndef SkFlate_DEFINED
 #define SkFlate_DEFINED
 
-#include "SkTypes.h"
-
 #include "SkStream.h"
 
 /**
@@ -30,14 +28,14 @@ public:
         @param gzip iff true, output a gzip file. "The gzip format is
         a wrapper, documented in RFC 1952, around a deflate stream."
         gzip adds a header with a magic number to the beginning of the
-        stream, alowing a client to identify a gzip file.
+        stream, allowing a client to identify a gzip file.
      */
     SkDeflateWStream(SkWStream*,
                      int compressionLevel = -1,
                      bool gzip = false);
 
     /** The destructor calls finalize(). */
-    ~SkDeflateWStream();
+    ~SkDeflateWStream() override;
 
     /** Write the end of the compressed stream.  All subsequent calls to
         write() will fail. Subsequent calls to finalize() do nothing. */

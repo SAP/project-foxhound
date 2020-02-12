@@ -6,9 +6,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=567213
 
 <head>
   <title>Test for Bug 567213</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 
 <body>
@@ -37,7 +37,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=567213
         target.focus();
 
         // press some key
-        synthesizeKey("X", {});
+        sendString("X");
         is(target.textContent, "X", "Text input should work (sanity check)");
 
         // select the contents of the editable area again
@@ -46,7 +46,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=567213
         thief.focus();
 
         // press some key with the thief having focus
-        synthesizeKey("Y", {});
+        sendString("Y");
         is(target.textContent, "X", "Text entry should not work with another element focused");
 
         SimpleTest.finish();

@@ -1,23 +1,20 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
 // Test that NetworkHelper.parseSecurityInfo returns correctly formatted object.
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 
 Object.defineProperty(this, "NetworkHelper", {
-  get: function () {
+  get: function() {
     return require("devtools/shared/webconsole/network-helper");
   },
   configurable: true,
   writeable: false,
-  enumerable: true
+  enumerable: true,
 });
 
-var Ci = Components.interfaces;
 const wpl = Ci.nsIWebProgressListener;
 const MockCertificate = {
   commonName: "cn",
@@ -31,33 +28,39 @@ const MockCertificate = {
   validity: {
     notBeforeLocalDay: "yesterday",
     notAfterLocalDay: "tomorrow",
-  }
+  },
 };
 
+// This *cannot* be used as an nsITransportSecurityInfo (since that interface is
+// builtinclass) but the methods being tested aren't defined by XPCOM and aren't
+// calling QueryInterface, so this usage is fine.
 const MockSecurityInfo = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsITransportSecurityInfo,
-                                         Ci.nsISSLStatusProvider]),
   securityState: wpl.STATE_IS_SECURE,
   errorCode: 0,
-  SSLStatus: {
-    cipherSuite: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
-    protocolVersion: 3, // TLS_VERSION_1_2
-    serverCert: MockCertificate,
-  }
+  cipherName: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
+  // TLS_VERSION_1_2
+  protocolVersion: 3,
+  serverCert: MockCertificate,
 };
 
 function run_test() {
-  let result = NetworkHelper.parseSecurityInfo(MockSecurityInfo, {});
+  const result = NetworkHelper.parseSecurityInfo(MockSecurityInfo, {});
 
   equal(result.state, "secure", "State is correct.");
 
-  equal(result.cipherSuite, MockSecurityInfo.cipherSuite,
-    "Cipher suite is correct.");
+  equal(
+    result.cipherSuite,
+    MockSecurityInfo.cipherName,
+    "Cipher suite is correct."
+  );
 
   equal(result.protocolVersion, "TLSv1.2", "Protocol version is correct.");
 
-  deepEqual(result.cert, NetworkHelper.parseCertificateInfo(MockCertificate),
-    "Certificate information is correct.");
+  deepEqual(
+    result.cert,
+    NetworkHelper.parseCertificateInfo(MockCertificate),
+    "Certificate information is correct."
+  );
 
   equal(result.hpkp, false, "HPKP is false when URI is not available.");
   equal(result.hsts, false, "HSTS is false when URI is not available.");

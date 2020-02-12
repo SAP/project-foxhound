@@ -1,54 +1,48 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const TEST_URL = "data:text/html,test custom host";
 
-function test() {
-  let {Toolbox} = require("devtools/client/framework/toolbox");
+add_task(async function() {
+  const { Toolbox } = require("devtools/client/framework/toolbox");
 
-  let toolbox, iframe, target;
-
-  window.addEventListener("message", onMessage);
-
-  iframe = document.createElement("iframe");
-  document.documentElement.appendChild(iframe);
-
-  addTab(TEST_URL).then(function (tab) {
-    target = TargetFactory.forTab(tab);
-    let options = {customIframe: iframe};
-    gDevTools.showToolbox(target, null, Toolbox.HostType.CUSTOM, options)
-             .then(testCustomHost, console.error)
-             .then(null, console.error);
+  const messageReceived = new Promise(resolve => {
+    function onMessage(event) {
+      if (!event.data) {
+        return;
+      }
+      const msg = event.data;
+      info(`onMessage: ${JSON.stringify(msg)}`);
+      switch (msg.name) {
+        case "toolbox-close":
+          ok(true, "Got the `toolbox-close` message");
+          window.removeEventListener("message", onMessage);
+          resolve();
+          break;
+      }
+    }
+    window.addEventListener("message", onMessage);
   });
 
-  function onMessage(event) {
-    info("onMessage: " + event.data);
-    let json = JSON.parse(event.data);
-    if (json.name == "toolbox-close") {
-      ok("Got the `toolbox-close` message");
-      window.removeEventListener("message", onMessage);
-      cleanup();
-    }
-  }
+  let iframe = document.createXULElement("iframe");
+  document.documentElement.appendChild(iframe);
 
-  function testCustomHost(t) {
-    toolbox = t;
-    is(toolbox.win.top, window, "Toolbox is included in browser.xul");
-    is(toolbox.doc, iframe.contentDocument, "Toolbox is in the custom iframe");
-    executeSoon(() => gBrowser.removeCurrentTab());
-  }
+  const tab = await addTab(TEST_URL);
+  let target = await TargetFactory.forTab(tab);
+  const options = { customIframe: iframe };
+  let toolbox = await gDevTools.showToolbox(
+    target,
+    null,
+    Toolbox.HostType.CUSTOM,
+    options
+  );
 
-  function cleanup() {
-    iframe.remove();
+  is(toolbox.topWindow, window, "Toolbox is included in browser.xhtml");
+  is(toolbox.doc, iframe.contentDocument, "Toolbox is in the custom iframe");
 
-    // Even if we received "toolbox-close", the toolbox may still be destroying
-    // toolbox.destroy() returns a singleton promise that ensures
-    // everything is cleaned up before proceeding.
-    toolbox.destroy().then(() => {
-      toolbox = iframe = target = null;
-      finish();
-    });
-  }
-}
+  iframe.remove();
+  await toolbox.destroy();
+  await messageReceived;
+
+  iframe = toolbox = target = null;
+});

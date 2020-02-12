@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=907503
 -->
 <head>
   <title>Test for Bug 907503</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <script type="application/javascript" src="imgutils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=907503
   <img>
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 /** Test for Bug 907503**/
 
 SimpleTest.requestFlakyTimeout("Early failure timeout");
@@ -86,7 +86,7 @@ function cleanUpAndFinish() {
   if (gIsTestFinished) {
     return;
   }
-  let imgLoadingContent = SpecialPowers.wrap(gImg).QueryInterface(Ci.nsIImageLoadingContent);
+  let imgLoadingContent = SpecialPowers.wrap(gImg);
   imgLoadingContent.removeObserver(gMyDecoderObserver);
   SimpleTest.finish();
   gIsTestFinished = true;
@@ -96,12 +96,12 @@ function main() {
   takeReferenceSnapshot();
 
   // Create, customize & attach decoder observer
-  observer = new ImageDecoderObserverStub();
+  var observer = new ImageDecoderObserverStub();
   observer.frameUpdate = myOnFrameUpdate;
   gMyDecoderObserver =
     Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
       .createScriptedObserver(SpecialPowers.wrapCallbackObject(observer));
-  let imgLoadingContent = SpecialPowers.wrap(gImg).QueryInterface(Ci.nsIImageLoadingContent);
+  let imgLoadingContent = SpecialPowers.wrap(gImg);
   imgLoadingContent.addObserver(gMyDecoderObserver);
 
   // We want to test the cold loading behavior, so clear cache in case an

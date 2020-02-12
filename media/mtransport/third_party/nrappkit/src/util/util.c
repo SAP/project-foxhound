@@ -36,9 +36,6 @@
    ekr@rtfm.com  Wed Dec 26 17:19:36 2001
  */
 
-
-static char *RCSSTRING __UNUSED__ ="$Id: util.c,v 1.5 2007/11/21 00:09:13 adamcain Exp $";
-
 #ifndef WIN32
 #include <sys/uio.h>
 #include <pwd.h>
@@ -506,7 +503,7 @@ strlcat(dst, src, siz)
 
 #endif  /* LINUX or WIN32 */
 
-#if defined(USE_OWN_INET_NTOP) || defined(WIN32)
+#if defined(USE_OWN_INET_NTOP) || (defined(WIN32) && WINVER < 0x0600)
 #include <errno.h>
 #ifdef WIN32
 #include <Ws2ipdef.h>
@@ -774,19 +771,5 @@ int gettimeofday(struct timeval *tv, void *tz)
 
     return 0;
   }
-
-#if _MSC_VER < 1900
-int snprintf(char *buffer, size_t n, const char *format, ...)
-{
-  va_list argp;
-  int ret;
-  va_start(argp, format);
-  ret = _vscprintf(format, argp);
-  vsnprintf_s(buffer, n, _TRUNCATE, format, argp);
-  va_end(argp);
-  return ret;
-}
-#endif
-
 #endif
 

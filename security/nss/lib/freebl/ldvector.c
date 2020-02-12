@@ -10,6 +10,7 @@ extern int FREEBL_InitStubs(void);
 #endif
 
 #include "loader.h"
+#include "cmac.h"
 #include "alghmac.h"
 #include "hmacct.h"
 #include "blapii.h"
@@ -294,9 +295,41 @@ static const struct FREEBLVectorStr vector =
       ChaCha20Poly1305_CreateContext,
       ChaCha20Poly1305_DestroyContext,
       ChaCha20Poly1305_Seal,
-      ChaCha20Poly1305_Open
+      ChaCha20Poly1305_Open,
 
       /* End of Version 3.018 */
+
+      EC_GetPointSize,
+
+      /* End of Version 3.019 */
+
+      BLAKE2B_Hash,
+      BLAKE2B_HashBuf,
+      BLAKE2B_MAC_HashBuf,
+      BLAKE2B_NewContext,
+      BLAKE2B_DestroyContext,
+      BLAKE2B_Begin,
+      BLAKE2B_MAC_Begin,
+      BLAKE2B_Update,
+      BLAKE2B_End,
+      BLAKE2B_FlattenSize,
+      BLAKE2B_Flatten,
+      BLAKE2B_Resurrect,
+
+      /* End of Version 3.020 */
+
+      ChaCha20_Xor,
+
+      /* End of version 3.021 */
+
+      CMAC_Init,
+      CMAC_Create,
+      CMAC_Begin,
+      CMAC_Update,
+      CMAC_Finish,
+      CMAC_Destroy
+
+      /* End of version 3.022 */
     };
 
 const FREEBLVector*
@@ -316,8 +349,12 @@ FREEBL_GetVector(void)
         return NULL;
     }
 #endif
-    /* make sure the Full self tests have been run before continuing */
+
+#ifndef NSS_FIPS_DISABLED
+    /* In FIPS mode make sure the Full self tests have been run before
+     * continuing. */
     BL_POSTRan(PR_FALSE);
+#endif
 
     return &vector;
 }

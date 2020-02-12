@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for miscellaneous computed style issues</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -43,14 +43,13 @@ function test_bug_841601() {
   is(cs.backgroundBlendMode, "normal, multiply, screen, overlay, darken, lighten, color-dodge, color-burn, hard-light, soft-light, difference, exclusion, hue, saturation, color, luminosity",
      "set all blendmodes");
 
-  p.parentNode.removeChild(p);
+  p.remove();
 
   SimpleTest.finish();
 }
 
 SimpleTest.waitForExplicitFinish();
-SpecialPowers.pushPrefEnv({ "set": [["layout.css.background-blend-mode.enabled", true]] },
-                          test_bug_841601);
+test_bug_841601();
 
 </script>
 </pre>

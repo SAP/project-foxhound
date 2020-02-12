@@ -9,58 +9,46 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestCancelParent : public PTestCancelParent {
+ public:
+  TestCancelParent();
+  virtual ~TestCancelParent();
 
-class TestCancelParent :
-    public PTestCancelParent
-{
-public:
-    TestCancelParent();
-    virtual ~TestCancelParent();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return false; }
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return false; }
+  void Main();
 
-    void Main();
+  mozilla::ipc::IPCResult RecvDone1();
+  mozilla::ipc::IPCResult RecvTest2_1();
+  mozilla::ipc::IPCResult RecvStart3();
+  mozilla::ipc::IPCResult RecvTest3_2();
+  mozilla::ipc::IPCResult RecvDone();
 
-    virtual bool RecvDone1() override;
-    virtual bool RecvTest2_1() override;
-    virtual bool RecvStart3() override;
-    virtual bool RecvTest3_2() override;
-    virtual bool RecvDone() override;
+  mozilla::ipc::IPCResult RecvCheckParent(uint32_t* reply);
 
-    virtual bool RecvCheckParent(uint32_t *reply) override;
-
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestCancelChild : public PTestCancelChild {
+ public:
+  TestCancelChild();
+  virtual ~TestCancelChild();
 
-class TestCancelChild :
-    public PTestCancelChild
-{
-public:
-    TestCancelChild();
-    virtual ~TestCancelChild();
+  mozilla::ipc::IPCResult RecvTest1_1();
+  mozilla::ipc::IPCResult RecvStart2();
+  mozilla::ipc::IPCResult RecvTest2_2();
+  mozilla::ipc::IPCResult RecvTest3_1();
 
-    virtual bool RecvTest1_1() override;
-    virtual bool RecvStart2() override;
-    virtual bool RecvTest2_2() override;
-    virtual bool RecvTest3_1() override;
+  mozilla::ipc::IPCResult RecvCheckChild(uint32_t* reply);
 
-    virtual bool RecvCheckChild(uint32_t *reply) override;
-
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override { QuitChild(); }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestCancel_h
+#endif  // ifndef mozilla__ipdltest_TestCancel_h

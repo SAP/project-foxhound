@@ -11,43 +11,42 @@
 
 namespace mozilla {
 
-class MediaStreamVideoSink;
+class VideoFrameContainer;
+class VideoOutput;
 
 namespace dom {
 
 class VideoStreamTrack : public MediaStreamTrack {
-public:
-  VideoStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
-                   TrackID aInputTrackID,
-                   MediaStreamTrackSource* aSource,
-                   const MediaTrackConstraints& aConstraints = MediaTrackConstraints())
-    : MediaStreamTrack(aStream, aTrackID, aInputTrackID, aSource, aConstraints) {}
+ public:
+  VideoStreamTrack(
+      nsPIDOMWindowInner* aWindow, mozilla::MediaTrack* aInputTrack,
+      MediaStreamTrackSource* aSource,
+      MediaStreamTrackState aState = MediaStreamTrackState::Live,
+      const MediaTrackConstraints& aConstraints = MediaTrackConstraints());
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  void Destroy() override;
 
   VideoStreamTrack* AsVideoStreamTrack() override { return this; }
-
   const VideoStreamTrack* AsVideoStreamTrack() const override { return this; }
 
-  void AddVideoOutput(MediaStreamVideoSink* aSink);
-  void RemoveVideoOutput(MediaStreamVideoSink* aSink);
+  void AddVideoOutput(VideoFrameContainer* aSink);
+  void AddVideoOutput(VideoOutput* aOutput);
+  void RemoveVideoOutput(VideoFrameContainer* aSink);
+  void RemoveVideoOutput(VideoOutput* aOutput);
 
   // WebIDL
   void GetKind(nsAString& aKind) override { aKind.AssignLiteral("video"); }
 
-protected:
-  already_AddRefed<MediaStreamTrack> CloneInternal(DOMMediaStream* aOwningStream,
-                                                   TrackID aTrackID) override
-  {
-    return do_AddRef(new VideoStreamTrack(aOwningStream,
-                                          aTrackID,
-                                          mInputTrackID,
-                                          mSource,
-                                          mConstraints));
-  }
+  void GetLabel(nsAString& aLabel, CallerType aCallerType) override;
+
+ protected:
+  already_AddRefed<MediaStreamTrack> CloneInternal() override;
+
+ private:
+  nsTArray<RefPtr<VideoOutput>> mVideoOutputs;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* VIDEOSTREAMTRACK_H_ */

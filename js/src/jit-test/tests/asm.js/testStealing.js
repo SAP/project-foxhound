@@ -1,3 +1,5 @@
+// |jit-test| skip-if: !isAsmJSCompilationAvailable()
+
 load(libdir + "asm.js");
 load(libdir + "asserts.js");
 

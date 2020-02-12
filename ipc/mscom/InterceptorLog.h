@@ -7,22 +7,30 @@
 #ifndef mozilla_mscom_InterceptorLog_h
 #define mozilla_mscom_InterceptorLog_h
 
+#include "mozilla/TimeStamp.h"
+#include "nsString.h"
+
 struct ICallFrame;
 struct IUnknown;
 
 namespace mozilla {
 namespace mscom {
 
-class InterceptorLog
-{
-public:
+class InterceptorLog {
+ public:
   static bool Init();
-  static void QI(HRESULT aResult, IUnknown* aTarget, REFIID aIid, IUnknown* aInterface);
-  static void Event(ICallFrame* aCallFrame, IUnknown* aTarget);
+  static void QI(HRESULT aResult, IUnknown* aTarget, REFIID aIid,
+                 IUnknown* aInterface,
+                 const TimeDuration* aOverheadDuration = nullptr,
+                 const TimeDuration* aGeckoDuration = nullptr);
+  static void CaptureFrame(ICallFrame* aCallFrame, IUnknown* aTarget,
+                           nsACString& aCapturedFrame);
+  static void Event(const nsACString& aCapturedFrame,
+                    const TimeDuration& aOverheadDuration,
+                    const TimeDuration& aGeckoDuration);
 };
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla
 
-#endif // mozilla_mscom_InterceptorLog_h
-
+#endif  // mozilla_mscom_InterceptorLog_h

@@ -1,104 +1,148 @@
-var harness = SimpleTest.harnessParameters.testRoot == "chrome" ? "chrome" : "tests";
-var BASE_URL = "http://mochi.test:8888/" + harness + "/dom/tests/mochitest/geolocation/network_geolocation.sjs";
+"use strict";
 
-function sleep(delay)
-{
-    var start = Date.now();
-    while (Date.now() < start + delay);
+var harness =
+  SimpleTest.harnessParameters.testRoot == "chrome" ? "chrome" : "tests";
+var BASE_URL =
+  "http://mochi.test:8888/" +
+  harness +
+  "/dom/tests/mochitest/geolocation/network_geolocation.sjs";
+
+function set_geo_wifi_uri(uri, callback) {
+  // Disable NetworkGeolocationProvider.js request cache because the cache
+  // does not remember from which location service it came from. We expect
+  // different results when we change the provider URL (geo.wifi.uri).
+  set_network_request_cache_enabled(false, () => {
+    SpecialPowers.pushPrefEnv({ set: [["geo.wifi.uri", uri]] }, callback);
+  });
+}
+
+function sleep(delay) {
+  var start = Date.now();
+  while (Date.now() < start + delay) {}
 }
 
 function force_prompt(allow, callback) {
-  SpecialPowers.pushPrefEnv({"set": [["geo.prompt.testing", true], ["geo.prompt.testing.allow", allow]]}, callback);
+  SpecialPowers.pushPrefEnv(
+    {
+      set: [["geo.prompt.testing", true], ["geo.prompt.testing.allow", allow]],
+    },
+    callback
+  );
 }
 
-function start_sending_garbage(callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + "?action=respond-garbage"]]}, function() {
+function start_sending_garbage(callback) {
+  set_geo_wifi_uri(BASE_URL + "?action=respond-garbage", () => {
     // we need to be sure that all location data has been purged/set.
     sleep(1000);
     callback.call();
   });
 }
 
-function stop_sending_garbage(callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + ""]]}, function() {
+function stop_sending_garbage(callback) {
+  set_geo_wifi_uri(BASE_URL + "", () => {
     // we need to be sure that all location data has been purged/set.
     sleep(1000);
     callback.call();
   });
 }
 
-function stop_geolocationProvider(callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + "?action=stop-responding"]]}, function() {
+function stop_geolocationProvider(callback) {
+  set_geo_wifi_uri(BASE_URL + "?action=stop-responding", () => {
     // we need to be sure that all location data has been purged/set.
     sleep(1000);
     callback.call();
   });
 }
 
-function set_network_request_cache_enabled(enabled, callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.debug.requestCache.enabled", enabled]]}, callback);
+function set_network_request_cache_enabled(enabled, callback) {
+  SpecialPowers.pushPrefEnv(
+    { set: [["geo.wifi.debug.requestCache.enabled", enabled]] },
+    callback
+  );
 }
 
-function worse_geolocationProvider(callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + "?action=worse-accuracy"]]}, callback);
+function worse_geolocationProvider(callback) {
+  set_geo_wifi_uri(BASE_URL + "?action=worse-accuracy", callback);
 }
 
-function resume_geolocationProvider(callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + ""]]}, callback);
+function resume_geolocationProvider(callback) {
+  set_geo_wifi_uri(BASE_URL + "", callback);
 }
 
-function delay_geolocationProvider(delay, callback)
-{
-  SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + "?delay=" + delay]]}, callback);
+function delay_geolocationProvider(delay, callback) {
+  set_geo_wifi_uri(BASE_URL + "?delay=" + delay, callback);
 }
 
-function send404_geolocationProvider(callback)
-{
-  set_network_request_cache_enabled(false, function() {
-    SpecialPowers.pushPrefEnv({"set": [["geo.wifi.uri", BASE_URL + "?action=send404"]]}, callback);});
+function send404_geolocationProvider(callback) {
+  set_geo_wifi_uri(BASE_URL + "?action=send404", callback);
 }
 
 function check_geolocation(location) {
-
   ok(location, "Check to see if this location is non-null");
 
-  ok("timestamp" in location, "Check to see if there is a timestamp");
+  const timestamp = location.timestamp;
+  dump(`timestamp=$timestamp}\n`);
+  ok(IsNumber(timestamp), "check timestamp type");
+  ok(timestamp > 0, "check timestamp range");
 
   // eventually, coords may be optional (eg, when civic addresses are supported)
   ok("coords" in location, "Check to see if this location has a coords");
 
-  var coords = location.coords;
+  const {
+    latitude,
+    longitude,
+    accuracy,
+    altitude,
+    altitudeAccuracy,
+    speed,
+    heading,
+  } = location.coords;
 
-  ok("latitude" in coords, "Check to see if there is a latitude");
-  ok("longitude" in coords, "Check to see if there is a longitude");
-  ok("accuracy" in coords, "Check to see if there is a accuracy");
-  
-  // optional ok("altitude" in coords, "Check to see if there is a altitude");
-  // optional ok("altitudeAccuracy" in coords, "Check to see if there is a alt accuracy");
-  // optional ok("heading" in coords, "Check to see if there is a heading");
-  // optional ok("speed" in coords, "Check to see if there is a speed");
+  dump(`latitude=${latitude}\n`);
+  dump(`longitude=${longitude}\n`);
+  dump(`accuracy=${accuracy}\n`);
+  dump(`altitude=${altitude}\n`);
+  dump(`altitudeAccuracy=${altitudeAccuracy}\n`);
+  dump(`speed=${speed}\n`);
+  dump(`heading=${heading}\n`);
 
-  ok (Math.abs(location.coords.latitude - 37.41857) < 0.001, "lat matches known value");
-  ok (Math.abs(location.coords.longitude + 122.08769) < 0.001, "lon matches known value");
-  // optional  ok(location.coords.altitude == 42, "alt matches known value");
-  // optional  ok(location.coords.altitudeAccuracy == 42, "alt acc matches known value");
+  ok(IsNumber(latitude), "check latitude type");
+  ok(IsNumber(longitude), "check longitude type");
+
+  ok(
+    Math.abs(latitude - 37.41857) < 0.001,
+    "latitude matches hard-coded value"
+  );
+  ok(
+    Math.abs(longitude + 122.08769) < 0.001,
+    "longitude matches hard-coded value"
+  );
+
+  ok(IsNonNegativeNumber(accuracy), "check accuracy type and range");
+  ok(IsNumber(altitude) || altitude === null, "check accuracy type");
+
+  ok(
+    (IsNonNegativeNumber(altitudeAccuracy) && IsNumber(altitude)) ||
+      altitudeAccuracy === null,
+    "check altitudeAccuracy type and range"
+  );
+
+  ok(
+    IsNonNegativeNumber(speed) || speed === null,
+    "check speed type and range"
+  );
+
+  ok(
+    (IsNonNegativeNumber(heading) && heading < 360 && speed > 0) ||
+      heading === null,
+    "check heading type and range"
+  );
 }
 
-function toggleGeolocationSetting(value, callback) {
-  var mozSettings = window.navigator.mozSettings;
-  var lock = mozSettings.createLock();
+function IsNumber(x) {
+  return typeof x === "number" && !Number.isNaN(x);
+}
 
-  var geoenabled = {"geolocation.enabled": value};
-
-  req = lock.set(geoenabled);
-  req.onsuccess = function () {
-    ok(true, "set done");
-    callback();
-  }
+function IsNonNegativeNumber(x) {
+  return IsNumber(x) && x >= 0;
 }

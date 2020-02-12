@@ -28,10 +28,10 @@
  * There are a couple of central data structures (classes) that are used to
  * manage taint information. These are:
  *
+ *   TaintLocation      Information about where a taint operation took place
+ *
  *   TaintOperation     An operation performed on tainted data. These could be
  *                      operations like substr(), replace(), concat(), ...
- *
- *   TaintSource        An alias for TaintOperation.
  *
  *   TaintFlow          Represent a flow of tainted data through the engine.
  *                      A flow is comprised of a source (e.g. location.hash)
@@ -57,6 +57,39 @@
  */
 
 /*
+ * Information on the location of a taint operation/source/sink
+ *
+ * Used to track exact operation locations in a taint flow.
+ */
+class TaintLocation
+{
+  public:
+
+    TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function);
+
+    TaintLocation();
+
+    // These work fine as long as we are using stl classes.
+    TaintLocation(const TaintLocation& other) = default;
+    TaintLocation& operator=(const TaintLocation& other) = default;
+
+    // MSVC doesn't let us = default these :(
+    TaintLocation(TaintLocation&& other);
+    TaintLocation& operator=(TaintLocation&& other);
+
+    const std::u16string& filename() const { return filename_; }
+    uint32_t line() const { return line_; }
+    uint32_t pos() const { return pos_; }
+    const std::u16string& function() const { return function_; }
+
+  private:
+    std::u16string filename_;
+    uint32_t line_;
+    uint32_t pos_;
+    std::u16string function_;
+};
+
+/*
  * An operation performed on tainted data.
  *
  * These could also be shared between taint nodes, but it's most likely not worth
@@ -65,13 +98,18 @@
 class TaintOperation
 {
   public:
-    typedef std::vector<std::u16string>::iterator iterator;
 
     TaintOperation(const char* name, std::initializer_list<std::u16string> args);
     TaintOperation(const char* name, std::vector<std::u16string> args);
 
+    TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args);
+    TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args);
+
     // Constructs a taint operation with no arguments.
     TaintOperation(const char* name);
+
+    // Constructs a taint operation with location information
+    TaintOperation(const char* name, TaintLocation location);
 
     // These work fine as long as we are using stl classes.
     TaintOperation(const TaintOperation& other) = default;
@@ -82,8 +120,12 @@ class TaintOperation
     TaintOperation& operator=(TaintOperation&& other);
 
     const char* name() const { return name_.c_str(); }
-
     const std::vector<std::u16string>& arguments() const { return arguments_; }
+    const TaintLocation& location() const { return location_; }
+
+    // Getter and setter to mark a taint source
+    bool isSource() const { return source_ != 0; }
+    void setSource() { source_ = 1; }
 
   private:
     // The operation name is owned by this instance. It will be copied from the
@@ -92,10 +134,12 @@ class TaintOperation
 
     // The argument strings are owned by node instances as well.
     std::vector<std::u16string> arguments_;
-};
 
-// An alias to make the code at taint sources a bit more intuitive.
-typedef TaintOperation TaintSource;
+    // Is this Operation a Source
+    uint8_t source_;
+
+    TaintLocation location_;
+};
 
 
 /*
@@ -118,7 +162,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation operation);
     // Constructs a root node.
-    TaintNode(TaintSource operation);
+    TaintNode(TaintOperation operation);
 
     // Increments the reference count of this object by one.
     void addref();
@@ -214,8 +258,7 @@ class TaintFlow
     };
 
   public:
-    typedef Iterator iterator;
-
+   
     // Creates an empty taint flow.
     TaintFlow();
 
@@ -226,7 +269,7 @@ class TaintFlow
     explicit TaintFlow(TaintNode* head);
 
     // Construct a new taint flow from the provided taint source.
-    TaintFlow(TaintSource source);
+    TaintFlow(TaintOperation source);
 
     // Copying taint flows is an O(1) operation since it only requires
     // incrementing the reference count on the head node of the flow.
@@ -243,7 +286,7 @@ class TaintFlow
     TaintNode* head() const { return head_; }
 
     // Returns the source of this taint flow.
-    const TaintSource& source() const;
+    const TaintOperation& source() const;
 
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.
@@ -255,8 +298,8 @@ class TaintFlow
     // starting at the newest node.
     // Since TaintNodes are inherently immutable, we can safely return non-const
     // pointers here.
-    iterator begin() const;
-    iterator end() const;
+    TaintFlow::Iterator begin() const;
+    TaintFlow::Iterator end() const;
 
     // Constructs a new taint node as child of the head node in this flow and
     // returns a new taint flow starting at that node.
@@ -312,7 +355,16 @@ class TaintRange {
     // Resizes this range.
     void resize(uint32_t begin, uint32_t end);
 
+    // Re-sizes the range to convert from ASCII to base64
+    void toBase64();
+    // Re-sizes the range to convert from base64 to ASCII
+    void fromBase64();
+
   private:
+
+    static uint32_t convertBaseBegin(uint32_t ntet, uint32_t nwidth, uint32_t m_tet);
+    static uint32_t convertBaseEnd(uint32_t ntet, uint32_t nwidth, uint32_t m_tet);
+
     uint32_t begin_, end_;
 
     TaintFlow flow_;
@@ -343,11 +395,9 @@ class TaintRange {
 class StringTaint
 {
   public:
-    typedef std::vector<TaintRange>::iterator iterator;
-    typedef std::vector<TaintRange>::const_iterator const_iterator;
 
     // Constructs an empty instance without any taint flows.
-    StringTaint();
+    explicit constexpr StringTaint() : ranges_(nullptr) { }
 
     // Constructs a new instance containing a single taint range.
     explicit StringTaint(TaintRange range);
@@ -359,7 +409,11 @@ class StringTaint
     // Construct taint information for a uniformly tainted string.
     explicit StringTaint(TaintFlow taint, uint32_t length);
 
-    ~StringTaint();
+    // Default destructor needed to allow the StringTaint class to
+    // act as a literal and appear in constexpr's, e.g. EmptyTaint
+    // This means that any instance of StringTaint needs to call
+    // clear() before the object goes out of scope.
+    ~StringTaint() = default;
 
     StringTaint(const StringTaint& other);
     StringTaint(StringTaint&& other);
@@ -388,7 +442,7 @@ class StringTaint
         clearBetween(index, index+1);
     }
 
-    // Shifts all taint information after the givne index by the given amount
+    // Shifts all taint information after the given index by the given amount
     // to the right.
     void shift(uint32_t index, int amount);
 
@@ -441,6 +495,9 @@ class StringTaint
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& extend(TaintOperation operation);
 
+    // Adds a taint operation to the taint flows of all ranges in this instance.
+    StringTaint& overlay(uint32_t begin, uint32_t end, TaintOperation operation);
+
     // Appends a taint range.
     //
     // It is only possible to insert ranges at the end, so the start index of
@@ -455,12 +512,16 @@ class StringTaint
     // TODO rename to append
     StringTaint& concat(const StringTaint& other, uint32_t offset);
 
-    // Iterate over the taint ranges.
-    iterator begin();
-    iterator end();
-    const_iterator begin() const;
-    const_iterator end() const;
+    // Re-sizes all taint ranges to convert from ASCII to base64
+    StringTaint& toBase64();
+    // Re-sizes all taint ranges to convert from base64 to ASCII
+    StringTaint& fromBase64();
 
+    // Iterate over the taint ranges.
+    std::vector<TaintRange>::iterator begin();
+    std::vector<TaintRange>::iterator end();
+    std::vector<TaintRange>::const_iterator begin() const;
+    std::vector<TaintRange>::const_iterator end() const;
 
     //
     // Static constructors corresponding to common string operations.
@@ -479,9 +540,17 @@ class StringTaint
     // by the given taint operation.
     static StringTaint extend(const StringTaint& taint, const TaintOperation& operation);
 
+    // Creates a copy of the provided taint information with each range adjusted to base64
+    static StringTaint toBase64(const StringTaint& taint);
+    // Creates a copy of the provided taint information with each range adjusted from base64
+    static StringTaint fromBase64(const StringTaint& taint);
+
   private:
     // Assign a new range vector and delete the old one.
     void assign(std::vector<TaintRange>* ranges);
+
+    // Resize any overlapping ranges
+    void removeOverlaps();
 
     // Here we optimize for the (common) case of untainted strings by only
     // storing a single pointer per instance. This keeps untainted strings
@@ -501,6 +570,8 @@ static_assert(sizeof(StringTaint) == sizeof(void*), "Class StringTaint must be c
 // Empty taint instance for convenience.
 // Using a macro here (instead of an exported instance) should be slightly
 // faster since no memory accesses are required.
+// TODO: in c++17 it should be possible to use something like
+// inline constexpr const StringTaint& EmptyTaint = StringTaint();
 #define EmptyTaint (StringTaint())
 
 /*
@@ -532,6 +603,10 @@ class TaintableString {
   public:
     TaintableString() : taint_() { }
 
+    ~TaintableString() { taint_.clear(); }
+
+    //TODO: Copy constructor
+
     // A string is tainted if at least one of its characters is tainted.
     bool isTainted() const { return taint_.hasTaint(); }
     bool IsTainted() const { return taint_.hasTaint(); }
@@ -552,10 +627,26 @@ class TaintableString {
     void clearTaint() { taint_.clear(); }
     void ClearTaint() { taint_.clear(); }
 
+    // Remove all taint information after an index
+    void clearTaintAfter(uint32_t index) { taint_.clearAfter(index); }
+    void ClearTaintAfter(uint32_t index) { taint_.clearAfter(index); }
+
+    // Remove taint information at an index
+    void clearTaintAt(uint32_t index) { taint_.clearAt(index); }
+    void ClearTaintAt(uint32_t index) { taint_.clearAt(index); }
+        
+    // Replace taint information from a range
+    void ReplaceTaint(uint32_t begin, uint32_t end, uint32_t length, const StringTaint& taint) {
+        taint_.replace(begin, end, length, taint); 
+    }
+    
     // Since we don't have access to the string length of our child class (TODO
     // possible using CRTP somehow?), this API is the best we can offer.
     void appendTaintAt(uint32_t offset, const StringTaint& taint) { taint_.concat(taint, offset); }
     void AppendTaintAt(uint32_t offset, const StringTaint& taint) { taint_.concat(taint, offset); }
+
+    void insertTaintAt(uint32_t offset, const StringTaint& taint) { taint_.insert(offset, taint); }
+    void InsertTaintAt(uint32_t offset, const StringTaint& taint) { taint_.insert(offset, taint); }
 
     // Initialize the taint information.
     //
@@ -568,7 +659,7 @@ class TaintableString {
     //
     // Same as above, this can be used instead of the destructor. It guarantees
     // that all owned resources of this instance are released.
-    void finalize() { taint_.~StringTaint(); }
+    void finalize() { taint_.clear(); }
 
   protected:
     // Protected so child classes can do offset assertions (see js/src/vm/String.h).

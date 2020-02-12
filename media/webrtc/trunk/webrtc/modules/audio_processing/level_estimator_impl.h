@@ -8,46 +8,40 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_
+#ifndef MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_
+#define MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_
 
-#include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/audio_processing/processing_component.h"
-#include "webrtc/modules/audio_processing/rms_level.h"
+#include <memory>
+
+#include "modules/audio_processing/include/audio_processing.h"
+#include "rtc_base/constructormagic.h"
+#include "rtc_base/criticalsection.h"
 
 namespace webrtc {
 
 class AudioBuffer;
-class CriticalSectionWrapper;
+class RmsLevel;
 
-class LevelEstimatorImpl : public LevelEstimator,
-                           public ProcessingComponent {
+class LevelEstimatorImpl : public LevelEstimator {
  public:
-  LevelEstimatorImpl(const AudioProcessing* apm,
-                     CriticalSectionWrapper* crit);
-  virtual ~LevelEstimatorImpl();
+  explicit LevelEstimatorImpl(rtc::CriticalSection* crit);
+  ~LevelEstimatorImpl() override;
 
-  int ProcessStream(AudioBuffer* audio);
+  // TODO(peah): Fold into ctor, once public API is removed.
+  void Initialize();
+  void ProcessStream(AudioBuffer* audio);
 
-  // LevelEstimator implementation.
-  bool is_enabled() const override;
-
- private:
   // LevelEstimator implementation.
   int Enable(bool enable) override;
+  bool is_enabled() const override;
   int RMS() override;
 
-  // ProcessingComponent implementation.
-  void* CreateHandle() const override;
-  int InitializeHandle(void* handle) const override;
-  int ConfigureHandle(void* handle) const override;
-  void DestroyHandle(void* handle) const override;
-  int num_handles_required() const override;
-  int GetHandleError(void* handle) const override;
-
-  CriticalSectionWrapper* crit_;
+ private:
+  rtc::CriticalSection* const crit_ = nullptr;
+  bool enabled_ RTC_GUARDED_BY(crit_) = false;
+  std::unique_ptr<RmsLevel> rms_ RTC_GUARDED_BY(crit_);
+  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(LevelEstimatorImpl);
 };
-
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_
+#endif  // MODULES_AUDIO_PROCESSING_LEVEL_ESTIMATOR_IMPL_H_

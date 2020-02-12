@@ -2,11 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
+/* import-globals-from allDownloadsView.js */
+
+const { PrivateBrowsingUtils } = ChromeUtils.import(
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
 
 var ContentAreaDownloadsView = {
   init() {
-    let view = new DownloadsPlacesView(document.getElementById("downloadsRichListBox"));
+    let view = new DownloadsPlacesView(
+      document.getElementById("downloadsRichListBox")
+    );
     // Do not display the Places downloads in private windows
     if (!PrivateBrowsingUtils.isContentWindowPrivate(window)) {
       view.place = "place:transition=7&sort=4";
@@ -14,4 +20,8 @@ var ContentAreaDownloadsView = {
     // Set focus to Downloads list once it is created
     document.getElementById("downloadsRichListBox").focus();
   },
+};
+
+window.onload = function() {
+  ContentAreaDownloadsView.init();
 };

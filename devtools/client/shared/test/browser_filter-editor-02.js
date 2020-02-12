@@ -5,42 +5,45 @@
 
 // Tests that the Filter Editor Widget renders filters correctly
 
-const {CSSFilterEditorWidget} = require("devtools/client/shared/widgets/FilterWidget");
+const {
+  CSSFilterEditorWidget,
+} = require("devtools/client/shared/widgets/FilterWidget");
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/locale/filterwidget.properties";
+const STRINGS_URI = "devtools/client/locales/filterwidget.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   const TEST_DATA = [
     {
-      cssValue: "blur(2px) contrast(200%) hue-rotate(20.2deg) drop-shadow(5px 5px black)",
+      cssValue:
+        "blur(2px) contrast(200%) hue-rotate(20.2deg) drop-shadow(5px 5px black)",
       expected: [
         {
           label: "blur",
           value: "2",
-          unit: "px"
+          unit: "px",
         },
         {
           label: "contrast",
           value: "200",
-          unit: "%"
+          unit: "%",
         },
         {
           label: "hue-rotate",
           value: "20.2",
-          unit: "deg"
+          unit: "deg",
         },
         {
           label: "drop-shadow",
           value: "5px 5px black",
-          unit: null
-        }
-      ]
+          unit: null,
+        },
+      ],
     },
     {
       cssValue: "hue-rotate(420.2deg)",
@@ -48,9 +51,9 @@ add_task(function* () {
         {
           label: "hue-rotate",
           value: "420.2",
-          unit: "deg"
-        }
-      ]
+          unit: "deg",
+        },
+      ],
     },
     {
       cssValue: "url(example.svg)",
@@ -58,31 +61,34 @@ add_task(function* () {
         {
           label: "url",
           value: "example.svg",
-          unit: null
-        }
-      ]
+          unit: null,
+        },
+      ],
     },
     {
       cssValue: "none",
-      expected: []
-    }
+      expected: [],
+    },
   ];
 
   const container = doc.querySelector("#filter-container");
-  let widget = new CSSFilterEditorWidget(container, "none");
+  const widget = new CSSFilterEditorWidget(container, "none");
 
   info("Test rendering of different types");
 
-
-  for (let {cssValue, expected} of TEST_DATA) {
+  for (const { cssValue, expected } of TEST_DATA) {
     widget.setCssValue(cssValue);
 
     if (cssValue === "none") {
       const text = container.querySelector("#filters").textContent;
-      ok(text.indexOf(L10N.getStr("emptyFilterList")) > -1,
-         "Contains |emptyFilterList| string when given value 'none'");
-      ok(text.indexOf(L10N.getStr("addUsingList")) > -1,
-         "Contains |addUsingList| string when given value 'none'");
+      ok(
+        text.indexOf(L10N.getStr("emptyFilterList")) > -1,
+        "Contains |emptyFilterList| string when given value 'none'"
+      );
+      ok(
+        text.indexOf(L10N.getStr("addUsingList")) > -1,
+        "Contains |addUsingList| string when given value 'none'"
+      );
       continue;
     }
     const filters = container.querySelectorAll(".filter");
@@ -90,10 +96,9 @@ add_task(function* () {
   }
 });
 
-
 function testRenderedFilters(filters, expected) {
-  for (let [index, filter] of [...filters].entries()) {
-    let [name, value] = filter.children,
+  for (const [index, filter] of [...filters].entries()) {
+    const [name, value] = filter.children,
       label = name.children[1],
       [input, unit] = value.children;
 

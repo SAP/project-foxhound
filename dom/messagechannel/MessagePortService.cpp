@@ -21,43 +21,36 @@ namespace {
 
 StaticRefPtr<MessagePortService> gInstance;
 
-void
-AssertIsInMainProcess()
-{
+void AssertIsInMainProcess() {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
 }
 
-} // namespace
+}  // namespace
 
-class MessagePortService::MessagePortServiceData final
-{
-public:
+class MessagePortService::MessagePortServiceData final {
+ public:
   explicit MessagePortServiceData(const nsID& aDestinationUUID)
-    : mDestinationUUID(aDestinationUUID)
-    , mSequenceID(1)
-    , mParent(nullptr)
-    // By default we don't know the next parent.
-    , mWaitingForNewParent(true)
-    , mNextStepCloseAll(false)
-  {
+      : mDestinationUUID(aDestinationUUID),
+        mSequenceID(1),
+        mParent(nullptr)
+        // By default we don't know the next parent.
+        ,
+        mWaitingForNewParent(true),
+        mNextStepCloseAll(false) {
     MOZ_COUNT_CTOR(MessagePortServiceData);
   }
 
   MessagePortServiceData(const MessagePortServiceData& aOther) = delete;
   MessagePortServiceData& operator=(const MessagePortServiceData&) = delete;
 
-  ~MessagePortServiceData()
-  {
-    MOZ_COUNT_DTOR(MessagePortServiceData);
-  }
+  ~MessagePortServiceData() { MOZ_COUNT_DTOR(MessagePortServiceData); }
 
   nsID mDestinationUUID;
 
   uint32_t mSequenceID;
   MessagePortParent* mParent;
 
-  struct NextParent
-  {
+  struct NextParent {
     uint32_t mSequenceID;
     // MessagePortParent keeps the service alive, and we don't want a cycle.
     MessagePortParent* mParent;
@@ -70,18 +63,16 @@ public:
   bool mNextStepCloseAll;
 };
 
-/* static */ MessagePortService*
-MessagePortService::Get()
-{
+/* static */
+MessagePortService* MessagePortService::Get() {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
   return gInstance;
 }
 
-/* static */ MessagePortService*
-MessagePortService::GetOrCreate()
-{
+/* static */
+MessagePortService* MessagePortService::GetOrCreate() {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
@@ -92,11 +83,9 @@ MessagePortService::GetOrCreate()
   return gInstance;
 }
 
-bool
-MessagePortService::RequestEntangling(MessagePortParent* aParent,
-                                      const nsID& aDestinationUUID,
-                                      const uint32_t& aSequenceID)
-{
+bool MessagePortService::RequestEntangling(MessagePortParent* aParent,
+                                           const nsID& aDestinationUUID,
+                                           const uint32_t& aSequenceID) {
   MOZ_ASSERT(aParent);
   MessagePortServiceData* data;
 
@@ -139,15 +128,20 @@ MessagePortService::RequestEntangling(MessagePortParent* aParent,
     // We activate this port, sending all the messages.
     data->mParent = aParent;
     data->mWaitingForNewParent = false;
-    FallibleTArray<MessagePortMessage> array;
-    if (!SharedMessagePortMessage::FromSharedToMessagesParent(aParent,
-                                                              data->mMessages,
+
+    // We want to ensure we clear data->mMessages even if we early return, while
+    // also ensuring that its contents remain alive until after array's contents
+    // are destroyed because of JSStructuredCloneData borrowing.  So we use
+    // Move to initialize things swapped and do it before we declare `array` so
+    // that reverse destruction order works for us.
+    FallibleTArray<RefPtr<SharedMessagePortMessage>> messages(
+        std::move(data->mMessages));
+    FallibleTArray<ClonedMessageData> array;
+    if (!SharedMessagePortMessage::FromSharedToMessagesParent(aParent, messages,
                                                               array)) {
       CloseAll(aParent->ID());
       return false;
     }
-
-    data->mMessages.Clear();
 
     // We can entangle the port.
     if (!aParent->Entangled(array)) {
@@ -167,7 +161,7 @@ MessagePortService::RequestEntangling(MessagePortParent* aParent,
   // This new parent will be the next one when a Disentangle request is
   // received from the current parent.
   MessagePortServiceData::NextParent* nextParent =
-    data->mNextParents.AppendElement(mozilla::fallible);
+      data->mNextParents.AppendElement(mozilla::fallible);
   if (!nextParent) {
     CloseAll(aParent->ID());
     return false;
@@ -179,11 +173,9 @@ MessagePortService::RequestEntangling(MessagePortParent* aParent,
   return true;
 }
 
-bool
-MessagePortService::DisentanglePort(
-                  MessagePortParent* aParent,
-                  FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages)
-{
+bool MessagePortService::DisentanglePort(
+    MessagePortParent* aParent,
+    FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
     MOZ_ASSERT(false, "Unknown MessagePortParent should not happen.");
@@ -191,7 +183,9 @@ MessagePortService::DisentanglePort(
   }
 
   if (data->mParent != aParent) {
-    MOZ_ASSERT(false, "DisentanglePort() should be called just from the correct parent.");
+    MOZ_ASSERT(
+        false,
+        "DisentanglePort() should be called just from the correct parent.");
     return false;
   }
 
@@ -226,10 +220,9 @@ MessagePortService::DisentanglePort(
   data->mParent = nextParent;
   data->mNextParents.RemoveElementAt(index);
 
-  FallibleTArray<MessagePortMessage> array;
+  FallibleTArray<ClonedMessageData> array;
   if (!SharedMessagePortMessage::FromSharedToMessagesParent(data->mParent,
-                                                            aMessages,
-                                                            array)) {
+                                                            aMessages, array)) {
     return false;
   }
 
@@ -237,9 +230,7 @@ MessagePortService::DisentanglePort(
   return true;
 }
 
-bool
-MessagePortService::ClosePort(MessagePortParent* aParent)
-{
+bool MessagePortService::ClosePort(MessagePortParent* aParent) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
     MOZ_ASSERT(false, "Unknown MessagePortParent should not happend.");
@@ -247,12 +238,14 @@ MessagePortService::ClosePort(MessagePortParent* aParent)
   }
 
   if (data->mParent != aParent) {
-    MOZ_ASSERT(false, "ClosePort() should be called just from the correct parent.");
+    MOZ_ASSERT(false,
+               "ClosePort() should be called just from the correct parent.");
     return false;
   }
 
   if (!data->mNextParents.IsEmpty()) {
-    MOZ_ASSERT(false, "ClosePort() should be called when there are not next parents.");
+    MOZ_ASSERT(false,
+               "ClosePort() should be called when there are not next parents.");
     return false;
   }
 
@@ -263,9 +256,7 @@ MessagePortService::ClosePort(MessagePortParent* aParent)
   return true;
 }
 
-void
-MessagePortService::CloseAll(const nsID& aUUID, bool aForced)
-{
+void MessagePortService::CloseAll(const nsID& aUUID, bool aForced) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aUUID, &data)) {
     MaybeShutdown();
@@ -287,8 +278,7 @@ MessagePortService::CloseAll(const nsID& aUUID, bool aForced)
   // because its entangling request didn't arrive yet), we cannot close this
   // channel.
   MessagePortServiceData* destinationData;
-  if (!aForced &&
-      mPorts.Get(destinationUUID, &destinationData) &&
+  if (!aForced && mPorts.Get(destinationUUID, &destinationData) &&
       !destinationData->mMessages.IsEmpty() &&
       destinationData->mWaitingForNewParent) {
     MOZ_ASSERT(!destinationData->mNextStepCloseAll);
@@ -316,19 +306,15 @@ MessagePortService::CloseAll(const nsID& aUUID, bool aForced)
 }
 
 // This service can be dismissed when there are not active ports.
-void
-MessagePortService::MaybeShutdown()
-{
+void MessagePortService::MaybeShutdown() {
   if (mPorts.Count() == 0) {
     gInstance = nullptr;
   }
 }
 
-bool
-MessagePortService::PostMessages(
-                  MessagePortParent* aParent,
-                  FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages)
-{
+bool MessagePortService::PostMessages(
+    MessagePortParent* aParent,
+    FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
     MOZ_ASSERT(false, "Unknown MessagePortParent should not happend.");
@@ -336,7 +322,8 @@ MessagePortService::PostMessages(
   }
 
   if (data->mParent != aParent) {
-    MOZ_ASSERT(false, "PostMessages() should be called just from the correct parent.");
+    MOZ_ASSERT(false,
+               "PostMessages() should be called just from the correct parent.");
     return false;
   }
 
@@ -348,23 +335,24 @@ MessagePortService::PostMessages(
 
   // If the parent can send data to the child, let's proceed.
   if (data->mParent && data->mParent->CanSendData()) {
-    FallibleTArray<MessagePortMessage> messages;
-    if (!SharedMessagePortMessage::FromSharedToMessagesParent(data->mParent,
-                                                              data->mMessages,
-                                                              messages)) {
-      return false;
-    }
+    {
+      FallibleTArray<ClonedMessageData> messages;
+      if (!SharedMessagePortMessage::FromSharedToMessagesParent(
+              data->mParent, data->mMessages, messages)) {
+        return false;
+      }
 
+      Unused << data->mParent->SendReceiveData(messages);
+    }
+    // `messages` borrows the underlying JSStructuredCloneData so we need to
+    // avoid destroying the `mMessages` until after we've destroyed `messages`.
     data->mMessages.Clear();
-    Unused << data->mParent->SendReceiveData(messages);
   }
 
   return true;
 }
 
-void
-MessagePortService::ParentDestroy(MessagePortParent* aParent)
-{
+void MessagePortService::ParentDestroy(MessagePortParent* aParent) {
   // This port has already been destroyed.
   MessagePortServiceData* data;
   if (!mPorts.Get(aParent->ID(), &data)) {
@@ -375,8 +363,8 @@ MessagePortService::ParentDestroy(MessagePortParent* aParent)
     // We don't want to send a message to this parent.
     for (uint32_t i = 0; i < data->mNextParents.Length(); ++i) {
       if (aParent == data->mNextParents[i].mParent) {
-       data->mNextParents.RemoveElementAt(i);
-       break;
+        data->mNextParents.RemoveElementAt(i);
+        break;
       }
     }
   }
@@ -384,11 +372,9 @@ MessagePortService::ParentDestroy(MessagePortParent* aParent)
   CloseAll(aParent->ID());
 }
 
-bool
-MessagePortService::ForceClose(const nsID& aUUID,
-                               const nsID& aDestinationUUID,
-                               const uint32_t& aSequenceID)
-{
+bool MessagePortService::ForceClose(const nsID& aUUID,
+                                    const nsID& aDestinationUUID,
+                                    const uint32_t& aSequenceID) {
   MessagePortServiceData* data;
   if (!mPorts.Get(aUUID, &data)) {
     NS_WARNING("Unknown MessagePort in ForceClose()");
@@ -405,5 +391,5 @@ MessagePortService::ForceClose(const nsID& aUUID,
   return true;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

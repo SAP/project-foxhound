@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_
-#define WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_
+#ifndef MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_
+#define MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_
 
-#include "webrtc/modules/audio_coding/neteq/expand.h"
+#include "modules/audio_coding/neteq/expand.h"
 
-#include "testing/gmock/include/gmock/gmock.h"
+#include "test/gmock.h"
 
 namespace webrtc {
 
@@ -22,10 +22,15 @@ class MockExpand : public Expand {
   MockExpand(BackgroundNoise* background_noise,
              SyncBuffer* sync_buffer,
              RandomVector* random_vector,
+             StatisticsCalculator* statistics,
              int fs,
              size_t num_channels)
-      : Expand(background_noise, sync_buffer, random_vector, fs, num_channels) {
-  }
+      : Expand(background_noise,
+               sync_buffer,
+               random_vector,
+               statistics,
+               fs,
+               num_channels) {}
   virtual ~MockExpand() { Die(); }
   MOCK_METHOD0(Die, void());
   MOCK_METHOD0(Reset,
@@ -46,13 +51,14 @@ namespace webrtc {
 
 class MockExpandFactory : public ExpandFactory {
  public:
-  MOCK_CONST_METHOD5(Create,
+  MOCK_CONST_METHOD6(Create,
                      Expand*(BackgroundNoise* background_noise,
                              SyncBuffer* sync_buffer,
                              RandomVector* random_vector,
+                             StatisticsCalculator* statistics,
                              int fs,
                              size_t num_channels));
 };
 
 }  // namespace webrtc
-#endif  // WEBRTC_MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_
+#endif  // MODULES_AUDIO_CODING_NETEQ_MOCK_MOCK_EXPAND_H_

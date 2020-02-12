@@ -4,7 +4,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=270145
 -->
 <head>
   <title>Test the html copy encoder with XHTML </title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -17,9 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=270145
 <script class="testbody" type="text/javascript">
 //<![CDATA[
 function testHtmlCopyEncoder () {
-  const de = SpecialPowers.Ci.nsIDocumentEncoder;
-  var encoder = SpecialPowers.Cc["@mozilla.org/layout/htmlCopyEncoder;1"]
-                   .createInstance(SpecialPowers.Ci.nsIDocumentEncoder);
+  var encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
   var out, expected;
   
   var node = document.getElementById('draggable');

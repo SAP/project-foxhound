@@ -15,19 +15,23 @@
     <p>Status codes test</p>
 
     <script type="text/javascript">
-      function get(aAddress, aCallback) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", aAddress, true);
+      /* exported performRequests, performCachedRequests, performOneCachedRequest */
+      "use strict";
+
+      function get(address, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", address, true);
 
         xhr.onreadystatechange = function() {
           if (this.readyState == this.DONE) {
-            aCallback();
+            callback();
           }
         };
         xhr.send(null);
       }
 
       function performRequests() {
+        /* eslint-disable max-nested-callbacks */
         get("sjs_status-codes-test-server.sjs?sts=100", function() {
           get("sjs_status-codes-test-server.sjs?sts=200", function() {
             get("sjs_status-codes-test-server.sjs?sts=300", function() {
@@ -39,6 +43,7 @@
             });
           });
         });
+        /* eslint-enable max-nested-callbacks */
       }
 
       function performCachedRequests() {
@@ -49,6 +54,13 @@
         });
       }
 
+      function performOneCachedRequest() {
+        get("sjs_status-codes-test-server.sjs?sts=ok&cached", function() {
+          get("sjs_status-codes-test-server.sjs?sts=ok&cached", function() {
+            // Done.
+          });
+        });
+      }
     </script>
   </body>
 

@@ -39,11 +39,11 @@
         if (typeof func !== "function") {
           reject(new TypeError("Expected a Function."));
         }
-        //not a generator, wrap it.
+        // not a generator, wrap it.
         if (func.constructor.name !== "GeneratorFunction") {
           gen = (function*() {
             return func.apply(self, functionArgs);
-          }());
+          })();
         } else {
           gen = func.apply(self, functionArgs);
         }
@@ -53,26 +53,24 @@
           reject(err);
         }
 
-        function step({value, done}) {
+        function step({ value, done }) {
           if (done) {
             return resolve(value);
           }
           if (value instanceof Promise) {
-            return value.then(
-              result => step(gen.next(result)),
-              error => {
-                try {
+            return value
+              .then(
+                result => step(gen.next(result)),
+                error => {
                   step(gen.throw(error));
-                } catch (err) {
-                  throw err;
                 }
-              }
-            ).catch(err => reject(err));
+              )
+              .catch(err => reject(err));
           }
-          step(gen.next(value));
+          return step(gen.next(value));
         }
       });
     };
   }
   exports.async = async;
-}(this || self));
+})(this || self);

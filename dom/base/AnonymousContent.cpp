@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AnonymousContent.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/AnonymousContentBinding.h"
+#include "nsComputedDOMStyle.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIDocument.h"
-#include "nsIDOMHTMLCollection.h"
 #include "nsIFrame.h"
 #include "nsStyledElement.h"
 #include "HTMLCanvasElement.h"
@@ -22,31 +23,16 @@ NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AnonymousContent, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AnonymousContent, Release)
 NS_IMPL_CYCLE_COLLECTION(AnonymousContent, mContentNode)
 
-AnonymousContent::AnonymousContent(Element* aContentNode) :
-  mContentNode(aContentNode)
-{}
-
-AnonymousContent::~AnonymousContent()
-{
+AnonymousContent::AnonymousContent(already_AddRefed<Element> aContentNode)
+    : mContentNode(aContentNode) {
+  MOZ_ASSERT(mContentNode);
 }
 
-Element*
-AnonymousContent::GetContentNode()
-{
-  return mContentNode;
-}
+AnonymousContent::~AnonymousContent() = default;
 
-void
-AnonymousContent::SetContentNode(Element* aContentNode)
-{
-  mContentNode = aContentNode;
-}
-
-void
-AnonymousContent::SetTextContentForElement(const nsAString& aElementId,
-                                           const nsAString& aText,
-                                           ErrorResult& aRv)
-{
+void AnonymousContent::SetTextContentForElement(const nsAString& aElementId,
+                                                const nsAString& aText,
+                                                ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
@@ -56,11 +42,9 @@ AnonymousContent::SetTextContentForElement(const nsAString& aElementId,
   element->SetTextContent(aText, aRv);
 }
 
-void
-AnonymousContent::GetTextContentForElement(const nsAString& aElementId,
-                                           DOMString& aText,
-                                           ErrorResult& aRv)
-{
+void AnonymousContent::GetTextContentForElement(const nsAString& aElementId,
+                                                DOMString& aText,
+                                                ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
@@ -70,27 +54,24 @@ AnonymousContent::GetTextContentForElement(const nsAString& aElementId,
   element->GetTextContent(aText, aRv);
 }
 
-void
-AnonymousContent::SetAttributeForElement(const nsAString& aElementId,
-                                         const nsAString& aName,
-                                         const nsAString& aValue,
-                                         ErrorResult& aRv)
-{
+void AnonymousContent::SetAttributeForElement(const nsAString& aElementId,
+                                              const nsAString& aName,
+                                              const nsAString& aValue,
+                                              nsIPrincipal* aSubjectPrincipal,
+                                              ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
     return;
   }
 
-  element->SetAttribute(aName, aValue, aRv);
+  element->SetAttribute(aName, aValue, aSubjectPrincipal, aRv);
 }
 
-void
-AnonymousContent::GetAttributeForElement(const nsAString& aElementId,
-                                         const nsAString& aName,
-                                         DOMString& aValue,
-                                         ErrorResult& aRv)
-{
+void AnonymousContent::GetAttributeForElement(const nsAString& aElementId,
+                                              const nsAString& aName,
+                                              DOMString& aValue,
+                                              ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
@@ -100,11 +81,9 @@ AnonymousContent::GetAttributeForElement(const nsAString& aElementId,
   element->GetAttribute(aName, aValue);
 }
 
-void
-AnonymousContent::RemoveAttributeForElement(const nsAString& aElementId,
-                                            const nsAString& aName,
-                                            ErrorResult& aRv)
-{
+void AnonymousContent::RemoveAttributeForElement(const nsAString& aElementId,
+                                                 const nsAString& aName,
+                                                 ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
   if (!element) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
@@ -114,11 +93,9 @@ AnonymousContent::RemoveAttributeForElement(const nsAString& aElementId,
   element->RemoveAttribute(aName, aRv);
 }
 
-already_AddRefed<nsISupports>
-AnonymousContent::GetCanvasContext(const nsAString& aElementId,
-                                   const nsAString& aContextId,
-                                   ErrorResult& aRv)
-{
+already_AddRefed<nsISupports> AnonymousContent::GetCanvasContext(
+    const nsAString& aElementId, const nsAString& aContextId,
+    ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
 
   if (!element) {
@@ -138,13 +115,11 @@ AnonymousContent::GetCanvasContext(const nsAString& aElementId,
   return context.forget();
 }
 
-already_AddRefed<Animation>
-AnonymousContent::SetAnimationForElement(JSContext* aContext,
-                                         const nsAString& aElementId,
-                                         JS::Handle<JSObject*> aKeyframes,
-                                         const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-                                         ErrorResult& aRv)
-{
+already_AddRefed<Animation> AnonymousContent::SetAnimationForElement(
+    JSContext* aContext, const nsAString& aElementId,
+    JS::Handle<JSObject*> aKeyframes,
+    const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
+    ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
 
   if (!element) {
@@ -155,11 +130,9 @@ AnonymousContent::SetAnimationForElement(JSContext* aContext,
   return element->Animate(aContext, aKeyframes, aOptions, aRv);
 }
 
-void
-AnonymousContent::SetCutoutRectsForElement(const nsAString& aElementId,
-                                           const Sequence<OwningNonNull<DOMRect>>& aRects,
-                                           ErrorResult& aRv)
-{
+void AnonymousContent::SetCutoutRectsForElement(
+    const nsAString& aElementId, const Sequence<OwningNonNull<DOMRect>>& aRects,
+    ErrorResult& aRv) {
   Element* element = GetElementById(aElementId);
 
   if (!element) {
@@ -182,17 +155,15 @@ AnonymousContent::SetCutoutRectsForElement(const nsAString& aElementId,
   }
 }
 
-Element*
-AnonymousContent::GetElementById(const nsAString& aElementId)
-{
+Element* AnonymousContent::GetElementById(const nsAString& aElementId) {
   // This can be made faster in the future if needed.
-  nsCOMPtr<nsIAtom> elementId = NS_Atomize(aElementId);
+  RefPtr<nsAtom> elementId = NS_Atomize(aElementId);
   for (nsIContent* node = mContentNode; node;
        node = node->GetNextNode(mContentNode)) {
     if (!node->IsElement()) {
       continue;
     }
-    nsIAtom* id = node->AsElement()->GetID();
+    nsAtom* id = node->AsElement()->GetID();
     if (id && id == elementId) {
       return node->AsElement();
     }
@@ -200,13 +171,53 @@ AnonymousContent::GetElementById(const nsAString& aElementId)
   return nullptr;
 }
 
-bool
-AnonymousContent::WrapObject(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto,
-                             JS::MutableHandle<JSObject*> aReflector)
-{
-  return AnonymousContentBinding::Wrap(aCx, this, aGivenProto, aReflector);
+bool AnonymousContent::WrapObject(JSContext* aCx,
+                                  JS::Handle<JSObject*> aGivenProto,
+                                  JS::MutableHandle<JSObject*> aReflector) {
+  return AnonymousContent_Binding::Wrap(aCx, this, aGivenProto, aReflector);
 }
 
-} // namespace dom
-} // namespace mozilla
+void AnonymousContent::GetComputedStylePropertyValue(
+    const nsAString& aElementId, const nsAString& aPropertyName,
+    DOMString& aResult, ErrorResult& aRv) {
+  Element* element = GetElementById(aElementId);
+  if (!element) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return;
+  }
+
+  if (!element->OwnerDoc()->GetPresShell()) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return;
+  }
+
+  RefPtr<nsComputedDOMStyle> cs =
+      new nsComputedDOMStyle(element, NS_LITERAL_STRING(""),
+                             element->OwnerDoc(), nsComputedDOMStyle::eAll);
+  aRv = cs->GetPropertyValue(aPropertyName, aResult);
+}
+
+void AnonymousContent::GetTargetIdForEvent(Event& aEvent, DOMString& aResult) {
+  nsCOMPtr<Element> el = do_QueryInterface(aEvent.GetOriginalTarget());
+  if (el && el->IsInNativeAnonymousSubtree() && mContentNode->Contains(el)) {
+    aResult.SetKnownLiveAtom(el->GetID(), DOMString::eTreatNullAsNull);
+    return;
+  }
+
+  aResult.SetNull();
+}
+
+void AnonymousContent::SetStyle(const nsAString& aProperty,
+                                const nsAString& aValue, ErrorResult& aRv) {
+  if (!mContentNode->IsHTMLElement()) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return;
+  }
+
+  nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(mContentNode);
+  nsCOMPtr<nsICSSDeclaration> declaration = element->Style();
+  declaration->SetProperty(aProperty, aValue, EmptyString());
+}
+
+}  // namespace dom
+}  // namespace mozilla

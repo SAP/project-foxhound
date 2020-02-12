@@ -9,56 +9,48 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestInterruptShutdownRaceParent
+    : public PTestInterruptShutdownRaceParent {
+ public:
+  TestInterruptShutdownRaceParent();
+  virtual ~TestInterruptShutdownRaceParent();
 
-class TestInterruptShutdownRaceParent :
-    public PTestInterruptShutdownRaceParent
-{
-public:
-    TestInterruptShutdownRaceParent();
-    virtual ~TestInterruptShutdownRaceParent();
+  static bool RunTestInProcesses() { return true; }
+  // FIXME/bug 703323 Could work if modified
+  static bool RunTestInThreads() { return false; }
 
-    static bool RunTestInProcesses() { return true; }
-    // FIXME/bug 703323 Could work if modified
-    static bool RunTestInThreads() { return false; }
+  void Main();
 
-    void Main();
+  mozilla::ipc::IPCResult RecvStartDeath();
 
-    virtual bool RecvStartDeath() override;
+  mozilla::ipc::IPCResult RecvOrphan();
 
-    virtual bool RecvOrphan() override;
+ protected:
+  void StartShuttingDown();
 
-protected:
-    void StartShuttingDown();
-
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (AbnormalShutdown != why)
-            fail("unexpected destruction!");  
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (AbnormalShutdown != why) fail("unexpected destruction!");
+  }
 };
 
+class TestInterruptShutdownRaceChild : public PTestInterruptShutdownRaceChild {
+  friend class PTestInterruptShutdownRaceChild;
 
-class TestInterruptShutdownRaceChild :
-    public PTestInterruptShutdownRaceChild
-{
-public:
-    TestInterruptShutdownRaceChild();
-    virtual ~TestInterruptShutdownRaceChild();
+ public:
+  TestInterruptShutdownRaceChild();
+  virtual ~TestInterruptShutdownRaceChild();
 
-protected:
-    virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool AnswerExit() override;
+  mozilla::ipc::IPCResult AnswerExit();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        fail("should have 'crashed'!");
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    fail("should have 'crashed'!");
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestInterruptShutdownRace_h
+#endif  // ifndef mozilla__ipdltest_TestInterruptShutdownRace_h

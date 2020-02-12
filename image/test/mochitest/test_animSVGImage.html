@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=610419
 -->
 <head>
   <title>Test for Bug 610419</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <script type="application/javascript" src="imgutils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -19,10 +19,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=610419
   <img>
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 /** Test for Bug 610419**/
 
 SimpleTest.requestFlakyTimeout("Pre-existing timeouts when converting from mochitest-chrome");
+SimpleTest.requestCompleteLog();
 SimpleTest.waitForExplicitFinish();
 
 const FAILURE_TIMEOUT = 120000; // Fail early after 120 seconds (2 minutes)
@@ -79,8 +80,9 @@ function myPoll() {
       loadNextImageAndPoll();
     }
   }
-  else
-    setTimeout(myPoll, 1);
+  else {
+    setTimeout(myPoll, 20);
+  }
 }
 
 function failTest() {

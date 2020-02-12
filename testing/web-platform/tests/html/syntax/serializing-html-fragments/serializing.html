@@ -15,6 +15,7 @@
 <span><a b='"'></a></span>
 <span><a b="<"></a></span>
 <span><a b=">"></a></span>
+<span><a href="javascript:&quot;&lt;>&quot;"></a></span>
 <span><svg xlink:href="a"></svg></span>
 <span><svg xmlns:svg="test"></svg></span>
 <span>a</span>
@@ -25,6 +26,7 @@
 <span>&quot;</span>
 <span><style><&></style></span>
 <span><script type="test"><&></script></span>
+<script type="test"><&></script>
 <span><xmp><&></xmp></span>
 <span><iframe><&></iframe></span>
 <span><noembed><&></noembed></span>
@@ -37,7 +39,7 @@
 <!-- TODO: template element -->
 <script>
 
-var test_data = document.getElementById("test").getElementsByTagName("span");
+var test_data = document.getElementById("test").children;
 var expected = [
 ["", "<span></span>"],
 ["<a></a>", "<span><a></a></span>"],
@@ -48,6 +50,7 @@ var expected = [
 ["<a b=\"&quot;\"></a>", "<span><a b=\"&quot;\"></a></span>"],
 ["<a b=\"<\"></a>", "<span><a b=\"<\"></a></span>"],
 ["<a b=\">\"></a>", "<span><a b=\">\"></a></span>"],
+["<a href=\"javascript:&quot;<>&quot;\"></a>", "<span><a href=\"javascript:&quot;<>&quot;\"></a></span>"],
 ["<svg xlink:href=\"a\"></svg>", "<span><svg xlink:href=\"a\"></svg></span>"],
 ["<svg xmlns:svg=\"test\"></svg>", "<span><svg xmlns:svg=\"test\"></svg></span>"],
 ["a", "<span>a</span>"],
@@ -58,6 +61,7 @@ var expected = [
 ["\"", "<span>\"</span>"],
 ["<style><&></style>", "<span><style><&></style></span>"],
 ["<script type=\"test\"><&><\/script>", "<span><script type=\"test\"><&><\/script></span>"],
+["<&>", "<script type=\"test\"><&><\/script>"],
 ["<xmp><&></xmp>", "<span><xmp><&></xmp></span>"],
 ["<iframe><&></iframe>", "<span><iframe><&></iframe></span>"],
 ["<noembed><&></noembed>", "<span><noembed><&></noembed></span>"],
@@ -145,7 +149,7 @@ var text_tests = [
       return elem;
   },
   "\x0A",
-  "<%text>\x0A\x0A</%text>"],
+  "<%text>\x0A</%text>"],
 
  ["<%text> context not starting with U+000A",
   function(elem) {
@@ -162,8 +166,8 @@ var text_tests = [
       span.appendChild(elem);
       return span;
   },
-  "<%text>\x0A\x0A</%text>",
-  "<span><%text>\x0A\x0A</%text></span>"],
+  "<%text>\x0A</%text>",
+  "<span><%text>\x0A</%text></span>"],
 
  ["<%text> non-context not starting with U+000A",
   function(elem) {
@@ -178,7 +182,7 @@ var text_tests = [
 
 var void_elements = [
   "area", "base", "basefont", "bgsound", "br", "col", "embed",
-  "frame", "hr", "img", "input", "keygen", "link", "menuitem",
+  "frame", "hr", "img", "input", "keygen", "link",
   "meta", "param", "source", "track", "wbr"
 ];
 
@@ -292,20 +296,20 @@ generate_tests(outerHTML_test,
 generate_tests(innerHTML_test,
                cross_map(text_tests, text_elements,
                          function(test_data, elem_name) {
-                             var rv = ["innerHTML " + test_data[0].replace("%text", elem_name, "g"),
+                             var rv = ["innerHTML " + test_data[0].replace(/%text/g, elem_name),
                                        test_data[1],
                                        document.createElement(elem_name),
-                                       test_data[2].replace("%text", elem_name, "g")];
+                                       test_data[2].replace(/%text/g, elem_name)];
                              return rv;
                          }))
 
 generate_tests(outerHTML_test,
                cross_map(text_tests, text_elements,
                          function(test_data, elem_name) {
-                             var rv = ["outerHTML " + test_data[0].replace("%text", elem_name, "g"),
+                             var rv = ["outerHTML " + test_data[0].replace(/%text/g, elem_name),
                                        test_data[1],
                                        document.createElement(elem_name),
-                                       test_data[3].replace("%text", elem_name, "g")];
+                                       test_data[3].replace(/%text/g, elem_name)];
                              return rv;
                          }))
 
@@ -315,7 +319,7 @@ generate_tests(innerHTML_test,
                              var rv = ["innerHTML " + test_data[0] + " " + elem_name,
                                        test_data[1],
                                        make_void(elem_name),
-                                       test_data[2].replace("%void", elem_name, "g")];
+                                       test_data[2].replace(/%void/g, elem_name)];
                              return rv;
                          }))
 
@@ -325,7 +329,7 @@ generate_tests(outerHTML_test,
                              var rv = ["outerHTML " + test_data[0] + " " + elem_name,
                                        test_data[1],
                                        make_void(elem_name),
-                                       test_data[3].replace("%void", elem_name, "g")];
+                                       test_data[3].replace(/%void/g, elem_name)];
                              return rv;
                          }))
 

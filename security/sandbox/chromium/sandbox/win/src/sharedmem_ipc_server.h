@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <list>
+#include <memory>
 
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
@@ -48,8 +49,10 @@ class SharedMemIPCServer {
   // target_process_id: process id of the target process.
   // thread_provider: a thread provider object.
   // dispatcher: an object that can service IPC calls.
-  SharedMemIPCServer(HANDLE target_process, DWORD target_process_id,
-                     ThreadProvider* thread_provider, Dispatcher* dispatcher);
+  SharedMemIPCServer(HANDLE target_process,
+                     DWORD target_process_id,
+                     ThreadProvider* thread_provider,
+                     Dispatcher* dispatcher);
 
   ~SharedMemIPCServer();
 
@@ -64,14 +67,14 @@ class SharedMemIPCServer {
   // When an event fires (IPC request). A thread from the ThreadProvider
   // will call this function. The context parameter should be the same as
   // provided when ThreadProvider::RegisterWait was called.
-  static void __stdcall ThreadPingEventReady(void* context,
-                                             unsigned char);
+  static void __stdcall ThreadPingEventReady(void* context, unsigned char);
 
   // Makes the client and server events. This function is called once
   // per channel.
   bool MakeEvents(base::win::ScopedHandle* server_ping,
                   base::win::ScopedHandle* server_pong,
-                  HANDLE* client_ping, HANDLE* client_pong);
+                  HANDLE* client_ping,
+                  HANDLE* client_pong);
 
   // A copy this structure is maintained per channel.
   // Note that a lot of the fields are just the same of what we have in the IPC
@@ -103,15 +106,15 @@ class SharedMemIPCServer {
 
   // Looks for the appropriate handler for this IPC and invokes it.
   static bool InvokeCallback(const ServerControl* service_context,
-                             void* ipc_buffer, CrossCallReturn* call_result);
+                             void* ipc_buffer,
+                             CrossCallReturn* call_result);
 
   // Points to the shared memory channel control which lives at
   // the start of the shared section.
   IPCControl* client_control_;
 
   // Keeps track of the server side objects that are used to answer an IPC.
-  typedef std::list<ServerControl*> ServerContexts;
-  ServerContexts server_contexts_;
+  std::list<std::unique_ptr<ServerControl>> server_contexts_;
 
   // The thread provider provides the threads that call back into this object
   // when the IPC events fire.

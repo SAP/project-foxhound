@@ -17,25 +17,31 @@
  * - opened from a chrome worker through require().
  */
 
+/* eslint-env node */
+
 "use strict";
 
 var SharedAll;
 if (typeof Components != "undefined") {
-  let Cu = Components.utils;
   // Module is opened as a jsm module
-  Cu.import("resource://gre/modules/ctypes.jsm", this);
+  ChromeUtils.import("resource://gre/modules/ctypes.jsm", this);
 
   SharedAll = {};
-  Cu.import("resource://gre/modules/osfile/osfile_shared_allthreads.jsm", SharedAll);
+  ChromeUtils.import(
+    "resource://gre/modules/osfile/osfile_shared_allthreads.jsm",
+    SharedAll
+  );
   this.exports = {};
 } else if (typeof module != "undefined" && typeof require != "undefined") {
   // Module is loaded with require()
   SharedAll = require("resource://gre/modules/osfile/osfile_shared_allthreads.jsm");
 } else {
-  throw new Error("Please open this module with Component.utils.import or with require()");
+  throw new Error(
+    "Please open this module with Component.utils.import or with require()"
+  );
 }
 
-var LOG = SharedAll.LOG.bind(SharedAll, "Win", "allthreads");
+SharedAll.LOG.bind(SharedAll, "Win", "allthreads");
 var Const = SharedAll.Constants.Win;
 
 // Open libc
@@ -49,16 +55,20 @@ exports.declareFFI = declareFFI;
 var Scope = {};
 
 // Define Error
-libc.declareLazy(Scope, "FormatMessage",
-                 "FormatMessageW", ctypes.winapi_abi,
-                 /*return*/ ctypes.uint32_t,
-                 /*flags*/  ctypes.uint32_t,
-                 /*source*/ ctypes.voidptr_t,
-                 /*msgid*/  ctypes.uint32_t,
-                 /*langid*/ ctypes.uint32_t,
-                 /*buf*/    ctypes.char16_t.ptr,
-                 /*size*/   ctypes.uint32_t,
-                 /*Arguments*/ctypes.voidptr_t);
+libc.declareLazy(
+  Scope,
+  "FormatMessage",
+  "FormatMessageW",
+  ctypes.winapi_abi,
+  /* return*/ ctypes.uint32_t,
+  ctypes.uint32_t,
+  /* source*/ ctypes.voidptr_t,
+  ctypes.uint32_t,
+  /* langid*/ ctypes.uint32_t,
+  ctypes.char16_t.ptr,
+  ctypes.uint32_t,
+  /* Arguments*/ ctypes.voidptr_t
+);
 
 /**
  * A File-related error.
@@ -85,9 +95,11 @@ libc.declareLazy(Scope, "FormatMessage",
  * @constructor
  * @extends {OS.Shared.Error}
  */
-var OSError = function OSError(operation = "unknown operation",
-                               lastError = ctypes.winLastError, path = "") {
-  operation = operation;
+var OSError = function OSError(
+  operation = "unknown operation",
+  lastError = ctypes.winLastError,
+  path = ""
+) {
   SharedAll.OSError.call(this, operation, path);
   this.winLastError = lastError;
 };
@@ -95,23 +107,30 @@ OSError.prototype = Object.create(SharedAll.OSError.prototype);
 OSError.prototype.toString = function toString() {
   let buf = new (ctypes.ArrayType(ctypes.char16_t, 1024))();
   let result = Scope.FormatMessage(
-    Const.FORMAT_MESSAGE_FROM_SYSTEM |
-    Const.FORMAT_MESSAGE_IGNORE_INSERTS,
+    Const.FORMAT_MESSAGE_FROM_SYSTEM | Const.FORMAT_MESSAGE_IGNORE_INSERTS,
     null,
     /* The error number */ this.winLastError,
     /* Default language */ 0,
-    /* Output buffer*/     buf,
+    buf,
     /* Minimum size of buffer */ 1024,
-    /* Format args*/       null
+    null
   );
   if (!result) {
-    buf = "additional error " +
+    buf =
+      "additional error " +
       ctypes.winLastError +
       " while fetching system error message";
   }
-  return "Win error " + this.winLastError + " during operation "
-    + this.operation + (this.path? " on file " + this.path : "") +
-    " (" + buf.readString() + ")";
+  return (
+    "Win error " +
+    this.winLastError +
+    " during operation " +
+    this.operation +
+    (this.path ? " on file " + this.path : "") +
+    " (" +
+    buf.readString() +
+    ")"
+  );
 };
 OSError.prototype.toMsg = function toMsg() {
   return OSError.toMsg(this);
@@ -123,9 +142,11 @@ OSError.prototype.toMsg = function toMsg() {
  */
 Object.defineProperty(OSError.prototype, "becauseExists", {
   get: function becauseExists() {
-    return this.winLastError == Const.ERROR_FILE_EXISTS ||
-      this.winLastError == Const.ERROR_ALREADY_EXISTS;
-  }
+    return (
+      this.winLastError == Const.ERROR_FILE_EXISTS ||
+      this.winLastError == Const.ERROR_ALREADY_EXISTS
+    );
+  },
 });
 /**
  * |true| if the error was raised because a file or directory
@@ -133,9 +154,11 @@ Object.defineProperty(OSError.prototype, "becauseExists", {
  */
 Object.defineProperty(OSError.prototype, "becauseNoSuchFile", {
   get: function becauseNoSuchFile() {
-    return this.winLastError == Const.ERROR_FILE_NOT_FOUND ||
-      this.winLastError == Const.ERROR_PATH_NOT_FOUND;
-  }
+    return (
+      this.winLastError == Const.ERROR_FILE_NOT_FOUND ||
+      this.winLastError == Const.ERROR_PATH_NOT_FOUND
+    );
+  },
 });
 /**
  * |true| if the error was raised because a directory is not empty
@@ -144,7 +167,7 @@ Object.defineProperty(OSError.prototype, "becauseNoSuchFile", {
 Object.defineProperty(OSError.prototype, "becauseNotEmpty", {
   get: function becauseNotEmpty() {
     return this.winLastError == Const.ERROR_DIR_NOT_EMPTY;
-  }
+  },
 });
 /**
  * |true| if the error was raised because a file or directory
@@ -153,7 +176,7 @@ Object.defineProperty(OSError.prototype, "becauseNotEmpty", {
 Object.defineProperty(OSError.prototype, "becauseClosed", {
   get: function becauseClosed() {
     return this.winLastError == Const.ERROR_INVALID_HANDLE;
-  }
+  },
 });
 /**
  * |true| if the error was raised because permission is denied to
@@ -162,7 +185,7 @@ Object.defineProperty(OSError.prototype, "becauseClosed", {
 Object.defineProperty(OSError.prototype, "becauseAccessDenied", {
   get: function becauseAccessDenied() {
     return this.winLastError == Const.ERROR_ACCESS_DENIED;
-  }
+  },
 });
 /**
  * |true| if the error was raised because some invalid argument was passed,
@@ -170,9 +193,11 @@ Object.defineProperty(OSError.prototype, "becauseAccessDenied", {
  */
 Object.defineProperty(OSError.prototype, "becauseInvalidArgument", {
   get: function becauseInvalidArgument() {
-    return this.winLastError == Const.ERROR_NOT_SUPPORTED ||
-           this.winLastError == Const.ERROR_BAD_ARGUMENTS;
-  }
+    return (
+      this.winLastError == Const.ERROR_NOT_SUPPORTED ||
+      this.winLastError == Const.ERROR_BAD_ARGUMENTS
+    );
+  },
 });
 
 /**
@@ -187,7 +212,7 @@ OSError.toMsg = function toMsg(error) {
     stack: error.moduleStack,
     operation: error.operation,
     winLastError: error.winLastError,
-    path: error.path
+    path: error.path,
   };
 };
 
@@ -208,10 +233,16 @@ exports.Error = OSError;
  *
  * @constructor
  */
-var AbstractInfo = function AbstractInfo(path, isDir, isSymLink, size,
-                                         winBirthDate,
-                                         lastAccessDate, lastWriteDate,
-                                         winAttributes) {
+var AbstractInfo = function AbstractInfo(
+  path,
+  isDir,
+  isSymLink,
+  size,
+  winBirthDate,
+  lastAccessDate,
+  lastWriteDate,
+  winAttributes
+) {
   this._path = path;
   this._isDir = isDir;
   this._isSymLink = isSymLink;
@@ -296,7 +327,7 @@ AbstractInfo.prototype = {
    */
   get winAttributes() {
     return this._winAttributes;
-  }
+  },
 };
 exports.AbstractInfo = AbstractInfo;
 
@@ -305,9 +336,15 @@ exports.AbstractInfo = AbstractInfo;
  *
  * @constructor
  */
-var AbstractEntry = function AbstractEntry(isDir, isSymLink, name,
-                                           winCreationDate, winLastWriteDate,
-                                           winLastAccessDate, path) {
+var AbstractEntry = function AbstractEntry(
+  isDir,
+  isSymLink,
+  name,
+  winCreationDate,
+  winLastWriteDate,
+  winLastAccessDate,
+  path
+) {
   this._isDir = isDir;
   this._isSymLink = isSymLink;
   this._name = name;
@@ -364,7 +401,7 @@ AbstractEntry.prototype = {
    */
   get path() {
     return this._path;
-  }
+  },
 };
 exports.AbstractEntry = AbstractEntry;
 
@@ -413,10 +450,10 @@ var EXPORTED_SYMBOLS = [
   "Type",
   "POS_START",
   "POS_CURRENT",
-  "POS_END"
+  "POS_END",
 ];
 
-//////////// Boilerplate
+// ////////// Boilerplate
 if (typeof Components != "undefined") {
   this.EXPORTED_SYMBOLS = EXPORTED_SYMBOLS;
   for (let symbol of EXPORTED_SYMBOLS) {

@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=613979
 -->
 <head>
   <title>Test for Bug 613979</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -28,20 +28,20 @@ input.addEventListener("input", function() {
     ok(input.validity.valid, "input should be valid");
     testNum++;
     SimpleTest.executeSoon(function() {
-      synthesizeKey("VK_BACK_SPACE", {});
+      synthesizeKey("KEY_Backspace");
     });
   } else if (testNum == 1) {
     ok(!input.validity.valid, "input should not be valid");
-    input.removeEventListener("input", arguments.callee, false);
+    input.removeEventListener("input", arguments.callee);
     SimpleTest.finish();
   }
-}, false);
+});
 
 SimpleTest.waitForExplicitFinish();
 
 SimpleTest.waitForFocus(function() {
   input.focus();
-  synthesizeKey("a", {});
+  sendString("a");
 });
 
 </script>

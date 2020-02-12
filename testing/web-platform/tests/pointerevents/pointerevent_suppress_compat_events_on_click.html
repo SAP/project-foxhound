@@ -8,10 +8,14 @@
     <link rel="stylesheet" type="text/css" href="pointerevent_styles.css">
     <script src="/resources/testharness.js"></script>
     <script src="/resources/testharnessreport.js"></script>
+    <script src="/resources/testdriver.js"></script>
+    <script src="/resources/testdriver-actions.js"></script>
+    <script src="/resources/testdriver-vendor.js"></script>
     <script type="text/javascript" src="pointerevent_support.js"></script>
     <script type="text/javascript">
       var test_pointerEvent = async_test("Suppress compat mouse events on click");
       add_completion_callback(end_of_test);
+      var actions_promise;
 
       var detected_pointertypes = {};
       var event_log = [];
@@ -24,18 +28,22 @@
       function end_of_interaction() {
           test(function () {
               assert_equals(event_log.join(", "),
-                  "mousedown@target1, mouseup@target1");
+                  "click@target0, mousedown@target1, mouseup@target1, click@target1");
           }, "Event log");
 
-          test_pointerEvent.done(); // complete test
+          // Make sure the test finishes after all the input actions are completed.
+          actions_promise.then( () => {
+              test_pointerEvent.done();
+          });
       }
 
       function run() {
-          on_event(document.getElementById("done"), "click", end_of_interaction);
+          var targetDone = document.getElementById('done');
+          on_event(targetDone, "click", end_of_interaction);
 
           var target_list = ["target0", "target1"];
           var pointer_event_list = ["pointerdown"];
-          var mouse_event_list = ["mousedown", "mouseup"];
+          var mouse_event_list = ["mousedown", "mouseup", "click"];
 
           target_list.forEach(function(targetId) {
               var target = document.getElementById(targetId);
@@ -60,6 +68,19 @@
                   });
               });
           });
+
+          // Inject mouse inputs.
+          actions_promise = new test_driver.Actions()
+              .pointerMove(0, 0, {origin: target0})
+              .pointerDown()
+              .pointerUp()
+              .pointerMove(0, 0, {origin: target1})
+              .pointerDown()
+              .pointerUp()
+              .pointerMove(0, 0, {origin: targetDone})
+              .pointerDown()
+              .pointerUp()
+              .send();
       }
     </script>
     <style>
@@ -76,7 +97,7 @@
   <body onload="run()">
     <h1>Pointer Event: Suppress compatibility mouse events on click</h1>
     <h4>
-      When a pointerdown is canceled, a click/tap shouldn't fire any compatibility mouse events.
+      When a pointerdown is canceled, a click/tap shouldn't fire any compatibility mouse events except click event.
     </h4>
     <ol>
       <li> Click or tap on Target0.</li>

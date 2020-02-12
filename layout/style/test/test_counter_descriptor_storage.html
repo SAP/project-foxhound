@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for parsing, storage and serialization of CSS @counter-style descriptor values</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -79,14 +79,15 @@ function test_system_dep_desc() {
       system: "fixed",
       base: "symbols: x",
       base_tests: {
-        system: "fixed 1",
+        system: "fixed",
         symbols: "x"
       },
       tests: {
         system: [
           [null, "", "symbolic"],
           ["fixed 0"],
-          ["fixed 1", "fixed", "FixeD"],
+          ["fixed", "FixeD"],
+          ["fixed 1", "FixeD 1"],
           ["fixed -1"],
           [null, "fixed a", "fixed \"0\"", "fixed 0 1"],
         ],

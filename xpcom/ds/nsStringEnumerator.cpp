@@ -4,64 +4,134 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 #include "nsStringEnumerator.h"
-#include "nsISimpleEnumerator.h"
+#include "nsSimpleEnumerator.h"
 #include "nsSupportsPrimitives.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ResultExtensions.h"
+#include "mozilla/dom/IteratorResultBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "nsTArray.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
+
+namespace {
+
+class JSStringEnumerator final : public nsIJSEnumerator {
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIJSENUMERATOR
+
+  explicit JSStringEnumerator(nsIStringEnumerator* aEnumerator)
+      : mEnumerator(aEnumerator) {
+    MOZ_ASSERT(mEnumerator);
+  }
+
+ private:
+  ~JSStringEnumerator() = default;
+
+  nsCOMPtr<nsIStringEnumerator> mEnumerator;
+};
+
+}  // anonymous namespace
+
+nsresult JSStringEnumerator::Iterator(nsIJSEnumerator** aResult) {
+  RefPtr<JSStringEnumerator> result(this);
+  result.forget(aResult);
+  return NS_OK;
+}
+
+nsresult JSStringEnumerator::Next(JSContext* aCx,
+                                  JS::MutableHandleValue aResult) {
+  RootedDictionary<IteratorResult> result(aCx);
+
+  nsAutoString elem;
+  if (NS_FAILED(mEnumerator->GetNext(elem))) {
+    result.mDone = true;
+  } else {
+    result.mDone = false;
+
+    if (!ToJSValue(
+            aCx, elem,
+            JS::MutableHandleValue::fromMarkedLocation(&result.mValue))) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+  }
+
+  if (!ToJSValue(aCx, result, aResult)) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS(JSStringEnumerator, nsIJSEnumerator)
+
+//
+// nsStringEnumeratorBase
+//
+
+nsresult nsStringEnumeratorBase::GetNext(nsAString& aResult) {
+  nsAutoCString str;
+  MOZ_TRY(GetNext(str));
+
+  CopyUTF8toUTF16(str, aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsStringEnumeratorBase::StringIterator(nsIJSEnumerator** aRetVal) {
+  auto result = MakeRefPtr<JSStringEnumerator>(this);
+  result.forget(aRetVal);
+  return NS_OK;
+}
 
 //
 // nsStringEnumerator
 //
 
-class nsStringEnumerator final
-  : public nsIStringEnumerator
-  , public nsIUTF8StringEnumerator
-  , public nsISimpleEnumerator
-{
-public:
+class nsStringEnumerator final : public nsSimpleEnumerator,
+                                 public nsIStringEnumerator,
+                                 public nsIUTF8StringEnumerator {
+ public:
   nsStringEnumerator(const nsTArray<nsString>* aArray, bool aOwnsArray)
-    : mArray(aArray)
-    , mIndex(0)
-    , mOwnsArray(aOwnsArray)
-    , mIsUnicode(true)
-  {}
+      : mArray(aArray), mIndex(0), mOwnsArray(aOwnsArray), mIsUnicode(true) {}
 
   nsStringEnumerator(const nsTArray<nsCString>* aArray, bool aOwnsArray)
-    : mCArray(aArray)
-    , mIndex(0)
-    , mOwnsArray(aOwnsArray)
-    , mIsUnicode(false)
-  {}
+      : mCArray(aArray), mIndex(0), mOwnsArray(aOwnsArray), mIsUnicode(false) {}
 
   nsStringEnumerator(const nsTArray<nsString>* aArray, nsISupports* aOwner)
-    : mArray(aArray)
-    , mIndex(0)
-    , mOwner(aOwner)
-    , mOwnsArray(false)
-    , mIsUnicode(true)
-  {}
+      : mArray(aArray),
+        mIndex(0),
+        mOwner(aOwner),
+        mOwnsArray(false),
+        mIsUnicode(true) {}
 
   nsStringEnumerator(const nsTArray<nsCString>* aArray, nsISupports* aOwner)
-    : mCArray(aArray)
-    , mIndex(0)
-    , mOwner(aOwner)
-    , mOwnsArray(false)
-    , mIsUnicode(false)
-  {}
+      : mCArray(aArray),
+        mIndex(0),
+        mOwner(aOwner),
+        mOwnsArray(false),
+        mIsUnicode(false) {}
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIUTF8STRINGENUMERATOR
+  NS_DECL_NSISTRINGENUMERATORBASE
 
   // have to declare nsIStringEnumerator manually, because of
   // overlapping method names
   NS_IMETHOD GetNext(nsAString& aResult) override;
   NS_DECL_NSISIMPLEENUMERATOR
 
-private:
-  ~nsStringEnumerator()
-  {
+  const nsID& DefaultInterface() override {
+    if (mIsUnicode) {
+      return NS_GET_IID(nsISupportsString);
+    }
+    return NS_GET_IID(nsISupportsCString);
+  }
+
+ private:
+  ~nsStringEnumerator() {
     if (mOwnsArray) {
       // const-casting is safe here, because the NS_New*
       // constructors make sure mOwnsArray is consistent with
@@ -74,14 +144,12 @@ private:
     }
   }
 
-  union
-  {
+  union {
     const nsTArray<nsString>* mArray;
     const nsTArray<nsCString>* mCArray;
   };
 
-  inline uint32_t Count()
-  {
+  inline uint32_t Count() {
     return mIsUnicode ? mArray->Length() : mCArray->Length();
   }
 
@@ -96,40 +164,31 @@ private:
   bool mIsUnicode;
 };
 
-NS_IMPL_ISUPPORTS(nsStringEnumerator,
-                  nsIStringEnumerator,
-                  nsIUTF8StringEnumerator,
-                  nsISimpleEnumerator)
+NS_IMPL_ISUPPORTS_INHERITED(nsStringEnumerator, nsSimpleEnumerator,
+                            nsIStringEnumerator, nsIUTF8StringEnumerator)
 
 NS_IMETHODIMP
-nsStringEnumerator::HasMore(bool* aResult)
-{
+nsStringEnumerator::HasMore(bool* aResult) {
   *aResult = mIndex < Count();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsStringEnumerator::HasMoreElements(bool* aResult)
-{
-  return HasMore(aResult);
-}
+nsStringEnumerator::HasMoreElements(bool* aResult) { return HasMore(aResult); }
 
 NS_IMETHODIMP
-nsStringEnumerator::GetNext(nsISupports** aResult)
-{
+nsStringEnumerator::GetNext(nsISupports** aResult) {
+  if (mIndex >= mArray->Length()) {
+    return NS_ERROR_FAILURE;
+  }
+
   if (mIsUnicode) {
     nsSupportsString* stringImpl = new nsSupportsString();
-    if (!stringImpl) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
 
     stringImpl->SetData(mArray->ElementAt(mIndex++));
     *aResult = stringImpl;
   } else {
     nsSupportsCString* cstringImpl = new nsSupportsCString();
-    if (!cstringImpl) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
 
     cstringImpl->SetData(mCArray->ElementAt(mIndex++));
     *aResult = cstringImpl;
@@ -139,8 +198,7 @@ nsStringEnumerator::GetNext(nsISupports** aResult)
 }
 
 NS_IMETHODIMP
-nsStringEnumerator::GetNext(nsAString& aResult)
-{
+nsStringEnumerator::GetNext(nsAString& aResult) {
   if (NS_WARN_IF(mIndex >= Count())) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -155,8 +213,7 @@ nsStringEnumerator::GetNext(nsAString& aResult)
 }
 
 NS_IMETHODIMP
-nsStringEnumerator::GetNext(nsACString& aResult)
-{
+nsStringEnumerator::GetNext(nsACString& aResult) {
   if (NS_WARN_IF(mIndex >= Count())) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -170,10 +227,15 @@ nsStringEnumerator::GetNext(nsACString& aResult)
   return NS_OK;
 }
 
-template<class T>
-static inline nsresult
-StringEnumeratorTail(T** aResult)
-{
+NS_IMETHODIMP
+nsStringEnumerator::StringIterator(nsIJSEnumerator** aRetVal) {
+  auto result = MakeRefPtr<JSStringEnumerator>(this);
+  result.forget(aRetVal);
+  return NS_OK;
+}
+
+template <class T>
+static inline nsresult StringEnumeratorTail(T** aResult) {
   if (!*aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -185,10 +247,9 @@ StringEnumeratorTail(T** aResult)
 // constructors
 //
 
-nsresult
-NS_NewStringEnumerator(nsIStringEnumerator** aResult,
-                       const nsTArray<nsString>* aArray, nsISupports* aOwner)
-{
+nsresult NS_NewStringEnumerator(nsIStringEnumerator** aResult,
+                                const nsTArray<nsString>* aArray,
+                                nsISupports* aOwner) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -197,12 +258,9 @@ NS_NewStringEnumerator(nsIStringEnumerator** aResult,
   return StringEnumeratorTail(aResult);
 }
 
-
-nsresult
-NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
-                           const nsTArray<nsCString>* aArray,
-                           nsISupports* aOwner)
-{
+nsresult NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
+                                    const nsTArray<nsCString>* aArray,
+                                    nsISupports* aOwner) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -211,10 +269,8 @@ NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
   return StringEnumeratorTail(aResult);
 }
 
-nsresult
-NS_NewAdoptingStringEnumerator(nsIStringEnumerator** aResult,
-                               nsTArray<nsString>* aArray)
-{
+nsresult NS_NewAdoptingStringEnumerator(nsIStringEnumerator** aResult,
+                                        nsTArray<nsString>* aArray) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -223,10 +279,8 @@ NS_NewAdoptingStringEnumerator(nsIStringEnumerator** aResult,
   return StringEnumeratorTail(aResult);
 }
 
-nsresult
-NS_NewAdoptingUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
-                                   nsTArray<nsCString>* aArray)
-{
+nsresult NS_NewAdoptingUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
+                                            nsTArray<nsCString>* aArray) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -236,10 +290,8 @@ NS_NewAdoptingUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
 }
 
 // const ones internally just forward to the non-const equivalents
-nsresult
-NS_NewStringEnumerator(nsIStringEnumerator** aResult,
-                       const nsTArray<nsString>* aArray)
-{
+nsresult NS_NewStringEnumerator(nsIStringEnumerator** aResult,
+                                const nsTArray<nsString>* aArray) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -248,10 +300,8 @@ NS_NewStringEnumerator(nsIStringEnumerator** aResult,
   return StringEnumeratorTail(aResult);
 }
 
-nsresult
-NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
-                           const nsTArray<nsCString>* aArray)
-{
+nsresult NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
+                                    const nsTArray<nsCString>* aArray) {
   if (NS_WARN_IF(!aResult) || NS_WARN_IF(!aArray)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -259,4 +309,3 @@ NS_NewUTF8StringEnumerator(nsIUTF8StringEnumerator** aResult,
   *aResult = new nsStringEnumerator(aArray, false);
   return StringEnumeratorTail(aResult);
 }
-

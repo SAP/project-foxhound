@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=350022
 -->
 <head>
   <title>Test for Bug 350022</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -51,18 +51,15 @@ addLoadEvent(function() {
 
   framesElts = document.getElementsByTagName('iframe');
   framesElts[0].addEventListener("load", function() {
-    framesElts[0].removeEventListener("load", arguments.callee, false);
     checkRadioGroup(0, [false, false, true]);
 
     framesElts[1].addEventListener("load", function() {
-      framesElts[1].removeEventListener("load", arguments.callee, false);
-
       checkRadioGroup(1, [false, true, false]);
       SimpleTest.finish();
-    }, false);
+    }, {once: true});
 
     frames[1].location.reload();
-  }, false);
+  }, {once: true});
 
   frames[0].location.reload();
 });

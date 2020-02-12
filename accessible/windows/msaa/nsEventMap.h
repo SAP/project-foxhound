@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -11,6 +11,7 @@
 const uint32_t kEVENT_WIN_UNKNOWN = 0x00000000;
 
 static const uint32_t gWinEventMap[] = {
+    // clang-format off
   kEVENT_WIN_UNKNOWN,                                // nsIAccessibleEvent doesn't have 0 constant
   EVENT_OBJECT_SHOW,                                 // nsIAccessibleEvent::EVENT_SHOW
   EVENT_OBJECT_HIDE,                                 // nsIAccessibleEvent::EVENT_HIDE
@@ -97,7 +98,9 @@ static const uint32_t gWinEventMap[] = {
   IA2_EVENT_HYPERTEXT_CHANGED,                       // nsIAccessibleEvent::EVENT_HYPERTEXT_CHANGED
   IA2_EVENT_HYPERTEXT_NLINKS_CHANGED,                // nsIAccessibleEvent::EVENT_HYPERTEXT_NLINKS_CHANGED
   IA2_EVENT_OBJECT_ATTRIBUTE_CHANGED,                // nsIAccessibleEvent::EVENT_OBJECT_ATTRIBUTE_CHANGED
-  kEVENT_WIN_UNKNOWN,                                 // nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED
-  EVENT_OBJECT_VALUECHANGE                          // nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE
+  kEVENT_WIN_UNKNOWN,                                // nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED
+  EVENT_OBJECT_VALUECHANGE,                          // nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE
+  kEVENT_WIN_UNKNOWN,                                // nsIAccessibleEvent::EVENT_SCROLLING
+  kEVENT_WIN_UNKNOWN,                                // nsIAccessibleEvent::EVENT_ANNOUNCEMENT
+    // clang-format on
 };
-

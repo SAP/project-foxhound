@@ -5,10 +5,9 @@
 
 "use strict";
 
-var Cu = Components.utils;
-var {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
+var { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 
-const {angleUtils} = require("devtools/client/shared/css-angle");
+const { angleUtils } = require("devtools/client/shared/css-angle");
 
 const CLASSIFY_TESTS = [
   { input: "180deg", output: "deg" },
@@ -22,12 +21,12 @@ const CLASSIFY_TESTS = [
   { input: "0.5GRAD", output: "grad" },
   { input: "0.33turn", output: "turn" },
   { input: "0.33TURN", output: "turn" },
-  { input: "-0.33turn", output: "turn" }
+  { input: "-0.33turn", output: "turn" },
 ];
 
 function run_test() {
-  for (let test of CLASSIFY_TESTS) {
-    let result = angleUtils.classifyAngle(test.input);
+  for (const test of CLASSIFY_TESTS) {
+    const result = angleUtils.classifyAngle(test.input);
     equal(result, test.output, "test classifyAngle(" + test.input + ")");
   }
 }

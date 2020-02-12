@@ -10,7 +10,8 @@ DIRS += [
 ]
 
 DevToolsModules(
-    'dom-panel.js',
-    'dom.html',
-    'main.js',
+    'panel.js',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('DevTools', 'DOM')

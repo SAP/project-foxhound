@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_
-#define WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_
+#ifndef MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_
+#define MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_
 
 #include <stdlib.h>
 
-#include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/test/testsupport/packet_reader.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/criticalsection.h"
+#include "test/testsupport/packet_reader.h"
 
 namespace webrtc {
 namespace test {
@@ -24,22 +24,20 @@ namespace test {
 enum PacketLossMode {
   // Drops packets with a configured probability independently for each packet
   kUniform,
-  // Drops packets similar to uniform but when a packet is being dropped,
-  // the number of lost packets in a row is equal to the configured burst
-  // length.
+  // Drops packets similar to uniform but when a packet is being dropped, the
+  // number of lost packets in a row is equal to the configured burst length.
   kBurst
 };
-// Returns a string representation of the enum value.
-const char* PacketLossModeToStr(PacketLossMode e);
 
 // Contains configurations related to networking and simulation of
 // scenarios caused by network interference.
 struct NetworkingConfig {
   NetworkingConfig()
-  : packet_size_in_bytes(1500), max_payload_size_in_bytes(1440),
-    packet_loss_mode(kUniform), packet_loss_probability(0.0),
-    packet_loss_burst_length(1) {
-  }
+      : packet_size_in_bytes(1500),
+        max_payload_size_in_bytes(1440),
+        packet_loss_mode(kUniform),
+        packet_loss_probability(0.0),
+        packet_loss_burst_length(1) {}
 
   // Packet size in bytes. Default: 1500 bytes.
   size_t packet_size_in_bytes;
@@ -90,23 +88,25 @@ class PacketManipulatorImpl : public PacketManipulator {
   PacketManipulatorImpl(PacketReader* packet_reader,
                         const NetworkingConfig& config,
                         bool verbose);
-  virtual ~PacketManipulatorImpl();
+  ~PacketManipulatorImpl() = default;
   int ManipulatePackets(webrtc::EncodedImage* encoded_image) override;
   virtual void InitializeRandomSeed(unsigned int seed);
+
  protected:
   // Returns a uniformly distributed random value between 0.0 and 1.0
   virtual double RandomUniform();
+
  private:
-  PacketReader* packet_reader_;
+  PacketReader* const packet_reader_;
   const NetworkingConfig& config_;
+  const bool verbose_;
   // Used to simulate a burst over several frames.
   int active_burst_packets_;
-  CriticalSectionWrapper* critsect_;
+  rtc::CriticalSection critsect_;
   unsigned int random_seed_;
-  bool verbose_;
 };
 
 }  // namespace test
 }  // namespace webrtc
 
-#endif  // WEBRTC_MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_
+#endif  // MODULES_VIDEO_CODING_CODECS_TEST_PACKET_MANIPULATOR_H_

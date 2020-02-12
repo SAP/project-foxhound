@@ -6,15 +6,14 @@
 
 #include "nsString.h"
 #include "MacHelpers.h"
+#include "MacStringHelpers.h"
 #include "nsObjCExceptions.h"
 
 #import <Foundation/Foundation.h>
 
 namespace mozilla {
 
-nsresult
-GetSelectedCityInfo(nsAString& aCountryCode)
-{
+nsresult GetSelectedCityInfo(nsAString& aCountryCode) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   // Can be replaced with [[NSLocale currentLocale] countryCode] once we build
@@ -25,17 +24,9 @@ GetSelectedCityInfo(nsAString& aCountryCode)
     return NS_ERROR_FAILURE;
   }
 
-  const char* countryCodeUTF8 = [(NSString*)countryCode UTF8String];
-
-  if (!countryCodeUTF8) {
-    return NS_ERROR_FAILURE;
-  }
-
-  AppendUTF8toUTF16(countryCodeUTF8, aCountryCode);
-  return NS_OK;
+  return mozilla::CopyCocoaStringToXPCOMString((NSString*)countryCode, aCountryCode);
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-} // namespace Mozilla
-
+}  // namespace Mozilla

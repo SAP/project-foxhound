@@ -1,8 +1,10 @@
 "use strict";
 
-let env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+let env = Cc["@mozilla.org/process/environment;1"].getService(
+  Ci.nsIEnvironment
+);
 
-add_task(function* test_getEnvironment() {
+add_task(async function test_getEnvironment() {
   env.set("FOO", "BAR");
 
   let environment = Subprocess.getEnvironment();

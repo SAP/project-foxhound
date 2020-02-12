@@ -6,20 +6,19 @@
 
 #include "nsEnvironment.h"
 #include "prenv.h"
-#include "prprf.h"
 #include "nsBaseHashtable.h"
 #include "nsHashKeys.h"
 #include "nsPromiseFlatString.h"
 #include "nsDependentString.h"
 #include "nsNativeCharsetUtils.h"
+#include "mozilla/Printf.h"
 
 using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsEnvironment, nsIEnvironment)
 
-nsresult
-nsEnvironment::Create(nsISupports* aOuter, REFNSIID aIID, void** aResult)
-{
+nsresult nsEnvironment::Create(nsISupports* aOuter, REFNSIID aIID,
+                               void** aResult) {
   nsresult rv;
   *aResult = nullptr;
 
@@ -36,13 +35,10 @@ nsEnvironment::Create(nsISupports* aOuter, REFNSIID aIID, void** aResult)
   return rv;
 }
 
-nsEnvironment::~nsEnvironment()
-{
-}
+nsEnvironment::~nsEnvironment() {}
 
 NS_IMETHODIMP
-nsEnvironment::Exists(const nsAString& aName, bool* aOutValue)
-{
+nsEnvironment::Exists(const nsAString& aName, bool* aOutValue) {
   nsAutoCString nativeName;
   nsresult rv = NS_CopyUnicodeToNative(aName, nativeName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -73,8 +69,7 @@ nsEnvironment::Exists(const nsAString& aName, bool* aOutValue)
 }
 
 NS_IMETHODIMP
-nsEnvironment::Get(const nsAString& aName, nsAString& aOutValue)
-{
+nsEnvironment::Get(const nsAString& aName, nsAString& aOutValue) {
   nsAutoCString nativeName;
   nsresult rv = NS_CopyUnicodeToNative(aName, nativeName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -103,9 +98,7 @@ typedef nsTHashtable<EnvEntryType> EnvHashType;
 
 static EnvHashType* gEnvHash = nullptr;
 
-static bool
-EnsureEnvHash()
-{
+static bool EnsureEnvHash() {
   if (gEnvHash) {
     return true;
   }
@@ -119,8 +112,7 @@ EnsureEnvHash()
 }
 
 NS_IMETHODIMP
-nsEnvironment::Set(const nsAString& aName, const nsAString& aValue)
-{
+nsEnvironment::Set(const nsAString& aName, const nsAString& aValue) {
   nsAutoCString nativeName;
   nsAutoCString nativeVal;
 
@@ -145,19 +137,16 @@ nsEnvironment::Set(const nsAString& aName, const nsAString& aValue)
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  char* newData = PR_smprintf("%s=%s",
-                              nativeName.get(),
-                              nativeVal.get());
+  SmprintfPointer newData =
+      mozilla::Smprintf("%s=%s", nativeName.get(), nativeVal.get());
   if (!newData) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  PR_SetEnv(newData);
-  if (entry->mData) {
-    PR_smprintf_free(entry->mData);
+  PR_SetEnv(newData.get());
+  if (entry->GetData()) {
+    free(entry->GetData());
   }
-  entry->mData = newData;
+  entry->SetData(newData.release());
   return NS_OK;
 }
-
-

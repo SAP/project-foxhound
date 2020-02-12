@@ -5,8 +5,7 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
   const objectStoreName = "Objects";
 
@@ -19,8 +18,7 @@ function testSteps()
   let db = event.target.result;
   is(db.objectStoreNames.length, 0, "Bad objectStores list");
 
-  let objectStore = db.createObjectStore(objectStoreName,
-                                         { keyPath: "foo" });
+  let objectStore = db.createObjectStore(objectStoreName, { keyPath: "foo" });
 
   is(db.objectStoreNames.length, 1, "Bad objectStores list");
   is(db.objectStoreNames.item(0), objectStoreName, "Bad name");
@@ -31,9 +29,7 @@ function testSteps()
 
   is(objectStore.name, objectStoreName, "Bad name");
   is(objectStore.keyPath, "foo", "Bad keyPath");
-  if(objectStore.indexNames.length, 0, "Bad indexNames");
+  is(objectStore.indexNames.length, 0, "Bad indexNames");
 
   finishTest();
-  yield undefined;
 }
-

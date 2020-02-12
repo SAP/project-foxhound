@@ -12,18 +12,84 @@
 #include "nsRegion.h"
 #include "nsCRT.h"
 #include "nsCOMPtr.h"
-#include "nsWidgetInitData.h" // for nsWindowType
+#include "nsWidgetInitData.h"  // for nsWindowType
 #include "nsIWidgetListener.h"
 #include "Units.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 
 class nsViewManager;
 class nsIWidget;
 class nsIFrame;
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
+/**
+ * nsView's serve two main purposes: 1) a bridge between nsIFrame's and
+ * nsIWidget's, 2) linking the frame tree of a(n) (in-process) subdocument with
+ * its parent document frame tree. Historically views were used for more things,
+ * but their role has been reduced, and could be reduced to nothing in the
+ * future (bug 337801 tracks removing views). Views are generally associated
+ * with a frame. A view that does not have a frame is called an anonymous view.
+ * Some frames also have associated widgets (think os level windows). If a frame
+ * has a widget it must also have a view, but not all frames with views will
+ * have widgets.
+ *
+ * Only five types of frames can have a view: root frames (ViewportFrame),
+ * subdocument frames (nsSubDocumentFrame), plugin frames (nsPluginFrame),
+ * menu popup frames (nsMenuPopupFrame), and list control frames
+ * (nsListControlFrame). Root frames and subdocument frames have views to link
+ * the two documents together (the frame trees do not link up otherwise).
+ * Plugin frames, menu popup frames, and list control frames have views because
+ * they (sometimes) need to create widgets (although plugins with widgets might
+ * be going away/gone?). Menu popup frames handles xul popups, which is anything
+ * where we need content to go over top the main window at an os level. List
+ * control frames handle select popups/dropdowns in non-e10s mode.
+ *
+ * The term "root view" refers to the root view of a document. Just like root
+ * frames, root views can have parent views. Only the root view of the root
+ * document in the process will not have a parent.
+ *
+ * All views are created by their frames except root views. Root views are
+ * special. Root views are created in nsDocumentViewer::MakeWindow before the
+ * root frame is created, so the root view will not have a frame very early in
+ * document creation.
+ *
+ * Subdocument frames and plugin frames have an anonymous (no frame associated
+ * with it) inner view that is a child of their "outer" view. On a plugin frame
+ * with a widget the inner view would be associated with the widget (as opposed
+ * to the outer view).
+ *
+ * On a subdocument frame the inner view serves as the parent of the
+ * root view of the subdocument. The outer and inner view of the subdocument
+ * frame belong to the subdocument frame and hence to the parent document. The
+ * root view of the subdocument belongs to the subdocument.
+ * nsLayoutUtils::GetCrossDocParentFrame and nsPresContext::GetParentPresContext
+ * depend on this view structure and are the main way that we traverse across
+ * the document boundary in layout.
+ *
+ * When the load of a new document is started in the subdocument, the creation
+ * of the new subdocument and destruction of the old subdocument are not
+ * linked. (This creation and destruction is handled in nsDocumentViewer.cpp.)
+ * This means that the old and new document will both exist at the same time
+ * during the loading of the new document. During this period the inner view of
+ * the subdocument parent will be the parent of two root views. This means that
+ * during this period there is a choice for which subdocument we draw,
+ * nsSubDocumentFrame::GetSubdocumentPresShellForPainting is what makes that
+ * choice. Note that this might not be a totally free choice, ie there might be
+ * hidden dependencies and bugs if the way we choose is changed.
+ *
+ * One thing that is special about the root view of a chrome window is that
+ * instead of creating a widget for the view, they can "attach" to the
+ * existing widget that was created by appshell code or something else. (see
+ * nsDocumentViewer::ShouldAttachToTopLevel)
+ */
+
 // Enumerated type to indicate the visibility of a layer.
 // hide - the layer is not shown.
-// show - the layer is shown irrespective of the visibility of 
+// show - the layer is shown irrespective of the visibility of
 //        the layer's parent.
 enum nsViewVisibility {
   nsViewVisibility_kHide = 0,
@@ -33,10 +99,10 @@ enum nsViewVisibility {
 // Public view flags
 
 // Indicates that the view is using auto z-indexing
-#define NS_VIEW_FLAG_AUTO_ZINDEX          0x0004
+#define NS_VIEW_FLAG_AUTO_ZINDEX 0x0004
 
 // Indicates that the view is a floating view.
-#define NS_VIEW_FLAG_FLOATING             0x0008
+#define NS_VIEW_FLAG_FLOATING 0x0008
 
 //----------------------------------------------------------------------
 
@@ -53,20 +119,19 @@ enum nsViewVisibility {
  * of a view, go through nsViewManager.
  */
 
-class nsView final : public nsIWidgetListener
-{
-public:
+class nsView final : public nsIWidgetListener {
+ public:
   friend class nsViewManager;
 
   typedef mozilla::LayoutDeviceIntRect LayoutDeviceIntRect;
   typedef mozilla::LayoutDeviceIntRegion LayoutDeviceIntRegion;
 
-  NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
+  void operator delete(void* ptr) { ::operator delete(ptr); }
 
   /**
    * Get the view manager which "owns" the view.
-   * This method might require some expensive traversal work in the future. If you can get the
-   * view manager from somewhere else, do that instead.
+   * This method might require some expensive traversal work in the future. If
+   * you can get the view manager from somewhere else, do that instead.
    * @result the view manager
    */
   nsViewManager* GetViewManager() const { return mViewManager; }
@@ -119,7 +184,9 @@ public:
    * GetBounds except this is relative to this view instead of the parent view.
    */
   nsRect GetDimensions() const {
-    nsRect r = mDimBounds; r.MoveBy(-mPosX, -mPosY); return r;
+    nsRect r = mDimBounds;
+    r.MoveBy(-mPosX, -mPosY);
+    return r;
   }
 
   /**
@@ -134,7 +201,7 @@ public:
    *
    * If aOther is null, this will return the offset of |this| from the
    * root of the viewmanager tree.
-   * 
+   *
    * This function is fastest when aOther is an ancestor of |this|.
    *
    * NOTE: this actually returns the offset from aOther to |this|, but
@@ -208,9 +275,9 @@ public:
    * @param aOffset - if non-null the offset from this view's origin to the
    * widget's origin (usually positive) expressed in appunits of this will be
    * returned in aOffset.
-   * @return the widget closest to this view; can be null because some view trees
-   * don't have widgets at all (e.g., printing), but if any view in the view tree
-   * has a widget, then it's safe to assume this will not return null
+   * @return the widget closest to this view; can be null because some view
+   * trees don't have widgets at all (e.g., printing), but if any view in the
+   * view tree has a widget, then it's safe to assume this will not return null
    */
   nsIWidget* GetNearestWidget(nsPoint* aOffset) const;
 
@@ -223,7 +290,7 @@ public:
    *        its create is called.
    * @return error status
    */
-  nsresult CreateWidget(nsWidgetInitData *aWidgetInitData = nullptr,
+  nsresult CreateWidget(nsWidgetInitData* aWidgetInitData = nullptr,
                         bool aEnableDragDrop = true,
                         bool aResetVisibility = true);
 
@@ -233,7 +300,7 @@ public:
    * as for |CreateWidget()|.
    */
   nsresult CreateWidgetForParent(nsIWidget* aParentWidget,
-                                 nsWidgetInitData *aWidgetInitData = nullptr,
+                                 nsWidgetInitData* aWidgetInitData = nullptr,
                                  bool aEnableDragDrop = true,
                                  bool aResetVisibility = true);
 
@@ -244,7 +311,7 @@ public:
    * other params are the same as for |CreateWidget()|, except that
    * |aWidgetInitData| must be nonnull.
    */
-  nsresult CreateWidgetForPopup(nsWidgetInitData *aWidgetInitData,
+  nsresult CreateWidgetForPopup(nsWidgetInitData* aWidgetInitData,
                                 nsIWidget* aParentWidget = nullptr,
                                 bool aEnableDragDrop = true,
                                 bool aResetVisibility = true);
@@ -287,9 +354,9 @@ public:
 
   /**
    * The widget which we have attached a listener to can also have a "previous"
-   * listener set on it. This is to keep track of the last nsView when navigating
-   * to a new one so that we can continue to paint that if the new one isn't ready
-   * yet.
+   * listener set on it. This is to keep track of the last nsView when
+   * navigating to a new one so that we can continue to paint that if the new
+   * one isn't ready yet.
    */
   void SetPreviousWidget(nsIWidget* aWidget) { mPreviousWindow = aWidget; }
 
@@ -297,10 +364,8 @@ public:
    * Returns true if the view has a widget associated with it.
    */
   bool HasWidget() const { return mWindow != nullptr; }
-  
-  void SetForcedRepaint(bool aForceRepaint) { 
-    mForcedRepaint = aForceRepaint; 
-  }
+
+  void SetForcedRepaint(bool aForceRepaint) { mForcedRepaint = aForceRepaint; }
 
   void SetNeedsWindowPropertiesSync();
 
@@ -320,10 +385,11 @@ public:
    * Output debug info to FILE
    * @param out output file handle
    * @param aIndent indentation depth
-   * NOTE: virtual so that debugging tools not linked into gklayout can access it
+   * NOTE: virtual so that debugging tools not linked into gklayout can access
+   * it
    */
   virtual void List(FILE* out, int32_t aIndent = 0) const;
-#endif // DEBUG
+#endif  // DEBUG
 
   /**
    * @result true iff this is the root view for its view manager
@@ -349,19 +415,20 @@ public:
   /**
    * Called to indicate that the z-index of a view has been changed.
    * The z-index is relative to all siblings of the view.
-   * @param aAuto Indicate that the z-index of a view is "auto". An "auto" z-index
-   * means that the view does not define a new stacking context,
-   * which means that the z-indicies of the view's children are
-   * relative to the view's siblings.
+   * @param aAuto Indicate that the z-index of a view is "auto". An "auto"
+   *              z-index means that the view does not define a new stacking
+   *              context, which means that the z-indicies of the view's
+   *              children are relative to the view's siblings.
    * @param zindex new z depth
    */
   void SetZIndex(bool aAuto, int32_t aZIndex);
-  bool GetZIndexIsAuto() const { return (mVFlags & NS_VIEW_FLAG_AUTO_ZINDEX) != 0; }
+  bool GetZIndexIsAuto() const {
+    return (mVFlags & NS_VIEW_FLAG_AUTO_ZINDEX) != 0;
+  }
   int32_t GetZIndex() const { return mZIndex; }
 
-  void SetParent(nsView *aParent) { mParent = aParent; }
-  void SetNextSibling(nsView *aSibling)
-  {
+  void SetParent(nsView* aParent) { mParent = aParent; }
+  void SetNextSibling(nsView* aSibling) {
     NS_ASSERTION(aSibling != this, "Can't be our own sibling!");
     mNextSibling = aSibling;
   }
@@ -377,19 +444,26 @@ public:
   }
 
   // nsIWidgetListener
-  virtual nsIPresShell* GetPresShell() override;
+  virtual mozilla::PresShell* GetPresShell() override;
   virtual nsView* GetView() override { return this; }
   virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) override;
-  virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth, int32_t aHeight) override;
+  virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
+                             int32_t aHeight) override;
   virtual bool RequestWindowClose(nsIWidget* aWidget) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void WillPaintWindow(nsIWidget* aWidget) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual bool PaintWindow(nsIWidget* aWidget,
                            LayoutDeviceIntRegion aRegion) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void DidPaintWindow() override;
-  virtual void DidCompositeWindow(uint64_t aTransactionId,
-                                  const mozilla::TimeStamp& aCompositeStart,
-                                  const mozilla::TimeStamp& aCompositeEnd) override;
+  virtual void DidCompositeWindow(
+      mozilla::layers::TransactionId aTransactionId,
+      const mozilla::TimeStamp& aCompositeStart,
+      const mozilla::TimeStamp& aCompositeEnd) override;
   virtual void RequestRepaint() override;
+  virtual bool ShouldNotBeVisible() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsEventStatus HandleEvent(mozilla::WidgetGUIEvent* aEvent,
                                     bool aUseAttachedEvents) override;
 
@@ -400,7 +474,7 @@ public:
 
   bool IsPrimaryFramePaintSuppressed();
 
-private:
+ private:
   explicit nsView(nsViewManager* aViewManager = nullptr,
                   nsViewVisibility aVisibility = nsViewVisibility_kShow);
 
@@ -419,7 +493,7 @@ private:
    * or to the left of its origin position. The term 'dimensions' indicates it
    * is relative to this view.
    */
-  void SetDimensions(const nsRect &aRect, bool aPaint = true,
+  void SetDimensions(const nsRect& aRect, bool aPaint = true,
                      bool aResizeWidget = true);
 
   /**
@@ -450,8 +524,8 @@ private:
     return mDirtyRegion && !mDirtyRegion->IsEmpty();
   }
 
-  void InsertChild(nsView *aChild, nsView *aSibling);
-  void RemoveChild(nsView *aChild);
+  void InsertChild(nsView* aChild, nsView* aSibling);
+  void RemoveChild(nsView* aChild);
 
   void ResetWidgetBounds(bool aRecurse, bool aForceSync);
   void AssertNoWindow();
@@ -461,26 +535,26 @@ private:
   // Update the cached RootViewManager for all view manager descendents.
   void InvalidateHierarchy();
 
-  nsViewManager    *mViewManager;
-  nsView           *mParent;
+  nsViewManager* mViewManager;
+  nsView* mParent;
   nsCOMPtr<nsIWidget> mWindow;
   nsCOMPtr<nsIWidget> mPreviousWindow;
-  nsView           *mNextSibling;
-  nsView           *mFirstChild;
-  nsIFrame         *mFrame;
-  nsRegion         *mDirtyRegion;
-  int32_t           mZIndex;
-  nsViewVisibility  mVis;
+  nsView* mNextSibling;
+  nsView* mFirstChild;
+  nsIFrame* mFrame;
+  nsRegion* mDirtyRegion;
+  int32_t mZIndex;
+  nsViewVisibility mVis;
   // position relative our parent view origin but in our appunits
-  nscoord           mPosX, mPosY;
+  nscoord mPosX, mPosY;
   // relative to parent, but in our appunits
-  nsRect            mDimBounds;
+  nsRect mDimBounds;
   // in our appunits
-  nsPoint           mViewToWidgetOffset;
-  uint32_t          mVFlags;
-  bool              mWidgetIsTopLevel;
-  bool              mForcedRepaint;
-  bool              mNeedsWindowPropertiesSync;
+  nsPoint mViewToWidgetOffset;
+  uint32_t mVFlags;
+  bool mWidgetIsTopLevel;
+  bool mForcedRepaint;
+  bool mNeedsWindowPropertiesSync;
 };
 
 #endif

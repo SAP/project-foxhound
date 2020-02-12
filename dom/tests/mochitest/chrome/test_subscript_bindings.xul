@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
 -->
 <window title="Mozilla Bug 741267"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <iframe id="t"></iframe>
 
@@ -25,7 +25,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741267
       // Resolve XMLHttpRequest on the chrome global
       new XMLHttpRequest();
 
-      var loader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"].getService(Components.interfaces.mozIJSSubScriptLoader);
+      var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
       var context = { window: $("t").contentWindow };
       var thrown = false;
       try {

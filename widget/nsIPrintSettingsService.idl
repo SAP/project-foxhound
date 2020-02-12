@@ -30,7 +30,7 @@ namespace embedding {
 interface nsIPrintSettingsService : nsISupports
 {
   /**
-   * Returns a "global" PrintSettings object 
+   * Returns a "global" PrintSettings object
    * Creates a new the first time, if one doesn't exist.
    *
    * Then returns the same object each time after that.
@@ -58,7 +58,7 @@ interface nsIPrintSettingsService : nsISupports
   /**
    * The name of the last printer used, or else the system default printer.
    */
-  readonly attribute wstring defaultPrinterName;
+  readonly attribute AString defaultPrinterName;
 
   /**
    * Initializes certain settings from the native printer into the PrintSettings
@@ -68,7 +68,8 @@ interface nsIPrintSettingsService : nsISupports
    *   Page Size
    *   Number of Copies
    */
-  void initPrintSettingsFromPrinter(in wstring aPrinterName, in nsIPrintSettings aPrintSettings);
+  void initPrintSettingsFromPrinter(in AString aPrinterName,
+                                    in nsIPrintSettings aPrintSettings);
 
   /**
    * Reads PrintSettings values from Prefs,
@@ -86,18 +87,18 @@ interface nsIPrintSettingsService : nsISupports
    *
    * Items not read:
    *   startPageRange, endPageRange, scaling, printRange, title
-   *   docURL, howToEnableFrameUI, isCancelled, printFrameTypeUsage
-   *   printFrameType, printSilent, shrinkToFit, numCopies,
+   *   docURL, isCancelled,
+   *   printSilent, shrinkToFit, numCopies,
    *   printerName
    *
    */
   void initPrintSettingsFromPrefs(in nsIPrintSettings aPrintSettings, in boolean aUsePrinterNamePrefix, in unsigned long aFlags);
 
   /**
-   * Writes PrintSettings values to Prefs, 
+   * Writes PrintSettings values to Prefs,
    * the values to be written are indicated by the "flags" arg.
    *
-   * If there is no PrinterName in the PrinterSettings 
+   * If there is no PrinterName in the PrinterSettings
    * the values are saved as the "generic" values not associated with any printer.
    * If a PrinterName is there, then it saves the items qualified for that Printer
    *
@@ -107,8 +108,8 @@ interface nsIPrintSettingsService : nsISupports
    *
    * Items not written:
    *   startPageRange, endPageRange, scaling, printRange, title
-   *   docURL, howToEnableFrameUI, isCancelled, printFrameTypeUsage
-   *   printFrameType, printSilent, shrinkToFit, numCopies
+   *   docURL, isCancelled,
+   *   printSilent, shrinkToFit, numCopies
    *
    */
   void savePrintSettingsToPrefs(in nsIPrintSettings aPrintSettings, in boolean aUsePrinterNamePrefix, in unsigned long aFlags);

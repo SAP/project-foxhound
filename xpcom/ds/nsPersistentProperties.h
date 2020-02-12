@@ -9,57 +9,50 @@
 
 #include "nsIPersistentProperties2.h"
 #include "PLDHashTable.h"
-#include "plarena.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
+#include "mozilla/ArenaAllocator.h"
 #include "mozilla/Attributes.h"
 
 class nsIUnicharInputStream;
 
-class nsPersistentProperties final : public nsIPersistentProperties
-{
-public:
+class nsPersistentProperties final : public nsIPersistentProperties {
+ public:
   nsPersistentProperties();
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPROPERTIES
   NS_DECL_NSIPERSISTENTPROPERTIES
 
-  static MOZ_MUST_USE nsresult
-  Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
+  size_t SizeOfIncludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) const override;
 
-private:
+ private:
   ~nsPersistentProperties();
 
-protected:
+ protected:
   nsCOMPtr<nsIUnicharInputStream> mIn;
 
   PLDHashTable mTable;
-  PLArenaPool mArena;
+  mozilla::ArenaAllocator<2048, 4> mArena;
 };
 
-class nsPropertyElement final : public nsIPropertyElement
-{
-public:
-  nsPropertyElement()
-  {
-  }
+class nsPropertyElement final : public nsIPropertyElement {
+ public:
+  nsPropertyElement() {}
 
   nsPropertyElement(const nsACString& aKey, const nsAString& aValue)
-    : mKey(aKey)
-    , mValue(aValue)
-  {
-  }
+      : mKey(aKey), mValue(aValue) {}
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROPERTYELEMENT
 
   static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
 
-private:
+ private:
   ~nsPropertyElement() {}
 
-protected:
+ protected:
   nsCString mKey;
   nsString mValue;
 };

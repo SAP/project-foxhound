@@ -14,81 +14,69 @@ namespace _ipdltest {
 
 // top-level protocol
 
-class TestManyChildAllocsParent :
-    public PTestManyChildAllocsParent
-{
-public:
-    TestManyChildAllocsParent();
-    virtual ~TestManyChildAllocsParent();
+class TestManyChildAllocsParent : public PTestManyChildAllocsParent {
+  friend class PTestManyChildAllocsParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestManyChildAllocsParent();
+  virtual ~TestManyChildAllocsParent();
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:
-    virtual bool RecvDone() override;
-    virtual bool DeallocPTestManyChildAllocsSubParent(PTestManyChildAllocsSubParent* __a) override;
-    virtual PTestManyChildAllocsSubParent* AllocPTestManyChildAllocsSubParent() override;
+  void Main();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        passed("ok");
-        QuitParent();
-    }
+ protected:
+  mozilla::ipc::IPCResult RecvDone();
+  bool DeallocPTestManyChildAllocsSubParent(PTestManyChildAllocsSubParent* __a);
+  PTestManyChildAllocsSubParent* AllocPTestManyChildAllocsSubParent();
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestManyChildAllocsChild : public PTestManyChildAllocsChild {
+  friend class PTestManyChildAllocsChild;
 
-class TestManyChildAllocsChild :
-    public PTestManyChildAllocsChild
-{
-public:
-    TestManyChildAllocsChild();
-    virtual ~TestManyChildAllocsChild();
+ public:
+  TestManyChildAllocsChild();
+  virtual ~TestManyChildAllocsChild();
 
-protected:
-    virtual bool RecvGo() override;
-    virtual bool DeallocPTestManyChildAllocsSubChild(PTestManyChildAllocsSubChild* __a) override;
-    virtual PTestManyChildAllocsSubChild* AllocPTestManyChildAllocsSubChild() override;
+ protected:
+  mozilla::ipc::IPCResult RecvGo();
+  bool DeallocPTestManyChildAllocsSubChild(PTestManyChildAllocsSubChild* __a);
+  PTestManyChildAllocsSubChild* AllocPTestManyChildAllocsSubChild();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
-
 
 // do-nothing sub-protocol actors
 
-class TestManyChildAllocsSubParent :
-    public PTestManyChildAllocsSubParent
-{
-public:
-    TestManyChildAllocsSubParent() { }
-    virtual ~TestManyChildAllocsSubParent() { }
+class TestManyChildAllocsSubParent : public PTestManyChildAllocsSubParent {
+  friend class PTestManyChildAllocsSubParent;
 
-protected:
-    virtual void ActorDestroy(ActorDestroyReason why) override {}
-    virtual bool RecvHello() override { return true; }
+ public:
+  TestManyChildAllocsSubParent() {}
+  virtual ~TestManyChildAllocsSubParent() {}
+
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {}
+  mozilla::ipc::IPCResult RecvHello() { return IPC_OK(); }
 };
 
-
-class TestManyChildAllocsSubChild :
-    public PTestManyChildAllocsSubChild
-{
-public:
-    TestManyChildAllocsSubChild() { }
-    virtual ~TestManyChildAllocsSubChild() { }
+class TestManyChildAllocsSubChild : public PTestManyChildAllocsSubChild {
+ public:
+  TestManyChildAllocsSubChild() {}
+  virtual ~TestManyChildAllocsSubChild() {}
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-
-} // namepsace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestManyChildAllocs_h
+#endif  // ifndef mozilla__ipdltest_TestManyChildAllocs_h

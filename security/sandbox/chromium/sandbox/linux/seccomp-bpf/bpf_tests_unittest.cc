@@ -10,9 +10,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/bpf_dsl/policy.h"
@@ -76,7 +77,7 @@ TEST(BPFTest, BPFTesterCompatibilityDelegateLeakTest) {
   }
   {
     // Test polymorphism.
-    scoped_ptr<BPFTesterDelegate> simple_delegate(
+    std::unique_ptr<BPFTesterDelegate> simple_delegate(
         new BPFTesterCompatibilityDelegate<EmptyClassTakingPolicy, FourtyTwo>(
             DummyTestFunction));
   }
@@ -113,8 +114,8 @@ class BasicBPFTesterDelegate : public BPFTesterDelegate {
   BasicBPFTesterDelegate() {}
   ~BasicBPFTesterDelegate() override {}
 
-  scoped_ptr<bpf_dsl::Policy> GetSandboxBPFPolicy() override {
-    return scoped_ptr<bpf_dsl::Policy>(new EnosysPtracePolicy());
+  std::unique_ptr<bpf_dsl::Policy> GetSandboxBPFPolicy() override {
+    return std::unique_ptr<bpf_dsl::Policy>(new EnosysPtracePolicy());
   }
   void RunTestFunction() override {
     errno = 0;
@@ -129,7 +130,7 @@ class BasicBPFTesterDelegate : public BPFTesterDelegate {
 
 // This is the most powerful and complex way to create a BPF test, but it
 // requires a full class definition (BasicBPFTesterDelegate).
-BPF_TEST_D(BPFTest, BPFTestWithDelegateClass, BasicBPFTesterDelegate);
+BPF_TEST_D(BPFTest, BPFTestWithDelegateClass, BasicBPFTesterDelegate)
 
 // This is the simplest form of BPF tests.
 BPF_TEST_C(BPFTest, BPFTestWithInlineTest, EnosysPtracePolicy) {

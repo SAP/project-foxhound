@@ -24,39 +24,32 @@ function run_test() {
   run_next_test();
 }
 
-do_register_cleanup(function () {
+registerCleanupFunction(function() {
   remove_bookmarks_html();
   remove_all_JSON_backups();
   return PlacesUtils.bookmarks.eraseEverything();
 });
 
-add_task(function* test_main() {
+add_task(async function test_main() {
   // Initialize nsBrowserGlue before Places.
   Cc["@mozilla.org/browser/browserglue;1"].getService(Ci.nsISupports);
 
   // Initialize Places through the History Service.
-  let hs = Cc["@mozilla.org/browser/nav-history-service;1"].
-           getService(Ci.nsINavHistoryService);
+  let hs = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
+    Ci.nsINavHistoryService
+  );
 
   // Check a new database has been created.
   // nsBrowserGlue uses databaseStatus to manage initialization.
   Assert.equal(hs.databaseStatus, hs.DATABASE_STATUS_CREATE);
 
-  // The test will continue once restore has finished and smart bookmarks
-  // have been created.
-  yield promiseTopicObserved("places-browser-init-complete");
-
-  let bm = yield PlacesUtils.bookmarks.fetch({
-    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-    index: 0
-  });
-  yield checkItemHasAnnotation(bm.guid, SMART_BOOKMARKS_ANNO);
+  // The test will continue once restore has finished.
+  await promiseTopicObserved("places-browser-init-complete");
 
   // Check that JSON backup has been restored.
-  // Notice restore from JSON notification is fired before smart bookmarks creation.
-  bm = yield PlacesUtils.bookmarks.fetch({
+  let bm = await PlacesUtils.bookmarks.fetch({
     parentGuid: PlacesUtils.bookmarks.toolbarGuid,
-    index: SMART_BOOKMARKS_ON_TOOLBAR
+    index: 0,
   });
   Assert.equal(bm.title, "examplejson");
 });

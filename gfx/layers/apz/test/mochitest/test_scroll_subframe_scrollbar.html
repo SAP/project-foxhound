@@ -2,9 +2,9 @@
 <html>
 <head>
   <title>Test scrolling subframe scrollbars</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 <style>
@@ -58,7 +58,7 @@ p {
 39	<br>
 40	<br>
 </p>
-<script clss="testbody" type="text/javascript;version=1.7">
+<script clss="testbody" type="text/javascript">
 
 var DefaultEvent = {
   deltaMode: WheelEvent.DOM_DELTA_LINE,
@@ -69,13 +69,13 @@ var DefaultEvent = {
 var ScrollbarWidth = 0;
 
 function test() {
-  var subframe = document.getElementById('subframe');
+  var subframe = document.getElementById("subframe");
   var oldClientWidth = subframe.clientWidth;
 
-  subframe.style.overflow = 'auto';
+  subframe.style.overflow = "auto";
   subframe.getBoundingClientRect();
 
-  waitForAllPaintsFlushed(function () {
+  waitForAllPaintsFlushed(function() {
     ScrollbarWidth = oldClientWidth - subframe.clientWidth;
     if (!ScrollbarWidth) {
       // Probably we have overlay scrollbars - abort the test.
@@ -98,7 +98,7 @@ function testScrolling(subframe) {
 
   var oldScrollTop = subframe.scrollTop;
 
-  sendWheelAndPaint(subframe, posX, posY, DefaultEvent, function () {
+  sendWheelAndPaint(subframe, posX, posY, DefaultEvent, function() {
     ok(subframe.scrollTop > oldScrollTop, "subframe should have scrolled");
     SimpleTest.finish();
   });
@@ -106,9 +106,9 @@ function testScrolling(subframe) {
 
 SimpleTest.waitForExplicitFinish();
 
-pushPrefs([['general.smoothScroll', false],
-           ['mousewheel.transaction.timeout', 0],
-           ['mousewheel.transaction.ignoremovedelay', 0]])
+pushPrefs([["general.smoothScroll", false],
+           ["mousewheel.transaction.timeout", 0],
+           ["mousewheel.transaction.ignoremovedelay", 0]])
 .then(waitUntilApzStable)
 .then(test);
 

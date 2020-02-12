@@ -2,8 +2,8 @@
 <html>
 <head>
   <title>Test CSP 1.1 nonce-source for scripts and styles</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -18,12 +18,12 @@ var totalTests = 20;
 
 // This is used to watch the blocked data bounce off CSP
 function examiner() {
-  SpecialPowers.addObserver(this, "specialpowers-http-notify-request", false);
-  SpecialPowers.addObserver(this, "csp-on-violate-policy", false);
+  SpecialPowers.addObserver(this, "specialpowers-http-notify-request");
+  SpecialPowers.addObserver(this, "csp-on-violate-policy");
 }
 
 examiner.prototype = {
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     var testid_re = new RegExp("testid=([a-z0-9_]+)");
 
     //_good things better be allowed!
@@ -52,7 +52,7 @@ examiner.prototype = {
     }
   },
   // must eventually call this to remove the listener, or mochitests might get borked.
-  remove: function() {
+  remove() {
     SpecialPowers.removeObserver(this, "specialpowers-http-notify-request");
     SpecialPowers.removeObserver(this, "csp-on-violate-policy");
   }
@@ -76,7 +76,7 @@ function ranTests(num) {
 function checkInlineScriptsAndStyles () {
   var cspframe = document.getElementById('cspframe');
   var getElementColorById = function (id) {
-    return window.getComputedStyle(cspframe.contentDocument.getElementById(id), null).color;
+    return window.getComputedStyle(cspframe.contentDocument.getElementById(id)).color;
   };
   // Inline style tries to change an element's color to green. If blocked, the
   // element's color will be the (unchanged) default black.
@@ -115,7 +115,7 @@ SimpleTest.waitForExplicitFinish();
 // save this for last so that our listeners are registered.
 // ... this loads the testbed of good and bad requests.
 document.getElementById('cspframe').src = 'file_nonce_source.html';
-document.getElementById('cspframe').addEventListener('load', checkInlineScriptsAndStyles, false);
+document.getElementById('cspframe').addEventListener('load', checkInlineScriptsAndStyles);
 </script>
 </pre>
 </body>

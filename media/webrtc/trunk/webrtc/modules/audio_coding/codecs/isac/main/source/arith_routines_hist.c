@@ -17,7 +17,7 @@
  */
 void WebRtcIsac_EncHistMulti(Bitstr *streamdata, /* in-/output struct containing bitstream */
                              const int *data,  /* input: data vector */
-                             const uint16_t **cdf, /* input: array of cdf arrays */
+                             const uint16_t *const *cdf, /* input: array of cdf arrays */
                              const int N)   /* input: data vector length */
 {
   uint32_t W_lower, W_upper;
@@ -84,7 +84,7 @@ void WebRtcIsac_EncHistMulti(Bitstr *streamdata, /* in-/output struct containing
  */
 int WebRtcIsac_DecHistBisectMulti(int *data,     /* output: data vector */
                                   Bitstr *streamdata,   /* in-/output struct containing bitstream */
-                                  const uint16_t **cdf,  /* input: array of cdf arrays */
+                                  const uint16_t *const *cdf,  /* input: array of cdf arrays */
                                   const uint16_t *cdf_size, /* input: array of cdf table sizes+1 (power of two: 2^k) */
                                   const int N)    /* input: data vector length */
 {
@@ -192,7 +192,7 @@ int WebRtcIsac_DecHistBisectMulti(int *data,     /* output: data vector */
  */
 int WebRtcIsac_DecHistOneStepMulti(int *data,        /* output: data vector */
                                    Bitstr *streamdata,      /* in-/output struct containing bitstream */
-                                   const uint16_t **cdf,   /* input: array of cdf arrays */
+                                   const uint16_t *const *cdf,   /* input: array of cdf arrays */
                                    const uint16_t *init_index, /* input: vector of initial cdf table search entries */
                                    const int N)     /* input: data vector length */
 {
@@ -214,10 +214,10 @@ int WebRtcIsac_DecHistOneStepMulti(int *data,        /* output: data vector */
   if (streamdata->stream_index == 0)   /* first time decoder is called for this stream */
   {
     /* read first word from bytestream */
-    streamval = *stream_ptr << 24;
-    streamval |= *++stream_ptr << 16;
-    streamval |= *++stream_ptr << 8;
-    streamval |= *++stream_ptr;
+    streamval = (uint32_t)(*stream_ptr) << 24;
+    streamval |= (uint32_t)(*++stream_ptr) << 16;
+    streamval |= (uint32_t)(*++stream_ptr) << 8;
+    streamval |= (uint32_t)(*++stream_ptr);
   } else {
     streamval = streamdata->streamval;
   }

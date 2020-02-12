@@ -1,8 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef FLAC_DEMUXER_H_
 #define FLAC_DEMUXER_H_
@@ -15,33 +15,36 @@ namespace mozilla {
 namespace flac {
 class Frame;
 class FrameParser;
-}
+}  // namespace flac
 class FlacTrackDemuxer;
 
+DDLoggedTypeDeclNameAndBase(FlacDemuxer, MediaDataDemuxer);
+DDLoggedTypeNameAndBase(FlacTrackDemuxer, MediaTrackDemuxer);
 
-class FlacDemuxer : public MediaDataDemuxer {
-public:
+class FlacDemuxer : public MediaDataDemuxer,
+                    public DecoderDoctorLifeLogger<FlacDemuxer> {
+ public:
   // MediaDataDemuxer interface.
   explicit FlacDemuxer(MediaResource* aSource);
   RefPtr<InitPromise> Init() override;
-  bool HasTrackType(TrackInfo::TrackType aType) const override;
   uint32_t GetNumberTracks(TrackInfo::TrackType aType) const override;
   already_AddRefed<MediaTrackDemuxer> GetTrackDemuxer(
-    TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
+      TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
   bool IsSeekable() const override;
 
   // Return true if a valid flac frame header could be found.
   static bool FlacSniffer(const uint8_t* aData, const uint32_t aLength);
 
-private:
+ private:
   bool InitInternal();
 
   RefPtr<MediaResource> mSource;
   RefPtr<FlacTrackDemuxer> mTrackDemuxer;
 };
 
-class FlacTrackDemuxer : public MediaTrackDemuxer {
-public:
+class FlacTrackDemuxer : public MediaTrackDemuxer,
+                         public DecoderDoctorLifeLogger<FlacTrackDemuxer> {
+ public:
   explicit FlacTrackDemuxer(MediaResource* aSource);
 
   // Initializes the track demuxer by reading the first frame for meta data.
@@ -50,17 +53,17 @@ public:
 
   // MediaTrackDemuxer interface.
   UniquePtr<TrackInfo> GetInfo() const override;
-  RefPtr<SeekPromise> Seek(media::TimeUnit aTime) override;
+  RefPtr<SeekPromise> Seek(const media::TimeUnit& aTime) override;
   RefPtr<SamplesPromise> GetSamples(int32_t aNumSamples = 1) override;
   void Reset() override;
   int64_t GetResourceOffset() const override;
   media::TimeIntervals GetBuffered() override;
   RefPtr<SkipAccessPointPromise> SkipToNextRandomAccessPoint(
-    media::TimeUnit aTimeThreshold) override;
+      const media::TimeUnit& aTimeThreshold) override;
 
   bool IsSeekable() const;
 
-private:
+ private:
   // Destructor.
   ~FlacTrackDemuxer();
 
@@ -71,7 +74,8 @@ private:
   // Fast approximate seeking to given time.
   media::TimeUnit FastSeek(const media::TimeUnit& aTime);
 
-  // Seeks by scanning the stream up to the given time for more accurate results.
+  // Seeks by scanning the stream up to the given time for more accurate
+  // results.
   media::TimeUnit ScanUntil(const media::TimeUnit& aTime);
 
   // Finds the next valid frame and return it.
@@ -103,6 +107,6 @@ private:
   UniquePtr<AudioInfo> mInfo;
 };
 
-} // mozilla
+}  // namespace mozilla
 
-#endif // !FLAC_DEMUXER_H_
+#endif  // !FLAC_DEMUXER_H_

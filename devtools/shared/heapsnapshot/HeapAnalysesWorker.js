@@ -1,18 +1,22 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* global ThreadSafeChromeUtils*/
+/* global ChromeUtils*/
 
 // This is a worker which reads offline heap snapshots into memory and performs
 // heavyweight analyses on them without blocking the main thread. A
 // HeapAnalysesWorker is owned and communicated with by a HeapAnalysesClient
 // instance. See HeapAnalysesClient.js.
 
+/* global importScripts, workerHelper, self */
+
 "use strict";
 
 importScripts("resource://gre/modules/workers/require.js");
 importScripts("resource://devtools/shared/worker/helper.js");
-const { censusReportToCensusTreeNode } = require("resource://devtools/shared/heapsnapshot/census-tree-node.js");
+const {
+  censusReportToCensusTreeNode,
+} = require("resource://devtools/shared/heapsnapshot/census-tree-node.js");
 const DominatorTreeNode = require("resource://devtools/shared/heapsnapshot/DominatorTreeNode.js");
 const CensusUtils = require("resource://devtools/shared/heapsnapshot/CensusUtils.js");
 
@@ -44,8 +48,7 @@ const dominatorTreeSnapshots = [];
  * @see HeapAnalysesClient.prototype.readHeapSnapshot
  */
 workerHelper.createTask(self, "readHeapSnapshot", ({ snapshotFilePath }) => {
-  snapshots[snapshotFilePath] =
-    ThreadSafeChromeUtils.readHeapSnapshot(snapshotFilePath);
+  snapshots[snapshotFilePath] = ChromeUtils.readHeapSnapshot(snapshotFilePath);
   return true;
 });
 
@@ -53,14 +56,14 @@ workerHelper.createTask(self, "readHeapSnapshot", ({ snapshotFilePath }) => {
  * @see HeapAnalysesClient.prototype.deleteHeapSnapshot
  */
 workerHelper.createTask(self, "deleteHeapSnapshot", ({ snapshotFilePath }) => {
-  let snapshot = snapshots[snapshotFilePath];
+  const snapshot = snapshots[snapshotFilePath];
   if (!snapshot) {
     throw new Error(`No known heap snapshot for '${snapshotFilePath}'`);
   }
 
   snapshots[snapshotFilePath] = undefined;
 
-  let dominatorTreeId = dominatorTreeSnapshots.indexOf(snapshot);
+  const dominatorTreeId = dominatorTreeSnapshots.indexOf(snapshot);
   if (dominatorTreeId != -1) {
     dominatorTreeSnapshots[dominatorTreeId] = undefined;
     dominatorTrees[dominatorTreeId] = undefined;
@@ -70,25 +73,33 @@ workerHelper.createTask(self, "deleteHeapSnapshot", ({ snapshotFilePath }) => {
 /**
  * @see HeapAnalysesClient.prototype.takeCensus
  */
-workerHelper.createTask(self, "takeCensus", ({ snapshotFilePath, censusOptions, requestOptions }) => {
-  if (!snapshots[snapshotFilePath]) {
-    throw new Error(`No known heap snapshot for '${snapshotFilePath}'`);
-  }
-
-  let report = snapshots[snapshotFilePath].takeCensus(censusOptions);
-  let parentMap;
-
-  if (requestOptions.asTreeNode || requestOptions.asInvertedTreeNode) {
-    const opts = { filter: requestOptions.filter || null };
-    if (requestOptions.asInvertedTreeNode) {
-      opts.invert = true;
+workerHelper.createTask(
+  self,
+  "takeCensus",
+  ({ snapshotFilePath, censusOptions, requestOptions }) => {
+    if (!snapshots[snapshotFilePath]) {
+      throw new Error(`No known heap snapshot for '${snapshotFilePath}'`);
     }
-    report = censusReportToCensusTreeNode(censusOptions.breakdown, report, opts);
-    parentMap = CensusUtils.createParentMap(report);
-  }
 
-  return { report, parentMap };
-});
+    let report = snapshots[snapshotFilePath].takeCensus(censusOptions);
+    let parentMap;
+
+    if (requestOptions.asTreeNode || requestOptions.asInvertedTreeNode) {
+      const opts = { filter: requestOptions.filter || null };
+      if (requestOptions.asInvertedTreeNode) {
+        opts.invert = true;
+      }
+      report = censusReportToCensusTreeNode(
+        censusOptions.breakdown,
+        report,
+        opts
+      );
+      parentMap = CensusUtils.createParentMap(report);
+    }
+
+    return { report, parentMap };
+  }
+);
 
 /**
  * @see HeapAnalysesClient.prototype.getCensusIndividuals
@@ -106,29 +117,42 @@ workerHelper.createTask(self, "getCensusIndividuals", request => {
   const dominatorTree = dominatorTrees[dominatorTreeId];
   if (!dominatorTree) {
     throw new Error(
-      `There does not exist a DominatorTree with the id ${dominatorTreeId}`);
+      `There does not exist a DominatorTree with the id ${dominatorTreeId}`
+    );
   }
 
   const snapshot = dominatorTreeSnapshots[dominatorTreeId];
-  const nodeIds = CensusUtils.getCensusIndividuals(indices, censusBreakdown, snapshot);
+  const nodeIds = CensusUtils.getCensusIndividuals(
+    indices,
+    censusBreakdown,
+    snapshot
+  );
 
   const nodes = nodeIds
-    .sort((a, b) => dominatorTree.getRetainedSize(b) - dominatorTree.getRetainedSize(a))
+    .sort(
+      (a, b) =>
+        dominatorTree.getRetainedSize(b) - dominatorTree.getRetainedSize(a)
+    )
     .slice(0, maxIndividuals)
     .map(id => {
-      const { label, shallowSize } =
-        DominatorTreeNode.getLabelAndShallowSize(id, snapshot, labelBreakdown);
+      const { label, shallowSize } = DominatorTreeNode.getLabelAndShallowSize(
+        id,
+        snapshot,
+        labelBreakdown
+      );
       const retainedSize = dominatorTree.getRetainedSize(id);
       const node = new DominatorTreeNode(id, label, shallowSize, retainedSize);
       node.moreChildrenAvailable = false;
       return node;
     });
 
-  DominatorTreeNode.attachShortestPaths(snapshot,
-                                        labelBreakdown,
-                                        dominatorTree.root,
-                                        nodes,
-                                        maxRetainingPaths);
+  DominatorTreeNode.attachShortestPaths(
+    snapshot,
+    labelBreakdown,
+    dominatorTree.root,
+    nodes,
+    maxRetainingPaths
+  );
 
   return { nodes };
 });
@@ -141,7 +165,7 @@ workerHelper.createTask(self, "takeCensusDiff", request => {
     firstSnapshotFilePath,
     secondSnapshotFilePath,
     censusOptions,
-    requestOptions
+    requestOptions,
   } = request;
 
   if (!snapshots[firstSnapshotFilePath]) {
@@ -206,19 +230,22 @@ workerHelper.createTask(self, "getDominatorTree", request => {
     maxRetainingPaths,
   } = request;
 
-  if (!(0 <= dominatorTreeId && dominatorTreeId < dominatorTrees.length)) {
+  if (!(dominatorTreeId >= 0 && dominatorTreeId < dominatorTrees.length)) {
     throw new Error(
-      `There does not exist a DominatorTree with the id ${dominatorTreeId}`);
+      `There does not exist a DominatorTree with the id ${dominatorTreeId}`
+    );
   }
 
   const dominatorTree = dominatorTrees[dominatorTreeId];
   const snapshot = dominatorTreeSnapshots[dominatorTreeId];
 
-  const tree = DominatorTreeNode.partialTraversal(dominatorTree,
-                                                  snapshot,
-                                                  breakdown,
-                                                  maxDepth,
-                                                  maxSiblings);
+  const tree = DominatorTreeNode.partialTraversal(
+    dominatorTree,
+    snapshot,
+    breakdown,
+    maxDepth,
+    maxSiblings
+  );
 
   const nodes = [];
   (function getNodes(node) {
@@ -228,13 +255,15 @@ workerHelper.createTask(self, "getDominatorTree", request => {
         getNodes(node.children[i]);
       }
     }
-  }(tree));
+  })(tree);
 
-  DominatorTreeNode.attachShortestPaths(snapshot,
-                                        breakdown,
-                                        dominatorTree.root,
-                                        nodes,
-                                        maxRetainingPaths);
+  DominatorTreeNode.attachShortestPaths(
+    snapshot,
+    breakdown,
+    dominatorTree.root,
+    nodes,
+    maxRetainingPaths
+  );
 
   return tree;
 });
@@ -252,9 +281,10 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
     maxRetainingPaths,
   } = request;
 
-  if (!(0 <= dominatorTreeId && dominatorTreeId < dominatorTrees.length)) {
+  if (!(dominatorTreeId >= 0 && dominatorTreeId < dominatorTrees.length)) {
     throw new Error(
-      `There does not exist a DominatorTree with the id ${dominatorTreeId}`);
+      `There does not exist a DominatorTree with the id ${dominatorTreeId}`
+    );
   }
 
   const dominatorTree = dominatorTrees[dominatorTreeId];
@@ -269,19 +299,21 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
   const count = maxCount || DEFAULT_MAX_COUNT;
   const end = start + count;
 
-  const nodes = childIds
-    .slice(start, end)
-    .map(id => {
-      const { label, shallowSize } =
-        DominatorTreeNode.getLabelAndShallowSize(id, snapshot, breakdown);
-      const retainedSize = dominatorTree.getRetainedSize(id);
-      const node = new DominatorTreeNode(id, label, shallowSize, retainedSize);
-      node.parentId = nodeId;
-      // DominatorTree.getImmediatelyDominated will always return non-null here
-      // because we got the id directly from the dominator tree.
-      node.moreChildrenAvailable = dominatorTree.getImmediatelyDominated(id).length > 0;
-      return node;
-    });
+  const nodes = childIds.slice(start, end).map(id => {
+    const { label, shallowSize } = DominatorTreeNode.getLabelAndShallowSize(
+      id,
+      snapshot,
+      breakdown
+    );
+    const retainedSize = dominatorTree.getRetainedSize(id);
+    const node = new DominatorTreeNode(id, label, shallowSize, retainedSize);
+    node.parentId = nodeId;
+    // DominatorTree.getImmediatelyDominated will always return non-null here
+    // because we got the id directly from the dominator tree.
+    node.moreChildrenAvailable =
+      dominatorTree.getImmediatelyDominated(id).length > 0;
+    return node;
+  });
 
   const path = [];
   let id = nodeId;
@@ -293,11 +325,13 @@ workerHelper.createTask(self, "getImmediatelyDominated", request => {
 
   const moreChildrenAvailable = childIds.length > end;
 
-  DominatorTreeNode.attachShortestPaths(snapshot,
-                                        breakdown,
-                                        dominatorTree.root,
-                                        nodes,
-                                        maxRetainingPaths);
+  DominatorTreeNode.attachShortestPaths(
+    snapshot,
+    breakdown,
+    dominatorTree.root,
+    nodes,
+    maxRetainingPaths
+  );
 
   return { nodes, moreChildrenAvailable, path };
 });

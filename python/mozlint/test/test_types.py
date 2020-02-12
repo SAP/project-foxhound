@@ -3,21 +3,28 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-import sys
 
+import mozunit
 import pytest
+import mozpack.path as mozpath
 
-from mozlint.result import ResultContainer
+from mozlint.result import Issue, ResultSummary
 
 
 @pytest.fixture
 def path(filedir):
     def _path(name):
-        return os.path.join(filedir, name)
+        return mozpath.join(filedir, name)
     return _path
 
 
-@pytest.fixture(params=['string.lint', 'regex.lint', 'external.lint', 'structured.lint'])
+@pytest.fixture(params=[
+    'external.yml',
+    'global.yml',
+    'regex.yml',
+    'string.yml',
+    'structured.yml',
+])
 def linter(lintdir, request):
     return os.path.join(lintdir, request.param)
 
@@ -25,26 +32,33 @@ def linter(lintdir, request):
 def test_linter_types(lint, linter, files, path):
     lint.read(linter)
     result = lint.roll(files)
-    assert isinstance(result, dict)
-    assert path('foobar.js') in result
-    assert path('no_foobar.js') not in result
+    assert isinstance(result, ResultSummary)
+    assert isinstance(result.issues, dict)
+    assert path('foobar.js') in result.issues
+    assert path('no_foobar.js') not in result.issues
 
-    result = result[path('foobar.js')][0]
-    assert isinstance(result, ResultContainer)
+    issue = result.issues[path('foobar.js')][0]
+    assert isinstance(issue, Issue)
 
     name = os.path.basename(linter).split('.')[0]
-    assert result.linter.lower().startswith(name)
+    assert issue.linter.lower().startswith(name)
 
 
 def test_no_filter(lint, lintdir, files):
-    lint.read(os.path.join(lintdir, 'explicit_path.lint'))
+    lint.read(os.path.join(lintdir, 'explicit_path.yml'))
     result = lint.roll(files)
-    assert len(result) == 0
+    assert len(result.issues) == 0
 
     lint.lintargs['use_filters'] = False
     result = lint.roll(files)
-    assert len(result) == 2
+    assert len(result.issues) == 3
+
+
+def test_global_skipped(lint, lintdir, files):
+    lint.read(os.path.join(lintdir, 'global_skipped.yml'))
+    result = lint.roll(files)
+    assert len(result.issues) == 0
 
 
 if __name__ == '__main__':
-    sys.exit(pytest.main(['--verbose', __file__]))
+    mozunit.main()

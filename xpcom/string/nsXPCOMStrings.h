@@ -109,7 +109,7 @@ class nsStringContainer;
 struct nsStringContainer_base
 {
 protected:
-  // TaintFox: add taint property.
+  // TaintFox: XXX segfault caused by this? add taint property.
   void* d1;
   uint32_t d2;
   uint32_t d3;
@@ -766,5 +766,21 @@ XPCOM_API(const StringTaint&) NS_StringGetTaint(const nsAString& aStr);
  * a string.
  */
 XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr);
+
+/**
+ * TaintFox: NS_StringSetTaint
+ *
+ * This function provides a way to assign the taint information associated with
+ * a string.
+ */
+XPCOM_API(void) NS_StringSetTaint(nsAString& aStr, const StringTaint& aTaint);
+
+/**
+ * TaintFox: NS_CStringGetTaint
+ *
+ * This function provides a way to assign the taint information associated with
+ * a string.
+ */
+XPCOM_API(void) NS_CStringSetTaint(nsACString& aStr, const StringTaint& aTaint);
 
 #endif // nsXPCOMStrings_h__

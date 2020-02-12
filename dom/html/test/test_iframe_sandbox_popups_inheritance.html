@@ -7,7 +7,7 @@ Implement HTML5 sandbox allow-popuos directive for IFRAMEs - inheritance tests
 <head>
   <meta charset="utf-8">
   <title>Tests for Bug 766282</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 
@@ -19,7 +19,7 @@ SimpleTest.requestFlakyTimeout("untriaged");
 
 // A postMessage handler that is used by sandboxed iframes without
 // 'allow-same-origin' to communicate pass/fail back to this main page.
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 
 function receiveMessage(event) {
   switch (event.data.type) {

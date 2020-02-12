@@ -18,73 +18,55 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(RTCIdentityProviderRegistrar)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(RTCIdentityProviderRegistrar)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(RTCIdentityProviderRegistrar,
-                                      mGlobal,
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(RTCIdentityProviderRegistrar, mGlobal,
                                       mGenerateAssertionCallback,
                                       mValidateAssertionCallback)
 
 RTCIdentityProviderRegistrar::RTCIdentityProviderRegistrar(
     nsIGlobalObject* aGlobal)
-    : mGlobal(aGlobal)
-    , mGenerateAssertionCallback(nullptr)
-    , mValidateAssertionCallback(nullptr)
-{
-  MOZ_COUNT_CTOR(RTCIdentityProviderRegistrar);
-}
+    : mGlobal(aGlobal),
+      mGenerateAssertionCallback(nullptr),
+      mValidateAssertionCallback(nullptr) {}
 
-RTCIdentityProviderRegistrar::~RTCIdentityProviderRegistrar()
-{
-  MOZ_COUNT_DTOR(RTCIdentityProviderRegistrar);
-}
+RTCIdentityProviderRegistrar::~RTCIdentityProviderRegistrar() = default;
 
-nsIGlobalObject*
-RTCIdentityProviderRegistrar::GetParentObject() const
-{
+nsIGlobalObject* RTCIdentityProviderRegistrar::GetParentObject() const {
   return mGlobal;
 }
 
-JSObject*
-RTCIdentityProviderRegistrar::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return RTCIdentityProviderRegistrarBinding::Wrap(aCx, this, aGivenProto);
+JSObject* RTCIdentityProviderRegistrar::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return RTCIdentityProviderRegistrar_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void
-RTCIdentityProviderRegistrar::Register(const RTCIdentityProvider& aIdp)
-{
+void RTCIdentityProviderRegistrar::Register(const RTCIdentityProvider& aIdp) {
   mGenerateAssertionCallback = aIdp.mGenerateAssertion;
   mValidateAssertionCallback = aIdp.mValidateAssertion;
 }
 
-bool
-RTCIdentityProviderRegistrar::HasIdp() const
-{
+bool RTCIdentityProviderRegistrar::HasIdp() const {
   return mGenerateAssertionCallback && mValidateAssertionCallback;
 }
 
-already_AddRefed<Promise>
-RTCIdentityProviderRegistrar::GenerateAssertion(
-  const nsAString& aContents, const nsAString& aOrigin,
-  const Optional<nsAString>& aUsernameHint, ErrorResult& aRv)
-{
+already_AddRefed<Promise> RTCIdentityProviderRegistrar::GenerateAssertion(
+    const nsAString& aContents, const nsAString& aOrigin,
+    const RTCIdentityProviderOptions& aOptions, ErrorResult& aRv) {
   if (!mGenerateAssertionCallback) {
     aRv.Throw(NS_ERROR_NOT_INITIALIZED);
     return nullptr;
   }
-  return mGenerateAssertionCallback->Call(aContents, aOrigin, aUsernameHint, aRv);
+  RefPtr<GenerateAssertionCallback> callback(mGenerateAssertionCallback);
+  return callback->Call(aContents, aOrigin, aOptions, aRv);
 }
-already_AddRefed<Promise>
-RTCIdentityProviderRegistrar::ValidateAssertion(
-  const nsAString& aAssertion, const nsAString& aOrigin, ErrorResult& aRv)
-{
+already_AddRefed<Promise> RTCIdentityProviderRegistrar::ValidateAssertion(
+    const nsAString& aAssertion, const nsAString& aOrigin, ErrorResult& aRv) {
   if (!mValidateAssertionCallback) {
     aRv.Throw(NS_ERROR_NOT_INITIALIZED);
     return nullptr;
   }
-  return mValidateAssertionCallback->Call(aAssertion, aOrigin, aRv);
+  RefPtr<ValidateAssertionCallback> callback(mValidateAssertionCallback);
+  return callback->Call(aAssertion, aOrigin, aRv);
 }
 
-
-
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

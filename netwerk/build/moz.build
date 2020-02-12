@@ -12,61 +12,40 @@ SOURCES += [
     'nsNetModule.cpp',
 ]
 
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
+    '/extensions/auth',
     '/netwerk/base',
     '/netwerk/cache',
     '/netwerk/dns',
     '/netwerk/mime',
     '/netwerk/protocol/about',
+    '/netwerk/protocol/data',
+    '/netwerk/protocol/file',
+    '/netwerk/protocol/ftp',
+    '/netwerk/protocol/http',
+    '/netwerk/protocol/res',
+    '/netwerk/protocol/viewsource',
+    '/netwerk/protocol/websocket',
     '/netwerk/socket',
     '/netwerk/streamconv',
     '/netwerk/streamconv/converters',
 ]
 
-protocols = CONFIG['NECKO_PROTOCOLS']
-LOCAL_INCLUDES += sorted([
-    '/netwerk/protocol/%s' % d for d in protocols if d != 'about'
-])
-
-if CONFIG['OS_ARCH'] == 'WINNT':
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     LOCAL_INCLUDES += [
-        '/netwerk/system/win32',
+        '/netwerk/protocol/gio',
     ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
-    LOCAL_INCLUDES += [
-        '/netwerk/system/mac',
-    ]
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
-    LOCAL_INCLUDES += [
-        '/netwerk/system/android',
-    ]
-
-elif CONFIG['OS_ARCH'] == 'Linux':
-    LOCAL_INCLUDES += [
-        '/netwerk/system/linux',
-    ]
-
-if CONFIG['NECKO_COOKIES']:
-    LOCAL_INCLUDES += [
-        '/netwerk/cookie',
-    ]
-
-if CONFIG['NECKO_WIFI']:
-    LOCAL_INCLUDES += [
-        '/netwerk/wifi',
-    ]
-
-if CONFIG['MOZ_RTSP']:
-    LOCAL_INCLUDES += [
-        '/netwerk/protocol/rtsp',
-    ]
 
 LOCAL_INCLUDES += [
     '!/netwerk/dns',
+    '/modules/brotli/dec',
 ]

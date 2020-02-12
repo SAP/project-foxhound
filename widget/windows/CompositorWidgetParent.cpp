@@ -5,58 +5,48 @@
 
 #include "CompositorWidgetParent.h"
 
+#include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/Unused.h"
+#include "mozilla/widget/PlatformWidgetTypes.h"
 
 namespace mozilla {
 namespace widget {
 
-CompositorWidgetParent::CompositorWidgetParent(const CompositorWidgetInitData& aInitData)
- : WinCompositorWidget(aInitData)
-{
+CompositorWidgetParent::CompositorWidgetParent(
+    const CompositorWidgetInitData& aInitData,
+    const layers::CompositorOptions& aOptions)
+    : WinCompositorWidget(aInitData.get_WinCompositorWidgetInitData(),
+                          aOptions) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
 }
 
-CompositorWidgetParent::~CompositorWidgetParent()
-{
-}
+CompositorWidgetParent::~CompositorWidgetParent() {}
 
-bool
-CompositorWidgetParent::RecvEnterPresentLock()
-{
+mozilla::ipc::IPCResult CompositorWidgetParent::RecvEnterPresentLock() {
   EnterPresentLock();
-  return true;
+  return IPC_OK();
 }
 
-bool
-CompositorWidgetParent::RecvLeavePresentLock()
-{
+mozilla::ipc::IPCResult CompositorWidgetParent::RecvLeavePresentLock() {
   LeavePresentLock();
-  return true;
+  return IPC_OK();
 }
 
-bool
-CompositorWidgetParent::RecvUpdateTransparency(const int32_t& aMode)
-{
-  UpdateTransparency(static_cast<nsTransparencyMode>(aMode));
-  return true;
+mozilla::ipc::IPCResult CompositorWidgetParent::RecvUpdateTransparency(
+    const nsTransparencyMode& aMode) {
+  UpdateTransparency(aMode);
+  return IPC_OK();
 }
 
-bool
-CompositorWidgetParent::RecvClearTransparentWindow()
-{
+mozilla::ipc::IPCResult CompositorWidgetParent::RecvClearTransparentWindow() {
   ClearTransparentWindow();
-  return true;
+  return IPC_OK();
 }
 
-nsIWidget*
-CompositorWidgetParent::RealWidget()
-{
-  return nullptr;
-}
+nsIWidget* CompositorWidgetParent::RealWidget() { return nullptr; }
 
-void
-CompositorWidgetParent::ObserveVsync(VsyncObserver* aObserver)
-{
+void CompositorWidgetParent::ObserveVsync(VsyncObserver* aObserver) {
   if (aObserver) {
     Unused << SendObserveVsync();
   } else {
@@ -65,17 +55,39 @@ CompositorWidgetParent::ObserveVsync(VsyncObserver* aObserver)
   mVsyncObserver = aObserver;
 }
 
-RefPtr<VsyncObserver>
-CompositorWidgetParent::GetVsyncObserver() const
-{
+RefPtr<VsyncObserver> CompositorWidgetParent::GetVsyncObserver() const {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
   return mVsyncObserver;
 }
 
-void
-CompositorWidgetParent::ActorDestroy(ActorDestroyReason aWhy)
-{
+void CompositorWidgetParent::UpdateCompositorWnd(const HWND aCompositorWnd,
+                                                 const HWND aParentWnd) {
+  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
+  MOZ_ASSERT(mRootLayerTreeID.isSome());
+
+  RefPtr<CompositorWidgetParent> self = this;
+  SendUpdateCompositorWnd(reinterpret_cast<WindowsHandle>(aCompositorWnd),
+                          reinterpret_cast<WindowsHandle>(aParentWnd))
+      ->Then(
+          layers::CompositorThreadHolder::Loop()->SerialEventTarget(), __func__,
+          [self](const bool& aSuccess) {
+            if (aSuccess && self->mRootLayerTreeID.isSome()) {
+              self->mSetParentCompleted = true;
+              // Schedule composition after ::SetParent() call in parent
+              // process.
+              layers::CompositorBridgeParent::ScheduleForcedComposition(
+                  self->mRootLayerTreeID.ref());
+            }
+          },
+          [self](const mozilla::ipc::ResponseRejectReason&) {});
 }
 
-} // namespace widget
-} // namespace mozilla
+void CompositorWidgetParent::SetRootLayerTreeID(
+    const layers::LayersId& aRootLayerTreeId) {
+  mRootLayerTreeID = Some(aRootLayerTreeId);
+}
+
+void CompositorWidgetParent::ActorDestroy(ActorDestroyReason aWhy) {}
+
+}  // namespace widget
+}  // namespace mozilla

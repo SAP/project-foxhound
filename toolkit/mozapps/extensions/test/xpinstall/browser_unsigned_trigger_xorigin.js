@@ -9,18 +9,32 @@ function test() {
   Harness.finalContentEvent = "InstallComplete";
   Harness.setup();
 
-  var pm = Services.perms;
-  pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    "http://example.com/",
+    "install",
+    Services.perms.ALLOW_ACTION
+  );
 
-  var inner_url = encodeURIComponent(TESTROOT + "installtrigger.html?" + encodeURIComponent(JSON.stringify({
-    "Unsigned XPI": {
-      URL: TESTROOT + "amosigned.xpi",
-      IconURL: TESTROOT + "icon.png",
-      toString: function() { return this.URL; }
-    }
-  })));
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.loadURI(TESTROOT2 + "installtrigger_frame.html?" + inner_url);
+  var inner_url = encodeURIComponent(
+    TESTROOT +
+      "installtrigger.html?" +
+      encodeURIComponent(
+        JSON.stringify({
+          "Unsigned XPI": {
+            URL: TESTROOT + "amosigned.xpi",
+            IconURL: TESTROOT + "icon.png",
+            toString() {
+              return this.URL;
+            },
+          },
+        })
+      )
+  );
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.loadURI(
+    gBrowser,
+    TESTROOT2 + "installtrigger_frame.html?" + inner_url
+  );
 }
 
 function install_blocked(installInfo) {
@@ -28,10 +42,13 @@ function install_blocked(installInfo) {
 }
 
 function finish_test(count) {
-  ok(wasOriginBlocked, "Should have been blocked due to the cross origin request.");
+  ok(
+    wasOriginBlocked,
+    "Should have been blocked due to the cross origin request."
+  );
 
   is(count, 0, "No add-ons should have been installed");
-  Services.perms.remove(makeURI("http://example.com"), "install");
+  PermissionTestUtils.remove("http://example.com", "install");
 
   gBrowser.removeCurrentTab();
   Harness.finish();

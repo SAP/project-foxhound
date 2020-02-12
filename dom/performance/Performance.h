@@ -13,7 +13,6 @@
 #include "nsDOMNavigationTiming.h"
 
 class nsITimedChannel;
-class nsIHttpChannel;
 
 namespace mozilla {
 
@@ -24,60 +23,54 @@ namespace dom {
 class PerformanceEntry;
 class PerformanceNavigation;
 class PerformanceObserver;
+class PerformanceService;
+class PerformanceStorage;
 class PerformanceTiming;
-
-namespace workers {
 class WorkerPrivate;
-}
 
 // Base class for main-thread and worker Performance API
-class Performance : public DOMEventTargetHelper
-{
-public:
+class Performance : public DOMEventTargetHelper {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Performance,
-                                           DOMEventTargetHelper)
-
-  static bool IsEnabled(JSContext* aCx, JSObject* aGlobal);
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Performance, DOMEventTargetHelper)
 
   static bool IsObserverEnabled(JSContext* aCx, JSObject* aGlobal);
 
-  static already_AddRefed<Performance>
-  CreateForMainThread(nsPIDOMWindowInner* aWindow,
-                      nsDOMNavigationTiming* aDOMTiming,
-                      nsITimedChannel* aChannel,
-                      Performance* aParentPerformance);
+  static already_AddRefed<Performance> CreateForMainThread(
+      nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal,
+      nsDOMNavigationTiming* aDOMTiming, nsITimedChannel* aChannel);
 
-  static already_AddRefed<Performance>
-  CreateForWorker(workers::WorkerPrivate* aWorkerPrivate);
+  static already_AddRefed<Performance> CreateForWorker(
+      WorkerPrivate* aWorkerPrivate);
 
-  JSObject* WrapObject(JSContext *cx,
+  JSObject* WrapObject(JSContext* cx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  void GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval);
+  virtual void GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval);
 
-  void GetEntriesByType(const nsAString& aEntryType,
-                        nsTArray<RefPtr<PerformanceEntry>>& aRetval);
+  virtual void GetEntriesByType(const nsAString& aEntryType,
+                                nsTArray<RefPtr<PerformanceEntry>>& aRetval);
 
-  void GetEntriesByName(const nsAString& aName,
-                        const Optional<nsAString>& aEntryType,
-                        nsTArray<RefPtr<PerformanceEntry>>& aRetval);
+  virtual void GetEntriesByName(const nsAString& aName,
+                                const Optional<nsAString>& aEntryType,
+                                nsTArray<RefPtr<PerformanceEntry>>& aRetval);
 
-  virtual void AddEntry(nsIHttpChannel* channel,
-                        nsITimedChannel* timedChannel) = 0;
+  virtual PerformanceStorage* AsPerformanceStorage() = 0;
 
   void ClearResourceTimings();
 
-  virtual DOMHighResTimeStamp Now() const = 0;
+  DOMHighResTimeStamp Now();
+
+  DOMHighResTimeStamp NowUnclamped() const;
+
+  DOMHighResTimeStamp TimeOrigin();
 
   void Mark(const nsAString& aName, ErrorResult& aRv);
 
   void ClearMarks(const Optional<nsAString>& aName);
 
-  void Measure(const nsAString& aName,
-               const Optional<nsAString>& aStartMark,
-               const Optional<nsAString>& aEndMark,
-               ErrorResult& aRv);
+  void Measure(const nsAString& aName, const Optional<nsAString>& aStartMark,
+               const Optional<nsAString>& aEndMark, ErrorResult& aRv);
 
   void ClearMeasures(const Optional<nsAString>& aName);
 
@@ -85,7 +78,7 @@ public:
 
   void AddObserver(PerformanceObserver* aObserver);
   void RemoveObserver(PerformanceObserver* aObserver);
-  void NotifyObservers();
+  MOZ_CAN_RUN_SCRIPT void NotifyObservers();
   void CancelNotificationObservers();
 
   virtual PerformanceTiming* Timing() = 0;
@@ -94,23 +87,35 @@ public:
 
   IMPL_EVENT_HANDLER(resourcetimingbufferfull)
 
-  virtual void GetMozMemory(JSContext *aCx,
+  virtual void GetMozMemory(JSContext* aCx,
                             JS::MutableHandle<JSObject*> aObj) = 0;
 
   virtual nsDOMNavigationTiming* GetDOMTiming() const = 0;
 
   virtual nsITimedChannel* GetChannel() const = 0;
 
-  virtual Performance* GetParentPerformance() const = 0;
+  virtual TimeStamp CreationTimeStamp() const = 0;
 
-protected:
-  Performance();
-  explicit Performance(nsPIDOMWindowInner* aWindow);
+  uint64_t IsSystemPrincipal() { return mSystemPrincipal; }
+
+  virtual uint64_t GetRandomTimelineSeed() = 0;
+
+  void MemoryPressure();
+
+  size_t SizeOfUserEntries(mozilla::MallocSizeOf aMallocSizeOf) const;
+  size_t SizeOfResourceEntries(mozilla::MallocSizeOf aMallocSizeOf) const;
+
+  void InsertResourceEntry(PerformanceEntry* aEntry);
+
+  virtual void QueueNavigationTimingEntry() = 0;
+
+ protected:
+  explicit Performance(bool aSystemPrincipal);
+  Performance(nsPIDOMWindowInner* aWindow, bool aSystemPrincipal);
 
   virtual ~Performance();
 
   virtual void InsertUserEntry(PerformanceEntry* aEntry);
-  void InsertResourceEntry(PerformanceEntry* aEntry);
 
   void ClearUserEntries(const Optional<nsAString>& aEntryName,
                         const nsAString& aEntryType);
@@ -118,22 +123,17 @@ protected:
   DOMHighResTimeStamp ResolveTimestampFromName(const nsAString& aName,
                                                ErrorResult& aRv);
 
-  virtual nsISupports* GetAsISupports() = 0;
-
   virtual void DispatchBufferFullEvent() = 0;
-
-  virtual TimeStamp CreationTimeStamp() const = 0;
 
   virtual DOMHighResTimeStamp CreationTime() const = 0;
 
-  virtual bool IsPerformanceTimingAttribute(const nsAString& aName) = 0;
+  virtual bool IsPerformanceTimingAttribute(const nsAString& aName) {
+    return false;
+  }
 
-  virtual DOMHighResTimeStamp
-  GetPerformanceTimingFromString(const nsAString& aTimingName) = 0;
-
-  bool IsResourceEntryLimitReached() const
-  {
-    return mResourceEntries.Length() >= mResourceTimingBufferSize;
+  virtual DOMHighResTimeStamp GetPerformanceTimingFromString(
+      const nsAString& aTimingName) {
+    return 0;
   }
 
   void LogEntry(PerformanceEntry* aEntry, const nsACString& aOwner) const;
@@ -143,20 +143,35 @@ protected:
   void RunNotificationObserversTask();
   void QueueEntry(PerformanceEntry* aEntry);
 
-  DOMHighResTimeStamp RoundTime(double aTime) const;
-
   nsTObserverArray<PerformanceObserver*> mObservers;
 
-private:
-  nsTArray<RefPtr<PerformanceEntry>> mUserEntries;
-  nsTArray<RefPtr<PerformanceEntry>> mResourceEntries;
+ protected:
+  static const uint64_t kDefaultResourceTimingBufferSize = 250;
+
+  // When kDefaultResourceTimingBufferSize is increased or removed, these should
+  // be changed to use SegmentedVector
+  AutoTArray<RefPtr<PerformanceEntry>, kDefaultResourceTimingBufferSize>
+      mUserEntries;
+  AutoTArray<RefPtr<PerformanceEntry>, kDefaultResourceTimingBufferSize>
+      mResourceEntries;
+  AutoTArray<RefPtr<PerformanceEntry>, kDefaultResourceTimingBufferSize>
+      mSecondaryResourceEntries;
 
   uint64_t mResourceTimingBufferSize;
-  static const uint64_t kDefaultResourceTimingBufferSize = 150;
   bool mPendingNotificationObserversTask;
+
+  bool mPendingResourceTimingBufferFullEvent;
+
+  RefPtr<PerformanceService> mPerformanceService;
+
+  bool mSystemPrincipal;
+
+ private:
+  MOZ_ALWAYS_INLINE bool CanAddResourceTimingEntry();
+  void BufferEvent();
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_Performance_h
+#endif  // mozilla_dom_Performance_h

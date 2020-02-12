@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99: */
+ * vim: set ts=8 sts=2 et sw=2 tw=80: */
 
 // Copyright 2011 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,8 @@
 #include "irregexp/RegExpBytecode.h"
 #include "irregexp/RegExpMacroAssembler.h"
 #include "vm/MatchPairs.h"
+
+#include "vm/JSContext-inl.h"
 
 using namespace js;
 using namespace js::irregexp;
@@ -128,12 +130,18 @@ irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const CharT* cha
     if (!stack.init())
         return RegExpRunStatus_Error;
 
-    int32_t numRegisters = Load32Aligned(pc);
-    pc += 4;
+    auto header = reinterpret_cast<const RegExpByteCodeHeader*>(byteCode);
+    int32_t numRegisters = header->numRegisters;
+    pc += sizeof(RegExpByteCodeHeader);
 
-    Vector<int32_t, 0, SystemAllocPolicy> registers;
-    if (!registers.growByUninitialized(numRegisters))
+    // Most of the time we need 8 or fewer registers.  Specify an initial
+    // size of 8 here, therefore, so that the vector contents can be stack
+    // allocated in the majority of cases.  See bug 1387394.
+    Vector<int32_t, 8, SystemAllocPolicy> registers;
+    if (!registers.growByUninitialized(numRegisters)) {
+        ReportOutOfMemory(cx);
         return RegExpRunStatus_Error;
+    }
     for (size_t i = 0; i < (size_t) numRegisters; i++)
         registers[i] = -1;
 
@@ -491,6 +499,8 @@ irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const CharT* cha
         }
     }
 }
+
+#undef BYTECODE
 
 template RegExpRunStatus
 irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const Latin1Char* chars, size_t current,

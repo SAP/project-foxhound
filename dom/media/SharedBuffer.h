@@ -8,34 +8,39 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/mozalloc.h"
-#include "nsCOMPtr.h"
+#include "mozilla/MemoryReporting.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
 class AudioBlockBuffer;
+class ThreadSharedFloatArrayBufferList;
 
 /**
  * Base class for objects with a thread-safe refcount and a virtual
  * destructor.
  */
 class ThreadSharedObject {
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ThreadSharedObject)
 
   bool IsShared() { return mRefCnt.get() > 1; }
 
   virtual AudioBlockBuffer* AsAudioBlockBuffer() { return nullptr; };
+  virtual ThreadSharedFloatArrayBufferList*
+  AsThreadSharedFloatArrayBufferList() {
+    return nullptr;
+  };
 
-  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
-  {
+  virtual size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
     return 0;
   }
 
-  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-  {
+  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
-protected:
+
+ protected:
   // Protected destructor, to discourage deletion outside of Release():
   virtual ~ThreadSharedObject() {}
 };
@@ -49,32 +54,48 @@ protected:
  * refcount's size is large enough that SharedBuffer's size is divisible by 4.
  */
 class SharedBuffer : public ThreadSharedObject {
-public:
+ public:
   void* Data() { return this + 1; }
 
-  static already_AddRefed<SharedBuffer> Create(size_t aSize)
-  {
-    CheckedInt<size_t> size = sizeof(SharedBuffer);
-    size += aSize;
-    if (!size.isValid()) {
-      MOZ_CRASH();
+  static already_AddRefed<SharedBuffer> Create(size_t aSize,
+                                               const fallible_t&) {
+    void* m = operator new(AllocSize(aSize), fallible);
+    if (!m) {
+      return nullptr;
     }
-    void* m = moz_xmalloc(size.value());
     RefPtr<SharedBuffer> p = new (m) SharedBuffer();
-    NS_ASSERTION((reinterpret_cast<char*>(p.get() + 1) - reinterpret_cast<char*>(p.get())) % 4 == 0,
-                 "SharedBuffers should be at least 4-byte aligned");
     return p.forget();
   }
 
-  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override
-  {
+  static already_AddRefed<SharedBuffer> Create(size_t aSize) {
+    void* m = operator new(AllocSize(aSize));
+    RefPtr<SharedBuffer> p = new (m) SharedBuffer();
+    return p.forget();
+  }
+
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-private:
-  SharedBuffer() {}
+ private:
+  static size_t AllocSize(size_t aDataSize) {
+    CheckedInt<size_t> size = sizeof(SharedBuffer);
+    size += aDataSize;
+    if (!size.isValid()) {
+      MOZ_CRASH();
+    }
+    return size.value();
+  }
+
+  SharedBuffer() {
+    NS_ASSERTION(
+        (reinterpret_cast<char*>(this + 1) - reinterpret_cast<char*>(this)) %
+                4 ==
+            0,
+        "SharedBuffers should be at least 4-byte aligned");
+  }
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif /* MOZILLA_SHAREDBUFFER_H_ */

@@ -13,60 +13,100 @@ DIRS += [
 
 XPI_NAME = 'mochijar'
 
-JAR_MANIFESTS += ['jar.mn']
-
 USE_EXTENSION_MANIFEST = True
 
-FINAL_TARGET_PP_FILES += ['install.rdf']
-
-if CONFIG['OS_TARGET'] != 'Android':
-    DEFINES['MOCHITEST_BOOTSTRAP'] = True
-    FINAL_TARGET_FILES += ['bootstrap.js']
-
-MOCHITEST_MANIFESTS += [
-    'tests/MochiKit-1.4.2/tests/mochitest.ini',
-]
-MOCHITEST_CHROME_MANIFESTS += ['chrome/chrome.ini']
-
-GENERATED_FILES += [
-    'automation.py',
+FINAL_TARGET_FILES += [
+    'api.js',
+    'manifest.json',
+    'schema.json',
 ]
 
-TEST_HARNESS_FILES.testing.mochitest += [
-    '!automation.py',
-    '/build/mobile/remoteautomation.py',
-    '/build/pgo/server-locations.txt',
-    '/build/sanitizers/lsan_suppressions.txt',
-    '/build/valgrind/cross-architecture.sup',
-    '/build/valgrind/i386-redhat-linux-gnu.sup',
-    '/build/valgrind/x86_64-redhat-linux-gnu.sup',
-    '/netwerk/test/httpserver/httpd.js',
-    'bisection.py',
+FINAL_TARGET_FILES.content += [
     'browser-harness.xul',
-    'browser-test-overlay.xul',
     'browser-test.js',
     'chrome-harness.js',
     'chunkifyTests.js',
-    'gen_template.pl',
     'harness.xul',
-    'jetpack-addon-harness.js',
-    'jetpack-addon-overlay.xul',
-    'jetpack-package-harness.js',
-    'jetpack-package-overlay.xul',
+    'manifestLibrary.js',
+    'mochitest-e10s-utils.js',
+    'redirect.html',
+    'server.js',
+    'shutdown-leaks-collector.js',
+    'ShutdownLeaksCollector.jsm',
+]
+
+FINAL_TARGET_FILES.content.dynamic += [
+    'dynamic/getMyDirectory.sjs',
+]
+
+FINAL_TARGET_FILES.content.static += [
+    'static/harness.css',
+]
+
+FINAL_TARGET_FILES.content.tests.SimpleTest += [
+    '../../docshell/test/chrome/docshell_helpers.js',
+    '../modules/StructuredLog.jsm',
+    'tests/SimpleTest/EventUtils.js',
+    'tests/SimpleTest/ExtensionTestUtils.js',
+    'tests/SimpleTest/iframe-between-tests.html',
+    'tests/SimpleTest/LogController.js',
+    'tests/SimpleTest/MemoryStats.js',
+    'tests/SimpleTest/MockObjects.js',
+    'tests/SimpleTest/MozillaLogger.js',
+    'tests/SimpleTest/NativeKeyCodes.js',
+    'tests/SimpleTest/paint_listener.js',
+    'tests/SimpleTest/setup.js',
+    'tests/SimpleTest/SimpleTest.js',
+    'tests/SimpleTest/test.css',
+    'tests/SimpleTest/TestRunner.js',
+    'tests/SimpleTest/WindowSnapshot.js',
+]
+
+FINAL_TARGET_FILES.content.tests.BrowserTestUtils += [
+    'BrowserTestUtils/content/content-about-page-utils.js',
+    'BrowserTestUtils/content/content-task.js',
+    'BrowserTestUtils/content/content-utils.js',
+]
+
+MOCHITEST_MANIFESTS += [
+    'baselinecoverage/plain/mochitest.ini',
+    'tests/MochiKit-1.4.2/tests/mochitest.ini',
+]
+
+MOCHITEST_CHROME_MANIFESTS += [
+    'baselinecoverage/chrome/chrome.ini',
+    'chrome/chrome.ini'
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    'baselinecoverage/browser_chrome/browser.ini'
+]
+
+TEST_HARNESS_FILES.testing.mochitest += [
+    '/build/mobile/remoteautomation.py',
+    '/build/pgo/server-locations.txt',
+    '/build/valgrind/cross-architecture.sup',
+    '/build/valgrind/i386-pc-linux-gnu.sup',
+    '/build/valgrind/x86_64-pc-linux-gnu.sup',
+    '/netwerk/test/httpserver/httpd.js',
+    'bisection.py',
+    'browser-harness.xul',
+    'browser-test.js',
+    'chrome-harness.js',
+    'chunkifyTests.js',
+    'favicon.ico',
+    'harness.xul',
     'leaks.py',
     'mach_test_package_commands.py',
     'manifest.webapp',
     'manifestLibrary.js',
     'mochitest_options.py',
-    'nested_setup.js',
     'pywebsocket_wrapper.py',
     'redirect.html',
-    'runrobocop.py',
+    'runjunit.py',
     'runtests.py',
-    'runtestsb2g.py',
     'runtestsremote.py',
     'server.js',
-    'start_b2g.js',
     'start_desktop.js',
 ]
 
@@ -167,3 +207,9 @@ TEST_HARNESS_FILES.testing.mochitest.websocketprocessbridge += [
     '/testing/tools/websocketprocessbridge/websocketprocessbridge_requirements.txt',
 ]
 
+with Files("**"):
+    BUG_COMPONENT = ("Testing", "Mochitest")
+    SCHEDULES.exclusive = ['mochitest']
+
+with Files("*remote*"):
+    BUG_COMPONENT = ("Firefox for Android", "Testing")

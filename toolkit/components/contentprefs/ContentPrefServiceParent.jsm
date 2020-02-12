@@ -5,40 +5,64 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [ "ContentPrefServiceParent" ];
+var EXPORTED_SYMBOLS = ["ContentPrefServiceParent"];
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "_methodsCallableFromChild",
+  "resource://gre/modules/ContentPrefUtils.jsm"
+);
+
+let loadContext = Cu.createLoadContext();
+let privateLoadContext = Cu.createPrivateLoadContext();
+
+function contextArg(context) {
+  return context && context.usePrivateBrowsing
+    ? privateLoadContext
+    : loadContext;
+}
 
 var ContentPrefServiceParent = {
-  _cps2: null,
+  // Called on all platforms.
+  alwaysInit() {
+    let globalMM = Cc[
+      "@mozilla.org/parentprocessmessagemanager;1"
+    ].getService();
 
-  init: function() {
-    let globalMM = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-                     .getService(Ci.nsIMessageListenerManager);
+    globalMM.addMessageListener("child-process-shutdown", this);
+  },
 
-    this._cps2 = Cc["@mozilla.org/content-pref/service;1"]
-                  .getService(Ci.nsIContentPrefService2);
+  // Only called on Android. Listeners are added in BrowserGlue.jsm on other
+  // platforms.
+  init() {
+    let globalMM = Cc[
+      "@mozilla.org/parentprocessmessagemanager;1"
+    ].getService();
 
+    // PLEASE KEEP THIS LIST IN SYNC WITH THE LISTENERS ADDED IN nsBrowserGlue
     globalMM.addMessageListener("ContentPrefs:FunctionCall", this);
+    globalMM.addMessageListener("ContentPrefs:AddObserverForName", this);
+    globalMM.addMessageListener("ContentPrefs:RemoveObserverForName", this);
+    // PLEASE KEEP THIS LIST IN SYNC WITH THE LISTENERS ADDED IN nsBrowserGlue
 
-    let observerChangeHandler = this.handleObserverChange.bind(this);
-    globalMM.addMessageListener("ContentPrefs:AddObserverForName", observerChangeHandler);
-    globalMM.addMessageListener("ContentPrefs:RemoveObserverForName", observerChangeHandler);
-    globalMM.addMessageListener("child-process-shutdown", observerChangeHandler);
+    this.alwaysInit();
   },
 
   // Map from message manager -> content pref observer.
   _observers: new Map(),
 
-  handleObserverChange: function(msg) {
+  handleObserverChange(msg) {
     let observer = this._observers.get(msg.target);
     if (msg.name === "child-process-shutdown") {
       // If we didn't have any observers for this child process, don't do
       // anything.
-      if (!observer)
+      if (!observer) {
         return;
+      }
 
       for (let i of observer._names) {
         this._cps2.removeObserverForName(i, observer);
@@ -54,22 +78,26 @@ var ContentPrefServiceParent = {
       // observers for the same name.
       if (!observer) {
         observer = {
-          onContentPrefSet: function(group, name, value, isPrivate) {
-            msg.target.sendAsyncMessage("ContentPrefs:NotifyObservers",
-                                        { name: name, callback: "onContentPrefSet",
-                                          args: [ group, name, value, isPrivate ] });
+          onContentPrefSet(group, name, value, isPrivate) {
+            msg.target.sendAsyncMessage("ContentPrefs:NotifyObservers", {
+              name,
+              callback: "onContentPrefSet",
+              args: [group, name, value, isPrivate],
+            });
           },
 
-          onContentPrefRemoved: function(group, name, isPrivate) {
-            msg.target.sendAsyncMessage("ContentPrefs:NotifyObservers",
-                                        { name: name, callback: "onContentPrefRemoved",
-                                          args: [ group, name, isPrivate ] });
+          onContentPrefRemoved(group, name, isPrivate) {
+            msg.target.sendAsyncMessage("ContentPrefs:NotifyObservers", {
+              name,
+              callback: "onContentPrefRemoved",
+              args: [group, name, isPrivate],
+            });
           },
 
           // The names we're using this observer object for, used to keep track
           // of the number of names we care about as well as for removing this
           // observer if its associated process goes away.
-          _names: new Set()
+          _names: new Set(),
         };
 
         this._observers.set(msg.target, observer);
@@ -92,40 +120,74 @@ var ContentPrefServiceParent = {
     }
   },
 
-  receiveMessage: function(msg) {
+  // Listeners are added in BrowserGlue.jsm
+  receiveMessage(msg) {
+    if (msg.name != "ContentPrefs:FunctionCall") {
+      this.handleObserverChange(msg);
+      return;
+    }
+
     let data = msg.data;
+    let signature;
+
+    if (
+      !_methodsCallableFromChild.some(([method, args]) => {
+        if (method == data.call) {
+          signature = args;
+          return true;
+        }
+        return false;
+      })
+    ) {
+      throw new Error(`Can't call ${data.call} from child!`);
+    }
 
     let args = data.args;
     let requestId = data.requestId;
 
     let listener = {
-      handleResult: function(pref) {
-        msg.target.sendAsyncMessage("ContentPrefs:HandleResult",
-                                    { requestId: requestId,
-                                      contentPref: {
-                                        domain: pref.domain,
-                                        name: pref.name,
-                                        value: pref.value
-                                      }
-                                    });
+      handleResult(pref) {
+        msg.target.sendAsyncMessage("ContentPrefs:HandleResult", {
+          requestId,
+          contentPref: {
+            domain: pref.domain,
+            name: pref.name,
+            value: pref.value,
+          },
+        });
       },
 
-      handleError: function(error) {
-        msg.target.sendAsyncMessage("ContentPrefs:HandleError",
-                                    { requestId: requestId,
-                                      error: error });
+      handleError(error) {
+        msg.target.sendAsyncMessage("ContentPrefs:HandleError", {
+          requestId,
+          error,
+        });
       },
-      handleCompletion: function(reason) {
-        msg.target.sendAsyncMessage("ContentPrefs:HandleCompletion",
-                                    { requestId: requestId,
-                                      reason: reason });
-      }
+      handleCompletion(reason) {
+        msg.target.sendAsyncMessage("ContentPrefs:HandleCompletion", {
+          requestId,
+          reason,
+        });
+      },
     };
 
     // Push our special listener.
     args.push(listener);
 
+    // Process context argument for forwarding
+    let contextIndex = signature.indexOf("context");
+    if (contextIndex > -1) {
+      args[contextIndex] = contextArg(args[contextIndex]);
+    }
+
     // And call the function.
     this._cps2[data.call](...args);
-  }
+  },
 };
+
+XPCOMUtils.defineLazyServiceGetter(
+  ContentPrefServiceParent,
+  "_cps2",
+  "@mozilla.org/content-pref/service;1",
+  "nsIContentPrefService2"
+);

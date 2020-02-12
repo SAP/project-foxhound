@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1151667
 -->
 <head>
   <title>Test for Bug 1151667</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
   <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
   <script type="application/javascript" src="apz_test_utils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -42,15 +42,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1151667
      layerized upon page load. -->
 <div id="page-content"></div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 function startTest() {
-  var subframe = document.getElementById('subframe');
+  var subframe = document.getElementById("subframe");
   synthesizeNativeWheelAndWaitForScrollEvent(subframe, 100, 150, 0, -10, continueTest);
 }
 
 function continueTest() {
-  var subframe = document.getElementById('subframe');
+  var subframe = document.getElementById("subframe");
   is(subframe.scrollTop > 0, true, "We should have scrolled the subframe down");
   is(document.documentElement.scrollTop, 0, "We should not have scrolled the page");
   SimpleTest.finish();

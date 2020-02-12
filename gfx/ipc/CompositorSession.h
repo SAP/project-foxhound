@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=99: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +7,24 @@
 #define _include_mozilla_gfx_ipc_CompositorSession_h_
 
 #include "base/basictypes.h"
+#include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/CompositorTypes.h"
 #include "nsISupportsImpl.h"
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "mozilla/layers/UiCompositorControllerChild.h"
+#endif  // defined(MOZ_WIDGET_ANDROID)
 
-class nsIWidget;
+class nsBaseWidget;
 
 namespace mozilla {
 namespace widget {
 class CompositorWidget;
 class CompositorWidgetDelegate;
-} // namespace widget
+}  // namespace widget
 namespace gfx {
 class GPUProcessHost;
 class GPUProcessManager;
-} // namespace gfx
+}  // namespace gfx
 namespace layers {
 
 class GeckoContentController;
@@ -30,21 +35,21 @@ class ClientLayerManager;
 
 // A CompositorSession provides access to a compositor without exposing whether
 // or not it's in-process or out-of-process.
-class CompositorSession
-{
+class CompositorSession {
   friend class gfx::GPUProcessManager;
 
-protected:
+ protected:
   typedef gfx::GPUProcessHost GPUProcessHost;
   typedef widget::CompositorWidget CompositorWidget;
   typedef widget::CompositorWidgetDelegate CompositorWidgetDelegate;
 
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorSession)
 
   virtual void Shutdown() = 0;
 
-  // This returns a CompositorBridgeParent if the compositor resides in the same process.
+  // This returns a CompositorBridgeParent if the compositor resides in the same
+  // process.
   virtual CompositorBridgeParent* GetInProcessBridge() const = 0;
 
   // Set the GeckoContentController for the root of the layer tree.
@@ -62,26 +67,41 @@ public:
   }
 
   // Return the id of the root layer tree.
-  uint64_t RootLayerTreeId() const {
-    return mRootLayerTreeId;
+  LayersId RootLayerTreeId() const { return mRootLayerTreeId; }
+
+#if defined(MOZ_WIDGET_ANDROID)
+  // Set the UiCompositorControllerChild after Session creation so the Session
+  // constructor doesn't get mucked up for other platforms.
+  void SetUiCompositorControllerChild(
+      RefPtr<UiCompositorControllerChild> aUiController) {
+    mUiCompositorControllerChild = aUiController;
   }
 
-protected:
-  CompositorSession(CompositorWidgetDelegate* aDelegate,
+  RefPtr<UiCompositorControllerChild> GetUiCompositorControllerChild() {
+    return mUiCompositorControllerChild;
+  }
+
+  void NotifyDisablingWebRender();
+#endif  // defined(MOZ_WIDGET_ANDROID)
+ protected:
+  CompositorSession(nsBaseWidget* aWidget, CompositorWidgetDelegate* aDelegate,
                     CompositorBridgeChild* aChild,
-                    const uint64_t& aRootLayerTreeId);
+                    const LayersId& aRootLayerTreeId);
   virtual ~CompositorSession();
 
-protected:
+ protected:
+  nsBaseWidget* mWidget;
   CompositorWidgetDelegate* mCompositorWidgetDelegate;
   RefPtr<CompositorBridgeChild> mCompositorBridgeChild;
-  uint64_t mRootLayerTreeId;
-
-private:
+  LayersId mRootLayerTreeId;
+#if defined(MOZ_WIDGET_ANDROID)
+  RefPtr<UiCompositorControllerChild> mUiCompositorControllerChild;
+#endif  // defined(MOZ_WIDGET_ANDROID)
+ private:
   DISALLOW_COPY_AND_ASSIGN(CompositorSession);
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
-#endif // _include_mozilla_gfx_ipc_CompositorSession_h_
+#endif  // _include_mozilla_gfx_ipc_CompositorSession_h_

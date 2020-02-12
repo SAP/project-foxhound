@@ -1,0 +1,14 @@
+---
+rst:
+    description: RST linter
+    include: [.]
+    exclude:
+        - toolkit/components/telemetry/docs/
+        - toolkit/components/extensions/
+    extensions:
+        - rst
+    support-files:
+        - 'tools/lint/rst/**'
+    type: external
+    payload: rst:lint
+    setup: rst:setup

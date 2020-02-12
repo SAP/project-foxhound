@@ -13,17 +13,20 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-ol-element
+[Exposed=Window]
 interface HTMLOListElement : HTMLElement {
-           [SetterThrows]
+  [HTMLConstructor] constructor();
+
+           [CEReactions, SetterThrows]
            attribute boolean reversed;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute long start;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString type;
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLOListElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute boolean compact;
 };

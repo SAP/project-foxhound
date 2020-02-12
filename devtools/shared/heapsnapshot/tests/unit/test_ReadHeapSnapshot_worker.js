@@ -2,8 +2,8 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Test that we can read core dumps into HeapSnapshot instances in a worker.
-
-add_task(function* () {
+// eslint-disable-next-line
+add_task(async function () {
   const worker = new ChromeWorker("resource://test/heap-snapshot-worker.js");
   worker.postMessage({});
 
@@ -17,7 +17,7 @@ add_task(function* () {
     assertionCount++;
   };
 
-  yield waitForDone(worker);
+  await waitForDone(worker);
 
   ok(assertionCount > 0);
   worker.terminate();
@@ -32,9 +32,9 @@ function waitForDone(w) {
 
     w.addEventListener("message", function listener(e) {
       if (e.data.type === "done") {
-        w.removeEventListener("message", listener, false);
+        w.removeEventListener("message", listener);
         resolve();
       }
-    }, false);
+    });
   });
 }

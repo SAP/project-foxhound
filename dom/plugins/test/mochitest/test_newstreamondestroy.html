@@ -1,6 +1,6 @@
 <head>
   <title>NPN_GetURL called from NPP_Destroy</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
 
   <link rel="stylesheet" type="text/css"
@@ -13,11 +13,11 @@
   setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
 
   function runTest() {
-    var p = document.getElementById('plugin1');
+    var p = document.getElementById("plugin1");
     var destroyed = false;
     p.callOnDestroy(function() {
       destroyed = true;
-      ok(!p.streamTest('loremipsum.txt', false, null, null,
+      ok(!p.streamTest("loremipsum.txt", false, null, null,
                        function(r, t) {
                          ok(false, "get-during-destroy should have failed");
                        }, null, true), "NPN_GetURLNotify should fail during NPP_Destroy");

@@ -18,16 +18,15 @@
  * @param expectedCacheSize
  *        the expected cache size for the given page size
  */
-function check_size(dbOpener, file, pageSize, expectedCacheSize)
-{
+function check_size(dbOpener, file, pageSize, expectedCacheSize) {
   // Open the DB, immediately change its page size.
   let db = dbOpener(file);
   db.executeSimpleSQL("PRAGMA page_size = " + pageSize);
 
   // Check the page size change worked.
   let stmt = db.createStatement("PRAGMA page_size");
-  do_check_true(stmt.executeStep());
-  do_check_eq(stmt.row.page_size, pageSize);
+  Assert.ok(stmt.executeStep());
+  Assert.equal(stmt.row.page_size, pageSize);
   stmt.finalize();
 
   // Create a simple table.
@@ -39,34 +38,36 @@ function check_size(dbOpener, file, pageSize, expectedCacheSize)
 
   // Check cache size is as expected.
   stmt = db.createStatement("PRAGMA cache_size");
-  do_check_true(stmt.executeStep());
-  do_check_eq(stmt.row.cache_size, expectedCacheSize);
+  Assert.ok(stmt.executeStep());
+  Assert.equal(stmt.row.cache_size, expectedCacheSize);
   stmt.finalize();
 }
 
-function new_file(name)
-{
-  let file = dirSvc.get("ProfD", Ci.nsIFile);
+function new_file(name) {
+  let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
   file.append(name + ".sqlite");
-  do_check_false(file.exists());
+  Assert.ok(!file.exists());
   return file;
 }
 
-function run_test()
-{
+function run_test() {
   const kExpectedCacheSize = -2048; // 2MiB
 
-  let pageSizes = [
-    1024,
-    4096,
-    32768,
-  ];
+  let pageSizes = [1024, 4096, 32768];
 
   for (let i = 0; i < pageSizes.length; i++) {
     let pageSize = pageSizes[i];
-    check_size(getDatabase,
-               new_file("shared" + pageSize), pageSize, kExpectedCacheSize);
-    check_size(getService().openUnsharedDatabase,
-               new_file("unshared" + pageSize), pageSize, kExpectedCacheSize);
+    check_size(
+      getDatabase,
+      new_file("shared" + pageSize),
+      pageSize,
+      kExpectedCacheSize
+    );
+    check_size(
+      Services.storage.openUnsharedDatabase,
+      new_file("unshared" + pageSize),
+      pageSize,
+      kExpectedCacheSize
+    );
   }
 }

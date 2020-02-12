@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,25 +21,21 @@ namespace dom {
 class GlobalObject;
 
 class CSS {
-private:
+ private:
   CSS() = delete;
 
-public:
-  static bool Supports(const GlobalObject& aGlobal,
-                       const nsAString& aProperty,
-                       const nsAString& aValue,
-                       ErrorResult& aRv);
+ public:
+  static bool Supports(const GlobalObject& aGlobal, const nsAString& aProperty,
+                       const nsAString& aValue, ErrorResult& aRv);
 
   static bool Supports(const GlobalObject& aGlobal,
-                       const nsAString& aDeclaration,
-                       ErrorResult& aRv);
+                       const nsAString& aDeclaration, ErrorResult& aRv);
 
-  static void Escape(const GlobalObject& aGlobal,
-                     const nsAString& aIdent,
+  static void Escape(const GlobalObject& aGlobal, const nsAString& aIdent,
                      nsAString& aReturn);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_CSS_h_
+#endif  // mozilla_dom_CSS_h_

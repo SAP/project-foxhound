@@ -3,25 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
 /* import-globals-from head.js */
+/* import-globals-from helper_diff.js */
 "use strict";
+
+const beautify = require("devtools/shared/jsbeautify/beautify");
+
+loadHelperScript("helper_diff.js");
 
 /**
  * Generator function that runs checkEventsForNode() for each object in the
  * TEST_DATA array.
  */
-function* runEventPopupTests(url, tests) {
-  let {inspector, testActor} = yield openInspectorForURL(url);
+async function runEventPopupTests(url, tests) {
+  const { inspector, testActor } = await openInspectorForURL(url);
 
-  yield inspector.markup.expandAll();
+  await inspector.markup.expandAll();
 
-  for (let test of tests) {
-    yield checkEventsForNode(test, inspector, testActor);
+  for (const test of tests) {
+    await checkEventsForNode(test, inspector, testActor);
   }
 
   // Wait for promises to avoid leaks when running this as a single test.
   // We need to do this because we have opened a bunch of popups and don't them
   // to affect other test runs when they are GCd.
-  yield promiseNextTick();
+  await promiseNextTick();
 }
 
 /**
@@ -38,74 +43,175 @@ function* runEventPopupTests(url, tests) {
  *          - handler {String} string representation of the handler
  *        - beforeTest {Function} (optional) a function to execute on the page
  *        before running the test
+ *        - isSourceMapped {Boolean} (optional) true if the location
+ *        is source-mapped, requiring some extra delay before the checks
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * opened
  * @param {TestActorFront} testActor
  */
-function* checkEventsForNode(test, inspector, testActor) {
-  let {selector, expected, beforeTest} = test;
-  let container = yield getContainerForSelector(selector, inspector);
+async function checkEventsForNode(test, inspector, testActor) {
+  const { selector, expected, beforeTest, isSourceMapped } = test;
+  const container = await getContainerForSelector(selector, inspector);
 
   if (typeof beforeTest === "function") {
-    yield beforeTest(inspector, testActor);
+    await beforeTest(inspector, testActor);
   }
 
-  let evHolder = container.elt.querySelector(".markupview-events");
+  const evHolder = container.elt.querySelector(
+    ".inspector-badge.interactive[data-event]"
+  );
 
   if (expected.length === 0) {
-    // if no event is expected, simply check that the event bubble is hidden
-    is(evHolder.style.display, "none", "event bubble should be hidden");
+    // If no event is expected, check that event bubble is hidden.
+    ok(!evHolder, "event bubble should be hidden");
     return;
   }
 
-  let tooltip = inspector.markup.eventDetailsTooltip;
+  const tooltip = inspector.markup.eventDetailsTooltip;
 
-  yield selectNode(selector, inspector);
+  await selectNode(selector, inspector);
+
+  let sourceMapPromise = null;
+  if (isSourceMapped) {
+    sourceMapPromise = tooltip.once("event-tooltip-source-map-ready");
+  }
 
   // Click button to show tooltip
   info("Clicking evHolder");
-  EventUtils.synthesizeMouseAtCenter(evHolder, {},
-    inspector.markup.doc.defaultView);
-  yield tooltip.once("shown");
+  evHolder.scrollIntoView();
+  EventUtils.synthesizeMouseAtCenter(
+    evHolder,
+    {},
+    inspector.markup.doc.defaultView
+  );
+  await tooltip.once("shown");
   info("tooltip shown");
 
+  if (isSourceMapped) {
+    info("Waiting for source map to be applied");
+    await sourceMapPromise;
+  }
+
   // Check values
-  let headers = tooltip.panel.querySelectorAll(".event-header");
-  let nodeFront = container.node;
-  let cssSelector = nodeFront.nodeName + "#" + nodeFront.id;
+  const headers = tooltip.panel.querySelectorAll(".event-header");
+  const nodeFront = container.node;
+  const cssSelector = nodeFront.nodeName + "#" + nodeFront.id;
 
   for (let i = 0; i < headers.length; i++) {
-    info("Processing header[" + i + "] for " + cssSelector);
+    const label = `${cssSelector}.${expected[i].type} (index ${i})`;
+    info(`${label} START`);
 
-    let header = headers[i];
-    let type = header.querySelector(".event-tooltip-event-type");
-    let filename = header.querySelector(".event-tooltip-filename");
-    let attributes = header.querySelectorAll(".event-tooltip-attributes");
-    let contentBox = header.nextElementSibling;
+    const header = headers[i];
+    const type = header.querySelector(".event-tooltip-event-type");
+    const filename = header.querySelector(".event-tooltip-filename");
+    const attributes = header.querySelectorAll(".event-tooltip-attributes");
+    const contentBox = header.nextElementSibling;
 
-    is(type.textContent, expected[i].type,
-       "type matches for " + cssSelector);
-    is(filename.textContent, expected[i].filename,
-       "filename matches for " + cssSelector);
+    info("Looking for " + type.textContent);
 
-    is(attributes.length, expected[i].attributes.length,
-       "we have the correct number of attributes");
+    is(type.textContent, expected[i].type, "type matches for " + cssSelector);
+    is(
+      filename.textContent,
+      expected[i].filename,
+      "filename matches for " + cssSelector
+    );
+
+    is(
+      attributes.length,
+      expected[i].attributes.length,
+      "we have the correct number of attributes"
+    );
 
     for (let j = 0; j < expected[i].attributes.length; j++) {
-      is(attributes[j].textContent, expected[i].attributes[j],
-         "attribute[" + j + "] matches for " + cssSelector);
+      is(
+        attributes[j].textContent,
+        expected[i].attributes[j],
+        "attribute[" + j + "] matches for " + cssSelector
+      );
     }
+
+    is(
+      header.classList.contains("content-expanded"),
+      false,
+      "We are not in expanded state"
+    );
 
     // Make sure the header is not hidden by scrollbars before clicking.
     header.scrollIntoView();
 
-    EventUtils.synthesizeMouseAtCenter(header, {}, type.ownerGlobal);
-    yield tooltip.once("event-tooltip-ready");
+    // Avoid clicking the header's center (could hit the debugger button)
+    EventUtils.synthesizeMouse(header, 2, 2, {}, type.ownerGlobal);
+    await tooltip.once("event-tooltip-ready");
 
-    let editor = tooltip.eventTooltip._eventEditors.get(contentBox).editor;
-    is(editor.getText(), expected[i].handler,
-       "handler matches for " + cssSelector);
+    is(
+      header.classList.contains("content-expanded") &&
+        contentBox.hasAttribute("open"),
+      true,
+      "We are in expanded state and icon changed"
+    );
+
+    is(
+      tooltip.panel.querySelectorAll(".event-header.content-expanded")
+        .length === 1 &&
+        tooltip.panel.querySelectorAll(".event-tooltip-content-box[open]")
+          .length === 1,
+      true,
+      "Only one event box is expanded at a time"
+    );
+
+    const editor = tooltip.eventTooltip._eventEditors.get(contentBox).editor;
+    const tidiedHandler = beautify.js(expected[i].handler, {
+      indent_size: 2,
+    });
+    testDiff(
+      editor.getText(),
+      tidiedHandler,
+      "handler matches for " + cssSelector,
+      ok
+    );
+
+    info(`${label} END`);
   }
 
+  const tooltipHidden = tooltip.once("hidden");
   tooltip.hide();
+  await tooltipHidden;
+}
+
+/**
+ * Create diff of two strings.
+ *
+ * @param  {String} text1
+ *         String to compare with text2.
+ * @param  {String} text2 [description]
+ *         String to compare with text1.
+ * @param  {String} msg
+ *         Message to display on failure. A diff will be displayed after this
+ *         message.
+ */
+function testDiff(text1, text2, msg) {
+  let out = "";
+
+  if (text1 === text2) {
+    ok(true, msg);
+    return;
+  }
+
+  const result = textDiff(text1, text2);
+
+  for (const { atom, operation } of result) {
+    switch (operation) {
+      case "add":
+        out += "+ " + atom + "\n";
+        break;
+      case "delete":
+        out += "- " + atom + "\n";
+        break;
+      case "none":
+        out += "  " + atom + "\n";
+        break;
+    }
+  }
+
+  ok(false, msg + "\nDIFF:\n==========\n" + out + "==========\n");
 }

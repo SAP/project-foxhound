@@ -20,11 +20,8 @@ class nsParserBase;
  * This class is mostly responsible for wrapping tree building in an update
  * batch and resetting various fields in nsContentSink upon finishing.
  */
-class nsHtml5OplessBuilder : public nsHtml5DocumentBuilder
-{
-public:
-  NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
-
+class nsHtml5OplessBuilder : public nsHtml5DocumentBuilder {
+ public:
   nsHtml5OplessBuilder();
   ~nsHtml5OplessBuilder();
   void Start();
@@ -32,4 +29,4 @@ public:
   void SetParser(nsParserBase* aParser);
 };
 
-#endif // nsHtml5OplessBuilder_h
+#endif  // nsHtml5OplessBuilder_h

@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/rm.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 rm{
     Currencies{
         ADP{
@@ -224,9 +218,13 @@ rm{
             "BYB",
             "nov rubel bieloruss (1994–1999)",
         }
+        BYN{
+            "BYN",
+            "rubel bieloruss",
+        }
         BYR{
             "BYR",
-            "rubel bieloruss",
+            "rubel bieloruss (2000–2016)",
         }
         BZD{
             "BZD",
@@ -674,6 +672,10 @@ rm{
         }
         MRO{
             "MRO",
+            "ouguiya da la Mauretania (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "ouguiya da la Mauretania",
         }
         MTL{
@@ -774,11 +776,11 @@ rm{
         }
         PEN{
             "PEN",
-            "nov sol peruan",
+            "sol peruan",
         }
         PES{
             "PES",
-            "sol peruan",
+            "sol peruan (1863–1965)",
         }
         PGK{
             "PGK",
@@ -902,6 +904,10 @@ rm{
         }
         STD{
             "STD",
+            "dobra da São Tomé e Principe (1977–2017)",
+        }
+        STN{
+            "STN",
             "dobra da São Tomé e Principe",
         }
         SUR{
@@ -1018,6 +1024,10 @@ rm{
         }
         VEF{
             "VEF",
+            "bolivar venezuelan (2008–2018)",
+        }
+        VES{
+            "VES",
             "bolivar venezuelan",
         }
         VND{
@@ -1101,7 +1111,7 @@ rm{
             "code per verifitgar la valuta",
         }
         XXX{
-            "XXX",
+            "¤",
             "valuta nunenconuschenta",
         }
         YDD{
@@ -1267,5 +1277,5 @@ rm{
         one{"{0} {1}"}
         other{"{0} {1}"}
     }
-    Version{"2.1.19.14"}
+    Version{"2.1.48.4"}
 }

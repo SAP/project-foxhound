@@ -6,30 +6,37 @@
 #define SharedCertVerifier_h
 
 #include "CertVerifier.h"
+#include "EnterpriseRoots.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
 
-namespace mozilla { namespace psm {
+namespace mozilla {
+namespace psm {
 
-class SharedCertVerifier : public mozilla::psm::CertVerifier
-{
-protected:
+class SharedCertVerifier : public mozilla::psm::CertVerifier {
+ protected:
   ~SharedCertVerifier();
 
-public:
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SharedCertVerifier)
 
   SharedCertVerifier(OcspDownloadConfig odc, OcspStrictConfig osc,
-                     OcspGetConfig ogc, uint32_t certShortLifetimeInDays,
-                     PinningMode pinningMode, SHA1Mode sha1Mode,
+                     mozilla::TimeDuration ocspSoftTimeout,
+                     mozilla::TimeDuration ocspHardTimeout,
+                     uint32_t certShortLifetimeInDays, PinningMode pinningMode,
+                     SHA1Mode sha1Mode,
                      BRNameMatchingPolicy::Mode nameMatchingMode,
-                     NetscapeStepUpPolicy netscapeStepUpPolicy)
-    : mozilla::psm::CertVerifier(odc, osc, ogc, certShortLifetimeInDays,
-                                 pinningMode, sha1Mode, nameMatchingMode,
-                                 netscapeStepUpPolicy)
-  {
-  }
+                     NetscapeStepUpPolicy netscapeStepUpPolicy,
+                     CertificateTransparencyMode ctMode,
+                     DistrustedCAPolicy distrustedCAPolicy,
+                     const Vector<EnterpriseCert>& thirdPartyCerts)
+      : mozilla::psm::CertVerifier(
+            odc, osc, ocspSoftTimeout, ocspHardTimeout, certShortLifetimeInDays,
+            pinningMode, sha1Mode, nameMatchingMode, netscapeStepUpPolicy,
+            ctMode, distrustedCAPolicy, thirdPartyCerts) {}
 };
 
-} } // namespace mozilla::psm
+}  // namespace psm
+}  // namespace mozilla
 
-#endif // SharedCertVerifier_h
+#endif  // SharedCertVerifier_h

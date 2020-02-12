@@ -14,45 +14,38 @@
 
 namespace mozilla {
 
-// A hash entry that uses a RefPtr<dom::Element>, CSSPseudoElementType pair
-class PseudoElementHashEntry : public PLDHashEntryHdr
-{
-public:
+// A hash entry that uses a RefPtr<dom::Element>, PseudoStyleType pair
+class PseudoElementHashEntry : public PLDHashEntryHdr {
+ public:
   typedef NonOwningAnimationTarget KeyType;
   typedef const NonOwningAnimationTarget* KeyTypePointer;
 
   explicit PseudoElementHashEntry(KeyTypePointer aKey)
-    : mElement(aKey->mElement)
-    , mPseudoType(aKey->mPseudoType) { }
-  explicit PseudoElementHashEntry(const PseudoElementHashEntry& aCopy)=default;
+      : mElement(aKey->mElement), mPseudoType(aKey->mPseudoType) {}
+  PseudoElementHashEntry(PseudoElementHashEntry&& aOther) = default;
 
   ~PseudoElementHashEntry() = default;
 
-  KeyType GetKey() const { return { mElement, mPseudoType }; }
-  bool KeyEquals(KeyTypePointer aKey) const
-  {
-    return mElement == aKey->mElement &&
-           mPseudoType == aKey->mPseudoType;
+  KeyType GetKey() const { return {mElement, mPseudoType}; }
+  bool KeyEquals(KeyTypePointer aKey) const {
+    return mElement == aKey->mElement && mPseudoType == aKey->mPseudoType;
   }
 
   static KeyTypePointer KeyToPointer(KeyType& aKey) { return &aKey; }
-  static PLDHashNumber HashKey(KeyTypePointer aKey)
-  {
-    if (!aKey)
-      return 0;
+  static PLDHashNumber HashKey(KeyTypePointer aKey) {
+    if (!aKey) return 0;
 
     // Convert the scoped enum into an integer while adding it to hash.
-    // Note: CSSPseudoElementTypeBase is uint8_t, so we convert it into
-    //       uint8_t directly to avoid including the header.
+    static_assert(sizeof(PseudoStyleType) == sizeof(uint8_t), "");
     return mozilla::HashGeneric(aKey->mElement,
                                 static_cast<uint8_t>(aKey->mPseudoType));
   }
   enum { ALLOW_MEMMOVE = true };
 
   RefPtr<dom::Element> mElement;
-  CSSPseudoElementType mPseudoType;
+  PseudoStyleType mPseudoType;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_PseudoElementHashEntry_h
+#endif  // mozilla_PseudoElementHashEntry_h

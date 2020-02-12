@@ -9,50 +9,41 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestCrashCleanupParent : public PTestCrashCleanupParent {
+ public:
+  TestCrashCleanupParent();
+  virtual ~TestCrashCleanupParent();
 
-class TestCrashCleanupParent :
-    public PTestCrashCleanupParent
-{
-public:
-    TestCrashCleanupParent();
-    virtual ~TestCrashCleanupParent();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return false; }
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return false; }
+  void Main();
 
-    void Main();
+ protected:
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (AbnormalShutdown != why) fail("unexpected destruction!");
+    mCleanedUp = true;
+  }
 
-protected:    
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (AbnormalShutdown != why)
-            fail("unexpected destruction!");
-        mCleanedUp = true;
-    }
-
-    bool mCleanedUp;
+  bool mCleanedUp;
 };
 
+class TestCrashCleanupChild : public PTestCrashCleanupChild {
+  friend class PTestCrashCleanupChild;
 
-class TestCrashCleanupChild :
-    public PTestCrashCleanupChild
-{
-public:
-    TestCrashCleanupChild();
-    virtual ~TestCrashCleanupChild();
+ public:
+  TestCrashCleanupChild();
+  virtual ~TestCrashCleanupChild();
 
-protected:
-    virtual bool AnswerDIEDIEDIE() override;
+ protected:
+  mozilla::ipc::IPCResult AnswerDIEDIEDIE();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        fail("should have 'crashed'!");
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    fail("should have 'crashed'!");
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestCrashCleanup_h
+#endif  // ifndef mozilla__ipdltest_TestCrashCleanup_h

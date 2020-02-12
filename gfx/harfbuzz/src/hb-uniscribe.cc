@@ -24,30 +24,39 @@
  * Google Author(s): Behdad Esfahbod
  */
 
-#define HB_SHAPER uniscribe
-#include "hb-shaper-impl-private.hh"
+#include "hb.hh"
+
+#ifdef HAVE_UNISCRIBE
+
+#ifdef HB_NO_OT_TAG
+#error "Cannot compile 'uniscribe' shaper with HB_NO_OT_TAG."
+#endif
+
+#include "hb-shaper-impl.hh"
 
 #include <windows.h>
 #include <usp10.h>
 #include <rpc.h>
 
-#include "hb-uniscribe.h"
-
-#include "hb-open-file-private.hh"
-#include "hb-ot-name-table.hh"
-#include "hb-ot-tag.h"
-
-
-#ifndef HB_DEBUG_UNISCRIBE
-#define HB_DEBUG_UNISCRIBE (HB_DEBUG+0)
+#ifndef E_NOT_SUFFICIENT_BUFFER
+#define E_NOT_SUFFICIENT_BUFFER HRESULT_FROM_WIN32 (ERROR_INSUFFICIENT_BUFFER)
 #endif
 
+#include "hb-uniscribe.h"
 
-static inline uint16_t hb_uint16_swap (const uint16_t v)
-{ return (v >> 8) | (v << 8); }
-static inline uint32_t hb_uint32_swap (const uint32_t v)
-{ return (hb_uint16_swap (v) << 16) | hb_uint16_swap (v >> 16); }
+#include "hb-open-file.hh"
+#include "hb-ot-name-table.hh"
+#include "hb-ot-layout.h"
 
+
+/**
+ * SECTION:hb-uniscribe
+ * @title: hb-uniscribe
+ * @short_description: Windows integration
+ * @include: hb-uniscribe.h
+ *
+ * Functions for using HarfBuzz with the Windows fonts.
+ **/
 
 typedef HRESULT (WINAPI *SIOT) /*ScriptItemizeOpenType*/(
   const WCHAR *pwcInChars,
@@ -194,69 +203,84 @@ hb_ScriptPlaceOpenType(
 }
 
 
-struct hb_uniscribe_shaper_funcs_t {
+struct hb_uniscribe_shaper_funcs_t
+{
   SIOT ScriptItemizeOpenType;
   SSOT ScriptShapeOpenType;
   SPOT ScriptPlaceOpenType;
 
-  inline void init (void)
+  void init ()
   {
     HMODULE hinstLib;
-    this->ScriptItemizeOpenType = NULL;
-    this->ScriptShapeOpenType   = NULL;
-    this->ScriptPlaceOpenType   = NULL;
+    this->ScriptItemizeOpenType = nullptr;
+    this->ScriptShapeOpenType   = nullptr;
+    this->ScriptPlaceOpenType   = nullptr;
 
     hinstLib = GetModuleHandle (TEXT ("usp10.dll"));
     if (hinstLib)
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
       this->ScriptItemizeOpenType = (SIOT) GetProcAddress (hinstLib, "ScriptItemizeOpenType");
       this->ScriptShapeOpenType   = (SSOT) GetProcAddress (hinstLib, "ScriptShapeOpenType");
       this->ScriptPlaceOpenType   = (SPOT) GetProcAddress (hinstLib, "ScriptPlaceOpenType");
+#pragma GCC diagnostic pop
     }
     if (!this->ScriptItemizeOpenType ||
 	!this->ScriptShapeOpenType   ||
 	!this->ScriptPlaceOpenType)
     {
-      DEBUG_MSG (UNISCRIBE, NULL, "OpenType versions of functions not found; falling back.");
+      DEBUG_MSG (UNISCRIBE, nullptr, "OpenType versions of functions not found; falling back.");
       this->ScriptItemizeOpenType = hb_ScriptItemizeOpenType;
       this->ScriptShapeOpenType   = hb_ScriptShapeOpenType;
       this->ScriptPlaceOpenType   = hb_ScriptPlaceOpenType;
     }
   }
 };
-static hb_uniscribe_shaper_funcs_t *uniscribe_funcs;
 
-static inline void
-free_uniscribe_funcs (void)
+#if HB_USE_ATEXIT
+static void free_static_uniscribe_shaper_funcs ();
+#endif
+
+static struct hb_uniscribe_shaper_funcs_lazy_loader_t : hb_lazy_loader_t<hb_uniscribe_shaper_funcs_t,
+									 hb_uniscribe_shaper_funcs_lazy_loader_t>
 {
-  free (uniscribe_funcs);
-}
-
-static hb_uniscribe_shaper_funcs_t *
-hb_uniscribe_shaper_get_funcs (void)
-{
-retry:
-  hb_uniscribe_shaper_funcs_t *funcs = (hb_uniscribe_shaper_funcs_t *) hb_atomic_ptr_get (&uniscribe_funcs);
-
-  if (unlikely (!funcs))
+  static hb_uniscribe_shaper_funcs_t *create ()
   {
-    funcs = (hb_uniscribe_shaper_funcs_t *) calloc (1, sizeof (hb_uniscribe_shaper_funcs_t));
+    hb_uniscribe_shaper_funcs_t *funcs = (hb_uniscribe_shaper_funcs_t *) calloc (1, sizeof (hb_uniscribe_shaper_funcs_t));
     if (unlikely (!funcs))
-      return NULL;
+      return nullptr;
 
     funcs->init ();
 
-    if (!hb_atomic_ptr_cmpexch (&uniscribe_funcs, NULL, funcs)) {
-      free (funcs);
-      goto retry;
-    }
-
-#ifdef HB_USE_ATEXIT
-    atexit (free_uniscribe_funcs); /* First person registers atexit() callback. */
+#if HB_USE_ATEXIT
+    atexit (free_static_uniscribe_shaper_funcs);
 #endif
-  }
 
-  return funcs;
+    return funcs;
+  }
+  static void destroy (hb_uniscribe_shaper_funcs_t *p)
+  {
+    free ((void *) p);
+  }
+  static hb_uniscribe_shaper_funcs_t *get_null ()
+  {
+    return nullptr;
+  }
+} static_uniscribe_shaper_funcs;
+
+#if HB_USE_ATEXIT
+static
+void free_static_uniscribe_shaper_funcs ()
+{
+  static_uniscribe_shaper_funcs.free_instance ();
+}
+#endif
+
+static hb_uniscribe_shaper_funcs_t *
+hb_uniscribe_shaper_get_funcs ()
+{
+  return static_uniscribe_shaper_funcs.get_unconst ();
 }
 
 
@@ -264,15 +288,16 @@ struct active_feature_t {
   OPENTYPE_FEATURE_RECORD rec;
   unsigned int order;
 
-  static int cmp (const active_feature_t *a, const active_feature_t *b) {
+  HB_INTERNAL static int cmp (const void *pa, const void *pb) {
+    const active_feature_t *a = (const active_feature_t *) pa;
+    const active_feature_t *b = (const active_feature_t *) pb;
     return a->rec.tagFeature < b->rec.tagFeature ? -1 : a->rec.tagFeature > b->rec.tagFeature ? 1 :
 	   a->order < b->order ? -1 : a->order > b->order ? 1 :
 	   a->rec.lParameter < b->rec.lParameter ? -1 : a->rec.lParameter > b->rec.lParameter ? 1 :
 	   0;
   }
-  bool operator== (const active_feature_t *f) {
-    return cmp (this, f) == 0;
-  }
+  bool operator== (const active_feature_t *f)
+  { return cmp (this, f) == 0; }
 };
 
 struct feature_event_t {
@@ -280,7 +305,10 @@ struct feature_event_t {
   bool start;
   active_feature_t feature;
 
-  static int cmp (const feature_event_t *a, const feature_event_t *b) {
+  HB_INTERNAL static int cmp (const void *pa, const void *pb)
+  {
+    const feature_event_t *a = (const feature_event_t *) pa;
+    const feature_event_t *b = (const feature_event_t *) pb;
     return a->index < b->index ? -1 : a->index > b->index ? 1 :
 	   a->start < b->start ? -1 : a->start > b->start ? 1 :
 	   active_feature_t::cmp (&a->feature, &b->feature);
@@ -293,15 +321,12 @@ struct range_record_t {
   unsigned int index_last;  /* == end - 1 */
 };
 
-HB_SHAPER_DATA_ENSURE_DECLARE(uniscribe, face)
-HB_SHAPER_DATA_ENSURE_DECLARE(uniscribe, font)
-
 
 /*
  * shaper face data
  */
 
-struct hb_uniscribe_shaper_face_data_t {
+struct hb_uniscribe_face_data_t {
   HANDLE fh;
   hb_uniscribe_shaper_funcs_t *funcs;
   wchar_t face_name[LF_FACESIZE];
@@ -316,7 +341,7 @@ _hb_generate_unique_face_name (wchar_t *face_name, unsigned int *plen)
   const char *enc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
   UUID id;
   UuidCreate ((UUID*) &id);
-  ASSERT_STATIC (2 + 3 * (16/2) < LF_FACESIZE);
+  static_assert ((2 + 3 * (16/2) < LF_FACESIZE), "");
   unsigned int name_str_len = 0;
   face_name[name_str_len++] = 'F';
   face_name[name_str_len++] = '_';
@@ -350,7 +375,7 @@ _hb_rename_font (hb_blob_t *blob, wchar_t *new_name)
    * full, PS. All of them point to the same name data with our unique name.
    */
 
-  blob = OT::Sanitizer<OT::OpenTypeFontFile>::sanitize (blob);
+  blob = hb_sanitize_context_t ().sanitize_blob<OT::OpenTypeFontFile> (blob);
 
   unsigned int length, new_length, name_str_len;
   const char *orig_sfnt_data = hb_blob_get_data (blob, &length);
@@ -360,37 +385,38 @@ _hb_rename_font (hb_blob_t *blob, wchar_t *new_name)
   static const uint16_t name_IDs[] = { 1, 2, 3, 4, 6 };
 
   unsigned int name_table_length = OT::name::min_size +
-                                   ARRAY_LENGTH (name_IDs) * OT::NameRecord::static_size +
-                                   name_str_len * 2; /* for name data in UTF16BE form */
+				   ARRAY_LENGTH (name_IDs) * OT::NameRecord::static_size +
+				   name_str_len * 2; /* for name data in UTF16BE form */
+  unsigned int padded_name_table_length = ((name_table_length + 3) & ~3);
   unsigned int name_table_offset = (length + 3) & ~3;
 
-  new_length = name_table_offset + ((name_table_length + 3) & ~3);
+  new_length = name_table_offset + padded_name_table_length;
   void *new_sfnt_data = calloc (1, new_length);
   if (!new_sfnt_data)
   {
     hb_blob_destroy (blob);
-    return NULL;
+    return nullptr;
   }
 
   memcpy(new_sfnt_data, orig_sfnt_data, length);
 
-  OT::name &name = OT::StructAtOffset<OT::name> (new_sfnt_data, name_table_offset);
-  name.format.set (0);
-  name.count.set (ARRAY_LENGTH (name_IDs));
-  name.stringOffset.set (name.get_size ());
+  OT::name &name = StructAtOffset<OT::name> (new_sfnt_data, name_table_offset);
+  name.format = 0;
+  name.count = ARRAY_LENGTH (name_IDs);
+  name.stringOffset = name.get_size ();
   for (unsigned int i = 0; i < ARRAY_LENGTH (name_IDs); i++)
   {
-    OT::NameRecord &record = name.nameRecord[i];
-    record.platformID.set (3);
-    record.encodingID.set (1);
-    record.languageID.set (0x0409u); /* English */
-    record.nameID.set (name_IDs[i]);
-    record.length.set (name_str_len * 2);
-    record.offset.set (0);
+    OT::NameRecord &record = name.nameRecordZ[i];
+    record.platformID = 3;
+    record.encodingID = 1;
+    record.languageID = 0x0409u; /* English */
+    record.nameID = name_IDs[i];
+    record.length = name_str_len * 2;
+    record.offset = 0;
   }
 
   /* Copy string data from new_name, converting wchar_t to UTF16BE. */
-  unsigned char *p = &OT::StructAfter<unsigned char> (name);
+  unsigned char *p = &StructAfter<unsigned char> (name);
   for (unsigned int i = 0; i < name_str_len; i++)
   {
     *p++ = new_name[i] >> 8;
@@ -409,15 +435,15 @@ _hb_rename_font (hb_blob_t *blob, wchar_t *new_name)
     if (face.find_table_index (HB_OT_TAG_name, &index))
     {
       OT::TableRecord &record = const_cast<OT::TableRecord &> (face.get_table (index));
-      record.checkSum.set_for_data (&name, name_table_length);
-      record.offset.set (name_table_offset);
-      record.length.set (name_table_length);
+      record.checkSum.set_for_data (&name, padded_name_table_length);
+      record.offset = name_table_offset;
+      record.length = name_table_length;
     }
     else if (face_index == 0) /* Fail if first face doesn't have 'name' table. */
     {
       free (new_sfnt_data);
       hb_blob_destroy (blob);
-      return NULL;
+      return nullptr;
     }
   }
 
@@ -427,21 +453,21 @@ _hb_rename_font (hb_blob_t *blob, wchar_t *new_name)
 
   hb_blob_destroy (blob);
   return hb_blob_create ((const char *) new_sfnt_data, new_length,
-			 HB_MEMORY_MODE_WRITABLE, NULL, free);
+			 HB_MEMORY_MODE_WRITABLE, nullptr, free);
 }
 
-hb_uniscribe_shaper_face_data_t *
+hb_uniscribe_face_data_t *
 _hb_uniscribe_shaper_face_data_create (hb_face_t *face)
 {
-  hb_uniscribe_shaper_face_data_t *data = (hb_uniscribe_shaper_face_data_t *) calloc (1, sizeof (hb_uniscribe_shaper_face_data_t));
+  hb_uniscribe_face_data_t *data = (hb_uniscribe_face_data_t *) calloc (1, sizeof (hb_uniscribe_face_data_t));
   if (unlikely (!data))
-    return NULL;
+    return nullptr;
 
   data->funcs = hb_uniscribe_shaper_get_funcs ();
   if (unlikely (!data->funcs))
   {
     free (data);
-    return NULL;
+    return nullptr;
   }
 
   hb_blob_t *blob = hb_face_reference_blob (face);
@@ -452,25 +478,25 @@ _hb_uniscribe_shaper_face_data_create (hb_face_t *face)
   if (unlikely (!blob))
   {
     free (data);
-    return NULL;
+    return nullptr;
   }
 
   DWORD num_fonts_installed;
-  data->fh = AddFontMemResourceEx ((void *) hb_blob_get_data (blob, NULL),
+  data->fh = AddFontMemResourceEx ((void *) hb_blob_get_data (blob, nullptr),
 				   hb_blob_get_length (blob),
 				   0, &num_fonts_installed);
   if (unlikely (!data->fh))
   {
     DEBUG_MSG (UNISCRIBE, face, "Face AddFontMemResourceEx() failed");
     free (data);
-    return NULL;
+    return nullptr;
   }
 
   return data;
 }
 
 void
-_hb_uniscribe_shaper_face_data_destroy (hb_uniscribe_shaper_face_data_t *data)
+_hb_uniscribe_shaper_face_data_destroy (hb_uniscribe_face_data_t *data)
 {
   RemoveFontMemResourceEx (data->fh);
   free (data);
@@ -481,11 +507,12 @@ _hb_uniscribe_shaper_face_data_destroy (hb_uniscribe_shaper_face_data_t *data)
  * shaper font data
  */
 
-struct hb_uniscribe_shaper_font_data_t {
+struct hb_uniscribe_font_data_t
+{
   HDC hdc;
-  LOGFONTW log_font;
+  mutable LOGFONTW log_font;
   HFONT hfont;
-  SCRIPT_CACHE script_cache;
+  mutable SCRIPT_CACHE script_cache;
   double x_mult, y_mult; /* From LOGFONT space to HB space. */
 };
 
@@ -495,25 +522,20 @@ populate_log_font (LOGFONTW  *lf,
 		   unsigned int font_size)
 {
   memset (lf, 0, sizeof (*lf));
-  lf->lfHeight = -font_size;
+  lf->lfHeight = - (int) font_size;
   lf->lfCharSet = DEFAULT_CHARSET;
 
-  hb_face_t *face = font->face;
-  hb_uniscribe_shaper_face_data_t *face_data = HB_SHAPER_DATA_GET (face);
-
-  memcpy (lf->lfFaceName, face_data->face_name, sizeof (lf->lfFaceName));
+  memcpy (lf->lfFaceName, font->face->data.uniscribe->face_name, sizeof (lf->lfFaceName));
 
   return true;
 }
 
-hb_uniscribe_shaper_font_data_t *
+hb_uniscribe_font_data_t *
 _hb_uniscribe_shaper_font_data_create (hb_font_t *font)
 {
-  if (unlikely (!hb_uniscribe_shaper_face_data_ensure (font->face))) return NULL;
-
-  hb_uniscribe_shaper_font_data_t *data = (hb_uniscribe_shaper_font_data_t *) calloc (1, sizeof (hb_uniscribe_shaper_font_data_t));
+  hb_uniscribe_font_data_t *data = (hb_uniscribe_font_data_t *) calloc (1, sizeof (hb_uniscribe_font_data_t));
   if (unlikely (!data))
-    return NULL;
+    return nullptr;
 
   int font_size = font->face->get_upem (); /* Default... */
   /* No idea if the following is even a good idea. */
@@ -525,35 +547,35 @@ _hb_uniscribe_shaper_font_data_create (hb_font_t *font)
   data->x_mult = (double) font->x_scale / font_size;
   data->y_mult = (double) font->y_scale / font_size;
 
-  data->hdc = GetDC (NULL);
+  data->hdc = GetDC (nullptr);
 
   if (unlikely (!populate_log_font (&data->log_font, font, font_size))) {
     DEBUG_MSG (UNISCRIBE, font, "Font populate_log_font() failed");
     _hb_uniscribe_shaper_font_data_destroy (data);
-    return NULL;
+    return nullptr;
   }
 
   data->hfont = CreateFontIndirectW (&data->log_font);
   if (unlikely (!data->hfont)) {
     DEBUG_MSG (UNISCRIBE, font, "Font CreateFontIndirectW() failed");
     _hb_uniscribe_shaper_font_data_destroy (data);
-     return NULL;
+     return nullptr;
   }
 
   if (!SelectObject (data->hdc, data->hfont)) {
     DEBUG_MSG (UNISCRIBE, font, "Font SelectObject() failed");
     _hb_uniscribe_shaper_font_data_destroy (data);
-     return NULL;
+     return nullptr;
   }
 
   return data;
 }
 
 void
-_hb_uniscribe_shaper_font_data_destroy (hb_uniscribe_shaper_font_data_t *data)
+_hb_uniscribe_shaper_font_data_destroy (hb_uniscribe_font_data_t *data)
 {
   if (data->hdc)
-    ReleaseDC (NULL, data->hdc);
+    ReleaseDC (nullptr, data->hdc);
   if (data->hfont)
     DeleteObject (data->hfont);
   if (data->script_cache)
@@ -564,37 +586,15 @@ _hb_uniscribe_shaper_font_data_destroy (hb_uniscribe_shaper_font_data_t *data)
 LOGFONTW *
 hb_uniscribe_font_get_logfontw (hb_font_t *font)
 {
-  if (unlikely (!hb_uniscribe_shaper_font_data_ensure (font))) return NULL;
-  hb_uniscribe_shaper_font_data_t *font_data =  HB_SHAPER_DATA_GET (font);
-  return &font_data->log_font;
+  const hb_uniscribe_font_data_t *data =  font->data.uniscribe;
+  return data ? &data->log_font : nullptr;
 }
 
 HFONT
 hb_uniscribe_font_get_hfont (hb_font_t *font)
 {
-  if (unlikely (!hb_uniscribe_shaper_font_data_ensure (font))) return NULL;
-  hb_uniscribe_shaper_font_data_t *font_data =  HB_SHAPER_DATA_GET (font);
-  return font_data->hfont;
-}
-
-
-/*
- * shaper shape_plan data
- */
-
-struct hb_uniscribe_shaper_shape_plan_data_t {};
-
-hb_uniscribe_shaper_shape_plan_data_t *
-_hb_uniscribe_shaper_shape_plan_data_create (hb_shape_plan_t    *shape_plan HB_UNUSED,
-					     const hb_feature_t *user_features HB_UNUSED,
-					     unsigned int        num_user_features HB_UNUSED)
-{
-  return (hb_uniscribe_shaper_shape_plan_data_t *) HB_SHAPER_DATA_SUCCEEDED;
-}
-
-void
-_hb_uniscribe_shaper_shape_plan_data_destroy (hb_uniscribe_shaper_shape_plan_data_t *data HB_UNUSED)
-{
+  const hb_uniscribe_font_data_t *data =  font->data.uniscribe;
+  return data ? data->hfont : nullptr;
 }
 
 
@@ -611,19 +611,19 @@ _hb_uniscribe_shape (hb_shape_plan_t    *shape_plan,
 		     unsigned int        num_features)
 {
   hb_face_t *face = font->face;
-  hb_uniscribe_shaper_face_data_t *face_data = HB_SHAPER_DATA_GET (face);
-  hb_uniscribe_shaper_font_data_t *font_data = HB_SHAPER_DATA_GET (font);
+  const hb_uniscribe_face_data_t *face_data = face->data.uniscribe;
+  const hb_uniscribe_font_data_t *font_data = font->data.uniscribe;
   hb_uniscribe_shaper_funcs_t *funcs = face_data->funcs;
 
   /*
    * Set up features.
    */
-  hb_auto_array_t<OPENTYPE_FEATURE_RECORD> feature_records;
-  hb_auto_array_t<range_record_t> range_records;
+  hb_vector_t<OPENTYPE_FEATURE_RECORD> feature_records;
+  hb_vector_t<range_record_t> range_records;
   if (num_features)
   {
     /* Sort features by start/end events. */
-    hb_auto_array_t<feature_event_t> feature_events;
+    hb_vector_t<feature_event_t> feature_events;
     for (unsigned int i = 0; i < num_features; i++)
     {
       active_feature_t feature;
@@ -634,15 +634,11 @@ _hb_uniscribe_shape (hb_shape_plan_t    *shape_plan,
       feature_event_t *event;
 
       event = feature_events.push ();
-      if (unlikely (!event))
-	goto fail_features;
       event->index = features[i].start;
       event->start = true;
       event->feature = feature;
 
       event = feature_events.push ();
-      if (unlikely (!event))
-	goto fail_features;
       event->index = features[i].end;
       event->start = false;
       event->feature = feature;
@@ -656,89 +652,77 @@ _hb_uniscribe_shape (hb_shape_plan_t    *shape_plan,
       feature.order = num_features + 1;
 
       feature_event_t *event = feature_events.push ();
-      if (unlikely (!event))
-	goto fail_features;
       event->index = 0; /* This value does magic. */
       event->start = false;
       event->feature = feature;
     }
 
     /* Scan events and save features for each range. */
-    hb_auto_array_t<active_feature_t> active_features;
+    hb_vector_t<active_feature_t> active_features;
     unsigned int last_index = 0;
-    for (unsigned int i = 0; i < feature_events.len; i++)
+    for (unsigned int i = 0; i < feature_events.length; i++)
     {
       feature_event_t *event = &feature_events[i];
 
       if (event->index != last_index)
       {
-        /* Save a snapshot of active features and the range. */
+	/* Save a snapshot of active features and the range. */
 	range_record_t *range = range_records.push ();
-	if (unlikely (!range))
-	  goto fail_features;
 
-	unsigned int offset = feature_records.len;
+	unsigned int offset = feature_records.length;
 
 	active_features.qsort ();
-	for (unsigned int j = 0; j < active_features.len; j++)
+	for (unsigned int j = 0; j < active_features.length; j++)
 	{
-	  if (!j || active_features[j].rec.tagFeature != feature_records[feature_records.len - 1].tagFeature)
+	  if (!j || active_features[j].rec.tagFeature != feature_records[feature_records.length - 1].tagFeature)
 	  {
-	    OPENTYPE_FEATURE_RECORD *feature = feature_records.push ();
-	    if (unlikely (!feature))
-	      goto fail_features;
-	    *feature = active_features[j].rec;
+	    feature_records.push (active_features[j].rec);
 	  }
 	  else
 	  {
 	    /* Overrides value for existing feature. */
-	    feature_records[feature_records.len - 1].lParameter = active_features[j].rec.lParameter;
+	    feature_records[feature_records.length - 1].lParameter = active_features[j].rec.lParameter;
 	  }
 	}
 
 	/* Will convert to pointer after all is ready, since feature_records.array
 	 * may move as we grow it. */
 	range->props.potfRecords = reinterpret_cast<OPENTYPE_FEATURE_RECORD *> (offset);
-	range->props.cotfRecords = feature_records.len - offset;
+	range->props.cotfRecords = feature_records.length - offset;
 	range->index_first = last_index;
 	range->index_last  = event->index - 1;
 
 	last_index = event->index;
       }
 
-      if (event->start) {
-        active_feature_t *feature = active_features.push ();
-	if (unlikely (!feature))
-	  goto fail_features;
-	*feature = event->feature;
-      } else {
-        active_feature_t *feature = active_features.find (&event->feature);
+      if (event->start)
+      {
+	active_features.push (event->feature);
+      }
+      else
+      {
+	active_feature_t *feature = active_features.find (&event->feature);
 	if (feature)
-	  active_features.remove (feature - active_features.array);
+	  active_features.remove (feature - active_features.arrayZ);
       }
     }
 
-    if (!range_records.len) /* No active feature found. */
-      goto fail_features;
+    if (!range_records.length) /* No active feature found. */
+      num_features = 0;
 
     /* Fixup the pointers. */
-    for (unsigned int i = 0; i < range_records.len; i++)
+    for (unsigned int i = 0; i < range_records.length; i++)
     {
       range_record_t *range = &range_records[i];
-      range->props.potfRecords = feature_records.array + reinterpret_cast<uintptr_t> (range->props.potfRecords);
+      range->props.potfRecords = (OPENTYPE_FEATURE_RECORD *) feature_records + reinterpret_cast<uintptr_t> (range->props.potfRecords);
     }
-  }
-  else
-  {
-  fail_features:
-    num_features = 0;
   }
 
 #define FAIL(...) \
   HB_STMT_START { \
-    DEBUG_MSG (UNISCRIBE, NULL, __VA_ARGS__); \
+    DEBUG_MSG (UNISCRIBE, nullptr, __VA_ARGS__); \
     return false; \
-  } HB_STMT_END;
+  } HB_STMT_END
 
   HRESULT hr;
 
@@ -749,12 +733,12 @@ retry:
 
 #define ALLOCATE_ARRAY(Type, name, len) \
   Type *name = (Type *) scratch; \
-  { \
+  do { \
     unsigned int _consumed = DIV_CEIL ((len) * sizeof (Type), sizeof (*scratch)); \
     assert (_consumed <= scratch_size); \
     scratch += _consumed; \
     scratch_size -= _consumed; \
-  }
+  } while (0)
 
 #define utf16_index() var1.u32
 
@@ -841,18 +825,24 @@ retry:
 				     script_tags,
 				     &item_count);
   if (unlikely (FAILED (hr)))
-    FAIL ("ScriptItemizeOpenType() failed: 0x%08xL", hr);
+    FAIL ("ScriptItemizeOpenType() failed: 0x%08lx", hr);
 
 #undef MAX_ITEMS
 
-  OPENTYPE_TAG language_tag = hb_uint32_swap (hb_ot_tag_from_language (buffer->props.language));
-  hb_auto_array_t<TEXTRANGE_PROPERTIES*> range_properties;
-  hb_auto_array_t<int> range_char_counts;
+  hb_tag_t lang_tag;
+  unsigned int lang_count = 1;
+  hb_ot_tags_from_script_and_language (buffer->props.script,
+				       buffer->props.language,
+				       nullptr, nullptr,
+				       &lang_count, &lang_tag);
+  OPENTYPE_TAG language_tag = hb_uint32_swap (lang_count ? lang_tag : HB_TAG_NONE);
+  hb_vector_t<TEXTRANGE_PROPERTIES*> range_properties;
+  hb_vector_t<int> range_char_counts;
 
   unsigned int glyphs_offset = 0;
   unsigned int glyphs_len;
   bool backward = HB_DIRECTION_IS_BACKWARD (buffer->props.direction);
-  for (unsigned int i = 0; i < item_count; i++)
+  for (int i = 0; i < item_count; i++)
   {
     unsigned int chars_offset = items[i].iCharPos;
     unsigned int item_chars_len = items[i + 1].iCharPos - chars_offset;
@@ -871,8 +861,8 @@ retry:
 	  range--;
 	while (log_clusters[k] > range->index_last)
 	  range++;
-	if (!range_properties.len ||
-	    &range->props != range_properties[range_properties.len - 1])
+	if (!range_properties.length ||
+	    &range->props != range_properties[range_properties.length - 1])
 	{
 	  TEXTRANGE_PROPERTIES **props = range_properties.push ();
 	  int *c = range_char_counts.push ();
@@ -887,7 +877,7 @@ retry:
 	}
 	else
 	{
-	  range_char_counts[range_char_counts.len - 1]++;
+	  range_char_counts[range_char_counts.length - 1]++;
 	}
 
 	last_range = range;
@@ -904,9 +894,9 @@ retry:
 				     &items[i].a,
 				     script_tags[i],
 				     language_tag,
-				     range_char_counts.array,
-				     range_properties.array,
-				     range_properties.len,
+				     range_char_counts.arrayZ,
+				     range_properties.arrayZ,
+				     range_properties.length,
 				     pchars + chars_offset,
 				     item_chars_len,
 				     glyphs_size - glyphs_offset,
@@ -934,7 +924,7 @@ retry:
     }
     if (unlikely (FAILED (hr)))
     {
-      FAIL ("ScriptShapeOpenType() failed: 0x%08xL", hr);
+      FAIL ("ScriptShapeOpenType() failed: 0x%08lx", hr);
     }
 
     for (unsigned int j = chars_offset; j < chars_offset + item_chars_len; j++)
@@ -945,9 +935,9 @@ retry:
 				     &items[i].a,
 				     script_tags[i],
 				     language_tag,
-				     range_char_counts.array,
-				     range_properties.array,
-				     range_properties.len,
+				     range_char_counts.arrayZ,
+				     range_properties.arrayZ,
+				     range_properties.length,
 				     pchars + chars_offset,
 				     log_clusters + chars_offset,
 				     char_props + chars_offset,
@@ -958,9 +948,9 @@ retry:
 				     /* out */
 				     advances + glyphs_offset,
 				     offsets + glyphs_offset,
-				     NULL);
+				     nullptr);
     if (unlikely (FAILED (hr)))
-      FAIL ("ScriptPlaceOpenType() failed: 0x%08xL", hr);
+      FAIL ("ScriptPlaceOpenType() failed: 0x%08lx", hr);
 
     if (DEBUG_ENABLED (UNISCRIBE))
       fprintf (stderr, "Item %d RTL %d LayoutRTL %d LogicalOrder %d ScriptTag %c%c%c%c\n",
@@ -979,13 +969,13 @@ retry:
 
   /* Calculate visual-clusters.  That's what we ship. */
   for (unsigned int i = 0; i < glyphs_len; i++)
-    vis_clusters[i] = -1;
+    vis_clusters[i] = (uint32_t) -1;
   for (unsigned int i = 0; i < buffer->len; i++) {
     uint32_t *p = &vis_clusters[log_clusters[buffer->info[i].utf16_index()]];
-    *p = MIN (*p, buffer->info[i].cluster);
+    *p = hb_min (*p, buffer->info[i].cluster);
   }
   for (unsigned int i = 1; i < glyphs_len; i++)
-    if (vis_clusters[i] == -1)
+    if (vis_clusters[i] == (uint32_t) -1)
       vis_clusters[i] = vis_clusters[i - 1];
 
 #undef utf16_index
@@ -1027,8 +1017,11 @@ retry:
   if (backward)
     hb_buffer_reverse (buffer);
 
+  buffer->unsafe_to_break_all ();
+
   /* Wow, done! */
   return true;
 }
 
 
+#endif

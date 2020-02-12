@@ -32,6 +32,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/avassert.h"
+#include "avcodec.h"
 #include "mathops.h"
 #include "vlc.h"
 
@@ -201,6 +202,13 @@ static inline int get_bits_count(const GetBitContext *s)
     return s->index;
 }
 
+/**
+ * Skips the specified number of bits.
+ * @param n the number of bits to skip,
+ *          For the UNCHECKED_BITSTREAM_READER this must not cause the distance
+ *          from the start to overflow int32_t. Staying within the bitstream + padding
+ *          is sufficient, too.
+ */
 static inline void skip_bits_long(GetBitContext *s, int n)
 {
 #if UNCHECKED_BITSTREAM_READER
@@ -227,6 +235,20 @@ static inline int get_xbits(GetBitContext *s, int n)
     LAST_SKIP_BITS(re, s, n);
     CLOSE_READER(re, s);
     return (NEG_USR32(sign ^ cache, n) ^ sign) - sign;
+}
+
+static inline int get_xbits_le(GetBitContext *s, int n)
+{
+    register int sign;
+    register int32_t cache;
+    OPEN_READER(re, s);
+    av_assert2(n>0 && n<=25);
+    UPDATE_CACHE_LE(re, s);
+    cache = GET_CACHE(re, s);
+    sign  = sign_extend(~cache, n) >> 31;
+    LAST_SKIP_BITS(re, s, n);
+    CLOSE_READER(re, s);
+    return (zero_extend(sign ^ cache, n) ^ sign) - sign;
 }
 
 static inline int get_sbits(GetBitContext *s, int n)
@@ -331,6 +353,7 @@ static inline void skip_bits1(GetBitContext *s)
  */
 static inline unsigned int get_bits_long(GetBitContext *s, int n)
 {
+    av_assert2(n>=0 && n<=32);
     if (!n) {
         return 0;
     } else if (n <= MIN_CACHE_BITS) {
@@ -369,6 +392,10 @@ static inline uint64_t get_bits64(GetBitContext *s, int n)
  */
 static inline int get_sbits_long(GetBitContext *s, int n)
 {
+    // sign_extend(x, 0) is undefined
+    if (!n)
+        return 0;
+
     return sign_extend(get_bits_long(s, n), n);
 }
 
@@ -409,7 +436,7 @@ static inline int init_get_bits(GetBitContext *s, const uint8_t *buffer,
     int buffer_size;
     int ret = 0;
 
-    if (bit_size >= INT_MAX - 7 || bit_size < 0 || !buffer) {
+    if (bit_size >= INT_MAX - FFMAX(7, AV_INPUT_BUFFER_PADDING_SIZE*8) || bit_size < 0 || !buffer) {
         bit_size    = 0;
         buffer      = NULL;
         ret         = AVERROR_INVALIDDATA;
@@ -531,6 +558,7 @@ static inline const uint8_t *align_get_bits(GetBitContext *s)
  * @param max_depth is the number of times bits bits must be read to completely
  *                  read the longest vlc code
  *                  = (max_vlc_length + bits - 1) / bits
+ * @returns the code parsed or -1 if no vlc matches
  */
 static av_always_inline int get_vlc2(GetBitContext *s, VLC_TYPE (*table)[2],
                                      int bits, int max_depth)

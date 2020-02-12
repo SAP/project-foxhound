@@ -21,7 +21,14 @@ enum ChannelInterpretation {
     "discrete"
 };
 
-[Pref="dom.webaudio.enabled"]
+dictionary AudioNodeOptions {
+             unsigned long         channelCount;
+             ChannelCountMode      channelCountMode;
+             ChannelInterpretation channelInterpretation;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface AudioNode : EventTarget {
 
     [Throws]
@@ -29,17 +36,30 @@ interface AudioNode : EventTarget {
     [Throws]
     void connect(AudioParam destination, optional unsigned long output = 0);
     [Throws]
-    void disconnect(optional unsigned long output = 0);
+    void disconnect();
+    [Throws]
+    void disconnect(unsigned long output);
+    [Throws]
+    void disconnect(AudioNode destination);
+    [Throws]
+    void disconnect(AudioNode destination, unsigned long output);
+    [Throws]
+    void disconnect(AudioNode destination, unsigned long output, unsigned long input);
+    [Throws]
+    void disconnect(AudioParam destination);
+    [Throws]
+    void disconnect(AudioParam destination, unsigned long output);
 
-    readonly attribute AudioContext context;
+    readonly attribute BaseAudioContext context;
     readonly attribute unsigned long numberOfInputs;
     readonly attribute unsigned long numberOfOutputs;
 
     // Channel up-mixing and down-mixing rules for all inputs.
     [SetterThrows]
     attribute unsigned long channelCount;
-    [SetterThrows]
+    [SetterThrows, BinaryName="channelCountModeValue"]
     attribute ChannelCountMode channelCountMode;
+    [SetterThrows, BinaryName="channelInterpretationValue"]
     attribute ChannelInterpretation channelInterpretation;
 
 };
@@ -49,8 +69,7 @@ partial interface AudioNode {
   [ChromeOnly]
   readonly attribute unsigned long id;
 };
-[NoInterfaceObject]
-interface AudioNodePassThrough {
+interface mixin AudioNodePassThrough {
   [ChromeOnly]
   attribute boolean passThrough;
 };

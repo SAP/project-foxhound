@@ -12,6 +12,7 @@
 #include "mozilla/dom/TextTrackCueList.h"
 #include "mozilla/StaticPtr.h"
 #include "nsContentUtils.h"
+#include "TimeUnits.h"
 
 class nsIWebVTTParserWrapper;
 
@@ -21,10 +22,11 @@ namespace dom {
 class HTMLMediaElement;
 
 class CompareTextTracks {
-private:
+ private:
   HTMLMediaElement* mMediaElement;
   int32_t TrackChildPosition(TextTrack* aTrack) const;
-public:
+
+ public:
   explicit CompareTextTracks(HTMLMediaElement* aMediaElement);
   bool Equals(TextTrack* aOne, TextTrack* aTwo) const;
   bool LessThan(TextTrack* aOne, TextTrack* aTwo) const;
@@ -33,11 +35,10 @@ public:
 class TextTrack;
 class TextTrackCue;
 
-class TextTrackManager final : public nsIDOMEventListener
-{
+class TextTrackManager final : public nsIDOMEventListener {
   ~TextTrackManager();
 
-public:
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(TextTrackManager)
 
@@ -94,16 +95,15 @@ public:
   void TimeMarchesOn();
   void DispatchUpdateCueDisplay();
 
-  void NotifyShutdown()
-  {
-    mShutdown = true;
-  }
+  void NotifyShutdown() { mShutdown = true; }
 
-  void NotifyCueUpdated(TextTrackCue *aCue);
+  void NotifyCueUpdated(TextTrackCue* aCue);
 
   void NotifyReset();
 
-private:
+  bool IsLoaded();
+
+ private:
   /**
    * Converts the TextTrackCue's cuetext into a tree of DOM objects
    * and attaches it to a div on its owning TrackElement's
@@ -119,14 +119,12 @@ private:
 
   // Contain all cues for a MediaElement. Not sorted.
   RefPtr<TextTrackCueList> mNewCues;
-  // The active cues for the last TimeMarchesOn iteration.
-  RefPtr<TextTrackCueList> mLastActiveCues;
 
   // True if the media player playback changed due to seeking prior to and
   // during running the "Time Marches On" algorithm.
   bool mHasSeeked;
   // Playback position at the time of last "Time Marches On" call
-  double mLastTimeMarchesOnCalled;
+  media::TimeUnit mLastTimeMarchesOnCalled;
 
   bool mTimeMarchesOnDispatched;
   bool mUpdateCueDisplayDispatched;
@@ -139,7 +137,7 @@ private:
   void HonorUserPreferencesForTrackSelection();
   // Performs track selection for a single TextTrackKind.
   void PerformTrackSelection(TextTrackKind aTextTrackKind);
-  //Performs track selection for a set of TextTrackKinds, for example,
+  // Performs track selection for a set of TextTrackKinds, for example,
   // 'subtitles' and 'captions' should be selected together.
   void PerformTrackSelection(TextTrackKind aTextTrackKinds[], uint32_t size);
   void GetTextTracksOfKinds(TextTrackKind aTextTrackKinds[], uint32_t size,
@@ -149,35 +147,38 @@ private:
   bool TrackIsDefault(TextTrack* aTextTrack);
 
   void ReportTelemetryForTrack(TextTrack* aTextTrack) const;
-  void ReportTelemetryForCue();
 
-  // If there is at least one cue has been added to the cue list once, we would
-  // report the usage of cue to Telemetry.
-  bool mCueTelemetryReported;
+  bool IsShutdown() const;
 
-  class ShutdownObserverProxy final : public nsIObserver
-  {
+  // This function will check media element's show poster flag to decide whether
+  // we need to run `TimeMarchesOn`.
+  void MaybeRunTimeMarchesOn();
+
+  class ShutdownObserverProxy final : public nsIObserver {
     NS_DECL_ISUPPORTS
 
-  public:
+   public:
     explicit ShutdownObserverProxy(TextTrackManager* aManager)
-      : mManager(aManager)
-    {
+        : mManager(aManager) {
       nsContentUtils::RegisterShutdownObserver(this);
     }
 
-    NS_IMETHODIMP Observe(nsISupports *aSubject, const char *aTopic, const char16_t *aData) override
-    {
+    NS_IMETHODIMP Observe(nsISupports* aSubject, const char* aTopic,
+                          const char16_t* aData) override {
       MOZ_ASSERT(NS_IsMainThread());
       if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
-        nsContentUtils::UnregisterShutdownObserver(this);
-        mManager->NotifyShutdown();
+        if (mManager) {
+          mManager->NotifyShutdown();
+        }
+        Unregister();
       }
       return NS_OK;
     }
 
-  private:
-    ~ShutdownObserverProxy() {};
+    void Unregister();
+
+   private:
+    ~ShutdownObserverProxy(){};
     TextTrackManager* mManager;
   };
 
@@ -185,7 +186,7 @@ private:
   bool mShutdown;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_TextTrackManager_h
+#endif  // mozilla_dom_TextTrackManager_h

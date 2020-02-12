@@ -23,15 +23,16 @@ TEST(HandleInheritanceTests, TestStdoutInheritance) {
   base::ScopedTempDir temp_directory;
   base::FilePath temp_file_name;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
-  ASSERT_TRUE(CreateTemporaryFileInDir(temp_directory.path(), &temp_file_name));
+  ASSERT_TRUE(
+      CreateTemporaryFileInDir(temp_directory.GetPath(), &temp_file_name));
 
   SECURITY_ATTRIBUTES attrs = {};
   attrs.nLength = sizeof(attrs);
-  attrs.bInheritHandle = TRUE;
+  attrs.bInheritHandle = true;
   base::win::ScopedHandle tmp_handle(
       CreateFile(temp_file_name.value().c_str(), GENERIC_WRITE,
-                 FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
-                 &attrs, OPEN_EXISTING, 0, NULL));
+                 FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE, &attrs,
+                 OPEN_EXISTING, 0, nullptr));
   ASSERT_TRUE(tmp_handle.IsValid());
 
   TestRunner runner;
@@ -42,11 +43,7 @@ TEST(HandleInheritanceTests, TestStdoutInheritance) {
   std::string data;
   ASSERT_TRUE(base::ReadFileToString(base::FilePath(temp_file_name), &data));
   // Redirection uses a feature that was added in Windows Vista.
-  if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
-    ASSERT_EQ("Example output to stdout\r\n", data);
-  } else {
-    ASSERT_EQ("", data);
-  }
+  ASSERT_EQ("Example output to stdout\r\n", data);
 }
 
 }  // namespace sandbox

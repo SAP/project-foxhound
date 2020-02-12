@@ -4,110 +4,156 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Content Processes")
+
 XPIDL_SOURCES += [
-    'nsIBrowser.idl',
     'nsIHangReport.idl',
+    'nsIRemoteWebProgress.idl',
+    'nsIRemoteWebProgressRequest.idl',
 ]
 
 XPIDL_MODULE = 'dom'
 
-EXPORTS += [
-    'nsICachedFileDescriptorListener.h',
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+EXTRA_JS_MODULES += [
+    'ManifestMessagesChild.jsm',
 ]
 
 EXPORTS.mozilla.dom.ipc += [
-    'BlobChild.h',
-    'BlobParent.h',
     'IdType.h',
-    'nsIRemoteBlob.h',
+    'MemMapSnapshot.h',
+    'SharedMap.h',
+    'SharedMapChangeEvent.h',
+    'SharedStringMap.h',
+    'StringTable.h',
     'StructuredCloneData.h',
 ]
 
 EXPORTS.mozilla.dom += [
-    'ContentBridgeChild.h',
-    'ContentBridgeParent.h',
+    'BrowserBridgeChild.h',
+    'BrowserBridgeHost.h',
+    'BrowserBridgeParent.h',
+    'BrowserChild.h',
+    'BrowserHost.h',
+    'BrowserParent.h',
+    'CoalescedInputData.h',
+    'CoalescedMouseData.h',
+    'CoalescedWheelData.h',
     'ContentChild.h',
     'ContentParent.h',
     'ContentProcess.h',
     'ContentProcessManager.h',
     'CPOWManagerGetter.h',
-    'CrashReporterChild.h',
-    'CrashReporterParent.h',
+    'CSPMessageUtils.h',
+    'DocShellMessageUtils.h',
+    'EffectsInfo.h',
     'FilePickerParent.h',
-    'nsIContentChild.h',
-    'nsIContentParent.h',
+    'JSWindowActor.h',
+    'JSWindowActorChild.h',
+    'JSWindowActorParent.h',
+    'JSWindowActorService.h',
+    'MemoryReportRequest.h',
     'PermissionMessageUtils.h',
-    'TabChild.h',
+    'ReferrerInfoUtils.h',
+    'RemoteBrowser.h',
+    'RemoteWebProgress.h',
+    'RemoteWebProgressRequest.h',
     'TabContext.h',
     'TabMessageUtils.h',
-    'TabParent.h',
+    'URLClassifierChild.h',
+    'URLClassifierParent.h',
+    'UserActivationIPCUtils.h',
+    'WindowGlobalActor.h',
+    'WindowGlobalChild.h',
+    'WindowGlobalParent.h',
 ]
 
 EXPORTS.mozilla += [
-    'AppProcessChecker.h',
     'PreallocatedProcessManager.h',
     'ProcessHangMonitor.h',
     'ProcessHangMonitorIPC.h',
     'ProcessPriorityManager.h',
 ]
 
+EXPORTS += [
+    'nsQueryActor.h',
+]
+
 UNIFIED_SOURCES += [
-    'AppProcessChecker.cpp',
+    'BrowserBridgeChild.cpp',
+    'BrowserBridgeHost.cpp',
+    'BrowserBridgeParent.cpp',
+    'BrowserChild.cpp',
+    'BrowserHost.cpp',
+    'BrowserParent.cpp',
+    'CoalescedMouseData.cpp',
+    'CoalescedWheelData.cpp',
     'ColorPickerParent.cpp',
-    'ContentBridgeChild.cpp',
-    'ContentBridgeParent.cpp',
     'ContentParent.cpp',
     'ContentProcess.cpp',
     'ContentProcessManager.cpp',
-    'CrashReporterParent.cpp',
-    'DatePickerParent.cpp',
+    'CSPMessageUtils.cpp',
+    'DocShellMessageUtils.cpp',
     'FilePickerParent.cpp',
-    'nsIContentChild.cpp',
-    'nsIContentParent.cpp',
+    'JSWindowActor.cpp',
+    'JSWindowActorChild.cpp',
+    'JSWindowActorParent.cpp',
+    'JSWindowActorService.cpp',
+    'MemMapSnapshot.cpp',
+    'MemoryReportRequest.cpp',
+    'MMPrinter.cpp',
     'PermissionMessageUtils.cpp',
     'PreallocatedProcessManager.cpp',
     'ProcessPriorityManager.cpp',
-    'ScreenManagerParent.cpp',
+    'ReferrerInfoUtils.cpp',
+    'RemoteBrowser.cpp',
+    'RemoteWebProgress.cpp',
+    'RemoteWebProgressRequest.cpp',
+    'SharedMap.cpp',
+    'SharedStringMap.cpp',
     'StructuredCloneData.cpp',
-    'TabChild.cpp',
     'TabContext.cpp',
     'TabMessageUtils.cpp',
-    'TabParent.cpp',
+    'URLClassifierParent.cpp',
+    'WindowGlobalActor.cpp',
+    'WindowGlobalChild.cpp',
+    'WindowGlobalParent.cpp',
 ]
 
-# Blob.cpp cannot be compiled in unified mode because it triggers a fatal gcc warning.
-# CrashReporterChild.cpp cannot be compiled in unified mode because of name clashes
-# in OS X headers.
 # ContentChild.cpp cannot be compiled in unified mode on  linux due to Time conflict
 SOURCES += [
-    'Blob.cpp',
     'ContentChild.cpp',
-    'CrashReporterChild.cpp',
     'ProcessHangMonitor.cpp',
 ]
 
+PREPROCESSED_IPDL_SOURCES += [
+    'PContent.ipdl',
+]
+
 IPDL_SOURCES += [
-    'BlobTypes.ipdlh',
     'DOMTypes.ipdlh',
-    'PBlob.ipdl',
-    'PBlobStream.ipdl',
+    'MemoryReportTypes.ipdlh',
     'PBrowser.ipdl',
+    'PBrowserBridge.ipdl',
     'PBrowserOrId.ipdlh',
     'PColorPicker.ipdl',
-    'PContent.ipdl',
-    'PContentBridge.ipdl',
     'PContentPermission.ipdlh',
     'PContentPermissionRequest.ipdl',
-    'PCrashReporter.ipdl',
     'PCycleCollectWithLogs.ipdl',
-    'PDatePicker.ipdl',
-    'PDocumentRenderer.ipdl',
     'PFilePicker.ipdl',
-    'PMemoryReportRequest.ipdl',
+    'PLoginReputation.ipdl',
     'PPluginWidget.ipdl',
     'PProcessHangMonitor.ipdl',
-    'PScreenManager.ipdl',
+    'PrefsTypes.ipdlh',
     'PTabContext.ipdlh',
+    'PURLClassifier.ipdl',
+    'PURLClassifierInfo.ipdlh',
+    'PURLClassifierLocal.ipdl',
+    'PWindowGlobal.ipdl',
     'ServiceWorkerConfiguration.ipdlh',
 ]
 
@@ -115,7 +161,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_TARGET'] == 'Darwin':
+if CONFIG['MOZ_SANDBOX'] and (CONFIG['OS_TARGET'] in ['Darwin', 'Linux']):
     USE_LIBS += [
         'mozsandbox',
     ]
@@ -125,26 +171,25 @@ LOCAL_INCLUDES += [
     '/chrome',
     '/docshell/base',
     '/dom/base',
-    '/dom/bluetooth/common',
-    '/dom/bluetooth/ipc',
-    '/dom/devicestorage',
+    '/dom/bindings',
     '/dom/events',
     '/dom/filesystem',
-    '/dom/fmradio/ipc',
     '/dom/geolocation',
     '/dom/media/webspeech/synth/ipc',
-    '/dom/mobilemessage/ipc',
     '/dom/security',
     '/dom/storage',
-    '/dom/workers',
-    '/embedding/components/printingui/ipc',
-    '/extensions/cookie',
+    '/extensions/permissions',
     '/extensions/spellcheck/src',
     '/gfx/2d',
     '/hal/sandbox',
+    '/js/xpconnect/loader',
+    '/js/xpconnect/src',
     '/layout/base',
     '/media/webrtc',
     '/netwerk/base',
+    '/netwerk/protocol/http',
+    '/toolkit/components/printingui/ipc',
+    '/toolkit/crashreporter',
     '/toolkit/xre',
     '/uriloader/exthandler',
     '/widget',
@@ -165,19 +210,29 @@ if CONFIG['OS_ARCH'] != 'WINNT':
 
 DEFINES['BIN_SUFFIX'] = '"%s"' % CONFIG['BIN_SUFFIX']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gonk'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     DEFINES['MOZ_ENABLE_FREETYPE'] = True
-
-if CONFIG['MOZ_TOOLKIT_SEARCH']:
-    DEFINES['MOZ_TOOLKIT_SEARCH'] = True
 
 JAR_MANIFESTS += ['jar.mn']
 
-BROWSER_CHROME_MANIFESTS += ['tests/browser.ini']
+BROWSER_CHROME_MANIFESTS += [
+    'tests/browser.ini',
+    'tests/JSWindowActor/browser.ini',
+]
+
 MOCHITEST_CHROME_MANIFESTS += ['tests/chrome.ini']
 MOCHITEST_MANIFESTS += ['tests/mochitest.ini']
+XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell.ini']
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+if CONFIG['FUZZING'] and CONFIG['FUZZING_INTERFACES']:
+    TEST_DIRS += [
+        'fuzztest'
+    ]
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

@@ -5,16 +5,14 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript"
           src="../common.js"></script>
   <script type="application/javascript"
           src="../text.js"></script>
   <script type="application/javascript">
     
-    function doTest()
-    {
+    function doTest() {
       var iframeDoc = [ getNode("iframe").contentDocument ];
       testCharacterCount(iframeDoc, 15);
       testText(iframeDoc, 0, 15, "outbody inbody ");

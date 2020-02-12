@@ -22,15 +22,18 @@ namespace gmp {
 
 class GMPContentParent;
 
-class GMPVideoDecoderParent final : public PGMPVideoDecoderParent
-                                  , public GMPVideoDecoderProxy
-                                  , public GMPSharedMemManager
-                                  , public GMPCrashHelperHolder
-{
-public:
-  NS_INLINE_DECL_REFCOUNTING(GMPVideoDecoderParent)
+class GMPVideoDecoderParent final : public PGMPVideoDecoderParent,
+                                    public GMPVideoDecoderProxy,
+                                    public GMPSharedMemManager,
+                                    public GMPCrashHelperHolder {
+  friend class PGMPVideoDecoderParent;
 
-  explicit GMPVideoDecoderParent(GMPContentParent *aPlugin);
+ public:
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPVideoDecoderParent.
+  NS_INLINE_DECL_REFCOUNTING(GMPVideoDecoderParent, final)
+
+  explicit GMPVideoDecoderParent(GMPContentParent* aPlugin);
 
   GMPVideoHostImpl& Host();
   nsresult Shutdown();
@@ -51,36 +54,37 @@ public:
   const nsCString& GetDisplayName() const override;
 
   // GMPSharedMemManager
-  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType, Shmem* aMem) override
-  {
+  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
+             Shmem* aMem) override {
 #ifdef GMP_SAFE_SHMEM
     return AllocShmem(aSize, aType, aMem);
 #else
     return AllocUnsafeShmem(aSize, aType, aMem);
 #endif
   }
-  void Dealloc(Shmem& aMem) override
-  {
-    DeallocShmem(aMem);
-  }
+  void Dealloc(Shmem&& aMem) override { DeallocShmem(aMem); }
 
-private:
+ private:
   ~GMPVideoDecoderParent();
 
   // PGMPVideoDecoderParent
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  bool RecvDecoded(const GMPVideoi420FrameData& aDecodedFrame) override;
-  bool RecvReceivedDecodedReferenceFrame(const uint64_t& aPictureId) override;
-  bool RecvReceivedDecodedFrame(const uint64_t& aPictureId) override;
-  bool RecvInputDataExhausted() override;
-  bool RecvDrainComplete() override;
-  bool RecvResetComplete() override;
-  bool RecvError(const GMPErr& aError) override;
-  bool RecvShutdown() override;
-  bool RecvParentShmemForPool(Shmem&& aEncodedBuffer) override;
-  bool AnswerNeedShmem(const uint32_t& aFrameBufferSize,
-                       Shmem* aMem) override;
-  bool Recv__delete__() override;
+  mozilla::ipc::IPCResult RecvDecoded(
+      const GMPVideoi420FrameData& aDecodedFrame) override;
+  mozilla::ipc::IPCResult RecvReceivedDecodedReferenceFrame(
+      const uint64_t& aPictureId) override;
+  mozilla::ipc::IPCResult RecvReceivedDecodedFrame(
+      const uint64_t& aPictureId) override;
+  mozilla::ipc::IPCResult RecvInputDataExhausted() override;
+  mozilla::ipc::IPCResult RecvDrainComplete() override;
+  mozilla::ipc::IPCResult RecvResetComplete() override;
+  mozilla::ipc::IPCResult RecvError(const GMPErr& aError) override;
+  mozilla::ipc::IPCResult RecvShutdown() override;
+  mozilla::ipc::IPCResult RecvParentShmemForPool(
+      Shmem&& aEncodedBuffer) override;
+  mozilla::ipc::IPCResult AnswerNeedShmem(const uint32_t& aFrameBufferSize,
+                                          Shmem* aMem) override;
+  mozilla::ipc::IPCResult Recv__delete__() override;
 
   void UnblockResetAndDrain();
   void CancelResetCompleteTimeout();
@@ -98,7 +102,7 @@ private:
   RefPtr<SimpleTimer> mResetCompleteTimeout;
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPVideoDecoderParent_h_
+#endif  // GMPVideoDecoderParent_h_

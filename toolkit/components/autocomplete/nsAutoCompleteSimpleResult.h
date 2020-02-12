@@ -13,11 +13,30 @@
 #include "nsTArray.h"
 #include "mozilla/Attributes.h"
 
-struct AutoCompleteSimpleResultMatch;
+struct AutoCompleteSimpleResultMatch {
+  AutoCompleteSimpleResultMatch(const nsAString& aValue,
+                                const nsAString& aComment,
+                                const nsAString& aImage,
+                                const nsAString& aStyle,
+                                const nsAString& aFinalCompleteValue,
+                                const nsAString& aLabel)
+      : mValue(aValue),
+        mComment(aComment),
+        mImage(aImage),
+        mStyle(aStyle),
+        mFinalCompleteValue(aFinalCompleteValue),
+        mLabel(aLabel) {}
 
-class nsAutoCompleteSimpleResult final : public nsIAutoCompleteSimpleResult
-{
-public:
+  nsString mValue;
+  nsString mComment;
+  nsString mImage;
+  nsString mStyle;
+  nsString mFinalCompleteValue;
+  nsString mLabel;
+};
+
+class nsAutoCompleteSimpleResult final : public nsIAutoCompleteSimpleResult {
+ public:
   nsAutoCompleteSimpleResult();
 
   NS_DECL_ISUPPORTS
@@ -26,21 +45,19 @@ public:
 
   nsresult AppendResult(nsIAutoCompleteResult* aResult);
 
-private:
+ private:
   ~nsAutoCompleteSimpleResult() {}
 
-protected:
+ protected:
   typedef nsTArray<AutoCompleteSimpleResultMatch> MatchesArray;
-   MatchesArray mMatches;
+  MatchesArray mMatches;
 
   nsString mSearchString;
   nsString mErrorDescription;
   int32_t mDefaultIndex;
   uint32_t mSearchResult;
 
-  bool mTypeAheadResult;
-
   nsCOMPtr<nsIAutoCompleteSimpleResultListener> mListener;
 };
 
-#endif // __nsAutoCompleteSimpleResult__
+#endif  // __nsAutoCompleteSimpleResult__

@@ -5,9 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=765772
 -->
 <head>
   <title>Test for Bug 765772</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -20,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=765772
   </form>
 </div>
 <pre id="test">
-<script type="application/javascript;version=1.7">
+<script type="application/javascript">
 
 /*
  * This test checks that when a user types in some input types, it will not be
@@ -49,20 +48,15 @@ function urlify(aStr) {
 
 function runTestsForNextInputType()
 {
-  try {
-    testRunner.next();
-  } catch (e) {
-    if (e.toString() == '[object StopIteration]') {
-      SimpleTest.finish();
-    } else {
-      throw StopIteration;
-    }
+  let {done} = testRunner.next();
+  if (done) {
+    SimpleTest.finish();
   }
 }
 
 function checkValueSubmittedIsValid()
 {
-  is(frames['submit_frame'].location.href,
+  is(frames.submit_frame.location.href,
      'http://mochi.test:8888/tests/dom/html/test/forms/foo?i='
      + urlify(gValidData[valueIndex++]),
      "The submitted value should not have been sanitized");
@@ -85,7 +79,7 @@ function checkValueSubmittedIsValid()
 
 function checkValueSubmittedIsInvalid()
 {
-  is(frames['submit_frame'].location.href,
+  is(frames.submit_frame.location.href,
      'http://mochi.test:8888/tests/dom/html/test/forms/foo?i=',
      "The submitted value should have been sanitized");
 
@@ -116,7 +110,7 @@ var submitMethod = submitForm;
 
 SimpleTest.waitForExplicitFinish();
 
-function runTest()
+function* runTest()
 {
   SimpleTest.requestLongerTimeout(4);
 
@@ -140,45 +134,6 @@ function runTest()
         "1e0.1",
         "foo",
         "42,13", // comma can't be used as a decimal separator
-      ]
-    },
-    {
-      type: 'date',
-      validData: [
-        '0001-01-01',
-        '2012-12-21',
-        '2013-01-28',
-        '100000-01-01',
-      ],
-      invalidData: [
-        '1-01-01',
-        'a',
-        '-',
-        '2012-01',
-        '2013-01-1',
-        '1011-23-21',
-        '1000-12-99',
-      ]
-    },
-    {
-      type: 'time',
-      validData: [
-        '00:00',
-        '09:09:00',
-        '08:23:23.1',
-        '21:43:56.12',
-        '23:12:45.100',
-      ],
-      invalidData: [
-        '00:',
-        '00:00:',
-        '25:00',
-        '-00:00',
-        '00:00:00.',
-        '00:60',
-        '10:58:99',
-        ':19:10',
-        '23:08:09.1012',
       ]
     },
     {
@@ -216,18 +171,28 @@ function runTest()
         '1000-W'
       ]
     },
-    { type: 'datetime', todo: true },
-    { type: 'datetime-local', todo: true },
+    {
+      type: 'datetime-local',
+      validData: [
+        '0001-01-01T00:00',
+        '2016-11-07T16:45',
+        '2016-11-07T16:45:30',
+        '2016-11-07T16:45:30.10',
+        '2016-11-07T16:45:00.111',
+      ],
+      invalidData: [
+        '1-01-01T00:00',
+        '1970-01-01T9:30',
+        '2016/11/07T16:45',
+        '2016-11-07T16.45',
+        'T',
+        'datetime-local'
+      ]
+    },
   ];
 
   for (test of data) {
     gCurrentTest = test;
-
-    if (test.todo) {
-      input.type = test.type;
-      todo_is(input.type, test.type, test.type + " is not implemented");
-      continue;
-    }
 
     input.type = test.type;
     gValidData = test.validData;

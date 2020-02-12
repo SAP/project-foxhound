@@ -16,8 +16,8 @@ self.onconnect = function(event) {
   var port = event.ports[0];
 
   if (registeredPorts.length) {
-    var data = {
-      type: "connect"
+    let data = {
+      type: "connect",
     };
 
     registeredPorts.forEach(function(registeredPort) {
@@ -25,8 +25,8 @@ self.onconnect = function(event) {
     });
   }
 
-  port.onmessage = function(event) {
-    switch (event.data.command) {
+  port.onmessage = function(msg) {
+    switch (msg.data.command) {
       case "start":
         break;
 
@@ -34,13 +34,13 @@ self.onconnect = function(event) {
         throw new Error("Expected");
 
       case "store":
-        storedData = event.data.data;
+        storedData = msg.data.data;
         break;
 
       case "retrieve":
         var data = {
           type: "result",
-          data: storedData
+          data: storedData,
         };
         port.postMessage(data);
         break;
@@ -57,12 +57,12 @@ self.onerror = function(message, filename, lineno) {
   if (!errorCount++) {
     var data = {
       type: "worker-error",
-      message: message,
-      filename: filename,
-      lineno: lineno
+      message,
+      filename,
+      lineno,
     };
 
-    registeredPorts.forEach(function (registeredPort) {
+    registeredPorts.forEach(function(registeredPort) {
       registeredPort.postMessage(data);
     });
 

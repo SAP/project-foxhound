@@ -1,196 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!DOCTYPE html [
-  <!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
-  %htmlDTD;
-  <!ENTITY % globalDTD SYSTEM "chrome://global/locale/global.dtd">
-  %globalDTD;
-  <!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd" >
-  %brandDTD;
-  <!ENTITY % blockedSiteDTD SYSTEM "chrome://browser/locale/safebrowsing/phishing-afterload-warning-message.dtd">
-  %blockedSiteDTD;
-]>
-
+<!DOCTYPE html>
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-
-<html xmlns="http://www.w3.org/1999/xhtml" class="blacklist">
+<html xmlns="http://www.w3.org/1999/xhtml">
   <head>
+    <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'" />
     <link rel="stylesheet" href="chrome://browser/skin/blockedSite.css" type="text/css" media="all" />
-    <link rel="icon" type="image/png" id="favicon" href="chrome://global/skin/icons/blacklist_favicon.png"/>
-
-    <script type="application/javascript"><![CDATA[
-      // Error url MUST be formatted like this:
-      //   about:blocked?e=error_code&u=url(&o=1)?
-      //     (o=1 when user overrides are allowed)
-
-      // Note that this file uses document.documentURI to get
-      // the URL (with the format from above). This is because
-      // document.location.href gets the current URI off the docshell,
-      // which is the URL displayed in the location bar, i.e.
-      // the URI that the user attempted to load.
-
-      function getErrorCode()
-      {
-        var url = document.documentURI;
-        var error = url.search(/e\=/);
-        var duffUrl = url.search(/\&u\=/);
-        return decodeURIComponent(url.slice(error + 2, duffUrl));
-      }
-
-      function getURL()
-      {
-        var url = document.documentURI;
-        var match = url.match(/&u=([^&]+)&/);
-
-        // match == null if not found; if so, return an empty string
-        // instead of what would turn out to be portions of the URI
-        if (!match)
-          return "";
-
-        url = decodeURIComponent(match[1]);
-
-        // If this is a view-source page, then get then real URI of the page
-        if (url.startsWith("view-source:"))
-          url = url.slice(12);
-        return url;
-      }
-
-      /**
-       * Check whether this warning page should be overridable or whether
-       * the "ignore warning" button should be hidden.
-       */
-      function getOverride()
-      {
-        var url = document.documentURI;
-        var match = url.match(/&o=1&/);
-        return !!match;
-      }
-
-      /**
-       * Attempt to get the hostname via document.location.  Fail back
-       * to getURL so that we always return something meaningful.
-       */
-      function getHostString()
-      {
-        try {
-          return document.location.hostname;
-        } catch (e) {
-          return getURL();
-        }
-      }
-
-      function initPage()
-      {
-        var error = "";
-        switch (getErrorCode()) {
-          case "malwareBlocked" :
-            error = "malware";
-            break;
-          case "deceptiveBlocked" :
-            error = "phishing";
-            break;
-          case "unwantedBlocked" :
-            error = "unwanted";
-            break;
-          default:
-            return;
-        }
-
-        var el;
-
-        if (error !== "malware") {
-          el = document.getElementById("errorTitleText_malware");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorShortDescText_malware");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorLongDescText_malware");
-          el.parentNode.removeChild(el);
-        }
-
-        if (error !== "phishing") {
-          el = document.getElementById("errorTitleText_phishing");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorShortDescText_phishing");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorLongDescText_phishing");
-          el.parentNode.removeChild(el);
-        }
-
-        if (error !== "unwanted") {
-          el = document.getElementById("errorTitleText_unwanted");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorShortDescText_unwanted");
-          el.parentNode.removeChild(el);
-          el = document.getElementById("errorLongDescText_unwanted");
-          el.parentNode.removeChild(el);
-        }
-
-        // Set sitename
-        document.getElementById(error + "_sitename").textContent = getHostString();
-        document.title = document.getElementById("errorTitleText_" + error)
-                                 .innerHTML;
-
-        if (!getOverride()) {
-          var btn = document.getElementById("ignoreWarningButton");
-          if (btn) {
-            btn.parentNode.removeChild(btn);
-          }
-        }
-
-        // Inform the test harness that we're done loading the page
-        var event = new CustomEvent("AboutBlockedLoaded");
-        document.dispatchEvent(event);
-      }
-    ]]></script>
+    <link rel="icon" type="image/png" id="favicon" href="chrome://global/skin/icons/blocklist_favicon.png"/>
+    <link rel="localization" href="branding/brand.ftl"/>
+    <link rel="localization" href="browser/safebrowsing/blockedSite.ftl"/>
   </head>
-
-  <body dir="&locale.dir;">
+  <body>
     <div id="errorPageContainer" class="container">
 
       <!-- Error Title -->
       <div id="errorTitle" class="title">
-        <h1 class="title-text" id="errorTitleText_phishing">&safeb.blocked.phishingPage.title2;</h1>
-        <h1 class="title-text" id="errorTitleText_malware">&safeb.blocked.malwarePage.title;</h1>
-        <h1 class="title-text" id="errorTitleText_unwanted">&safeb.blocked.unwantedPage.title;</h1>
+        <h1 class="title-text" id="errorTitleText"></h1>
       </div>
 
       <div id="errorLongContent">
 
         <!-- Short Description -->
         <div id="errorShortDesc">
-          <p id="errorShortDescText_phishing">&safeb.blocked.phishingPage.shortDesc2;</p>
-          <p id="errorShortDescText_malware">&safeb.blocked.malwarePage.shortDesc;</p>
-          <p id="errorShortDescText_unwanted">&safeb.blocked.unwantedPage.shortDesc;</p>
+          <p id="errorShortDescText"></p>
         </div>
 
-        <!-- Long Description -->
-        <div id="errorLongDesc">
-          <p id="errorLongDescText_phishing">&safeb.blocked.phishingPage.longDesc2;</p>
-          <p id="errorLongDescText_malware">&safeb.blocked.malwarePage.longDesc;</p>
-          <p id="errorLongDescText_unwanted">&safeb.blocked.unwantedPage.longDesc;</p>
+        <!-- Advisory -->
+        <div id="advisoryDesc">
+          <p id="advisoryDescText">
+            <a id="advisory_provider" data-l10n-name="advisory_provider"></a>
+          </p>
         </div>
 
         <!-- Action buttons -->
         <div id="buttons" class="button-container">
           <!-- Commands handled in browser.js -->
-          <button id="getMeOutButton" class="primary">&safeb.palm.accept.label;</button>
-          <div class="button-spacer"></div>
-          <button id="reportButton">&safeb.palm.reportPage.label;</button>
+          <button id="goBackButton" class="primary" data-l10n-id="safeb-palm-accept-label"></button>
+          <button id="seeDetailsButton" data-l10n-id="safeb-palm-see-details-label"></button>
         </div>
       </div>
-      <div id="ignoreWarning">
-        <button id="ignoreWarningButton">&safeb.palm.decline.label;</button>
+      <div id="errorDescriptionContainer" hidden="true">
+        <!-- Error Descriptions Handled in blockedSite.js -->
+        <div class="error-description" id="errorLongDesc">
+          <p id="errorInnerDescription">
+              <span id="error_desc_sitename" data-l10n-name="sitename"></span>
+              <a id="error_desc_link" data-l10n-name="error_desc_link"></a>
+              <a id="report_detection" data-l10n-name="report_detection"></a>
+              <a id="ignore_warning_link" data-l10n-name="ignore_warning_link"></a>
+          </p>
+          <p id="learn_more">
+              <a id="learn_more_link" data-l10n-name="learn_more_link"></a>
+              <a id="firefox_support" data-l10n-name="firefox_support"></a>
+          </p>
+        </div>
       </div>
     </div>
-    <!--
-    - Note: It is important to run the script this way, instead of using
-    - an onload handler. This is because error pages are loaded as
-    - LOAD_BACKGROUND, which means that onload handlers will not be executed.
-    -->
-    <script type="application/javascript">
-      initPage();
-    </script>
   </body>
+  <script src="chrome://browser/content/blockedSite.js"/>
 </html>

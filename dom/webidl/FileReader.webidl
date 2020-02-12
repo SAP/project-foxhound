@@ -4,24 +4,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://dev.w3.org/2006/webapi/FileAPI/#dfn-filereader
+ * https://w3c.github.io/FileAPI/#APIASynch
  *
  * Copyright © 2013 W3C® (MIT, ERCIM, Keio, Beihang), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
  */
 
-[Constructor,
- Exposed=(Window,Worker,System)]
+[Exposed=(Window,Worker)]
 interface FileReader : EventTarget {
+  constructor();
+
   // async read methods
   [Throws]
   void readAsArrayBuffer(Blob blob);
   [Throws]
-  void readAsText(Blob blob, optional DOMString label = "");
+  void readAsBinaryString(Blob filedata);
+  [Throws]
+  void readAsText(Blob blob, optional DOMString label);
   [Throws]
   void readAsDataURL(Blob blob);
 
-  [Throws]
   void abort();
 
   // states
@@ -37,7 +39,7 @@ interface FileReader : EventTarget {
   [Throws]
   readonly attribute any result;
 
-  readonly attribute DOMError? error;
+  readonly attribute DOMException? error;
 
   // event handler attributes
   attribute EventHandler onloadstart;
@@ -46,10 +48,4 @@ interface FileReader : EventTarget {
   attribute EventHandler onabort;
   attribute EventHandler onerror;
   attribute EventHandler onloadend;
-};
-
-// Mozilla extensions.
-partial interface FileReader {
-  [Throws]
-  void readAsBinaryString(Blob filedata);
 };

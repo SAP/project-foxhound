@@ -4,52 +4,79 @@
 /* import-globals-from pippki.js */
 "use strict";
 
-const nsIDialogParamBlock = Components.interfaces.nsIDialogParamBlock;
-const nsIX509Cert = Components.interfaces.nsIX509Cert;
+/**
+ * @file Implements the functionality of downloadcert.xul: a dialog that allows
+ *       a user to confirm whether to import a certificate, and if so what trust
+ *       to give it.
+ * @argument {nsISupports} window.arguments[0]
+ *           Certificate to confirm import of, queryable to nsIX509Cert.
+ * @argument {nsISupports} window.arguments[1]
+ *           Object to set the return values of calling the dialog on, queryable
+ *           to the underlying type of DownloadCertReturnValues.
+ */
 
-var params;
-var caName;
-var cert;
+/**
+ * @typedef DownloadCertReturnValues
+ * @type nsIWritablePropertyBag2
+ * @property {Boolean} importConfirmed
+ *           Set to true if the user confirmed import of the cert and accepted
+ *           the dialog, false otherwise.
+ * @property {Boolean} trustForSSL
+ *           Set to true if the cert should be trusted for SSL, false otherwise.
+ *           Undefined value if |importConfirmed| is not true.
+ * @property {Boolean} trustForEmail
+ *           Set to true if the cert should be trusted for e-mail, false
+ *           otherwise. Undefined value if |importConfirmed| is not true.
+ */
 
-function onLoad()
-{
-  params = window.arguments[0].QueryInterface(nsIDialogParamBlock);
-  cert = params.objects.queryElementAt(0, nsIX509Cert);
+/**
+ * The cert to potentially import.
+ * @type nsIX509Cert
+ */
+var gCert;
 
-  var bundle = document.getElementById("pippki_bundle");
+/**
+ * onload() handler.
+ */
+function onLoad() {
+  gCert = window.arguments[0].QueryInterface(Ci.nsIX509Cert);
 
-  caName = cert.commonName;
+  document.addEventListener("dialogaccept", onDialogAccept);
+  document.addEventListener("dialogcancel", onDialogCancel);
+
+  let bundle = document.getElementById("pippki_bundle");
+  let caName = gCert.commonName;
   if (caName.length == 0) {
     caName = bundle.getString("unnamedCA");
   }
 
-  var message2 = bundle.getFormattedString("newCAMessage1", [caName]);
-  setText("message2", message2);
+  setText("trustHeader", bundle.getFormattedString("newCAMessage1", [caName]));
 }
 
-function viewCert()
-{
-  viewCertHelper(window, cert);
+/**
+ * Handler for the "View Cert" button.
+ */
+function viewCert() {
+  viewCertHelper(window, gCert, "window");
 }
 
-function doOK()
-{
+/**
+ * ondialogaccept() handler.
+ */
+function onDialogAccept() {
   let checkSSL = document.getElementById("trustSSL");
   let checkEmail = document.getElementById("trustEmail");
-  let checkObjSign = document.getElementById("trustObjSign");
 
-  // Signal which trust bits the user wanted to enable.
-  params.SetInt(2, checkSSL.checked ? 1 : 0);
-  params.SetInt(3, checkEmail.checked ? 1 : 0);
-  params.SetInt(4, checkObjSign.checked ? 1 : 0);
-
-  // Signal that the user accepted.
-  params.SetInt(1, 1);
-  return true;
+  let retVals = window.arguments[1].QueryInterface(Ci.nsIWritablePropertyBag2);
+  retVals.setPropertyAsBool("importConfirmed", true);
+  retVals.setPropertyAsBool("trustForSSL", checkSSL.checked);
+  retVals.setPropertyAsBool("trustForEmail", checkEmail.checked);
 }
 
-function doCancel()
-{
-  params.SetInt(1, 0); // Signal that the user cancelled.
-  return true;
+/**
+ * ondialogcancel() handler.
+ */
+function onDialogCancel() {
+  let retVals = window.arguments[1].QueryInterface(Ci.nsIWritablePropertyBag2);
+  retVals.setPropertyAsBool("importConfirmed", false);
 }

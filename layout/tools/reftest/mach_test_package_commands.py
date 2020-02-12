@@ -29,7 +29,7 @@ def run_reftest(context, **kwargs):
     normalize = partial(context.normalize_test_path, test_root)
     args.tests = map(normalize, args.tests)
 
-    if mozinfo.info['buildapp'] == 'mobile/android':
+    if mozinfo.info.get('buildapp') == 'mobile/android':
         return run_reftest_android(context, args)
     return run_reftest_desktop(context, args)
 
@@ -47,11 +47,10 @@ def run_reftest_desktop(context, args):
 def run_reftest_android(context, args):
     from remotereftest import run_test_harness
 
-    args.app = args.app or 'org.mozilla.fennec'
+    args.app = args.app or 'org.mozilla.geckoview.test'
     args.utilityPath = context.hostutils
     args.xrePath = context.hostutils
     args.httpdPath = context.module_dir
-    args.dm_trans = 'adb'
     args.ignoreWindowSize = True
     args.printDeviceInfo = False
 
@@ -70,7 +69,7 @@ def setup_argument_parser():
     import reftestcommandline
 
     global parser
-    mozinfo.find_and_update_from_json(os.path.dirname(here))
+    mozinfo.find_and_update_from_json(here)
     if mozinfo.info.get('buildapp') == 'mobile/android':
         parser = reftestcommandline.RemoteArgumentsParser()
     else:
@@ -88,5 +87,6 @@ class ReftestCommands(object):
              description='Run the reftest harness.',
              parser=setup_argument_parser)
     def reftest(self, **kwargs):
+        self.context.activate_mozharness_venv()
         kwargs['suite'] = 'reftest'
         return run_reftest(self.context, **kwargs)

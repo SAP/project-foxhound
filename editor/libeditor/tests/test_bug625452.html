@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=625452
 -->
 <head>
   <title>Test for Bug 625452</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -23,7 +23,7 @@ SimpleTest.waitForExplicitFinish();
 addLoadEvent(function() {
   var i = document.querySelector("input");
   var inputCount = 0;
-  i.addEventListener("input", function() { inputCount++; }, false);
+  i.addEventListener("input", function() { inputCount++; });
 
   // test cut
   i.focus();
@@ -47,7 +47,7 @@ addLoadEvent(function() {
   // test delete
   i.selectionStart = 0;
   i.selectionEnd = 2;
-  synthesizeKey("VK_DELETE", {});
+  synthesizeKey("KEY_Delete");
   is(i.value, "r", "Delete should work correctly");
   is(inputCount, 4, "input event should be raised correctly");
 

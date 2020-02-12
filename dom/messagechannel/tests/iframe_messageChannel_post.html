@@ -5,13 +5,13 @@
 
   var port;
 
-  window.addEventListener('message', receiveMessage, false);
+  window.addEventListener('message', receiveMessage);
   function receiveMessage(evt) {
     port = evt.data.port;
 
-    port.addEventListener('message', receivePostMessage, false);
-    function receivePostMessage(evt) {
-      port.postMessage(evt.data);
+    port.addEventListener('message', receivePostMessage);
+    function receivePostMessage(event) {
+      port.postMessage(event.data);
     }
     port.start();
 
@@ -21,4 +21,3 @@
   </script>
 </body>
 </html>
-

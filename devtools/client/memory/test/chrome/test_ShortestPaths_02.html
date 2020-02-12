@@ -6,7 +6,7 @@ Test that the ShortestPaths component renders a suggestion to select a node when
 <head>
     <meta charset="utf-8">
     <title>Tree component test</title>
-    <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css">
 
     <script type="application/javascript"
@@ -21,24 +21,25 @@ Test that the ShortestPaths component renders a suggestion to select a node when
     <div id="container" style="height: 900px;"></div>
 
     <pre id="test">
-        <script src="head.js" type="application/javascript;version=1.8"></script>
-        <script type="application/javascript;version=1.8">
-         window.onload = Task.async(function* () {
+        <script src="head.js" type="application/javascript"></script>
+        <script type="application/javascript">
+         "use strict";
+         window.onload = async function() {
            try {
              const container = document.getElementById("container");
 
-             yield renderComponent(ShortestPaths(immutableUpdate(TEST_SHORTEST_PATHS_PROPS,
+             await renderComponent(ShortestPaths(immutableUpdate(TEST_SHORTEST_PATHS_PROPS,
                                                                  { graph: null })),
                                    container);
 
-             ok(container.textContent.indexOf(L10N.getStr("shortest-paths.select-node")) !== -1,
+             ok(container.textContent.includes(L10N.getStr("shortest-paths.select-node")),
                 "The node selection prompt is displayed");
-           } catch(e) {
+           } catch (e) {
              ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));
            } finally {
              SimpleTest.finish();
            }
-         });
+         };
         </script>
     </pre>
 </body>

@@ -14,29 +14,26 @@
 namespace mozilla {
 namespace gfx {
 
-class NativeFontResourceMac final : public NativeFontResource
-{
-public:
-  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(NativeFontResourceMac)
+class NativeFontResourceMac final : public NativeFontResource {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(NativeFontResourceMac, override)
 
-  static already_AddRefed<NativeFontResourceMac>
-    Create(uint8_t *aFontData, uint32_t aDataLength);
+  static already_AddRefed<NativeFontResourceMac> Create(uint8_t* aFontData,
+                                                        uint32_t aDataLength);
 
-  already_AddRefed<ScaledFont>
-    CreateScaledFont(uint32_t aIndex, uint32_t aGlyphSize);
+  already_AddRefed<UnscaledFont> CreateUnscaledFont(
+      uint32_t aIndex, const uint8_t* aInstanceData,
+      uint32_t aInstanceDataLength) final;
 
-  ~NativeFontResourceMac()
-  {
-    CFRelease(mFontRef);
-  }
+  ~NativeFontResourceMac() { CFRelease(mFontRef); }
 
-private:
+ private:
   explicit NativeFontResourceMac(CGFontRef aFontRef) : mFontRef(aFontRef) {}
 
   CGFontRef mFontRef;
 };
 
-} // gfx
-} // mozilla
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // mozilla_gfx_NativeFontResourceMac_h
+#endif  // mozilla_gfx_NativeFontResourceMac_h

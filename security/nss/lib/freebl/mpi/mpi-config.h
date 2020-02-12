@@ -24,20 +24,8 @@
 #define MP_MODARITH 1 /* include modular arithmetic ?        */
 #endif
 
-#ifndef MP_NUMTH
-#define MP_NUMTH 1 /* include number theoretic functions? */
-#endif
-
 #ifndef MP_LOGTAB
 #define MP_LOGTAB 1 /* use table of logs instead of log()? */
-#endif
-
-#ifndef MP_MEMSET
-#define MP_MEMSET 1 /* use memset() to zero buffers?       */
-#endif
-
-#ifndef MP_MEMCPY
-#define MP_MEMCPY 1 /* use memcpy() to copy buffers?       */
 #endif
 
 #ifndef MP_ARGCHK

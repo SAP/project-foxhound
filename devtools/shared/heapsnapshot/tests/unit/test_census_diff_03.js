@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test diffing census reports of breakdown by "coarseType".
 
@@ -8,7 +9,8 @@ const BREAKDOWN = {
   objects: { by: "count", count: true, bytes: true },
   scripts: { by: "count", count: true, bytes: true },
   strings: { by: "count", count: true, bytes: true },
-  other:   { by: "count", count: true, bytes: true },
+  other: { by: "count", count: true, bytes: true },
+  domNode: { by: "count", count: true, bytes: true },
 };
 
 const REPORT1 = {
@@ -27,6 +29,10 @@ const REPORT1 = {
   other: {
     count: 3,
     bytes: 30,
+  },
+  domNode: {
+    count: 0,
+    bytes: 0,
   },
 };
 
@@ -47,6 +53,10 @@ const REPORT2 = {
     count: 4,
     bytes: 40,
   },
+  domNode: {
+    count: 0,
+    bytes: 0,
+  },
 };
 
 const EXPECTED = {
@@ -65,6 +75,10 @@ const EXPECTED = {
   other: {
     count: 1,
     bytes: 10,
+  },
+  domNode: {
+    count: 0,
+    bytes: 0,
   },
 };
 

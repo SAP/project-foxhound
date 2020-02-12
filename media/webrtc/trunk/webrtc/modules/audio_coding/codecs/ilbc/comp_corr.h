@@ -16,8 +16,8 @@
 
 ******************************************************************/
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
-#define WEBRTC_MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
+#ifndef MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
+#define MODULES_AUDIO_CODING_CODECS_ILBC_MAIN_SOURCE_COMP_CORR_H_
 
 #include "defines.h"
 
@@ -30,9 +30,9 @@ void WebRtcIlbcfix_CompCorr(
     int32_t *corr, /* (o) cross correlation */
     int32_t *ener, /* (o) energy */
     int16_t *buffer, /* (i) signal buffer */
-    int16_t lag,  /* (i) pitch lag */
-    int16_t bLen, /* (i) length of buffer */
-    int16_t sRange, /* (i) correlation search length */
+    size_t lag,  /* (i) pitch lag */
+    size_t bLen, /* (i) length of buffer */
+    size_t sRange, /* (i) correlation search length */
     int16_t scale /* (i) number of rightshifts to use */
                             );
 

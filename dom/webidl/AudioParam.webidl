@@ -10,11 +10,19 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
+enum AutomationRate {
+    "a-rate",
+    "k-rate"
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface AudioParam {
 
-    attribute float value;
-    readonly attribute float defaultValue;
+                    attribute float value;
+    readonly        attribute float defaultValue;
+    readonly        attribute float minValue;
+    readonly        attribute float maxValue;
 
     // Parameter automation. 
     [Throws]
@@ -31,7 +39,7 @@ interface AudioParam {
     // Sets an array of arbitrary parameter values starting at time for the given duration. 
     // The number of values will be scaled to fit into the desired duration. 
     [Throws]
-    AudioParam setValueCurveAtTime(Float32Array values, double startTime, double duration);
+    AudioParam setValueCurveAtTime(sequence<float> values, double startTime, double duration);
 
     // Cancels all scheduled parameter changes with times greater than or equal to startTime. 
     [Throws]
@@ -47,4 +55,10 @@ partial interface AudioParam {
   // The name of the AudioParam
   [ChromeOnly]
   readonly attribute DOMString name;
+};
+
+partial interface AudioParam {
+  // This attribute is used for mochitest only.
+  [ChromeOnly]
+  readonly attribute boolean isTrackSuspended;
 };

@@ -5,7 +5,10 @@
 include protocol PBackgroundIDBTransaction;
 include protocol PBackgroundIDBVersionChangeTransaction;
 include protocol PBackgroundMutableFile;
-include protocol PBlob;
+include protocol PChildToParentStream; // FIXME: bug 792908
+include protocol PFileDescriptorSet; // FIXME: bug 792908
+include protocol PIPCBlobInputStream; // FIXME: bug 792908
+include protocol PParentToChildStream; // FIXME: bug 792908
 
 include PBackgroundIDBSharedTypes;
 
@@ -87,7 +90,7 @@ protocol PBackgroundIDBCursor
 parent:
   async DeleteMe();
 
-  async Continue(CursorRequestParams params);
+  async Continue(CursorRequestParams params, Key currentKey);
 
 child:
   async __delete__();

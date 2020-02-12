@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=936340
 -->
 <head>
   <title>Test for beacon</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -105,7 +105,7 @@ function identity(data) {
 
 var tests = [
     function() { createIframeWithData("hi!", "text/plain;charset=UTF-8", identity); },
-    function() { createIframeWithData("123", "application/octet-stream", stringToArrayBuffer); },
+    function() { createIframeWithData("123", "", stringToArrayBuffer); },
     function() { createIframeWithData("abc", "text/html", stringToBlob); },
     function() { createIframeWithData("qwerty", "multipart/form-data", stringToFormData); },
     function() { SimpleTest.finish(); },

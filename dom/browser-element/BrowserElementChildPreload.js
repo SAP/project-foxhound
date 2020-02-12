@@ -4,6 +4,8 @@
 
 "use strict";
 
+/* eslint-env mozilla/frame-script */
+
 function debug(msg) {
   // dump("BrowserElementChildPreload - " + msg + "\n");
 }
@@ -12,27 +14,18 @@ debug("loaded");
 
 var BrowserElementIsReady;
 
-var { classes: Cc, interfaces: Ci, results: Cr, utils: Cu }  = Components;
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/BrowserElementPromptService.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/ExtensionContent.jsm");
-
-XPCOMUtils.defineLazyServiceGetter(this, "acs",
-                                   "@mozilla.org/audiochannel/service;1",
-                                   "nsIAudioChannelService");
-XPCOMUtils.defineLazyModuleGetter(this, "ManifestFinder",
-                                  "resource://gre/modules/ManifestFinder.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ManifestObtainer",
-                                  "resource://gre/modules/ManifestObtainer.jsm");
-
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+var { BrowserElementPromptService } = ChromeUtils.import(
+  "resource://gre/modules/BrowserElementPromptService.jsm"
+);
 
 var kLongestReturnedString = 128;
 
-var Timer = Components.Constructor("@mozilla.org/timer;1",
-                                   "nsITimer",
-                                   "initWithCallback");
+var Timer = Components.Constructor(
+  "@mozilla.org/timer;1",
+  "nsITimer",
+  "initWithCallback"
+);
 
 function sendAsyncMsg(msg, data) {
   // Ensure that we don't send any messages before BrowserElementChild.js
@@ -42,36 +35,35 @@ function sendAsyncMsg(msg, data) {
   }
 
   if (!data) {
-    data = { };
+    data = {};
   }
 
   data.msg_name = msg;
-  sendAsyncMessage('browser-element-api:call', data);
+  sendAsyncMessage("browser-element-api:call", data);
 }
 
 function sendSyncMsg(msg, data) {
   // Ensure that we don't send any messages before BrowserElementChild.js
   // finishes loading.
   if (!BrowserElementIsReady) {
-    return;
+    return undefined;
   }
 
   if (!data) {
-    data = { };
+    data = {};
   }
 
   data.msg_name = msg;
-  return sendSyncMessage('browser-element-api:call', data);
+  return sendSyncMessage("browser-element-api:call", data);
 }
 
-var CERTIFICATE_ERROR_PAGE_PREF = 'security.alternate_certificate_error_page';
+var CERTIFICATE_ERROR_PAGE_PREF = "security.alternate_certificate_error_page";
 
 var OBSERVED_EVENTS = [
-  'xpcom-shutdown',
-  'audio-playback',
-  'activity-done',
-  'invalid-widget',
-  'will-launch-app'
+  "xpcom-shutdown",
+  "audio-playback",
+  "activity-done",
+  "will-launch-app",
 ];
 
 var LISTENED_EVENTS = [
@@ -79,7 +71,11 @@ var LISTENED_EVENTS = [
   { type: "DOMLinkAdded", useCapture: true, wantsUntrusted: false },
   { type: "MozScrolledAreaChanged", useCapture: true, wantsUntrusted: false },
   { type: "MozDOMFullscreen:Request", useCapture: true, wantsUntrusted: false },
-  { type: "MozDOMFullscreen:NewOrigin", useCapture: true, wantsUntrusted: false },
+  {
+    type: "MozDOMFullscreen:NewOrigin",
+    useCapture: true,
+    wantsUntrusted: false,
+  },
   { type: "MozDOMFullscreen:Exit", useCapture: true, wantsUntrusted: false },
   { type: "DOMMetaAdded", useCapture: true, wantsUntrusted: false },
   { type: "DOMMetaChanged", useCapture: true, wantsUntrusted: false },
@@ -117,87 +113,48 @@ var LISTENED_SYSTEM_EVENTS = [
 
 var global = this;
 
-function BrowserElementProxyForwarder() {
-}
-
-BrowserElementProxyForwarder.prototype = {
-  init: function() {
-    Services.obs.addObserver(this, "browser-element-api:proxy-call", false);
-    addMessageListener("browser-element-api:proxy", this);
-  },
-
-  uninit: function() {
-    Services.obs.removeObserver(this, "browser-element-api:proxy-call", false);
-    removeMessageListener("browser-element-api:proxy", this);
-  },
-
-  // Observer callback receives messages from BrowserElementProxy.js
-  observe: function(subject, topic, stringifedData) {
-    if (subject !== content) {
-      return;
-    }
-
-    // Forward it to BrowserElementParent.js
-    sendAsyncMessage(topic, JSON.parse(stringifedData));
-  },
-
-  // Message manager callback receives messages from BrowserElementParent.js
-  receiveMessage: function(mmMsg) {
-    // Forward it to BrowserElementProxy.js
-    Services.obs.notifyObservers(
-      content, mmMsg.name, JSON.stringify(mmMsg.json));
-  }
-};
-
 function BrowserElementChild() {
   // Maps outer window id --> weak ref to window.  Used by modal dialog code.
   this._windowIDDict = {};
 
-  // _forcedVisible corresponds to the visibility state our owner has set on us
-  // (via iframe.setVisible).  ownerVisible corresponds to whether the docShell
-  // whose window owns this element is visible.
-  //
-  // Our docShell is visible iff _forcedVisible and _ownerVisible are both
-  // true.
-  this._forcedVisible = true;
-  this._ownerVisible = true;
-
-  this._nextPaintHandler = null;
-
   this._isContentWindowCreated = false;
-  this._pendingSetInputMethodActive = [];
-
-  this.forwarder = new BrowserElementProxyForwarder();
 
   this._init();
-};
+}
 
 BrowserElementChild.prototype = {
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIObserver,
+    Ci.nsISupportsWeakReference,
+  ]),
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
-
-  _init: function() {
+  _init() {
     debug("Starting up.");
 
     BrowserElementPromptService.mapWindowToBrowserElementChild(content, this);
 
-    docShell.QueryInterface(Ci.nsIWebProgress)
-            .addProgressListener(this._progressListener,
-                                 Ci.nsIWebProgress.NOTIFY_LOCATION |
-                                 Ci.nsIWebProgress.NOTIFY_SECURITY |
-                                 Ci.nsIWebProgress.NOTIFY_STATE_WINDOW);
+    docShell
+      .QueryInterface(Ci.nsIWebProgress)
+      .addProgressListener(
+        this._progressListener,
+        Ci.nsIWebProgress.NOTIFY_LOCATION |
+          Ci.nsIWebProgress.NOTIFY_SECURITY |
+          Ci.nsIWebProgress.NOTIFY_STATE_WINDOW
+      );
 
     let webNavigation = docShell.QueryInterface(Ci.nsIWebNavigation);
     if (!webNavigation.sessionHistory) {
-      webNavigation.sessionHistory = Cc["@mozilla.org/browser/shistory;1"]
-                                       .createInstance(Ci.nsISHistory);
+      // XXX(nika): I don't think this code should ever be hit? We should run
+      // BrowserChild::Init before we run this code which will perform this setup
+      // for us.
+      docShell.initSessionHistory();
     }
 
     // This is necessary to get security web progress notifications.
-    var securityUI = Cc['@mozilla.org/secure_browser_ui;1']
-                       .createInstance(Ci.nsISecureBrowserUI);
-    securityUI.init(content);
+    var securityUI = Cc["@mozilla.org/secure_browser_ui;1"].createInstance(
+      Ci.nsISecureBrowserUI
+    );
+    securityUI.init(docShell);
 
     // A cache of the menuitem dom objects keyed by the id we generate
     // and pass to the embedder
@@ -208,67 +165,77 @@ BrowserElementChild.prototype = {
     this._shuttingDown = false;
 
     LISTENED_EVENTS.forEach(event => {
-      addEventListener(event.type, this, event.useCapture, event.wantsUntrusted);
+      addEventListener(
+        event.type,
+        this,
+        event.useCapture,
+        event.wantsUntrusted
+      );
     });
 
     // Registers a MozAfterPaint handler for the very first paint.
-    this._addMozAfterPaintHandler(function () {
-      sendAsyncMsg('firstpaint');
+    this._addMozAfterPaintHandler(function() {
+      sendAsyncMsg("firstpaint");
     });
 
     addMessageListener("browser-element-api:call", this);
 
-    let els = Cc["@mozilla.org/eventlistenerservice;1"]
-                .getService(Ci.nsIEventListenerService);
     LISTENED_SYSTEM_EVENTS.forEach(event => {
-      els.addSystemEventListener(global, event.type, this, event.useCapture);
+      Services.els.addSystemEventListener(
+        global,
+        event.type,
+        this,
+        event.useCapture
+      );
     });
 
-    OBSERVED_EVENTS.forEach((aTopic) => {
-      Services.obs.addObserver(this, aTopic, false);
+    OBSERVED_EVENTS.forEach(aTopic => {
+      Services.obs.addObserver(this, aTopic);
     });
-
-    this.forwarder.init();
   },
 
   /**
    * Shut down the frame's side of the browser API.  This is called when:
-   *   - our TabChildGlobal starts to die
+   *   - our BrowserChildGlobal starts to die
    *   - the content is moved to frame without the browser API
    * This is not called when the page inside |content| unloads.
    */
-  destroy: function() {
+  destroy() {
     debug("Destroying");
     this._shuttingDown = true;
 
     BrowserElementPromptService.unmapWindowToBrowserElementChild(content);
 
-    docShell.QueryInterface(Ci.nsIWebProgress)
-            .removeProgressListener(this._progressListener);
+    docShell
+      .QueryInterface(Ci.nsIWebProgress)
+      .removeProgressListener(this._progressListener);
 
     LISTENED_EVENTS.forEach(event => {
-      removeEventListener(event.type, this, event.useCapture, event.wantsUntrusted);
+      removeEventListener(
+        event.type,
+        this,
+        event.useCapture,
+        event.wantsUntrusted
+      );
     });
-
-    this._deactivateNextPaintListener();
 
     removeMessageListener("browser-element-api:call", this);
 
-    let els = Cc["@mozilla.org/eventlistenerservice;1"]
-                .getService(Ci.nsIEventListenerService);
     LISTENED_SYSTEM_EVENTS.forEach(event => {
-      els.removeSystemEventListener(global, event.type, this, event.useCapture);
+      Services.els.removeSystemEventListener(
+        global,
+        event.type,
+        this,
+        event.useCapture
+      );
     });
 
-    OBSERVED_EVENTS.forEach((aTopic) => {
+    OBSERVED_EVENTS.forEach(aTopic => {
       Services.obs.removeObserver(this, aTopic);
     });
-
-    this.forwarder.uninit();
-    this.forwarder = null;
   },
 
-  handleEvent: function(event) {
+  handleEvent(event) {
     switch (event.type) {
       case "DOMTitleChanged":
         this._titleChangedHandler(event);
@@ -324,120 +291,99 @@ BrowserElementChild.prototype = {
     }
   },
 
-  receiveMessage: function(message) {
+  receiveMessage(message) {
     let self = this;
 
     let mmCalls = {
-      "purge-history": this._recvPurgeHistory,
-      "get-screenshot": this._recvGetScreenshot,
-      "get-contentdimensions": this._recvGetContentDimensions,
-      "set-visible": this._recvSetVisible,
-      "get-visible": this._recvVisible,
       "send-mouse-event": this._recvSendMouseEvent,
-      "send-touch-event": this._recvSendTouchEvent,
       "get-can-go-back": this._recvCanGoBack,
       "get-can-go-forward": this._recvCanGoForward,
-      "mute": this._recvMute,
-      "unmute": this._recvUnmute,
-      "get-muted": this._recvGetMuted,
-      "set-volume": this._recvSetVolume,
-      "get-volume": this._recvGetVolume,
       "go-back": this._recvGoBack,
       "go-forward": this._recvGoForward,
-      "reload": this._recvReload,
-      "stop": this._recvStop,
-      "zoom": this._recvZoom,
+      reload: this._recvReload,
+      stop: this._recvStop,
+      zoom: this._recvZoom,
       "unblock-modal-prompt": this._recvStopWaiting,
       "fire-ctx-callback": this._recvFireCtxCallback,
       "owner-visibility-change": this._recvOwnerVisibilityChange,
       "entered-fullscreen": this._recvEnteredFullscreen,
       "exit-fullscreen": this._recvExitFullscreen,
-      "activate-next-paint-listener": this._activateNextPaintListener,
-      "set-input-method-active": this._recvSetInputMethodActive,
-      "deactivate-next-paint-listener": this._deactivateNextPaintListener,
-      "find-all": this._recvFindAll,
-      "find-next": this._recvFindNext,
-      "clear-match": this._recvClearMatch,
-      "execute-script": this._recvExecuteScript,
-      "get-audio-channel-volume": this._recvGetAudioChannelVolume,
-      "set-audio-channel-volume": this._recvSetAudioChannelVolume,
-      "get-audio-channel-muted": this._recvGetAudioChannelMuted,
-      "set-audio-channel-muted": this._recvSetAudioChannelMuted,
-      "get-is-audio-channel-active": this._recvIsAudioChannelActive,
-      "get-web-manifest": this._recvGetWebManifest,
-    }
+    };
 
     if (message.data.msg_name in mmCalls) {
       return mmCalls[message.data.msg_name].apply(self, arguments);
     }
+    return undefined;
   },
 
   _paintFrozenTimer: null,
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     // Ignore notifications not about our document.  (Note that |content| /can/
     // be null; see bug 874900.)
 
-    if (topic !== 'activity-done' &&
-        topic !== 'audio-playback' &&
-        topic !== 'will-launch-app' &&
-        (!content || subject !== content.document)) {
+    if (
+      topic !== "activity-done" &&
+      topic !== "audio-playback" &&
+      topic !== "will-launch-app" &&
+      (!content || subject !== content.document)
+    ) {
       return;
     }
-    if (topic == 'activity-done' && docShell !== subject)
+    if (topic == "activity-done" && docShell !== subject) {
       return;
+    }
     switch (topic) {
-      case 'activity-done':
-        sendAsyncMsg('activitydone', { success: (data == 'activity-success') });
+      case "activity-done":
+        sendAsyncMsg("activitydone", { success: data == "activity-success" });
         break;
-      case 'audio-playback':
+      case "audio-playback":
         if (subject === content) {
-          sendAsyncMsg('audioplaybackchange', { _payload_: data });
+          sendAsyncMsg("audioplaybackchange", { _payload_: data });
         }
         break;
-      case 'xpcom-shutdown':
+      case "xpcom-shutdown":
         this._shuttingDown = true;
         break;
-      case 'invalid-widget':
-        sendAsyncMsg('error', { type: 'invalid-widget' });
-        break;
-      case 'will-launch-app':
+      case "will-launch-app":
         // If the launcher is not visible, let's ignore the message.
         if (!docShell.isActive) {
           return;
         }
 
         // If this is not a content process, let's not freeze painting.
-        if (Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_CONTENT) {
+        if (
+          Services.appinfo.processType != Services.appinfo.PROCESS_TYPE_CONTENT
+        ) {
           return;
         }
 
         docShell.contentViewer.pausePainting();
 
         this._paintFrozenTimer && this._paintFrozenTimer.cancel();
-        this._paintFrozenTimer = new Timer(this, 3000, Ci.nsITimer.TYPE_ONE_SHOT);
+        this._paintFrozenTimer = new Timer(
+          this,
+          3000,
+          Ci.nsITimer.TYPE_ONE_SHOT
+        );
         break;
     }
   },
 
-  notify: function(timer) {
+  notify(timer) {
     docShell.contentViewer.resumePainting();
     this._paintFrozenTimer.cancel();
     this._paintFrozenTimer = null;
   },
 
   get _windowUtils() {
-    return content.document.defaultView
-                  .QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIDOMWindowUtils);
+    return content.document.defaultView.windowUtils;
   },
 
-  _tryGetInnerWindowID: function(win) {
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+  _tryGetInnerWindowID(win) {
+    let utils = win.windowUtils;
     try {
       return utils.currentInnerWindowID;
-    }
-    catch(e) {
+    } catch (e) {
       return null;
     }
   },
@@ -445,33 +391,34 @@ BrowserElementChild.prototype = {
   /**
    * Show a modal prompt.  Called by BrowserElementPromptService.
    */
-  showModalPrompt: function(win, args) {
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+  showModalPrompt(win, args) {
+    let utils = win.windowUtils;
 
-    args.windowID = { outer: utils.outerWindowID,
-                      inner: this._tryGetInnerWindowID(win) };
-    sendAsyncMsg('showmodalprompt', args);
+    args.windowID = {
+      outer: utils.outerWindowID,
+      inner: this._tryGetInnerWindowID(win),
+    };
+    sendAsyncMsg("showmodalprompt", args);
 
     let returnValue = this._waitForResult(win);
 
-    Services.obs.notifyObservers(null, 'BEC:ShownModalPrompt', null);
-
-    if (args.promptType == 'prompt' ||
-        args.promptType == 'confirm' ||
-        args.promptType == 'custom-prompt') {
+    if (
+      args.promptType == "prompt" ||
+      args.promptType == "confirm" ||
+      args.promptType == "custom-prompt"
+    ) {
       return returnValue;
     }
+    return undefined;
   },
 
   /**
    * Spin in a nested event loop until we receive a unblock-modal-prompt message for
    * this window.
    */
-  _waitForResult: function(win) {
+  _waitForResult(win) {
     debug("_waitForResult(" + win + ")");
-    let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                   .getInterface(Ci.nsIDOMWindowUtils);
+    let utils = win.windowUtils;
 
     let outerWindowID = utils.outerWindowID;
     let innerWindowID = this._tryGetInnerWindowID(win);
@@ -479,13 +426,19 @@ BrowserElementChild.prototype = {
       // I have no idea what waiting for a result means when there's no inner
       // window, so let's just bail.
       debug("_waitForResult: No inner window. Bailing.");
-      return;
+      return undefined;
     }
 
     this._windowIDDict[outerWindowID] = Cu.getWeakReference(win);
 
-    debug("Entering modal state (outerWindowID=" + outerWindowID + ", " +
-                                "innerWindowID=" + innerWindowID + ")");
+    debug(
+      "Entering modal state (outerWindowID=" +
+        outerWindowID +
+        ", " +
+        "innerWindowID=" +
+        innerWindowID +
+        ")"
+    );
 
     utils.enterModalState();
 
@@ -497,20 +450,21 @@ BrowserElementChild.prototype = {
     win.modalDepth++;
     let origModalDepth = win.modalDepth;
 
-    let thread = Services.tm.currentThread;
     debug("Nested event loop - begin");
-    while (win.modalDepth == origModalDepth && !this._shuttingDown) {
+    Services.tm.spinEventLoopUntil(() => {
       // Bail out of the loop if the inner window changed; that means the
       // window navigated.  Bail out when we're shutting down because otherwise
       // we'll leak our window.
       if (this._tryGetInnerWindowID(win) !== innerWindowID) {
-        debug("_waitForResult: Inner window ID changed " +
-              "while in nested event loop.");
-        break;
+        debug(
+          "_waitForResult: Inner window ID changed " +
+            "while in nested event loop."
+        );
+        return true;
       }
 
-      thread.processNextEvent(/* mayWait = */ true);
-    }
+      return win.modalDepth !== origModalDepth || this._shuttingDown;
+    });
     debug("Nested event loop - finish");
 
     if (win.modalDepth == 0) {
@@ -520,8 +474,10 @@ BrowserElementChild.prototype = {
     // If we exited the loop because the inner window changed, then bail on the
     // modal prompt.
     if (innerWindowID !== this._tryGetInnerWindowID(win)) {
-      throw Components.Exception("Modal state aborted by navigation",
-                                 Cr.NS_ERROR_NOT_AVAILABLE);
+      throw Components.Exception(
+        "Modal state aborted by navigation",
+        Cr.NS_ERROR_NOT_AVAILABLE
+      );
     }
 
     let returnValue = win.modalReturnValue;
@@ -531,17 +487,30 @@ BrowserElementChild.prototype = {
       utils.leaveModalState();
     }
 
-    debug("Leaving modal state (outerID=" + outerWindowID + ", " +
-                               "innerID=" + innerWindowID + ")");
+    debug(
+      "Leaving modal state (outerID=" +
+        outerWindowID +
+        ", " +
+        "innerID=" +
+        innerWindowID +
+        ")"
+    );
     return returnValue;
   },
 
-  _recvStopWaiting: function(msg) {
+  _recvStopWaiting(msg) {
     let outerID = msg.json.windowID.outer;
     let innerID = msg.json.windowID.inner;
     let returnValue = msg.json.returnValue;
-    debug("recvStopWaiting(outer=" + outerID + ", inner=" + innerID +
-          ", returnValue=" + returnValue + ")");
+    debug(
+      "recvStopWaiting(outer=" +
+        outerID +
+        ", inner=" +
+        innerID +
+        ", returnValue=" +
+        returnValue +
+        ")"
+    );
 
     if (!this._windowIDDict[outerID]) {
       debug("recvStopWaiting: No record of outer window ID " + outerID);
@@ -565,9 +534,11 @@ BrowserElementChild.prototype = {
     win.modalDepth--;
   },
 
-  _recvEnteredFullscreen: function() {
-    if (!this._windowUtils.handleFullscreenRequests() &&
-        !content.document.fullscreenElement) {
+  _recvEnteredFullscreen() {
+    if (
+      !this._windowUtils.handleFullscreenRequests() &&
+      !content.document.fullscreenElement
+    ) {
       // If we don't actually have any pending fullscreen request
       // to handle, neither we have been in fullscreen, tell the
       // parent to just exit.
@@ -575,77 +546,66 @@ BrowserElementChild.prototype = {
     }
   },
 
-  _recvExitFullscreen: function() {
+  _recvExitFullscreen() {
     this._windowUtils.exitFullscreen();
   },
 
-  _titleChangedHandler: function(e) {
+  _titleChangedHandler(e) {
     debug("Got titlechanged: (" + e.target.title + ")");
     var win = e.target.defaultView;
 
     // Ignore titlechanges which don't come from the top-level
     // <iframe mozbrowser> window.
     if (win == content) {
-      sendAsyncMsg('titlechange', { _payload_: e.target.title });
-    }
-    else {
+      sendAsyncMsg("titlechange", { _payload_: e.target.title });
+    } else {
       debug("Not top level!");
     }
   },
 
-  _maybeCopyAttribute: function(src, target, attribute) {
+  _maybeCopyAttribute(src, target, attribute) {
     if (src.getAttribute(attribute)) {
       target[attribute] = src.getAttribute(attribute);
     }
   },
 
-  _iconChangedHandler: function(e) {
-    debug('Got iconchanged: (' + e.target.href + ')');
+  _iconChangedHandler(e) {
+    debug("Got iconchanged: (" + e.target.href + ")");
     let icon = { href: e.target.href };
-    this._maybeCopyAttribute(e.target, icon, 'sizes');
-    this._maybeCopyAttribute(e.target, icon, 'rel');
-    sendAsyncMsg('iconchange', icon);
+    this._maybeCopyAttribute(e.target, icon, "sizes");
+    this._maybeCopyAttribute(e.target, icon, "rel");
+    sendAsyncMsg("iconchange", icon);
   },
 
-  _openSearchHandler: function(e) {
-    debug('Got opensearch: (' + e.target.href + ')');
+  _openSearchHandler(e) {
+    debug("Got opensearch: (" + e.target.href + ")");
 
     if (e.target.type !== "application/opensearchdescription+xml") {
       return;
     }
 
-    sendAsyncMsg('opensearch', { title: e.target.title,
-                                 href: e.target.href });
-
-  },
-
-  _manifestChangedHandler: function(e) {
-    debug('Got manifestchanged: (' + e.target.href + ')');
-    let manifest = { href: e.target.href };
-    sendAsyncMsg('manifestchange', manifest);
-
+    sendAsyncMsg("opensearch", { title: e.target.title, href: e.target.href });
   },
 
   // Processes the "rel" field in <link> tags and forward to specific handlers.
-  _linkAddedHandler: function(e) {
-    let win = e.target.ownerDocument.defaultView;
+  _linkAddedHandler(e) {
+    let win = e.target.ownerGlobal;
     // Ignore links which don't come from the top-level
     // <iframe mozbrowser> window.
     if (win != content) {
-      debug('Not top level!');
+      debug("Not top level!");
       return;
     }
 
     let handlers = {
-      'icon': this._iconChangedHandler.bind(this),
-      'apple-touch-icon': this._iconChangedHandler.bind(this),
-      'apple-touch-icon-precomposed': this._iconChangedHandler.bind(this),
-      'search': this._openSearchHandler,
-      'manifest': this._manifestChangedHandler
+      icon: this._iconChangedHandler.bind(this),
+      "apple-touch-icon": this._iconChangedHandler.bind(this),
+      "apple-touch-icon-precomposed": this._iconChangedHandler.bind(this),
+      search: this._openSearchHandler,
     };
 
-    debug('Got linkAdded: (' + e.target.href + ') ' + e.target.rel);
-    e.target.rel.split(' ').forEach(function(x) {
+    debug("Got linkAdded: (" + e.target.href + ") " + e.target.rel);
+    e.target.rel.split(" ").forEach(function(x) {
       let token = x.toLowerCase();
       if (handlers[token]) {
         handlers[token](e);
@@ -653,12 +613,12 @@ BrowserElementChild.prototype = {
     }, this);
   },
 
-  _metaChangedHandler: function(e) {
-    let win = e.target.ownerDocument.defaultView;
+  _metaChangedHandler(e) {
+    let win = e.target.ownerGlobal;
     // Ignore metas which don't come from the top-level
     // <iframe mozbrowser> window.
     if (win != content) {
-      debug('Not top level!');
+      debug("Not top level!");
       return;
     }
 
@@ -669,14 +629,13 @@ BrowserElementChild.prototype = {
       return;
     }
 
-    debug('Got metaChanged: (' + (name || property) + ') ' +
-          e.target.content);
+    debug("Got metaChanged: (" + (name || property) + ") " + e.target.content);
 
     let handlers = {
-      'viewmode': this._genericMetaHandler,
-      'theme-color': this._genericMetaHandler,
-      'theme-group': this._genericMetaHandler,
-      'application-name': this._applicationNameChangedHandler
+      viewmode: this._genericMetaHandler,
+      "theme-color": this._genericMetaHandler,
+      "theme-group": this._genericMetaHandler,
+      "application-name": this._applicationNameChangedHandler,
     };
     let handler = handlers[name];
 
@@ -690,29 +649,33 @@ BrowserElementChild.prototype = {
     }
   },
 
-  _applicationNameChangedHandler: function(name, eventType, target) {
-    if (eventType !== 'DOMMetaAdded') {
+  _applicationNameChangedHandler(name, eventType, target) {
+    if (eventType !== "DOMMetaAdded") {
       // Bug 1037448 - Decide what to do when <meta name="application-name">
       // changes
       return;
     }
 
-    let meta = { name: name,
-                 content: target.content };
+    let meta = { name, content: target.content };
 
     let lang;
     let elm;
 
-    for (elm = target;
-         !lang && elm && elm.nodeType == target.ELEMENT_NODE;
-         elm = elm.parentNode) {
-      if (elm.hasAttribute('lang')) {
-        lang = elm.getAttribute('lang');
+    for (
+      elm = target;
+      !lang && elm && elm.nodeType == target.ELEMENT_NODE;
+      elm = elm.parentNode
+    ) {
+      if (elm.hasAttribute("lang")) {
+        lang = elm.getAttribute("lang");
         continue;
       }
 
-      if (elm.hasAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang')) {
-        lang = elm.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang');
+      if (elm.hasAttributeNS("http://www.w3.org/XML/1998/namespace", "lang")) {
+        lang = elm.getAttributeNS(
+          "http://www.w3.org/XML/1998/namespace",
+          "lang"
+        );
         continue;
       }
     }
@@ -726,103 +689,83 @@ BrowserElementChild.prototype = {
       meta.lang = lang;
     }
 
-    sendAsyncMsg('metachange', meta);
+    sendAsyncMsg("metachange", meta);
   },
 
-  _ScrollViewChangeHandler: function(e) {
+  _ScrollViewChangeHandler(e) {
     e.stopPropagation();
     let detail = {
       state: e.state,
     };
-    sendAsyncMsg('scrollviewchange', detail);
+    sendAsyncMsg("scrollviewchange", detail);
   },
 
-  _ClickHandler: function(e) {
-
+  _ClickHandler(e) {
     let isHTMLLink = node =>
-      ((node instanceof Ci.nsIDOMHTMLAnchorElement && node.href) ||
-       (node instanceof Ci.nsIDOMHTMLAreaElement && node.href) ||
-        node instanceof Ci.nsIDOMHTMLLinkElement);
+      (ChromeUtils.getClassName(node) === "HTMLAnchorElement" && node.href) ||
+      (ChromeUtils.getClassName(node) === "HTMLAreaElement" && node.href) ||
+      ChromeUtils.getClassName(node) === "HTMLLinkElement";
 
     // Open in a new tab if middle click or ctrl/cmd-click,
     // and e.target is a link or inside a link.
-    if ((Services.appinfo.OS == 'Darwin' && e.metaKey) ||
-        (Services.appinfo.OS != 'Darwin' && e.ctrlKey) ||
-         e.button == 1) {
-
+    if (
+      (Services.appinfo.OS == "Darwin" && e.metaKey) ||
+      (Services.appinfo.OS != "Darwin" && e.ctrlKey) ||
+      e.button == 1
+    ) {
       let node = e.target;
       while (node && !isHTMLLink(node)) {
         node = node.parentNode;
       }
 
       if (node) {
-        sendAsyncMsg('opentab', {url: node.href});
+        sendAsyncMsg("opentab", { url: node.href });
       }
     }
   },
 
-  _genericMetaHandler: function(name, eventType, target) {
+  _genericMetaHandler(name, eventType, target) {
     let meta = {
-      name: name,
+      name,
       content: target.content,
-      type: eventType.replace('DOMMeta', '').toLowerCase()
+      type: eventType.replace("DOMMeta", "").toLowerCase(),
     };
-    sendAsyncMsg('metachange', meta);
+    sendAsyncMsg("metachange", meta);
   },
 
-  _addMozAfterPaintHandler: function(callback) {
+  _addMozAfterPaintHandler(callback) {
     function onMozAfterPaint() {
       let uri = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
       if (uri.spec != "about:blank") {
         debug("Got afterpaint event: " + uri.spec);
-        removeEventListener('MozAfterPaint', onMozAfterPaint,
-                            /* useCapture = */ true);
+        removeEventListener(
+          "MozAfterPaint",
+          onMozAfterPaint,
+          /* useCapture = */ true
+        );
         callback();
       }
     }
 
-    addEventListener('MozAfterPaint', onMozAfterPaint, /* useCapture = */ true);
+    addEventListener("MozAfterPaint", onMozAfterPaint, /* useCapture = */ true);
     return onMozAfterPaint;
   },
 
-  _removeMozAfterPaintHandler: function(listener) {
-    removeEventListener('MozAfterPaint', listener,
-                        /* useCapture = */ true);
-  },
-
-  _activateNextPaintListener: function(e) {
-    if (!this._nextPaintHandler) {
-      this._nextPaintHandler = this._addMozAfterPaintHandler(function () {
-        this._nextPaintHandler = null;
-        sendAsyncMsg('nextpaint');
-      }.bind(this));
-    }
-  },
-
-  _deactivateNextPaintListener: function(e) {
-    if (this._nextPaintHandler) {
-      this._removeMozAfterPaintHandler(this._nextPaintHandler);
-      this._nextPaintHandler = null;
-    }
-  },
-
-  _windowCloseHandler: function(e) {
+  _windowCloseHandler(e) {
     let win = e.target;
     if (win != content || e.defaultPrevented) {
       return;
     }
 
     debug("Closing window " + win);
-    sendAsyncMsg('close');
+    sendAsyncMsg("close");
 
     // Inform the window implementation that we handled this close ourselves.
     e.preventDefault();
   },
 
-  _windowCreatedHandler: function(e) {
-    let targetDocShell = e.target.defaultView
-          .QueryInterface(Ci.nsIInterfaceRequestor)
-          .getInterface(Ci.nsIWebNavigation);
+  _windowCreatedHandler(e) {
+    let targetDocShell = e.target.defaultView.docShell;
     if (targetDocShell != docShell) {
       return;
     }
@@ -830,31 +773,27 @@ BrowserElementChild.prototype = {
     let uri = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
     debug("Window created: " + uri.spec);
     if (uri.spec != "about:blank") {
-      this._addMozAfterPaintHandler(function () {
-        sendAsyncMsg('documentfirstpaint');
+      this._addMozAfterPaintHandler(function() {
+        sendAsyncMsg("documentfirstpaint");
       });
       this._isContentWindowCreated = true;
-      // Handle pending SetInputMethodActive request.
-      while (this._pendingSetInputMethodActive.length > 0) {
-        this._recvSetInputMethodActive(this._pendingSetInputMethodActive.shift());
-      }
     }
   },
 
-  _windowResizeHandler: function(e) {
+  _windowResizeHandler(e) {
     let win = e.target;
     if (win != content || e.defaultPrevented) {
       return;
     }
 
     debug("resizing window " + win);
-    sendAsyncMsg('resize', { width: e.detail.width, height: e.detail.height });
+    sendAsyncMsg("resize", { width: e.detail.width, height: e.detail.height });
 
     // Inform the window implementation that we handled this resize ourselves.
     e.preventDefault();
   },
 
-  _contextmenuHandler: function(e) {
+  _contextmenuHandler(e) {
     debug("Got contextmenu");
 
     if (e.defaultPrevented) {
@@ -865,38 +804,46 @@ BrowserElementChild.prototype = {
     this._ctxHandlers = {};
 
     var elem = e.target;
-    var menuData = {systemTargets: [], contextmenu: null};
+    var menuData = { systemTargets: [], contextmenu: null };
     var ctxMenuId = null;
-    var clipboardPlainTextOnly = Services.prefs.getBoolPref('clipboard.plainTextOnly');
+    var clipboardPlainTextOnly = Services.prefs.getBoolPref(
+      "clipboard.plainTextOnly"
+    );
     var copyableElements = {
       image: false,
       link: false,
-      hasElements: function() {
+      hasElements() {
         return this.image || this.link;
-      }
+      },
     };
 
     // Set the event target as the copy image command needs it to
     // determine what was context-clicked on.
-    docShell.contentViewer.QueryInterface(Ci.nsIContentViewerEdit).setCommandNode(elem);
+    docShell.contentViewer
+      .QueryInterface(Ci.nsIContentViewerEdit)
+      .setCommandNode(elem);
 
     while (elem && elem.parentNode) {
       var ctxData = this._getSystemCtxMenuData(elem);
       if (ctxData) {
         menuData.systemTargets.push({
           nodeName: elem.nodeName,
-          data: ctxData
+          data: ctxData,
         });
       }
 
-      if (!ctxMenuId && 'hasAttribute' in elem && elem.hasAttribute('contextmenu')) {
-        ctxMenuId = elem.getAttribute('contextmenu');
+      if (
+        !ctxMenuId &&
+        "hasAttribute" in elem &&
+        elem.hasAttribute("contextmenu")
+      ) {
+        ctxMenuId = elem.getAttribute("contextmenu");
       }
 
       // Enable copy image/link option
-      if (elem.nodeName == 'IMG') {
+      if (elem.nodeName == "IMG") {
         copyableElements.image = !clipboardPlainTextOnly;
-      } else if (elem.nodeName == 'A') {
+      } else if (elem.nodeName == "A") {
         copyableElements.link = true;
       }
 
@@ -908,7 +855,7 @@ BrowserElementChild.prototype = {
       if (ctxMenuId) {
         menu = e.target.ownerDocument.getElementById(ctxMenuId);
       }
-      menuData.contextmenu = this._buildMenuObj(menu, '', copyableElements);
+      menuData.contextmenu = this._buildMenuObj(menu, "", copyableElements);
     }
 
     // Pass along the position where the context menu should be located
@@ -922,56 +869,72 @@ BrowserElementChild.prototype = {
     //
     // We call preventDefault() on our contextmenu event if the embedder called
     // preventDefault() on /its/ contextmenu event.  This way, if the embedder
-    // ignored the contextmenu event, TabChild will fire a click.
-    if (sendSyncMsg('contextmenu', menuData)[0]) {
+    // ignored the contextmenu event, BrowserChild will fire a click.
+    if (sendSyncMsg("contextmenu", menuData)[0]) {
       e.preventDefault();
     } else {
       this._ctxHandlers = {};
     }
   },
 
-  _getSystemCtxMenuData: function(elem) {
-    let documentURI =
-      docShell.QueryInterface(Ci.nsIWebNavigation).currentURI.spec;
-    if ((elem instanceof Ci.nsIDOMHTMLAnchorElement && elem.href) ||
-        (elem instanceof Ci.nsIDOMHTMLAreaElement && elem.href)) {
-      return {uri: elem.href,
-              documentURI: documentURI,
-              text: elem.textContent.substring(0, kLongestReturnedString)};
+  _getSystemCtxMenuData(elem) {
+    let documentURI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI
+      .spec;
+
+    if (
+      (ChromeUtils.getClassName(elem) === "HTMLAnchorElement" && elem.href) ||
+      (ChromeUtils.getClassName(elem) === "HTMLAreaElement" && elem.href)
+    ) {
+      return {
+        uri: elem.href,
+        documentURI,
+        text: elem.textContent.substring(0, kLongestReturnedString),
+      };
     }
-    if (elem instanceof Ci.nsIImageLoadingContent && elem.currentURI) {
-      return {uri: elem.currentURI.spec, documentURI: documentURI};
+    if (
+      elem instanceof Ci.nsIImageLoadingContent &&
+      (elem.currentRequestFinalURI || elem.currentURI)
+    ) {
+      let uri = elem.currentRequestFinalURI || elem.currentURI;
+      return { uri: uri.spec, documentURI };
     }
-    if (elem instanceof Ci.nsIDOMHTMLImageElement) {
-      return {uri: elem.src, documentURI: documentURI};
+    if (ChromeUtils.getClassName(elem) === "HTMLImageElement") {
+      return { uri: elem.src, documentURI };
     }
-    if (elem instanceof Ci.nsIDOMHTMLMediaElement) {
-      let hasVideo = !(elem.readyState >= elem.HAVE_METADATA &&
-                       (elem.videoWidth == 0 || elem.videoHeight == 0));
-      return {uri: elem.currentSrc || elem.src,
-              hasVideo: hasVideo,
-              documentURI: documentURI};
+    if (
+      ChromeUtils.getClassName(elem) === "HTMLVideoElement" ||
+      ChromeUtils.getClassName(elem) === "HTMLAudioElement"
+    ) {
+      let hasVideo = !(
+        elem.readyState >= elem.HAVE_METADATA &&
+        (elem.videoWidth == 0 || elem.videoHeight == 0)
+      );
+      return { uri: elem.currentSrc || elem.src, hasVideo, documentURI };
     }
-    if (elem instanceof Ci.nsIDOMHTMLInputElement &&
-        elem.hasAttribute("name")) {
+    if (
+      ChromeUtils.getClassName(elem) === "HTMLInputElement" &&
+      elem.hasAttribute("name")
+    ) {
       // For input elements, we look for a parent <form> and if there is
       // one we return the form's method and action uri.
       let parent = elem.parentNode;
       while (parent) {
-        if (parent instanceof Ci.nsIDOMHTMLFormElement &&
-            parent.hasAttribute("action")) {
-          let actionHref = docShell.QueryInterface(Ci.nsIWebNavigation)
-                                   .currentURI
-                                   .resolve(parent.getAttribute("action"));
+        if (
+          ChromeUtils.getClassName(parent) === "HTMLFormElement" &&
+          parent.hasAttribute("action")
+        ) {
+          let actionHref = docShell
+            .QueryInterface(Ci.nsIWebNavigation)
+            .currentURI.resolve(parent.getAttribute("action"));
           let method = parent.hasAttribute("method")
             ? parent.getAttribute("method").toLowerCase()
             : "get";
           return {
-            documentURI: documentURI,
+            documentURI,
             action: actionHref,
-            method: method,
+            method,
             name: elem.getAttribute("name"),
-          }
+          };
         }
         parent = parent.parentNode;
       }
@@ -979,7 +942,7 @@ BrowserElementChild.prototype = {
     return false;
   },
 
-  _scrollEventHandler: function(e) {
+  _scrollEventHandler(e) {
     let win = e.target.defaultView;
     if (win != content) {
       return;
@@ -989,271 +952,40 @@ BrowserElementChild.prototype = {
     sendAsyncMsg("scroll", { top: win.scrollY, left: win.scrollX });
   },
 
-  _recvPurgeHistory: function(data) {
-    debug("Received purgeHistory message: (" + data.json.id + ")");
-
-    let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
-
-    try {
-      if (history && history.count) {
-        history.PurgeHistory(history.count);
-      }
-    } catch(e) {}
-
-    sendAsyncMsg('got-purge-history', { id: data.json.id, successRv: true });
-  },
-
-  _recvGetScreenshot: function(data) {
-    debug("Received getScreenshot message: (" + data.json.id + ")");
-
-    let self = this;
-    let maxWidth = data.json.args.width;
-    let maxHeight = data.json.args.height;
-    let mimeType = data.json.args.mimeType;
-    let domRequestID = data.json.id;
-
-    let takeScreenshotClosure = function() {
-      self._takeScreenshot(maxWidth, maxHeight, mimeType, domRequestID);
-    };
-
-    let maxDelayMS = 2000;
-    try {
-      maxDelayMS = Services.prefs.getIntPref('dom.browserElement.maxScreenshotDelayMS');
-    }
-    catch(e) {}
-
-    // Try to wait for the event loop to go idle before we take the screenshot,
-    // but once we've waited maxDelayMS milliseconds, go ahead and take it
-    // anyway.
-    Cc['@mozilla.org/message-loop;1'].getService(Ci.nsIMessageLoop).postIdleTask(
-      takeScreenshotClosure, maxDelayMS);
-  },
-
-  _recvExecuteScript: function(data) {
-    debug("Received executeScript message: (" + data.json.id + ")");
-
-    let domRequestID = data.json.id;
-
-    let sendError = errorMsg => sendAsyncMsg("execute-script-done", {
-      errorMsg,
-      id: domRequestID
-    });
-
-    let sendSuccess = successRv => sendAsyncMsg("execute-script-done", {
-      successRv,
-      id: domRequestID
-    });
-
-    let isJSON = obj => {
-      try {
-        JSON.stringify(obj);
-      } catch(e) {
-        return false;
-      }
-      return true;
-    }
-
-    let expectedOrigin = data.json.args.options.origin;
-    let expectedUrl = data.json.args.options.url;
-
-    if (expectedOrigin) {
-      if (expectedOrigin != content.location.origin) {
-        sendError("Origin mismatches");
-        return;
-      }
-    }
-
-    if (expectedUrl) {
-      let expectedURI
-      try {
-       expectedURI = Services.io.newURI(expectedUrl, null, null);
-      } catch(e) {
-        sendError("Malformed URL");
-        return;
-      }
-      let currentURI = docShell.QueryInterface(Ci.nsIWebNavigation).currentURI;
-      if (!currentURI.equalsExceptRef(expectedURI)) {
-        sendError("URL mismatches");
-        return;
-      }
-    }
-
-    let sandbox = new Cu.Sandbox([content], {
-      sandboxPrototype: content,
-      sandboxName: "browser-api-execute-script",
-      allowWaivers: false,
-      sameZoneAs: content
-    });
-
-    try {
-      let sandboxRv = Cu.evalInSandbox(data.json.args.script, sandbox, "1.8");
-      if (sandboxRv instanceof sandbox.Promise) {
-        sandboxRv.then(rv => {
-          if (isJSON(rv)) {
-            sendSuccess(rv);
-          } else {
-            sendError("Value returned (resolve) by promise is not a valid JSON object");
-          }
-        }, error => {
-          if (isJSON(error)) {
-            sendError(error);
-          } else {
-            sendError("Value returned (reject) by promise is not a valid JSON object");
-          }
-        });
-      } else {
-        if (isJSON(sandboxRv)) {
-          sendSuccess(sandboxRv);
-        } else {
-          sendError("Script last expression must be a promise or a JSON object");
-        }
-      }
-    } catch(e) {
-      sendError(e.toString());
-    }
-  },
-
-  _recvGetContentDimensions: function(data) {
-    debug("Received getContentDimensions message: (" + data.json.id + ")");
-    sendAsyncMsg('got-contentdimensions', {
-      id: data.json.id,
-      successRv: this._getContentDimensions()
-    });
-  },
-
-  _mozScrollAreaChanged: function(e) {
-    sendAsyncMsg('scrollareachanged', {
+  _mozScrollAreaChanged(e) {
+    sendAsyncMsg("scrollareachanged", {
       width: e.width,
-      height: e.height
+      height: e.height,
     });
   },
 
-  _mozRequestedDOMFullscreen: function(e) {
+  _mozRequestedDOMFullscreen(e) {
     sendAsyncMsg("requested-dom-fullscreen");
   },
 
-  _mozFullscreenOriginChange: function(e) {
+  _mozFullscreenOriginChange(e) {
     sendAsyncMsg("fullscreen-origin-change", {
-      originNoSuffix: e.target.nodePrincipal.originNoSuffix
+      originNoSuffix: e.target.nodePrincipal.originNoSuffix,
     });
   },
 
-  _mozExitDomFullscreen: function(e) {
+  _mozExitDomFullscreen(e) {
     sendAsyncMsg("exit-dom-fullscreen");
   },
 
-  _getContentDimensions: function() {
-    return {
-      width: content.document.body.scrollWidth,
-      height: content.document.body.scrollHeight
-    }
-  },
-
-  /**
-   * Actually take a screenshot and foward the result up to our parent, given
-   * the desired maxWidth and maxHeight (in CSS pixels), and given the
-   * DOMRequest ID associated with the request from the parent.
-   */
-  _takeScreenshot: function(maxWidth, maxHeight, mimeType, domRequestID) {
-    // You can think of the screenshotting algorithm as carrying out the
-    // following steps:
-    //
-    // - Calculate maxWidth, maxHeight, and viewport's width and height in the
-    //   dimension of device pixels by multiply the numbers with
-    //   window.devicePixelRatio.
-    //
-    // - Let scaleWidth be the factor by which we'd need to downscale the
-    //   viewport pixel width so it would fit within maxPixelWidth.
-    //   (If the viewport's pixel width is less than maxPixelWidth, let
-    //   scaleWidth be 1.) Compute scaleHeight the same way.
-    //
-    // - Scale the viewport by max(scaleWidth, scaleHeight).  Now either the
-    //   viewport's width is no larger than maxWidth, the viewport's height is
-    //   no larger than maxHeight, or both.
-    //
-    // - Crop the viewport so its width is no larger than maxWidth and its
-    //   height is no larger than maxHeight.
-    //
-    // - Set mozOpaque to true and background color to solid white
-    //   if we are taking a JPEG screenshot, keep transparent if otherwise.
-    //
-    // - Return a screenshot of the page's viewport scaled and cropped per
-    //   above.
-    debug("Taking a screenshot: maxWidth=" + maxWidth +
-          ", maxHeight=" + maxHeight +
-          ", mimeType=" + mimeType +
-          ", domRequestID=" + domRequestID + ".");
-
-    if (!content) {
-      // If content is not loaded yet, bail out since even sendAsyncMessage
-      // fails...
-      debug("No content yet!");
-      return;
-    }
-
-    let devicePixelRatio = content.devicePixelRatio;
-
-    let maxPixelWidth = Math.round(maxWidth * devicePixelRatio);
-    let maxPixelHeight = Math.round(maxHeight * devicePixelRatio);
-
-    let contentPixelWidth = content.innerWidth * devicePixelRatio;
-    let contentPixelHeight = content.innerHeight * devicePixelRatio;
-
-    let scaleWidth = Math.min(1, maxPixelWidth / contentPixelWidth);
-    let scaleHeight = Math.min(1, maxPixelHeight / contentPixelHeight);
-
-    let scale = Math.max(scaleWidth, scaleHeight);
-
-    let canvasWidth =
-      Math.min(maxPixelWidth, Math.round(contentPixelWidth * scale));
-    let canvasHeight =
-      Math.min(maxPixelHeight, Math.round(contentPixelHeight * scale));
-
-    let transparent = (mimeType !== 'image/jpeg');
-
-    var canvas = content.document
-      .createElementNS("http://www.w3.org/1999/xhtml", "canvas");
-    if (!transparent)
-      canvas.mozOpaque = true;
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    let ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.scale(scale * devicePixelRatio, scale * devicePixelRatio);
-
-    let flags = ctx.DRAWWINDOW_DRAW_VIEW |
-                ctx.DRAWWINDOW_USE_WIDGET_LAYERS |
-                ctx.DRAWWINDOW_DO_NOT_FLUSH |
-                ctx.DRAWWINDOW_ASYNC_DECODE_IMAGES;
-    ctx.drawWindow(content, 0, 0, content.innerWidth, content.innerHeight,
-                   transparent ? "rgba(255,255,255,0)" : "rgb(255,255,255)",
-                   flags);
-
-    // Take a JPEG screenshot by default instead of PNG with alpha channel.
-    // This requires us to unpremultiply the alpha channel, which
-    // is expensive on ARM processors because they lack a hardware integer
-    // division instruction.
-    canvas.toBlob(function(blob) {
-      sendAsyncMsg('got-screenshot', {
-        id: domRequestID,
-        successRv: blob
-      });
-    }, mimeType);
-  },
-
-  _recvFireCtxCallback: function(data) {
+  _recvFireCtxCallback(data) {
     debug("Received fireCtxCallback message: (" + data.json.menuitem + ")");
 
-    let doCommandIfEnabled = (command) => {
+    let doCommandIfEnabled = command => {
       if (docShell.isCommandEnabled(command)) {
         docShell.doCommand(command);
       }
     };
 
-    if (data.json.menuitem == 'copy-image') {
-      doCommandIfEnabled('cmd_copyImage');
-    } else if (data.json.menuitem == 'copy-link') {
-      doCommandIfEnabled('cmd_copyLink');
+    if (data.json.menuitem == "copy-image") {
+      doCommandIfEnabled("cmd_copyImage");
+    } else if (data.json.menuitem == "copy-link") {
+      doCommandIfEnabled("cmd_copyLink");
     } else if (data.json.menuitem in this._ctxHandlers) {
       this._ctxHandlers[data.json.menuitem].click();
       this._ctxHandlers = {};
@@ -1263,20 +995,22 @@ BrowserElementChild.prototype = {
     }
   },
 
-  _buildMenuObj: function(menu, idPrefix, copyableElements) {
-    var menuObj = {type: 'menu', customized: false, items: []};
+  _buildMenuObj(menu, idPrefix, copyableElements) {
+    var menuObj = { type: "menu", customized: false, items: [] };
     // Customized context menu
     if (menu) {
-      this._maybeCopyAttribute(menu, menuObj, 'label');
+      this._maybeCopyAttribute(menu, menuObj, "label");
 
-      for (var i = 0, child; child = menu.children[i++];) {
-        if (child.nodeName === 'MENU') {
-          menuObj.items.push(this._buildMenuObj(child, idPrefix + i + '_', false));
-        } else if (child.nodeName === 'MENUITEM') {
-          var id = this._ctxCounter + '_' + idPrefix + i;
-          var menuitem = {id: id, type: 'menuitem'};
-          this._maybeCopyAttribute(child, menuitem, 'label');
-          this._maybeCopyAttribute(child, menuitem, 'icon');
+      for (var i = 0, child; (child = menu.children[i++]); ) {
+        if (child.nodeName === "MENU") {
+          menuObj.items.push(
+            this._buildMenuObj(child, idPrefix + i + "_", false)
+          );
+        } else if (child.nodeName === "MENUITEM") {
+          var id = this._ctxCounter + "_" + idPrefix + i;
+          var menuitem = { id, type: "menuitem" };
+          this._maybeCopyAttribute(child, menuitem, "label");
+          this._maybeCopyAttribute(child, menuitem, "icon");
           this._ctxHandlers[id] = child;
           menuObj.items.push(menuitem);
         }
@@ -1290,48 +1024,25 @@ BrowserElementChild.prototype = {
     //       put together with other image options if elem is an image link.
     // "Copy Link" menu item
     if (copyableElements.link) {
-      menuObj.items.push({id: 'copy-link'});
+      menuObj.items.push({ id: "copy-link" });
     }
     // "Copy Image" menu item
     if (copyableElements.image) {
-      menuObj.items.push({id: 'copy-image'});
+      menuObj.items.push({ id: "copy-image" });
     }
 
     return menuObj;
-  },
-
-  _recvSetVisible: function(data) {
-    debug("Received setVisible message: (" + data.json.visible + ")");
-    if (this._forcedVisible == data.json.visible) {
-      return;
-    }
-
-    this._forcedVisible = data.json.visible;
-    this._updateVisibility();
-  },
-
-  _recvVisible: function(data) {
-    sendAsyncMsg('got-visible', {
-      id: data.json.id,
-      successRv: docShell.isActive
-    });
   },
 
   /**
    * Called when the window which contains this iframe becomes hidden or
    * visible.
    */
-  _recvOwnerVisibilityChange: function(data) {
+  _recvOwnerVisibilityChange(data) {
     debug("Received ownerVisibilityChange: (" + data.json.visible + ")");
-    this._ownerVisible = data.json.visible;
-    this._updateVisibility();
-  },
-
-  _updateVisibility: function() {
-    var visible = this._forcedVisible && this._ownerVisible;
+    var visible = data.json.visible;
     if (docShell && docShell.isActive !== visible) {
       docShell.isActive = visible;
-      sendAsyncMsg('visibilitychange', {visible: visible});
 
       // Ensure painting is not frozen if the app goes visible.
       if (visible && this._paintFrozenTimer) {
@@ -1340,252 +1051,78 @@ BrowserElementChild.prototype = {
     }
   },
 
-  _recvSendMouseEvent: function(data) {
+  _recvSendMouseEvent(data) {
     let json = data.json;
-    let utils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
-    utils.sendMouseEventToWindow(json.type, json.x, json.y, json.button,
-                                 json.clickCount, json.modifiers);
+    let utils = content.windowUtils;
+    utils.sendMouseEventToWindow(
+      json.type,
+      json.x,
+      json.y,
+      json.button,
+      json.clickCount,
+      json.modifiers
+    );
   },
 
-  _recvSendTouchEvent: function(data) {
-    let json = data.json;
-    let utils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
-    utils.sendTouchEventToWindow(json.type, json.identifiers, json.touchesX,
-                                 json.touchesY, json.radiisX, json.radiisY,
-                                 json.rotationAngles, json.forces, json.count,
-                                 json.modifiers);
-  },
-
-  _recvCanGoBack: function(data) {
+  _recvCanGoBack(data) {
     var webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    sendAsyncMsg('got-can-go-back', {
+    sendAsyncMsg("got-can-go-back", {
       id: data.json.id,
-      successRv: webNav.canGoBack
+      successRv: webNav.canGoBack,
     });
   },
 
-  _recvCanGoForward: function(data) {
+  _recvCanGoForward(data) {
     var webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    sendAsyncMsg('got-can-go-forward', {
+    sendAsyncMsg("got-can-go-forward", {
       id: data.json.id,
-      successRv: webNav.canGoForward
+      successRv: webNav.canGoForward,
     });
   },
 
-  _recvMute: function(data) {
-    this._windowUtils.audioMuted = true;
-  },
-
-  _recvUnmute: function(data) {
-    this._windowUtils.audioMuted = false;
-  },
-
-  _recvGetMuted: function(data) {
-    sendAsyncMsg('got-muted', {
-      id: data.json.id,
-      successRv: this._windowUtils.audioMuted
-    });
-  },
-
-  _recvSetVolume: function(data) {
-    this._windowUtils.audioVolume = data.json.volume;
-  },
-
-  _recvGetVolume: function(data) {
-    sendAsyncMsg('got-volume', {
-      id: data.json.id,
-      successRv: this._windowUtils.audioVolume
-    });
-  },
-
-  _recvGoBack: function(data) {
+  _recvGoBack(data) {
     try {
       docShell.QueryInterface(Ci.nsIWebNavigation).goBack();
-    } catch(e) {
+    } catch (e) {
       // Silently swallow errors; these happen when we can't go back.
     }
   },
 
-  _recvGoForward: function(data) {
+  _recvGoForward(data) {
     try {
       docShell.QueryInterface(Ci.nsIWebNavigation).goForward();
-    } catch(e) {
+    } catch (e) {
       // Silently swallow errors; these happen when we can't go forward.
     }
   },
 
-  _recvReload: function(data) {
+  _recvReload(data) {
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
-    let reloadFlags = data.json.hardReload ?
-      webNav.LOAD_FLAGS_BYPASS_PROXY | webNav.LOAD_FLAGS_BYPASS_CACHE :
-      webNav.LOAD_FLAGS_NONE;
+    let reloadFlags = data.json.hardReload
+      ? webNav.LOAD_FLAGS_BYPASS_PROXY | webNav.LOAD_FLAGS_BYPASS_CACHE
+      : webNav.LOAD_FLAGS_NONE;
     try {
       webNav.reload(reloadFlags);
-    } catch(e) {
+    } catch (e) {
       // Silently swallow errors; these can happen if a used cancels reload
     }
   },
 
-  _recvStop: function(data) {
+  _recvStop(data) {
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
     webNav.stop(webNav.STOP_NETWORK);
-  },
-
-  _recvZoom: function(data) {
-    docShell.contentViewer.fullZoom = data.json.zoom;
-  },
-
-  _recvGetAudioChannelVolume: function(data) {
-    debug("Received getAudioChannelVolume message: (" + data.json.id + ")");
-
-    let volume = acs.getAudioChannelVolume(content,
-                                           data.json.args.audioChannel);
-    sendAsyncMsg('got-audio-channel-volume', {
-      id: data.json.id, successRv: volume
-    });
-  },
-
-  _recvSetAudioChannelVolume: function(data) {
-    debug("Received setAudioChannelVolume message: (" + data.json.id + ")");
-
-    acs.setAudioChannelVolume(content,
-                              data.json.args.audioChannel,
-                              data.json.args.volume);
-    sendAsyncMsg('got-set-audio-channel-volume', {
-      id: data.json.id, successRv: true
-    });
-  },
-
-  _recvGetAudioChannelMuted: function(data) {
-    debug("Received getAudioChannelMuted message: (" + data.json.id + ")");
-
-    let muted = acs.getAudioChannelMuted(content, data.json.args.audioChannel);
-    sendAsyncMsg('got-audio-channel-muted', {
-      id: data.json.id, successRv: muted
-    });
-  },
-
-  _recvSetAudioChannelMuted: function(data) {
-    debug("Received setAudioChannelMuted message: (" + data.json.id + ")");
-
-    acs.setAudioChannelMuted(content, data.json.args.audioChannel,
-                             data.json.args.muted);
-    sendAsyncMsg('got-set-audio-channel-muted', {
-      id: data.json.id, successRv: true
-    });
-  },
-
-  _recvIsAudioChannelActive: function(data) {
-    debug("Received isAudioChannelActive message: (" + data.json.id + ")");
-
-    let active = acs.isAudioChannelActive(content, data.json.args.audioChannel);
-    sendAsyncMsg('got-is-audio-channel-active', {
-      id: data.json.id, successRv: active
-    });
-  },
-  _recvGetWebManifest: Task.async(function* (data) {
-    debug(`Received GetWebManifest message: (${data.json.id})`);
-    let manifest = null;
-    let hasManifest = ManifestFinder.contentHasManifestLink(content);
-    if (hasManifest) {
-      try {
-        manifest = yield ManifestObtainer.contentObtainManifest(content);
-      } catch (e) {
-        sendAsyncMsg('got-web-manifest', {
-          id: data.json.id,
-          errorMsg: `Error fetching web manifest: ${e}.`,
-        });
-        return;
-      }
-    }
-    sendAsyncMsg('got-web-manifest', {
-      id: data.json.id,
-      successRv: manifest
-    });
-  }),
-
-  _initFinder: function() {
-    if (!this._finder) {
-      let {Finder} = Components.utils.import("resource://gre/modules/Finder.jsm", {});
-      this._finder = new Finder(docShell);
-    }
-    let listener = {
-      onMatchesCountResult: (data) => {
-        sendAsyncMsg("findchange", {
-          active: true,
-          searchString: this._finder.searchString,
-          searchLimit: this._finder.matchesCountLimit,
-          activeMatchOrdinal: data.current,
-          numberOfMatches: data.total
-        });
-        this._finder.removeResultListener(listener);
-      }
-    };
-    this._finder.addResultListener(listener);
-  },
-
-  _recvFindAll: function(data) {
-    this._initFinder();
-    let searchString = data.json.searchString;
-    this._finder.caseSensitive = data.json.caseSensitive;
-    this._finder.fastFind(searchString, false, false);
-    this._finder.requestMatchesCount(searchString, this._finder.matchesCountLimit, false);
-  },
-
-  _recvFindNext: function(data) {
-    if (!this._finder) {
-      debug("findNext() called before findAll()");
-      return;
-    }
-    this._initFinder();
-    this._finder.findAgain(data.json.backward, false, false);
-    this._finder.requestMatchesCount(this._finder.searchString, this._finder.matchesCountLimit, false);
-  },
-
-  _recvClearMatch: function(data) {
-    if (!this._finder) {
-      debug("clearMach() called before findAll()");
-      return;
-    }
-    this._finder.removeSelection();
-    sendAsyncMsg("findchange", {active: false});
-  },
-
-  _recvSetInputMethodActive: function(data) {
-    let msgData = { id: data.json.id };
-    if (!this._isContentWindowCreated) {
-      if (data.json.args.isActive) {
-        // To activate the input method, we should wait before the content
-        // window is ready.
-        this._pendingSetInputMethodActive.push(data);
-        return;
-      }
-      msgData.successRv = null;
-      sendAsyncMsg('got-set-input-method-active', msgData);
-      return;
-    }
-    // Unwrap to access webpage content.
-    let nav = XPCNativeWrapper.unwrap(content.document.defaultView.navigator);
-    if (nav.mozInputMethod) {
-      // Wrap to access the chrome-only attribute setActive.
-      new XPCNativeWrapper(nav.mozInputMethod).setActive(data.json.args.isActive);
-      msgData.successRv = null;
-    } else {
-      msgData.errorMsg = 'Cannot access mozInputMethod.';
-    }
-    sendAsyncMsg('got-set-input-method-active', msgData);
   },
 
   // The docShell keeps a weak reference to the progress listener, so we need
   // to keep a strong ref to it ourselves.
   _progressListener: {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
-                                           Ci.nsISupportsWeakReference]),
+    QueryInterface: ChromeUtils.generateQI([
+      Ci.nsIWebProgressListener,
+      Ci.nsISupportsWeakReference,
+    ]),
     _seenLoadStart: false,
 
-    onLocationChange: function(webProgress, request, location, flags) {
+    onLocationChange(webProgress, request, location, flags) {
       // We get progress events from subshells here, which is kind of weird.
       if (webProgress != docShell) {
         return;
@@ -1597,211 +1134,210 @@ BrowserElementChild.prototype = {
         return;
       }
 
-      // Remove password and wyciwyg from uri.
-      location = Cc["@mozilla.org/docshell/urifixup;1"]
-        .getService(Ci.nsIURIFixup).createExposableURI(location);
+      // Remove password from uri.
+      location = Services.uriFixup.createExposableURI(location);
 
       var webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
 
-      sendAsyncMsg('locationchange', { url: location.spec,
-                                       canGoBack: webNav.canGoBack,
-                                       canGoForward: webNav.canGoForward });
+      sendAsyncMsg("locationchange", {
+        url: location.spec,
+        canGoBack: webNav.canGoBack,
+        canGoForward: webNav.canGoForward,
+      });
     },
 
-    onStateChange: function(webProgress, request, stateFlags, status) {
+    // eslint-disable-next-line complexity
+    onStateChange(webProgress, request, stateFlags, status) {
       if (webProgress != docShell) {
         return;
       }
 
       if (stateFlags & Ci.nsIWebProgressListener.STATE_START) {
         this._seenLoadStart = true;
-        sendAsyncMsg('loadstart');
+        sendAsyncMsg("loadstart");
       }
 
       if (stateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
-        let bgColor = 'transparent';
+        let bgColor = "transparent";
         try {
-          bgColor = content.getComputedStyle(content.document.body)
-                           .getPropertyValue('background-color');
+          bgColor = content
+            .getComputedStyle(content.document.body)
+            .getPropertyValue("background-color");
         } catch (e) {}
-        sendAsyncMsg('loadend', {backgroundColor: bgColor});
+        sendAsyncMsg("loadend", { backgroundColor: bgColor });
 
         switch (status) {
-          case Cr.NS_OK :
-          case Cr.NS_BINDING_ABORTED :
-            // Ignoring NS_BINDING_ABORTED, which is set when loading page is
-            // stopped.
+          case Cr.NS_OK:
+          case Cr.NS_BINDING_ABORTED:
+          // Ignoring NS_BINDING_ABORTED, which is set when loading page is
+          // stopped.
+          // fall through
           case Cr.NS_ERROR_PARSED_DATA_CACHED:
             return;
 
           // TODO See nsDocShell::DisplayLoadError to see what extra
           // information we should be annotating this first block of errors
           // with. Bug 1107091.
-          case Cr.NS_ERROR_UNKNOWN_PROTOCOL :
-            sendAsyncMsg('error', { type: 'unknownProtocolFound' });
+          case Cr.NS_ERROR_UNKNOWN_PROTOCOL:
+            sendAsyncMsg("error", { type: "unknownProtocolFound" });
             return;
-          case Cr.NS_ERROR_FILE_NOT_FOUND :
-            sendAsyncMsg('error', { type: 'fileNotFound' });
+          case Cr.NS_ERROR_FILE_NOT_FOUND:
+            sendAsyncMsg("error", { type: "fileNotFound" });
             return;
-          case Cr.NS_ERROR_UNKNOWN_HOST :
-            sendAsyncMsg('error', { type: 'dnsNotFound' });
+          case Cr.NS_ERROR_UNKNOWN_HOST:
+            sendAsyncMsg("error", { type: "dnsNotFound" });
             return;
-          case Cr.NS_ERROR_CONNECTION_REFUSED :
-            sendAsyncMsg('error', { type: 'connectionFailure' });
+          case Cr.NS_ERROR_CONNECTION_REFUSED:
+            sendAsyncMsg("error", { type: "connectionFailure" });
             return;
-          case Cr.NS_ERROR_NET_INTERRUPT :
-            sendAsyncMsg('error', { type: 'netInterrupt' });
+          case Cr.NS_ERROR_NET_INTERRUPT:
+            sendAsyncMsg("error", { type: "netInterrupt" });
             return;
-          case Cr.NS_ERROR_NET_TIMEOUT :
-            sendAsyncMsg('error', { type: 'netTimeout' });
+          case Cr.NS_ERROR_NET_TIMEOUT:
+            sendAsyncMsg("error", { type: "netTimeout" });
             return;
-          case Cr.NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION :
-            sendAsyncMsg('error', { type: 'cspBlocked' });
+          case Cr.NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION:
+            sendAsyncMsg("error", { type: "cspBlocked" });
             return;
-          case Cr.NS_ERROR_PHISHING_URI :
-            sendAsyncMsg('error', { type: 'deceptiveBlocked' });
+          case Cr.NS_ERROR_PHISHING_URI:
+            sendAsyncMsg("error", { type: "deceptiveBlocked" });
             return;
-          case Cr.NS_ERROR_MALWARE_URI :
-            sendAsyncMsg('error', { type: 'malwareBlocked' });
+          case Cr.NS_ERROR_MALWARE_URI:
+            sendAsyncMsg("error", { type: "malwareBlocked" });
             return;
-          case Cr.NS_ERROR_UNWANTED_URI :
-            sendAsyncMsg('error', { type: 'unwantedBlocked' });
+          case Cr.NS_ERROR_HARMFUL_URI:
+            sendAsyncMsg("error", { type: "harmfulBlocked" });
             return;
-          case Cr.NS_ERROR_FORBIDDEN_URI :
-            sendAsyncMsg('error', { type: 'forbiddenBlocked' });
+          case Cr.NS_ERROR_UNWANTED_URI:
+            sendAsyncMsg("error", { type: "unwantedBlocked" });
+            return;
+          case Cr.NS_ERROR_FORBIDDEN_URI:
+            sendAsyncMsg("error", { type: "forbiddenBlocked" });
             return;
 
-          case Cr.NS_ERROR_OFFLINE :
-            sendAsyncMsg('error', { type: 'offline' });
+          case Cr.NS_ERROR_OFFLINE:
+            sendAsyncMsg("error", { type: "offline" });
             return;
-          case Cr.NS_ERROR_MALFORMED_URI :
-            sendAsyncMsg('error', { type: 'malformedURI' });
+          case Cr.NS_ERROR_MALFORMED_URI:
+            sendAsyncMsg("error", { type: "malformedURI" });
             return;
-          case Cr.NS_ERROR_REDIRECT_LOOP :
-            sendAsyncMsg('error', { type: 'redirectLoop' });
+          case Cr.NS_ERROR_REDIRECT_LOOP:
+            sendAsyncMsg("error", { type: "redirectLoop" });
             return;
-          case Cr.NS_ERROR_UNKNOWN_SOCKET_TYPE :
-            sendAsyncMsg('error', { type: 'unknownSocketType' });
+          case Cr.NS_ERROR_UNKNOWN_SOCKET_TYPE:
+            sendAsyncMsg("error", { type: "unknownSocketType" });
             return;
-          case Cr.NS_ERROR_NET_RESET :
-            sendAsyncMsg('error', { type: 'netReset' });
+          case Cr.NS_ERROR_NET_RESET:
+            sendAsyncMsg("error", { type: "netReset" });
             return;
-          case Cr.NS_ERROR_DOCUMENT_NOT_CACHED :
-            sendAsyncMsg('error', { type: 'notCached' });
+          case Cr.NS_ERROR_DOCUMENT_NOT_CACHED:
+            sendAsyncMsg("error", { type: "notCached" });
             return;
-          case Cr.NS_ERROR_DOCUMENT_IS_PRINTMODE :
-            sendAsyncMsg('error', { type: 'isprinting' });
+          case Cr.NS_ERROR_DOCUMENT_IS_PRINTMODE:
+            sendAsyncMsg("error", { type: "isprinting" });
             return;
-          case Cr.NS_ERROR_PORT_ACCESS_NOT_ALLOWED :
-            sendAsyncMsg('error', { type: 'deniedPortAccess' });
+          case Cr.NS_ERROR_PORT_ACCESS_NOT_ALLOWED:
+            sendAsyncMsg("error", { type: "deniedPortAccess" });
             return;
-          case Cr.NS_ERROR_UNKNOWN_PROXY_HOST :
-            sendAsyncMsg('error', { type: 'proxyResolveFailure' });
+          case Cr.NS_ERROR_UNKNOWN_PROXY_HOST:
+            sendAsyncMsg("error", { type: "proxyResolveFailure" });
             return;
-          case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED :
-            sendAsyncMsg('error', { type: 'proxyConnectFailure' });
+          case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED:
+            sendAsyncMsg("error", { type: "proxyConnectFailure" });
             return;
-          case Cr.NS_ERROR_INVALID_CONTENT_ENCODING :
-            sendAsyncMsg('error', { type: 'contentEncodingFailure' });
+          case Cr.NS_ERROR_INVALID_CONTENT_ENCODING:
+            sendAsyncMsg("error", { type: "contentEncodingFailure" });
             return;
-          case Cr.NS_ERROR_REMOTE_XUL :
-            sendAsyncMsg('error', { type: 'remoteXUL' });
+          case Cr.NS_ERROR_REMOTE_XUL:
+            sendAsyncMsg("error", { type: "remoteXUL" });
             return;
-          case Cr.NS_ERROR_UNSAFE_CONTENT_TYPE :
-            sendAsyncMsg('error', { type: 'unsafeContentType' });
+          case Cr.NS_ERROR_UNSAFE_CONTENT_TYPE:
+            sendAsyncMsg("error", { type: "unsafeContentType" });
             return;
-          case Cr.NS_ERROR_CORRUPTED_CONTENT :
-            sendAsyncMsg('error', { type: 'corruptedContentErrorv2' });
+          case Cr.NS_ERROR_CORRUPTED_CONTENT:
+            sendAsyncMsg("error", { type: "corruptedContentErrorv2" });
+            return;
+          case Cr.NS_ERROR_BLOCKED_BY_POLICY:
+            sendAsyncMsg("error", { type: "blockedByPolicy" });
             return;
 
           default:
             // getErrorClass() will throw if the error code passed in is not a NSS
             // error code.
             try {
-              let nssErrorsService = Cc['@mozilla.org/nss_errors_service;1']
-                                       .getService(Ci.nsINSSErrorsService);
-              if (nssErrorsService.getErrorClass(status)
-                    == Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT) {
+              let nssErrorsService = Cc[
+                "@mozilla.org/nss_errors_service;1"
+              ].getService(Ci.nsINSSErrorsService);
+              if (
+                nssErrorsService.getErrorClass(status) ==
+                Ci.nsINSSErrorsService.ERROR_CLASS_BAD_CERT
+              ) {
                 // XXX Is there a point firing the event if the error page is not
                 // certerror? If yes, maybe we should add a property to the
                 // event to to indicate whether there is a custom page. That would
                 // let the embedder have more control over the desired behavior.
-                let errorPage = null;
-                try {
-                  errorPage = Services.prefs.getCharPref(CERTIFICATE_ERROR_PAGE_PREF);
-                } catch (e) {}
+                let errorPage = Services.prefs.getCharPref(
+                  CERTIFICATE_ERROR_PAGE_PREF,
+                  ""
+                );
 
-                if (errorPage == 'certerror') {
-                  sendAsyncMsg('error', { type: 'certerror' });
+                if (errorPage == "certerror") {
+                  sendAsyncMsg("error", { type: "certerror" });
                   return;
                 }
               }
             } catch (e) {}
 
-            sendAsyncMsg('error', { type: 'other' });
-            return;
+            sendAsyncMsg("error", { type: "other" });
         }
       }
     },
 
-    onSecurityChange: function(webProgress, request, state) {
+    onSecurityChange(webProgress, request, state) {
       if (webProgress != docShell) {
         return;
       }
 
       var securityStateDesc;
       if (state & Ci.nsIWebProgressListener.STATE_IS_SECURE) {
-        securityStateDesc = 'secure';
-      }
-      else if (state & Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
-        securityStateDesc = 'broken';
-      }
-      else if (state & Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
-        securityStateDesc = 'insecure';
-      }
-      else {
+        securityStateDesc = "secure";
+      } else if (state & Ci.nsIWebProgressListener.STATE_IS_BROKEN) {
+        securityStateDesc = "broken";
+      } else if (state & Ci.nsIWebProgressListener.STATE_IS_INSECURE) {
+        securityStateDesc = "insecure";
+      } else {
         debug("Unexpected securitychange state!");
-        securityStateDesc = '???';
-      }
-
-      var trackingStateDesc;
-      if (state & Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT) {
-        trackingStateDesc = 'loaded_tracking_content';
-      }
-      else if (state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT) {
-        trackingStateDesc = 'blocked_tracking_content';
+        securityStateDesc = "???";
       }
 
       var mixedStateDesc;
-      if (state & Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT) {
-        mixedStateDesc = 'blocked_mixed_active_content';
-      }
-      else if (state & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT) {
+      if (
+        state & Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT
+      ) {
+        mixedStateDesc = "blocked_mixed_active_content";
+      } else if (
+        state & Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT
+      ) {
         // Note that STATE_LOADED_MIXED_ACTIVE_CONTENT implies STATE_IS_BROKEN
-        mixedStateDesc = 'loaded_mixed_active_content';
+        mixedStateDesc = "loaded_mixed_active_content";
       }
 
-      var isEV = !!(state & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL);
-      var isTrackingContent = !!(state &
-        (Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT |
-        Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT));
-      var isMixedContent = !!(state &
+      var isEV = !!(
+        state & Ci.nsIWebProgressListener.STATE_IDENTITY_EV_TOPLEVEL
+      );
+      var isMixedContent = !!(
+        state &
         (Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_ACTIVE_CONTENT |
-        Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT));
+          Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT)
+      );
 
-      sendAsyncMsg('securitychange', {
+      sendAsyncMsg("securitychange", {
         state: securityStateDesc,
-        trackingState: trackingStateDesc,
         mixedState: mixedStateDesc,
         extendedValidation: isEV,
-        trackingContent: isTrackingContent,
         mixedContent: isMixedContent,
       });
     },
-
-    onStatusChange: function(webProgress, request, status, message) {},
-    onProgressChange: function(webProgress, request, curSelfProgress,
-                               maxSelfProgress, curTotalProgress, maxTotalProgress) {},
   },
 
   // Expose the message manager for WebApps and others.
@@ -1809,16 +1345,19 @@ BrowserElementChild.prototype = {
     sendAsyncMessage: global.sendAsyncMessage.bind(global),
     sendSyncMessage: global.sendSyncMessage.bind(global),
     addMessageListener: global.addMessageListener.bind(global),
-    removeMessageListener: global.removeMessageListener.bind(global)
+    removeMessageListener: global.removeMessageListener.bind(global),
   },
 
   get messageManager() {
     return this._messageManagerPublic;
-  }
+  },
 };
 
 var api = null;
-if ('DoPreloadPostfork' in this && typeof this.DoPreloadPostfork === 'function') {
+if (
+  "DoPreloadPostfork" in this &&
+  typeof this.DoPreloadPostfork === "function"
+) {
   // If we are preloaded, instantiate BrowserElementChild after a content
   // process is forked.
   this.DoPreloadPostfork(function() {

@@ -6,20 +6,22 @@
 // Tests the Filter Editor Widget inputs increase/decrease value when cursor is
 // on a number using arrow keys, applying multiplier using alt/shift on strings
 
-const {CSSFilterEditorWidget} = require("devtools/client/shared/widgets/FilterWidget");
+const {
+  CSSFilterEditorWidget,
+} = require("devtools/client/shared/widgets/FilterWidget");
 
 const FAST_VALUE_MULTIPLIER = 10;
 const SLOW_VALUE_MULTIPLIER = 0.1;
 const DEFAULT_VALUE_MULTIPLIER = 1;
 
-const TEST_URI = `data:text/html,<div id="filter-container" />`;
+const TEST_URI = CHROME_URL_ROOT + "doc_filter-editor-01.html";
 
-add_task(function* () {
-  let [host, win, doc] = yield createHost("bottom", TEST_URI);
+add_task(async function() {
+  const [, , doc] = await createHost("bottom", TEST_URI);
 
   const container = doc.querySelector("#filter-container");
   const initialValue = "drop-shadow(rgb(0, 0, 0) 1px 1px 0px)";
-  let widget = new CSSFilterEditorWidget(container, initialValue);
+  const widget = new CSSFilterEditorWidget(container, initialValue);
   widget.el.querySelector("#filters input").setSelectionRange(13, 13);
 
   let value = 1;
@@ -30,71 +32,100 @@ add_task(function* () {
   triggerKey(40);
 
   value -= DEFAULT_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease value using down arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease value using down arrow"
+  );
 
   triggerKey(38);
 
   value += DEFAULT_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease value using down arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease value using down arrow"
+  );
 
   info("Test shift key multiplier");
   triggerKey(38, "shiftKey");
 
   value += FAST_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should increase value by fast multiplier using up arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should increase value by fast multiplier using up arrow"
+  );
 
   triggerKey(40, "shiftKey");
 
   value -= FAST_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease value by fast multiplier using down arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease value by fast multiplier using down arrow"
+  );
 
   info("Test alt key multiplier");
   triggerKey(38, "altKey");
 
   value += SLOW_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should increase value by slow multiplier using up arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should increase value by slow multiplier using up arrow"
+  );
 
   triggerKey(40, "altKey");
 
   value -= SLOW_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease value by slow multiplier using down arrow");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease value by slow multiplier using down arrow"
+  );
 
   triggerKey(40, "shiftKey");
 
   value -= FAST_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease to negative");
+  is(widget.getValueAt(0), val(value), "Should decrease to negative");
 
   triggerKey(40);
 
   value -= DEFAULT_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease negative numbers correctly");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease negative numbers correctly"
+  );
 
   triggerKey(38);
 
   value += DEFAULT_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should increase negative values correctly");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should increase negative values correctly"
+  );
 
   triggerKey(40, "altKey");
   triggerKey(40, "altKey");
 
   value -= SLOW_VALUE_MULTIPLIER * 2;
-  is(widget.getValueAt(0), val(value),
-     "Should decrease float numbers correctly");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should decrease float numbers correctly"
+  );
 
   triggerKey(38, "altKey");
 
   value += SLOW_VALUE_MULTIPLIER;
-  is(widget.getValueAt(0), val(value),
-     "Should increase float numbers correctly");
+  is(
+    widget.getValueAt(0),
+    val(value),
+    "Should increase float numbers correctly"
+  );
 
   triggerKey = null;
 });
@@ -109,7 +140,7 @@ function triggerKey(key, modifier) {
     target: input,
     keyCode: key,
     [modifier]: true,
-    preventDefault: function () {}
+    preventDefault: function() {},
   });
 }
 

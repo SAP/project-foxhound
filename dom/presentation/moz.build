@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
 DIRS += ['interfaces', 'provider']
 
 XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
@@ -50,7 +53,6 @@ UNIFIED_SOURCES += [
     'PresentationReceiver.cpp',
     'PresentationRequest.cpp',
     'PresentationService.cpp',
-    'PresentationServiceBase.cpp',
     'PresentationSessionInfo.cpp',
     'PresentationSessionRequest.cpp',
     'PresentationTCPSessionTransport.cpp',
@@ -58,22 +60,18 @@ UNIFIED_SOURCES += [
     'PresentationTransportBuilderConstructor.cpp'
 ]
 
-EXTRA_COMPONENTS += [
-    'PresentationDataChannelSessionTransport.js',
-    'PresentationDataChannelSessionTransport.manifest',
-    'PresentationDeviceInfoManager.js',
-    'PresentationDeviceInfoManager.manifest',
+EXTRA_JS_MODULES += [
+    'PresentationDataChannelSessionTransport.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
-    EXTRA_COMPONENTS += [
-        'PresentationNetworkHelper.js',
-        'PresentationNetworkHelper.manifest',
+    EXTRA_JS_MODULES += [
+        'PresentationNetworkHelper.jsm',
     ]
-
-EXTRA_JS_MODULES += [
-    'PresentationDeviceInfoManager.jsm',
-]
 
 IPDL_SOURCES += [
     'ipc/PPresentation.ipdl',

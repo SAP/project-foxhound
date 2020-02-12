@@ -7,32 +7,83 @@
 #define INITGUID
 #include "mozilla/mscom/WeakRef.h"
 
-#include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/RefPtr.h"
+#include "mozilla/Mutex.h"
 #include "nsThreadUtils.h"
 #include "nsWindowsHelpers.h"
+#include "nsProxyRelease.h"
+
+static void InitializeCS(CRITICAL_SECTION& aCS) {
+  DWORD flags = 0;
+#if defined(RELEASE_OR_BETA)
+  flags |= CRITICAL_SECTION_NO_DEBUG_INFO;
+#endif
+  InitializeCriticalSectionEx(&aCS, 4000, flags);
+}
 
 namespace mozilla {
 namespace mscom {
 
-WeakReferenceSupport::WeakReferenceSupport(Flags aFlags)
-  : mRefCnt(1)
-  , mFlags(aFlags)
-{
-  ::InitializeCriticalSectionAndSpinCount(&mCS, 4000);
+namespace detail {
+
+SharedRef::SharedRef(WeakReferenceSupport* aSupport) : mSupport(aSupport) {
+  ::InitializeCS(mCS);
 }
 
-WeakReferenceSupport::~WeakReferenceSupport()
-{
-  MOZ_ASSERT(mWeakRefs.IsEmpty());
-  ::DeleteCriticalSection(&mCS);
+SharedRef::~SharedRef() { ::DeleteCriticalSection(&mCS); }
+
+void SharedRef::Lock() { ::EnterCriticalSection(&mCS); }
+
+void SharedRef::Unlock() { ::LeaveCriticalSection(&mCS); }
+
+HRESULT
+SharedRef::ToStrongRef(IWeakReferenceSource** aOutStrongReference) {
+  RefPtr<IWeakReferenceSource> strongRef;
+
+  {  // Scope for lock
+    AutoCriticalSection lock(&mCS);
+    if (!mSupport) {
+      return E_POINTER;
+    }
+    strongRef = mSupport;
+  }
+
+  strongRef.forget(aOutStrongReference);
+  return S_OK;
 }
 
 HRESULT
-WeakReferenceSupport::QueryInterface(REFIID riid, void** ppv)
-{
+SharedRef::Resolve(REFIID aIid, void** aOutStrongReference) {
+  RefPtr<WeakReferenceSupport> strongRef;
+
+  {  // Scope for lock
+    AutoCriticalSection lock(&mCS);
+    if (!mSupport) {
+      return E_POINTER;
+    }
+    strongRef = mSupport;
+  }
+
+  return strongRef->QueryInterface(aIid, aOutStrongReference);
+}
+
+void SharedRef::Clear() {
   AutoCriticalSection lock(&mCS);
+  mSupport = nullptr;
+}
+
+}  // namespace detail
+
+typedef BaseAutoLock<detail::SharedRef&> SharedRefAutoLock;
+typedef BaseAutoUnlock<detail::SharedRef&> SharedRefAutoUnlock;
+
+WeakReferenceSupport::WeakReferenceSupport(Flags aFlags)
+    : mRefCnt(0), mFlags(aFlags) {
+  mSharedRef = new detail::SharedRef(this);
+}
+
+HRESULT
+WeakReferenceSupport::QueryInterface(REFIID riid, void** ppv) {
   RefPtr<IUnknown> punk;
   if (!ppv) {
     return E_INVALIDARG;
@@ -40,12 +91,12 @@ WeakReferenceSupport::QueryInterface(REFIID riid, void** ppv)
   *ppv = nullptr;
 
   // Raise the refcount for stabilization purposes during aggregation
-  RefPtr<IUnknown> kungFuDeathGrip(static_cast<IUnknown*>(this));
+  StabilizeRefCount stabilize(*this);
 
   if (riid == IID_IUnknown || riid == IID_IWeakReferenceSource) {
     punk = static_cast<IUnknown*>(this);
   } else {
-    HRESULT hr = ThreadSafeQueryInterface(riid, getter_AddRefs(punk));
+    HRESULT hr = WeakRefQueryInterface(riid, getter_AddRefs(punk));
     if (FAILED(hr)) {
       return hr;
     }
@@ -59,83 +110,72 @@ WeakReferenceSupport::QueryInterface(REFIID riid, void** ppv)
   return S_OK;
 }
 
-ULONG
-WeakReferenceSupport::AddRef()
-{
-  AutoCriticalSection lock(&mCS);
-  return ++mRefCnt;
+WeakReferenceSupport::StabilizeRefCount::StabilizeRefCount(
+    WeakReferenceSupport& aObject)
+    : mObject(aObject) {
+  SharedRefAutoLock lock(*mObject.mSharedRef);
+  ++mObject.mRefCnt;
+}
+
+WeakReferenceSupport::StabilizeRefCount::~StabilizeRefCount() {
+  // We directly access these fields instead of calling Release() because we
+  // want to adjust the ref count without the other side effects (such as
+  // deleting this if the count drops back to zero, which may happen during
+  // an initial QI during object creation).
+  SharedRefAutoLock lock(*mObject.mSharedRef);
+  --mObject.mRefCnt;
 }
 
 ULONG
-WeakReferenceSupport::Release()
-{
+WeakReferenceSupport::AddRef() {
+  SharedRefAutoLock lock(*mSharedRef);
+  ULONG result = ++mRefCnt;
+  NS_LOG_ADDREF(this, result, "mscom::WeakReferenceSupport", sizeof(*this));
+  return result;
+}
+
+ULONG
+WeakReferenceSupport::Release() {
   ULONG newRefCnt;
-  { // Scope for lock
-    AutoCriticalSection lock(&mCS);
+  {  // Scope for lock
+    SharedRefAutoLock lock(*mSharedRef);
     newRefCnt = --mRefCnt;
     if (newRefCnt == 0) {
-      ClearWeakRefs();
+      mSharedRef->Clear();
     }
   }
+  NS_LOG_RELEASE(this, newRefCnt, "mscom::WeakReferenceSupport");
   if (newRefCnt == 0) {
     if (mFlags != Flags::eDestroyOnMainThread || NS_IsMainThread()) {
       delete this;
     } else {
-      // It is possible for the last Release() call to happen off-main-thread.
-      // If so, we need to dispatch an event to delete ourselves.
-      mozilla::DebugOnly<nsresult> rv =
-        NS_DispatchToMainThread(NS_NewRunnableFunction([this]() -> void
-        {
-          delete this;
-        }));
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      // We need to delete this object on the main thread, but we aren't on the
+      // main thread right now, so we send a reference to ourselves to the main
+      // thread to be re-released there.
+      RefPtr<WeakReferenceSupport> self = this;
+      NS_ReleaseOnMainThreadSystemGroup("WeakReferenceSupport", self.forget());
     }
   }
   return newRefCnt;
 }
 
-void
-WeakReferenceSupport::ClearWeakRefs()
-{
-  for (uint32_t i = 0, len = mWeakRefs.Length(); i < len; ++i) {
-    mWeakRefs[i]->Clear();
-    mWeakRefs[i]->Release();
-  }
-  mWeakRefs.Clear();
-}
-
 HRESULT
-WeakReferenceSupport::GetWeakReference(IWeakReference** aOutWeakRef)
-{
+WeakReferenceSupport::GetWeakReference(IWeakReference** aOutWeakRef) {
   if (!aOutWeakRef) {
     return E_INVALIDARG;
   }
-  *aOutWeakRef = nullptr;
 
-  AutoCriticalSection lock(&mCS);
-  RefPtr<WeakRef> weakRef = MakeAndAddRef<WeakRef>(this);
-
-  HRESULT hr = weakRef->QueryInterface(IID_IWeakReference, (void**)aOutWeakRef);
-  if (FAILED(hr)) {
-    return hr;
-  }
-
-  mWeakRefs.AppendElement(weakRef.get());
-  weakRef->AddRef();
-  return S_OK;
+  RefPtr<WeakRef> weakRef = MakeAndAddRef<WeakRef>(mSharedRef);
+  return weakRef->QueryInterface(IID_IWeakReference, (void**)aOutWeakRef);
 }
 
-WeakRef::WeakRef(WeakReferenceSupport* aSupport)
-  : mRefCnt(1)
-  , mMutex("mozilla::mscom::WeakRef::mMutex")
-  , mSupport(aSupport)
-{
-  MOZ_ASSERT(aSupport);
+WeakRef::WeakRef(RefPtr<detail::SharedRef>& aSharedRef)
+    : mRefCnt(0), mSharedRef(aSharedRef) {
+  MOZ_ASSERT(aSharedRef);
 }
 
 HRESULT
-WeakRef::QueryInterface(REFIID riid, void** ppv)
-{
+WeakRef::QueryInterface(REFIID riid, void** ppv) {
   IUnknown* punk = nullptr;
   if (!ppv) {
     return E_INVALIDARG;
@@ -155,15 +195,16 @@ WeakRef::QueryInterface(REFIID riid, void** ppv)
 }
 
 ULONG
-WeakRef::AddRef()
-{
-  return (ULONG) InterlockedIncrement((LONG*)&mRefCnt);
+WeakRef::AddRef() {
+  ULONG result = ++mRefCnt;
+  NS_LOG_ADDREF(this, result, "mscom::WeakRef", sizeof(*this));
+  return result;
 }
 
 ULONG
-WeakRef::Release()
-{
-  ULONG newRefCnt = (ULONG) InterlockedDecrement((LONG*)&mRefCnt);
+WeakRef::Release() {
+  ULONG newRefCnt = --mRefCnt;
+  NS_LOG_RELEASE(this, newRefCnt, "mscom::WeakRef");
   if (newRefCnt == 0) {
     delete this;
   }
@@ -171,23 +212,14 @@ WeakRef::Release()
 }
 
 HRESULT
-WeakRef::Resolve(REFIID aIid, void** aOutStrongReference)
-{
-  MutexAutoLock lock(mMutex);
-  if (!mSupport) {
-    return E_FAIL;
-  }
-  return mSupport->QueryInterface(aIid, aOutStrongReference);
+WeakRef::ToStrongRef(IWeakReferenceSource** aOutStrongReference) {
+  return mSharedRef->ToStrongRef(aOutStrongReference);
 }
 
-void
-WeakRef::Clear()
-{
-  MutexAutoLock lock(mMutex);
-  MOZ_ASSERT(mSupport);
-  mSupport = nullptr;
+HRESULT
+WeakRef::Resolve(REFIID aIid, void** aOutStrongReference) {
+  return mSharedRef->Resolve(aIid, aOutStrongReference);
 }
 
-} // namespace mscom
-} // namespace mozilla
-
+}  // namespace mscom
+}  // namespace mozilla

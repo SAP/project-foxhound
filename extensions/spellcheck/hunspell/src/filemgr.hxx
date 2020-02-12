@@ -1,6 +1,8 @@
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
+ * Copyright (C) 2002-2017 Németh László
+ *
  * The contents of this file are subject to the Mozilla Public License Version
  * 1.1 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -11,12 +13,7 @@
  * for the specific language governing rights and limitations under the
  * License.
  *
- * The Original Code is Hunspell, based on MySpell.
- *
- * The Initial Developers of the Original Code are
- * Kevin Hendricks (MySpell) and Németh László (Hunspell).
- * Portions created by the Initial Developers are Copyright (C) 2002-2005
- * the Initial Developers. All Rights Reserved.
+ * Hunspell is based on MySpell which is Copyright (C) 2002 Kevin Hendricks.
  *
  * Contributor(s): David Einstein, Davide Prina, Giuseppe Modugno,
  * Gianluca Turconi, Simon Brouwer, Noll János, Bíró Árpád,
@@ -72,30 +69,9 @@
  */
 
 /* file manager class - read lines of files [filename] OR [filename.hz] */
-#ifndef _FILEMGR_HXX_
-#define _FILEMGR_HXX_
+#ifndef FILEMGR_HXX_
+#define FILEMGR_HXX_
 
-#include "hunvisapi.h"
+#include "mozHunspellFileMgr.h"
 
-#include "hunzip.hxx"
-#include <stdio.h>
-
-class LIBHUNSPELL_DLL_EXPORTED FileMgr {
- private:
-  FileMgr(const FileMgr&);
-  FileMgr& operator=(const FileMgr&);
-
- protected:
-  FILE* fin;
-  Hunzip* hin;
-  char in[BUFSIZE + 50];  // input buffer
-  int fail(const char* err, const char* par);
-  int linenum;
-
- public:
-  FileMgr(const char* filename, const char* key = NULL);
-  ~FileMgr();
-  char* getline();
-  int getlinenum();
-};
 #endif

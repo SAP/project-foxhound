@@ -2,32 +2,18 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-function* awaitResize(browser) {
-  // Debouncing code makes this a bit racy.
-  // Try to skip the first, early resize, and catch the resize event we're
-  // looking for, but don't wait longer than a few seconds.
+add_task(async function testPageActionPopupResize() {
+  let browser;
 
-  return Promise.race([
-    BrowserTestUtils.waitForEvent(browser, "WebExtPopupResized")
-      .then(() => BrowserTestUtils.waitForEvent(browser, "WebExtPopupResized")),
-    new Promise(resolve => setTimeout(resolve, 5000)),
-  ]);
-}
-
-let delay = ms => new Promise(resolve => {
-  setTimeout(resolve, ms);
-});
-
-add_task(function* testPageActionPopupResize() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "page_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
+      page_action: {
+        default_popup: "popup.html",
+        browser_style: true,
       },
     },
     background: function() {
-      browser.tabs.query({active: true, currentWindow: true}, tabs => {
+      browser.tabs.query({ active: true, currentWindow: true }, tabs => {
         const tabId = tabs[0].id;
 
         browser.pageAction.show(tabId).then(() => {
@@ -41,84 +27,90 @@ add_task(function* testPageActionPopupResize() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("action-shown");
+  await extension.startup();
+  await extension.awaitMessage("action-shown");
 
   clickPageAction(extension, window);
 
-  let {target: panelDocument} = yield BrowserTestUtils.waitForEvent(document, "load", true, (event) => {
-    info(`Loaded ${event.target.location}`);
-    return event.target.location && event.target.location.href.endsWith("popup.html");
-  });
+  browser = await awaitExtensionPanel(extension);
 
-  let panelWindow = panelDocument.defaultView;
-  let panelBody = panelDocument.body.firstChild;
-  let body = panelDocument.body;
-  let root = panelDocument.documentElement;
+  async function checkSize(expected) {
+    let dims = await promiseContentDimensions(browser);
+    let { body, root } = dims;
 
-  function checkSize(expected) {
-    is(panelWindow.innerHeight, expected, `Panel window should be ${expected}px tall`);
-    is(body.clientHeight, body.scrollHeight,
-      "Panel body should be tall enough to fit its contents");
-    is(root.clientHeight, root.scrollHeight,
-      "Panel root should be tall enough to fit its contents");
+    is(
+      dims.window.innerHeight,
+      expected,
+      `Panel window should be ${expected}px tall`
+    );
+    is(
+      body.clientHeight,
+      body.scrollHeight,
+      "Panel body should be tall enough to fit its contents"
+    );
+    is(
+      root.clientHeight,
+      root.scrollHeight,
+      "Panel root should be tall enough to fit its contents"
+    );
 
     // Tolerate if it is 1px too wide, as that may happen with the current resizing method.
-    ok(Math.abs(panelWindow.innerWidth - expected) <= 1, `Panel window should be ${expected}px wide`);
-    is(body.clientWidth, body.scrollWidth,
-       "Panel body should be wide enough to fit its contents");
+    ok(
+      Math.abs(dims.window.innerWidth - expected) <= 1,
+      `Panel window should be ${expected}px wide`
+    );
+    is(
+      body.clientWidth,
+      body.scrollWidth,
+      "Panel body should be wide enough to fit its contents"
+    );
   }
 
   function setSize(size) {
-    panelBody.style.height = `${size}px`;
-    panelBody.style.width = `${size}px`;
-
-    return BrowserTestUtils.waitForEvent(panelWindow, "resize");
+    let elem = content.document.body.firstElementChild;
+    elem.style.height = `${size}px`;
+    elem.style.width = `${size}px`;
   }
 
-  let sizes = [
-    200,
-    400,
-    300,
-  ];
+  let sizes = [200, 400, 300];
 
   for (let size of sizes) {
-    yield setSize(size);
-    checkSize(size);
+    await alterContent(browser, setSize, size);
+    await checkSize(size);
   }
 
-  yield setSize(1400);
+  let dims = await alterContent(browser, setSize, 1400);
+  let { body, root } = dims;
 
-  // Windows has a particular slow resize animation for this panel.
-  if (AppConstants.platform == "win") {
-    while (panelWindow.innerWidth < 800) {
-      yield delay(50);
-    }
-  }
-
-  is(panelWindow.innerWidth, 800, "Panel window width");
-  ok(body.clientWidth <= 800, `Panel body width ${body.clientWidth} is less than 800`);
+  is(dims.window.innerWidth, 800, "Panel window width");
+  ok(
+    body.clientWidth <= 800,
+    `Panel body width ${body.clientWidth} is less than 800`
+  );
   is(body.scrollWidth, 1400, "Panel body scroll width");
 
-  is(panelWindow.innerHeight, 600, "Panel window height");
-  ok(root.clientHeight <= 600, `Panel root height (${root.clientHeight}px) is less than 600px`);
+  is(dims.window.innerHeight, 600, "Panel window height");
+  ok(
+    root.clientHeight <= 600,
+    `Panel root height (${root.clientHeight}px) is less than 600px`
+  );
   is(root.scrollHeight, 1400, "Panel root scroll height");
 
-  yield extension.unload();
+  await extension.unload();
 });
 
-add_task(function* testPageActionPopupReflow() {
+add_task(async function testPageActionPopupReflow() {
   let browser;
 
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      "page_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
+      page_action: {
+        default_popup: "popup.html",
+        browser_style: true,
       },
     },
     background: function() {
-      browser.tabs.query({active: true, currentWindow: true}, tabs => {
+      browser.tabs.query({ active: true, currentWindow: true }, tabs => {
         const tabId = tabs[0].id;
 
         browser.pageAction.show(tabId).then(() => {
@@ -140,37 +132,44 @@ add_task(function* testPageActionPopupReflow() {
     },
   });
 
-  yield extension.startup();
-  yield extension.awaitMessage("action-shown");
+  await extension.startup();
+  await extension.awaitMessage("action-shown");
 
   clickPageAction(extension, window);
 
-  browser = yield awaitExtensionPanel(extension);
-
-  let win = browser.contentWindow;
-  let body = win.document.body;
-  let root = win.document.documentElement;
+  browser = await awaitExtensionPanel(extension);
 
   function setSize(size) {
-    body.style.fontSize = `${size}px`;
-
-    return awaitResize(browser);
+    content.document.body.style.fontSize = `${size}px`;
   }
 
-  yield setSize(18);
+  let dims = await alterContent(browser, setSize, 18);
 
-  is(win.innerWidth, 800, "Panel window should be 800px wide");
-  is(body.clientWidth, 800, "Panel body should be 800px wide");
-  is(body.clientWidth, body.scrollWidth,
-     "Panel body should be wide enough to fit its contents");
+  is(dims.window.innerWidth, 800, "Panel window should be 800px wide");
+  is(dims.body.clientWidth, 800, "Panel body should be 800px wide");
+  is(
+    dims.body.clientWidth,
+    dims.body.scrollWidth,
+    "Panel body should be wide enough to fit its contents"
+  );
 
-  ok(win.innerHeight > 36,
-     `Panel window height (${win.innerHeight}px) should be taller than two lines of text.`);
+  ok(
+    dims.window.innerHeight > 36,
+    `Panel window height (${
+      dims.window.innerHeight
+    }px) should be taller than two lines of text.`
+  );
 
-  is(body.clientHeight, body.scrollHeight,
-    "Panel body should be tall enough to fit its contents");
-  is(root.clientHeight, root.scrollHeight,
-    "Panel root should be tall enough to fit its contents");
+  is(
+    dims.body.clientHeight,
+    dims.body.scrollHeight,
+    "Panel body should be tall enough to fit its contents"
+  );
+  is(
+    dims.root.clientHeight,
+    dims.root.scrollHeight,
+    "Panel root should be tall enough to fit its contents"
+  );
 
-  yield extension.unload();
+  await extension.unload();
 });

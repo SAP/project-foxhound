@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=423523
 -->
 <head>
   <title>Test for Bug 423523</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
 </head>
 <body onload="setTimeout(runtests, 200)">
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=423523">Mozilla Bug 423523</a>
@@ -71,15 +71,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=423523
     ok(divIsFocused(), "Div should be focused [1].");
     ok(selectionOffsetIs(0), "Caret should be at offset 0");
     
-    synthesizeKey("VK_LEFT", { });
+    synthesizeKey("KEY_ArrowLeft");
     ok(divIsFocused(), "Div should be focused [2].");    
     ok(selectionOffsetIs(0), "Caret should be at offset 0");
     
-    synthesizeKey("VK_RIGHT", { });
+    synthesizeKey("KEY_ArrowRight");
     ok(divIsFocused(), "Div should be focused [3].");
     ok(selectionOffsetIs(1), "Caret should be at offset 1");
     
-    synthesizeKey("VK_LEFT", { });
+    synthesizeKey("KEY_ArrowLeft");
     ok(divIsFocused(), "Div should be focused [4].");
     ok(selectionOffsetIs(0), "Caret should be at offset 0");
 
@@ -89,7 +89,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=423523
 
     ok(divIsFocused(), "Div should be focused [6].");    
     ok(selectionOffsetIs(0), "Caret should be at offset 0");    
-    synthesizeKey("VK_LEFT", { });
+    synthesizeKey("KEY_ArrowLeft");
 
     ok(divIsFocused(), "Div should be focused [7].");
     ok(selectionOffsetIs(0), "Caret should be at offset 0");

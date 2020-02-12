@@ -8,20 +8,14 @@
 
 NS_IMPL_ISUPPORTS(nsExternalURLHandlerService, nsIExternalURLHandlerService)
 
-nsExternalURLHandlerService::nsExternalURLHandlerService()
-{
-}
+nsExternalURLHandlerService::nsExternalURLHandlerService() {}
 
-nsExternalURLHandlerService::~nsExternalURLHandlerService()
-{
-}
+nsExternalURLHandlerService::~nsExternalURLHandlerService() {}
 
 NS_IMETHODIMP
-nsExternalURLHandlerService::GetURLHandlerInfoFromOS(nsIURI *aURL,
-                                                     bool *found,
-                                                     nsIHandlerInfo **info)
-{
-  nsCString uriSpec;
-  aURL->GetSpec(uriSpec);
-  return nsMIMEInfoAndroid::GetMimeInfoForURL(uriSpec, found, info);
+nsExternalURLHandlerService::GetURLHandlerInfoFromOS(nsIURI* aURL, bool* found,
+                                                     nsIHandlerInfo** info) {
+  // We don't want to get protocol handlers from the OS in GV; the app
+  // should take care of that in NavigationDelegate.onLoadRequest().
+  return NS_ERROR_NOT_IMPLEMENTED;
 }

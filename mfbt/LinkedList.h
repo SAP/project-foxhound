@@ -68,17 +68,72 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
+#include "mozilla/RefPtr.h"
 
 #ifdef __cplusplus
 
 namespace mozilla {
 
-template<typename T>
+template <typename T>
+class LinkedListElement;
+
+namespace detail {
+
+/**
+ * LinkedList supports refcounted elements using this adapter class. Clients
+ * using LinkedList<RefPtr<T>> will get a data structure that holds a strong
+ * reference to T as long as T is in the list.
+ */
+template <typename T>
+struct LinkedListElementTraits {
+  typedef T* RawType;
+  typedef const T* ConstRawType;
+  typedef T* ClientType;
+  typedef const T* ConstClientType;
+
+  // These static methods are called when an element is added to or removed from
+  // a linked list. It can be used to keep track ownership in lists that are
+  // supposed to own their elements. If elements are transferred from one list
+  // to another, no enter or exit calls happen since the elements still belong
+  // to a list.
+  static void enterList(LinkedListElement<T>* elt) {}
+  static void exitList(LinkedListElement<T>* elt) {}
+
+  // This method is called when AutoCleanLinkedList cleans itself
+  // during destruction. It can be used to call delete on elements if
+  // the list is the sole owner.
+  static void cleanElement(LinkedListElement<T>* elt) { delete elt->asT(); }
+};
+
+template <typename T>
+struct LinkedListElementTraits<RefPtr<T>> {
+  typedef T* RawType;
+  typedef const T* ConstRawType;
+  typedef RefPtr<T> ClientType;
+  typedef RefPtr<const T> ConstClientType;
+
+  static void enterList(LinkedListElement<RefPtr<T>>* elt) {
+    elt->asT()->AddRef();
+  }
+  static void exitList(LinkedListElement<RefPtr<T>>* elt) {
+    elt->asT()->Release();
+  }
+  static void cleanElement(LinkedListElement<RefPtr<T>>* elt) {}
+};
+
+} /* namespace detail */
+
+template <typename T>
 class LinkedList;
 
-template<typename T>
-class LinkedListElement
-{
+template <typename T>
+class LinkedListElement {
+  typedef typename detail::LinkedListElementTraits<T> Traits;
+  typedef typename Traits::RawType RawType;
+  typedef typename Traits::ConstRawType ConstRawType;
+  typedef typename Traits::ClientType ClientType;
+  typedef typename Traits::ConstClientType ConstClientType;
+
   /*
    * It's convenient that we return nullptr when getNext() or getPrevious()
    * hits the end of the list, but doing so costs an extra word of storage in
@@ -113,50 +168,32 @@ class LinkedListElement
    * lists, and supporting this painlessly was a key design criterion.
    */
 
-private:
+ private:
   LinkedListElement* mNext;
   LinkedListElement* mPrev;
   const bool mIsSentinel;
 
-public:
-  LinkedListElement()
-    : mNext(this),
-      mPrev(this),
-      mIsSentinel(false)
-  { }
+ public:
+  LinkedListElement() : mNext(this), mPrev(this), mIsSentinel(false) {}
 
-  LinkedListElement(LinkedListElement<T>&& other)
-    : mIsSentinel(other.mIsSentinel)
-  {
-    if (!other.isInList()) {
-      mNext = this;
-      mPrev = this;
-      return;
-    }
-
-    MOZ_ASSERT(other.mNext->mPrev == &other);
-    MOZ_ASSERT(other.mPrev->mNext == &other);
-
-    /*
-     * Initialize |this| with |other|'s mPrev/mNext pointers, and adjust those
-     * element to point to this one.
-     */
-    mNext = other.mNext;
-    mPrev = other.mPrev;
-
-    mNext->mPrev = this;
-    mPrev->mNext = this;
-
-    /*
-     * Adjust |other| so it doesn't think it's in a list.  This makes it
-     * safely destructable.
-     */
-    other.mNext = &other;
-    other.mPrev = &other;
+  /*
+   * Moves |aOther| into |*this|. If |aOther| is already in a list, then
+   * |aOther| is removed from the list and replaced by |*this|.
+   */
+  LinkedListElement(LinkedListElement<T>&& aOther)
+      : mIsSentinel(aOther.mIsSentinel) {
+    adjustLinkForMove(std::move(aOther));
   }
 
-  ~LinkedListElement()
-  {
+  LinkedListElement& operator=(LinkedListElement<T>&& aOther) {
+    MOZ_ASSERT(mIsSentinel == aOther.mIsSentinel, "Mismatch NodeKind!");
+    MOZ_ASSERT(!isInList(),
+               "Assigning to an element in a list messes up that list!");
+    adjustLinkForMove(std::move(aOther));
+    return *this;
+  }
+
+  ~LinkedListElement() {
     if (!mIsSentinel && isInList()) {
       remove();
     }
@@ -166,22 +203,21 @@ public:
    * Get the next element in the list, or nullptr if this is the last element
    * in the list.
    */
-  T* getNext()             { return mNext->asT(); }
-  const T* getNext() const { return mNext->asT(); }
+  RawType getNext() { return mNext->asT(); }
+  ConstRawType getNext() const { return mNext->asT(); }
 
   /*
    * Get the previous element in the list, or nullptr if this is the first
    * element in the list.
    */
-  T* getPrevious()             { return mPrev->asT(); }
-  const T* getPrevious() const { return mPrev->asT(); }
+  RawType getPrevious() { return mPrev->asT(); }
+  ConstRawType getPrevious() const { return mPrev->asT(); }
 
   /*
    * Insert aElem after this element in the list.  |this| must be part of a
    * linked list when you call setNext(); otherwise, this method will assert.
    */
-  void setNext(T* aElem)
-  {
+  void setNext(RawType aElem) {
     MOZ_ASSERT(isInList());
     setNextUnsafe(aElem);
   }
@@ -191,8 +227,7 @@ public:
    * linked list when you call setPrevious(); otherwise, this method will
    * assert.
    */
-  void setPrevious(T* aElem)
-  {
+  void setPrevious(RawType aElem) {
     MOZ_ASSERT(isInList());
     setPreviousUnsafe(aElem);
   }
@@ -201,22 +236,46 @@ public:
    * Remove this element from the list which contains it.  If this element is
    * not currently part of a linked list, this method asserts.
    */
-  void remove()
-  {
+  void remove() {
     MOZ_ASSERT(isInList());
 
     mPrev->mNext = mNext;
     mNext->mPrev = mPrev;
     mNext = this;
     mPrev = this;
+
+    Traits::exitList(this);
+  }
+
+  /*
+   * Remove this element from the list containing it.  Returns a pointer to the
+   * element that follows this element (before it was removed).  This method
+   * asserts if the element does not belong to a list. Note: In a refcounted
+   * list, |this| may be destroyed.
+   */
+  RawType removeAndGetNext() {
+    RawType r = getNext();
+    remove();
+    return r;
+  }
+
+  /*
+   * Remove this element from the list containing it.  Returns a pointer to the
+   * previous element in the containing list (before the removal).  This method
+   * asserts if the element does not belong to a list. Note: In a refcounted
+   * list, |this| may be destroyed.
+   */
+  RawType removeAndGetPrevious() {
+    RawType r = getPrevious();
+    remove();
+    return r;
   }
 
   /*
    * Identical to remove(), but also asserts in debug builds that this element
    * is in aList.
    */
-  void removeFrom(const LinkedList<T>& aList)
-  {
+  void removeFrom(const LinkedList<T>& aList) {
     aList.assertContains(asT());
     remove();
   }
@@ -224,60 +283,50 @@ public:
   /*
    * Return true if |this| part is of a linked list, and false otherwise.
    */
-  bool isInList() const
-  {
+  bool isInList() const {
     MOZ_ASSERT((mNext == this) == (mPrev == this));
     return mNext != this;
   }
 
-private:
+ private:
   friend class LinkedList<T>;
+  friend struct detail::LinkedListElementTraits<T>;
 
-  enum NodeKind {
-    NODE_KIND_NORMAL,
-    NODE_KIND_SENTINEL
-  };
+  enum class NodeKind { Normal, Sentinel };
 
   explicit LinkedListElement(NodeKind nodeKind)
-    : mNext(this),
-      mPrev(this),
-      mIsSentinel(nodeKind == NODE_KIND_SENTINEL)
-  { }
+      : mNext(this), mPrev(this), mIsSentinel(nodeKind == NodeKind::Sentinel) {}
 
   /*
    * Return |this| cast to T* if we're a normal node, or return nullptr if
    * we're a sentinel node.
    */
-  T* asT()
-  {
-    return mIsSentinel ? nullptr : static_cast<T*>(this);
-  }
-  const T* asT() const
-  {
-    return mIsSentinel ? nullptr : static_cast<const T*>(this);
+  RawType asT() { return mIsSentinel ? nullptr : static_cast<RawType>(this); }
+  ConstRawType asT() const {
+    return mIsSentinel ? nullptr : static_cast<ConstRawType>(this);
   }
 
   /*
    * Insert aElem after this element, but don't check that this element is in
    * the list.  This is called by LinkedList::insertFront().
    */
-  void setNextUnsafe(T* aElem)
-  {
-    LinkedListElement *listElem = static_cast<LinkedListElement*>(aElem);
+  void setNextUnsafe(RawType aElem) {
+    LinkedListElement* listElem = static_cast<LinkedListElement*>(aElem);
     MOZ_ASSERT(!listElem->isInList());
 
     listElem->mNext = this->mNext;
     listElem->mPrev = this;
     this->mNext->mPrev = listElem;
     this->mNext = listElem;
+
+    Traits::enterList(aElem);
   }
 
   /*
    * Insert aElem before this element, but don't check that this element is in
    * the list.  This is called by LinkedList::insertBack().
    */
-  void setPreviousUnsafe(T* aElem)
-  {
+  void setPreviousUnsafe(RawType aElem) {
     LinkedListElement<T>* listElem = static_cast<LinkedListElement<T>*>(aElem);
     MOZ_ASSERT(!listElem->isInList());
 
@@ -285,45 +334,97 @@ private:
     listElem->mPrev = this->mPrev;
     this->mPrev->mNext = listElem;
     this->mPrev = listElem;
+
+    Traits::enterList(aElem);
   }
 
-private:
+  /*
+   * Adjust mNext and mPrev for implementing move constructor and move
+   * assignment.
+   */
+  void adjustLinkForMove(LinkedListElement<T>&& aOther) {
+    if (!aOther.isInList()) {
+      mNext = this;
+      mPrev = this;
+      return;
+    }
+
+    if (!mIsSentinel) {
+      Traits::enterList(this);
+    }
+
+    MOZ_ASSERT(aOther.mNext->mPrev == &aOther);
+    MOZ_ASSERT(aOther.mPrev->mNext == &aOther);
+
+    /*
+     * Initialize |this| with |aOther|'s mPrev/mNext pointers, and adjust those
+     * element to point to this one.
+     */
+    mNext = aOther.mNext;
+    mPrev = aOther.mPrev;
+
+    mNext->mPrev = this;
+    mPrev->mNext = this;
+
+    /*
+     * Adjust |aOther| so it doesn't think it's in a list.  This makes it
+     * safely destructable.
+     */
+    aOther.mNext = &aOther;
+    aOther.mPrev = &aOther;
+
+    if (!mIsSentinel) {
+      Traits::exitList(&aOther);
+    }
+  }
+
   LinkedListElement& operator=(const LinkedListElement<T>& aOther) = delete;
   LinkedListElement(const LinkedListElement<T>& aOther) = delete;
 };
 
-template<typename T>
-class LinkedList
-{
-private:
+template <typename T>
+class LinkedList {
+ private:
+  typedef typename detail::LinkedListElementTraits<T> Traits;
+  typedef typename Traits::RawType RawType;
+  typedef typename Traits::ConstRawType ConstRawType;
+  typedef typename Traits::ClientType ClientType;
+  typedef typename Traits::ConstClientType ConstClientType;
+  typedef LinkedListElement<T>* ElementType;
+  typedef const LinkedListElement<T>* ConstElementType;
+
   LinkedListElement<T> sentinel;
 
-public:
+ public:
+  template <typename Type, typename Element>
   class Iterator {
-    T* mCurrent;
+    Type mCurrent;
 
-  public:
-    explicit Iterator(T* aCurrent) : mCurrent(aCurrent) {}
+   public:
+    explicit Iterator(Type aCurrent) : mCurrent(aCurrent) {}
 
-    T* operator *() const {
-      return mCurrent;
-    }
+    Type operator*() const { return mCurrent; }
 
     const Iterator& operator++() {
-      mCurrent = mCurrent->getNext();
+      mCurrent = static_cast<Element>(mCurrent)->getNext();
       return *this;
     }
 
-    bool operator!=(Iterator& aOther) const {
+    bool operator!=(const Iterator& aOther) const {
       return mCurrent != aOther.mCurrent;
     }
   };
 
-  LinkedList() : sentinel(LinkedListElement<T>::NODE_KIND_SENTINEL) { }
+  LinkedList() : sentinel(LinkedListElement<T>::NodeKind::Sentinel) {}
 
-  LinkedList(LinkedList<T>&& aOther)
-    : sentinel(mozilla::Move(aOther.sentinel))
-  { }
+  LinkedList(LinkedList<T>&& aOther) : sentinel(std::move(aOther.sentinel)) {}
+
+  LinkedList& operator=(LinkedList<T>&& aOther) {
+    MOZ_ASSERT(isEmpty(),
+               "Assigning to a non-empty list leaks elements in that list!");
+    sentinel = std::move(aOther.sentinel);
+    return *this;
+  }
 
   ~LinkedList() {
     MOZ_ASSERT(isEmpty(),
@@ -335,8 +436,7 @@ public:
   /*
    * Add aElem to the front of the list.
    */
-  void insertFront(T* aElem)
-  {
+  void insertFront(RawType aElem) {
     /* Bypass setNext()'s this->isInList() assertion. */
     sentinel.setNextUnsafe(aElem);
   }
@@ -344,32 +444,28 @@ public:
   /*
    * Add aElem to the back of the list.
    */
-  void insertBack(T* aElem)
-  {
-    sentinel.setPreviousUnsafe(aElem);
-  }
+  void insertBack(RawType aElem) { sentinel.setPreviousUnsafe(aElem); }
 
   /*
    * Get the first element of the list, or nullptr if the list is empty.
    */
-  T* getFirst()             { return sentinel.getNext(); }
-  const T* getFirst() const { return sentinel.getNext(); }
+  RawType getFirst() { return sentinel.getNext(); }
+  ConstRawType getFirst() const { return sentinel.getNext(); }
 
   /*
    * Get the last element of the list, or nullptr if the list is empty.
    */
-  T* getLast()             { return sentinel.getPrevious(); }
-  const T* getLast() const { return sentinel.getPrevious(); }
+  RawType getLast() { return sentinel.getPrevious(); }
+  ConstRawType getLast() const { return sentinel.getPrevious(); }
 
   /*
    * Get and remove the first element of the list.  If the list is empty,
    * return nullptr.
    */
-  T* popFirst()
-  {
-    T* ret = sentinel.getNext();
+  ClientType popFirst() {
+    ClientType ret = sentinel.getNext();
     if (ret) {
-      static_cast<LinkedListElement<T>*>(ret)->remove();
+      static_cast<LinkedListElement<T>*>(RawType(ret))->remove();
     }
     return ret;
   }
@@ -378,11 +474,10 @@ public:
    * Get and remove the last element of the list.  If the list is empty,
    * return nullptr.
    */
-  T* popLast()
-  {
-    T* ret = sentinel.getPrevious();
+  ClientType popLast() {
+    ClientType ret = sentinel.getPrevious();
     if (ret) {
-      static_cast<LinkedListElement<T>*>(ret)->remove();
+      static_cast<LinkedListElement<T>*>(RawType(ret))->remove();
     }
     return ret;
   }
@@ -390,10 +485,7 @@ public:
   /*
    * Return true if the list is empty, or false otherwise.
    */
-  bool isEmpty() const
-  {
-    return !sentinel.isInList();
-  }
+  bool isEmpty() const { return !sentinel.isInList(); }
 
   /*
    * Remove all the elements from the list.
@@ -401,10 +493,8 @@ public:
    * This runs in time linear to the list's length, because we have to mark
    * each element as not in the list.
    */
-  void clear()
-  {
+  void clear() {
     while (popFirst()) {
-      continue;
     }
   }
 
@@ -413,11 +503,17 @@ public:
    *
    *     for (MyElementType* elt : myList) { ... }
    */
-  Iterator begin() {
-    return Iterator(getFirst());
+  Iterator<RawType, ElementType> begin() {
+    return Iterator<RawType, ElementType>(getFirst());
   }
-  Iterator end() {
-    return Iterator(nullptr);
+  Iterator<ConstRawType, ConstElementType> begin() const {
+    return Iterator<ConstRawType, ConstElementType>(getFirst());
+  }
+  Iterator<RawType, ElementType> end() {
+    return Iterator<RawType, ElementType>(nullptr);
+  }
+  Iterator<ConstRawType, ConstElementType> end() const {
+    return Iterator<ConstRawType, ConstElementType>(nullptr);
   }
 
   /*
@@ -426,11 +522,12 @@ public:
    * contain pointers to other memory blocks, those blocks must be measured
    * separately during a subsequent iteration over the list.
    */
-  size_t sizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const
-  {
+  size_t sizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
     size_t n = 0;
-    for (const T* t = getFirst(); t; t = t->getNext()) {
+    ConstRawType t = getFirst();
+    while (t) {
       n += aMallocSizeOf(t);
+      t = static_cast<const LinkedListElement<T>*>(t)->getNext();
     }
     return n;
   }
@@ -438,8 +535,7 @@ public:
   /*
    * Like sizeOfExcludingThis(), but measures |this| as well.
    */
-  size_t sizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const
-  {
+  size_t sizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + sizeOfExcludingThis(aMallocSizeOf);
   }
 
@@ -447,9 +543,8 @@ public:
    * In a debug build, make sure that the list is sane (no cycles, consistent
    * mNext/mPrev pointers, only one sentinel).  Has no effect in release builds.
    */
-  void debugAssertIsSane() const
-  {
-#ifdef DEBUG
+  void debugAssertIsSane() const {
+#  ifdef DEBUG
     const LinkedListElement<T>* slow;
     const LinkedListElement<T>* fast1;
     const LinkedListElement<T>* fast2;
@@ -458,9 +553,8 @@ public:
      * Check for cycles in the forward singly-linked list using the
      * tortoise/hare algorithm.
      */
-    for (slow = sentinel.mNext,
-         fast1 = sentinel.mNext->mNext,
-         fast2 = sentinel.mNext->mNext->mNext;
+    for (slow = sentinel.mNext, fast1 = sentinel.mNext->mNext,
+        fast2 = sentinel.mNext->mNext->mNext;
          slow != &sentinel && fast1 != &sentinel && fast2 != &sentinel;
          slow = slow->mNext, fast1 = fast2->mNext, fast2 = fast1->mNext) {
       MOZ_ASSERT(slow != fast1);
@@ -468,9 +562,8 @@ public:
     }
 
     /* Check for cycles in the backward singly-linked list. */
-    for (slow = sentinel.mPrev,
-         fast1 = sentinel.mPrev->mPrev,
-         fast2 = sentinel.mPrev->mPrev->mPrev;
+    for (slow = sentinel.mPrev, fast1 = sentinel.mPrev->mPrev,
+        fast2 = sentinel.mPrev->mPrev->mPrev;
          slow != &sentinel && fast1 != &sentinel && fast2 != &sentinel;
          slow = slow->mPrev, fast1 = fast2->mPrev, fast2 = fast1->mPrev) {
       MOZ_ASSERT(slow != fast1);
@@ -481,8 +574,7 @@ public:
      * Check that |sentinel| is the only node in the list with
      * mIsSentinel == true.
      */
-    for (const LinkedListElement<T>* elem = sentinel.mNext;
-         elem != &sentinel;
+    for (const LinkedListElement<T>* elem = sentinel.mNext; elem != &sentinel;
          elem = elem->mNext) {
       MOZ_ASSERT(!elem->mIsSentinel);
     }
@@ -491,28 +583,27 @@ public:
     const LinkedListElement<T>* prev = &sentinel;
     const LinkedListElement<T>* cur = sentinel.mNext;
     do {
-        MOZ_ASSERT(cur->mPrev == prev);
-        MOZ_ASSERT(prev->mNext == cur);
+      MOZ_ASSERT(cur->mPrev == prev);
+      MOZ_ASSERT(prev->mNext == cur);
 
-        prev = cur;
-        cur = cur->mNext;
+      prev = cur;
+      cur = cur->mNext;
     } while (cur != &sentinel);
-#endif /* ifdef DEBUG */
+#  endif /* ifdef DEBUG */
   }
 
-private:
+ private:
   friend class LinkedListElement<T>;
 
-  void assertContains(const T* aValue) const
-  {
-#ifdef DEBUG
-    for (const T* elem = getFirst(); elem; elem = elem->getNext()) {
+  void assertContains(const RawType aValue) const {
+#  ifdef DEBUG
+    for (ConstRawType elem = getFirst(); elem; elem = elem->getNext()) {
       if (elem == aValue) {
         return;
       }
     }
     MOZ_CRASH("element wasn't found in this list!");
-#endif
+#  endif
   }
 
   LinkedList& operator=(const LinkedList<T>& aOther) = delete;
@@ -520,13 +611,22 @@ private:
 };
 
 template <typename T>
-class AutoCleanLinkedList : public LinkedList<T>
-{
-public:
-  ~AutoCleanLinkedList()
-  {
-    while (T* element = this->popFirst()) {
-      delete element;
+class AutoCleanLinkedList : public LinkedList<T> {
+ private:
+  using Traits = detail::LinkedListElementTraits<T>;
+  using ClientType = typename detail::LinkedListElementTraits<T>::ClientType;
+
+ public:
+  ~AutoCleanLinkedList() { clear(); }
+
+  AutoCleanLinkedList& operator=(AutoCleanLinkedList&& aOther) {
+    LinkedList<T>::operator=(std::forward<LinkedList<T>>(aOther));
+    return *this;
+  }
+
+  void clear() {
+    while (ClientType element = this->popFirst()) {
+      Traits::cleanElement(element);
     }
   }
 };

@@ -2,64 +2,63 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-'use strict';
+"use strict";
 
-const kInterfaceName = 'wifi';
-const kOtherInterfaceName = 'ril';
+const kInterfaceName = "wifi";
+const kOtherInterfaceName = "ril";
 
 var server;
 var step = 0;
 var loginFinished = false;
 
 function xhr_handler(metadata, response) {
-  response.setStatusLine(metadata.httpVersion, 200, 'OK');
-  response.setHeader('Cache-Control', 'no-cache', false);
-  response.setHeader('Content-Type', 'text/plain', false);
+  response.setStatusLine(metadata.httpVersion, 200, "OK");
+  response.setHeader("Cache-Control", "no-cache", false);
+  response.setHeader("Content-Type", "text/plain", false);
   if (loginFinished) {
-    response.write('true');
+    response.write("true");
   } else {
-    response.write('false');
+    response.write("false");
   }
 }
 
 function fakeUIResponse() {
   Services.obs.addObserver(function observe(subject, topic, data) {
-    if (topic === 'captive-portal-login') {
-      let xhr = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-                  .createInstance(Ci.nsIXMLHttpRequest);
-      xhr.open('GET', gServerURL + kCanonicalSitePath, true);
+    if (topic === "captive-portal-login") {
+      let xhr = new XMLHttpRequest();
+      xhr.open("GET", gServerURL + kCanonicalSitePath, true);
       xhr.send();
       loginFinished = true;
-      do_check_eq(++step, 3);
+      Assert.equal(++step, 3);
     }
-  }, 'captive-portal-login', false);
+  }, "captive-portal-login");
 }
 
 function test_multiple_requests_abort() {
   do_test_pending();
 
   let callback = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsICaptivePortalCallback]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsICaptivePortalCallback]),
     prepare: function prepare() {
-      do_check_eq(++step, 1);
+      Assert.equal(++step, 1);
       gCaptivePortalDetector.finishPreparation(kInterfaceName);
     },
     complete: function complete(success) {
-      do_throw('should not execute |complete| callback for ' + kInterfaceName);
+      do_throw("should not execute |complete| callback for " + kInterfaceName);
     },
   };
 
   let otherCallback = {
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsICaptivePortalCallback]),
+    QueryInterface: ChromeUtils.generateQI([Ci.nsICaptivePortalCallback]),
     prepare: function prepare() {
-      do_check_eq(++step, 2);
+      Assert.equal(++step, 2);
       gCaptivePortalDetector.finishPreparation(kOtherInterfaceName);
     },
     complete: function complete(success) {
-      do_check_eq(++step, 4);
-      do_check_true(success);
+      Assert.equal(++step, 4);
+      Assert.ok(success);
       gServer.stop(do_test_finished);
-    }
+    },
   };
 
   gCaptivePortalDetector.checkCaptivePortal(kInterfaceName, callback);
@@ -68,5 +67,9 @@ function test_multiple_requests_abort() {
 }
 
 function run_test() {
-  run_captivedetect_test(xhr_handler, fakeUIResponse, test_multiple_requests_abort);
+  run_captivedetect_test(
+    xhr_handler,
+    fakeUIResponse,
+    test_multiple_requests_abort
+  );
 }

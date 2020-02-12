@@ -10,16 +10,18 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor(DOMString type, optional UIEventInit eventInitDict)]
+[Exposed=Window]
 interface UIEvent : Event
 {
+  constructor(DOMString type, optional UIEventInit eventInitDict = {});
+
   readonly attribute WindowProxy? view;
   readonly attribute long         detail;
   void initUIEvent(DOMString aType,
-                   boolean aCanBubble,
-                   boolean aCancelable,
-                   Window? aView,
-                   long aDetail);
+                   optional boolean aCanBubble = false,
+                   optional boolean aCancelable = false,
+                   optional Window? aView = null,
+                   optional long aDetail = 0);
 };
 
 // Additional DOM0 properties.
@@ -29,13 +31,10 @@ partial interface UIEvent {
 
   readonly attribute long          layerX;
   readonly attribute long          layerY;
-  readonly attribute long          pageX;
-  readonly attribute long          pageY;
+  [NeedsCallerType]
   readonly attribute unsigned long which;
   readonly attribute Node?         rangeParent;
   readonly attribute long          rangeOffset;
-           attribute boolean       cancelBubble;
-  readonly attribute boolean       isChar;
 };
 
 dictionary UIEventInit : EventInit

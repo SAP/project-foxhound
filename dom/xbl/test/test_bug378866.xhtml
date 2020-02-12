@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=378866
 -->
 <head>
   <title>Test for Bug 378866</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <bindings xmlns="http://www.mozilla.org/xbl" xmlns:html="http://www.w3.org/1999/xhtml">
     <binding id="b1">
@@ -36,7 +36,7 @@ function runTest() {
   var anon = SpecialPowers.wrap(document).getAnonymousNodes(document.getElementById('grandparent'));
   var child = SpecialPowers.wrap(document).getElementById('child');
   var insertionPoint = anon[0].childNodes[0];
-  insertionPoint.parentNode.removeChild(insertionPoint);
+  insertionPoint.remove();
   child.appendChild(insertionPoint);
 
   var e = document.createEvent("Event");

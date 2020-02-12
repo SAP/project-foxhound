@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
 XPIDL_SOURCES += [
@@ -12,16 +15,12 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'urlformatter'
 
-EXTRA_COMPONENTS += [
-    'nsURLFormatter.manifest',
+EXTRA_JS_MODULES += [
+    'URLFormatter.jsm',
 ]
 
-EXTRA_PP_COMPONENTS += [
-    'nsURLFormatter.js',
-]
-
-CONFIGURE_SUBST_FILES += [
-    'api_keys',
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 DEFINES['OBJDIR'] = OBJDIR

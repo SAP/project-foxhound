@@ -1,33 +1,32 @@
-function test() {
-  waitForExplicitFinish();
+add_task(async function test() {
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "http://example.com" },
+    async function(browser) {
+      let numLocationChanges = 0;
 
-  let tab = gBrowser.addTab("http://example.com");
+      let listener = {
+        onLocationChange(browser, webProgress, request, uri, flags) {
+          info("location change: " + (uri && uri.spec));
+          numLocationChanges++;
+        },
+      };
 
-  tab.linkedBrowser.addEventListener("load", function() {
-    tab.linkedBrowser.removeEventListener("load", arguments.callee, true);
+      gBrowser.addTabsProgressListener(listener);
 
-    let numLocationChanges = 0;
+      await ContentTask.spawn(browser, null, function() {
+        // pushState to a new URL (http://example.com/foo").  This should trigger
+        // exactly one LocationChange event.
+        content.history.pushState(null, null, "foo");
+      });
 
-    let listener = {
-      onLocationChange: function(browser, webProgress, request, uri, flags) {
-        info("location change: " + (uri && uri.spec));
-        numLocationChanges++;
-      }
-    };
+      await Promise.resolve();
 
-    gBrowser.addTabsProgressListener(listener);
-
-    // pushState to a new URL (http://example.com/foo").  This should trigger
-    // exactly one LocationChange event.
-    tab.linkedBrowser.contentWindow.history.pushState(null, null, "foo");
-
-    executeSoon(function() {
-      gBrowser.removeTab(tab);
       gBrowser.removeTabsProgressListener(listener);
-      is(numLocationChanges, 1,
-         "pushState should cause exactly one LocationChange event.");
-      finish();
-    });
-
-  }, true);
-}
+      is(
+        numLocationChanges,
+        1,
+        "pushState should cause exactly one LocationChange event."
+      );
+    }
+  );
+});

@@ -21,8 +21,20 @@ enum BiquadFilterType {
   "allpass"
 };
 
-[Pref="dom.webaudio.enabled"]
+dictionary BiquadFilterOptions : AudioNodeOptions {
+             BiquadFilterType type = "lowpass";
+             float            Q = 1;
+             float            detune = 0;
+             float            frequency = 350;
+             float            gain = 0;
+};
+
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface BiquadFilterNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context,
+                optional BiquadFilterOptions options = {});
 
     attribute BiquadFilterType type;
     readonly attribute AudioParam frequency; // in Hertz
@@ -30,6 +42,7 @@ interface BiquadFilterNode : AudioNode {
     readonly attribute AudioParam Q; // Quality factor
     readonly attribute AudioParam gain; // in Decibels
 
+    [Throws]
     void getFrequencyResponse(Float32Array frequencyHz,
                               Float32Array magResponse,
                               Float32Array phaseResponse);
@@ -37,5 +50,5 @@ interface BiquadFilterNode : AudioNode {
 };
 
 // Mozilla extension
-BiquadFilterNode implements AudioNodePassThrough;
+BiquadFilterNode includes  AudioNodePassThrough;
 

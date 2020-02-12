@@ -29,8 +29,10 @@ dictionary CheckerboardReport {
 // The guard function only allows creation of this interface on the
 // about:checkerboard page, and only if it's in the parent process.
 [Func="mozilla::dom::CheckerboardReportService::IsEnabled",
- Constructor]
+ Exposed=Window]
 interface CheckerboardReportService {
+  constructor();
+
   /**
    * Gets the available checkerboard reports.
    */
@@ -45,4 +47,14 @@ interface CheckerboardReportService {
    * Sets the state of the apz.record_checkerboarding pref.
    */
   void setRecordingEnabled(boolean aEnabled);
+
+  /**
+   * Flush any in-progress checkerboard reports. Since this happens
+   * asynchronously, the caller may register an observer with the observer
+   * service to be notified when this operation is complete. The observer should
+   * listen for the topic "APZ:FlushActiveCheckerboard:Done". Upon receiving
+   * this notification, the caller may call getReports() to obtain the flushed
+   * reports, along with any other reports that are available.
+   */
+  void flushActiveReports();
 };

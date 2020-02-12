@@ -5,9 +5,11 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
-  let request = indexedDB.open(this.window ? window.location.pathname : "Splendid Test", 1);
+function* testSteps() {
+  let request = indexedDB.open(
+    this.window ? window.location.pathname : "Splendid Test",
+    1
+  );
   request.onerror = errorHandler;
   request.onupgradeneeded = grabEventAndContinueHandler;
   let event = yield undefined;
@@ -35,7 +37,7 @@ function testSteps()
     is(event.target.error.name, "AbortError", "Good error");
     sawError = true;
     event.preventDefault();
-  }
+  };
 
   transaction.abort();
 
@@ -45,16 +47,8 @@ function testSteps()
   is(sawError, true, "Saw get() error");
   if (this.window) {
     // Make sure the success event isn't queued somehow.
-    let comp = SpecialPowers.wrap(Components);
-    let thread = comp.classes["@mozilla.org/thread-manager;1"]
-                     .getService(comp.interfaces.nsIThreadManager)
-                     .currentThread;
-    while (thread.hasPendingEvents()) {
-      thread.processNextEvent(false);
-    }
+    SpecialPowers.Services.tm.spinEventLoopUntilEmpty();
   }
 
   finishTest();
-  yield undefined;
 }
-

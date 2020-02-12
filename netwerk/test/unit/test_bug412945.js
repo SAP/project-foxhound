@@ -1,17 +1,14 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpserv;
 
-function TestListener() {
-}
+function TestListener() {}
 
-TestListener.prototype.onStartRequest = function(request, context) {
-}
+TestListener.prototype.onStartRequest = function(request) {};
 
-TestListener.prototype.onStopRequest = function(request, context, status) {
+TestListener.prototype.onStopRequest = function(request, status) {
   httpserv.stop(do_test_finished);
-}
+};
 
 function run_test() {
   httpserv = new HttpServer();
@@ -23,20 +20,21 @@ function run_test() {
   // make request
   var channel = NetUtil.newChannel({
     uri: "http://localhost:" + httpserv.identity.primaryPort + "/bug412945",
-    loadUsingSystemPrincipal: true
+    loadUsingSystemPrincipal: true,
   });
 
-  channel.QueryInterface(Components.interfaces.nsIHttpChannel);
+  channel.QueryInterface(Ci.nsIHttpChannel);
   channel.requestMethod = "POST";
-  channel.asyncOpen2(new TestListener(), null);
+  channel.asyncOpen(new TestListener(), null);
 
   do_test_pending();
 }
 
 function bug412945(metadata, response) {
-  if (!metadata.hasHeader("Content-Length") ||
-      metadata.getHeader("Content-Length") != "0")
-  {
+  if (
+    !metadata.hasHeader("Content-Length") ||
+    metadata.getHeader("Content-Length") != "0"
+  ) {
     do_throw("Content-Length header not found!");
   }
 }

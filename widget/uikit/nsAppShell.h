@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,17 +20,16 @@
 
 @class AppShellDelegate;
 
-class nsAppShell : public nsBaseAppShell
-{
-public:
-  NS_IMETHOD ResumeNative(void);
+class nsAppShell : public nsBaseAppShell {
+ public:
+  NS_IMETHOD ResumeNative(void) override;
 
   nsAppShell();
 
   nsresult Init();
 
-  NS_IMETHOD Run(void);
-  NS_IMETHOD Exit(void);
+  NS_IMETHOD Run(void) override;
+  NS_IMETHOD Exit(void) override;
   // Called by the application delegate
   void WillTerminate(void);
 
@@ -38,7 +37,7 @@ public:
   static UIWindow* gWindow;
   static NSMutableArray* gTopLevelViews;
 
-protected:
+ protected:
   virtual ~nsAppShell();
 
   static void ProcessGeckoEvents(void* aInfo);
@@ -46,12 +45,12 @@ protected:
   virtual bool ProcessNextNativeEvent(bool aMayWait);
 
   NSAutoreleasePool* mAutoreleasePool;
-  AppShellDelegate*  mDelegate;
-  CFRunLoopRef       mCFRunLoop;
+  AppShellDelegate* mDelegate;
+  CFRunLoopRef mCFRunLoop;
   CFRunLoopSourceRef mCFRunLoopSource;
 
-  bool               mTerminated;
-  bool               mNotifiedWillTerminate;
+  bool mTerminated;
+  bool mNotifiedWillTerminate;
 };
 
-#endif // nsAppShell_h_
+#endif  // nsAppShell_h_

@@ -1,5 +1,4 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
 loadFile(`
   function SwitchTest(){
@@ -11,5 +10,5 @@ loadFile(`
   SwitchTest();
 `)
 function loadFile(lfVarx) {
-  oomTest(function() eval(lfVarx))
+  oomTest(function() { return eval(lfVarx); })
 }

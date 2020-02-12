@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197901
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1197901</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
@@ -15,15 +15,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197901
   SimpleTest.waitForExplicitFinish();
   window.onload = function() {
     SimpleTest.waitForFocus(function() {
-      SpecialPowers.pushPrefEnv({"set": [['device.sensors.test.events', true]]},
-                                doTest); 
+      SpecialPowers.pushPrefEnv({"set": [["device.sensors.test.events", true]]},
+                                doTest);
       }, window);
-  }
+  };
 
   function doTest() {
     window.onmessage = function(event) {
       ok(event.data.result, event.data.message);
-    }
+    };
 
     // Only same-origin iframe should get the events.
     var xo = document.getElementById("cross-origin");
@@ -42,8 +42,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197901
 
     // We need a timeout here to check that something does not happen.
     setTimeout(function() {
-      so.parentNode.removeChild(so);
-      xo.parentNode.removeChild(xo);
+      so.remove();
+      xo.remove();
       doWindowTest();
     }, 500);
   }
@@ -75,9 +75,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1197901
               SimpleTest.finish();
             }, 500);
           }, win2);
-        }
+        };
       }, win);
-    }
+    };
   }
 
   </script>

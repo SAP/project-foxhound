@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=613113
 -->
 <head>
   <title>Test for Bug 613113</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -41,11 +41,11 @@ output.addEventListener("invalid", function() {
       SimpleTest.finish();
     }, 0);
   }
-}, false);
+});
 
 form.addEventListener("submit", function() {
   ok(false, "submit event should not have been send");
-}, false);
+});
 
 output.setCustomValidity("foo");
 

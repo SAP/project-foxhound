@@ -1,12 +1,10 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <script>
 
-function boom()
-{
+function boom() {
   var newSpan = document.createElementNS("http://www.w3.org/1999/xhtml", "span");
   c.insertBefore(newSpan, d);
   a.style.visibility = "visible";

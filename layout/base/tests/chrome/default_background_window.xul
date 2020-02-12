@@ -4,10 +4,8 @@
                  type="text/css"?>
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         onload="runTests()">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js"></script>
 
   <iframe type="content" id="f" src="about:blank" style="border:1px solid black;"/>
 
@@ -17,7 +15,7 @@
 
     var imports = [ "SimpleTest", "is", "isnot", "ok" ];
     for (var name of imports) {
-      window[name] = window.opener.wrappedJSObject[name];
+      window[name] = window.arguments[0][name];
     }
     
     function snapshot(win) {
@@ -33,8 +31,8 @@
     }
 
     var color = '#2468AC';
-    var prefs = Components.classes["@mozilla.org/preferences-service;1"]
-        .getService(Components.interfaces.nsIPrefBranch);
+    var prefs = Cc["@mozilla.org/preferences-service;1"]
+        .getService(Ci.nsIPrefBranch);
     prefs.setCharPref('browser.display.background_color', color);
 
     function runTests() {

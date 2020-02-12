@@ -12,45 +12,49 @@
 namespace mozilla {
 namespace dom {
 
-class MediaStreamAudioDestinationNode final : public AudioNode
-{
-public:
-  explicit MediaStreamAudioDestinationNode(AudioContext* aContext);
+class AudioContext;
+struct AudioNodeOptions;
+
+class MediaStreamAudioDestinationNode final : public AudioNode {
+ public:
+  static already_AddRefed<MediaStreamAudioDestinationNode> Create(
+      AudioContext& aAudioContext, const AudioNodeOptions& aOptions,
+      ErrorResult& aRv);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamAudioDestinationNode, AudioNode)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamAudioDestinationNode,
+                                           AudioNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
-
-  uint16_t NumberOfOutputs() const final override
-  {
-    return 0;
+  static already_AddRefed<MediaStreamAudioDestinationNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const AudioNodeOptions& aOptions, ErrorResult& aRv) {
+    return Create(aAudioContext, aOptions, aRv);
   }
 
-  void DestroyMediaStream() override;
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
-  DOMMediaStream* DOMStream() const
-  {
-    return mDOMStream;
-  }
+  uint16_t NumberOfOutputs() const final { return 0; }
 
-  const char* NodeType() const override
-  {
+  void DestroyMediaTrack() override;
+
+  DOMMediaStream* DOMStream() const { return mDOMStream; }
+
+  const char* NodeType() const override {
     return "MediaStreamAudioDestinationNode";
   }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
-protected:
-  virtual ~MediaStreamAudioDestinationNode();
+ private:
+  explicit MediaStreamAudioDestinationNode(AudioContext* aContext);
+  ~MediaStreamAudioDestinationNode() = default;
 
-private:
   RefPtr<DOMMediaStream> mDOMStream;
-  RefPtr<MediaInputPort> mPort;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

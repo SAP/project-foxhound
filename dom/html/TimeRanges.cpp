@@ -7,6 +7,7 @@
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/TimeRangesBinding.h"
 #include "mozilla/dom/HTMLMediaElement.h"
+#include "TimeUnits.h"
 #include "nsError.h"
 
 namespace mozilla {
@@ -17,102 +18,81 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(TimeRanges)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(TimeRanges)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TimeRanges)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsIDOMTimeRanges)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-TimeRanges::TimeRanges()
-  : mParent(nullptr)
-{
+TimeRanges::TimeRanges() : mParent(nullptr) {}
+
+TimeRanges::TimeRanges(nsISupports* aParent) : mParent(aParent) {}
+
+TimeRanges::TimeRanges(nsISupports* aParent,
+                       const media::TimeIntervals& aTimeIntervals)
+    : TimeRanges(aParent) {
+  if (aTimeIntervals.IsInvalid()) {
+    return;
+  }
+  for (const media::TimeInterval& interval : aTimeIntervals) {
+    Add(interval.mStart.ToSeconds(), interval.mEnd.ToSeconds());
+  }
 }
 
-TimeRanges::TimeRanges(nsISupports* aParent)
-  : mParent(aParent)
-{
+TimeRanges::TimeRanges(const media::TimeIntervals& aTimeIntervals)
+    : TimeRanges(nullptr, aTimeIntervals) {}
+
+media::TimeIntervals TimeRanges::ToTimeIntervals() const {
+  media::TimeIntervals t;
+  for (uint32_t i = 0; i < Length(); i++) {
+    t += media::TimeInterval(media::TimeUnit::FromSeconds(Start(i)),
+                             media::TimeUnit::FromSeconds(End(i)));
+  }
+  return t;
 }
 
-TimeRanges::~TimeRanges()
-{
-}
+TimeRanges::~TimeRanges() {}
 
-NS_IMETHODIMP
-TimeRanges::GetLength(uint32_t* aLength)
-{
-  *aLength = Length();
-  return NS_OK;
-}
-
-double
-TimeRanges::Start(uint32_t aIndex, ErrorResult& aRv)
-{
+double TimeRanges::Start(uint32_t aIndex, ErrorResult& aRv) const {
   if (aIndex >= mRanges.Length()) {
     aRv = NS_ERROR_DOM_INDEX_SIZE_ERR;
     return 0;
   }
 
-  return mRanges[aIndex].mStart;
+  return Start(aIndex);
 }
 
-NS_IMETHODIMP
-TimeRanges::Start(uint32_t aIndex, double* aTime)
-{
-  ErrorResult rv;
-  *aTime = Start(aIndex, rv);
-  return rv.StealNSResult();
-}
-
-double
-TimeRanges::End(uint32_t aIndex, ErrorResult& aRv)
-{
+double TimeRanges::End(uint32_t aIndex, ErrorResult& aRv) const {
   if (aIndex >= mRanges.Length()) {
     aRv = NS_ERROR_DOM_INDEX_SIZE_ERR;
     return 0;
   }
 
-  return mRanges[aIndex].mEnd;
+  return End(aIndex);
 }
 
-NS_IMETHODIMP
-TimeRanges::End(uint32_t aIndex, double* aTime)
-{
-  ErrorResult rv;
-  *aTime = End(aIndex, rv);
-  return rv.StealNSResult();
-}
-
-void
-TimeRanges::Add(double aStart, double aEnd)
-{
+void TimeRanges::Add(double aStart, double aEnd) {
   if (aStart > aEnd) {
     NS_WARNING("Can't add a range if the end is older that the start.");
     return;
   }
-  mRanges.AppendElement(TimeRange(aStart,aEnd));
+  mRanges.AppendElement(TimeRange(aStart, aEnd));
 }
 
-double
-TimeRanges::GetStartTime()
-{
+double TimeRanges::GetStartTime() {
   if (mRanges.IsEmpty()) {
     return -1.0;
   }
   return mRanges[0].mStart;
 }
 
-double
-TimeRanges::GetEndTime()
-{
+double TimeRanges::GetEndTime() {
   if (mRanges.IsEmpty()) {
     return -1.0;
   }
   return mRanges[mRanges.Length() - 1].mEnd;
 }
 
-void
-TimeRanges::Normalize(double aTolerance)
-{
+void TimeRanges::Normalize(double aTolerance) {
   if (mRanges.Length() >= 2) {
-    AutoTArray<TimeRange,4> normalized;
+    AutoTArray<TimeRange, 4> normalized;
 
     mRanges.Sort(CompareTimeRanges());
 
@@ -137,20 +117,17 @@ TimeRanges::Normalize(double aTolerance)
   }
 }
 
-void
-TimeRanges::Union(const TimeRanges* aOtherRanges, double aTolerance)
-{
+void TimeRanges::Union(const TimeRanges* aOtherRanges, double aTolerance) {
   mRanges.AppendElements(aOtherRanges->mRanges);
   Normalize(aTolerance);
 }
 
-void
-TimeRanges::Intersection(const TimeRanges* aOtherRanges)
-{
-  AutoTArray<TimeRange,4> intersection;
+void TimeRanges::Intersection(const TimeRanges* aOtherRanges) {
+  AutoTArray<TimeRange, 4> intersection;
 
   const nsTArray<TimeRange>& otherRanges = aOtherRanges->mRanges;
-  for (index_type i = 0, j = 0; i < mRanges.Length() && j < otherRanges.Length();) {
+  for (index_type i = 0, j = 0;
+       i < mRanges.Length() && j < otherRanges.Length();) {
     double start = std::max(mRanges[i].mStart, otherRanges[j].mStart);
     double end = std::min(mRanges[i].mEnd, otherRanges[j].mEnd);
     if (start < end) {
@@ -166,9 +143,8 @@ TimeRanges::Intersection(const TimeRanges* aOtherRanges)
   mRanges = intersection;
 }
 
-TimeRanges::index_type
-TimeRanges::Find(double aTime, double aTolerance /* = 0 */)
-{
+TimeRanges::index_type TimeRanges::Find(double aTime,
+                                        double aTolerance /* = 0 */) {
   for (index_type i = 0; i < mRanges.Length(); ++i) {
     if (aTime < mRanges[i].mEnd && (aTime + aTolerance) >= mRanges[i].mStart) {
       return i;
@@ -177,26 +153,19 @@ TimeRanges::Find(double aTime, double aTolerance /* = 0 */)
   return NoIndex;
 }
 
-JSObject*
-TimeRanges::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return TimeRangesBinding::Wrap(aCx, this, aGivenProto);
+JSObject* TimeRanges::WrapObject(JSContext* aCx,
+                                 JS::Handle<JSObject*> aGivenProto) {
+  return TimeRanges_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsISupports*
-TimeRanges::GetParentObject() const
-{
-  return mParent;
-}
+nsISupports* TimeRanges::GetParentObject() const { return mParent; }
 
-void
-TimeRanges::Shift(double aOffset)
-{
+void TimeRanges::Shift(double aOffset) {
   for (index_type i = 0; i < mRanges.Length(); ++i) {
     mRanges[i].mStart += aOffset;
     mRanges[i].mEnd += aOffset;
   }
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

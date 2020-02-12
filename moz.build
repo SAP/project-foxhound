@@ -4,11 +4,116 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files('**/Makefile.in'):
-    BUG_COMPONENT = ('Core', 'Build Config')
+with Files('AUTHORS'):
+    BUG_COMPONENT = ('mozilla.org', 'Licensing')
+
+with Files('LICENSE'):
+    BUG_COMPONENT = ('mozilla.org', 'Licensing')
+
+with Files('LEGAL'):
+    BUG_COMPONENT = ('mozilla.org', 'Licensing')
+
+with Files('aclocal.m4'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('Cargo.*'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('client.*'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('CLOBBER'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('*configure*'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('mach'):
+    BUG_COMPONENT = ('Firefox Build System', 'Mach Core')
+
+with Files('*moz*'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('GNUmakefile'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('*gradle*'):
+    BUG_COMPONENT = ('Firefox for Android', 'Build Config & IDE Support')
+    SCHEDULES.exclusive = ['android']
+
+with Files('*.json'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('**/l10n.toml'):
+    BUG_COMPONENT = ('Core', 'Localization')
     FINAL = True
 
-FILES_PER_UNIFIED_FILE = 1
+with Files('README.txt'):
+    BUG_COMPONENT = ('Core', 'General')
+
+with Files("nsprpub/**"):
+    BUG_COMPONENT = ("NSPR", "NSPR")
+
+with Files('**/Makefile.in'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+    FINAL = True
+
+with Files("**/*.js"):
+    SCHEDULES.inclusive += ['docs']
+
+with Files("**/*.jsm"):
+    SCHEDULES.inclusive += ['docs']
+
+with Files("**/*.rst"):
+    SCHEDULES.inclusive += ['docs']
+
+with Files("**/*.md"):
+    SCHEDULES.inclusive += ['docs']
+
+with Files("**/reftest.list"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/crashtest*.list"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/mochitest.ini"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/browser.ini"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/chrome.ini"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/xpcshell.ini"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/reftest*/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/crashtest*/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/mochitest*/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/xpcshell/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/tests/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/test/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/unit/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/browser/tools/mozscreenshots/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
+
+with Files("**/devtools/shared/test-helpers/**"):
+    SCHEDULES.inclusive += ['test-verify', 'test-verify-gpu']
 
 CONFIGURE_SUBST_FILES += [
     'config/autoconf.mk',
@@ -23,12 +128,11 @@ DIRS += [
     'python',
     'taint',
     'taskcluster',
+    'testing/mozbase',
+    'third_party/python',
 ]
 
-if not CONFIG['JS_STANDALONE']:
-    CONFIGURE_SUBST_FILES += [
-        'tools/update-packaging/Makefile',
-    ]
+if not CONFIG['JS_STANDALONE'] or not CONFIG['MOZ_BUILD_APP']:
     CONFIGURE_DEFINE_FILES += [
         'mozilla-config.h',
     ]
@@ -48,43 +152,20 @@ if not CONFIG['JS_STANDALONE']:
 
     DIRS += [
         'build',
-        'probes',
     ]
 
 DIRS += [
-    'config/external/fdlibm',
-    'config/external/nspr',
-    'config/external/zlib',
-    'memory',
     'mfbt',
-    'mozglue',
 ]
 
-if not CONFIG['JS_STANDALONE']:
-    DIRS += ['xpcom/xpidl']
-
-if CONFIG['USE_ICU']:
-    DIRS += ['config/external/icu']
-
-if CONFIG['COMPILE_ENVIRONMENT']:
-
-    if not CONFIG['JS_STANDALONE']:
-        DIRS += [
-            'config/external',
-            'config/external/nss',
-        ]
-
-    if CONFIG['BUILD_CTYPES']:
-        DIRS += ['config/external/ffi']
-
-    DIRS += ['js/src']
-else:
-    TEST_DIRS += ['js/src/tests']
-
-if not CONFIG['JS_STANDALONE'] and CONFIG['MOZ_BUILD_APP']:
+if CONFIG['MOZ_BUILD_APP']:
     # Bring in the configuration for the configured application.
     include('/' + CONFIG['MOZ_BUILD_APP'] + '/app.mozbuild')
+else:
+    include('/toolkit/toolkit.mozbuild')
 
-CONFIGURE_SUBST_FILES += ['.cargo/config']
+OBJDIR_PP_FILES['.cargo'] += ['.cargo/config.in']
+
+DEFINES['top_srcdir'] = TOPSRCDIR
 
 include('build/templates.mozbuild')

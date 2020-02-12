@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/cache/PrincipalVerifier.h"
 
-#include "mozilla/AppProcessChecker.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -14,7 +13,6 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -28,72 +26,63 @@ using mozilla::ipc::PrincipalInfo;
 using mozilla::ipc::PrincipalInfoToPrincipal;
 
 // static
-already_AddRefed<PrincipalVerifier>
-PrincipalVerifier::CreateAndDispatch(Listener* aListener,
-                                     PBackgroundParent* aActor,
-                                     const PrincipalInfo& aPrincipalInfo)
-{
+already_AddRefed<PrincipalVerifier> PrincipalVerifier::CreateAndDispatch(
+    Listener* aListener, PBackgroundParent* aActor,
+    const PrincipalInfo& aPrincipalInfo) {
   // We must get the ContentParent actor from the PBackgroundParent.  This
   // only works on the PBackground thread.
   AssertIsOnBackgroundThread();
 
-  RefPtr<PrincipalVerifier> verifier = new PrincipalVerifier(aListener,
-                                                               aActor,
-                                                               aPrincipalInfo);
+  RefPtr<PrincipalVerifier> verifier =
+      new PrincipalVerifier(aListener, aActor, aPrincipalInfo);
 
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(verifier));
 
   return verifier.forget();
 }
 
-void
-PrincipalVerifier::AddListener(Listener* aListener)
-{
+void PrincipalVerifier::AddListener(Listener* aListener) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aListener);
+  MOZ_DIAGNOSTIC_ASSERT(aListener);
   MOZ_ASSERT(!mListenerList.Contains(aListener));
   mListenerList.AppendElement(aListener);
 }
 
-void
-PrincipalVerifier::RemoveListener(Listener* aListener)
-{
+void PrincipalVerifier::RemoveListener(Listener* aListener) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aListener);
+  MOZ_DIAGNOSTIC_ASSERT(aListener);
   MOZ_ALWAYS_TRUE(mListenerList.RemoveElement(aListener));
 }
 
 PrincipalVerifier::PrincipalVerifier(Listener* aListener,
                                      PBackgroundParent* aActor,
                                      const PrincipalInfo& aPrincipalInfo)
-  : mActor(BackgroundParent::GetContentParent(aActor))
-  , mPrincipalInfo(aPrincipalInfo)
-  , mInitiatingThread(NS_GetCurrentThread())
-  , mResult(NS_OK)
-{
+    : Runnable("dom::cache::PrincipalVerifier"),
+      mActor(BackgroundParent::GetContentParent(aActor)),
+      mPrincipalInfo(aPrincipalInfo),
+      mInitiatingEventTarget(GetCurrentThreadSerialEventTarget()),
+      mResult(NS_OK) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(mInitiatingThread);
-  MOZ_ASSERT(aListener);
+  MOZ_DIAGNOSTIC_ASSERT(mInitiatingEventTarget);
+  MOZ_DIAGNOSTIC_ASSERT(aListener);
 
   mListenerList.AppendElement(aListener);
 }
 
-PrincipalVerifier::~PrincipalVerifier()
-{
+PrincipalVerifier::~PrincipalVerifier() {
   // Since the PrincipalVerifier is a Runnable that executes on multiple
   // threads, its a race to see which thread de-refs us last.  Therefore
   // we cannot guarantee which thread we destruct on.
 
-  MOZ_ASSERT(mListenerList.IsEmpty());
+  MOZ_DIAGNOSTIC_ASSERT(mListenerList.IsEmpty());
 
   // We should always be able to explicitly release the actor on the main
   // thread.
-  MOZ_ASSERT(!mActor);
+  MOZ_DIAGNOSTIC_ASSERT(!mActor);
 }
 
 NS_IMETHODIMP
-PrincipalVerifier::Run()
-{
+PrincipalVerifier::Run() {
   // Executed twice.  First, on the main thread and then back on the
   // originating thread.
 
@@ -106,9 +95,7 @@ PrincipalVerifier::Run()
   return NS_OK;
 }
 
-void
-PrincipalVerifier::VerifyOnMainThread()
-{
+void PrincipalVerifier::VerifyOnMainThread() {
   MOZ_ASSERT(NS_IsMainThread());
 
   // No matter what happens, we need to release the actor before leaving
@@ -117,46 +104,33 @@ PrincipalVerifier::VerifyOnMainThread()
   actor.swap(mActor);
 
   nsresult rv;
-  RefPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(mPrincipalInfo,
-                                                              &rv);
+  RefPtr<nsIPrincipal> principal =
+      PrincipalInfoToPrincipal(mPrincipalInfo, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     DispatchToInitiatingThread(rv);
     return;
   }
 
-  // We disallow null principal and unknown app IDs on the client side, but
-  // double-check here.
-  if (NS_WARN_IF(principal->GetIsNullPrincipal() ||
-                 principal->GetUnknownAppId())) {
+  // We disallow null principal on the client side, but double-check here.
+  if (NS_WARN_IF(principal->GetIsNullPrincipal())) {
     DispatchToInitiatingThread(NS_ERROR_FAILURE);
-    return;
-  }
-
-  nsCOMPtr<nsIScriptSecurityManager> ssm = nsContentUtils::GetSecurityManager();
-  if (NS_WARN_IF(!ssm)) {
-    DispatchToInitiatingThread(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
     return;
   }
 
   // Verify if a child process uses system principal, which is not allowed
   // to prevent system principal is spoofed.
-  if (NS_WARN_IF(actor && ssm->IsSystemPrincipal(principal))) {
+  if (NS_WARN_IF(actor && principal->IsSystemPrincipal())) {
     DispatchToInitiatingThread(NS_ERROR_FAILURE);
     return;
   }
 
-  // Verify that a child process claims to own the app for this principal
-  if (NS_WARN_IF(actor && !AssertAppPrincipal(actor, principal))) {
-    DispatchToInitiatingThread(NS_ERROR_FAILURE);
-    return;
-  }
   actor = nullptr;
 
 #ifdef DEBUG
   // Sanity check principal origin by using it to construct a URI and security
   // checking it.  Don't do this for the system principal, though, as its origin
   // is a synthetic [System Principal] string.
-  if (!ssm->IsSystemPrincipal(principal)) {
+  if (!principal->IsSystemPrincipal()) {
     nsAutoCString origin;
     rv = principal->GetOriginNoSuffix(origin);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -186,9 +160,7 @@ PrincipalVerifier::VerifyOnMainThread()
   DispatchToInitiatingThread(NS_OK);
 }
 
-void
-PrincipalVerifier::CompleteOnInitiatingThread()
-{
+void PrincipalVerifier::CompleteOnInitiatingThread() {
   AssertIsOnBackgroundThread();
   ListenerList::ForwardIterator iter(mListenerList);
   while (iter.HasMore()) {
@@ -196,12 +168,10 @@ PrincipalVerifier::CompleteOnInitiatingThread()
   }
 
   // The listener must clear its reference in OnPrincipalVerified()
-  MOZ_ASSERT(mListenerList.IsEmpty());
+  MOZ_DIAGNOSTIC_ASSERT(mListenerList.IsEmpty());
 }
 
-void
-PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv)
-{
+void PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv) {
   MOZ_ASSERT(NS_IsMainThread());
 
   mResult = aRv;
@@ -211,12 +181,14 @@ PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv)
   // This will result in a new CacheStorage object delaying operations until
   // shutdown completes and the browser goes away.  This is as graceful as
   // we can get here.
-  nsresult rv = mInitiatingThread->Dispatch(this, nsIThread::DISPATCH_NORMAL);
+  nsresult rv =
+      mInitiatingEventTarget->Dispatch(this, nsIThread::DISPATCH_NORMAL);
   if (NS_FAILED(rv)) {
-    NS_WARNING("Cache unable to complete principal verification due to shutdown.");
+    NS_WARNING(
+        "Cache unable to complete principal verification due to shutdown.");
   }
 }
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla

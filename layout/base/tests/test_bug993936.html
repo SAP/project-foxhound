@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=993936
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 993936</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
@@ -45,7 +45,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
 
   for (var touchType of ["touches", "changedTouches", "targetTouches"]) {
     for (var i = 0; i < aEvent[touchType].length; i++) {
-      if (ids.indexOf(aEvent[touchType][i].identifier) == -1) {
+      if (!ids.includes(aEvent[touchType][i].identifier)) {
         ids.push(aEvent[touchType][i].identifier);
         xs.push(aEvent[touchType][i].page.x);
         ys.push(aEvent[touchType][i].page.y);
@@ -59,7 +59,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces,
-                                    ids.length, aModifiers, 0);
+                                    aModifiers, 0);
 }
 
 function getSingleTouchEventForTarget(target, cwu) {

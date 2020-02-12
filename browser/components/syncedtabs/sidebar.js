@@ -4,23 +4,47 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+const { SyncedTabs } = ChromeUtils.import(
+  "resource://services-sync/SyncedTabs.jsm"
+);
+const { SyncedTabsDeckComponent } = ChromeUtils.import(
+  "resource:///modules/syncedtabs/SyncedTabsDeckComponent.js"
+);
+const { LightweightThemeChild } = ChromeUtils.import(
+  "resource:///actors/LightweightThemeChild.jsm"
+);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-sync/SyncedTabs.jsm");
-Cu.import("resource:///modules/syncedtabs/SyncedTabsDeckComponent.js");
+var syncedTabsDeckComponent = new SyncedTabsDeckComponent({
+  window,
+  SyncedTabs,
+});
 
-XPCOMUtils.defineLazyModuleGetter(this, "fxAccounts",
-                                  "resource://gre/modules/FxAccounts.jsm");
-
-this.syncedTabsDeckComponent = new SyncedTabsDeckComponent({window, SyncedTabs, fxAccounts});
+let themeListener;
 
 let onLoaded = () => {
+  window.top.MozXULElement.insertFTLIfNeeded("browser/syncedTabs.ftl");
+  window.top.document
+    .getElementById("SyncedTabsSidebarContext")
+    .querySelectorAll("[data-lazy-l10n-id]")
+    .forEach(el => {
+      el.setAttribute("data-l10n-id", el.getAttribute("data-lazy-l10n-id"));
+      el.removeAttribute("data-lazy-l10n-id");
+    });
+  themeListener = new LightweightThemeChild({
+    content: window,
+    chromeOuterWindowID: window.top.windowUtils.outerWindowID,
+    docShell: window.docShell,
+  });
   syncedTabsDeckComponent.init();
-  document.getElementById("template-container").appendChild(syncedTabsDeckComponent.container);
+  document
+    .getElementById("template-container")
+    .appendChild(syncedTabsDeckComponent.container);
 };
 
 let onUnloaded = () => {
+  if (themeListener) {
+    themeListener.cleanup();
+  }
   removeEventListener("DOMContentLoaded", onLoaded);
   removeEventListener("unload", onUnloaded);
   syncedTabsDeckComponent.uninit();

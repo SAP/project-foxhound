@@ -6,13 +6,12 @@
                  type="text/css"?>
 <window title="Test chrome harness functions"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/chrome-harness.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/chrome-harness.js"></script>
   <script type="application/javascript">
   <![CDATA[
-    let {Promise} = Components.utils.import("resource://gre/modules/Promise.jsm");
-    Components.utils.import("resource://gre/modules/osfile.jsm");
+    let {Promise} = ChromeUtils.import("resource://gre/modules/Promise.jsm");
+    const {OS} = ChromeUtils.import("resource://gre/modules/osfile.jsm");
     let decoder = new TextDecoder();
 
     SimpleTest.waitForExplicitFinish();

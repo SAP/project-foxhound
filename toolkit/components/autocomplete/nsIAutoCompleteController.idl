@@ -5,7 +5,8 @@
 #include "nsISupports.idl"
 
 interface nsIAutoCompleteInput;
-interface nsIDOMEvent;
+
+webidl Event;
 
 [scriptable, uuid(ff9f8465-204a-47a6-b3c9-0628b3856684)]
 interface nsIAutoCompleteController : nsISupports
@@ -21,6 +22,7 @@ interface nsIAutoCompleteController : nsISupports
   /*
    * The input widget that is currently being controlled.
    */
+  [can_run_script]  // Only setter.
   attribute nsIAutoCompleteInput input;
 
   /*
@@ -36,12 +38,12 @@ interface nsIAutoCompleteController : nsISupports
   /*
    * Start a search on a string, assuming the input property is already set.
    */
-  void startSearch(in AString searchString);
+  [can_run_script] void startSearch(in AString searchString);
 
   /*
    * Stop all asynchronous searches
    */
-  void stopSearch();
+  [can_run_script] void stopSearch();
 
   /*
    * Notify the controller that the user has changed text in the textbox.
@@ -58,7 +60,7 @@ interface nsIAutoCompleteController : nsISupports
    *
    * @return whether this handler started a new search.
    */
-  boolean handleText();
+  [can_run_script] boolean handleText();
 
   /*
    * Notify the controller that the user wishes to enter the current text. If
@@ -75,8 +77,8 @@ interface nsIAutoCompleteController : nsISupports
    * @return Whether the controller wishes to prevent event propagation and
    *         default event.
    */
-  boolean handleEnter(in boolean aIsPopupSelection,
-                      [optional] in nsIDOMEvent aEvent);
+  [can_run_script] boolean handleEnter(in boolean aIsPopupSelection,
+                                       [optional] in Event aEvent);
 
   /*
    * Notify the controller that the user wishes to revert autocomplete
@@ -84,7 +86,7 @@ interface nsIAutoCompleteController : nsISupports
    * @return Whether the controller wishes to prevent event propagation and
    *         default event.
    */
-  boolean handleEscape();
+  [can_run_script] boolean handleEscape();
 
   /*
    * Notify the controller that the user wishes to start composition
@@ -92,7 +94,7 @@ interface nsIAutoCompleteController : nsISupports
    * NOTE: nsIAutoCompleteController implementation expects that this is called
    *       by DOM compositionstart handler.
    */
-  void handleStartComposition();
+  [can_run_script] void handleStartComposition();
 
   /*
    * Notify the controller that the user wishes to end composition
@@ -105,7 +107,7 @@ interface nsIAutoCompleteController : nsISupports
   /*
    * Handle tab. Just closes up.
    */
-  void handleTab();
+  [can_run_script] void handleTab();
 
   /*
    * Notify the controller of the following key navigation events:
@@ -114,7 +116,7 @@ interface nsIAutoCompleteController : nsISupports
    * @return Whether the controller wishes to prevent event propagation and
    *         default event
    */
-  boolean handleKeyNavigation(in unsigned long key);
+  [can_run_script] boolean handleKeyNavigation(in unsigned long key);
 
   /*
    * Notify the controller that the user chose to delete the current
@@ -122,7 +124,7 @@ interface nsIAutoCompleteController : nsISupports
    *
    * @return Whether the controller removed a result item.
    */
-  boolean handleDelete();
+  [can_run_script] boolean handleDelete();
 
   /*
    * Get the value of the result at a given index in the last completed search
@@ -170,4 +172,11 @@ interface nsIAutoCompleteController : nsISupports
    * tracking variables of features like completeSelectedIndex.
    */
   void setInitiallySelectedIndex(in long index);
+
+  /*
+   * Reset controller internal caches for cases where the input doesn't change
+   * but its context resets, thus it is about to start a completely new search
+   * session.
+   */
+  [can_run_script] void resetInternalState();
 };

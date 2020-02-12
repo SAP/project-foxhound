@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=534571
 -->
 <head>
   <title>Test for Bug 534571</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -37,8 +37,8 @@ var second = null;
 function ended(event) {
   s.type = second.type;
   s.src = second.name;
-  v.removeEventListener("ended", ended, false);
-  v.addEventListener("ended", finish, false);
+  v.removeEventListener("ended", ended);
+  v.addEventListener("ended", finish);
   v.load();
 }
 
@@ -61,7 +61,7 @@ if (first && second) {
   s.src = first.name;
   v.appendChild(s);
   v.autoplay = true;
-  v.addEventListener("ended", ended, false);
+  v.addEventListener("ended", ended);
   document.body.appendChild(v);
   SimpleTest.waitForExplicitFinish();
 } else {

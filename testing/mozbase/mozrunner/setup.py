@@ -2,37 +2,38 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import sys
+from __future__ import absolute_import
+
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'mozrunner'
-PACKAGE_VERSION = '6.12'
+PACKAGE_VERSION = '7.6.0'
 
 desc = """Reliable start/stop/configuration of Mozilla Applications (Firefox, Thunderbird, etc.)"""
 
-deps = ['mozdevice >= 0.37',
-        'mozfile >= 1.0',
-        'mozinfo >= 0.7',
-        'mozlog >= 3.0',
-        'mozprocess >= 0.23',
-        'mozprofile >= 0.18',
-        ]
+deps = [
+    'mozdevice>=3.0.1',
+    'mozfile>=1.2',
+    'mozinfo>=0.7,<2',
+    'mozlog~=4.2.0',
+    'mozprocess>=0.23,<2',
+    'mozprofile~=2.3',
+    'six>=1.10.0,<2',
+]
 
-EXTRAS_REQUIRE = {'crash': ['mozcrash >= 0.14']}
-
-# we only support python 2 right now
-assert sys.version_info[0] == 2
+EXTRAS_REQUIRE = {'crash': ['mozcrash >= 1.0']}
 
 setup(name=PACKAGE_NAME,
       version=PACKAGE_VERSION,
       description=desc,
-      long_description="see http://mozbase.readthedocs.org/",
+      long_description="see https://firefox-source-docs.mozilla.org/mozbase/index.html",
       classifiers=['Environment :: Console',
                    'Intended Audience :: Developers',
                    'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)',
                    'Natural Language :: English',
                    'Operating System :: OS Independent',
-                   'Programming Language :: Python',
+                   'Programming Language :: Python :: 2.7',
+                   'Programming Language :: Python :: 3.5',
                    'Topic :: Software Development :: Libraries :: Python Modules',
                    ],
       keywords='mozilla',
@@ -41,9 +42,6 @@ setup(name=PACKAGE_NAME,
       url='https://wiki.mozilla.org/Auto-tools/Projects/Mozbase',
       license='MPL 2.0',
       packages=find_packages(),
-      package_data={'mozrunner': [
-            'resources/metrotestharness.exe'
-      ]},
       zip_safe=False,
       install_requires=deps,
       extras_require=EXTRAS_REQUIRE,
@@ -51,5 +49,4 @@ setup(name=PACKAGE_NAME,
       # -*- Entry points: -*-
       [console_scripts]
       mozrunner = mozrunner:cli
-      """,
-    )
+      """)

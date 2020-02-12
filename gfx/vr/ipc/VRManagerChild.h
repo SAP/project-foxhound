@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,145 +7,142 @@
 #ifndef MOZILLA_GFX_VR_VRMANAGERCHILD_H
 #define MOZILLA_GFX_VR_VRMANAGERCHILD_H
 
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/WindowBinding.h"  // For FrameRequestCallback
 #include "mozilla/gfx/PVRManagerChild.h"
-#include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
+#include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
-#include "mozilla/layers/LayersTypes.h"  // for LayersBackend
+#include "mozilla/layers/LayersTypes.h"        // for LayersBackend
 #include "mozilla/layers/TextureForwarder.h"
 
 namespace mozilla {
 namespace dom {
+class Promise;
+class GamepadManager;
 class Navigator;
 class VRDisplay;
-class VREventObserver;
-} // namespace dom
+}  // namespace dom
 namespace layers {
-class PCompositableChild;
-class TextureClient;
+class SyncObjectClient;
 }
 namespace gfx {
 class VRLayerChild;
 class VRDisplayClient;
 
-class VRManagerChild : public PVRManagerChild
-                     , public layers::TextureForwarder
-                     , public layers::ShmemAllocator
-{
-public:
+class VRManagerEventObserver {
+ public:
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+  virtual void NotifyVRDisplayMounted(uint32_t aDisplayID) = 0;
+  virtual void NotifyVRDisplayUnmounted(uint32_t aDisplayID) = 0;
+  virtual void NotifyVRDisplayConnect(uint32_t aDisplayID) = 0;
+  virtual void NotifyVRDisplayDisconnect(uint32_t aDisplayID) = 0;
+  virtual void NotifyVRDisplayPresentChange(uint32_t aDisplayID) = 0;
+  virtual void NotifyPresentationGenerationChanged(uint32_t aDisplayID) = 0;
+  virtual bool GetStopActivityStatus() const = 0;
+  virtual void NotifyEnumerationCompleted() = 0;
+
+ protected:
+  virtual ~VRManagerEventObserver() = default;
+};
+
+class VRManagerChild : public PVRManagerChild {
+  friend class PVRManagerChild;
+
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VRManagerChild);
+
   static VRManagerChild* Get();
 
   // Indicate that an observer wants to receive VR events.
-  void AddListener(dom::VREventObserver* aObserver);
+  void AddListener(VRManagerEventObserver* aObserver);
   // Indicate that an observer should no longer receive VR events.
-  void RemoveListener(dom::VREventObserver* aObserver);
+  void RemoveListener(VRManagerEventObserver* aObserver);
+  void StartActivity();
+  void StopActivity();
 
-  int GetInputFrameID();
-  bool GetVRDisplays(nsTArray<RefPtr<VRDisplayClient> >& aDisplays);
+  void GetVRDisplays(nsTArray<RefPtr<VRDisplayClient>>& aDisplays);
   bool RefreshVRDisplaysWithCallback(uint64_t aWindowId);
+  bool EnumerateVRDisplays();
+  void AddPromise(const uint32_t& aID, dom::Promise* aPromise);
 
   static void InitSameProcess();
   static void InitWithGPUProcess(Endpoint<PVRManagerChild>&& aEndpoint);
   static bool InitForContent(Endpoint<PVRManagerChild>&& aEndpoint);
+  static bool ReinitForContent(Endpoint<PVRManagerChild>&& aEndpoint);
   static void ShutDown();
 
   static bool IsCreated();
 
-  virtual PTextureChild* CreateTexture(const SurfaceDescriptor& aSharedData,
-                                       layers::LayersBackend aLayersBackend,
-                                       TextureFlags aFlags,
-                                       uint64_t aSerial) override;
-  virtual void CancelWaitForRecycle(uint64_t aTextureId) override;
+  PVRLayerChild* CreateVRLayer(uint32_t aDisplayID, nsIEventTarget* aTarget,
+                               uint32_t aGroup);
 
-  PVRLayerChild* CreateVRLayer(uint32_t aDisplayID, const Rect& aLeftEyeRect, const Rect& aRightEyeRect);
-
-  static void IdentifyTextureHost(const layers::TextureFactoryIdentifier& aIdentifier);
+  static void IdentifyTextureHost(
+      const layers::TextureFactoryIdentifier& aIdentifier);
   layers::LayersBackend GetBackendType() const;
-  layers::SyncObject* GetSyncObject() { return mSyncObject; }
+  layers::SyncObjectClient* GetSyncObject() { return mSyncObject; }
 
-  virtual MessageLoop* GetMessageLoop() const override { return mMessageLoop; }
-  virtual base::ProcessId GetParentPid() const override { return OtherPid(); }
-
-  nsresult ScheduleFrameRequestCallback(mozilla::dom::FrameRequestCallback& aCallback,
-    int32_t *aHandle);
+  nsresult ScheduleFrameRequestCallback(
+      mozilla::dom::FrameRequestCallback& aCallback, int32_t* aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
+  MOZ_CAN_RUN_SCRIPT
   void RunFrameRequestCallbacks();
+  void NotifyPresentationGenerationChanged(uint32_t aDisplayID);
 
+  MOZ_CAN_RUN_SCRIPT
   void UpdateDisplayInfo(nsTArray<VRDisplayInfo>& aDisplayUpdates);
-  void FireDOMVRDisplayConnectEvent();
-  void FireDOMVRDisplayDisconnectEvent();
-  void FireDOMVRDisplayPresentChangeEvent();
+  void FireDOMVRDisplayMountedEvent(uint32_t aDisplayID);
+  void FireDOMVRDisplayUnmountedEvent(uint32_t aDisplayID);
+  void FireDOMVRDisplayConnectEvent(uint32_t aDisplayID);
+  void FireDOMVRDisplayDisconnectEvent(uint32_t aDisplayID);
+  void FireDOMVRDisplayPresentChangeEvent(uint32_t aDisplayID);
+  void FireDOMVRDisplayConnectEventsForLoad(VRManagerEventObserver* aObserver);
 
-protected:
+  virtual void HandleFatalError(const char* aMsg) const override;
+
+  void RunPuppet(const nsTArray<uint64_t>& aBuffer, dom::Promise* aPromise,
+                 ErrorResult& aRv);
+  void ResetPuppet(dom::Promise* aPromise, ErrorResult& aRv);
+
+ protected:
   explicit VRManagerChild();
   ~VRManagerChild();
   void Destroy();
   static void DeferredDestroy(RefPtr<VRManagerChild> aVRManagerChild);
 
-  virtual PTextureChild* AllocPTextureChild(const SurfaceDescriptor& aSharedData,
-                                            const layers::LayersBackend& aLayersBackend,
-                                            const TextureFlags& aFlags,
-                                            const uint64_t& aSerial) override;
-  virtual bool DeallocPTextureChild(PTextureChild* actor) override;
+  PVRLayerChild* AllocPVRLayerChild(const uint32_t& aDisplayID,
+                                    const uint32_t& aGroup);
+  bool DeallocPVRLayerChild(PVRLayerChild* actor);
 
-  virtual PVRLayerChild* AllocPVRLayerChild(const uint32_t& aDisplayID,
-                                            const float& aLeftEyeX,
-                                            const float& aLeftEyeY,
-                                            const float& aLeftEyeWidth,
-                                            const float& aLeftEyeHeight,
-                                            const float& aRightEyeX,
-                                            const float& aRightEyeY,
-                                            const float& aRightEyeWidth,
-                                            const float& aRightEyeHeight) override;
-  virtual bool DeallocPVRLayerChild(PVRLayerChild* actor) override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until we can mark ipdl-generated things as
+  // MOZ_CAN_RUN_SCRIPT.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvUpdateDisplayInfo(
+      nsTArray<VRDisplayInfo>&& aDisplayUpdates);
+  mozilla::ipc::IPCResult RecvReplyGamepadVibrateHaptic(
+      const uint32_t& aPromiseID);
 
-  virtual bool RecvUpdateDisplayInfo(nsTArray<VRDisplayInfo>&& aDisplayUpdates) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvNotifyPuppetCommandBufferCompleted(bool aSuccess);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvNotifyPuppetResetComplete();
 
-  virtual bool RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>&& aMessages) override;
+  bool IsSameProcess() const { return OtherPid() == base::GetCurrentProcId(); }
 
-  virtual bool RecvNotifyVSync() override;
-  virtual bool RecvNotifyVRVSync(const uint32_t& aDisplayID) override;
+ private:
+  void FireDOMVRDisplayMountedEventInternal(uint32_t aDisplayID);
+  void FireDOMVRDisplayUnmountedEventInternal(uint32_t aDisplayID);
+  void FireDOMVRDisplayConnectEventInternal(uint32_t aDisplayID);
+  void FireDOMVRDisplayDisconnectEventInternal(uint32_t aDisplayID);
+  void FireDOMVRDisplayPresentChangeEventInternal(uint32_t aDisplayID);
+  void FireDOMVRDisplayConnectEventsForLoadInternal(
+      uint32_t aDisplayID, VRManagerEventObserver* aObserver);
+  void NotifyPresentationGenerationChangedInternal(uint32_t aDisplayID);
+  void NotifyEnumerationCompletedInternal();
 
-
-  // ShmemAllocator
-
-  virtual ShmemAllocator* AsShmemAllocator() override { return this; }
-
-  virtual bool AllocShmem(size_t aSize,
-                          ipc::SharedMemory::SharedMemoryType aType,
-                          ipc::Shmem* aShmem) override;
-
-  virtual bool AllocUnsafeShmem(size_t aSize,
-                                ipc::SharedMemory::SharedMemoryType aType,
-                                ipc::Shmem* aShmem) override;
-
-  virtual void DeallocShmem(ipc::Shmem& aShmem) override;
-
-  virtual bool IsSameProcess() const override
-  {
-    return OtherPid() == base::GetCurrentProcId();
-  }
-
-  friend class layers::CompositorBridgeChild;
-
-private:
-
-  void FireDOMVRDisplayConnectEventInternal();
-  void FireDOMVRDisplayDisconnectEventInternal();
-  void FireDOMVRDisplayPresentChangeEventInternal();
-
-  void DeliverFence(uint64_t aTextureId, FenceHandle& aReleaseFenceHandle);
-  /**
-  * Notify id of Texture When host side end its use. Transaction id is used to
-  * make sure if there is no newer usage.
-  */
-  void NotifyNotUsed(uint64_t aTextureId, uint64_t aFwdTransactionId);
-
-  nsTArray<RefPtr<VRDisplayClient> > mDisplays;
+  nsTArray<RefPtr<VRDisplayClient>> mDisplays;
   bool mDisplaysInitialized;
   nsTArray<uint64_t> mNavigatorCallbacks;
-
-  int32_t mInputFrameID;
 
   MessageLoop* mMessageLoop;
 
@@ -154,27 +150,24 @@ private:
 
   nsTArray<FrameRequest> mFrameRequestCallbacks;
   /**
-  * The current frame request callback handle
-  */
+   * The current frame request callback handle
+   */
   int32_t mFrameRequestCallbackCounter;
   mozilla::TimeStamp mStartTimeStamp;
 
-  // Array of Weak pointers, instance is owned by nsGlobalWindow::mVREventObserver.
-  nsTArray<dom::VREventObserver*> mListeners;
-
-  /**
-  * Hold TextureClients refs until end of their usages on host side.
-  * It defer calling of TextureClient recycle callback.
-  */
-  nsDataHashtable<nsUint64HashKey, RefPtr<layers::TextureClient> > mTexturesWaitingRecycled;
+  nsTArray<RefPtr<VRManagerEventObserver>> mListeners;
+  bool mWaitingForEnumeration;
 
   layers::LayersBackend mBackend;
-  RefPtr<layers::SyncObject> mSyncObject;
+  RefPtr<layers::SyncObjectClient> mSyncObject;
+  nsRefPtrHashtable<nsUint32HashKey, dom::Promise> mGamepadPromiseList;
+  RefPtr<dom::Promise> mRunPuppetPromise;
+  nsTArray<RefPtr<dom::Promise>> mResetPuppetPromises;
 
   DISALLOW_COPY_AND_ASSIGN(VRManagerChild);
 };
 
-} // namespace mozilla
-} // namespace gfx
+}  // namespace gfx
+}  // namespace mozilla
 
-#endif // MOZILLA_GFX_VR_VRMANAGERCHILD_H
+#endif  // MOZILLA_GFX_VR_VRMANAGERCHILD_H

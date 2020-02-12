@@ -21,13 +21,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "defines.h"
-#include "nit_encode.h"
-#include "encode.h"
-#include "init_decode.h"
-#include "decode.h"
-#include "constants.h"
-#include "ilbc.h"
+#include "modules/audio_coding/codecs/ilbc/defines.h"
+#include "modules/audio_coding/codecs/ilbc/nit_encode.h"
+#include "modules/audio_coding/codecs/ilbc/encode.h"
+#include "modules/audio_coding/codecs/ilbc/init_decode.h"
+#include "modules/audio_coding/codecs/ilbc/decode.h"
+#include "modules/audio_coding/codecs/ilbc/constants.h"
+#include "modules/audio_coding/codecs/ilbc/ilbc.h"
 
 #define ILBCNOOFWORDS_MAX (NO_OF_BYTES_30MS)/2
 

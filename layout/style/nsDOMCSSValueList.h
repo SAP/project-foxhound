@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,43 +9,25 @@
 #ifndef nsDOMCSSValueList_h___
 #define nsDOMCSSValueList_h___
 
-#include "nsIDOMCSSValueList.h"
 #include "CSSValue.h"
 #include "nsTArray.h"
 
-class nsDOMCSSValueList final : public mozilla::dom::CSSValue,
-                                public nsIDOMCSSValueList
+class nsDOMCSSValueList final
+  : public mozilla::dom::CSSValue
 {
 public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsDOMCSSValueList, mozilla::dom::CSSValue)
-
-  // nsIDOMCSSValue
-  NS_DECL_NSIDOMCSSVALUE
-
   // nsDOMCSSValueList
-  nsDOMCSSValueList(bool aCommaDelimited, bool aReadonly);
+  explicit nsDOMCSSValueList(bool aCommaDelimited);
 
   /**
    * Adds a value to this list.
    */
   void AppendCSSValue(already_AddRefed<CSSValue> aValue);
 
-  virtual void GetCssText(nsString& aText, mozilla::ErrorResult& aRv)
-    override final;
-  virtual void SetCssText(const nsAString& aText,
-                          mozilla::ErrorResult& aRv) override final;
-  virtual uint16_t CssValueType() const override final;
-
-  CSSValue* IndexedGetter(uint32_t aIdx, bool& aFound) const
+  void GetCssText(nsString& aText, mozilla::ErrorResult& aRv) final;
+  uint16_t CssValueType() const final
   {
-    aFound = aIdx <= Length();
-    return Item(aIdx);
-  }
-
-  CSSValue* Item(uint32_t aIndex) const
-  {
-    return mCSSValues.SafeElementAt(aIndex);
+    return CSSValue::CSS_VALUE_LIST;
   }
 
   uint32_t Length() const
@@ -51,23 +35,15 @@ public:
     return mCSSValues.Length();
   }
 
-  nsISupports* GetParentObject()
-  {
-    return nullptr;
-  }
+  void GetCssText(nsAString& aText);
 
-  virtual JSObject *WrapObject(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+protected:
+  virtual ~nsDOMCSSValueList();
 
-private:
-  ~nsDOMCSSValueList();
+  bool mCommaDelimited; // some value lists use a comma as the delimiter, some
+                        // just use spaces.
 
-  bool                        mCommaDelimited;  // some value lists use a comma
-                                                // as the delimiter, some just use
-                                                // spaces.
-
-  bool                        mReadonly;    // Are we read-only?
-
-  InfallibleTArray<RefPtr<CSSValue> > mCSSValues;
+  nsTArray<RefPtr<CSSValue>> mCSSValues;
 };
 
 #endif /* nsDOMCSSValueList_h___ */

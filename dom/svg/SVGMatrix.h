@@ -37,7 +37,7 @@
 #ifndef mozilla_dom_SVGMatrix_h
 #define mozilla_dom_SVGMatrix_h
 
-#include "mozilla/dom/SVGTransform.h"
+#include "DOMSVGTransform.h"
 #include "gfxMatrix.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
@@ -49,32 +49,32 @@ namespace dom {
 /**
  * DOM wrapper for an SVG matrix.
  */
-class SVGMatrix final : public nsWrapperCache
-{
-public:
+class SVGMatrix final : public nsWrapperCache {
+ public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(SVGMatrix)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(SVGMatrix)
 
   /**
-   * Ctor for SVGMatrix objects that belong to a SVGTransform.
+   * Ctor for SVGMatrix objects that belong to a DOMSVGTransform.
    */
-  explicit SVGMatrix(SVGTransform& aTransform) : mTransform(&aTransform) {}
+  explicit SVGMatrix(DOMSVGTransform& aTransform) : mTransform(&aTransform) {}
 
   /**
-   * Ctors for SVGMatrix objects created independently of a SVGTransform.
+   * Ctors for SVGMatrix objects created independently of a DOMSVGTransform.
    */
   // Default ctor for gfxMatrix will produce identity mx
-  SVGMatrix() {}
+  SVGMatrix() = default;
 
-  explicit SVGMatrix(const gfxMatrix &aMatrix) : mMatrix(aMatrix) {}
+  explicit SVGMatrix(const gfxMatrix& aMatrix) : mMatrix(aMatrix) {}
 
   const gfxMatrix& GetMatrix() const {
     return mTransform ? mTransform->Matrixgfx() : mMatrix;
   }
 
   // WebIDL
-  SVGTransform* GetParentObject() const;
-  virtual JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  DOMSVGTransform* GetParentObject() const;
+  virtual JSObject* WrapObject(JSContext* aCx,
+                               JS::Handle<JSObject*> aGivenProto) override;
 
   float A() const { return static_cast<float>(GetMatrix()._11); }
   void SetA(float aA, ErrorResult& rv);
@@ -95,16 +95,15 @@ public:
   already_AddRefed<SVGMatrix> ScaleNonUniform(float scaleFactorX,
                                               float scaleFactorY);
   already_AddRefed<SVGMatrix> Rotate(float angle);
-  already_AddRefed<SVGMatrix> RotateFromVector(float x,
-                                               float y,
+  already_AddRefed<SVGMatrix> RotateFromVector(float x, float y,
                                                ErrorResult& aRv);
   already_AddRefed<SVGMatrix> FlipX();
   already_AddRefed<SVGMatrix> FlipY();
   already_AddRefed<SVGMatrix> SkewX(float angle, ErrorResult& rv);
   already_AddRefed<SVGMatrix> SkewY(float angle, ErrorResult& rv);
 
-private:
-  ~SVGMatrix() {}
+ private:
+  ~SVGMatrix() = default;
 
   void SetMatrix(const gfxMatrix& aMatrix) {
     if (mTransform) {
@@ -118,14 +117,15 @@ private:
     return mTransform ? mTransform->IsAnimVal() : false;
   }
 
-  RefPtr<SVGTransform> mTransform;
+  RefPtr<DOMSVGTransform> mTransform;
 
   // Typically we operate on the matrix data accessed via mTransform but for
-  // matrices that exist independently of an SVGTransform we use mMatrix below.
+  // matrices that exist independently of an DOMSVGTransform we use mMatrix
+  // below.
   gfxMatrix mMatrix;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGMatrix_h
+#endif  // mozilla_dom_SVGMatrix_h

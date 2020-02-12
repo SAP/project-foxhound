@@ -7,8 +7,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
 -->
 <window title="Mozilla Bug 990812"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -32,7 +31,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
     if (tests.length > 0) {
       var file = tests.shift();
       info("-- running " + file);
-      window.open(file, "", "chrome");
+      window.openDialog(file, "_blank", "chrome,noopener", window);
     } else {
       SimpleTest.finish();
     }

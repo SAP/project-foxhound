@@ -6,76 +6,27 @@
 
 #include "mozilla/dom/FileSystemBase.h"
 
-#include "DeviceStorageFileSystem.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "OSFileSystem.h"
 
 namespace mozilla {
 namespace dom {
 
-// static
-already_AddRefed<FileSystemBase>
-FileSystemBase::DeserializeDOMPath(const nsAString& aString)
-{
-  MOZ_ASSERT(XRE_IsParentProcess(), "Only call from parent process!");
-  AssertIsOnBackgroundThread();
+FileSystemBase::FileSystemBase() : mShutdown(false) {}
 
-  if (StringBeginsWith(aString, NS_LITERAL_STRING("devicestorage-"))) {
-    // The string representation of devicestorage file system is of the format:
-    // devicestorage-StorageType-StorageName
+FileSystemBase::~FileSystemBase() { AssertIsOnOwningThread(); }
 
-    nsCharSeparatedTokenizer tokenizer(aString, char16_t('-'));
-    tokenizer.nextToken();
-
-    nsString storageType;
-    if (tokenizer.hasMoreTokens()) {
-      storageType = tokenizer.nextToken();
-    }
-
-    nsString storageName;
-    if (tokenizer.hasMoreTokens()) {
-      storageName = tokenizer.nextToken();
-    }
-
-    RefPtr<DeviceStorageFileSystem> f =
-      new DeviceStorageFileSystem(storageType, storageName);
-    return f.forget();
-  }
-
-  return RefPtr<OSFileSystemParent>(new OSFileSystemParent(aString)).forget();
-}
-
-FileSystemBase::FileSystemBase()
-  : mShutdown(false)
-  , mPermissionCheckType(eNotSet)
-#ifdef DEBUG
-  , mOwningThread(PR_GetCurrentThread())
-#endif
-{
-}
-
-FileSystemBase::~FileSystemBase()
-{
-  AssertIsOnOwningThread();
-}
-
-void
-FileSystemBase::Shutdown()
-{
+void FileSystemBase::Shutdown() {
   AssertIsOnOwningThread();
   mShutdown = true;
 }
 
-nsISupports*
-FileSystemBase::GetParentObject() const
-{
+nsIGlobalObject* FileSystemBase::GetParentObject() const {
   AssertIsOnOwningThread();
   return nullptr;
 }
 
-bool
-FileSystemBase::GetRealPath(BlobImpl* aFile, nsIFile** aPath) const
-{
+bool FileSystemBase::GetRealPath(BlobImpl* aFile, nsIFile** aPath) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aFile, "aFile Should not be null.");
   MOZ_ASSERT(aPath);
@@ -88,8 +39,7 @@ FileSystemBase::GetRealPath(BlobImpl* aFile, nsIFile** aPath) const
     return false;
   }
 
-  rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(filePath),
-                             true, aPath);
+  rv = NS_NewLocalFile(filePath, true, aPath);
   if (NS_WARN_IF(rv.Failed())) {
     rv.SuppressException();
     return false;
@@ -98,24 +48,18 @@ FileSystemBase::GetRealPath(BlobImpl* aFile, nsIFile** aPath) const
   return true;
 }
 
-bool
-FileSystemBase::IsSafeFile(nsIFile* aFile) const
-{
+bool FileSystemBase::IsSafeFile(nsIFile* aFile) const {
   AssertIsOnOwningThread();
   return false;
 }
 
-bool
-FileSystemBase::IsSafeDirectory(Directory* aDir) const
-{
+bool FileSystemBase::IsSafeDirectory(Directory* aDir) const {
   AssertIsOnOwningThread();
   return false;
 }
 
-void
-FileSystemBase::GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
-                                 ErrorResult& aRv) const
-{
+void FileSystemBase::GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
+                                      ErrorResult& aRv) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aFile);
 
@@ -123,19 +67,15 @@ FileSystemBase::GetDirectoryName(nsIFile* aFile, nsAString& aRetval,
   NS_WARNING_ASSERTION(!aRv.Failed(), "GetLeafName failed");
 }
 
-void
-FileSystemBase::GetDOMPath(nsIFile* aFile,
-                           nsAString& aRetval,
-                           ErrorResult& aRv) const
-{
+void FileSystemBase::GetDOMPath(nsIFile* aFile, nsAString& aRetval,
+                                ErrorResult& aRv) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aFile);
 
   aRetval.Truncate();
 
   nsCOMPtr<nsIFile> fileSystemPath;
-  aRv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(LocalOrDeviceStorageRootPath()),
-                              true, getter_AddRefs(fileSystemPath));
+  aRv = NS_NewLocalFile(LocalRootPath(), true, getter_AddRefs(fileSystemPath));
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -194,12 +134,9 @@ FileSystemBase::GetDOMPath(nsIFile* aFile,
   }
 }
 
-void
-FileSystemBase::AssertIsOnOwningThread() const
-{
-  MOZ_ASSERT(mOwningThread);
-  MOZ_ASSERT(PR_GetCurrentThread() == mOwningThread);
+void FileSystemBase::AssertIsOnOwningThread() const {
+  NS_ASSERT_OWNINGTHREAD(FileSystemBase);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

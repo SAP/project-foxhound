@@ -4,12 +4,17 @@
 
 "use strict";
 
-const events = require("sdk/event/core");
-const { getCurrentZoom,
-  setIgnoreLayoutChanges } = require("devtools/shared/layout/utils");
+const EventEmitter = require("devtools/shared/event-emitter");
+const {
+  getCurrentZoom,
+  getWindowDimensions,
+  setIgnoreLayoutChanges,
+} = require("devtools/shared/layout/utils");
 const {
   CanvasFrameAnonymousContentHelper,
-  createSVGNode, createNode } = require("./utils/markup");
+  createSVGNode,
+  createNode,
+} = require("./utils/markup");
 
 // Hard coded value about the size of measuring tool label, in order to
 // position and flip it when is needed.
@@ -30,15 +35,17 @@ const SIDES = ["top", "right", "bottom", "left"];
  */
 function MeasuringToolHighlighter(highlighterEnv) {
   this.env = highlighterEnv;
-  this.markup = new CanvasFrameAnonymousContentHelper(highlighterEnv,
-    this._buildMarkup.bind(this));
+  this.markup = new CanvasFrameAnonymousContentHelper(
+    highlighterEnv,
+    this._buildMarkup.bind(this)
+  );
 
   this.coords = {
     x: 0,
-    y: 0
+    y: 0,
   };
 
-  let { pageListenerTarget } = highlighterEnv;
+  const { pageListenerTarget } = highlighterEnv;
 
   pageListenerTarget.addEventListener("mousedown", this);
   pageListenerTarget.addEventListener("mousemove", this);
@@ -53,97 +60,97 @@ MeasuringToolHighlighter.prototype = {
   ID_CLASS_PREFIX: "measuring-tool-highlighter-",
 
   _buildMarkup() {
-    let prefix = this.ID_CLASS_PREFIX;
-    let { window } = this.env;
+    const prefix = this.ID_CLASS_PREFIX;
+    const { window } = this.env;
 
-    let container = createNode(window, {
-      attributes: {"class": "highlighter-container"}
+    const container = createNode(window, {
+      attributes: { class: "highlighter-container" },
     });
 
-    let root = createNode(window, {
+    const root = createNode(window, {
       parent: container,
       attributes: {
-        "id": "root",
-        "class": "root",
+        id: "root",
+        class: "root",
+        hidden: "true",
       },
-      prefix
+      prefix,
     });
 
-    let svg = createSVGNode(window, {
+    const svg = createSVGNode(window, {
       nodeType: "svg",
       parent: root,
       attributes: {
         id: "elements",
-        "class": "elements",
+        class: "elements",
         width: "100%",
         height: "100%",
-        hidden: "true"
       },
-      prefix
+      prefix,
     });
 
     createNode(window, {
       nodeType: "label",
       attributes: {
         id: "label-size",
-        "class": "label-size",
-        "hidden": "true"
+        class: "label-size",
+        hidden: "true",
       },
       parent: root,
-      prefix
+      prefix,
     });
 
     createNode(window, {
       nodeType: "label",
       attributes: {
         id: "label-position",
-        "class": "label-position",
-        "hidden": "true"
+        class: "label-position",
+        hidden: "true",
       },
       parent: root,
-      prefix
+      prefix,
     });
 
     // Creating a <g> element in order to group all the paths below, that
     // together represent the measuring tool; so that would be easier move them
     // around
-    let g = createSVGNode(window, {
+    const g = createSVGNode(window, {
       nodeType: "g",
       attributes: {
         id: "tool",
       },
       parent: svg,
-      prefix
+      prefix,
     });
 
     createSVGNode(window, {
       nodeType: "path",
       attributes: {
-        id: "box-path"
+        id: "box-path",
       },
       parent: g,
-      prefix
+      prefix,
     });
 
     createSVGNode(window, {
       nodeType: "path",
       attributes: {
-        id: "diagonal-path"
+        id: "diagonal-path",
       },
       parent: g,
-      prefix
+      prefix,
     });
 
-    for (let side of SIDES) {
+    for (const side of SIDES) {
       createSVGNode(window, {
         nodeType: "line",
         parent: svg,
         attributes: {
-          "class": `guide-${side}`,
+          class: `guide-${side}`,
           id: `guide-${side}`,
-          hidden: "true"
+          hidden: "true",
         },
-        prefix
+        prefix,
       });
     }
 
@@ -151,41 +158,25 @@ MeasuringToolHighlighter.prototype = {
   },
 
   _update() {
-    let { window } = this.env;
+    const { window } = this.env;
 
     setIgnoreLayoutChanges(true);
 
-    let zoom = getCurrentZoom(window);
+    const zoom = getCurrentZoom(window);
 
-    let { documentElement } = window.document;
+    const { width, height } = getWindowDimensions(window);
 
-    let width = Math.max(documentElement.clientWidth,
-                         documentElement.scrollWidth,
-                         documentElement.offsetWidth);
+    const { coords } = this;
 
-    let height = Math.max(documentElement.clientHeight,
-                          documentElement.scrollHeight,
-                          documentElement.offsetHeight);
-
-    let { body } = window.document;
-
-    // get the size of the content document despite the compatMode
-    if (body) {
-      width = Math.max(width, body.scrollWidth, body.offsetWidth);
-      height = Math.max(height, body.scrollHeight, body.offsetHeight);
-    }
-
-    let { coords } = this;
-
-    let isZoomChanged = zoom !== coords.zoom;
+    const isZoomChanged = zoom !== coords.zoom;
 
     if (isZoomChanged) {
       coords.zoom = zoom;
       this.updateLabel();
     }
 
-    let isDocumentSizeChanged = width !== coords.documentWidth ||
-                                height !== coords.documentHeight;
+    const isDocumentSizeChanged =
+      width !== coords.documentWidth || height !== coords.documentHeight;
 
     if (isDocumentSizeChanged) {
       coords.documentWidth = width;
@@ -198,7 +189,7 @@ MeasuringToolHighlighter.prototype = {
       this.updateViewport();
     }
 
-    setIgnoreLayoutChanges(false, documentElement);
+    setIgnoreLayoutChanges(false, window.document.documentElement);
 
     this._rafID = window.requestAnimationFrame(() => this._update());
   },
@@ -215,24 +206,26 @@ MeasuringToolHighlighter.prototype = {
 
     this._cancelUpdate();
 
-    let { pageListenerTarget } = this.env;
+    const { pageListenerTarget } = this.env;
 
-    pageListenerTarget.removeEventListener("mousedown", this);
-    pageListenerTarget.removeEventListener("mousemove", this);
-    pageListenerTarget.removeEventListener("mouseup", this);
-    pageListenerTarget.removeEventListener("scroll", this);
-    pageListenerTarget.removeEventListener("pagehide", this);
-    pageListenerTarget.removeEventListener("mouseleave", this);
+    if (pageListenerTarget) {
+      pageListenerTarget.removeEventListener("mousedown", this);
+      pageListenerTarget.removeEventListener("mousemove", this);
+      pageListenerTarget.removeEventListener("mouseup", this);
+      pageListenerTarget.removeEventListener("scroll", this);
+      pageListenerTarget.removeEventListener("pagehide", this);
+      pageListenerTarget.removeEventListener("mouseleave", this);
+    }
 
     this.markup.destroy();
 
-    events.emit(this, "destroy");
+    EventEmitter.emit(this, "destroy");
   },
 
   show() {
     setIgnoreLayoutChanges(true);
 
-    this.getElement("elements").removeAttribute("hidden");
+    this.getElement("root").removeAttribute("hidden");
 
     this._update();
 
@@ -245,7 +238,7 @@ MeasuringToolHighlighter.prototype = {
     this.hideLabel("size");
     this.hideLabel("position");
 
-    this.getElement("elements").setAttribute("hidden", "true");
+    this.getElement("root").setAttribute("hidden", "true");
 
     this._cancelUpdate();
 
@@ -261,7 +254,7 @@ MeasuringToolHighlighter.prototype = {
   },
 
   setCoords(x, y, w, h) {
-    let { coords } = this;
+    const { coords } = this;
 
     if (typeof x !== "undefined") {
       coords.x = x;
@@ -291,17 +284,17 @@ MeasuringToolHighlighter.prototype = {
   },
 
   updatePaths() {
-    let { x, y, w, h } = this.coords;
-    let dir = `M0 0 L${w} 0 L${w} ${h} L0 ${h}z`;
+    const { x, y, w, h } = this.coords;
+    const dir = `M0 0 L${w} 0 L${w} ${h} L0 ${h}z`;
 
     // Adding correction to the line path, otherwise some pixels are drawn
     // outside the main rectangle area.
-    let x1 = w > 0 ? 0.5 : 0;
-    let y1 = w < 0 && h < 0 ? -0.5 : 0;
-    let w1 = w + (h < 0 && w < 0 ? 0.5 : 0);
-    let h1 = h + (h > 0 && w > 0 ? -0.5 : 0);
+    const x1 = w > 0 ? 0.5 : 0;
+    const y1 = w < 0 && h < 0 ? -0.5 : 0;
+    const w1 = w + (h < 0 && w < 0 ? 0.5 : 0);
+    const h1 = h + (h > 0 && w > 0 ? -0.5 : 0);
 
-    let linedir = `M${x1} ${y1} L${w1} ${h1}`;
+    const linedir = `M${x1} ${y1} L${w1} ${h1}`;
 
     this.getElement("box-path").setAttribute("d", dir);
     this.getElement("diagonal-path").setAttribute("d", linedir);
@@ -311,15 +304,15 @@ MeasuringToolHighlighter.prototype = {
   updateLabel(type) {
     type = type || this._isDragging ? "size" : "position";
 
-    let isSizeLabel = type === "size";
+    const isSizeLabel = type === "size";
 
-    let label = this.getElement(`label-${type}`);
+    const label = this.getElement(`label-${type}`);
 
     let origin = "top left";
 
-    let { innerWidth, innerHeight, scrollX, scrollY } = this.env.window;
+    const { innerWidth, innerHeight, scrollX, scrollY } = this.env.window;
     let { x, y, w, h, zoom } = this.coords;
-    let scale = 1 / zoom;
+    const scale = 1 / zoom;
 
     w = w || 0;
     h = h || 0;
@@ -333,7 +326,7 @@ MeasuringToolHighlighter.prototype = {
       labelWidth = LABEL_SIZE_WIDTH;
       labelHeight = LABEL_SIZE_HEIGHT;
 
-      let d = Math.hypot(w, h).toFixed(2);
+      const d = Math.hypot(w, h).toFixed(2);
 
       label.setTextContent(`W: ${Math.abs(w)} px
                             H: ${Math.abs(h)} px
@@ -348,15 +341,15 @@ MeasuringToolHighlighter.prototype = {
     }
 
     // Size used to position properly the label
-    let labelBoxWidth = (labelWidth + labelMargin) * scale;
-    let labelBoxHeight = (labelHeight + labelMargin) * scale;
+    const labelBoxWidth = (labelWidth + labelMargin) * scale;
+    const labelBoxHeight = (labelHeight + labelMargin) * scale;
 
-    let isGoingLeft = w < scrollX;
-    let isSizeGoingLeft = isSizeLabel && isGoingLeft;
-    let isExceedingLeftMargin = x - labelBoxWidth < scrollX;
-    let isExceedingRightMargin = x + labelBoxWidth > innerWidth + scrollX;
-    let isExceedingTopMargin = y - labelBoxHeight < scrollY;
-    let isExceedingBottomMargin = y + labelBoxHeight > innerHeight + scrollY;
+    const isGoingLeft = w < scrollX;
+    const isSizeGoingLeft = isSizeLabel && isGoingLeft;
+    const isExceedingLeftMargin = x - labelBoxWidth < scrollX;
+    const isExceedingRightMargin = x + labelBoxWidth > innerWidth + scrollX;
+    const isExceedingTopMargin = y - labelBoxHeight < scrollY;
+    const isExceedingBottomMargin = y + labelBoxHeight > innerHeight + scrollY;
 
     if ((isSizeGoingLeft && !isExceedingLeftMargin) || isExceedingRightMargin) {
       x -= labelBoxWidth;
@@ -371,47 +364,53 @@ MeasuringToolHighlighter.prototype = {
       y += isExceedingBottomMargin ? -labelBoxHeight : labelMargin * scale;
     }
 
-    label.setAttribute("style", `
+    label.setAttribute(
+      "style",
+      `
       width: ${labelWidth}px;
       height: ${labelHeight}px;
       transform-origin: ${origin};
       transform: translate(${x}px,${y}px) scale(${scale})
-    `);
+    `
+    );
 
     if (!isSizeLabel) {
-      let labelSize = this.getElement("label-size");
-      let style = labelSize.getAttribute("style");
+      const labelSize = this.getElement("label-size");
+      const style = labelSize.getAttribute("style");
 
       if (style) {
-        labelSize.setAttribute("style",
-          style.replace(/scale[^)]+\)/, `scale(${scale})`));
+        labelSize.setAttribute(
+          "style",
+          style.replace(/scale[^)]+\)/, `scale(${scale})`)
+        );
       }
     }
   },
 
   updateViewport() {
-    let { scrollX, scrollY, devicePixelRatio } = this.env.window;
-    let { documentWidth, documentHeight, zoom } = this.coords;
+    const { devicePixelRatio } = this.env.window;
+    const { documentWidth, documentHeight, zoom } = this.coords;
 
     // Because `devicePixelRatio` is affected by zoom (see bug 809788),
     // in order to get the "real" device pixel ratio, we need divide by `zoom`
-    let pixelRatio = devicePixelRatio / zoom;
+    const pixelRatio = devicePixelRatio / zoom;
 
     // The "real" device pixel ratio is used to calculate the max stroke
     // width we can actually assign: on retina, for instance, it would be 0.5,
     // where on non high dpi monitor would be 1.
-    let minWidth = 1 / pixelRatio;
-    let strokeWidth = Math.min(minWidth, minWidth / zoom);
+    const minWidth = 1 / pixelRatio;
+    const strokeWidth = minWidth / zoom;
 
-    this.getElement("root").setAttribute("style",
+    this.getElement("root").setAttribute(
+      "style",
       `stroke-width:${strokeWidth};
        width:${documentWidth}px;
-       height:${documentHeight}px;
-       transform: translate(${-scrollX}px,${-scrollY}px)`);
+       height:${documentHeight}px;`
+    );
   },
 
   updateGuides() {
-    let { x, y, w, h } = this.coords;
+    const { x, y, w, h } = this.coords;
 
     let guide = this.getElement("guide-top");
 
@@ -459,17 +458,17 @@ MeasuringToolHighlighter.prototype = {
   },
 
   showGuides() {
-    let prefix = this.ID_CLASS_PREFIX + "guide-";
+    const prefix = this.ID_CLASS_PREFIX + "guide-";
 
-    for (let side of SIDES) {
+    for (const side of SIDES) {
       this.markup.removeAttributeForElement(`${prefix + side}`, "hidden");
     }
   },
 
   hideGuides() {
-    let prefix = this.ID_CLASS_PREFIX + "guide-";
+    const prefix = this.ID_CLASS_PREFIX + "guide-";
 
-    for (let side of SIDES) {
+    for (const side of SIDES) {
       this.markup.setAttributeForElement(`${prefix + side}`, "hidden", "true");
     }
   },
@@ -478,7 +477,7 @@ MeasuringToolHighlighter.prototype = {
     let scrollX, scrollY, innerWidth, innerHeight;
     let x, y;
 
-    let { pageListenerTarget } = this.env;
+    const { pageListenerTarget } = this.env;
 
     switch (event.type) {
       case "mousedown":
@@ -488,7 +487,7 @@ MeasuringToolHighlighter.prototype = {
 
         this._isDragging = true;
 
-        let { window } = this.env;
+        const { window } = this.env;
 
         ({ scrollX, scrollY } = window);
         x = event.clientX + scrollX;
@@ -532,14 +531,14 @@ MeasuringToolHighlighter.prototype = {
         x = event.clientX + scrollX;
         y = event.clientY + scrollY;
 
-        let { coords } = this;
+        const { coords } = this;
 
-        x = Math.min(innerWidth + scrollX - 1, Math.max(0 + scrollX, x));
-        y = Math.min(innerHeight + scrollY, Math.max(1 + scrollY, y));
+        x = Math.min(innerWidth + scrollX, Math.max(scrollX, x));
+        y = Math.min(innerHeight + scrollY, Math.max(scrollY, y));
 
         this.setSize(x - coords.x, y - coords.y);
 
-        let type = this._isDragging ? "size" : "position";
+        const type = this._isDragging ? "size" : "position";
 
         this.showLabel(type);
         break;
@@ -549,15 +548,16 @@ MeasuringToolHighlighter.prototype = {
         }
         break;
       case "scroll":
-        setIgnoreLayoutChanges(true);
-        this.updateViewport();
-        setIgnoreLayoutChanges(false, this.env.window.document.documentElement);
-
+        this.hideLabel("position");
         break;
       case "pagehide":
-        this.destroy();
+        // If a page hide event is triggered for current window's highlighter, hide the
+        // highlighter.
+        if (event.target.defaultView === this.env.window) {
+          this.destroy();
+        }
         break;
     }
-  }
+  },
 };
 exports.MeasuringToolHighlighter = MeasuringToolHighlighter;

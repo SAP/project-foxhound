@@ -12,5 +12,8 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-head-element
-interface HTMLHeadElement : HTMLElement {};
+[Exposed=Window]
+interface HTMLHeadElement : HTMLElement {
+  [HTMLConstructor] constructor();
+};
 

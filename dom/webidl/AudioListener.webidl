@@ -10,22 +10,11 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="dom.webaudio.enabled"]
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface AudioListener {
-
-    // same as OpenAL (default 1)
-    [Deprecated="PannerNodeDoppler"]
-    attribute double dopplerFactor;
-
-    // in meters / second (default 343.3)
-    [Deprecated="PannerNodeDoppler"]
-    attribute double speedOfSound;
-
     // Uses a 3D cartesian coordinate system
     void setPosition(double x, double y, double z);
     void setOrientation(double x, double y, double z, double xUp, double yUp, double zUp);
-    [Deprecated="PannerNodeDoppler"]
-    void setVelocity(double x, double y, double z);
-
 };
 

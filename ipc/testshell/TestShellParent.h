@@ -21,46 +21,47 @@ namespace ipc {
 
 class TestShellCommandParent;
 
-class TestShellParent : public PTestShellParent
-{
-public:
+class TestShellParent : public PTestShellParent {
+  friend class PTestShellParent;
+
+ public:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  PTestShellCommandParent*
-  AllocPTestShellCommandParent(const nsString& aCommand) override;
+  PTestShellCommandParent* AllocPTestShellCommandParent(
+      const nsString& aCommand);
 
-  bool
-  DeallocPTestShellCommandParent(PTestShellCommandParent* aActor) override;
+  bool DeallocPTestShellCommandParent(PTestShellCommandParent* aActor);
 
-  bool
-  CommandDone(TestShellCommandParent* aActor, const nsString& aResponse);
+  bool CommandDone(TestShellCommandParent* aActor, const nsString& aResponse);
 };
 
+class TestShellCommandParent : public PTestShellCommandParent {
+  friend class PTestShellCommandParent;
 
-class TestShellCommandParent : public PTestShellCommandParent
-{
-public:
+ public:
   TestShellCommandParent() {}
 
-  bool SetCallback(JSContext* aCx, JS::Value aCallback);
+  bool SetCallback(JSContext* aCx, const JS::Value& aCallback);
 
   bool RunCallback(const nsString& aResponse);
 
   void ReleaseCallback();
 
-protected:
+ protected:
   bool ExecuteCallback(const nsString& aResponse);
 
-  void ActorDestroy(ActorDestroyReason why);
+  void ActorDestroy(ActorDestroyReason why) override;
 
-  bool Recv__delete__(const nsString& aResponse) {
-    return ExecuteCallback(aResponse);
+  mozilla::ipc::IPCResult Recv__delete__(const nsString& aResponse) override {
+    if (!ExecuteCallback(aResponse)) {
+      return IPC_FAIL_NO_REASON(this);
+    }
+    return IPC_OK();
   }
 
-private:
+ private:
   JS::PersistentRooted<JS::Value> mCallback;
 };
-
 
 } /* namespace ipc */
 } /* namespace mozilla */

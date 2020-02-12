@@ -13,83 +13,73 @@
 #include "nsCOMPtr.h"
 #include "nsISocketFilter.h"
 #include "js/TypeDecls.h"
-#include "mozilla/net/OfflineObserver.h"
 
-#define TCPSOCKETPARENT_CID \
-  { 0x4e7246c6, 0xa8b3, 0x426d, { 0x9c, 0x17, 0x76, 0xda, 0xb1, 0xe1, 0xe1, 0x4a } }
+#define TCPSOCKETPARENT_CID                          \
+  {                                                  \
+    0x4e7246c6, 0xa8b3, 0x426d, {                    \
+      0x9c, 0x17, 0x76, 0xda, 0xb1, 0xe1, 0xe1, 0x4a \
+    }                                                \
+  }
 
 namespace mozilla {
 namespace dom {
 
 class TCPSocket;
 
-class TCPSocketParentBase : public nsISupports
-                          , public mozilla::net::DisconnectableParent
-{
-public:
+class TCPSocketParentBase : public nsISupports {
+ public:
   NS_DECL_CYCLE_COLLECTION_CLASS(TCPSocketParentBase)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   void AddIPDLReference();
   void ReleaseIPDLReference();
 
-protected:
+  bool IPCOpen() const { return mIPCOpen; }
+
+ protected:
   TCPSocketParentBase();
   virtual ~TCPSocketParentBase();
 
   RefPtr<TCPSocket> mSocket;
-  RefPtr<mozilla::net::OfflineObserver> mObserver;
   bool mIPCOpen;
 };
 
-class TCPSocketParent : public mozilla::net::PTCPSocketParent
-                      , public TCPSocketParentBase
-{
-public:
+class TCPSocketParent : public mozilla::net::PTCPSocketParent,
+                        public TCPSocketParentBase {
+ public:
   NS_IMETHOD_(MozExternalRefCountType) Release() override;
 
   TCPSocketParent() {}
 
-  virtual bool RecvOpen(const nsString& aHost, const uint16_t& aPort,
-                        const bool& useSSL, const bool& aUseArrayBuffers) override;
+  mozilla::ipc::IPCResult RecvOpen(const nsString& aHost, const uint16_t& aPort,
+                                   const bool& useSSL,
+                                   const bool& aUseArrayBuffers);
 
-  virtual bool RecvOpenBind(const nsCString& aRemoteHost,
-                            const uint16_t& aRemotePort,
-                            const nsCString& aLocalAddr,
-                            const uint16_t& aLocalPort,
-                            const bool&     aUseSSL,
-                            const bool& aUseArrayBuffers,
-                            const nsCString& aFilter) override;
+  mozilla::ipc::IPCResult RecvStartTLS();
+  mozilla::ipc::IPCResult RecvSuspend();
+  mozilla::ipc::IPCResult RecvResume();
+  mozilla::ipc::IPCResult RecvClose();
+  mozilla::ipc::IPCResult RecvData(const SendableData& aData);
+  mozilla::ipc::IPCResult RecvRequestDelete();
 
-  virtual bool RecvStartTLS() override;
-  virtual bool RecvSuspend() override;
-  virtual bool RecvResume() override;
-  virtual bool RecvClose() override;
-  virtual bool RecvData(const SendableData& aData,
-                        const uint32_t& aTrackingNumber) override;
-  virtual bool RecvRequestDelete() override;
-  virtual nsresult OfflineNotification(nsISupports *) override;
-  virtual uint32_t GetAppId() override;
-  bool GetInIsolatedMozBrowser();
-
-  void FireErrorEvent(const nsAString& aName, const nsAString& aType, TCPReadyState aReadyState);
+  void FireErrorEvent(const nsAString& aName, const nsAString& aType,
+                      TCPReadyState aReadyState);
   void FireEvent(const nsAString& aType, TCPReadyState aReadyState);
-  void FireArrayBufferDataEvent(nsTArray<uint8_t>& aBuffer, TCPReadyState aReadyState);
+  void FireArrayBufferDataEvent(nsTArray<uint8_t>& aBuffer,
+                                TCPReadyState aReadyState);
   void FireStringDataEvent(const nsACString& aData, TCPReadyState aReadyState);
 
-  void SetSocket(TCPSocket *socket);
+  void SetSocket(TCPSocket* socket);
   nsresult GetHost(nsAString& aHost);
   nsresult GetPort(uint16_t* aPort);
 
-private:
+ private:
   virtual void ActorDestroy(ActorDestroyReason why) override;
-  void SendEvent(const nsAString& aType, CallbackData aData, TCPReadyState aReadyState);
-  nsresult SetFilter(const nsCString& aFilter);
-
-  nsCOMPtr<nsISocketFilter> mFilter;
+  void SendEvent(const nsAString& aType, CallbackData aData,
+                 TCPReadyState aReadyState);
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

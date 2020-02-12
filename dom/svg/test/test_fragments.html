@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=759124
 -->
 <head>
   <title>Test for Bug 759124</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -13,24 +13,23 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=759124
 <p id="display"></p>
 <div id="content" style="display: none"></div>
 
-<iframe id="svg" src="fragments-helper.svg"></iframe>
+<iframe id="svg"></iframe>
 
 <pre id="test">
 <script class="testbody" type="application/javascript">
+var svg = $("svg");
+
 SimpleTest.waitForExplicitFinish();
 
 function Test(svgFragmentIdentifier, valid, viewBoxString,
-              preserveAspectRatioString, zoomAndPanString)
-{
+              preserveAspectRatioString, zoomAndPanString) {
     this.svgFragmentIdentifier = svgFragmentIdentifier;
     this.valid = valid;
 }
 
-function runTests()
-{
-  var svg = $("svg");
+function runTests() {
   var doc = svg.contentWindow.document;
-  var rootElement = doc.rootElement;
+  var rootElement = doc.documentElement;
 
   var tests = [
       new Test("unknown", false),
@@ -58,7 +57,7 @@ function runTests()
       new Test("svgView(zoomAndPan(disable)", false),
       new Test("svgView(zoomAndPan(disable) ", false),
       new Test("svgView(zoomAndPan(disable)]", false),
-      new Test("svgView(zoomAndPan(disable)))", false)
+      new Test("svgView(zoomAndPan(disable)))", false),
   ];
 
   var src = svg.getAttribute("src");
@@ -109,7 +108,8 @@ function runTests()
   SimpleTest.finish();
 }
 
-$(svg).addEventListener("load", runTests, false);
+svg.addEventListener("load", runTests);
+svg.setAttribute("src", "fragments-helper.svg");
 </script>
 </pre>
 </body>

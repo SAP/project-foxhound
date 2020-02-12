@@ -1,31 +1,36 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
-const TEST_URI = "data:text/html;charset=utf-8," +
+"use strict";
+
+const TEST_URI =
+  "data:text/html;charset=utf-8," +
   "<p>browser_telemetry_button_scratchpad.js</p>";
 
 // Because we need to gather stats for the period of time that a tool has been
 // opened we make use of setTimeout() to create tool active times.
 const TOOL_DELAY = 200;
 
-add_task(function* () {
-  yield addTab(TEST_URI);
-  let Telemetry = loadTelemetryAndRecordLogs();
+add_task(async function() {
+  await addTab(TEST_URI);
+  startTelemetry();
 
-  let target = TargetFactory.forTab(gBrowser.selectedTab);
-  let toolbox = yield gDevTools.showToolbox(target, "inspector");
+  await pushPref("devtools.command-button-scratchpad.enabled", true);
+
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  const toolbox = await gDevTools.showToolbox(target, "inspector");
   info("inspector opened");
 
-  let onAllWindowsOpened = trackScratchpadWindows();
+  const onAllWindowsOpened = trackScratchpadWindows();
 
   info("testing the scratchpad button");
-  yield testButton(toolbox, Telemetry);
-  yield onAllWindowsOpened;
+  await testButton(toolbox);
+  await onAllWindowsOpened;
 
-  checkResults("_SCRATCHPAD_", Telemetry);
+  checkResults();
 
-  stopRecordingTelemetryLogs(Telemetry);
-  yield gDevTools.closeToolbox(target);
+  await toolbox.destroy();
   gBrowser.removeCurrentTab();
 });
 
@@ -37,39 +42,46 @@ function trackScratchpadWindows() {
   return new Promise(resolve => {
     Services.ww.registerNotification(function observer(subject, topic) {
       if (topic == "domwindowopened") {
-        let win = subject.QueryInterface(Ci.nsIDOMWindow);
-        win.addEventListener("load", function onLoad() {
-          win.removeEventListener("load", onLoad, false);
+        const win = subject;
+        win.addEventListener(
+          "load",
+          function() {
+            if (win.Scratchpad) {
+              win.Scratchpad.addObserver({
+                onReady: function() {
+                  win.Scratchpad.removeObserver(this);
+                  numScratchpads++;
+                  win.close();
 
-          if (win.Scratchpad) {
-            win.Scratchpad.addObserver({
-              onReady: function () {
-                win.Scratchpad.removeObserver(this);
-                numScratchpads++;
-                win.close();
+                  info(
+                    "another scratchpad was opened and closed, " +
+                      `count is now ${numScratchpads}`
+                  );
 
-                info("another scratchpad was opened and closed, count is now " + numScratchpads);
-
-                if (numScratchpads === 4) {
-                  Services.ww.unregisterNotification(observer);
-                  info("4 scratchpads have been opened and closed, checking results");
-                  resolve();
-                }
-              },
-            });
-          }
-        }, false);
+                  if (numScratchpads === 4) {
+                    Services.ww.unregisterNotification(observer);
+                    info(
+                      "4 scratchpads have been opened and closed, checking results"
+                    );
+                    resolve();
+                  }
+                },
+              });
+            }
+          },
+          { once: true }
+        );
       }
     });
   });
 }
 
-function* testButton(toolbox, Telemetry) {
+async function testButton(toolbox) {
   info("Testing command-button-scratchpad");
-  let button = toolbox.doc.querySelector("#command-button-scratchpad");
+  const button = toolbox.doc.querySelector("#command-button-scratchpad");
   ok(button, "Captain, we have the button");
 
-  yield delayedClicks(button, 4);
+  await delayedClicks(button, 4);
 }
 
 function delayedClicks(node, clicks) {
@@ -91,34 +103,13 @@ function delayedClicks(node, clicks) {
   });
 }
 
-function checkResults(histIdFocus, Telemetry) {
-  let result = Telemetry.prototype.telemetryInfo;
-
-  for (let [histId, value] of Object.entries(result)) {
-    if (histId.startsWith("DEVTOOLS_INSPECTOR_") ||
-        !histId.includes(histIdFocus)) {
-      // Inspector stats are tested in
-      // browser_telemetry_toolboxtabs_{toolname}.js so we skip them here
-      // because we only open the inspector once for this test.
-      continue;
-    }
-
-    if (histId.endsWith("OPENED_COUNT")) {
-      ok(value.length > 1, histId + " has more than one entry");
-
-      let okay = value.every(function (element) {
-        return element === true;
-      });
-
-      ok(okay, "All " + histId + " entries are === true");
-    } else if (histId.endsWith("TIME_ACTIVE_SECONDS")) {
-      ok(value.length > 1, histId + " has more than one entry");
-
-      let okay = value.every(function (element) {
-        return element > 0;
-      });
-
-      ok(okay, "All " + histId + " entries have time > 0");
-    }
-  }
+function checkResults() {
+  // For help generating these tests use generateTelemetryTests("DEVTOOLS_SCRATCHPAD_")
+  // here.
+  checkTelemetry(
+    "DEVTOOLS_SCRATCHPAD_WINDOW_OPENED_COUNT",
+    "",
+    { 0: 4, 1: 0 },
+    "array"
+  );
 }

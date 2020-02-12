@@ -6,14 +6,19 @@
 </head>
 <body>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 createHTML({
   bug: "1032848",
   title: "Canvas(2D)::CaptureStream as video-only input to peerconnection",
   visible: true
 });
 
-runNetworkTest(() => {
+runNetworkTest(async () => {
+  // [TODO] re-enable HW decoder after bug 1526207 is fixed.
+  if (navigator.userAgent.includes("Android")) {
+    await pushPrefs(["media.navigator.mediadatadecoder_vpx_enabled", false]);
+  }
+
   var test = new PeerConnectionTest();
   var mediaElement;
   var h = new CaptureStreamTestHelper2D();
@@ -25,20 +30,33 @@ runNetworkTest(() => {
 
   test.setMediaConstraints([{video: true}], []);
   test.chain.replace("PC_LOCAL_GUM", [
-    function PC_LOCAL_DRAW_INITIAL_LOCAL_GREEN(test) {
-      h.drawColor(canvas, h.green);
-    },
     function PC_LOCAL_CANVAS_CAPTURESTREAM(test) {
+      h.drawColor(canvas, h.green);
       stream = canvas.captureStream(0);
       test.pcLocal.attachLocalStream(stream);
+      stream.requestFrame();
+      var i = 0;
+      return setInterval(function() {
+        try {
+          info("draw " + i ? "green" : "red");
+          h.drawColor(canvas, i ? h.green : h.red);
+          i = 1 - i;
+          stream.requestFrame();
+        } catch (e) {
+          // ignore; stream might have shut down, and we don't bother clearing
+          // the setInterval.
+        }
+      }, 500);
     }
   ]);
   test.chain.append([
     function PC_REMOTE_WAIT_FOR_REMOTE_GREEN() {
       mediaElement = test.pcRemote.remoteMediaElements[0];
       ok(!!mediaElement, "Should have remote video element for pcRemote");
-      return h.waitForPixelColor(mediaElement, h.green, 128,
-                                 "pcRemote's remote should become green");
+      return h.pixelMustBecome(mediaElement, h.green, {
+        threshold: 128,
+        infoString: "pcRemote's remote should become green",
+      });
     },
     function PC_LOCAL_DRAW_LOCAL_RED() {
       // After requesting a frame it will be captured at the time of next render.
@@ -48,8 +66,10 @@ runNetworkTest(() => {
       h.drawColor(canvas, h.red);
     },
     function PC_REMOTE_WAIT_FOR_REMOTE_RED() {
-      return h.waitForPixelColor(mediaElement, h.red, 128,
-                                 "pcRemote's remote should become red");
+      return h.pixelMustBecome(mediaElement, h.red, {
+        threshold: 128,
+        infoString: "pcRemote's remote should become red",
+      });
     }
   ]);
   test.run();

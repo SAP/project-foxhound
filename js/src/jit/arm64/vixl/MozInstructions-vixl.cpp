@@ -85,6 +85,11 @@ bool Instruction::IsNOP() const {
 }
 
 
+bool Instruction::IsCSDB() const {
+  return Mask(SystemHintMask) == HINT && ImmHint() == CSDB;
+}
+
+
 bool Instruction::IsADR() const {
   return Mask(PCRelAddressingMask) == ADR;
 }
@@ -95,23 +100,34 @@ bool Instruction::IsADRP() const {
 }
 
 
+bool Instruction::IsMovz() const {
+  return (Mask(MoveWideImmediateMask) == MOVZ_x) ||
+         (Mask(MoveWideImmediateMask) == MOVZ_w);
+}
+
+
+bool Instruction::IsMovk() const {
+  return (Mask(MoveWideImmediateMask) == MOVK_x) ||
+         (Mask(MoveWideImmediateMask) == MOVK_w);
+}
+
 bool Instruction::IsBranchLinkImm() const {
   return Mask(UnconditionalBranchFMask) == (UnconditionalBranchFixed | BL);
 }
 
 
-bool Instruction::IsTargetReachable(Instruction* target) const {
+bool Instruction::IsTargetReachable(const Instruction* target) const {
     VIXL_ASSERT(((target - this) & 3) == 0);
     int offset = (target - this) >> kInstructionSizeLog2;
     switch (BranchType()) {
       case CondBranchType:
-        return is_int19(offset);
+        return IsInt19(offset);
       case UncondBranchType:
-        return is_int26(offset);
+        return IsInt26(offset);
       case CompareBranchType:
-        return is_int19(offset);
+        return IsInt19(offset);
       case TestBranchType:
-        return is_int14(offset);
+        return IsInt14(offset);
       default:
         VIXL_UNREACHABLE();
     }

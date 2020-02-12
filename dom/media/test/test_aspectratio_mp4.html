@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=975978
 
 <head>
   <title>Media test: default video size</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -14,12 +14,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=975978
 
 <pre id="test">
 <script class="testbody" type="text/javascript">
-
-function IsWindows7OrLater() {
-  var re = /Windows NT (\d.\d)/;
-  var winver = navigator.userAgent.match(re);
-  return winver && winver.length == 2 && parseFloat(winver[1]) >= 6.1;
-}
 
 SimpleTest.waitForExplicitFinish();
 
@@ -40,7 +34,7 @@ v.addEventListener("error", function(ev) {
     todo(false, "This platform doesn't support to retrieve MP4 metadata.");
     SimpleTest.finish();
   }
-}, false);
+});
 
 v.src = resource.name;
 v.preload = "auto";

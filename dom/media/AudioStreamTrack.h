@@ -13,35 +13,32 @@ namespace mozilla {
 namespace dom {
 
 class AudioStreamTrack : public MediaStreamTrack {
-public:
-  AudioStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
-                   TrackID aInputTrackID,
-                   MediaStreamTrackSource* aSource,
-                   const MediaTrackConstraints& aConstraints = MediaTrackConstraints())
-    : MediaStreamTrack(aStream, aTrackID, aInputTrackID, aSource, aConstraints) {}
-
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+ public:
+  AudioStreamTrack(
+      nsPIDOMWindowInner* aWindow, mozilla::MediaTrack* aInputTrack,
+      MediaStreamTrackSource* aSource,
+      MediaStreamTrackState aReadyState = MediaStreamTrackState::Live,
+      const MediaTrackConstraints& aConstraints = MediaTrackConstraints())
+      : MediaStreamTrack(aWindow, aInputTrack, aSource, aReadyState,
+                         aConstraints) {}
 
   AudioStreamTrack* AsAudioStreamTrack() override { return this; }
-
   const AudioStreamTrack* AsAudioStreamTrack() const override { return this; }
+
+  void AddAudioOutput(void* aKey);
+  void RemoveAudioOutput(void* aKey);
+  void SetAudioOutputVolume(void* aKey, float aVolume);
 
   // WebIDL
   void GetKind(nsAString& aKind) override { aKind.AssignLiteral("audio"); }
 
-protected:
-  already_AddRefed<MediaStreamTrack> CloneInternal(DOMMediaStream* aOwningStream,
-                                                   TrackID aTrackID) override
-  {
-    return do_AddRef(new AudioStreamTrack(aOwningStream,
-                                          aTrackID,
-                                          mInputTrackID,
-                                          mSource,
-                                          mConstraints));
-  }
+  void GetLabel(nsAString& aLabel, CallerType aCallerType) override;
+
+ protected:
+  already_AddRefed<MediaStreamTrack> CloneInternal() override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif /* AUDIOSTREAMTRACK_H_ */

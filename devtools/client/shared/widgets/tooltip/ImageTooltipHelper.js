@@ -1,21 +1,23 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/inspector.properties");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper(
+  "devtools/client/locales/inspector.properties"
+);
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 // Default image tooltip max dimension
 const MAX_DIMENSION = 200;
 const CONTAINER_MIN_WIDTH = 100;
-const LABEL_HEIGHT = 20;
+// Should remain synchronized with tooltips.css --image-tooltip-image-padding
 const IMAGE_PADDING = 4;
+// Should remain synchronized with tooltips.css --image-tooltip-label-height
+const LABEL_HEIGHT = 20;
 
 /**
  * Image preview tooltips should be provided with the naturalHeight and
@@ -31,10 +33,10 @@ const IMAGE_PADDING = 4;
  */
 function getImageDimensions(doc, imageUrl) {
   return new Promise(resolve => {
-    let imgObj = new doc.defaultView.Image();
+    const imgObj = new doc.defaultView.Image();
     imgObj.onload = () => {
       imgObj.onload = null;
-      let { naturalWidth, naturalHeight } = imgObj;
+      const { naturalWidth, naturalHeight } = imgObj;
       resolve({ naturalWidth, naturalHeight });
     };
     imgObj.src = imageUrl;
@@ -56,56 +58,66 @@ function getImageDimensions(doc, imageUrl) {
  *        - {Number} naturalHeight mandatory, height of the image to display
  *        - {Number} maxDim optional, max width/height of the preview
  *        - {Boolean} hideDimensionLabel optional, pass true to hide the label
+ *        - {Boolean} hideCheckeredBackground optional, pass true to hide
+                      the checkered background
  */
 function setImageTooltip(tooltip, doc, imageUrl, options) {
-  let {naturalWidth, naturalHeight, hideDimensionLabel, maxDim} = options;
+  let {
+    naturalWidth,
+    naturalHeight,
+    hideDimensionLabel,
+    hideCheckeredBackground,
+    maxDim,
+  } = options;
   maxDim = maxDim || MAX_DIMENSION;
 
   let imgHeight = naturalHeight;
   let imgWidth = naturalWidth;
   if (imgHeight > maxDim || imgWidth > maxDim) {
-    let scale = maxDim / Math.max(imgHeight, imgWidth);
+    const scale = maxDim / Math.max(imgHeight, imgWidth);
     // Only allow integer values to avoid rounding errors.
     imgHeight = Math.floor(scale * naturalHeight);
     imgWidth = Math.ceil(scale * naturalWidth);
   }
 
   // Create tooltip content
-  let div = doc.createElementNS(XHTML_NS, "div");
-  div.style.cssText = `
-    height: 100%;
-    min-width: 100px;
-    display: flex;
-    flex-direction: column;
-    text-align: center;`;
-  let html = `
-    <div style="flex: 1;
-                display: flex;
-                padding: ${IMAGE_PADDING}px;
-                align-items: center;
-                justify-content: center;
-                min-height: 1px;">
-      <img style="height: ${imgHeight}px; max-height: 100%;" src="${imageUrl}"/>
-    </div>`;
+  const container = doc.createElementNS(XHTML_NS, "div");
+  container.classList.add("devtools-tooltip-image-container");
+
+  const wrapper = doc.createElementNS(XHTML_NS, "div");
+  wrapper.classList.add("devtools-tooltip-image-wrapper");
+  container.appendChild(wrapper);
+
+  const img = doc.createElementNS(XHTML_NS, "img");
+  img.classList.add("devtools-tooltip-image");
+  img.classList.toggle("devtools-tooltip-tiles", !hideCheckeredBackground);
+  img.style.height = imgHeight;
+  img.src = encodeURI(imageUrl);
+  wrapper.appendChild(img);
 
   if (!hideDimensionLabel) {
-    let label = naturalWidth + " \u00D7 " + naturalHeight;
-    html += `
-      <div style="height: ${LABEL_HEIGHT}px;
-                  text-align: center;">
-        <span class="theme-comment devtools-tooltip-caption">${label}</span>
-      </div>`;
+    const dimensions = doc.createElementNS(XHTML_NS, "div");
+    dimensions.classList.add("devtools-tooltip-image-dimensions");
+    container.appendChild(dimensions);
+
+    const label = naturalWidth + " \u00D7 " + naturalHeight;
+    const span = doc.createElementNS(XHTML_NS, "span");
+    span.classList.add("theme-comment", "devtools-tooltip-caption");
+    span.textContent = label;
+    dimensions.appendChild(span);
   }
-  div.innerHTML = html;
+
+  tooltip.panel.innerHTML = "";
+  tooltip.panel.appendChild(container);
 
   // Calculate tooltip dimensions
+  const width = Math.max(CONTAINER_MIN_WIDTH, imgWidth + 2 * IMAGE_PADDING);
   let height = imgHeight + 2 * IMAGE_PADDING;
   if (!hideDimensionLabel) {
-    height += LABEL_HEIGHT;
+    height += parseFloat(LABEL_HEIGHT);
   }
-  let width = Math.max(CONTAINER_MIN_WIDTH, imgWidth + 2 * IMAGE_PADDING);
 
-  tooltip.setContent(div, {width, height});
+  tooltip.setContentSize({ width, height });
 }
 
 /*
@@ -118,16 +130,14 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
  *        A document element to create the HTML elements needed for the tooltip
  */
 function setBrokenImageTooltip(tooltip, doc) {
-  let div = doc.createElementNS(XHTML_NS, "div");
-  div.style.cssText = `
-    box-sizing: border-box;
-    height: 100%;
-    text-align: center;
-    line-height: 30px;`;
-
-  let message = L10N.getStr("previewTooltip.image.brokenImage");
+  const div = doc.createElementNS(XHTML_NS, "div");
+  div.className = "theme-comment devtools-tooltip-image-broken";
+  const message = L10N.getStr("previewTooltip.image.brokenImage");
   div.textContent = message;
-  tooltip.setContent(div, {width: 150, height: 30});
+
+  tooltip.panel.innerHTML = "";
+  tooltip.panel.appendChild(div);
+  tooltip.setContentSize({ width: "auto", height: "auto" });
 }
 
 module.exports.getImageDimensions = getImageDimensions;

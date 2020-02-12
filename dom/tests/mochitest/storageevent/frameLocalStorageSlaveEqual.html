@@ -12,7 +12,7 @@ var events = [];
 window.addEventListener("storage", function(event)
 {
   events.push(event);
-}, false);
+});
 
 function doStep()
 {
@@ -50,6 +50,6 @@ function doStep()
 
 </head>
 
-<body onload="postMsg('frame loaded');">
+<body onload="postMsg('frame loaded', 'http://mochi.test:8888');">
 </body>
 </html>

@@ -1,5 +1,4 @@
 <?xml version="1.0"?>
-<?xml-stylesheet href="chrome://global/skin" type="text/css"?>
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 <!--
   XUL Widget Test for bug 562554
@@ -7,26 +6,17 @@
 <window title="Bug 562554" width="400" height="400"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>  
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
 
-<xbl:bindings xmlns:xbl="http://www.mozilla.org/xbl">
-  <xbl:binding id="menu" display="xul:menu"
-               extends="chrome://global/content/bindings/button.xml#button-base">
-    <xbl:content>
-      <xbl:children includes="menupopup"/>
-      <xul:stack>
-         <xul:button width="100" left="0" top="0" height="30" allowevents="true"
-                     onclick="eventReceived('clickbutton1'); return false;"/>
-         <xul:button width="100" left="70" top="0" height="30" 
-                     onclick="eventReceived('clickbutton2'); return false;"/>
-      </xul:stack>
-    </xbl:content>
-  </xbl:binding>
-</xbl:bindings>
-
-  <toolbarbutton type="menu" id="toolbarmenu" height="200" style="-moz-binding: url(#menu);">
+  <toolbarbutton type="menu" id="toolbarmenu" height="200">
     <menupopup id="menupopup" onpopupshowing="eventReceived('popupshowing'); return false;"/>
+    <stack>
+      <button width="100" left="0" top="0" height="30" allowevents="true"
+              onclick="eventReceived('clickbutton1'); return false;"/>
+      <button width="100" left="70" top="0" height="30"
+              onclick="eventReceived('clickbutton2'); return false;"/>
+    </stack>
   </toolbarbutton>
 
   <!-- test results are displayed in the html:body -->
@@ -47,12 +37,15 @@ function test() {
 let tests = [
   // Click on the toolbarbutton itself - should call popupshowing
   () => synthesizeMouse($("toolbarmenu"), 10, 50, {}, window),
+  () => is(eventCount.popupshowing, 1, "Got first popupshowing event"),
 
   // Click on button1 which has allowevents="true" - should call clickbutton1
   () => synthesizeMouse($("toolbarmenu"), 10, 15, {}, window),
+  () => is(eventCount.clickbutton1, 1, "Button 1 clicked"),
 
   // Click on button2 where it intersects with button1 - should call popupshowing
   () => synthesizeMouse($("toolbarmenu"), 85, 15, {}, window),
+  () => is(eventCount.popupshowing, 2, "Got second popupshowing event"),
 
   // Click on button2 outside of intersection - should call popupshowing
   () => synthesizeMouse($("toolbarmenu"), 150, 15, {}, window)

@@ -9,18 +9,18 @@ GeckoSimplePrograms([
 ], linkage=None)
 
 # See the comment at the top of SmokeDMD.cpp:RunTests().
-if CONFIG['OS_ARCH'] == 'WINNT':
+if CONFIG['CXX_TYPE'] == 'clang-cl':
     CXXFLAGS += ['-Og-']
 else:
     CXXFLAGS += ['-O0']
 
 DEFINES['MOZ_NO_MOZALLOC'] = True
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
 XPCSHELL_TESTS_MANIFESTS += [
     'xpcshell.ini',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

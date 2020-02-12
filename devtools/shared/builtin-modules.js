@@ -13,48 +13,109 @@
  * they would also miss them.
  */
 
-const { Cu, CC, Cc, Ci } = require("chrome");
-const { Loader } = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
-const promise = Cu.import("resource://gre/modules/Promise.jsm", {}).Promise;
-const jsmScope = Cu.import("resource://gre/modules/Services.jsm", {});
-const { Services } = jsmScope;
+const { Cu, Cc, Ci } = require("chrome");
+const promise = require("resource://gre/modules/Promise.jsm").Promise;
+const jsmScope = require("resource://devtools/shared/Loader.jsm");
+const { Services } = require("resource://gre/modules/Services.jsm");
+
+const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+
 // Steal various globals only available in JSM scope (and not Sandbox one)
-const { PromiseDebugging, ChromeUtils, ThreadSafeChromeUtils, HeapSnapshot,
-        atob, btoa, Iterator } = jsmScope;
-const { URL } = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                           {wantGlobalProperties: ["URL"]});
+const {
+  BrowsingContext,
+  console,
+  DebuggerNotificationObserver,
+  DOMPoint,
+  DOMQuad,
+  DOMRect,
+  HeapSnapshot,
+  NamedNodeMap,
+  NodeFilter,
+  StructuredCloneHolder,
+  TelemetryStopwatch,
+} = Cu.getGlobalForObject(jsmScope);
+
+// Create a single Sandbox to access global properties needed in this module.
+// Sandbox are memory expensive, so we should create as little as possible.
+const debuggerSandbox = Cu.Sandbox(systemPrincipal, {
+  // This sandbox is also reused for ChromeDebugger implementation.
+  // As we want to load the `Debugger` API for debugging chrome contexts,
+  // we have to ensure loading it in a distinct compartment from its debuggee.
+  freshCompartment: true,
+
+  wantGlobalProperties: [
+    "atob",
+    "btoa",
+    "Blob",
+    "ChromeUtils",
+    "CSS",
+    "CSSRule",
+    "DOMParser",
+    "Element",
+    "Event",
+    "FileReader",
+    "FormData",
+    "indexedDB",
+    "InspectorUtils",
+    "Node",
+    "TextDecoder",
+    "TextEncoder",
+    "URL",
+    "XMLHttpRequest",
+  ],
+});
+
+const {
+  atob,
+  btoa,
+  Blob,
+  ChromeUtils,
+  CSS,
+  CSSRule,
+  DOMParser,
+  Element,
+  Event,
+  FileReader,
+  FormData,
+  indexedDB,
+  InspectorUtils,
+  Node,
+  TextDecoder,
+  TextEncoder,
+  URL,
+  XMLHttpRequest,
+} = debuggerSandbox;
 
 /**
  * Defines a getter on a specified object that will be created upon first use.
  *
- * @param aObject
+ * @param object
  *        The object to define the lazy getter on.
- * @param aName
- *        The name of the getter to define on aObject.
- * @param aLambda
+ * @param name
+ *        The name of the getter to define on object.
+ * @param lambda
  *        A function that returns what the getter should return.  This will
  *        only ever be called once.
  */
-function defineLazyGetter(aObject, aName, aLambda)
-{
-  Object.defineProperty(aObject, aName, {
-    get: function () {
+function defineLazyGetter(object, name, lambda) {
+  Object.defineProperty(object, name, {
+    get: function() {
       // Redefine this accessor property as a data property.
-      // Delete it first, to rule out "too much recursion" in case aObject is
+      // Delete it first, to rule out "too much recursion" in case object is
       // a proxy whose defineProperty handler might unwittingly trigger this
       // getter again.
-      delete aObject[aName];
-      let value = aLambda.apply(aObject);
-      Object.defineProperty(aObject, aName, {
+      delete object[name];
+      const value = lambda.apply(object);
+      Object.defineProperty(object, name, {
         value,
         writable: true,
         configurable: true,
-        enumerable: true
+        enumerable: true,
       });
       return value;
     },
     configurable: true,
-    enumerable: true
+    enumerable: true,
   });
 }
 
@@ -62,19 +123,18 @@ function defineLazyGetter(aObject, aName, aLambda)
  * Defines a getter on a specified object for a service.  The service will not
  * be obtained until first use.
  *
- * @param aObject
+ * @param object
  *        The object to define the lazy getter on.
- * @param aName
- *        The name of the getter to define on aObject for the service.
- * @param aContract
+ * @param name
+ *        The name of the getter to define on object for the service.
+ * @param contract
  *        The contract used to obtain the service.
- * @param aInterfaceName
+ * @param interfaceName
  *        The name of the interface to query the service to.
  */
-function defineLazyServiceGetter(aObject, aName, aContract, aInterfaceName)
-{
-  defineLazyGetter(aObject, aName, function XPCU_serviceLambda() {
-    return Cc[aContract].getService(Ci[aInterfaceName]);
+function defineLazyServiceGetter(object, name, contract, interfaceName) {
+  defineLazyGetter(object, name, function() {
+    return Cc[contract].getService(Ci[interfaceName]);
   });
 }
 
@@ -84,48 +144,54 @@ function defineLazyServiceGetter(aObject, aName, aContract, aInterfaceName)
  * teardown code (e.g.  to register/unregister to services) and accepts
  * a proxy object which acts on behalf of the module until it is imported.
  *
- * @param aObject
+ * @param object
  *        The object to define the lazy getter on.
- * @param aName
- *        The name of the getter to define on aObject for the module.
- * @param aResource
+ * @param name
+ *        The name of the getter to define on object for the module.
+ * @param resource
  *        The URL used to obtain the module.
- * @param aSymbol
+ * @param symbol
  *        The name of the symbol exported by the module.
- *        This parameter is optional and defaults to aName.
- * @param aPreLambda
+ *        This parameter is optional and defaults to name.
+ * @param preLambda
  *        A function that is executed when the proxy is set up.
  *        This will only ever be called once.
- * @param aPostLambda
+ * @param postLambda
  *        A function that is executed when the module has been imported to
  *        run optional teardown procedures on the proxy object.
  *        This will only ever be called once.
- * @param aProxy
+ * @param proxy
  *        An object which acts on behalf of the module to be imported until
  *        the module has been imported.
  */
-function defineLazyModuleGetter(aObject, aName, aResource, aSymbol,
-                                aPreLambda, aPostLambda, aProxy)
-{
-  let proxy = aProxy || {};
+function defineLazyModuleGetter(
+  object,
+  name,
+  resource,
+  symbol,
+  preLambda,
+  postLambda,
+  proxy
+) {
+  proxy = proxy || {};
 
-  if (typeof (aPreLambda) === "function") {
-    aPreLambda.apply(proxy);
+  if (typeof preLambda === "function") {
+    preLambda.apply(proxy);
   }
 
-  defineLazyGetter(aObject, aName, function XPCU_moduleLambda() {
-    var temp = {};
+  defineLazyGetter(object, name, function() {
+    let temp = {};
     try {
-      Cu.import(aResource, temp);
+      temp = ChromeUtils.import(resource);
 
-      if (typeof (aPostLambda) === "function") {
-        aPostLambda.apply(proxy);
+      if (typeof postLambda === "function") {
+        postLambda.apply(proxy);
       }
     } catch (ex) {
-      Cu.reportError("Failed to load module " + aResource + ".");
+      Cu.reportError("Failed to load module " + resource + ".");
       throw ex;
     }
-    return temp[aSymbol || aName];
+    return temp[symbol || name];
   });
 }
 
@@ -151,52 +217,88 @@ function lazyRequireGetter(obj, property, module, destructure) {
       // a proxy whose defineProperty handler might unwittingly trigger this
       // getter again.
       delete obj[property];
-      let value = destructure
+      const value = destructure
         ? require(module)[property]
         : require(module || property);
       Object.defineProperty(obj, property, {
         value,
         writable: true,
         configurable: true,
-        enumerable: true
+        enumerable: true,
       });
       return value;
     },
     configurable: true,
-    enumerable: true
+    enumerable: true,
   });
 }
 
 // List of pseudo modules exposed to all devtools modules.
 exports.modules = {
-  "Services": Object.create(Services),
-  "toolkit/loader": Loader,
-  promise,
-  PromiseDebugging,
   ChromeUtils,
-  ThreadSafeChromeUtils,
+  DebuggerNotificationObserver,
   HeapSnapshot,
+  promise,
+  // Expose "chrome" Promise, which aren't related to any document
+  // and so are never frozen, even if the browser loader module which
+  // pull it is destroyed. See bug 1402779.
+  Promise,
+  Services: Object.create(Services),
+  TelemetryStopwatch,
 };
 
 defineLazyGetter(exports.modules, "Debugger", () => {
-  // addDebuggerToGlobal only allows adding the Debugger object to a global. The
-  // this object is not guaranteed to be a global (in particular on B2G, due to
-  // compartment sharing), so add the Debugger object to a sandbox instead.
-  let sandbox = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")());
-  Cu.evalInSandbox(
-    "Components.utils.import('resource://gre/modules/jsdebugger.jsm');" +
-    "addDebuggerToGlobal(this);",
-    sandbox
+  const global = Cu.getGlobalForObject(this);
+  // Debugger may already have been added by RecordReplayControl getter
+  if (global.Debugger) {
+    return global.Debugger;
+  }
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
   );
-  return sandbox.Debugger;
+  addDebuggerToGlobal(global);
+  return global.Debugger;
+});
+
+defineLazyGetter(exports.modules, "ChromeDebugger", () => {
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
+  );
+  addDebuggerToGlobal(debuggerSandbox);
+  return debuggerSandbox.Debugger;
+});
+
+defineLazyGetter(exports.modules, "RecordReplayControl", () => {
+  // addDebuggerToGlobal also adds the RecordReplayControl object.
+  const global = Cu.getGlobalForObject(this);
+  // RecordReplayControl may already have been added by Debugger getter
+  if (global.RecordReplayControl) {
+    return global.RecordReplayControl;
+  }
+  const { addDebuggerToGlobal } = ChromeUtils.import(
+    "resource://gre/modules/jsdebugger.jsm"
+  );
+  addDebuggerToGlobal(global);
+  return global.RecordReplayControl;
+});
+
+defineLazyGetter(exports.modules, "InspectorUtils", () => {
+  if (exports.modules.Debugger.recordReplayProcessKind() == "Middleman") {
+    const ReplayInspector = require("devtools/server/actors/replay/inspector");
+    return ReplayInspector.createInspectorUtils(InspectorUtils);
+  }
+  return InspectorUtils;
 });
 
 defineLazyGetter(exports.modules, "Timer", () => {
-  let {setTimeout, clearTimeout} = Cu.import("resource://gre/modules/Timer.jsm", {});
-  // Do not return Cu.import result, as SDK loader would freeze Timer.jsm globals...
+  const {
+    setTimeout,
+    clearTimeout,
+  } = require("resource://gre/modules/Timer.jsm");
+  // Do not return Cu.import result, as DevTools loader would freeze Timer.jsm globals...
   return {
     setTimeout,
-    clearTimeout
+    clearTimeout,
   };
 });
 
@@ -204,40 +306,15 @@ defineLazyGetter(exports.modules, "xpcInspector", () => {
   return Cc["@mozilla.org/jsinspector;1"].getService(Ci.nsIJSInspector);
 });
 
-defineLazyGetter(exports.modules, "FileReader", () => {
-  let sandbox
-    = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                 {wantGlobalProperties: ["FileReader"]});
-  return sandbox.FileReader;
-});
-
 // List of all custom globals exposed to devtools modules.
 // Changes here should be mirrored to devtools/.eslintrc.
-const globals = exports.globals = {
-  isWorker: false,
-  reportError: Cu.reportError,
-  atob: atob,
-  btoa: btoa,
-  URL,
-  _Iterator: Iterator,
-  loader: {
-    lazyGetter: defineLazyGetter,
-    lazyImporter: defineLazyModuleGetter,
-    lazyServiceGetter: defineLazyServiceGetter,
-    lazyRequireGetter: lazyRequireGetter,
-    id: null // Defined by Loader.jsm
-  },
-
-  // Let new XMLHttpRequest do the right thing.
-  XMLHttpRequest: function () {
-    return Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-           .createInstance(Ci.nsIXMLHttpRequest);
-  },
-
-  Node: Ci.nsIDOMNode,
-  Element: Ci.nsIDOMElement,
-  DocumentFragment: Ci.nsIDOMDocumentFragment,
-
+exports.globals = {
+  atob,
+  Blob,
+  btoa,
+  BrowsingContext,
+  console,
+  CSS,
   // Make sure `define` function exists.  This allows defining some modules
   // in AMD format while retaining CommonJS compatibility through this hook.
   // JSON Viewer needs modules in AMD format, as it currently uses RequireJS
@@ -254,36 +331,87 @@ const globals = exports.globals = {
   define(factory) {
     factory(this.require, this.exports, this.module);
   },
+  DOMParser,
+  DOMPoint,
+  DOMQuad,
+  NamedNodeMap,
+  NodeFilter,
+  DOMRect,
+  Element,
+  FileReader,
+  FormData,
+  isWorker: false,
+  loader: {
+    lazyGetter: defineLazyGetter,
+    lazyImporter: defineLazyModuleGetter,
+    lazyServiceGetter: defineLazyServiceGetter,
+    lazyRequireGetter: lazyRequireGetter,
+    // Defined by Loader.jsm
+    id: null,
+  },
+  Node,
+  reportError: Cu.reportError,
+  StructuredCloneHolder,
+  TextDecoder,
+  TextEncoder,
+  URL,
+  XMLHttpRequest,
 };
+// DevTools loader copy globals property descriptors on each module global
+// object so that we have to memoize them from here in order to instantiate each
+// global only once.
+// `globals` is a cache object on which we put all global values
+// and we set getters on `exports.globals` returning `globals` values.
+const globals = {};
+function lazyGlobal(name, getter) {
+  defineLazyGetter(globals, name, getter);
+  Object.defineProperty(exports.globals, name, {
+    get: function() {
+      return globals[name];
+    },
+    configurable: true,
+    enumerable: true,
+  });
+}
 
 // Lazily define a few things so that the corresponding jsms are only loaded
 // when used.
-defineLazyGetter(globals, "console", () => {
-  return Cu.import("resource://gre/modules/Console.jsm", {}).console;
+lazyGlobal("clearTimeout", () => {
+  return require("resource://gre/modules/Timer.jsm").clearTimeout;
 });
-defineLazyGetter(globals, "clearTimeout", () => {
-  return Cu.import("resource://gre/modules/Timer.jsm", {}).clearTimeout;
+lazyGlobal("setTimeout", () => {
+  return require("resource://gre/modules/Timer.jsm").setTimeout;
 });
-defineLazyGetter(globals, "setTimeout", () => {
-  return Cu.import("resource://gre/modules/Timer.jsm", {}).setTimeout;
+lazyGlobal("clearInterval", () => {
+  return require("resource://gre/modules/Timer.jsm").clearInterval;
 });
-defineLazyGetter(globals, "clearInterval", () => {
-  return Cu.import("resource://gre/modules/Timer.jsm", {}).clearInterval;
+lazyGlobal("setInterval", () => {
+  return require("resource://gre/modules/Timer.jsm").setInterval;
 });
-defineLazyGetter(globals, "setInterval", () => {
-  return Cu.import("resource://gre/modules/Timer.jsm", {}).setInterval;
-});
-defineLazyGetter(globals, "CSSRule", () => Ci.nsIDOMCSSRule);
-defineLazyGetter(globals, "DOMParser", () => {
-  return CC("@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
-});
-defineLazyGetter(globals, "CSS", () => {
-  let sandbox
-    = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
-                 {wantGlobalProperties: ["CSS"]});
-  return sandbox.CSS;
-});
-defineLazyGetter(globals, "WebSocket", () => {
+lazyGlobal("WebSocket", () => {
   return Services.appShell.hiddenDOMWindow.WebSocket;
 });
-lazyRequireGetter(globals, "indexedDB", "sdk/indexed-db", true);
+lazyGlobal("indexedDB", () => {
+  return require("devtools/shared/indexed-db").createDevToolsIndexedDB(
+    indexedDB
+  );
+});
+lazyGlobal("isReplaying", () => {
+  return exports.modules.Debugger.recordReplayProcessKind() == "Middleman";
+});
+
+// Globals which the ReplayInspector provides an alternate implementation for.
+const inspectorGlobals = {
+  CSSRule,
+  Event,
+};
+
+for (const [name, value] of Object.entries(inspectorGlobals)) {
+  lazyGlobal(name, () => {
+    if (exports.modules.Debugger.recordReplayProcessKind() == "Middleman") {
+      const ReplayInspector = require("devtools/server/actors/replay/inspector");
+      return ReplayInspector[`create${name}`](value);
+    }
+    return value;
+  });
+}

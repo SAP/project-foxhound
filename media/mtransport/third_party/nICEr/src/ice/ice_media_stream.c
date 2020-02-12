@@ -30,10 +30,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-static char *RCSSTRING __UNUSED__="$Id: ice_media_stream.c,v 1.2 2008/04/28 17:59:01 ekr Exp $";
-
 #include <string.h>
 #include <assert.h>
 #include <nr_api.h>
@@ -43,12 +39,12 @@ static char *RCSSTRING __UNUSED__="$Id: ice_media_stream.c,v 1.2 2008/04/28 17:5
 #include "ice_ctx.h"
 
 static char *nr_ice_media_stream_states[]={"INVALID",
-  "UNPAIRED","FROZEN","ACTIVE","COMPLETED","FAILED"
+  "UNPAIRED","FROZEN","ACTIVE","CONNECTED","FAILED"
 };
 
 int nr_ice_media_stream_set_state(nr_ice_media_stream *str, int state);
 
-int nr_ice_media_stream_create(nr_ice_ctx *ctx,char *label,int components, nr_ice_media_stream **streamp)
+int nr_ice_media_stream_create(nr_ice_ctx *ctx,const char *label,const char *ufrag,const char *pwd,int components, nr_ice_media_stream **streamp)
   {
     int r,_status;
     nr_ice_media_stream *stream=0;
@@ -59,6 +55,12 @@ int nr_ice_media_stream_create(nr_ice_ctx *ctx,char *label,int components, nr_ic
       ABORT(R_NO_MEMORY);
 
     if(!(stream->label=r_strdup(label)))
+      ABORT(R_NO_MEMORY);
+
+    if(!(stream->ufrag=r_strdup(ufrag)))
+      ABORT(R_NO_MEMORY);
+
+    if(!(stream->pwd=r_strdup(pwd)))
       ABORT(R_NO_MEMORY);
 
     stream->ctx=ctx;
@@ -74,8 +76,12 @@ int nr_ice_media_stream_create(nr_ice_ctx *ctx,char *label,int components, nr_ic
     TAILQ_INIT(&stream->check_list);
     TAILQ_INIT(&stream->trigger_check_queue);
 
+    stream->disconnected = 0;
     stream->component_ct=components;
     stream->ice_state = NR_ICE_MEDIA_STREAM_UNPAIRED;
+    stream->obsolete = 0;
+    stream->r2l_user = 0;
+    stream->l2r_user = 0;
     *streamp=stream;
 
     _status=0;
@@ -131,6 +137,8 @@ int nr_ice_media_stream_initialize(nr_ice_ctx *ctx, nr_ice_media_stream *stream)
     int r,_status;
     nr_ice_component *comp;
 
+    assert(!stream->obsolete);
+
     comp=STAILQ_FIRST(&stream->components);
     while(comp){
       if(r=nr_ice_component_initialize(ctx,comp))
@@ -146,12 +154,13 @@ int nr_ice_media_stream_initialize(nr_ice_ctx *ctx, nr_ice_media_stream *stream)
 
 int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attrsp, int *attrctp)
   {
-    int attrct=0;
+    int attrct=2;
     nr_ice_component *comp;
     char **attrs=0;
     int index=0;
     nr_ice_candidate *cand;
     int r,_status;
+    char *tmp=0;
 
     *attrctp=0;
 
@@ -169,11 +178,6 @@ int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attr
         }
       }
       comp=STAILQ_NEXT(comp,entry);
-    }
-
-    if(attrct < 1){
-      r_log(LOG_ICE,LOG_ERR,"ICE-STREAM(%s): Failed to find any components for stream",stream->label);
-      ABORT(R_FAILED);
     }
 
     /* Make the array we'll need */
@@ -199,7 +203,7 @@ int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attr
             if (index >= attrct)
               ABORT(R_INTERNAL);
 
-            if(r=nr_ice_format_candidate_attribute(cand, attrs[index],NR_ICE_MAX_ATTRIBUTE_SIZE))
+            if(r=nr_ice_format_candidate_attribute(cand, attrs[index],NR_ICE_MAX_ATTRIBUTE_SIZE, 0))
               ABORT(r);
 
             index++;
@@ -210,6 +214,17 @@ int nr_ice_media_stream_get_attributes(nr_ice_media_stream *stream, char ***attr
       }
       comp=STAILQ_NEXT(comp,entry);
     }
+
+    /* Now, ufrag and pwd */
+    if(!(tmp=RMALLOC(100)))
+      ABORT(R_NO_MEMORY);
+    snprintf(tmp,100,"ice-ufrag:%s",stream->ufrag);
+    attrs[index++]=tmp;
+
+    if(!(tmp=RMALLOC(100)))
+      ABORT(R_NO_MEMORY);
+    snprintf(tmp,100,"ice-pwd:%s",stream->pwd);
+    attrs[index++]=tmp;
 
     *attrsp=attrs;
     *attrctp=attrct;
@@ -339,7 +354,7 @@ static void nr_ice_media_stream_check_timer_cb(NR_SOCKET s, int h, void *cb_arg)
       pair=TAILQ_NEXT(pair,triggered_check_queue_entry);
     }
 
-    if (stream->ice_state != NR_ICE_MEDIA_STREAM_CHECKS_COMPLETED) {
+    if (stream->ice_state != NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED) {
       if(!pair){
         /* Find the highest priority WAITING check and move it to RUNNING */
         pair=TAILQ_FIRST(&stream->check_list);
@@ -370,11 +385,17 @@ static void nr_ice_media_stream_check_timer_cb(NR_SOCKET s, int h, void *cb_arg)
       NR_ASYNC_TIMER_SET(timer_val,nr_ice_media_stream_check_timer_cb,cb_arg,&stream->timer);
     }
     else {
-      r_log(LOG_ICE,LOG_WARNING,"ICE-PEER(%s): no pairs for %s",stream->pctx->label,stream->label);
+      r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s): no FROZEN/WAITING pairs for %s",stream->pctx->label,stream->label);
     }
 
     _status=0;
   abort:
+    if (_status) {
+      // cb doesn't return anything, but we should probably log that we aborted
+      // This also quiets the unused variable warnings.
+      r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s): check timer cb for media stream %s abort with status: %d",
+        stream->pctx->label,stream->label, _status);
+    }
     return;
   }
 
@@ -389,10 +410,15 @@ int nr_ice_media_stream_start_checks(nr_ice_peer_ctx *pctx, nr_ice_media_stream 
       ABORT(R_INTERNAL);
     }
 
+    if (stream->local_stream->obsolete) {
+      assert(0);
+      ABORT(R_INTERNAL);
+    }
+
     /* Even if the stream is completed already remote can still create a new
      * triggered check request which needs to fire, but not change our stream
      * state. */
-    if (stream->ice_state != NR_ICE_MEDIA_STREAM_CHECKS_COMPLETED) {
+    if (stream->ice_state != NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED) {
       if(r=nr_ice_media_stream_set_state(stream,NR_ICE_MEDIA_STREAM_CHECKS_ACTIVE)) {
         ABORT(r);
       }
@@ -533,28 +559,36 @@ int nr_ice_media_stream_unfreeze_pairs_foundation(nr_ice_media_stream *stream, c
       str=STAILQ_NEXT(str,entry);
     }
 
-/*    nr_ice_media_stream_dump_state(stream->pctx,stream,stderr); */
-
-
     _status=0;
   abort:
     return(_status);
   }
 
 
-int nr_ice_media_stream_dump_state(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream,FILE *out)
+void nr_ice_media_stream_dump_state(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, int log_level)
   {
     nr_ice_cand_pair *pair;
+    nr_ice_component *comp;
 
-    /* r_log(LOG_ICE,LOG_DEBUG,"MEDIA-STREAM(%s): state dump", stream->label); */
+    if(stream->local_stream){
+      /* stream has a corresponding local_stream */
+      nr_ice_media_stream_dump_state(stream->local_stream->pctx,stream->local_stream, log_level);
+      r_log(LOG_ICE,log_level,"ICE-PEER(%s)/STREAM(%s): state dump", stream->pctx->label, stream->label);
+    } else {
+      r_log(LOG_ICE,log_level,"ICE(%s)/STREAM(%s): state dump", stream->ctx->label, stream->label);
+    }
+
     pair=TAILQ_FIRST(&stream->check_list);
     while(pair){
-      nr_ice_candidate_pair_dump_state(pair,out);
-
+      nr_ice_candidate_pair_dump_state(pair, log_level);
       pair=TAILQ_NEXT(pair,check_queue_entry);
     }
 
-    return(0);
+    comp=STAILQ_FIRST(&stream->components);
+    while(comp){
+      nr_ice_component_dump_state(comp, log_level);
+      comp=STAILQ_NEXT(comp,entry);
+    }
   }
 
 int nr_ice_media_stream_set_state(nr_ice_media_stream *str, int state)
@@ -563,8 +597,8 @@ int nr_ice_media_stream_set_state(nr_ice_media_stream *str, int state)
     if (state == str->ice_state)
       return 0;
 
-    assert(state < sizeof(nr_ice_media_stream_states)/sizeof(char *));
-    assert(str->ice_state < sizeof(nr_ice_media_stream_states)/sizeof(char *));
+    assert((size_t)state < sizeof(nr_ice_media_stream_states)/sizeof(char *));
+    assert((size_t)str->ice_state < sizeof(nr_ice_media_stream_states)/sizeof(char *));
 
     r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s): stream %s state %s->%s",
       str->pctx->label,str->label,
@@ -580,15 +614,137 @@ int nr_ice_media_stream_set_state(nr_ice_media_stream *str, int state)
       str->pctx->label, str->pctx->active_streams);
 
     str->ice_state=state;
+    if (state == NR_ICE_MEDIA_STREAM_CHECKS_FAILED) {
+      nr_ice_media_stream_dump_state(str->pctx,str,LOG_ERR);
+    }
 
+    return(0);
+  }
+
+void nr_ice_media_stream_stop_checking(nr_ice_media_stream *str)
+  {
+    nr_ice_cand_pair *p;
+    nr_ice_component *comp;
+
+    /* Cancel candidate pairs */
+    p=TAILQ_FIRST(&str->check_list);
+    while(p){
+      nr_ice_candidate_pair_cancel(p->pctx,p,0);
+      p=TAILQ_NEXT(p,check_queue_entry);
+    }
+
+    if(str->timer) {
+      NR_async_timer_cancel(str->timer);
+      str->timer = 0;
+    }
+
+    /* Cancel consent timers in case it is running already */
+    comp=STAILQ_FIRST(&str->components);
+    while(comp){
+      nr_ice_component_consent_destroy(comp);
+      comp=STAILQ_NEXT(comp,entry);
+    }
+  }
+
+void nr_ice_media_stream_set_obsolete(nr_ice_media_stream *str)
+  {
+    nr_ice_component *c1,*c2;
+    str->obsolete = 1;
+
+    STAILQ_FOREACH_SAFE(c1, &str->components, entry, c2){
+      nr_ice_component_stop_gathering(c1);
+    }
+
+    nr_ice_media_stream_stop_checking(str);
+  }
+
+int nr_ice_media_stream_is_done_gathering(nr_ice_media_stream *str)
+  {
+    nr_ice_component *comp;
+    comp=STAILQ_FIRST(&str->components);
+    while(comp){
+      if(!nr_ice_component_is_done_gathering(comp)) {
+        return 0;
+      }
+      comp=STAILQ_NEXT(comp,entry);
+    }
+    return 1;
+  }
+
+void nr_ice_media_stream_refresh_consent_all(nr_ice_media_stream *stream)
+  {
+    nr_ice_component *comp;
+
+    comp=STAILQ_FIRST(&stream->components);
+    while(comp){
+      if(comp->disconnected) {
+        nr_ice_component_refresh_consent_now(comp);
+      }
+
+      comp=STAILQ_NEXT(comp,entry);
+    }
+  }
+
+void nr_ice_media_stream_disconnect_all_components(nr_ice_media_stream *stream)
+  {
+    nr_ice_component *comp;
+
+    comp=STAILQ_FIRST(&stream->components);
+    while(comp){
+      comp->disconnected = 1;
+
+      comp=STAILQ_NEXT(comp,entry);
+    }
+  }
+
+void nr_ice_media_stream_set_disconnected(nr_ice_media_stream *stream, int disconnected)
+  {
+    if (stream->disconnected == disconnected) {
+      return;
+    }
+
+    if (stream->ice_state != NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED) {
+      return;
+    }
+    stream->disconnected = disconnected;
+
+    if (disconnected == NR_ICE_MEDIA_STREAM_DISCONNECTED) {
+      if (!stream->local_stream->obsolete) {
+        nr_ice_peer_ctx_disconnected(stream->pctx);
+      }
+    } else {
+      nr_ice_peer_ctx_check_if_connected(stream->pctx);
+    }
+  }
+
+int nr_ice_media_stream_check_if_connected(nr_ice_media_stream *stream)
+  {
+    nr_ice_component *comp;
+
+    comp=STAILQ_FIRST(&stream->components);
+    while(comp){
+      if((comp->state != NR_ICE_COMPONENT_DISABLED) &&
+         (comp->local_component->state != NR_ICE_COMPONENT_DISABLED) &&
+         comp->disconnected)
+        break;
+
+      comp=STAILQ_NEXT(comp,entry);
+    }
+
+    /* At least one disconnected component */
+    if(comp)
+      goto done;
+
+    nr_ice_media_stream_set_disconnected(stream, NR_ICE_MEDIA_STREAM_CONNECTED);
+
+  done:
     return(0);
   }
 
 /* S OK, this component has a nominated. If every component has a nominated,
    the stream is ready */
-int nr_ice_media_stream_component_nominated(nr_ice_media_stream *stream,nr_ice_component *component)
+void nr_ice_media_stream_component_nominated(nr_ice_media_stream *stream,nr_ice_component *component)
   {
-    int r,_status;
     nr_ice_component *comp;
 
     comp=STAILQ_FIRST(&stream->components);
@@ -603,11 +759,11 @@ int nr_ice_media_stream_component_nominated(nr_ice_media_stream *stream,nr_ice_c
 
     /* At least one un-nominated component */
     if(comp)
-      goto done;
+      return;
 
     /* All done... */
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s)/ICE-STREAM(%s): all active components have nominated candidate pairs",stream->pctx->label,stream->label);
-    nr_ice_media_stream_set_state(stream,NR_ICE_MEDIA_STREAM_CHECKS_COMPLETED);
+    nr_ice_media_stream_set_state(stream,NR_ICE_MEDIA_STREAM_CHECKS_CONNECTED);
 
     /* Cancel our timer */
     if(stream->timer){
@@ -615,25 +771,16 @@ int nr_ice_media_stream_component_nominated(nr_ice_media_stream *stream,nr_ice_c
       stream->timer=0;
     }
 
-    if (stream->pctx->handler) {
+    if (stream->pctx->handler && !stream->local_stream->obsolete) {
       stream->pctx->handler->vtbl->stream_ready(stream->pctx->handler->obj,stream->local_stream);
     }
 
-    /* Now tell the peer_ctx that we're done */
-    if(r=nr_ice_peer_ctx_check_if_done(stream->pctx))
-      ABORT(r);
-
-  done:
-    _status=0;
-  abort:
-    return(_status);
+    /* Now tell the peer_ctx that we're connected */
+    nr_ice_peer_ctx_check_if_connected(stream->pctx);
   }
 
-int nr_ice_media_stream_component_failed(nr_ice_media_stream *stream,nr_ice_component *component)
+void nr_ice_media_stream_component_failed(nr_ice_media_stream *stream,nr_ice_component *component)
   {
-    int r,_status;
-    nr_ice_cand_pair *p2;
-
     component->state=NR_ICE_COMPONENT_FAILED;
 
     /* at least one component failed in this media stream, so the entire
@@ -641,32 +788,14 @@ int nr_ice_media_stream_component_failed(nr_ice_media_stream *stream,nr_ice_comp
 
     nr_ice_media_stream_set_state(stream,NR_ICE_MEDIA_STREAM_CHECKS_FAILED);
 
-    /* OK, we need to cancel off everything on this component */
-    p2=TAILQ_FIRST(&stream->check_list);
-    while(p2){
-      if(r=nr_ice_candidate_pair_cancel(p2->pctx,p2,0))
-        ABORT(r);
+    nr_ice_media_stream_stop_checking(stream);
 
-      p2=TAILQ_NEXT(p2,check_queue_entry);
-    }
-
-    /* Cancel our timer */
-    if(stream->timer){
-      NR_async_timer_cancel(stream->timer);
-      stream->timer=0;
-    }
-
-    if (stream->pctx->handler) {
+    if (stream->pctx->handler && !stream->local_stream->obsolete) {
       stream->pctx->handler->vtbl->stream_failed(stream->pctx->handler->obj,stream->local_stream);
     }
 
-    /* Now tell the peer_ctx that we're done */
-    if(r=nr_ice_peer_ctx_check_if_done(stream->pctx))
-      ABORT(r);
-
-    _status=0;
-  abort:
-    return(_status);
+    /* Now tell the peer_ctx that we've failed */
+    nr_ice_peer_ctx_check_if_connected(stream->pctx);
   }
 
 int nr_ice_media_stream_get_best_candidate(nr_ice_media_stream *str, int component, nr_ice_candidate **candp)
@@ -747,8 +876,16 @@ int nr_ice_media_stream_send(nr_ice_peer_ctx *pctx, nr_ice_media_stream *str, in
        2. Use the address on the remote side
     */
     if(r=nr_socket_sendto(comp->active->local->osock,data,len,0,
-                          &comp->active->remote->addr))
+                          &comp->active->remote->addr)) {
+      if ((r==R_IO_ERROR) || (r==R_EOD)) {
+        nr_ice_component_disconnected(comp);
+      }
       ABORT(r);
+    }
+
+    // accumulate the sent bytes for the active candidate pair
+    comp->active->bytes_sent += len;
+    gettimeofday(&comp->active->last_sent, 0);
 
     _status=0;
   abort:

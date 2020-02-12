@@ -8,15 +8,15 @@
 #define MOZILLA_SVGTRANSFORMLIST_H__
 
 #include "gfxMatrix.h"
-#include "nsDebug.h"
+#include "SVGTransform.h"
 #include "nsTArray.h"
-#include "nsSVGTransform.h"
 
 namespace mozilla {
 
 namespace dom {
-class SVGTransform;
-} // namespace dom
+class DOMSVGTransform;
+class DOMSVGTransformList;
+}  // namespace dom
 
 /**
  * ATTENTION! WARNING! WATCH OUT!!
@@ -27,15 +27,14 @@ class SVGTransform;
  *
  * The DOM wrapper class for this class is DOMSVGTransformList.
  */
-class SVGTransformList
-{
-  friend class nsSVGAnimatedTransformList;
-  friend class DOMSVGTransformList;
-  friend class dom::SVGTransform;
+class SVGTransformList {
+  friend class SVGAnimatedTransformList;
+  friend class dom::DOMSVGTransform;
+  friend class dom::DOMSVGTransformList;
 
-public:
-  SVGTransformList() {}
-  ~SVGTransformList() {}
+ public:
+  SVGTransformList() = default;
+  ~SVGTransformList() = default;
 
   // Only methods that don't make/permit modification to this list are public.
   // Only our friend classes can access methods that may change us.
@@ -43,15 +42,11 @@ public:
   /// This may return an incomplete string on OOM, but that's acceptable.
   void GetValueAsString(nsAString& aValue) const;
 
-  bool IsEmpty() const {
-    return mItems.IsEmpty();
-  }
+  bool IsEmpty() const { return mItems.IsEmpty(); }
 
-  uint32_t Length() const {
-    return mItems.Length();
-  }
+  uint32_t Length() const { return mItems.Length(); }
 
-  const nsSVGTransform& operator[](uint32_t aIndex) const {
+  const SVGTransform& operator[](uint32_t aIndex) const {
     return mItems[aIndex];
   }
 
@@ -59,13 +54,9 @@ public:
     return mItems == rhs.mItems;
   }
 
-  bool SetCapacity(uint32_t size) {
-    return mItems.SetCapacity(size, fallible);
-  }
+  bool SetCapacity(uint32_t size) { return mItems.SetCapacity(size, fallible); }
 
-  void Compact() {
-    mItems.Compact();
-  }
+  void Compact() { mItems.Compact(); }
 
   gfxMatrix GetConsolidationMatrix() const;
 
@@ -73,21 +64,18 @@ public:
   // limited. This is to reduce the chances of someone modifying objects of
   // this type without taking the necessary steps to keep DOM wrappers in sync.
   // If you need wider access to these methods, consider adding a method to
-  // SVGAnimatedTransformList and having that class act as an intermediary so it
-  // can take care of keeping DOM wrappers in sync.
+  // DOMSVGAnimatedTransformList and having that class act as an intermediary so
+  // it can take care of keeping DOM wrappers in sync.
 
-protected:
-
+ protected:
   /**
    * These may fail on OOM if the internal capacity needs to be increased, in
    * which case the list will be left unmodified.
    */
   nsresult CopyFrom(const SVGTransformList& rhs);
-  nsresult CopyFrom(const nsTArray<nsSVGTransform>& aTransformArray);
+  nsresult CopyFrom(const nsTArray<SVGTransform>& aTransformArray);
 
-  nsSVGTransform& operator[](uint32_t aIndex) {
-    return mItems[aIndex];
-  }
+  SVGTransform& operator[](uint32_t aIndex) { return mItems[aIndex]; }
 
   /**
    * This may fail (return false) on OOM if the internal capacity is being
@@ -97,26 +85,23 @@ protected:
     return mItems.SetLength(aNumberOfItems, fallible);
   }
 
-private:
-
+ private:
   // Marking the following private only serves to show which methods are only
   // used by our friend classes (as opposed to our subclasses) - it doesn't
   // really provide additional safety.
 
   nsresult SetValueFromString(const nsAString& aValue);
 
-  void Clear() {
-    mItems.Clear();
-  }
+  void Clear() { mItems.Clear(); }
 
-  bool InsertItem(uint32_t aIndex, const nsSVGTransform& aTransform) {
+  bool InsertItem(uint32_t aIndex, const SVGTransform& aTransform) {
     if (aIndex >= mItems.Length()) {
       aIndex = mItems.Length();
     }
     return !!mItems.InsertElementAt(aIndex, aTransform, fallible);
   }
 
-  void ReplaceItem(uint32_t aIndex, const nsSVGTransform& aTransform) {
+  void ReplaceItem(uint32_t aIndex, const SVGTransform& aTransform) {
     MOZ_ASSERT(aIndex < mItems.Length(),
                "DOM wrapper caller should have raised INDEX_SIZE_ERR");
     mItems[aIndex] = aTransform;
@@ -128,18 +113,19 @@ private:
     mItems.RemoveElementAt(aIndex);
   }
 
-  bool AppendItem(const nsSVGTransform& aTransform) {
+  bool AppendItem(const SVGTransform& aTransform) {
     return !!mItems.AppendElement(aTransform, fallible);
   }
 
-protected:
+ protected:
   /*
-   * See SVGLengthList for the rationale for using FallibleTArray<nsSVGTransform>
-   * instead of FallibleTArray<nsSVGTransform, 1>.
+   * See SVGLengthList for the rationale for using
+   * FallibleTArray<SVGTransform> instead of FallibleTArray<SVGTransform,
+   * 1>.
    */
-  FallibleTArray<nsSVGTransform> mItems;
+  FallibleTArray<SVGTransform> mItems;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZILLA_SVGTRANSFORMLIST_H__
+#endif  // MOZILLA_SVGTRANSFORMLIST_H__

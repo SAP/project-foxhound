@@ -37,6 +37,11 @@ var grid_template_test_cases = [
         gridTemplateColumns: "100px",
     },
     {
+        specified: "minmax(auto,1fr) / minmax(auto,1fr)",
+        gridTemplateRows: "1fr",
+        gridTemplateColumns: "1fr",
+    },
+    {
         specified: "[foo] 40px [bar] / [baz] 100px [fizz]",
         gridTemplateRows: "[foo] 40px [bar]",
         gridTemplateColumns: "[baz] 100px [fizz]",
@@ -54,57 +59,57 @@ var grid_template_test_cases = [
     {
         specified: "40px/repeat(1, 20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "20px",
+        gridTemplateColumns: "repeat(1, 20px)",
     },
     {
         specified: "40px/[a]repeat(1, 20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a] 20px",
+        gridTemplateColumns: "[a] repeat(1, 20px)",
     },
     {
         specified: "40px/repeat(1, [a] 20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a] 20px",
+        gridTemplateColumns: "repeat(1, [a] 20px)",
     },
     {
         specified: "40px/[a]repeat(2, [b]20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a b] 20px [b] 20px",
+        gridTemplateColumns: "[a] repeat(2, [b] 20px)",
     },
     {
         specified: "40px/[a]repeat(2, 20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a] 20px 20px",
+        gridTemplateColumns: "[a] repeat(2, 20px)",
     },
     {
         specified: "40px/repeat(2, [a] 20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a] 20px [a] 20px",
+        gridTemplateColumns: "repeat(2, [a] 20px)",
     },
     {
         specified: "40px/[a]repeat(2, [b]20px)",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a b] 20px [b] 20px",
+        gridTemplateColumns: "[a] repeat(2, [b] 20px)",
     },
     {
         specified: "40px/repeat(2, 20px[a])",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "20px [a] 20px [a]",
+        gridTemplateColumns: "repeat(2, 20px [a])",
     },
     {
         specified: "40px/repeat(2, 20px[a]) [b]",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "20px [a] 20px [a b]",
+        gridTemplateColumns: "repeat(2, 20px [a]) [b]",
     },
     {
         specified: "40px/repeat(2, [a] 20px[b]) [c]",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a] 20px [b a] 20px [b c]",
+        gridTemplateColumns: "repeat(2, [a] 20px [b]) [c]",
     },
     {
         specified: "40px/[a] repeat(3, [b c] 20px [d] 100px [e f]) [g]",
         gridTemplateRows: "40px",
-        gridTemplateColumns: "[a b c] 20px [d] 100px [e f b c] 20px [d] 100px [e f b c] 20px [d] 100px [e f g]",
+        gridTemplateColumns: "[a] repeat(3, [b c] 20px [d] 100px [e f]) [g]",
     },
     {
         specified: "'fizz'",
@@ -139,11 +144,6 @@ var grid_template_test_cases = [
         gridTemplateAreas: "\"fizz\" \".\"",
         gridTemplateRows: "[bar] 100px [buzz a] 200px [b]",
         gridTemplateColumns: "[foo] 40px",
-    },
-    {
-        specified: "subgrid",
-        gridTemplateColumns: isGridTemplateSubgridValueEnabled ? "subgrid" : "none",
-        gridTemplateRows: isGridTemplateSubgridValueEnabled ? "subgrid" : "none",
     },
     {
         specified: "subgrid / subgrid",
@@ -198,9 +198,14 @@ grid_test_cases = grid_template_test_cases.concat([
     },
     {
         specified: "auto-flow dense / 0",
-        gridAutoFlow: "row dense",
+        gridAutoFlow: "dense",
         gridAutoRows: "auto",
         gridTemplateColumns: "0px",
+    },
+    {
+        specified: "auto-flow minmax(auto,1fr) / none",
+        gridAutoFlow: "row",
+        gridAutoRows: "1fr",
     },
     {
         specified: "auto-flow 40px / none",
@@ -214,6 +219,12 @@ grid_test_cases = grid_template_test_cases.concat([
         gridAutoColumns: "40px",
     },
     {
+        specified: "none / auto-flow minmax(auto,1fr)",
+        gridAutoFlow: "column",
+        gridAutoRows: "auto",
+        gridAutoColumns: "1fr",
+    },
+    {
         specified: "0 / auto-flow dense auto",
         gridAutoFlow: "column dense",
         gridAutoRows: "auto",
@@ -222,7 +233,7 @@ grid_test_cases = grid_template_test_cases.concat([
     },
     {
         specified: "dense auto-flow minmax(min-content, 2fr) / 0",
-        gridAutoFlow: "row dense",
+        gridAutoFlow: "dense",
         gridAutoRows: "minmax(min-content, 2fr)",
         gridAutoColumns: "auto",
         gridTemplateColumns: "0px",

@@ -9,75 +9,163 @@ const emulationSpec = generateActorSpec({
   typeName: "emulation",
 
   methods: {
-    setTouchEventsOverride: {
-      request: {
-        flag: Arg(0, "number")
-      },
-      response: {
-        valueChanged: RetVal("boolean")
-      }
-    },
-
-    getTouchEventsOverride: {
-      request: {},
-      response: {
-        flag: RetVal("number")
-      }
-    },
-
-    clearTouchEventsOverride: {
-      request: {},
-      response: {
-        valueChanged: RetVal("boolean")
-      }
-    },
-
-    setUserAgentOverride: {
-      request: {
-        flag: Arg(0, "string")
-      },
-      response: {
-        valueChanged: RetVal("boolean")
-      }
-    },
-
-    getUserAgentOverride: {
-      request: {},
-      response: {
-        userAgent: RetVal("string")
-      }
-    },
-
-    clearUserAgentOverride: {
-      request: {},
-      response: {
-        valueChanged: RetVal("boolean")
-      }
-    },
-
     setDPPXOverride: {
       request: {
-        dppx: Arg(0, "number")
+        dppx: Arg(0, "number"),
       },
       response: {
-        valueChanged: RetVal("boolean")
-      }
+        valueChanged: RetVal("boolean"),
+      },
     },
 
     getDPPXOverride: {
       request: {},
       response: {
-        dppx: RetVal("number")
-      }
+        dppx: RetVal("number"),
+      },
     },
 
     clearDPPXOverride: {
       request: {},
       response: {
-        valueChanged: RetVal("boolean")
-      }
+        valueChanged: RetVal("boolean"),
+      },
     },
-  }
+
+    setNetworkThrottling: {
+      request: {
+        options: Arg(0, "json"),
+      },
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    getNetworkThrottling: {
+      request: {},
+      response: {
+        state: RetVal("json"),
+      },
+    },
+
+    clearNetworkThrottling: {
+      request: {},
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    setTouchEventsOverride: {
+      request: {
+        flag: Arg(0, "number"),
+      },
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    getTouchEventsOverride: {
+      request: {},
+      response: {
+        flag: RetVal("number"),
+      },
+    },
+
+    clearTouchEventsOverride: {
+      request: {},
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    setMetaViewportOverride: {
+      request: {
+        flag: Arg(0, "number"),
+      },
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    getMetaViewportOverride: {
+      request: {},
+      response: {
+        flag: RetVal("number"),
+      },
+    },
+
+    clearMetaViewportOverride: {
+      request: {},
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    setUserAgentOverride: {
+      request: {
+        flag: Arg(0, "string"),
+      },
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    getUserAgentOverride: {
+      request: {},
+      response: {
+        userAgent: RetVal("string"),
+      },
+    },
+
+    clearUserAgentOverride: {
+      request: {},
+      response: {
+        valueChanged: RetVal("boolean"),
+      },
+    },
+
+    setElementPickerState: {
+      request: {
+        state: Arg(0, "boolean"),
+      },
+      response: {},
+    },
+
+    getIsPrintSimulationEnabled: {
+      request: {},
+      response: {
+        enabled: RetVal("boolean"),
+      },
+    },
+
+    startPrintMediaSimulation: {
+      request: {},
+      response: {},
+    },
+
+    stopPrintMediaSimulation: {
+      request: {
+        state: Arg(0, "boolean"),
+      },
+      response: {},
+    },
+
+    simulateScreenOrientationChange: {
+      request: {
+        orientation: Arg(0, "string"),
+        angle: Arg(1, "number"),
+        deviceChange: Arg(2, "boolean"),
+      },
+      response: {},
+    },
+
+    captureScreenshot: {
+      request: {},
+      response: {
+        value: RetVal("json"),
+      },
+    },
+  },
 });
 
 exports.emulationSpec = emulationSpec;

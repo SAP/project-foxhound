@@ -6,14 +6,18 @@
 
 # We don't import all modules at the top for performance reasons. See Bug 1008943
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
-from contextlib import contextmanager
 import errno
 import os
 import stat
+import sys
 import time
 import warnings
+from contextlib import contextmanager
+
+from six.moves import urllib
+
 
 __all__ = ['extract_tarball',
            'extract_zip',
@@ -24,22 +28,25 @@ __all__ = ['extract_tarball',
            'remove',
            'rmtree',
            'tree',
+           'which',
            'NamedTemporaryFile',
            'TemporaryDirectory']
 
-### utilities for extracting archives
+# utilities for extracting archives
+
 
 def extract_tarball(src, dest):
     """extract a .tar file"""
 
     import tarfile
 
-    bundle = tarfile.open(src)
-    namelist = bundle.getnames()
+    with tarfile.open(src) as bundle:
+        namelist = []
 
-    for name in namelist:
-        bundle.extract(name, path=dest)
-    bundle.close()
+        for m in bundle:
+            bundle.extract(m, path=dest)
+            namelist.append(m.name)
+
     return namelist
 
 
@@ -54,23 +61,14 @@ def extract_zip(src, dest):
         try:
             bundle = zipfile.ZipFile(src)
         except Exception:
-            print "src: %s" % src
+            print("src: %s" % src)
             raise
 
     namelist = bundle.namelist()
 
     for name in namelist:
+        bundle.extract(name, dest)
         filename = os.path.realpath(os.path.join(dest, name))
-        if name.endswith('/'):
-            if not os.path.isdir(filename):
-                os.makedirs(filename)
-        else:
-            path = os.path.dirname(filename)
-            if not os.path.isdir(path):
-                os.makedirs(path)
-            _dest = open(filename, 'wb')
-            _dest.write(bundle.read(name))
-            _dest.close()
         mode = bundle.getinfo(name).external_attr >> 16 & 0x1FF
         # Only update permissions if attributes are set. Otherwise fallback to the defaults.
         if mode:
@@ -99,10 +97,10 @@ def extract(src, dest=None):
         os.makedirs(dest)
     assert not os.path.isfile(dest), "dest cannot be a file"
 
-    if zipfile.is_zipfile(src):
-        namelist = extract_zip(src, dest)
-    elif tarfile.is_tarfile(src):
+    if tarfile.is_tarfile(src):
         namelist = extract_tarball(src, dest)
+    elif zipfile.is_zipfile(src):
+        namelist = extract_zip(src, dest)
     else:
         raise Exception("mozfile.extract: no archive format found for '%s'" %
                         src)
@@ -122,7 +120,7 @@ def extract(src, dest=None):
     return top_level_files
 
 
-### utilities for removal of files and directories
+# utilities for removal of files and directories
 
 def rmtree(dir):
     """Deprecated wrapper method to remove a directory tree.
@@ -160,8 +158,8 @@ def _call_windows_retry(func, args=(), retry_max=5, retry_delay=0.5):
 
             retry_count += 1
 
-            print '%s() failed for "%s". Reason: %s (%s). Retrying...' % \
-                    (func.__name__, args, e.strerror, e.errno)
+            print('%s() failed for "%s". Reason: %s (%s). Retrying...' %
+                  (func.__name__, args, e.strerror, e.errno))
             time.sleep(retry_count * retry_delay)
         else:
             # If no exception has been thrown it should be done
@@ -259,28 +257,11 @@ def depth(directory):
     return level
 
 
-# ASCII delimeters
-ascii_delimeters = {
-    'vertical_line' : '|',
-    'item_marker'   : '+',
-    'last_child'    : '\\'
-    }
-
-# unicode delimiters
-unicode_delimeters = {
-    'vertical_line' : '│',
-    'item_marker'   : '├',
-    'last_child'    : '└'
-    }
-
-def tree(directory,
-         item_marker=unicode_delimeters['item_marker'],
-         vertical_line=unicode_delimeters['vertical_line'],
-         last_child=unicode_delimeters['last_child'],
-         sort_key=lambda x: x.lower()):
-    """
-    display tree directory structure for `directory`
-    """
+def tree(directory, sort_key=lambda x: x.lower()):
+    """Display tree directory structure for `directory`."""
+    vertical_line = u'│'
+    item_marker = u'├'
+    last_child = u'└'
 
     retval = []
     indent = []
@@ -319,21 +300,70 @@ def tree(directory,
 
         # append the directory and piece of tree structure
         # if the top-level entry directory, print as passed
-        retval.append('%s%s%s'% (''.join(indent[:-1]),
-                                 dirpath_mark,
-                                 basename if retval else directory))
+        retval.append('%s%s%s' % (''.join(indent[:-1]),
+                                  dirpath_mark,
+                                  basename if retval else directory))
         # add the files
         if filenames:
             last_file = filenames[-1]
             retval.extend([('%s%s%s' % (''.join(indent),
                                         files_end if filename == last_file else item_marker,
                                         filename))
-                                        for index, filename in enumerate(filenames)])
+                           for index, filename in enumerate(filenames)])
 
     return '\n'.join(retval)
 
 
-### utilities for temporary resources
+def which(cmd, mode=os.F_OK | os.X_OK, path=None, exts=None):
+    """A wrapper around `shutil.which` to make the behavior on Windows
+    consistent with other platforms.
+
+    On non-Windows platforms, this is a direct call to `shutil.which`. On
+    Windows, this:
+
+    * Ensures that `cmd` without an extension will be found. Previously it was
+      only found if it had an extension in `PATHEXT`.
+    * Ensures the absolute path to the binary is returned. Previously if the
+      binary was found in `cwd`, a relative path was returned.
+
+    The arguments are the same as the ones in `shutil.which`. In addition there
+    is an `exts` argument that only has an effect on Windows. This is used to
+    set a custom value for PATHEXT and is formatted as a list of file
+    extensions.
+    """
+    try:
+        from shutil import which as shutil_which
+    except ImportError:
+        from shutil_which import which as shutil_which
+
+    if isinstance(path, (list, tuple)):
+        path = os.pathsep.join(path)
+
+    if sys.platform != "win32":
+        return shutil_which(cmd, mode=mode, path=path)
+
+    oldexts = os.environ.get("PATHEXT", "")
+    if not exts:
+        exts = oldexts.split(os.pathsep)
+
+    # This ensures that `cmd` without any extensions will be found.
+    # See: https://bugs.python.org/issue31405
+    if "." not in exts:
+        exts.append(".")
+
+    os.environ["PATHEXT"] = os.pathsep.join(exts)
+    try:
+        path = shutil_which(cmd, mode=mode, path=path)
+        return os.path.abspath(path.rstrip('.')) if path else None
+
+    finally:
+        if oldexts:
+            os.environ["PATHEXT"] = oldexts
+        else:
+            del os.environ["PATHEXT"]
+
+
+# utilities for temporary resources
 
 class NamedTemporaryFile(object):
     """
@@ -353,6 +383,7 @@ class NamedTemporaryFile(object):
 
     see https://bugzilla.mozilla.org/show_bug.cgi?id=821362
     """
+
     def __init__(self, mode='w+b', bufsize=-1, suffix='', prefix='tmp',
                  dir=None, delete=True):
 
@@ -410,29 +441,26 @@ def TemporaryDirectory():
         shutil.rmtree(tempdir)
 
 
-### utilities dealing with URLs
+# utilities dealing with URLs
 
 def is_url(thing):
     """
     Return True if thing looks like a URL.
     """
 
-    import urlparse
-
-    parsed = urlparse.urlparse(thing)
+    parsed = urllib.parse.urlparse(thing)
     if 'scheme' in parsed:
         return len(parsed.scheme) >= 2
     else:
         return len(parsed[0]) >= 2
 
+
 def load(resource):
     """
     open a file or URL for reading.  If the passed resource string is not a URL,
     or begins with 'file://', return a ``file``.  Otherwise, return the
-    result of urllib2.urlopen()
+    result of urllib.urlopen()
     """
-
-    import urllib2
 
     # handle file URLs separately due to python stdlib limitations
     if resource.startswith('file://'):
@@ -440,7 +468,6 @@ def load(resource):
 
     if not is_url(resource):
         # if no scheme is given, it is a file path
-        return file(resource)
+        return open(resource)
 
-    return urllib2.urlopen(resource)
-
+    return urllib.request.urlopen(resource)

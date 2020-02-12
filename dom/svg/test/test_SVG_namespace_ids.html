@@ -5,21 +5,20 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=589640
 -->
 <head>
   <title>Test for Bug 589640</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script class="testbody" type="application/javascript">
     SimpleTest.waitForExplicitFinish();
 
     function debug(message) {
-      document.getElementById('debug').appendChild(document.createTextNode(message + "\n"));
+      document.getElementById("debug").appendChild(document.createTextNode(message + "\n"));
     }
 
-    function runTests()
-    {
-      var svg = document.getElementById('svg1');
+    function runTests() {
+      var svg = document.getElementById("svg1");
       for (var el = 0; el < svg.children.length; el++) {
         is(svg.children[el].id, svg.children[el].localName, svg.children[el].localName + " in the SVG namespace has a valid ID");
-        debug(svg.children[el].localName + '.id = ' + svg.children[el].id);
+        debug(svg.children[el].localName + ".id = " + svg.children[el].id);
       }
 
       SimpleTest.finish();

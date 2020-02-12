@@ -7,8 +7,7 @@
  * http://dom.spec.whatwg.org/#interface-parentnode
  */
 
-[NoInterfaceObject]
-interface ParentNode {
+interface mixin ParentNode {
   [Constant]
   readonly attribute HTMLCollection children;
   [Pure]
@@ -18,8 +17,15 @@ interface ParentNode {
   [Pure]
   readonly attribute unsigned long childElementCount;
 
-  [Throws, Unscopable]
+  [Func="IsChromeOrXBL"]
+  HTMLCollection getElementsByAttribute(DOMString name,
+                                        [TreatNullAs=EmptyString] DOMString value);
+  [Throws, Func="IsChromeOrXBL"]
+  HTMLCollection getElementsByAttributeNS(DOMString? namespaceURI, DOMString name,
+                                          [TreatNullAs=EmptyString] DOMString value);
+
+  [CEReactions, Throws, Unscopable]
   void prepend((Node or DOMString)... nodes);
-  [Throws, Unscopable]
+  [CEReactions, Throws, Unscopable]
   void append((Node or DOMString)... nodes);
 };

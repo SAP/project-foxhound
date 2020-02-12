@@ -9,41 +9,40 @@
 
 #include "nsString.h"
 
-class nsIDocument;
-
 namespace mozilla {
 
 namespace dom {
+class Document;
 class SVGSVGElement;
-} // namespace dom
+}  // namespace dom
 
 /**
  * Implements support for parsing SVG fragment identifiers
  * http://www.w3.org/TR/SVG/linking.html#SVGFragmentIdentifiers
  */
-class SVGFragmentIdentifier
-{
+class SVGFragmentIdentifier {
   // To prevent the class being instantiated
   SVGFragmentIdentifier() = delete;
 
-public:
+ public:
   /**
    * Process the SVG fragment identifier, if there is one.
    * @return true if we found a valid svgView()-style fragment identifier,
    * in which case further processing by the caller can stop. Otherwise return
    * false as we may have an ordinary anchor which needs to be :target matched.
    */
-  static bool ProcessFragmentIdentifier(nsIDocument *aDocument,
-                                        const nsAString &aAnchorName);
+  static bool ProcessFragmentIdentifier(dom::Document* aDocument,
+                                        const nsAString& aAnchorName);
 
-private:
- /**
-  * Parse an SVG ViewSpec and set applicable attributes on the root element.
-  * @return true if there is a valid ViewSpec
-  */
-  static bool ProcessSVGViewSpec(const nsAString &aViewSpec, dom::SVGSVGElement *root);
+ private:
+  /**
+   * Parse an SVG ViewSpec and set applicable attributes on the root element.
+   * @return true if there is a valid ViewSpec
+   */
+  static bool ProcessSVGViewSpec(const nsAString& aViewSpec,
+                                 dom::SVGSVGElement* root);
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // MOZILLA_SVGFRAGMENTIDENTIFIER_H__
+#endif  // MOZILLA_SVGFRAGMENTIDENTIFIER_H__

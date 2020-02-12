@@ -4,20 +4,23 @@
 
 "use strict";
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+var EXPORTED_SYMBOLS = ["BingTranslator"];
 
-this.EXPORTED_SYMBOLS = [ "BingTranslator" ];
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
+const { Async } = ChromeUtils.import("resource://services-common/async.js");
+const { httpRequest } = ChromeUtils.import("resource://gre/modules/Http.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://services-common/utils.js");
-Cu.import("resource://gre/modules/Http.jsm");
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 // The maximum amount of net data allowed per request on Bing's API.
 const MAX_REQUEST_DATA = 5000; // Documentation says 10000 but anywhere
-                               // close to that is refused by the service.
+// close to that is refused by the service.
 
 // The maximum number of chunks allowed to be translated in a single
 // request.
@@ -40,7 +43,11 @@ const MAX_REQUESTS = 15;
  * @returns {Promise}          A promise that will resolve when the translation
  *                             task is finished.
  */
-this.BingTranslator = function(translationDocument, sourceLanguage, targetLanguage) {
+var BingTranslator = function(
+  translationDocument,
+  sourceLanguage,
+  targetLanguage
+) {
   this.translationDocument = translationDocument;
   this.sourceLanguage = sourceLanguage;
   this.targetLanguage = targetLanguage;
@@ -58,10 +65,10 @@ this.BingTranslator.prototype = {
    * @returns {Promise}          A promise that will resolve when the translation
    *                             task is finished.
    */
-  translate: function() {
-    return Task.spawn(function *() {
+  translate() {
+    return (async () => {
       let currentIndex = 0;
-      this._onFinishedDeferred = Promise.defer();
+      this._onFinishedDeferred = PromiseUtils.defer();
 
       // Let's split the document into various requests to be sent to
       // Bing's Translation API.
@@ -70,19 +77,22 @@ this.BingTranslator.prototype = {
         // let's take the opportunity of the chunkification process to
         // allow for the event loop to attend other pending events
         // before we continue.
-        yield CommonUtils.laterTickResolvingPromise();
+        await Async.promiseYield();
 
         // Determine the data for the next request.
         let request = this._generateNextTranslationRequest(currentIndex);
 
         // Create a real request to the server, and put it on the
         // pending requests list.
-        let bingRequest = new BingRequest(request.data,
-                                          this.sourceLanguage,
-                                          this.targetLanguage);
+        let bingRequest = new BingRequest(
+          request.data,
+          this.sourceLanguage,
+          this.targetLanguage
+        );
         this._pendingRequests++;
-        bingRequest.fireRequest().then(this._chunkCompleted.bind(this),
-                                       this._chunkFailed.bind(this));
+        bingRequest
+          .fireRequest()
+          .then(this._chunkCompleted.bind(this), this._chunkFailed.bind(this));
 
         currentIndex = request.lastIndex;
         if (request.finished) {
@@ -91,14 +101,14 @@ this.BingTranslator.prototype = {
       }
 
       return this._onFinishedDeferred.promise;
-    }.bind(this));
+    })();
   },
 
   /**
    * Resets the expiration time of the current token, in order to
    * force the token manager to ask for a new token during the next request.
    */
-  _resetToken : function() {
+  _resetToken() {
     // Force the token manager to get update token
     BingTokenManager._currentExpiryTime = 0;
   },
@@ -111,7 +121,7 @@ this.BingTranslator.prototype = {
    *
    * @param   request   The BingRequest sent to the server.
    */
-  _chunkCompleted: function(bingRequest) {
+  _chunkCompleted(bingRequest) {
     if (this._parseChunkResult(bingRequest)) {
       this._partialSuccess = true;
       // Count the number of characters successfully translated.
@@ -131,13 +141,19 @@ this.BingTranslator.prototype = {
    *
    * @param   aError   [optional] The XHR object of the request that failed.
    */
-  _chunkFailed: function(aError) {
-    if (aError instanceof Ci.nsIXMLHttpRequest &&
-        [400, 401].indexOf(aError.status) != -1) {
+  _chunkFailed(aError) {
+    if (
+      aError instanceof XMLHttpRequest &&
+      [400, 401].includes(aError.status)
+    ) {
       let body = aError.responseText;
-      if (body && body.includes("TranslateApiException") &&
-          (body.includes("balance") || body.includes("active state")))
+      if (
+        body &&
+        body.includes("TranslateApiException") &&
+        (body.includes("balance") || body.includes("active state"))
+      ) {
         this._serviceUnavailable = true;
+      }
     }
 
     this._checkIfFinished();
@@ -148,7 +164,7 @@ this.BingTranslator.prototype = {
    * This function handles resolving the promise
    * returned by the public `translate()` method when all chunks are completed.
    */
-  _checkIfFinished: function() {
+  _checkIfFinished() {
     // Check if all pending requests have been
     // completed and then resolves the promise.
     // If at least one chunk was successful, the
@@ -158,7 +174,7 @@ this.BingTranslator.prototype = {
     if (--this._pendingRequests == 0) {
       if (this._partialSuccess) {
         this._onFinishedDeferred.resolve({
-          characterCount: this._translatedCharacterCount
+          characterCount: this._translatedCharacterCount,
         });
       } else {
         let error = this._serviceUnavailable ? "unavailable" : "failure";
@@ -177,7 +193,7 @@ this.BingTranslator.prototype = {
    * @param   request      The request sent to the server.
    * @returns boolean      True if parsing of this chunk was successful.
    */
-  _parseChunkResult: function(bingRequest) {
+  _parseChunkResult(bingRequest) {
     let results;
     try {
       let doc = bingRequest.networkRequest.responseXML;
@@ -207,7 +223,9 @@ this.BingTranslator.prototype = {
         }
 
         root.parseResult(result);
-      } catch (e) { error = true; }
+      } catch (e) {
+        error = true;
+      }
     }
 
     return !error;
@@ -220,7 +238,7 @@ this.BingTranslator.prototype = {
    * @param startIndex What is the index, in the roots list, that the
    *                   chunk should start.
    */
-  _generateNextTranslationRequest: function(startIndex) {
+  _generateNextTranslationRequest(startIndex) {
     let currentDataSize = 0;
     let currentChunks = 0;
     let output = [];
@@ -237,9 +255,7 @@ this.BingTranslator.prototype = {
       let newCurSize = currentDataSize + text.length;
       let newChunks = currentChunks + 1;
 
-      if (newCurSize > MAX_REQUEST_DATA ||
-          newChunks > MAX_REQUEST_CHUNKS) {
-
+      if (newCurSize > MAX_REQUEST_DATA || newChunks > MAX_REQUEST_CHUNKS) {
         // If we've reached the API limits, let's stop accumulating data
         // for this request and return. We return information useful for
         // the caller to pass back on the next call, so that the function
@@ -247,7 +263,7 @@ this.BingTranslator.prototype = {
         return {
           data: output,
           finished: false,
-          lastIndex: i
+          lastIndex: i,
         };
       }
 
@@ -259,9 +275,9 @@ this.BingTranslator.prototype = {
     return {
       data: output,
       finished: true,
-      lastIndex: 0
+      lastIndex: 0,
     };
-  }
+  },
 };
 
 /**
@@ -285,61 +301,68 @@ BingRequest.prototype = {
   /**
    * Initiates the request
    */
-  fireRequest: function() {
-    return Task.spawn(function *(){
+  fireRequest() {
+    return (async () => {
       // Prepare authentication.
-      let token = yield BingTokenManager.getToken();
+      let token = await BingTokenManager.getToken();
       let auth = "Bearer " + token;
 
       // Prepare URL.
-      let url = getUrlParam("https://api.microsofttranslator.com/v2/Http.svc/TranslateArray",
-                            "browser.translation.bing.translateArrayURL");
+      let url = getUrlParam(
+        "https://api.microsofttranslator.com/v2/Http.svc/TranslateArray",
+        "browser.translation.bing.translateArrayURL"
+      );
 
       // Prepare request headers.
       let headers = [["Content-type", "text/xml"], ["Authorization", auth]];
 
       // Prepare the request body.
       let requestString =
-        '<TranslateArrayRequest>' +
-          '<AppId/>' +
-          '<From>' + this.sourceLanguage + '</From>' +
-          '<Options>' +
-            '<ContentType xmlns="http://schemas.datacontract.org/2004/07/Microsoft.MT.Web.Service.V2">text/html</ContentType>' +
-            '<ReservedFlags xmlns="http://schemas.datacontract.org/2004/07/Microsoft.MT.Web.Service.V2" />' +
-          '</Options>' +
-          '<Texts xmlns:s="http://schemas.microsoft.com/2003/10/Serialization/Arrays">';
+        "<TranslateArrayRequest>" +
+        "<AppId/>" +
+        "<From>" +
+        this.sourceLanguage +
+        "</From>" +
+        "<Options>" +
+        '<ContentType xmlns="http://schemas.datacontract.org/2004/07/Microsoft.MT.Web.Service.V2">text/html</ContentType>' +
+        '<ReservedFlags xmlns="http://schemas.datacontract.org/2004/07/Microsoft.MT.Web.Service.V2" />' +
+        "</Options>" +
+        '<Texts xmlns:s="http://schemas.microsoft.com/2003/10/Serialization/Arrays">';
 
       for (let [, text] of this.translationData) {
-        requestString += '<s:string>' + text + '</s:string>';
+        requestString += "<s:string>" + text + "</s:string>";
         this.characterCount += text.length;
       }
 
-      requestString += '</Texts>' +
-          '<To>' + this.targetLanguage + '</To>' +
-        '</TranslateArrayRequest>';
+      requestString +=
+        "</Texts>" +
+        "<To>" +
+        this.targetLanguage +
+        "</To>" +
+        "</TranslateArrayRequest>";
 
       // Set up request options.
-      let deferred = Promise.defer();
-      let options = {
-        onLoad: (function(responseText, xhr) {
-          deferred.resolve(this);
-        }).bind(this),
-        onError: function(e, responseText, xhr) {
-          deferred.reject(xhr);
-        },
-        postData: requestString,
-        headers: headers
-      };
+      return new Promise((resolve, reject) => {
+        let options = {
+          onLoad: (responseText, xhr) => {
+            resolve(this);
+          },
+          onError(e, responseText, xhr) {
+            reject(xhr);
+          },
+          postData: requestString,
+          headers,
+        };
 
-      // Fire the request.
-      let request = httpRequest(url, options);
+        // Fire the request.
+        let request = httpRequest(url, options);
 
-      // Override the response MIME type.
-      request.overrideMimeType("text/xml");
-      this.networkRequest = request;
-      return deferred.promise;
-    }.bind(this));
-  }
+        // Override the response MIME type.
+        request.overrideMimeType("text/xml");
+        this.networkRequest = request;
+      });
+    })();
+  },
 };
 
 /**
@@ -358,7 +381,7 @@ var BingTokenManager = {
    *                     can be the same one used in the past if it is still
    *                     valid.
    */
-  getToken: function() {
+  getToken() {
     if (this._pendingRequest) {
       return this._pendingRequest;
     }
@@ -378,63 +401,77 @@ var BingTokenManager = {
    * @returns {Promise}  A promise that resolves with the token
    *                     string once it is obtained.
    */
-  _getNewToken: function() {
-    let url = getUrlParam("https://datamarket.accesscontrol.windows.net/v2/OAuth2-13",
-                          "browser.translation.bing.authURL");
+  _getNewToken() {
+    let url = getUrlParam(
+      "https://datamarket.accesscontrol.windows.net/v2/OAuth2-13",
+      "browser.translation.bing.authURL"
+    );
     let params = [
       ["grant_type", "client_credentials"],
       ["scope", "http://api.microsofttranslator.com"],
-      ["client_id",
-      getUrlParam("%BING_API_CLIENTID%", "browser.translation.bing.clientIdOverride")],
-      ["client_secret",
-      getUrlParam("%BING_API_KEY%", "browser.translation.bing.apiKeyOverride")]
+      [
+        "client_id",
+        getUrlParam(
+          "%BING_API_CLIENTID%",
+          "browser.translation.bing.clientIdOverride"
+        ),
+      ],
+      [
+        "client_secret",
+        getUrlParam(
+          "%BING_API_KEY%",
+          "browser.translation.bing.apiKeyOverride"
+        ),
+      ],
     ];
 
-    let deferred = Promise.defer();
-    let options = {
-      onLoad: function(responseText, xhr) {
-        BingTokenManager._pendingRequest = null;
-        try {
-          let json = JSON.parse(responseText);
+    this._pendingRequest = new Promise((resolve, reject) => {
+      let options = {
+        onLoad(responseText, xhr) {
+          BingTokenManager._pendingRequest = null;
+          try {
+            let json = JSON.parse(responseText);
 
-          if (json.error) {
-            deferred.reject(json.error);
-            return;
+            if (json.error) {
+              reject(json.error);
+              return;
+            }
+
+            let token = json.access_token;
+            let expires_in = json.expires_in;
+            BingTokenManager._currentToken = token;
+            BingTokenManager._currentExpiryTime = new Date(
+              Date.now() + expires_in * 1000
+            );
+            resolve(token);
+          } catch (e) {
+            reject(e);
           }
+        },
+        onError(e, responseText, xhr) {
+          BingTokenManager._pendingRequest = null;
+          reject(e);
+        },
+        postData: params,
+      };
 
-          let token = json.access_token;
-          let expires_in = json.expires_in;
-          BingTokenManager._currentToken = token;
-          BingTokenManager._currentExpiryTime = new Date(Date.now() + expires_in * 1000);
-          deferred.resolve(token);
-        } catch (e) {
-          deferred.reject(e);
-        }
-      },
-      onError: function(e, responseText, xhr) {
-        BingTokenManager._pendingRequest = null;
-        deferred.reject(e);
-      },
-      postData: params
-    };
-
-    this._pendingRequest = deferred.promise;
-    let request = httpRequest(url, options);
-
-    return deferred.promise;
-  }
+      httpRequest(url, options);
+    });
+    return this._pendingRequest;
+  },
 };
 
 /**
  * Escape a string to be valid XML content.
  */
 function escapeXML(aStr) {
-  return aStr.toString()
-             .replace(/&/g, "&amp;")
-             .replace(/\"/g, "&quot;")
-             .replace(/\'/g, "&apos;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;");
+  return aStr
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/\"/g, "&quot;")
+    .replace(/\'/g, "&apos;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**
@@ -442,8 +479,9 @@ function escapeXML(aStr) {
  * a pref if it's set.
  */
 function getUrlParam(paramValue, prefName) {
-  if (Services.prefs.getPrefType(prefName))
+  if (Services.prefs.getPrefType(prefName)) {
     paramValue = Services.prefs.getCharPref(prefName);
+  }
   paramValue = Services.urlFormatter.formatURL(paramValue);
   return paramValue;
 }

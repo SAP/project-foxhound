@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=595310
 -->
 <head>
   <title>Test for Bug 595310</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -43,7 +43,6 @@ addLoadEvent(function() {
   function synthesizeDropText(aElement, aText)
   {
     var editor = SpecialPowers.wrap(aElement)
-                              .QueryInterface(SpecialPowers.Ci.nsIDOMNSEditableElement)
                               .editor
                               .QueryInterface(SpecialPowers.Ci.nsIPlaintextEditor);
 

@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5,12 +7,11 @@
 #ifndef GFX_CLIENTTILEDPAINTEDLAYER_H
 #define GFX_CLIENTTILEDPAINTEDLAYER_H
 
-#include "ClientLayerManager.h"         // for ClientLayer, etc
-#include "Layers.h"                     // for PaintedLayer, etc
-#include "mozilla/RefPtr.h"             // for RefPtr
+#include "ClientLayerManager.h"  // for ClientLayer, etc
+#include "Layers.h"              // for PaintedLayer, etc
+#include "mozilla/RefPtr.h"      // for RefPtr
 #include "mozilla/layers/TiledContentClient.h"
-#include "nsDebug.h"                    // for NS_RUNTIMEABORT
-#include "nsRegion.h"                   // for nsIntRegion
+#include "nsRegion.h"  // for nsIntRegion
 
 namespace mozilla {
 namespace layers {
@@ -33,48 +34,44 @@ class SpecificLayerAttributes;
  *
  * There is no ContentClient for tiled layers. There is a ContentHost, however.
  */
-class ClientTiledPaintedLayer : public PaintedLayer,
-                                public ClientLayer
-{
+class ClientTiledPaintedLayer : public PaintedLayer, public ClientLayer {
   typedef PaintedLayer Base;
 
-public:
+ public:
   explicit ClientTiledPaintedLayer(ClientLayerManager* const aManager,
-                                  ClientLayerManager::PaintedLayerCreationHint aCreationHint = LayerManager::NONE);
+                                   ClientLayerManager::PaintedLayerCreationHint
+                                       aCreationHint = LayerManager::NONE);
 
-protected:
-  ~ClientTiledPaintedLayer();
+ protected:
+  virtual ~ClientTiledPaintedLayer();
 
-  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
+  void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
 
-public:
+ public:
   // Override name to distinguish it from ClientPaintedLayer in layer dumps
-  virtual const char* Name() const override { return "TiledPaintedLayer"; }
+  const char* Name() const override { return "TiledPaintedLayer"; }
 
   // PaintedLayer
-  virtual Layer* AsLayer() override { return this; }
-  virtual void InvalidateRegion(const nsIntRegion& aRegion) override {
+  Layer* AsLayer() override { return this; }
+  void InvalidateRegion(const nsIntRegion& aRegion) override {
     mInvalidRegion.Add(aRegion);
-    nsIntRegion invalidRegion = mInvalidRegion.GetRegion();
-    mValidRegion.Sub(mValidRegion, invalidRegion);
-    mLowPrecisionValidRegion.Sub(mLowPrecisionValidRegion, invalidRegion);
+    UpdateValidRegionAfterInvalidRegionChanged();
+    if (!mLowPrecisionValidRegion.IsEmpty()) {
+      // Also update mLowPrecisionValidRegion. Unfortunately we call
+      // mInvalidRegion.GetRegion() here, which is expensive.
+      mLowPrecisionValidRegion.SubOut(mInvalidRegion.GetRegion());
+    }
   }
 
   // Shadow methods
-  virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs) override;
-  virtual ShadowableLayer* AsShadowableLayer() override { return this; }
+  void FillSpecificAttributes(SpecificLayerAttributes& aAttrs) override;
+  ShadowableLayer* AsShadowableLayer() override { return this; }
 
-  virtual void Disconnect() override
-  {
-    ClientLayer::Disconnect();
-  }
+  void RenderLayer() override;
 
-  virtual void RenderLayer() override;
+  void ClearCachedResources() override;
 
-  virtual void ClearCachedResources() override;
-
-  virtual void HandleMemoryPressure() override
-  {
+  void HandleMemoryPressure() override {
     if (mContentClient) {
       mContentClient->HandleMemoryPressure();
     }
@@ -89,11 +86,11 @@ public:
                          LayerMetricsWrapper* aOutDisplayPortAncestor,
                          bool* aOutHasTransformAnimation);
 
-  virtual bool IsOptimizedFor(LayerManager::PaintedLayerCreationHint aCreationHint) override;
+  bool IsOptimizedFor(
+      LayerManager::PaintedLayerCreationHint aCreationHint) override;
 
-private:
-  ClientLayerManager* ClientManager()
-  {
+ private:
+  ClientLayerManager* ClientManager() {
     return static_cast<ClientLayerManager*>(mManager);
   }
 
@@ -119,7 +116,7 @@ private:
    * Helper function to do the high-precision paint.
    * This function returns true if it updated the paint buffer.
    */
-  bool RenderHighPrecision(nsIntRegion& aInvalidRegion,
+  bool RenderHighPrecision(const nsIntRegion& aInvalidRegion,
                            const nsIntRegion& aVisibleRegion,
                            LayerManager::DrawPaintedLayerCallback aCallback,
                            void* aCallbackData);
@@ -128,7 +125,7 @@ private:
    * Helper function to do the low-precision paint.
    * This function returns true if it updated the paint buffer.
    */
-  bool RenderLowPrecision(nsIntRegion& aInvalidRegion,
+  bool RenderLowPrecision(const nsIntRegion& aInvalidRegion,
                           const nsIntRegion& aVisibleRegion,
                           LayerManager::DrawPaintedLayerCallback aCallback,
                           void* aCallbackData);
@@ -147,7 +144,7 @@ private:
   BasicTiledLayerPaintData mPaintData;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

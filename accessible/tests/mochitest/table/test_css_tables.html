@@ -6,8 +6,7 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
   <script type="application/javascript"
           src="../common.js"></script>
@@ -16,15 +15,14 @@
 
   <script type="application/javascript">
 
-    function doTest()
-    {
-      //////////////////////////////////////////////////////////////////////////
+    function doTest() {
+      // ////////////////////////////////////////////////////////////////////////
       // elements with display:table
 
       // only display:table
       var accTree =
         { SECTION: [
-          { TEXT_LEAF: [ ] }
+          { TEXT_LEAF: [ ] },
         ] };
       testAccessibleTree("table1", accTree);
 
@@ -32,8 +30,8 @@
       accTree =
         { SECTION: [
           { SECTION: [
-            { TEXT_LEAF: [ ] }
-	        ] }
+            { TEXT_LEAF: [ ] },
+          ] },
       ] };
       testAccessibleTree("table2", accTree);
 
@@ -41,8 +39,8 @@
       accTree =
         { SECTION: [
           { SECTION: [
-            { TEXT_LEAF: [ ] }
-          ] }
+            { TEXT_LEAF: [ ] },
+          ] },
       ] };
       testAccessibleTree("table3", accTree);
 
@@ -50,8 +48,8 @@
       accTree =
         { SECTION: [
           { SECTION: [
-            { TEXT_LEAF: [ ] }
-          ] }
+            { TEXT_LEAF: [ ] },
+          ] },
         ] };
       testAccessibleTree("table4", accTree);
 
@@ -59,8 +57,8 @@
       accTree =
         { TEXT_CONTAINER: [
           { TEXT_CONTAINER: [
-            { TEXT_LEAF: [ ] }
-          ] }
+            { TEXT_LEAF: [ ] },
+          ] },
         ] };
       testAccessibleTree("table5", accTree);
 

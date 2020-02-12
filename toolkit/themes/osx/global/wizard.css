@@ -8,10 +8,6 @@ wizard {
   padding: 14px;
 }
 
-#header { 
-  display: inline !important;
-}
-
 .wizard-header {
   -moz-appearance: dialog;
 }
@@ -59,4 +55,3 @@ wizard[branded="true"] .wizard-header-icon {
 .wizard-button {
   font: menu !important;
 }
-

@@ -3,36 +3,44 @@
 
 "use strict";
 
-var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
-var { console } = Cu.import("resource://gre/modules/Console.jsm", {});
-var { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+// via xpcshell.ini
+/* import-globals-from ../../../shared/test/shared-redux-head.js */
+
+var { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
 
 var Services = require("Services");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
-var flags = require("devtools/shared/flags");
-flags.testing = true;
-flags.wantLogging = true;
-flags.wantVerbose = false;
+
+Services.prefs.setBoolPref("devtools.testing", true);
+Services.prefs.setBoolPref("devtools.debugger.log", true);
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("devtools.testing");
+  Services.prefs.clearUserPref("devtools.debugger.log");
+});
 
 var { OS } = require("resource://gre/modules/osfile.jsm");
 var { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
 var { TargetFactory } = require("devtools/client/framework/target");
 var promise = require("promise");
 var defer = require("devtools/shared/defer");
-var { Task } = require("devtools/shared/task");
 var { expectState } = require("devtools/server/actors/common");
 var HeapSnapshotFileUtils = require("devtools/shared/heapsnapshot/HeapSnapshotFileUtils");
 var HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
 var { addDebuggerToGlobal } = require("resource://gre/modules/jsdebugger.jsm");
 var Store = require("devtools/client/memory/store");
 var { L10N } = require("devtools/client/memory/utils");
-var SYSTEM_PRINCIPAL = Cc["@mozilla.org/systemprincipal;1"].createInstance(Ci.nsIPrincipal);
+var SYSTEM_PRINCIPAL = Cc["@mozilla.org/systemprincipal;1"].createInstance(
+  Ci.nsIPrincipal
+);
 
 var EXPECTED_DTU_ASSERT_FAILURE_COUNT = 0;
 
-do_register_cleanup(function () {
-  equal(DevToolsUtils.assertionFailureCount, EXPECTED_DTU_ASSERT_FAILURE_COUNT,
-        "Should have had the expected number of DevToolsUtils.assert() failures.");
+registerCleanupFunction(function() {
+  equal(
+    DevToolsUtils.assertionFailureCount,
+    EXPECTED_DTU_ASSERT_FAILURE_COUNT,
+    "Should have had the expected number of DevToolsUtils.assert() failures."
+  );
 });
 
 function dumpn(msg) {
@@ -40,7 +48,7 @@ function dumpn(msg) {
 }
 
 function initDebugger() {
-  let global = new Cu.Sandbox(SYSTEM_PRINCIPAL, { freshZone: true });
+  const global = new Cu.Sandbox(SYSTEM_PRINCIPAL, { freshZone: true });
   addDebuggerToGlobal(global);
   return new global.Debugger();
 }
@@ -51,34 +59,48 @@ function StubbedMemoryFront() {
   this.dbg = initDebugger();
 }
 
-StubbedMemoryFront.prototype.attach = Task.async(function* () {
+StubbedMemoryFront.prototype.attach = async function() {
   this.state = "attached";
-});
+};
 
-StubbedMemoryFront.prototype.detach = Task.async(function* () {
+StubbedMemoryFront.prototype.detach = async function() {
   this.state = "detached";
-});
+};
 
-StubbedMemoryFront.prototype.saveHeapSnapshot = expectState("attached", Task.async(function* () {
-  return ThreadSafeChromeUtils.saveHeapSnapshot({ runtime: true });
-}), "saveHeapSnapshot");
+StubbedMemoryFront.prototype.saveHeapSnapshot = expectState(
+  "attached",
+  async function() {
+    return ChromeUtils.saveHeapSnapshot({ runtime: true });
+  },
+  "saveHeapSnapshot"
+);
 
-StubbedMemoryFront.prototype.startRecordingAllocations = expectState("attached", Task.async(function* () {
-  this.recordingAllocations = true;
-}));
+StubbedMemoryFront.prototype.startRecordingAllocations = expectState(
+  "attached",
+  async function() {
+    this.recordingAllocations = true;
+  }
+);
 
-StubbedMemoryFront.prototype.stopRecordingAllocations = expectState("attached", Task.async(function* () {
-  this.recordingAllocations = false;
-}));
+StubbedMemoryFront.prototype.stopRecordingAllocations = expectState(
+  "attached",
+  async function() {
+    this.recordingAllocations = false;
+  }
+);
 
 function waitUntilSnapshotState(store, expected) {
-  let predicate = () => {
-    let snapshots = store.getState().snapshots;
-    do_print(snapshots.map(x => x.state));
-    return snapshots.length === expected.length &&
-           expected.every((state, i) => state === "*" || snapshots[i].state === state);
+  const predicate = () => {
+    const snapshots = store.getState().snapshots;
+    info(snapshots.map(x => x.state));
+    return (
+      snapshots.length === expected.length &&
+      expected.every(
+        (state, i) => state === "*" || snapshots[i].state === state
+      )
+    );
   };
-  do_print(`Waiting for snapshots to be of state: ${expected}`);
+  info(`Waiting for snapshots to be of state: ${expected}`);
   return waitUntilState(store, predicate);
 }
 
@@ -88,7 +110,7 @@ function findReportLeafIndex(node, name = null) {
   }
 
   if (node.children) {
-    for (let child of node.children) {
+    for (const child of node.children) {
       const found = findReportLeafIndex(child);
       if (found) {
         return found;
@@ -100,29 +122,35 @@ function findReportLeafIndex(node, name = null) {
 }
 
 function waitUntilCensusState(store, getCensus, expected) {
-  let predicate = () => {
-    let snapshots = store.getState().snapshots;
+  const predicate = () => {
+    const snapshots = store.getState().snapshots;
 
-    do_print("Current census state:" +
-             snapshots.map(x => getCensus(x) ? getCensus(x).state : null));
+    info(
+      "Current census state:" +
+        snapshots.map(x => (getCensus(x) ? getCensus(x).state : null))
+    );
 
-    return snapshots.length === expected.length &&
-           expected.every((state, i) => {
-             let census = getCensus(snapshots[i]);
-             return (state === "*") ||
-                    (!census && !state) ||
-                    (census && census.state === state);
-           });
+    return (
+      snapshots.length === expected.length &&
+      expected.every((state, i) => {
+        const census = getCensus(snapshots[i]);
+        return (
+          state === "*" ||
+          (!census && !state) ||
+          (census && census.state === state)
+        );
+      })
+    );
   };
-  do_print(`Waiting for snapshots' censuses to be of state: ${expected}`);
+  info(`Waiting for snapshots' censuses to be of state: ${expected}`);
   return waitUntilState(store, predicate);
 }
 
-function* createTempFile() {
-  let file = FileUtils.getFile("TmpD", ["tmp.fxsnapshot"]);
+async function createTempFile() {
+  const file = FileUtils.getFile("TmpD", ["tmp.fxsnapshot"]);
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
-  let destPath = file.path;
-  let stat = yield OS.File.stat(destPath);
+  const destPath = file.path;
+  const stat = await OS.File.stat(destPath);
   ok(stat.size === 0, "new file is 0 bytes at start");
   return destPath;
 }

@@ -17,6 +17,7 @@ dictionary SVGBoundingBoxOptions {
   boolean clipped = false;
 };
 
+[Exposed=Window]
 interface SVGGraphicsElement : SVGElement {
   readonly attribute SVGAnimatedTransformList transform;
 
@@ -24,7 +25,7 @@ interface SVGGraphicsElement : SVGElement {
   readonly attribute SVGElement? farthestViewportElement;
 
   [NewObject, Throws]
-  SVGRect getBBox(optional SVGBoundingBoxOptions aOptions);
+  SVGRect getBBox(optional SVGBoundingBoxOptions aOptions = {});
   // Not implemented
   // SVGRect getStrokeBBox();
   SVGMatrix? getCTM();
@@ -33,4 +34,4 @@ interface SVGGraphicsElement : SVGElement {
   SVGMatrix getTransformToElement(SVGGraphicsElement element);
 };
 
-SVGGraphicsElement implements SVGTests;
+SVGGraphicsElement includes SVGTests;

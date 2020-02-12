@@ -17,13 +17,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
     var FRAME_SCRIPT2 = "data:,addMessageListener('test', function () {" +
                         "sendSyncMessage('test', 'frame2')})";
 
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
-    var globalMM = Cc["@mozilla.org/globalmessagemanager;1"]
-                     .getService(Ci.nsIMessageListenerManager);
+    var globalMM = Cc["@mozilla.org/globalmessagemanager;1"].getService();
 
     function is(val, exp, msg) {
-      opener.wrappedJSObject.is(val, exp, msg);
+      window.arguments[0].is(val, exp, msg);
     }
 
     function promiseMessage(type, mm) {
@@ -49,20 +46,18 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
       var promise1 = promiseMessage("frame2", getGroupMessageManager("test1"));
       var promise2 = promiseMessage("frame1", getGroupMessageManager("test2"));
 
-      var flo1 = browser1.QueryInterface(Ci.nsIFrameLoaderOwner);
-      var flo2 = browser2.QueryInterface(Ci.nsIFrameLoaderOwner);
-      flo1.swapFrameLoaders(flo2);
+      browser1.swapFrameLoaders(browser2);
       messageManager.broadcastAsyncMessage("test");
 
       Promise.all([promise1, promise2]).then(function () {
-        opener.setTimeout("next()");
+        window.arguments[0].setTimeout(function() { this.next(); });
         window.close();
       });
     }
 
   ]]></script>
 
-  <browser messagemanagergroup="test1" type="content-targetable" src="about:mozilla" />
-  <browser messagemanagergroup="test2" type="content-targetable" src="about:mozilla" />
+  <browser messagemanagergroup="test1" type="content" src="about:mozilla" />
+  <browser messagemanagergroup="test2" type="content" src="about:mozilla" />
 
 </window>

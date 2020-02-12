@@ -7,28 +7,32 @@ const kSearchEngineID = "addEngineWithDetails_test_engine";
 const kSearchEngineURL = "http://example.com/?search={searchTerms}";
 const kSearchTerm = "foo";
 
-add_task(function* test_addEngineWithDetails() {
-  do_check_false(Services.search.isInitialized);
+add_task(async function setup() {
+  await AddonTestUtils.promiseStartupManager();
+});
 
-  Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF)
-          .setBoolPref("reset.enabled", true);
+add_task(async function test_addEngineWithDetails() {
+  Assert.ok(!Services.search.isInitialized);
 
-  yield asyncInit();
-
-  Services.search.addEngineWithDetails(kSearchEngineID, "", "", "", "get",
-                                       kSearchEngineURL);
+  await Services.search.addEngineWithDetails(kSearchEngineID, {
+    method: "get",
+    template: kSearchEngineURL,
+  });
 
   // An engine added with addEngineWithDetails should have a load path, even
   // though we can't point to a specific file.
   let engine = Services.search.getEngineByName(kSearchEngineID);
-  do_check_eq(engine.wrappedJSObject._loadPath, "[other]addEngineWithDetails");
+  Assert.equal(engine.wrappedJSObject._loadPath, "[other]addEngineWithDetails");
 
   // Set the engine as default; this should set a loadPath verification hash,
   // which should ensure we don't show the search reset prompt.
-  Services.search.currentEngine = engine;
+  await Services.search.setDefault(engine);
 
   let expectedURL = kSearchEngineURL.replace("{searchTerms}", kSearchTerm);
-  let submission =
-    Services.search.currentEngine.getSubmission(kSearchTerm, null, "searchbar");
-  do_check_eq(submission.uri.spec, expectedURL);
+  let submission = (await Services.search.getDefault()).getSubmission(
+    kSearchTerm,
+    null,
+    "searchbar"
+  );
+  Assert.equal(submission.uri.spec, expectedURL);
 });

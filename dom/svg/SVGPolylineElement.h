@@ -7,33 +7,35 @@
 #ifndef mozilla_dom_SVGPolylineElement_h
 #define mozilla_dom_SVGPolylineElement_h
 
-#include "nsSVGPolyElement.h"
+#include "SVGPolyElement.h"
 
-nsresult NS_NewSVGPolylineElement(nsIContent **aResult,
-                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-
-typedef nsSVGPolyElement SVGPolylineElementBase;
+nsresult NS_NewSVGPolylineElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
-class SVGPolylineElement final : public SVGPolylineElementBase
-{
-protected:
-  explicit SVGPolylineElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
-  friend nsresult (::NS_NewSVGPolylineElement(nsIContent **aResult,
-                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+typedef SVGPolyElement SVGPolylineElementBase;
 
-  // nsSVGPathGeometryElement methods:
+class SVGPolylineElement final : public SVGPolylineElementBase {
+ protected:
+  explicit SVGPolylineElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
+  friend nsresult(::NS_NewSVGPolylineElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+
+  // SVGGeometryElement methods:
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
-public:
+ public:
   // nsIContent interface
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGPolylineElement_h
+#endif  // mozilla_dom_SVGPolylineElement_h

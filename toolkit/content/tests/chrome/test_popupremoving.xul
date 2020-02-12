@@ -23,8 +23,8 @@
   crash when the third menu is removed.
   -->
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>      
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <hbox>
 
@@ -118,7 +118,7 @@ function modified(event)
       event.attrName == "open") {
     gChangeMutation.hidden = true;
     // force a layout flush
-    document.documentElement.boxObject.width;
+    document.documentElement.clientWidth;
     gTriggerMutation = null;
     gChangeMutation = null;
   }
@@ -134,7 +134,7 @@ function removePopups()
   gTriggerMutation = menu3;
   gChangeMutation = $(gKey + "menu4");
   var menu = $(gKey + "menu1");
-  menu.parentNode.removeChild(menu);
+  menu.remove();
 
   if (gKey == "nested") {
     // the 'separate' test checks this during the popup2 hidden event handler

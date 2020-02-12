@@ -5,31 +5,56 @@
 #ifndef BASE_THREADING_THREAD_LOCAL_STORAGE_H_
 #define BASE_THREADING_THREAD_LOCAL_STORAGE_H_
 
+#include <stdint.h>
+
 #include "base/atomicops.h"
 #include "base/base_export.h"
 #include "base/macros.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
-#elif defined(OS_POSIX)
+#include "base/win/windows_types.h"
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include <pthread.h>
 #endif
 
+namespace heap_profiling {
+class ScopedAllowAlloc;
+}  // namespace heap_profiling
+
+namespace ui {
+class TLSDestructionCheckerForX11;
+}
+
 namespace base {
+
+class SamplingHeapProfiler;
+
+namespace debug {
+class GlobalActivityTracker;
+}  // namespace debug
+
+namespace trace_event {
+class MallocDumpProvider;
+}  // namespace trace_event
 
 namespace internal {
 
-// WARNING: You should *NOT* be using this class directly.
-// PlatformThreadLocalStorage is low-level abstraction to the OS's TLS
-// interface, you should instead be using ThreadLocalStorage::StaticSlot/Slot.
+class ThreadLocalStorageTestInternal;
+
+// WARNING: You should *NOT* use this class directly.
+// PlatformThreadLocalStorage is a low-level abstraction of the OS's TLS
+// interface. Instead, you should use one of the following:
+// * ThreadLocalBoolean (from thread_local.h) for booleans.
+// * ThreadLocalPointer (from thread_local.h) for pointers.
+// * ThreadLocalStorage::StaticSlot/Slot for more direct control of the slot.
 class BASE_EXPORT PlatformThreadLocalStorage {
  public:
 
 #if defined(OS_WIN)
   typedef unsigned long TLSKey;
   enum : unsigned { TLS_KEY_OUT_OF_INDEXES = TLS_OUT_OF_INDEXES };
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   typedef pthread_key_t TLSKey;
   // The following is a "reserved key" which is used in our generic Chromium
   // ThreadLocalStorage implementation.  We expect that an OS will not return
@@ -51,7 +76,13 @@ class BASE_EXPORT PlatformThreadLocalStorage {
   // SetTLSValue().
   static void FreeTLS(TLSKey key);
   static void SetTLSValue(TLSKey key, void* value);
-  static void* GetTLSValue(TLSKey key);
+  static void* GetTLSValue(TLSKey key) {
+#if defined(OS_WIN)
+    return TlsGetValue(key);
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+    return pthread_getspecific(key);
+#endif
+  }
 
   // Each platform (OS implementation) is required to call this method on each
   // terminating thread when the thread is about to terminate.  This method
@@ -65,7 +96,7 @@ class BASE_EXPORT PlatformThreadLocalStorage {
   // Since Windows which doesn't support TLS destructor, the implementation
   // should use GetTLSValue() to retrieve the value of TLS slot.
   static void OnThreadExit();
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   // |Value| is the data stored in TLS slot, The implementation can't use
   // GetTLSValue() to retrieve the value of slot as it has already been reset
   // in Posix.
@@ -79,34 +110,28 @@ class BASE_EXPORT PlatformThreadLocalStorage {
 // an API for portability.
 class BASE_EXPORT ThreadLocalStorage {
  public:
-
   // Prototype for the TLS destructor function, which can be optionally used to
   // cleanup thread local storage on thread exit.  'value' is the data that is
   // stored in thread local storage.
   typedef void (*TLSDestructorFunc)(void* value);
 
-  // StaticSlot uses its own struct initializer-list style static
-  // initialization, as base's LINKER_INITIALIZED requires a constructor and on
-  // some compilers (notably gcc 4.4) this still ends up needing runtime
-  // initialization.
-  #define TLS_INITIALIZER {0}
-
-  // A key representing one value stored in TLS.
-  // Initialize like
-  //   ThreadLocalStorage::StaticSlot my_slot = TLS_INITIALIZER;
-  // If you're not using a static variable, use the convenience class
-  // ThreadLocalStorage::Slot (below) instead.
-  struct BASE_EXPORT StaticSlot {
-    // Set up the TLS slot.  Called by the constructor.
-    // 'destructor' is a pointer to a function to perform per-thread cleanup of
-    // this object.  If set to NULL, no cleanup is done for this TLS slot.
-    void Initialize(TLSDestructorFunc destructor);
-
-    // Free a previously allocated TLS 'slot'.
-    // If a destructor was set for this slot, removes
-    // the destructor so that remaining threads exiting
-    // will not free data.
-    void Free();
+  // A key representing one value stored in TLS. Use as a class member or a
+  // local variable. If you need a static storage duration variable, use the
+  // following pattern with a NoDestructor<Slot>:
+  // void MyDestructorFunc(void* value);
+  // ThreadLocalStorage::Slot& ImportantContentTLS() {
+  //   static NoDestructor<ThreadLocalStorage::Slot> important_content_tls(
+  //       &MyDestructorFunc);
+  //   return *important_content_tls;
+  // }
+  class BASE_EXPORT Slot final {
+   public:
+    // |destructor| is a pointer to a function to perform per-thread cleanup of
+    // this object.  If set to nullptr, no cleanup is done for this TLS slot.
+    explicit Slot(TLSDestructorFunc destructor = nullptr);
+    // If a destructor was set for this slot, removes the destructor so that
+    // remaining threads exiting will not free data.
+    ~Slot();
 
     // Get the thread-local value stored in slot 'slot'.
     // Values are guaranteed to initially be zero.
@@ -116,30 +141,34 @@ class BASE_EXPORT ThreadLocalStorage {
     // value 'value'.
     void Set(void* value);
 
-    bool initialized() const {
-      return base::subtle::Acquire_Load(&initialized_) != 0;
-    }
-
-    // The internals of this struct should be considered private.
-    base::subtle::Atomic32 initialized_;
-    int slot_;
-  };
-
-  // A convenience wrapper around StaticSlot with a constructor. Can be used
-  // as a member variable.
-  class BASE_EXPORT Slot : public StaticSlot {
-   public:
-    // Calls StaticSlot::Initialize().
-    explicit Slot(TLSDestructorFunc destructor = NULL);
-
    private:
-    using StaticSlot::initialized_;
-    using StaticSlot::slot_;
+    void Initialize(TLSDestructorFunc destructor);
+    void Free();
+
+    static constexpr int kInvalidSlotValue = -1;
+    int slot_ = kInvalidSlotValue;
+    uint32_t version_ = 0;
 
     DISALLOW_COPY_AND_ASSIGN(Slot);
   };
 
  private:
+  // In most cases, most callers should not need access to HasBeenDestroyed().
+  // If you are working in code that runs during thread destruction, contact the
+  // base OWNERs for advice and then make a friend request.
+  //
+  // Returns |true| if Chrome's implementation of TLS has been destroyed during
+  // thread destruction. Attempting to call Slot::Get() during destruction is
+  // disallowed and will hit a DCHECK. Any code that relies on TLS during thread
+  // destruction must first check this method before calling Slot::Get().
+  friend class base::SamplingHeapProfiler;
+  friend class base::internal::ThreadLocalStorageTestInternal;
+  friend class base::trace_event::MallocDumpProvider;
+  friend class debug::GlobalActivityTracker;
+  friend class heap_profiling::ScopedAllowAlloc;
+  friend class ui::TLSDestructionCheckerForX11;
+  static bool HasBeenDestroyed();
+
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);
 };
 

@@ -11,6 +11,8 @@
 namespace mozilla {
 namespace dom {
 
+AnimationTimeline::~AnimationTimeline() { mAnimationOrder.clear(); }
+
 NS_IMPL_CYCLE_COLLECTION_CLASS(AnimationTimeline)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AnimationTimeline)
@@ -21,7 +23,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AnimationTimeline)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow, mAnimations)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(AnimationTimeline)
@@ -34,30 +35,22 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AnimationTimeline)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-void
-AnimationTimeline::NotifyAnimationUpdated(Animation& aAnimation)
-{
-  if (mAnimations.Contains(&aAnimation)) {
-    return;
+void AnimationTimeline::NotifyAnimationUpdated(Animation& aAnimation) {
+  if (mAnimations.EnsureInserted(&aAnimation)) {
+    if (aAnimation.GetTimeline() && aAnimation.GetTimeline() != this) {
+      aAnimation.GetTimeline()->RemoveAnimation(&aAnimation);
+    }
+    mAnimationOrder.insertBack(&aAnimation);
   }
-
-  if (aAnimation.GetTimeline() && aAnimation.GetTimeline() != this) {
-    aAnimation.GetTimeline()->RemoveAnimation(&aAnimation);
-  }
-
-  mAnimations.PutEntry(&aAnimation);
-  mAnimationOrder.insertBack(&aAnimation);
 }
 
-void
-AnimationTimeline::RemoveAnimation(Animation* aAnimation)
-{
+void AnimationTimeline::RemoveAnimation(Animation* aAnimation) {
   MOZ_ASSERT(!aAnimation->GetTimeline() || aAnimation->GetTimeline() == this);
-  if (aAnimation->isInList()) {
-    aAnimation->remove();
+  if (static_cast<LinkedListElement<Animation>*>(aAnimation)->isInList()) {
+    static_cast<LinkedListElement<Animation>*>(aAnimation)->remove();
   }
   mAnimations.RemoveEntry(aAnimation);
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

@@ -1,7 +1,4 @@
-if (!this.hasOwnProperty("TypedObject"))
-  quit();
-
-enableSPSProfiling();
+enableGeckoProfiling();
 var T = TypedObject;
 function check(results, ctor) {
   for (var i = 0; i < results.length; i++)

@@ -1,0 +1,17 @@
+{
+    "stages": "3",
+    "build_libcxx": false,
+    "build_type": "Release",
+    "assertions": false,
+    "python_path": "c:/mozilla-build/python/python.exe",
+    "cc": "cl.exe",
+    "cxx": "cl.exe",
+    "ml": "ml64.exe",
+    "patches": [
+      "unpoison-thread-stacks.patch",
+      "downgrade-mangling-error.patch",
+      "r372020-r372182-profiler-linkage.patch",
+      "revert-r359260-due-to-bug41817.patch",
+      "loosen-msvc-detection.patch"
+    ]
+}

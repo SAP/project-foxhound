@@ -9,7 +9,7 @@
   <link rel="author" title="Mats Palmgren" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1176775">
   <style type="text/css">
 body,html { color:black; background:white; font-size:12px; padding:0; margin:0; }
-pre { clear:both; }
+br { clear:both; }
 	
 .grid {
   display: grid;
@@ -59,53 +59,74 @@ b40 {
   width: 40px;
   height: 40px;
   border: 1px solid pink;
-  z-index: 1; position:relative; 
+  z-index: 1; position:relative;
 }
 
-w {
-  position:absolute;
-  background: lime;
-  border-width: 1px 0 0 3px;
-  border-style: solid;
-  height:45px;
-  width:60px;
-  left:-3px; top:-1px;
+.h.r {
+  height: 42px;
+  width: 42px;
+  /* 49px is the percentage basis, i.e. the column size */
+  margin-left: calc(0.2 * 49px);
+  padding: 1px 3px calc(0.1 * 49px) calc(0.3 * 49px);
 }
-.v > w {
-  border-width: 3px 0 0 1px;
-  left:-1px; top:-3px;
-  height:53px;
-  width:61px;
-}
-.v .h > w {
-  height:48px;
-  width:45px;
-}
-.v.r > w {
-  height:47px;
-  width:54px;
-}
-.v .v > w {
-  height:41px;
-  width:45px;
+.v.r {
+  height: 42px;
+  width: 42px;
+  /* This margin-left is 20% of 54px-wide grid area */
+  /* 27px is the percentage basis, i.e. the column size */
+  margin-left: calc(0.2 * 27px);
+  padding: 1px 3px calc(0.1 * 27px) calc(0.3 * 27px);
 }
 
 .r { position:relative; }
 
+.t4 { width: 49px;
+      height: calc(10px /* item min-height */ +
+                   7px  /* item margin-top */ +
+                   1px /* item padding-top */ +
+                   1px /* item border-top */ +
+                   calc(0.5 * 49px) /* item margin-bottom */ +
+                   calc(0.1 * 49px) /* item padding-bottom */);
+    }
+.t6 { width:46px; }
+.t8 { width: 27px;
+      height: calc(30px /* item min-height */ +
+                   7px  /* item margin-top */ +
+                   3px /* item padding-top */ +
+                   1px /* item border-top */ +
+                   calc(0.5 * 27px) /* item margin-bottom */ +
+                   calc(0.1 * 27px) /* item padding-bottom */);
+    }
+   
+
+xx {
+  display: block;
+  background: lime;
+  padding: 32px 32px calc(0.2 * 32px) calc(0.4 * 32px);
+  margin: 0 0 calc(0.4 * 32px) calc(0.2 * 32px);
+}
+.t9, .t10 {
+  position: relative;
+  z-index: 1;
+  grid: calc(32px + calc(0.4 * 32px) + calc(0.2 * 32px)) 0 / 32px;
+}
   </style>
 </head>
 <body>
 
-<pre>horizontal container, horizontal item</pre>
+
 <div class="grid"><span class="h"><x></x></span></div>
 <div class="grid"><span class="h bb"><x></x></span></div>
-<div class="grid t3"><span class="h"><x></x></span><span class="h"><x></x></span></div>
-<div class="grid"><span class="h r"><w></w><b40></b40></span></div>
-<pre>horizontal container, vertical item</pre>
+<div class="grid"><span class="h"><x></x></span><span class="h"><x></x></span></div>
+<div class="grid t4"><span class="h r"><b40></b40></span></div>
+<br>
 <div class="grid"><span class="v"><x></x></span></div>
 <div class="grid"><span class="v bb"><x></x></span></div>
-<div class="grid t7"><span class="v"><x></x></span><span class="v"><x></x></span></div>
-<div class="grid"><span class="v r"><w></w><b40></b40></span></div>
+<div class="grid"><span class="v"><x></x></span><span class="v"><x></x></span></div>
+<div class="grid t8"><span class="v r"><b40></b40></span></div>
+
+<div class="grid t9"><xx class="v"></xx></div>
+<div class="grid v t10"><xx class="h"></xx></div>
 
 </body>
 </html>

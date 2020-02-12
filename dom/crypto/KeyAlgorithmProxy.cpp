@@ -5,15 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/KeyAlgorithmProxy.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 
 namespace mozilla {
 namespace dom {
 
-bool
-KeyAlgorithmProxy::WriteStructuredClone(JSStructuredCloneWriter* aWriter) const
-{
-  if (!WriteString(aWriter, mName) ||
+bool KeyAlgorithmProxy::WriteStructuredClone(
+    JSStructuredCloneWriter* aWriter) const {
+  if (!StructuredCloneHolder::WriteString(aWriter, mName) ||
       !JS_WriteUint32Pair(aWriter, mType, KEY_ALGORITHM_SC_VERSION)) {
     return false;
   }
@@ -23,14 +23,14 @@ KeyAlgorithmProxy::WriteStructuredClone(JSStructuredCloneWriter* aWriter) const
       return JS_WriteUint32Pair(aWriter, mAes.mLength, 0);
     case HMAC:
       return JS_WriteUint32Pair(aWriter, mHmac.mLength, 0) &&
-             WriteString(aWriter, mHmac.mHash.mName);
+             StructuredCloneHolder::WriteString(aWriter, mHmac.mHash.mName);
     case RSA: {
       return JS_WriteUint32Pair(aWriter, mRsa.mModulusLength, 0) &&
              WriteBuffer(aWriter, mRsa.mPublicExponent) &&
-             WriteString(aWriter, mRsa.mHash.mName);
+             StructuredCloneHolder::WriteString(aWriter, mRsa.mHash.mName);
     }
     case EC:
-      return WriteString(aWriter, mEc.mNamedCurve);
+      return StructuredCloneHolder::WriteString(aWriter, mEc.mNamedCurve);
     case DH: {
       return WriteBuffer(aWriter, mDh.mPrime) &&
              WriteBuffer(aWriter, mDh.mGenerator);
@@ -40,11 +40,9 @@ KeyAlgorithmProxy::WriteStructuredClone(JSStructuredCloneWriter* aWriter) const
   return false;
 }
 
-bool
-KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
-{
+bool KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader) {
   uint32_t type, version, dummy;
-  if (!ReadString(aReader, mName) ||
+  if (!StructuredCloneHolder::ReadString(aReader, mName) ||
       !JS_ReadUint32Pair(aReader, &type, &version)) {
     return false;
   }
@@ -53,7 +51,7 @@ KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
     return false;
   }
 
-  mType = (KeyAlgorithmType) type;
+  mType = (KeyAlgorithmType)type;
   switch (mType) {
     case AES: {
       uint32_t length;
@@ -67,7 +65,7 @@ KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
     }
     case HMAC: {
       if (!JS_ReadUint32Pair(aReader, &mHmac.mLength, &dummy) ||
-          !ReadString(aReader, mHmac.mHash.mName)) {
+          !StructuredCloneHolder::ReadString(aReader, mHmac.mHash.mName)) {
         return false;
       }
 
@@ -79,7 +77,7 @@ KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
       nsString hashName;
       if (!JS_ReadUint32Pair(aReader, &modulusLength, &dummy) ||
           !ReadBuffer(aReader, mRsa.mPublicExponent) ||
-          !ReadString(aReader, mRsa.mHash.mName)) {
+          !StructuredCloneHolder::ReadString(aReader, mRsa.mHash.mName)) {
         return false;
       }
 
@@ -89,7 +87,7 @@ KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
     }
     case EC: {
       nsString namedCurve;
-      if (!ReadString(aReader, mEc.mNamedCurve)) {
+      if (!StructuredCloneHolder::ReadString(aReader, mEc.mNamedCurve)) {
         return false;
       }
 
@@ -111,46 +109,55 @@ KeyAlgorithmProxy::ReadStructuredClone(JSStructuredCloneReader* aReader)
 }
 
 CK_MECHANISM_TYPE
-KeyAlgorithmProxy::Mechanism() const
-{
+KeyAlgorithmProxy::Mechanism() const {
   if (mType == HMAC) {
     return GetMechanism(mHmac);
   }
   return MapAlgorithmNameToMechanism(mName);
 }
 
-nsString
-KeyAlgorithmProxy::JwkAlg() const
-{
+nsString KeyAlgorithmProxy::JwkAlg() const {
   if (mName.EqualsLiteral(WEBCRYPTO_ALG_AES_CBC)) {
     switch (mAes.mLength) {
-      case 128: return NS_LITERAL_STRING(JWK_ALG_A128CBC);
-      case 192: return NS_LITERAL_STRING(JWK_ALG_A192CBC);
-      case 256: return NS_LITERAL_STRING(JWK_ALG_A256CBC);
+      case 128:
+        return NS_LITERAL_STRING(JWK_ALG_A128CBC);
+      case 192:
+        return NS_LITERAL_STRING(JWK_ALG_A192CBC);
+      case 256:
+        return NS_LITERAL_STRING(JWK_ALG_A256CBC);
     }
   }
 
   if (mName.EqualsLiteral(WEBCRYPTO_ALG_AES_CTR)) {
     switch (mAes.mLength) {
-      case 128: return NS_LITERAL_STRING(JWK_ALG_A128CTR);
-      case 192: return NS_LITERAL_STRING(JWK_ALG_A192CTR);
-      case 256: return NS_LITERAL_STRING(JWK_ALG_A256CTR);
+      case 128:
+        return NS_LITERAL_STRING(JWK_ALG_A128CTR);
+      case 192:
+        return NS_LITERAL_STRING(JWK_ALG_A192CTR);
+      case 256:
+        return NS_LITERAL_STRING(JWK_ALG_A256CTR);
     }
   }
 
   if (mName.EqualsLiteral(WEBCRYPTO_ALG_AES_GCM)) {
     switch (mAes.mLength) {
-      case 128: return NS_LITERAL_STRING(JWK_ALG_A128GCM);
-      case 192: return NS_LITERAL_STRING(JWK_ALG_A192GCM);
-      case 256: return NS_LITERAL_STRING(JWK_ALG_A256GCM);
+      case 128:
+        return NS_LITERAL_STRING(JWK_ALG_A128GCM);
+      case 192:
+        return NS_LITERAL_STRING(JWK_ALG_A192GCM);
+      case 256:
+        return NS_LITERAL_STRING(JWK_ALG_A256GCM);
     }
   }
 
   if (mName.EqualsLiteral(WEBCRYPTO_ALG_AES_KW)) {
     switch (mAes.mLength) {
-      case 128: return NS_LITERAL_STRING(JWK_ALG_A128KW);
-      case 192: return NS_LITERAL_STRING(JWK_ALG_A192KW);
-      case 256: return NS_LITERAL_STRING(JWK_ALG_A256KW);
+      case 128:
+        return NS_LITERAL_STRING(JWK_ALG_A128KW);
+      case 192:
+        return NS_LITERAL_STRING(JWK_ALG_A192KW);
+      case 256:
+        return NS_LITERAL_STRING(JWK_ALG_A256KW);
     }
   }
 
@@ -210,16 +217,14 @@ KeyAlgorithmProxy::JwkAlg() const
 }
 
 CK_MECHANISM_TYPE
-KeyAlgorithmProxy::GetMechanism(const KeyAlgorithm& aAlgorithm)
-{
+KeyAlgorithmProxy::GetMechanism(const KeyAlgorithm& aAlgorithm) {
   // For everything but HMAC, the name determines the mechanism
   // HMAC is handled by the specialization below
   return MapAlgorithmNameToMechanism(aAlgorithm.mName);
 }
 
 CK_MECHANISM_TYPE
-KeyAlgorithmProxy::GetMechanism(const HmacKeyAlgorithm& aAlgorithm)
-{
+KeyAlgorithmProxy::GetMechanism(const HmacKeyAlgorithm& aAlgorithm) {
   // The use of HmacKeyAlgorithm doesn't completely prevent this
   // method from being called with dictionaries that don't really
   // represent HMAC key algorithms.
@@ -229,13 +234,17 @@ KeyAlgorithmProxy::GetMechanism(const HmacKeyAlgorithm& aAlgorithm)
   hashMech = MapAlgorithmNameToMechanism(aAlgorithm.mHash.mName);
 
   switch (hashMech) {
-    case CKM_SHA_1: return CKM_SHA_1_HMAC;
-    case CKM_SHA256: return CKM_SHA256_HMAC;
-    case CKM_SHA384: return CKM_SHA384_HMAC;
-    case CKM_SHA512: return CKM_SHA512_HMAC;
+    case CKM_SHA_1:
+      return CKM_SHA_1_HMAC;
+    case CKM_SHA256:
+      return CKM_SHA256_HMAC;
+    case CKM_SHA384:
+      return CKM_SHA384_HMAC;
+    case CKM_SHA512:
+      return CKM_SHA512_HMAC;
   }
   return UNKNOWN_CK_MECHANISM;
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

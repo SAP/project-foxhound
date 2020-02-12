@@ -5,9 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "SkOncePtr.h"
-#include "SkString.h"
 #include "SkTime.h"
+
+#include "SkLeanWindows.h"
+#include "SkString.h"
+#include "SkTo.h"
 #include "SkTypes.h"
 
 void SkTime::DateTime::toISO8601(SkString* dst) const {
@@ -25,10 +27,8 @@ void SkTime::DateTime::toISO8601(SkString* dst) const {
     }
 }
 
+#ifdef SK_BUILD_FOR_WIN
 
-#ifdef SK_BUILD_FOR_WIN32
-
-#include "windows.h"
 void SkTime::GetDateTime(DateTime* dt) {
     if (dt) {
         SYSTEMTIME st;
@@ -44,67 +44,44 @@ void SkTime::GetDateTime(DateTime* dt) {
     }
 }
 
-#else // SK_BUILD_FOR_WIN32
+#else // SK_BUILD_FOR_WIN
 
 #include <time.h>
 void SkTime::GetDateTime(DateTime* dt) {
     if (dt) {
         time_t m_time;
         time(&m_time);
-        struct tm* tstruct;
-        tstruct = gmtime(&m_time);
+        struct tm tstruct;
+        gmtime_r(&m_time, &tstruct);
         dt->fTimeZoneMinutes = 0;
-        dt->fYear       = tstruct->tm_year + 1900;
-        dt->fMonth      = SkToU8(tstruct->tm_mon + 1);
-        dt->fDayOfWeek  = SkToU8(tstruct->tm_wday);
-        dt->fDay        = SkToU8(tstruct->tm_mday);
-        dt->fHour       = SkToU8(tstruct->tm_hour);
-        dt->fMinute     = SkToU8(tstruct->tm_min);
-        dt->fSecond     = SkToU8(tstruct->tm_sec);
+        dt->fYear       = tstruct.tm_year + 1900;
+        dt->fMonth      = SkToU8(tstruct.tm_mon + 1);
+        dt->fDayOfWeek  = SkToU8(tstruct.tm_wday);
+        dt->fDay        = SkToU8(tstruct.tm_mday);
+        dt->fHour       = SkToU8(tstruct.tm_hour);
+        dt->fMinute     = SkToU8(tstruct.tm_min);
+        dt->fSecond     = SkToU8(tstruct.tm_sec);
     }
 }
-#endif // SK_BUILD_FOR_WIN32
+#endif // SK_BUILD_FOR_WIN
 
-#if defined(_MSC_VER)
-    // TODO: try std::chrono again with MSVC 2015?
-    #include <intrin.h>
-    SK_DECLARE_STATIC_ONCE_PTR(double, ns_per_tick);
-    double SkTime::GetNSecs() {
-        uint64_t ticks = __rdtsc();
-        return ticks * *ns_per_tick.get([]{
-            LARGE_INTEGER khz;  // The docs say this returns Hz, but it returns KHz.
-            QueryPerformanceFrequency(&khz);
-            return new double(1e6 / khz.QuadPart);
-        });
-    }
-#elif defined(__MACH__)
-    // TODO: fold into std::chrono when available?
-    #include <mach/mach_time.h>
-    SK_DECLARE_STATIC_ONCE_PTR(double, ns_per_tick);
-    double SkTime::GetNSecs() {
-        uint64_t ticks = mach_absolute_time();
-        return ticks * *ns_per_tick.get([]{
-            mach_timebase_info_data_t timebase;
-            (void)mach_timebase_info(&timebase);
-            return new double(timebase.numer * 1.0 / timebase.denom);
-        });
-    }
-#elif defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
-    #include <time.h>
-    double SkTime::GetNSecs() {
-        struct timespec ts;
-        if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-          return 0.0;
-        }
-        return ts.tv_sec * 1e9 + ts.tv_nsec;
-    }
+#if !defined(__has_feature)
+    #define  __has_feature(x) 0
+#endif
+
+#if __has_feature(memory_sanitizer) || defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
+#include <time.h>
+double SkTime::GetNSecs() {
+    // See skia:6504
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC, &tp);
+    return tp.tv_sec * 1e9 + tp.tv_nsec;
+}
 #else
-    // This std::chrono code looks great on Linux and Android,
-    // but MSVC 2013 returned mostly garbage (0ns times, etc).
-    #include <chrono>
-    double SkTime::GetNSecs() {
-        auto now = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::nano> ns = now.time_since_epoch();
-        return ns.count();
-    }
+#include <chrono>
+double SkTime::GetNSecs() {
+    auto now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::nano> ns = now.time_since_epoch();
+    return ns.count();
+}
 #endif

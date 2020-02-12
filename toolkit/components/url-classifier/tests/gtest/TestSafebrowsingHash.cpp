@@ -1,14 +1,19 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "Entries.h"
 #include "mozilla/EndianUtils.h"
 
-TEST(SafebrowsingHash, ToFromUint32)
+TEST(UrlClassifierHash, ToFromUint32)
 {
   using namespace mozilla::safebrowsing;
 
   // typedef SafebrowsingHash<PREFIX_SIZE, PrefixComparator> Prefix;
   // typedef nsTArray<Prefix> PrefixArray;
 
-  const char PREFIX_RAW[4] = { 0x1, 0x2, 0x3, 0x4 };
+  const char PREFIX_RAW[4] = {0x1, 0x2, 0x3, 0x4};
   uint32_t PREFIX_UINT32;
   memcpy(&PREFIX_UINT32, PREFIX_RAW, 4);
 
@@ -20,7 +25,7 @@ TEST(SafebrowsingHash, ToFromUint32)
   ASSERT_EQ(memcmp(PREFIX_RAW, p.buf, 4), 0);
 }
 
-TEST(SafebrowsingHash, Compare)
+TEST(UrlClassifierHash, Compare)
 {
   using namespace mozilla;
   using namespace mozilla::safebrowsing;

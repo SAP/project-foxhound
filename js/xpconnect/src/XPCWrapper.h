@@ -11,18 +11,9 @@
 
 namespace XPCNativeWrapper {
 
-// Given an XPCWrappedNative pointer and the name of the function on
-// XPCNativeScriptableFlags corresponding with a flag, returns 'true'
-// if the flag is set.
-// XXX Convert to using GetFlags() and not a macro.
-#define NATIVE_HAS_FLAG(_wn, _flag)                                           \
-  ((_wn)->GetScriptableInfo() &&                                              \
-   (_wn)->GetScriptableInfo()->GetFlags()._flag())
+bool AttachNewConstructorObject(JSContext* aCx, JS::HandleObject aGlobalObject);
 
-bool
-AttachNewConstructorObject(JSContext* aCx, JS::HandleObject aGlobalObject);
-
-} // namespace XPCNativeWrapper
+}  // namespace XPCNativeWrapper
 
 // This namespace wraps some common functionality between the three existing
 // wrappers. Its main purpose is to allow XPCCrossOriginWrapper to act both
@@ -31,10 +22,8 @@ AttachNewConstructorObject(JSContext* aCx, JS::HandleObject aGlobalObject);
 // objects).
 namespace XPCWrapper {
 
-JSObject*
-UnsafeUnwrapSecurityWrapper(JSObject* obj);
+JSObject* UnsafeUnwrapSecurityWrapper(JSObject* obj);
 
-} // namespace XPCWrapper
-
+}  // namespace XPCWrapper
 
 #endif

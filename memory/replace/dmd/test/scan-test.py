@@ -6,7 +6,7 @@
 
 '''Testing for the JSON file emitted by DMD heap scan mode when running SmokeDMD.'''
 
-from __future__ import print_function, division
+from __future__ import absolute_import, print_function, division
 
 import argparse
 import gzip
@@ -25,7 +25,8 @@ This is only for testing. Input files can be gzipped.
     p = argparse.ArgumentParser(description=description)
 
     p.add_argument('--clamp-contents', action='store_true',
-                   help='expect that the contents of the JSON input file have had their addresses clamped')
+                   help='expect that the contents of the JSON input file have had '
+                   'their addresses clamped')
 
     p.add_argument('input_file',
                    help='a file produced by DMD')
@@ -35,11 +36,13 @@ This is only for testing. Input files can be gzipped.
 
 def checkScanContents(contents, expected):
     if len(contents) != len(expected):
-        raise Exception("Expected " + str(len(expected)) + " things in contents but found " + str(len(contents)))
+        raise Exception("Expected " + str(len(expected)) +
+                        " things in contents but found " + str(len(contents)))
 
     for i in range(len(expected)):
         if contents[i] != expected[i]:
-            raise Exception("Expected to find " + expected[i] + " at offset " + str(i) + " but found " + contents[i])
+            raise Exception("Expected to find " +
+                            expected[i] + " at offset " + str(i) + " but found " + contents[i])
 
 
 def main():

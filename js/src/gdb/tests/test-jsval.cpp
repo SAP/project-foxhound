@@ -1,10 +1,14 @@
 #include "gdb-tests.h"
 #include "jsapi.h"
 
+#include "js/Symbol.h"
+#include "vm/BigIntType.h"
+
 FRAGMENT(jsval, simple) {
   using namespace JS;
 
   RootedValue fortytwo(cx, Int32Value(42));
+  RootedValue fortytwoD(cx, DoubleValue(42));
   RootedValue negone(cx, Int32Value(-1));
   RootedValue undefined(cx, UndefinedValue());
   RootedValue null(cx, NullValue());
@@ -17,24 +21,28 @@ FRAGMENT(jsval, simple) {
   RootedString hello(cx, JS_NewStringCopyZ(cx, "Hello!"));
   RootedValue friendly_string(cx, StringValue(hello));
   RootedValue symbol(cx, SymbolValue(GetSymbolFor(cx, hello)));
+  RootedValue bi(cx, BigIntValue(BigInt::zero(cx)));
 
   RootedValue global(cx);
   global.setObject(*CurrentGlobalOrNull(cx));
 
   // Some interesting value that floating-point won't munge.
-  RootedValue onehundredthirtysevenonehundredtwentyeighths(cx, DoubleValue(137.0 / 128.0));
+  RootedValue onehundredthirtysevenonehundredtwentyeighths(
+      cx, DoubleValue(137.0 / 128.0));
 
   breakpoint();
 
-  (void) fortytwo;
-  (void) negone;
-  (void) undefined;
-  (void) js_true;
-  (void) js_false;
-  (void) null;
-  (void) elements_hole;
-  (void) empty_string;
-  (void) friendly_string;
-  (void) symbol;
-  (void) global;
+  use(fortytwo);
+  use(fortytwoD);
+  use(negone);
+  use(undefined);
+  use(js_true);
+  use(js_false);
+  use(null);
+  use(elements_hole);
+  use(empty_string);
+  use(friendly_string);
+  use(symbol);
+  use(bi);
+  use(global);
 }

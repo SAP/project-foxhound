@@ -5,15 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "sdnAccessible-inl.h"
-#include "ISimpleDOMNode_i.c"
+#include "ISimpleDOM_i.c"
 
 #include "DocAccessibleWrap.h"
 
 #include "nsAttrName.h"
 #include "nsCoreUtils.h"
 #include "nsIAccessibleTypes.h"
-#include "nsIDOMHTMLElement.h"
-#include "nsIDOMCSSStyleDeclaration.h"
+#include "nsICSSDeclaration.h"
 #include "nsNameSpaceManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWinUtils.h"
@@ -21,18 +20,30 @@
 
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/PresShell.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-STDMETHODIMP
-sdnAccessible::QueryInterface(REFIID aREFIID, void** aInstancePtr)
-{
-  A11Y_TRYBLOCK_BEGIN
+sdnAccessible::~sdnAccessible() {
+  if (mUniqueId.isSome()) {
+    AccessibleWrap::ReleaseChildID(WrapNotNull(this));
+  }
+}
 
-  if (!aInstancePtr)
-    return E_FAIL;
+STDMETHODIMP
+sdnAccessible::QueryInterface(REFIID aREFIID, void** aInstancePtr) {
+  if (!aInstancePtr) return E_FAIL;
   *aInstancePtr = nullptr;
+
+  if (aREFIID == IID_IClientSecurity) {
+    // Some code might QI(IID_IClientSecurity) to detect whether or not we are
+    // a proxy. Right now that can potentially happen off the main thread, so we
+    // look for this condition immediately so that we don't trigger other code
+    // that might not be thread-safe.
+    return E_NOINTERFACE;
+  }
 
   if (aREFIID == IID_ISimpleDOMNode) {
     *aInstancePtr = static_cast<ISimpleDOMNode*>(this);
@@ -40,9 +51,8 @@ sdnAccessible::QueryInterface(REFIID aREFIID, void** aInstancePtr)
     return S_OK;
   }
 
-  AccessibleWrap* accessible = static_cast<AccessibleWrap*>(GetAccessible());
-  if (accessible)
-    return accessible->QueryInterface(aREFIID, aInstancePtr);
+  AccessibleWrap* accessible = GetAccessible();
+  if (accessible) return accessible->QueryInterface(aREFIID, aInstancePtr);
 
   // IUnknown* is the canonical one if and only if this accessible doesn't have
   // an accessible.
@@ -53,8 +63,6 @@ sdnAccessible::QueryInterface(REFIID aREFIID, void** aInstancePtr)
   }
 
   return E_NOINTERFACE;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
@@ -63,10 +71,7 @@ sdnAccessible::get_nodeInfo(BSTR __RPC_FAR* aNodeName,
                             BSTR __RPC_FAR* aNodeValue,
                             unsigned int __RPC_FAR* aNumChildren,
                             unsigned int __RPC_FAR* aUniqueID,
-                            unsigned short __RPC_FAR* aNodeType)
-{
-  A11Y_TRYBLOCK_BEGIN
-
+                            unsigned short __RPC_FAR* aNodeType) {
   if (!aNodeName || !aNameSpaceID || !aNodeValue || !aNumChildren ||
       !aUniqueID || !aNodeType)
     return E_INVALIDARG;
@@ -78,70 +83,61 @@ sdnAccessible::get_nodeInfo(BSTR __RPC_FAR* aNodeName,
   *aUniqueID = 0;
   *aNodeType = 0;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mNode));
-
-  uint16_t nodeType = 0;
-  DOMNode->GetNodeType(&nodeType);
+  uint16_t nodeType = mNode->NodeType();
   *aNodeType = static_cast<unsigned short>(nodeType);
 
-  if (*aNodeType !=  NODETYPE_TEXT) {
-    nsAutoString nodeName;
-    DOMNode->GetNodeName(nodeName);
-    *aNodeName = ::SysAllocString(nodeName.get());
+  if (*aNodeType != NODETYPE_TEXT) {
+    *aNodeName = ::SysAllocString(mNode->NodeName().get());
   }
 
   nsAutoString nodeValue;
-  DOMNode->GetNodeValue(nodeValue);
+  mNode->GetNodeValue(nodeValue);
   *aNodeValue = ::SysAllocString(nodeValue.get());
 
-  *aNameSpaceID = mNode->IsNodeOfType(nsINode::eCONTENT) ?
-    static_cast<short>(mNode->AsContent()->GetNameSpaceID()) : 0;
+  *aNameSpaceID = mNode->IsContent()
+                      ? static_cast<short>(mNode->AsContent()->GetNameSpaceID())
+                      : 0;
 
   // This is a unique ID for every content node. The 3rd party accessibility
   // application can compare this to the childID we return for events such as
   // focus events, to correlate back to data nodes in their internal object
   // model.
-  Accessible* accessible = GetAccessible();
+  AccessibleWrap* accessible = GetAccessible();
   if (accessible) {
     *aUniqueID = AccessibleWrap::GetChildIDFor(accessible);
   } else {
-    *aUniqueID = - NS_PTR_TO_INT32(static_cast<void*>(this));
+    if (mUniqueId.isNothing()) {
+      AccessibleWrap::AssignChildIDTo(WrapNotNull(this));
+    }
+    MOZ_ASSERT(mUniqueId.isSome());
+    *aUniqueID = mUniqueId.value();
   }
 
   *aNumChildren = mNode->GetChildCount();
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_attributes(unsigned  short aMaxAttribs,
+sdnAccessible::get_attributes(unsigned short aMaxAttribs,
                               BSTR __RPC_FAR* aAttribNames,
                               short __RPC_FAR* aNameSpaceIDs,
                               BSTR __RPC_FAR* aAttribValues,
-                              unsigned short __RPC_FAR* aNumAttribs)
-{
-  A11Y_TRYBLOCK_BEGIN
-
+                              unsigned short __RPC_FAR* aNumAttribs) {
   if (!aAttribNames || !aNameSpaceIDs || !aAttribValues || !aNumAttribs)
     return E_INVALIDARG;
 
   *aNumAttribs = 0;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  if (!mNode->IsElement())
-    return S_FALSE;
+  if (!mNode->IsElement()) return S_FALSE;
 
   dom::Element* elm = mNode->AsElement();
   uint32_t numAttribs = elm->GetAttrCount();
-  if (numAttribs > aMaxAttribs)
-    numAttribs = aMaxAttribs;
+  if (numAttribs > aMaxAttribs) numAttribs = aMaxAttribs;
 
   *aNumAttribs = static_cast<unsigned short>(numAttribs);
 
@@ -154,33 +150,26 @@ sdnAccessible::get_attributes(unsigned  short aMaxAttribs,
     attr.mValue->ToString(attributeValue);
 
     aNameSpaceIDs[index] = static_cast<short>(attr.mName->NamespaceID());
-    aAttribNames[index] = ::SysAllocString(attr.mName->LocalName()->GetUTF16String());
+    aAttribNames[index] =
+        ::SysAllocString(attr.mName->LocalName()->GetUTF16String());
     aAttribValues[index] = ::SysAllocString(attributeValue.get());
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 sdnAccessible::get_attributesForNames(unsigned short aMaxAttribs,
                                       BSTR __RPC_FAR* aAttribNames,
                                       short __RPC_FAR* aNameSpaceID,
-                                      BSTR __RPC_FAR* aAttribValues)
-{
-  A11Y_TRYBLOCK_BEGIN
+                                      BSTR __RPC_FAR* aAttribValues) {
+  if (!aAttribNames || !aNameSpaceID || !aAttribValues) return E_INVALIDARG;
 
-  if (!aAttribNames || !aNameSpaceID || !aAttribValues)
-    return E_INVALIDARG;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (!mNode->IsElement()) return S_FALSE;
 
-  if (!mNode->IsElement())
-    return S_FALSE;
-
-  nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(mNode));
+  dom::Element* domElement = mNode->AsElement();
   nsNameSpaceManager* nameSpaceManager = nsNameSpaceManager::GetInstance();
 
   int32_t index = 0;
@@ -188,63 +177,52 @@ sdnAccessible::get_attributesForNames(unsigned short aMaxAttribs,
     aAttribValues[index] = nullptr;
     if (aAttribNames[index]) {
       nsAutoString attributeValue, nameSpaceURI;
-      nsAutoString attributeName(nsDependentString(
-        static_cast<const wchar_t*>(aAttribNames[index])));
+      nsAutoString attributeName(
+          nsDependentString(static_cast<const wchar_t*>(aAttribNames[index])));
 
-      nsresult rv = NS_OK;
-      if (aNameSpaceID[index]>0 &&
-        NS_SUCCEEDED(nameSpaceManager->GetNameSpaceURI(aNameSpaceID[index],
-                                                       nameSpaceURI))) {
-          rv = domElement->GetAttributeNS(nameSpaceURI, attributeName,
-                                          attributeValue);
+      if (aNameSpaceID[index] > 0 &&
+          NS_SUCCEEDED(nameSpaceManager->GetNameSpaceURI(aNameSpaceID[index],
+                                                         nameSpaceURI))) {
+        domElement->GetAttributeNS(nameSpaceURI, attributeName, attributeValue);
       } else {
-        rv = domElement->GetAttribute(attributeName, attributeValue);
+        domElement->GetAttribute(attributeName, attributeValue);
       }
 
-      if (NS_SUCCEEDED(rv))
-        aAttribValues[index] = ::SysAllocString(attributeValue.get());
+      aAttribValues[index] = ::SysAllocString(attributeValue.get());
     }
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_computedStyle(unsigned short aMaxStyleProperties,
-                                 boolean aUseAlternateView,
-                                 BSTR __RPC_FAR* aStyleProperties,
-                                 BSTR __RPC_FAR* aStyleValues,
-                                 unsigned short __RPC_FAR* aNumStyleProperties)
-{
-  A11Y_TRYBLOCK_BEGIN
-
+sdnAccessible::get_computedStyle(
+    unsigned short aMaxStyleProperties, boolean aUseAlternateView,
+    BSTR __RPC_FAR* aStyleProperties, BSTR __RPC_FAR* aStyleValues,
+    unsigned short __RPC_FAR* aNumStyleProperties) {
   if (!aStyleProperties || aStyleValues || !aNumStyleProperties)
     return E_INVALIDARG;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   *aNumStyleProperties = 0;
 
-  if (mNode->IsNodeOfType(nsINode::eDOCUMENT))
-    return S_FALSE;
+  if (mNode->IsDocument()) return S_FALSE;
 
-  nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl =
-    nsWinUtils::GetComputedStyleDeclaration(mNode->AsContent());
+  nsCOMPtr<nsICSSDeclaration> cssDecl =
+      nsWinUtils::GetComputedStyleDeclaration(mNode->AsContent());
   NS_ENSURE_TRUE(cssDecl, E_FAIL);
 
-  uint32_t length = 0;
-  cssDecl->GetLength(&length);
+  uint32_t length = cssDecl->Length();
 
   uint32_t index = 0, realIndex = 0;
   for (index = realIndex = 0; index < length && realIndex < aMaxStyleProperties;
-       index ++) {
+       index++) {
     nsAutoString property, value;
 
     // Ignore -moz-* properties.
-    if (NS_SUCCEEDED(cssDecl->Item(index, property)) && property.CharAt(0) != '-')
+    cssDecl->Item(index, property);
+    if (property.CharAt(0) != '-')
       cssDecl->GetPropertyValue(property, value);  // Get property value
 
     if (!value.IsEmpty()) {
@@ -257,77 +235,59 @@ sdnAccessible::get_computedStyle(unsigned short aMaxStyleProperties,
   *aNumStyleProperties = static_cast<unsigned short>(realIndex);
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_computedStyleForProperties(unsigned short aNumStyleProperties,
-                                              boolean aUseAlternateView,
-                                              BSTR __RPC_FAR* aStyleProperties,
-                                              BSTR __RPC_FAR* aStyleValues)
-{
-  A11Y_TRYBLOCK_BEGIN
+sdnAccessible::get_computedStyleForProperties(
+    unsigned short aNumStyleProperties, boolean aUseAlternateView,
+    BSTR __RPC_FAR* aStyleProperties, BSTR __RPC_FAR* aStyleValues) {
+  if (!aStyleProperties || !aStyleValues) return E_INVALIDARG;
 
-  if (!aStyleProperties || !aStyleValues)
-    return E_INVALIDARG;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (mNode->IsDocument()) return S_FALSE;
 
-  if (mNode->IsNodeOfType(nsINode::eDOCUMENT))
-    return S_FALSE;
-
-  nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl =
-    nsWinUtils::GetComputedStyleDeclaration(mNode->AsContent());
+  nsCOMPtr<nsICSSDeclaration> cssDecl =
+      nsWinUtils::GetComputedStyleDeclaration(mNode->AsContent());
   NS_ENSURE_TRUE(cssDecl, E_FAIL);
 
   uint32_t index = 0;
   for (index = 0; index < aNumStyleProperties; index++) {
     nsAutoString value;
     if (aStyleProperties[index])
-      cssDecl->GetPropertyValue(nsDependentString(aStyleProperties[index]), value);  // Get property value
+      cssDecl->GetPropertyValue(nsDependentString(aStyleProperties[index]),
+                                value);  // Get property value
     aStyleValues[index] = ::SysAllocString(value.get());
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
-STDMETHODIMP
-sdnAccessible::scrollTo(boolean aScrollTopLeft)
-{
-  A11Y_TRYBLOCK_BEGIN
-
+// XXX Use MOZ_CAN_RUN_SCRIPT_BOUNDARY for now due to bug 1543294.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP
+sdnAccessible::scrollTo(boolean aScrollTopLeft) {
   DocAccessible* document = GetDocument();
-  if (!document) // that's IsDefunct check
+  if (!document)  // that's IsDefunct check
     return CO_E_OBJNOTCONNECTED;
 
-  if (!mNode->IsContent())
-    return S_FALSE;
+  if (!mNode->IsContent()) return S_FALSE;
 
-  uint32_t scrollType =
-    aScrollTopLeft ? nsIAccessibleScrollType::SCROLL_TYPE_TOP_LEFT :
-                     nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_RIGHT;
+  uint32_t scrollType = aScrollTopLeft
+                            ? nsIAccessibleScrollType::SCROLL_TYPE_TOP_LEFT
+                            : nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_RIGHT;
 
-  nsCoreUtils::ScrollTo(document->PresShell(), mNode->AsContent(), scrollType);
+  RefPtr<PresShell> presShell = document->PresShellPtr();
+  nsCOMPtr<nsIContent> content = mNode->AsContent();
+  nsCoreUtils::ScrollTo(presShell, content, scrollType);
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_parentNode(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+sdnAccessible::get_parentNode(ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsINode* resultNode = mNode->GetParentNode();
   if (resultNode) {
@@ -336,21 +296,14 @@ sdnAccessible::get_parentNode(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_firstChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+sdnAccessible::get_firstChild(ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsINode* resultNode = mNode->GetFirstChild();
   if (resultNode) {
@@ -359,21 +312,14 @@ sdnAccessible::get_firstChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_lastChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+sdnAccessible::get_lastChild(ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsINode* resultNode = mNode->GetLastChild();
   if (resultNode) {
@@ -382,21 +328,14 @@ sdnAccessible::get_lastChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_previousSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+sdnAccessible::get_previousSibling(ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsINode* resultNode = mNode->GetPreviousSibling();
   if (resultNode) {
@@ -405,21 +344,14 @@ sdnAccessible::get_previousSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_nextSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+sdnAccessible::get_nextSibling(ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsINode* resultNode = mNode->GetNextSibling();
   if (resultNode) {
@@ -428,112 +360,76 @@ sdnAccessible::get_nextSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
   }
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
 sdnAccessible::get_childAt(unsigned aChildIndex,
-                           ISimpleDOMNode __RPC_FAR *__RPC_FAR* aNode)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aNode)
-    return E_INVALIDARG;
+                           ISimpleDOMNode __RPC_FAR* __RPC_FAR* aNode) {
+  if (!aNode) return E_INVALIDARG;
   *aNode = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  nsINode* resultNode = mNode->GetChildAt(aChildIndex);
+  nsINode* resultNode = mNode->GetChildAt_Deprecated(aChildIndex);
   if (resultNode) {
     *aNode = static_cast<ISimpleDOMNode*>(new sdnAccessible(resultNode));
     (*aNode)->AddRef();
   }
 
-
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_innerHTML(BSTR __RPC_FAR* aInnerHTML)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aInnerHTML)
-    return E_INVALIDARG;
+sdnAccessible::get_innerHTML(BSTR __RPC_FAR* aInnerHTML) {
+  if (!aInnerHTML) return E_INVALIDARG;
   *aInnerHTML = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
-  if (!mNode->IsElement())
-    return S_FALSE;
+  if (!mNode->IsElement()) return S_FALSE;
 
   nsAutoString innerHTML;
-  mNode->AsElement()->GetInnerHTML(innerHTML);
-  if (innerHTML.IsEmpty())
-    return S_FALSE;
+  mNode->AsElement()->GetInnerHTML(innerHTML, IgnoreErrors());
+  if (innerHTML.IsEmpty()) return S_FALSE;
 
   *aInnerHTML = ::SysAllocStringLen(innerHTML.get(), innerHTML.Length());
-  if (!*aInnerHTML)
-    return E_OUTOFMEMORY;
+  if (!*aInnerHTML) return E_OUTOFMEMORY;
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_localInterface(void __RPC_FAR *__RPC_FAR* aLocalInterface)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aLocalInterface)
-    return E_INVALIDARG;
+sdnAccessible::get_localInterface(void __RPC_FAR* __RPC_FAR* aLocalInterface) {
+  if (!aLocalInterface) return E_INVALIDARG;
   *aLocalInterface = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   *aLocalInterface = this;
   AddRef();
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }
 
 STDMETHODIMP
-sdnAccessible::get_language(BSTR __RPC_FAR* aLanguage)
-{
-  A11Y_TRYBLOCK_BEGIN
-
-  if (!aLanguage)
-    return E_INVALIDARG;
+sdnAccessible::get_language(BSTR __RPC_FAR* aLanguage) {
+  if (!aLanguage) return E_INVALIDARG;
   *aLanguage = nullptr;
 
-  if (IsDefunct())
-    return CO_E_OBJNOTCONNECTED;
+  if (IsDefunct()) return CO_E_OBJNOTCONNECTED;
 
   nsAutoString language;
   if (mNode->IsContent())
     nsCoreUtils::GetLanguageFor(mNode->AsContent(), nullptr, language);
-  if (language.IsEmpty()) { // Nothing found, so use document's language
+  if (language.IsEmpty()) {  // Nothing found, so use document's language
     mNode->OwnerDoc()->GetHeaderData(nsGkAtoms::headerContentLanguage,
                                      language);
   }
 
-  if (language.IsEmpty())
-    return S_FALSE;
+  if (language.IsEmpty()) return S_FALSE;
 
   *aLanguage = ::SysAllocStringLen(language.get(), language.Length());
-  if (!*aLanguage)
-   return E_OUTOFMEMORY;
+  if (!*aLanguage) return E_OUTOFMEMORY;
 
   return S_OK;
-
-  A11Y_TRYBLOCK_END
 }

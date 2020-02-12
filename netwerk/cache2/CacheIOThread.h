@@ -26,13 +26,12 @@ namespace detail {
 // since including windows.h breaks stuff with number of macro definition
 // conflicts.
 class BlockingIOWatcher;
-}
+}  // namespace detail
 
-class CacheIOThread : public nsIThreadObserver
-{
+class CacheIOThread final : public nsIThreadObserver {
   virtual ~CacheIOThread();
 
-public:
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITHREADOBSERVER
 
@@ -43,11 +42,11 @@ public:
   enum ELevel : uint32_t {
     OPEN_PRIORITY,
     READ_PRIORITY,
+    MANAGEMENT,  // Doesn't do any actual I/O
     OPEN,
     READ,
-    MANAGEMENT,
+    WRITE_PRIORITY,
     WRITE,
-    CLOSE = WRITE,
     INDEX,
     EVICT,
     LAST_LEVEL,
@@ -67,6 +66,10 @@ public:
   nsresult DispatchAfterPendingOpens(nsIRunnable* aRunnable);
   bool IsCurrentThread();
 
+  uint32_t QueueSize(bool highPriority);
+
+  uint32_t EventCounter() const { return mEventCounter; }
+
   /**
    * Callable only on this thread, checks if there is an event waiting in
    * the event queue with a higher execution priority.  If so, the result
@@ -76,10 +79,7 @@ public:
    * handler (i.e. the one that called YieldAndRerun()) will not execute sooner
    * then this handler is executed w/o a call to YieldAndRerun().
    */
-  static bool YieldAndRerun()
-  {
-    return sSelf ? sSelf->YieldInternal() : false;
-  }
+  static bool YieldAndRerun() { return sSelf ? sSelf->YieldInternal() : false; }
 
   void Shutdown();
   // This method checks if there is a long blocking IO on the
@@ -89,10 +89,10 @@ public:
   already_AddRefed<nsIEventTarget> Target();
 
   // A stack class used to annotate running interruptable I/O event
-  class Cancelable
-  {
+  class Cancelable {
     bool mCancelable;
-  public:
+
+   public:
     explicit Cancelable(bool aCancelable);
     ~Cancelable();
   };
@@ -101,12 +101,13 @@ public:
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
-private:
+ private:
   static void ThreadFunc(void* aClosure);
   void ThreadFunc();
   void LoopOneLevel(uint32_t aLevel);
   bool EventsPending(uint32_t aLastLevel = LAST_LEVEL);
-  nsresult DispatchInternal(already_AddRefed<nsIRunnable> aRunnable, uint32_t aLevel);
+  nsresult DispatchInternal(already_AddRefed<nsIRunnable> aRunnable,
+                            uint32_t aLevel);
   bool YieldInternal();
 
   static CacheIOThread* sSelf;
@@ -114,9 +115,13 @@ private:
   mozilla::Monitor mMonitor;
   PRThread* mThread;
   UniquePtr<detail::BlockingIOWatcher> mBlockingIOWatcher;
-  Atomic<nsIThread *> mXPCOMThread;
+  Atomic<nsIThread*> mXPCOMThread;
   Atomic<uint32_t, Relaxed> mLowestLevelWaiting;
   uint32_t mCurrentlyExecutingLevel;
+
+  // Keeps the length of the each event queue, since LoopOneLevel moves all
+  // events into a local array.
+  Atomic<int32_t> mQueueLength[LAST_LEVEL];
 
   EventQueue mEventQueue[LAST_LEVEL];
   // Raised when nsIEventTarget.Dispatch() is called on this thread
@@ -130,12 +135,14 @@ private:
   // can be canceled when after shutdown, see the Shutdown() method
   // for usage. Made a counter to allow nesting of the Cancelable class.
   Atomic<uint32_t, Relaxed> mIOCancelableEvents;
+  // Event counter that increases with every event processed.
+  Atomic<uint32_t, Relaxed> mEventCounter;
 #ifdef DEBUG
   bool mInsideLoop;
 #endif
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 #endif

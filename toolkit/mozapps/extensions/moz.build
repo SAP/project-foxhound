@@ -6,39 +6,58 @@
 
 SPHINX_TREES['addon-manager'] = 'docs'
 
+with Files('docs/**'):
+    SCHEDULES.exclusive = ['docs']
+
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DEFINES['MOZ_BUILD_APP_IS_BROWSER'] = True
+
 if CONFIG['MOZ_BUILD_APP'] == 'mobile/android':
     DEFINES['MOZ_FENNEC'] = True
 
-DIRS += ['internal']
+DIRS += [
+    'default-theme',
+    'internal',
+]
 TEST_DIRS += ['test']
 
 XPIDL_SOURCES += [
-    'amIAddonManager.idl',
-    'amIAddonPathService.idl',
-    'amIWebInstaller.idl',
-    'amIWebInstallListener.idl',
+    'amIAddonManagerStartup.idl',
+    'amIWebInstallPrompt.idl',
 ]
 
 XPIDL_MODULE = 'extensions'
 
-EXTRA_COMPONENTS += [
-    'addonManager.js',
-    'amContentHandler.js',
-    'amInstallTrigger.js',
-    'amWebAPI.js',
-    'amWebInstallListener.js',
-    'nsBlocklistService.js',
-    'nsBlocklistServiceContent.js',
-]
+built_in_addons = 'built_in_addons.json'
+GENERATED_FILES += [built_in_addons]
+manifest = GENERATED_FILES[built_in_addons]
+manifest.script = 'gen_built_in_addons.py'
+
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    manifest.flags = ['--features=browser/features']
+
+    FINAL_TARGET_FILES.browser.chrome.browser.content.browser += [
+        '!%s' % built_in_addons,
+    ]
+elif CONFIG['MOZ_BUILD_APP'] == 'mobile/android':
+    manifest.flags = ['--features=features']
+
+    FINAL_TARGET_FILES.chrome.chrome.content += [
+        '!%s' % built_in_addons,
+    ]
 
 EXTRA_PP_COMPONENTS += [
     'extensions.manifest',
 ]
 
 EXTRA_JS_MODULES += [
+    'AbuseReporter.jsm',
+    'addonManager.js',
     'AddonManager.jsm',
-    'ChromeManifestParser.jsm',
-    'DeferredSave.jsm',
+    'amContentHandler.jsm',
+    'amInstallTrigger.jsm',
+    'amWebAPI.jsm',
+    'Blocklist.jsm',
     'LightweightThemeManager.jsm',
 ]
 
@@ -46,17 +65,22 @@ JAR_MANIFESTS += ['jar.mn']
 
 EXPORTS.mozilla += [
     'AddonContentPolicy.h',
+    'AddonManagerStartup.h',
     'AddonManagerWebAPI.h',
-    'AddonPathService.h',
 ]
 
 UNIFIED_SOURCES += [
     'AddonContentPolicy.cpp',
+    'AddonManagerStartup.cpp',
     'AddonManagerWebAPI.cpp',
-    'AddonPathService.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 LOCAL_INCLUDES += [
+    '/chrome',
     '/dom/base',
 ]
 
@@ -64,3 +88,10 @@ FINAL_LIBRARY = 'xul'
 
 with Files('**'):
     BUG_COMPONENT = ('Toolkit', 'Add-ons Manager')
+
+with Files('Blocklist.jsm'):
+    BUG_COMPONENT = ('Toolkit', 'Blocklist Implementation')
+
+with Files('content/blocklist**'):
+    BUG_COMPONENT = ('Toolkit', 'Blocklist Implementation')
+

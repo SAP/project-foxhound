@@ -20,15 +20,13 @@
 
   <div id="shadow">light dom</div>
 
-  <div id="native"><video controls></video></div>
+  <div id="native"><input type="file"></div>
 
   <script>
   "use strict";
   var host = document.querySelector("#shadow");
-  if (host.createShadowRoot) {
-    var root = host.createShadowRoot();
-    root.innerHTML = "<h3>Shadow DOM</h3><select multiple></select>";
-  }
+  var root = host.attachShadow({ mode: "open" });
+  root.innerHTML = "<h3>Shadow DOM</h3><select multiple></select>";
   </script>
 </body>
 </html>

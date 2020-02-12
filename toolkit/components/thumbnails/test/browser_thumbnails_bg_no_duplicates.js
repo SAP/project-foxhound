@@ -24,8 +24,8 @@ function* runTests() {
       return;
     }
     ok(false, "only expecting 2 callbacks");
-  }
-  BackgroundPageThumbs.capture(url, {onDone: doneCallback});
-  BackgroundPageThumbs.capture(url, {onDone: doneCallback});
+  };
+  BackgroundPageThumbs.capture(url, { onDone: doneCallback });
+  BackgroundPageThumbs.capture(url, { onDone: doneCallback });
   yield true;
 }

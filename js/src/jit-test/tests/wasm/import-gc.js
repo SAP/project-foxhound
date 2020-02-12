@@ -1,15 +1,12 @@
-// |jit-test| --no-baseline
+// |jit-test| --no-baseline; --no-blinterp
 // Turn off baseline and since it messes up the GC finalization assertions by
 // adding spurious edges to the GC graph.
-
-load(libdir + 'wasm.js');
-load(libdir + 'asserts.js');
 
 const Module = WebAssembly.Module;
 const Instance = WebAssembly.Instance;
 
-const m1 = new Module(textToBinary(`(module (func $f) (export "f" $f))`));
-const m2 = new Module(textToBinary(`(module (import "a" "f") (func $f) (export "g" $f))`));
+const m1 = new Module(wasmTextToBinary(`(module (func $f) (export "f" $f))`));
+const m2 = new Module(wasmTextToBinary(`(module (import "a" "f") (func $f) (export "g" $f))`));
 
 // Imported instance objects should stay alive as long as any importer is alive.
 resetFinalizeCount();
@@ -26,13 +23,13 @@ assertEq(finalizeCount(), 0);
 i1.exports = null;
 f = null;
 gc();
-assertEq(finalizeCount(), 1);
+assertEq(finalizeCount(), 0);
 i2 = null;
 gc();
-assertEq(finalizeCount(), 1);
+assertEq(finalizeCount(), 0);
 i1 = null;
 gc();
-assertEq(finalizeCount(), 1);
+assertEq(finalizeCount(), 0);
 g = null;
 gc();
 assertEq(finalizeCount(), 4);
@@ -52,14 +49,14 @@ assertEq(finalizeCount(), 0);
 i2.exports = null;
 g = null;
 gc();
-assertEq(finalizeCount(), 1);
+assertEq(finalizeCount(), 0);
 i2 = null;
 gc();
 assertEq(finalizeCount(), 2);
 i1.exports = null;
 f = null;
 gc();
-assertEq(finalizeCount(), 3);
+assertEq(finalizeCount(), 2);
 i1 = null;
 gc();
 assertEq(finalizeCount(), 4);

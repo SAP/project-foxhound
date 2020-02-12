@@ -6,12 +6,9 @@
 #define fopen_hooks_h__
 
 /**
- * This file is force-included in hunspell code. Its purpose is to add 
- * readahead to fopen() calls in hunspell without modifying its code, in order 
+ * This file is force-included in hunspell code. Its purpose is to add
+ * readahead to fopen() calls in hunspell without modifying its code, in order
  * to ease future upgrades.
- *
- * This file is force-included through mozilla-config.h which is generated
- * during the configure step.
  */
 
 #include "mozilla/FileUtils.h"
@@ -19,20 +16,18 @@
 #include <string.h>
 
 #if defined(XP_WIN)
-#include "nsNativeCharsetUtils.h"
-#include "nsString.h"
+#  include "nsNativeCharsetUtils.h"
+#  include "nsString.h"
 
-#include <fcntl.h>
-#include <windows.h>
+#  include <fcntl.h>
+#  include <windows.h>
 // Hunspell defines a function named near. Windef.h #defines near.
-#undef near
+#  undef near
 // mozHunspell defines a function named RemoveDirectory.
-#undef RemoveDirectory
+#  undef RemoveDirectory
 #endif /* defined(XP_WIN) */
 
-inline FILE*
-hunspell_fopen_readahead(const char* filename, const char* mode)
-{
+inline FILE* hunspell_fopen_readahead(const char* filename, const char* mode) {
   if (!filename || !mode) {
     return nullptr;
   }
@@ -42,11 +37,11 @@ hunspell_fopen_readahead(const char* filename, const char* mode)
   }
   int fd = -1;
 #if defined(XP_WIN)
-  // filename is obtained via the nsIFile::nativePath attribute, so 
+  // filename is obtained via the nsIFile::nativePath attribute, so
   // it is using the Windows ANSI code page, NOT UTF-8!
   nsAutoString utf16Filename;
-  nsresult rv = NS_CopyNativeToUnicode(nsDependentCString(filename),
-                                       utf16Filename);
+  nsresult rv =
+      NS_CopyNativeToUnicode(nsDependentCString(filename), utf16Filename);
   if (NS_FAILED(rv)) {
     return nullptr;
   }
@@ -84,4 +79,3 @@ hunspell_fopen_readahead(const char* filename, const char* mode)
 #define fopen(filename, mode) hunspell_fopen_readahead(filename, mode)
 
 #endif /* fopen_hooks_h__ */
-

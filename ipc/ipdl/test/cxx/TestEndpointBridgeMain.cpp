@@ -4,7 +4,7 @@
 #include "TestEndpointBridgeMain.h"
 
 #include "base/task.h"
-#include "IPDLUnitTests.h"      // fail etc.
+#include "IPDLUnitTests.h"  // fail etc.
 #include "IPDLUnitTestSubprocess.h"
 
 using namespace std;
@@ -12,30 +12,24 @@ using namespace std;
 namespace mozilla {
 namespace _ipdltest {
 
-
 //-----------------------------------------------------------------------------
 // main process
-void
-TestEndpointBridgeMainParent::Main()
-{
+void TestEndpointBridgeMainParent::Main() {
   if (!SendStart()) {
     fail("sending Start");
   }
 }
 
-bool
-TestEndpointBridgeMainParent::RecvBridged(Endpoint<PTestEndpointBridgeMainSubParent>&& endpoint)
-{
+mozilla::ipc::IPCResult TestEndpointBridgeMainParent::RecvBridged(
+    Endpoint<PTestEndpointBridgeMainSubParent>&& endpoint) {
   TestEndpointBridgeMainSubParent* a = new TestEndpointBridgeMainSubParent();
   if (!endpoint.Bind(a)) {
     fail("Bind failed");
   }
-  return true;
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeMainParent::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeMainParent::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
@@ -43,27 +37,25 @@ TestEndpointBridgeMainParent::ActorDestroy(ActorDestroyReason why)
   QuitParent();
 }
 
-bool
-TestEndpointBridgeMainSubParent::RecvHello()
-{
-  return SendHi();
+mozilla::ipc::IPCResult TestEndpointBridgeMainSubParent::RecvHello() {
+  if (!SendHi()) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-bool
-TestEndpointBridgeMainSubParent::RecvHelloSync()
-{
-  return true;
+mozilla::ipc::IPCResult TestEndpointBridgeMainSubParent::RecvHelloSync() {
+  return IPC_OK();
 }
 
-bool
-TestEndpointBridgeMainSubParent::AnswerHelloRpc()
-{
-  return CallHiRpc();
+mozilla::ipc::IPCResult TestEndpointBridgeMainSubParent::AnswerHelloRpc() {
+  if (!CallHiRpc()) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeMainSubParent::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeMainSubParent::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
@@ -72,7 +64,7 @@ TestEndpointBridgeMainSubParent::ActorDestroy(ActorDestroyReason why)
   // which needs the top-level actor (this) to stay alive a little
   // longer so other things can be cleaned up.
   MessageLoop::current()->PostTask(
-    do_AddRef(new DeleteTask<TestEndpointBridgeMainSubParent>(this)));
+      do_AddRef(new DeleteTask<TestEndpointBridgeMainSubParent>(this)));
 }
 
 //-----------------------------------------------------------------------------
@@ -80,14 +72,11 @@ TestEndpointBridgeMainSubParent::ActorDestroy(ActorDestroyReason why)
 TestEndpointBridgeMainChild* gEndpointBridgeMainChild;
 
 TestEndpointBridgeMainChild::TestEndpointBridgeMainChild()
- : mSubprocess(nullptr)
-{
+    : mSubprocess(nullptr) {
   gEndpointBridgeMainChild = this;
 }
 
-bool
-TestEndpointBridgeMainChild::RecvStart()
-{
+mozilla::ipc::IPCResult TestEndpointBridgeMainChild::RecvStart() {
   vector<string> subsubArgs;
   subsubArgs.push_back("TestEndpointBridgeSub");
 
@@ -105,55 +94,46 @@ TestEndpointBridgeMainChild::RecvStart()
   bsp->Open(transport, base::GetProcId(mSubprocess->GetChildProcessHandle()));
 
   bsp->Main();
-  return true;
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeMainChild::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeMainChild::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
   // NB: this is kosher because QuitChild() joins with the IO thread
-  XRE_GetIOMessageLoop()->PostTask(
-    do_AddRef(new DeleteTask<IPDLUnitTestSubprocess>(mSubprocess)));
+  mSubprocess->Destroy();
+  mSubprocess = nullptr;
   QuitChild();
 }
 
-void
-TestEndpointBridgeSubParent::Main()
-{
+void TestEndpointBridgeSubParent::Main() {
   if (!SendPing()) {
     fail("sending Ping");
   }
 }
 
-bool
-TestEndpointBridgeSubParent::RecvBridgeEm()
-{
+mozilla::ipc::IPCResult TestEndpointBridgeSubParent::RecvBridgeEm() {
   Endpoint<PTestEndpointBridgeMainSubParent> parent;
   Endpoint<PTestEndpointBridgeMainSubChild> child;
   nsresult rv;
   rv = PTestEndpointBridgeMainSub::CreateEndpoints(
-    gEndpointBridgeMainChild->OtherPid(), OtherPid(),
-    &parent, &child);
+      gEndpointBridgeMainChild->OtherPid(), OtherPid(), &parent, &child);
   if (NS_FAILED(rv)) {
     fail("opening PTestEndpointOpensOpened");
   }
 
-  if (!gEndpointBridgeMainChild->SendBridged(mozilla::Move(parent))) {
+  if (!gEndpointBridgeMainChild->SendBridged(std::move(parent))) {
     fail("SendBridge failed for parent");
   }
-  if (!SendBridged(mozilla::Move(child))) {
+  if (!SendBridged(std::move(child))) {
     fail("SendBridge failed for child");
   }
 
-  return true;
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeSubParent::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeSubParent::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
@@ -163,7 +143,7 @@ TestEndpointBridgeSubParent::ActorDestroy(ActorDestroyReason why)
   // which needs the top-level actor (this) to stay alive a little
   // longer so other things can be cleaned up.
   MessageLoop::current()->PostTask(
-    do_AddRef(new DeleteTask<TestEndpointBridgeSubParent>(this)));
+      do_AddRef(new DeleteTask<TestEndpointBridgeSubParent>(this)));
 }
 
 //-----------------------------------------------------------------------------
@@ -171,23 +151,19 @@ TestEndpointBridgeSubParent::ActorDestroy(ActorDestroyReason why)
 
 static TestEndpointBridgeSubChild* gBridgeSubChild;
 
-TestEndpointBridgeSubChild::TestEndpointBridgeSubChild()
-{
-    gBridgeSubChild = this;
+TestEndpointBridgeSubChild::TestEndpointBridgeSubChild() {
+  gBridgeSubChild = this;
 }
 
-bool
-TestEndpointBridgeSubChild::RecvPing()
-{
+mozilla::ipc::IPCResult TestEndpointBridgeSubChild::RecvPing() {
   if (!SendBridgeEm()) {
     fail("sending BridgeEm");
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
-TestEndpointBridgeSubChild::RecvBridged(Endpoint<PTestEndpointBridgeMainSubChild>&& endpoint)
-{
+mozilla::ipc::IPCResult TestEndpointBridgeSubChild::RecvBridged(
+    Endpoint<PTestEndpointBridgeMainSubChild>&& endpoint) {
   TestEndpointBridgeMainSubChild* a = new TestEndpointBridgeMainSubChild();
 
   if (!endpoint.Bind(a)) {
@@ -198,21 +174,17 @@ TestEndpointBridgeSubChild::RecvBridged(Endpoint<PTestEndpointBridgeMainSubChild
     fail("sending Hello");
   }
 
-  return true;
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeSubChild::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeSubChild::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
   QuitChild();
 }
 
-bool
-TestEndpointBridgeMainSubChild::RecvHi()
-{
+mozilla::ipc::IPCResult TestEndpointBridgeMainSubChild::RecvHi() {
   if (!SendHelloSync()) {
     fail("sending HelloSync");
   }
@@ -226,20 +198,17 @@ TestEndpointBridgeMainSubChild::RecvHi()
   // Need to close the channel without message-processing frames on
   // the C++ stack
   MessageLoop::current()->PostTask(
-    NewNonOwningRunnableMethod(this, &TestEndpointBridgeMainSubChild::Close));
-  return true;
+      NewNonOwningRunnableMethod("ipc::IToplevelProtocol::Close", this,
+                                 &TestEndpointBridgeMainSubChild::Close));
+  return IPC_OK();
 }
 
-bool
-TestEndpointBridgeMainSubChild::AnswerHiRpc()
-{
-  mGotHi = true;              // d00d
-  return true;
+mozilla::ipc::IPCResult TestEndpointBridgeMainSubChild::AnswerHiRpc() {
+  mGotHi = true;  // d00d
+  return IPC_OK();
 }
 
-void
-TestEndpointBridgeMainSubChild::ActorDestroy(ActorDestroyReason why)
-{
+void TestEndpointBridgeMainSubChild::ActorDestroy(ActorDestroyReason why) {
   if (NormalShutdown != why) {
     fail("unexpected destruction!");
   }
@@ -250,8 +219,8 @@ TestEndpointBridgeMainSubChild::ActorDestroy(ActorDestroyReason why)
   // which needs the top-level actor (this) to stay alive a little
   // longer so other things can be cleaned up.
   MessageLoop::current()->PostTask(
-    do_AddRef(new DeleteTask<TestEndpointBridgeMainSubChild>(this)));
+      do_AddRef(new DeleteTask<TestEndpointBridgeMainSubChild>(this)));
 }
 
-} // namespace mozilla
-} // namespace _ipdltest
+}  // namespace _ipdltest
+}  // namespace mozilla

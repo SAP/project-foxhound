@@ -4,14 +4,14 @@
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1185351 - Make sure that we don't enforce CSP on styles for AnonymousContent</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
 <div>
   <div id="test-element" style="color:red;">text content</div>
 </div>
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
   let chromeDocument = SpecialPowers.wrap(document);
   let testElement = document.querySelector("div");
   let anonymousContent = chromeDocument.insertAnonymousContent(testElement);

@@ -17,10 +17,8 @@ namespace mozilla {
 namespace a11y {
 
 class ia2AccessibleHyperlink : public ia2AccessibleAction,
-                               public IAccessibleHyperlink
-{
-public:
-
+                               public IAccessibleHyperlink {
+ public:
   // IUnknown
   STDMETHODIMP QueryInterface(REFIID, void**);
 
@@ -29,23 +27,23 @@ public:
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_anchor(
       /* [in] */ long index,
-      /* [retval][out] */ VARIANT *anchor);
+      /* [retval][out] */ VARIANT* anchor);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_anchorTarget(
       /* [in] */ long index,
-      /* [retval][out] */ VARIANT *anchorTarget);
+      /* [retval][out] */ VARIANT* anchorTarget);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_startIndex(
-      /* [retval][out] */ long *index);
+      /* [retval][out] */ long* index);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_endIndex(
-      /* [retval][out] */ long *index);
+      /* [retval][out] */ long* index);
 
   virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_valid(
-      /* [retval][out] */ boolean *valid);
+      /* [retval][out] */ boolean* valid);
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

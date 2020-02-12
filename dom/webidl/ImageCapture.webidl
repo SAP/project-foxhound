@@ -10,10 +10,15 @@
  * W3C liability, trademark and document use rules apply.
  */
 
-[Pref="dom.imagecapture.enabled", Constructor(VideoStreamTrack track)]
+[Pref="dom.imagecapture.enabled",
+ Exposed=Window]
 interface ImageCapture : EventTarget {
+  [Throws]
+  constructor(MediaStreamTrack track);
+
   // readonly attribute PhotoSettingsOptions photoSettingsOptions;
-  readonly attribute VideoStreamTrack videoStreamTrack;
+  [BinaryName="GetVideoStreamTrack"]
+  readonly attribute MediaStreamTrack videoStreamTrack;
   attribute EventHandler onphoto;
   attribute EventHandler onerror;
   // attribute EventHandler onphotosettingschange;

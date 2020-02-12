@@ -5,34 +5,41 @@
  * Test that we have allocation data coming from the front.
  */
 
-const { PerformanceFront } = require("devtools/shared/fronts/performance");
+"use strict";
 
-add_task(function* () {
-  let browser = yield addTab(MAIN_DOMAIN + "doc_allocations.html");
-  let doc = browser.contentDocument;
+add_task(async function() {
+  const target = await addTabTarget(MAIN_DOMAIN + "doc_allocations.html");
+  const front = await target.getFront("performance");
 
-  initDebuggerServer();
-  let client = new DebuggerClient(DebuggerServer.connectPipe());
-  let form = yield connectDebuggerClient(client);
-  let front = PerformanceFront(client, form);
-  yield front.connect();
+  const rec = await front.startRecording({
+    withMarkers: true,
+    withAllocations: true,
+    withTicks: true,
+  });
 
-  let rec = yield front.startRecording({ withMarkers: true, withAllocations: true, withTicks: true });
+  await waitUntil(() => rec.getAllocations().frames.length);
+  await waitUntil(() => rec.getAllocations().timestamps.length);
+  await waitUntil(() => rec.getAllocations().sizes.length);
+  await waitUntil(() => rec.getAllocations().sites.length);
 
-  yield waitUntil(() => rec.getAllocations().frames.length);
-  yield waitUntil(() => rec.getAllocations().timestamps.length);
-  yield waitUntil(() => rec.getAllocations().sizes.length);
-  yield waitUntil(() => rec.getAllocations().sites.length);
+  await front.stopRecording(rec);
 
-  yield front.stopRecording(rec);
+  const { timestamps, sizes } = rec.getAllocations();
 
-  let { frames, timestamps, sizes, sites } = rec.getAllocations();
+  is(
+    timestamps.length,
+    sizes.length,
+    "we have the same amount of timestamps and sizes"
+  );
+  ok(
+    timestamps.every(time => time > 0 && typeof time === "number"),
+    "all timestamps have numeric values"
+  );
+  ok(
+    sizes.every(n => n > 0 && typeof n === "number"),
+    "all sizes are positive numbers"
+  );
 
-  is(timestamps.length, sizes.length, "we have the same amount of timestamps and sizes");
-  ok(timestamps.every(time => time > 0 && typeof time === "number"), "all timestamps have numeric values");
-  ok(sizes.every(n => n > 0 && typeof n === "number"), "all sizes are positive numbers");
-
-  yield front.destroy();
-  yield client.close();
+  await target.destroy();
   gBrowser.removeCurrentTab();
 });

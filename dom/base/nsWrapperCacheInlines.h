@@ -8,38 +8,48 @@
 #define nsWrapperCacheInline_h___
 
 #include "nsWrapperCache.h"
-#include "js/GCAPI.h"
 #include "js/TracingAPI.h"
 
-inline JSObject*
-nsWrapperCache::GetWrapper() const
-{
-    JSObject* obj = GetWrapperPreserveColor();
-    if (obj) {
-      JS::ExposeObjectToActiveJS(obj);
-    }
-    return obj;
+inline JSObject* nsWrapperCache::GetWrapperPreserveColor() const {
+  JSObject* obj = GetWrapperMaybeDead();
+  if (obj && js::gc::EdgeNeedsSweepUnbarriered(&obj)) {
+    // The object has been found to be dead and is in the process of being
+    // finalized, so don't let the caller see it.
+    // Don't clear the cache though: this happens when a new wrapper is created
+    // for this native or when the wrapper is finalized.
+    return nullptr;
+  }
+  MOZ_ASSERT(obj == mWrapper);
+  return obj;
 }
 
-inline bool
-nsWrapperCache::IsBlack()
-{
+inline JSObject* nsWrapperCache::GetWrapper() const {
+  JSObject* obj = GetWrapperPreserveColor();
+  if (obj) {
+    JS::ExposeObjectToActiveJS(obj);
+  }
+  return obj;
+}
+
+inline bool nsWrapperCache::HasKnownLiveWrapper() const {
+  // If we have a wrapper and it's not gray in the GC-marking sense, that means
+  // that we can't be cycle-collected.  That's because the wrapper is being kept
+  // alive by the JS engine (and not just due to being traced from some
+  // cycle-collectable thing), and the wrapper holds us alive, so we know we're
+  // not collectable.
   JSObject* o = GetWrapperPreserveColor();
   return o && !JS::ObjectIsMarkedGray(o);
 }
 
-static void
-SearchGray(JS::GCCellPtr aGCThing, const char* aName, void* aClosure)
-{
+static void SearchGray(JS::GCCellPtr aGCThing, const char* aName,
+                       void* aClosure) {
   bool* hasGrayObjects = static_cast<bool*>(aClosure);
   if (!*hasGrayObjects && aGCThing && JS::GCThingIsMarkedGray(aGCThing)) {
     *hasGrayObjects = true;
   }
 }
 
-inline bool
-nsWrapperCache::HasNothingToTrace(nsISupports* aThis)
-{
+inline bool nsWrapperCache::HasNothingToTrace(nsISupports* aThis) {
   nsXPCOMCycleCollectionParticipant* participant = nullptr;
   CallQueryInterface(aThis, &participant);
   bool hasGrayObjects = false;
@@ -47,10 +57,15 @@ nsWrapperCache::HasNothingToTrace(nsISupports* aThis)
   return !hasGrayObjects;
 }
 
-inline bool
-nsWrapperCache::IsBlackAndDoesNotNeedTracing(nsISupports* aThis)
-{
-  return IsBlack() && HasNothingToTrace(aThis);
+inline bool nsWrapperCache::HasKnownLiveWrapperAndDoesNotNeedTracing(
+    nsISupports* aThis) {
+  return HasKnownLiveWrapper() && HasNothingToTrace(aThis);
+}
+
+inline void nsWrapperCache::MarkWrapperLive() {
+  // Just call GetWrapper and ignore the return value.  It will do the
+  // gray-unmarking for us.
+  GetWrapper();
 }
 
 #endif /* nsWrapperCache_h___ */

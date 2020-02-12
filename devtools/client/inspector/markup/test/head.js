@@ -2,34 +2,41 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+/* import-globals-from ../../../shared/test/telemetry-test-helpers.js */
 /* import-globals-from ../../test/head.js */
 "use strict";
 
 // Import the inspector's head.js first (which itself imports shared-head.js).
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/head.js",
-  this);
+  this
+);
 
-var {getInplaceEditorForSpan: inplaceEditor} = require("devtools/client/shared/inplace-editor");
-var clipboard = require("sdk/clipboard");
-var {ActorRegistryFront} = require("devtools/shared/fronts/actor-registry");
+// Load the shared Redux helpers into this compartment.
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-redux-head.js",
+  this
+);
+
+var {
+  getInplaceEditorForSpan: inplaceEditor,
+} = require("devtools/client/shared/inplace-editor");
+var clipboard = require("devtools/shared/platform/clipboard");
 
 // If a test times out we want to see the complete log and not just the last few
 // lines.
 SimpleTest.requestCompleteLog();
 
-// Set the testing flag on DevToolsUtils and reset it when the test ends
-flags.testing = true;
-registerCleanupFunction(() => {
-  flags.testing = false;
-});
+// Toggle this pref on to see all DevTools event communication. This is hugely
+// useful for fixing race conditions.
+// Services.prefs.setBoolPref("devtools.dump.emit", true);
 
 // Clear preferences that may be set during the course of tests.
 registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("devtools.dump.emit");
   Services.prefs.clearUserPref("devtools.inspector.htmlPanelOpen");
   Services.prefs.clearUserPref("devtools.inspector.sidebarOpen");
   Services.prefs.clearUserPref("devtools.markup.pagesize");
-  Services.prefs.clearUserPref("dom.webcomponents.enabled");
   Services.prefs.clearUserPref("devtools.inspector.showAllAnonymousContent");
 });
 
@@ -42,10 +49,9 @@ registerCleanupFunction(() => {
  * @param {String} filePath The file path, relative to the current directory.
  *                 Examples:
  *                 - "helper_attributes_test_runner.js"
- *                 - "../../../commandline/test/helpers.js"
  */
 function loadHelperScript(filePath) {
-  let testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
+  const testDir = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
   Services.scriptloader.loadSubScript(testDir + "/" + filePath, this);
 }
 
@@ -56,7 +62,7 @@ function loadHelperScript(filePath) {
  */
 function reloadPage(inspector, testActor) {
   info("Reloading the page");
-  let newRoot = inspector.once("new-root");
+  const newRoot = inspector.once("new-root");
   testActor.reload();
   return newRoot;
 }
@@ -69,7 +75,7 @@ function reloadPage(inspector, testActor) {
  * loaded in the toolbox
  * @return {MarkupContainer}
  */
-function getContainerForNodeFront(nodeFront, {markup}) {
+function getContainerForNodeFront(nodeFront, { markup }) {
   return markup.getContainer(nodeFront);
 }
 
@@ -79,15 +85,26 @@ function getContainerForNodeFront(nodeFront, {markup}) {
  * @param {String|NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
+ * @param {Boolean} Set to true in the event that the node shouldn't be found.
  * @return {MarkupContainer}
  */
-var getContainerForSelector = Task.async(function* (selector, inspector) {
+var getContainerForSelector = async function(
+  selector,
+  inspector,
+  expectFailure = false
+) {
   info("Getting the markup-container for node " + selector);
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
-  info("Found markup-container " + container);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
+
+  if (expectFailure) {
+    ok(!container, "Shouldn't find markup-container for selector: " + selector);
+  } else {
+    ok(container, "Found markup-container for selector: " + selector);
+  }
+
   return container;
-});
+};
 
 /**
  * Retrieve the nodeValue for the firstChild of a provided selector on the content page.
@@ -96,9 +113,9 @@ var getContainerForSelector = Task.async(function* (selector, inspector) {
  * @param {TestActorFront} testActor The current TestActorFront instance.
  * @return {String} the nodeValue of the first
  */
-function* getFirstChildNodeValue(selector, testActor) {
-  let nodeValue = yield testActor.eval(`
-    content.document.querySelector("${selector}").firstChild.nodeValue;
+async function getFirstChildNodeValue(selector, testActor) {
+  const nodeValue = await testActor.eval(`
+    document.querySelector("${selector}").firstChild.nodeValue;
   `);
   return nodeValue;
 }
@@ -111,13 +128,13 @@ function* getFirstChildNodeValue(selector, testActor) {
  * @return a promise that resolves when all queued children updates have been
  * handled
  */
-function waitForChildrenUpdated({markup}) {
+function waitForChildrenUpdated({ markup }) {
   info("Waiting for queued children updates to be handled");
-  let def = defer();
-  markup._waitForChildren().then(() => {
-    executeSoon(def.resolve);
+  return new Promise(resolve => {
+    markup._waitForChildren().then(() => {
+      executeSoon(resolve);
+    });
   });
-  return def.promise;
 }
 
 /**
@@ -128,21 +145,27 @@ function waitForChildrenUpdated({markup}) {
  * loaded in the toolbox
  * @return {Promise} Resolves when the node has been selected.
  */
-var clickContainer = Task.async(function* (selector, inspector) {
+var clickContainer = async function(selector, inspector) {
   info("Clicking on the markup-container for node " + selector);
 
-  let nodeFront = yield getNodeFront(selector, inspector);
-  let container = getContainerForNodeFront(nodeFront, inspector);
+  const nodeFront = await getNodeFront(selector, inspector);
+  const container = getContainerForNodeFront(nodeFront, inspector);
 
-  let updated = container.selected
-                ? promise.resolve()
-                : inspector.once("inspector-updated");
-  EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mousedown"},
-    inspector.markup.doc.defaultView);
-  EventUtils.synthesizeMouseAtCenter(container.tagLine, {type: "mouseup"},
-    inspector.markup.doc.defaultView);
+  const updated = container.selected
+    ? promise.resolve()
+    : inspector.once("inspector-updated");
+  EventUtils.synthesizeMouseAtCenter(
+    container.tagLine,
+    { type: "mousedown" },
+    inspector.markup.doc.defaultView
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    container.tagLine,
+    { type: "mouseup" },
+    inspector.markup.doc.defaultView
+  );
   return updated;
-});
+};
 
 /**
  * Focus a given editable element, enter edit mode, set value, and commit
@@ -155,7 +178,7 @@ var clickContainer = Task.async(function* (selector, inspector) {
 function setEditableFieldValue(field, value, inspector) {
   field.focus();
   EventUtils.sendKey("return", inspector.panelWin);
-  let input = inplaceEditor(field).input;
+  const input = inplaceEditor(field).input;
   ok(input, "Found editable field for setting value: " + value);
   input.value = value;
   EventUtils.sendKey("return", inspector.panelWin);
@@ -171,17 +194,17 @@ function setEditableFieldValue(field, value, inspector) {
  * loaded in the toolbox
  * @return a promise that resolves when the node has mutated
  */
-var addNewAttributes = Task.async(function* (selector, text, inspector) {
+var addNewAttributes = async function(selector, text, inspector) {
   info(`Entering text "${text}" in new attribute field for node ${selector}`);
 
-  let container = yield focusNode(selector, inspector);
+  const container = await focusNode(selector, inspector);
   ok(container, "The container for '" + selector + "' was found");
 
   info("Listening for the markupmutation event");
-  let nodeMutated = inspector.once("markupmutation");
+  const nodeMutated = inspector.once("markupmutation");
   setEditableFieldValue(container.editor.newAttr, text, inspector);
-  yield nodeMutated;
-});
+  await nodeMutated;
+};
 
 /**
  * Checks that a node has the given attributes.
@@ -194,19 +217,25 @@ var addNewAttributes = Task.async(function* (selector, text, inspector) {
  * Note that node.getAttribute() returns attribute values provided by the HTML
  * parser. The parser only provides unescaped entities so &amp; will return &.
  */
-var assertAttributes = Task.async(function* (selector, expected, testActor) {
-  let {attributes: actual} = yield testActor.getNodeInfo(selector);
+var assertAttributes = async function(selector, expected, testActor) {
+  const { attributes: actual } = await testActor.getNodeInfo(selector);
 
-  is(actual.length, Object.keys(expected).length,
-    "The node " + selector + " has the expected number of attributes.");
-  for (let attr in expected) {
-    let foundAttr = actual.find(({name}) => name === attr);
-    let foundValue = foundAttr ? foundAttr.value : undefined;
+  is(
+    actual.length,
+    Object.keys(expected).length,
+    "The node " + selector + " has the expected number of attributes."
+  );
+  for (const attr in expected) {
+    const foundAttr = actual.find(({ name }) => name === attr);
+    const foundValue = foundAttr ? foundAttr.value : undefined;
     ok(foundAttr, "The node " + selector + " has the attribute " + attr);
-    is(foundValue, expected[attr],
-      "The node " + selector + " has the correct " + attr + " attribute value");
+    is(
+      foundValue,
+      expected[attr],
+      "The node " + selector + " has the correct " + attr + " attribute value"
+    );
   }
-});
+};
 
 /**
  * Undo the last markup-view action and wait for the corresponding mutation to
@@ -217,13 +246,13 @@ var assertAttributes = Task.async(function* (selector, expected, testActor) {
  * rejects if no undo action is possible
  */
 function undoChange(inspector) {
-  let canUndo = inspector.markup.undo.canUndo();
+  const canUndo = inspector.markup.undo.canUndo();
   ok(canUndo, "The last change in the markup-view can be undone");
   if (!canUndo) {
     return promise.reject();
   }
 
-  let mutated = inspector.once("markupmutation");
+  const mutated = inspector.once("markupmutation");
   inspector.markup.undo.undo();
   return mutated;
 }
@@ -237,13 +266,13 @@ function undoChange(inspector) {
  * rejects if no redo action is possible
  */
 function redoChange(inspector) {
-  let canRedo = inspector.markup.undo.canRedo();
+  const canRedo = inspector.markup.undo.canRedo();
   ok(canRedo, "The last change in the markup-view can be redone");
   if (!canRedo) {
     return promise.reject();
   }
 
-  let mutated = inspector.once("markupmutation");
+  const mutated = inspector.once("markupmutation");
   inspector.markup.undo.redo();
   return mutated;
 }
@@ -264,8 +293,8 @@ function getSelectorSearchBox(inspector) {
  * to subscribe to events and react accordingly.
  */
 function searchUsingSelectorSearch(selector, inspector) {
-  info("Entering \"" + selector + "\" into the selector-search input field");
-  let field = getSelectorSearchBox(inspector);
+  info('Entering "' + selector + '" into the selector-search input field');
+  const field = getSelectorSearchBox(inspector);
   field.focus();
   field.value = selector;
   EventUtils.sendKey("return", inspector.panelWin);
@@ -280,17 +309,24 @@ function searchUsingSelectorSearch(selector, inspector) {
  * @return A promise that resolves with a boolean indicating whether
  *         the menu items are disabled once the menu has been checked.
  */
-var isEditingMenuDisabled = Task.async(
-function* (nodeFront, inspector, assert = true) {
+var isEditingMenuDisabled = async function(
+  nodeFront,
+  inspector,
+  assert = true
+) {
   // To ensure clipboard contains something to paste.
-  clipboard.set("<p>test</p>", "html");
+  clipboard.copyString("<p>test</p>");
 
-  yield selectNode(nodeFront, inspector);
-  let allMenuItems = openContextMenuAndGetAllItems(inspector);
+  await selectNode(nodeFront, inspector);
+  const allMenuItems = openContextMenuAndGetAllItems(inspector);
 
-  let deleteMenuItem = allMenuItems.find(i => i.id === "node-menu-delete");
-  let editHTMLMenuItem = allMenuItems.find(i => i.id === "node-menu-edithtml");
-  let pasteHTMLMenuItem = allMenuItems.find(i => i.id === "node-menu-pasteouterhtml");
+  const deleteMenuItem = allMenuItems.find(i => i.id === "node-menu-delete");
+  const editHTMLMenuItem = allMenuItems.find(
+    i => i.id === "node-menu-edithtml"
+  );
+  const pasteHTMLMenuItem = allMenuItems.find(
+    i => i.id === "node-menu-pasteouterhtml"
+  );
 
   if (assert) {
     ok(deleteMenuItem.disabled, "Delete menu item is disabled");
@@ -298,10 +334,12 @@ function* (nodeFront, inspector, assert = true) {
     ok(pasteHTMLMenuItem.disabled, "Paste HTML menu item is disabled");
   }
 
-  return deleteMenuItem.disabled &&
-         editHTMLMenuItem.disabled &&
-         pasteHTMLMenuItem.disabled;
-});
+  return (
+    deleteMenuItem.disabled &&
+    editHTMLMenuItem.disabled &&
+    pasteHTMLMenuItem.disabled
+  );
+};
 
 /**
  * Check to see if the inspector menu items for editing are enabled.
@@ -312,17 +350,20 @@ function* (nodeFront, inspector, assert = true) {
  * @return A promise that resolves with a boolean indicating whether
  *         the menu items are enabled once the menu has been checked.
  */
-var isEditingMenuEnabled = Task.async(
-function* (nodeFront, inspector, assert = true) {
+var isEditingMenuEnabled = async function(nodeFront, inspector, assert = true) {
   // To ensure clipboard contains something to paste.
-  clipboard.set("<p>test</p>", "html");
+  clipboard.copyString("<p>test</p>");
 
-  yield selectNode(nodeFront, inspector);
-  let allMenuItems = openContextMenuAndGetAllItems(inspector);
+  await selectNode(nodeFront, inspector);
+  const allMenuItems = openContextMenuAndGetAllItems(inspector);
 
-  let deleteMenuItem = allMenuItems.find(i => i.id === "node-menu-delete");
-  let editHTMLMenuItem = allMenuItems.find(i => i.id === "node-menu-edithtml");
-  let pasteHTMLMenuItem = allMenuItems.find(i => i.id === "node-menu-pasteouterhtml");
+  const deleteMenuItem = allMenuItems.find(i => i.id === "node-menu-delete");
+  const editHTMLMenuItem = allMenuItems.find(
+    i => i.id === "node-menu-edithtml"
+  );
+  const pasteHTMLMenuItem = allMenuItems.find(
+    i => i.id === "node-menu-pasteouterhtml"
+  );
 
   if (assert) {
     ok(!deleteMenuItem.disabled, "Delete menu item is enabled");
@@ -330,19 +371,48 @@ function* (nodeFront, inspector, assert = true) {
     ok(!pasteHTMLMenuItem.disabled, "Paste HTML menu item is enabled");
   }
 
-  return !deleteMenuItem.disabled &&
-         !editHTMLMenuItem.disabled &&
-         !pasteHTMLMenuItem.disabled;
-});
+  return (
+    !deleteMenuItem.disabled &&
+    !editHTMLMenuItem.disabled &&
+    !pasteHTMLMenuItem.disabled
+  );
+};
 
 /**
  * Wait for all current promises to be resolved. See this as executeSoon that
  * can be used with yield.
  */
 function promiseNextTick() {
-  let deferred = defer();
-  executeSoon(deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    executeSoon(resolve);
+  });
+}
+
+/**
+ * `await` with timeout.
+ *
+ * Usage:
+ *   const badgeEventAdded = inspector.markup.once("badge-added-event");
+ *   ...
+ *   const result = await awaitWithTimeout(badgeEventAdded, 3000);
+ *   is(result, "timeout", "Ensure that no event badges were added");
+ *
+ * @param  {Promise} promise
+ *         Promise to resolve
+ * @param  {Number} ms
+ *         Milliseconds to wait.
+ * @return "timeout" on timeout, otherwise the result of the fulfilled promise.
+ */
+async function awaitWithTimeout(promise, ms) {
+  const timeout = new Promise(resolve => {
+    // eslint-disable-next-line
+    const wait = setTimeout(() => {
+      clearTimeout(wait);
+      resolve("timeout");
+    }, ms);
+  });
+
+  return Promise.race([promise, timeout]);
 }
 
 /**
@@ -362,11 +432,9 @@ function collapseSelectionAndTab(inspector) {
  */
 function collapseSelectionAndShiftTab(inspector) {
   // collapse selection and move caret to end
-  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true },
-    inspector.panelWin);
+  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true }, inspector.panelWin);
   // previous element
-  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true },
-    inspector.panelWin);
+  EventUtils.synthesizeKey("VK_TAB", { shiftKey: true }, inspector.panelWin);
 }
 
 /**
@@ -376,10 +444,10 @@ function collapseSelectionAndShiftTab(inspector) {
  * @param {Boolean} editMode Whether or not the attribute should be in edit mode
  */
 function checkFocusedAttribute(attrName, editMode) {
-  let focusedAttr = Services.focus.focusedElement;
+  const focusedAttr = Services.focus.focusedElement;
   ok(focusedAttr, "Has a focused element");
 
-  let dataAttr = focusedAttr.parentNode.dataset.attr;
+  const dataAttr = focusedAttr.parentNode.dataset.attr;
   is(dataAttr, attrName, attrName + " attribute editor is currently focused.");
   if (editMode) {
     // Using a multiline editor for attributes, the focused element should be a textarea.
@@ -398,113 +466,14 @@ function checkFocusedAttribute(attrName, editMode) {
  *         A promise that resolves with an array of attribute names
  *         (e.g. ["id", "class", "href"])
  */
-var getAttributesFromEditor = Task.async(function* (selector, inspector) {
-  let nodeList = (yield getContainerForSelector(selector, inspector))
-    .tagLine.querySelectorAll("[data-attr]");
+var getAttributesFromEditor = async function(selector, inspector) {
+  const nodeList = (await getContainerForSelector(
+    selector,
+    inspector
+  )).tagLine.querySelectorAll("[data-attr]");
 
   return [...nodeList].map(node => node.getAttribute("data-attr"));
-});
-
-// The expand all operation of the markup-view calls itself recursively and
-// there's not one event we can wait for to know when it's done so use this
-// helper function to wait until all recursive children updates are done.
-function* waitForMultipleChildrenUpdates(inspector) {
-  // As long as child updates are queued up while we wait for an update already
-  // wait again
-  if (inspector.markup._queuedChildUpdates &&
-      inspector.markup._queuedChildUpdates.size) {
-    yield waitForChildrenUpdated(inspector);
-    return yield waitForMultipleChildrenUpdates(inspector);
-  }
-  return undefined;
-}
-
-/**
- * Create an HTTP server that can be used to simulate custom requests within
- * a test.  It is automatically cleaned up when the test ends, so no need to
- * call `destroy`.
- *
- * See https://developer.mozilla.org/en-US/docs/Httpd.js/HTTP_server_for_unit_tests
- * for more information about how to register handlers.
- *
- * The server can be accessed like:
- *
- *   const server = createTestHTTPServer();
- *   let url = "http://localhost: " + server.identity.primaryPort + "/path";
- *
- * @returns {HttpServer}
- */
-function createTestHTTPServer() {
-  const {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
-  let server = new HttpServer();
-
-  registerCleanupFunction(function* cleanup() {
-    let destroyed = defer();
-    server.stop(() => {
-      destroyed.resolve();
-    });
-    yield destroyed.promise;
-  });
-
-  server.start(-1);
-  return server;
-}
-
-/**
- * Registers new backend tab actor.
- *
- * @param {DebuggerClient} client RDP client object (toolbox.target.client)
- * @param {Object} options Configuration object with the following options:
- *
- * - moduleUrl {String}: URL of the module that contains actor implementation.
- * - prefix {String}: prefix of the actor.
- * - actorClass {ActorClassWithSpec}: Constructor object for the actor.
- * - frontClass {FrontClassWithSpec}: Constructor object for the front part
- * of the registered actor.
- *
- * @returns {Promise} A promise that is resolved when the actor is registered.
- * The resolved value has two properties:
- *
- * - registrar {ActorActor}: A handle to the registered actor that allows
- * unregistration.
- * - form {Object}: The JSON actor form provided by the server.
- */
-function registerTabActor(client, options) {
-  let moduleUrl = options.moduleUrl;
-
-  return client.listTabs().then(response => {
-    let config = {
-      prefix: options.prefix,
-      constructor: options.actorClass,
-      type: { tab: true },
-    };
-
-    // Register the custom actor on the backend.
-    let registry = ActorRegistryFront(client, response);
-    return registry.registerActor(moduleUrl, config).then(registrar => {
-      return client.getTab().then(tabResponse => ({
-        registrar: registrar,
-        form: tabResponse.tab
-      }));
-    });
-  });
-}
-
-/**
- * A helper for unregistering an existing backend actor.
- *
- * @param {ActorActor} registrar A handle to the registered actor
- * that has been received after registration.
- * @param {Front} Corresponding front object.
- *
- * @returns A promise that is resolved when the unregistration
- * has finished.
- */
-function unregisterActor(registrar, front) {
-  return front.detach().then(() => {
-    return registrar.unregister();
-  });
-}
+};
 
 /**
  * Simulate dragging a MarkupContainer by calling its mousedown and mousemove
@@ -515,13 +484,19 @@ function unregisterActor(registrar, front) {
  * @param {Number} xOffset Optional x offset to drag by.
  * @param {Number} yOffset Optional y offset to drag by.
  */
-function* simulateNodeDrag(inspector, selector, xOffset = 10, yOffset = 10) {
-  let container = typeof selector === "string"
-                  ? yield getContainerForSelector(selector, inspector)
-                  : selector;
-  let rect = container.tagLine.getBoundingClientRect();
-  let scrollX = inspector.markup.doc.documentElement.scrollLeft;
-  let scrollY = inspector.markup.doc.documentElement.scrollTop;
+async function simulateNodeDrag(
+  inspector,
+  selector,
+  xOffset = 10,
+  yOffset = 10
+) {
+  const container =
+    typeof selector === "string"
+      ? await getContainerForSelector(selector, inspector)
+      : selector;
+  const rect = container.tagLine.getBoundingClientRect();
+  const scrollX = inspector.markup.doc.documentElement.scrollLeft;
+  const scrollY = inspector.markup.doc.documentElement.scrollTop;
 
   info("Simulate mouseDown on element " + selector);
   container._onMouseDown({
@@ -530,19 +505,19 @@ function* simulateNodeDrag(inspector, selector, xOffset = 10, yOffset = 10) {
     pageX: scrollX + rect.x,
     pageY: scrollY + rect.y,
     stopPropagation: () => {},
-    preventDefault: () => {}
+    preventDefault: () => {},
   });
 
   // _onMouseDown selects the node, so make sure to wait for the
   // inspector-updated event if the current selection was different.
   if (inspector.selection.nodeFront !== container.node) {
-    yield inspector.once("inspector-updated");
+    await inspector.once("inspector-updated");
   }
 
   info("Simulate mouseMove on element " + selector);
-  container._onMouseMove({
+  container.onMouseMove({
     pageX: scrollX + rect.x + xOffset,
-    pageY: scrollY + rect.y + yOffset
+    pageY: scrollY + rect.y + yOffset,
   });
 }
 
@@ -553,12 +528,13 @@ function* simulateNodeDrag(inspector, selector, xOffset = 10, yOffset = 10) {
  * @param {String|MarkupContainer} selector The selector to identify the node or
  * the MarkupContainer for this node.
  */
-function* simulateNodeDrop(inspector, selector) {
+async function simulateNodeDrop(inspector, selector) {
   info("Simulate mouseUp on element " + selector);
-  let container = typeof selector === "string"
-                  ? yield getContainerForSelector(selector, inspector)
-                  : selector;
-  container._onMouseUp();
+  const container =
+    typeof selector === "string"
+      ? await getContainerForSelector(selector, inspector)
+      : selector;
+  container.onMouseUp();
   inspector.markup._onMouseUp();
 }
 
@@ -571,22 +547,22 @@ function* simulateNodeDrop(inspector, selector) {
  * @param {Number} xOffset Optional x offset to drag by.
  * @param {Number} yOffset Optional y offset to drag by.
  */
-function* simulateNodeDragAndDrop(inspector, selector, xOffset, yOffset) {
-  yield simulateNodeDrag(inspector, selector, xOffset, yOffset);
-  yield simulateNodeDrop(inspector, selector);
+async function simulateNodeDragAndDrop(inspector, selector, xOffset, yOffset) {
+  await simulateNodeDrag(inspector, selector, xOffset, yOffset);
+  await simulateNodeDrop(inspector, selector);
 }
 
 /**
  * Waits until the element has not scrolled for 30 consecutive frames.
  */
-function* waitForScrollStop(doc) {
-  let el = doc.documentElement;
-  let win = doc.defaultView;
+async function waitForScrollStop(doc) {
+  const el = doc.documentElement;
+  const win = doc.defaultView;
   let lastScrollTop = el.scrollTop;
   let stopFrameCount = 0;
   while (stopFrameCount < 30) {
     // Wait for a frame.
-    yield new Promise(resolve => win.requestAnimationFrame(resolve));
+    await new Promise(resolve => win.requestAnimationFrame(resolve));
 
     // Check if the element has scrolled.
     if (lastScrollTop == el.scrollTop) {
@@ -617,37 +593,264 @@ function* waitForScrollStop(doc) {
  *        - {String} pseudo: optional, "before" or "after" if the element focused after
  *        deleting the node is supposed to be a before/after pseudo-element.
  */
-function* checkDeleteAndSelection(inspector, key, {selector, focusedSelector, pseudo}) {
-  info("Test deleting node " + selector + " with " + key + ", " +
-       "expecting " + focusedSelector + " to be focused");
+async function checkDeleteAndSelection(
+  inspector,
+  key,
+  { selector, focusedSelector, pseudo }
+) {
+  info(
+    "Test deleting node " +
+      selector +
+      " with " +
+      key +
+      ", " +
+      "expecting " +
+      focusedSelector +
+      " to be focused"
+  );
 
   info("Select node " + selector + " and make sure it is focused");
-  yield selectNode(selector, inspector);
-  yield clickContainer(selector, inspector);
+  await selectNode(selector, inspector);
+  await clickContainer(selector, inspector);
 
   info("Delete the node with: " + key);
-  let mutated = inspector.once("markupmutation");
+  const mutated = inspector.once("markupmutation");
   EventUtils.sendKey(key, inspector.panelWin);
-  yield Promise.all([mutated, inspector.once("inspector-updated")]);
+  await Promise.all([mutated, inspector.once("inspector-updated")]);
 
-  let nodeFront = yield getNodeFront(focusedSelector, inspector);
+  let nodeFront = await getNodeFront(focusedSelector, inspector);
   if (pseudo) {
     // Update the selector for logging in case of failure.
     focusedSelector = focusedSelector + "::" + pseudo;
     // Retrieve the :before or :after pseudo element of the nodeFront.
-    let {nodes} = yield inspector.walker.children(nodeFront);
+    const { nodes } = await inspector.walker.children(nodeFront);
     nodeFront = pseudo === "before" ? nodes[0] : nodes[nodes.length - 1];
   }
 
-  is(inspector.selection.nodeFront, nodeFront,
-     focusedSelector + " is selected after deletion");
+  is(
+    inspector.selection.nodeFront,
+    nodeFront,
+    focusedSelector + " is selected after deletion"
+  );
 
   info("Check that the node was really removed");
-  let node = yield getNodeFront(selector, inspector);
+  let node = await getNodeFront(selector, inspector);
   ok(!node, "The node can't be found in the page anymore");
 
   info("Undo the deletion to restore the original markup");
-  yield undoChange(inspector);
-  node = yield getNodeFront(selector, inspector);
+  await undoChange(inspector);
+  node = await getNodeFront(selector, inspector);
   ok(node, "The node is back");
+}
+
+/**
+ * Assert whether the provided container is slotted.
+ */
+function assertContainerSlotted(container) {
+  ok(container.isSlotted(), "Container is a slotted container");
+  ok(
+    container.elt.querySelector(".reveal-link"),
+    "Slotted container has a reveal link element"
+  );
+}
+
+/**
+ * Check if the provided text can be matched anywhere in the text content for the provided
+ * container.
+ */
+function assertContainerHasText(container, expectedText) {
+  const textContent = container.elt.textContent;
+  ok(
+    textContent.includes(expectedText),
+    "Container has expected text: " + expectedText
+  );
+}
+
+/**
+ * Assert method to compare the current content of the markupview to a text based tree.
+ *
+ * @param {String} tree
+ *        Multiline string representing the markup view tree, for instance:
+ *        `root
+ *           child1
+ *             subchild1
+ *             subchild2
+ *           child2
+ *             subchild3!slotted`
+ *           child3!ignore-children
+ *        Each sub level should be indented by 2 spaces.
+ *        Each line contains text expected to match with the text of the corresponding
+ *        node in the markup view. Some suffixes are supported:
+ *        - !slotted -> indicates that the line corresponds to the slotted version
+ *        - !ignore-children -> the node might have children but do not assert them
+ * @param {String} selector
+ *        A CSS selector that will uniquely match the "root" element from the tree
+ * @param {Inspector} inspector
+ *        The inspector instance.
+ */
+async function assertMarkupViewAsTree(tree, selector, inspector) {
+  const { markup } = inspector;
+
+  info(`Find and expand the shadow DOM host matching selector ${selector}.`);
+  const rootFront = await getNodeFront(selector, inspector);
+  const rootContainer = markup.getContainer(rootFront);
+
+  const parsedTree = _parseMarkupViewTree(tree);
+  const treeRoot = parsedTree.children[0];
+  await _checkMarkupViewNode(treeRoot, rootContainer, inspector);
+}
+
+async function _checkMarkupViewNode(treeNode, container, inspector) {
+  const { node, children, path } = treeNode;
+  info("Checking [" + path + "]");
+  info("Checking node: " + node);
+
+  const ignoreChildren = node.includes("!ignore-children");
+  const slotted = node.includes("!slotted");
+
+  // Remove optional suffixes.
+  const nodeText = node.replace("!slotted", "").replace("!ignore-children", "");
+
+  assertContainerHasText(container, nodeText);
+
+  if (slotted) {
+    assertContainerSlotted(container);
+  }
+
+  if (ignoreChildren) {
+    return;
+  }
+
+  if (!children.length) {
+    ok(!container.canExpand, "Container for [" + path + "] has no children");
+    return;
+  }
+
+  // Expand the container if not already done.
+  if (!container.expanded) {
+    await expandContainer(inspector, container);
+  }
+
+  const containers = container.getChildContainers();
+  is(
+    containers.length,
+    children.length,
+    "Node [" + path + "] has the expected number of children"
+  );
+  for (let i = 0; i < children.length; i++) {
+    await _checkMarkupViewNode(children[i], containers[i], inspector);
+  }
+}
+
+/**
+ * Helper designed to parse a tree represented as:
+ * root
+ *   child1
+ *     subchild1
+ *     subchild2
+ *   child2
+ *     subchild3!slotted
+ *
+ * Lines represent a simplified view of the markup, where the trimmed line is supposed to
+ * be included in the text content of the actual markupview container.
+ * This method returns an object that can be passed to _checkMarkupViewNode() to verify
+ * the current markup view displays the expected structure.
+ */
+function _parseMarkupViewTree(inputString) {
+  const tree = {
+    level: 0,
+    children: [],
+  };
+  let lines = inputString.split("\n");
+  lines = lines.filter(l => l.trim());
+
+  let currentNode = tree;
+  for (const line of lines) {
+    const nodeString = line.trim();
+    const level = line.split("  ").length;
+
+    let parent;
+    if (level > currentNode.level) {
+      parent = currentNode;
+    } else {
+      parent = currentNode.parent;
+      for (let i = 0; i < currentNode.level - level; i++) {
+        parent = parent.parent;
+      }
+    }
+
+    const node = {
+      node: nodeString,
+      children: [],
+      parent,
+      level,
+      path: parent.path + " " + nodeString,
+    };
+
+    parent.children.push(node);
+    currentNode = node;
+  }
+
+  return tree;
+}
+
+function waitForMutation(inspector, type) {
+  return waitForNMutations(inspector, type, 1);
+}
+
+function waitForNMutations(inspector, type, count) {
+  info(`Expecting ${count} markupmutation of type ${type}`);
+  let receivedMutations = 0;
+  return new Promise(resolve => {
+    inspector.on("markupmutation", function onMutation(mutations) {
+      const validMutations = mutations.filter(m => m.type === type).length;
+      receivedMutations = receivedMutations + validMutations;
+      if (receivedMutations == count) {
+        inspector.off("markupmutation", onMutation);
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * Click on the reveal link the provided slotted container.
+ * Will resolve when selection emits "new-node-front".
+ */
+async function clickOnRevealLink(inspector, container) {
+  const onSelection = inspector.selection.once("new-node-front");
+  const revealLink = container.elt.querySelector(".reveal-link");
+  const tagline = revealLink.closest(".tag-line");
+  const win = inspector.markup.doc.defaultView;
+
+  // First send a mouseover on the tagline to force the link to be displayed.
+  EventUtils.synthesizeMouseAtCenter(tagline, { type: "mouseover" }, win);
+  EventUtils.synthesizeMouseAtCenter(revealLink, {}, win);
+
+  await onSelection;
+}
+
+/**
+ * Hit `key` on the reveal link in the provided slotted container.
+ * Will resolve when selection emits "new-node-front".
+ */
+async function keydownOnRevealLink(key, inspector, container) {
+  const revealLink = container.elt.querySelector(".reveal-link");
+  const win = inspector.markup.doc.defaultView;
+
+  const root = inspector.markup.getContainer(inspector.markup._rootNode);
+  root.elt.focus();
+
+  // we need to go through a ENTER + TAB  key sequence to focus on
+  // the .reveal-link element with the keyboard
+  const revealFocused = once(revealLink, "focus");
+  EventUtils.synthesizeKey("KEY_Enter", {}, win);
+  EventUtils.synthesizeKey("KEY_Tab", {}, win);
+  info("Waiting for .reveal-link to be focused");
+  await revealFocused;
+
+  // hit `key` on the .reveal-link
+  const onSelection = inspector.selection.once("new-node-front");
+  EventUtils.synthesizeKey(key, {}, win);
+  await onSelection;
 }

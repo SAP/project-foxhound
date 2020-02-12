@@ -4,13 +4,94 @@
 
 "use strict";
 
-const Cu = Components.utils;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { CommonUtils } = ChromeUtils.import(
+  "resource://services-common/utils.js"
+);
+const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 
-Cu.import("resource://gre/modules/PlacesUtils.jsm");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/bookmark_utils.js");
+ChromeUtils.defineModuleGetter(
+  this,
+  "Async",
+  "resource://services-common/async.js"
+);
 
-this.EXPORTED_SYMBOLS = ["BookmarkValidator", "BookmarkProblemData"];
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesSyncUtils",
+  "resource://gre/modules/PlacesSyncUtils.jsm"
+);
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["URLSearchParams"]);
+
+var EXPORTED_SYMBOLS = ["BookmarkValidator", "BookmarkProblemData"];
+
+const QUERY_PROTOCOL = "place:";
+
+function areURLsEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (a.startsWith(QUERY_PROTOCOL) != b.startsWith(QUERY_PROTOCOL)) {
+    return false;
+  }
+  // Tag queries are special because we rewrite them to point to the
+  // local tag folder ID. It's expected that the folders won't match,
+  // but all other params should.
+  let aParams = new URLSearchParams(a.slice(QUERY_PROTOCOL.length));
+  let aType = +aParams.get("type");
+  if (aType != Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAG_CONTENTS) {
+    return false;
+  }
+  let bParams = new URLSearchParams(b.slice(QUERY_PROTOCOL.length));
+  let bType = +bParams.get("type");
+  if (bType != Ci.nsINavHistoryQueryOptions.RESULTS_AS_TAG_CONTENTS) {
+    return false;
+  }
+  let aKeys = new Set(aParams.keys());
+  let bKeys = new Set(bParams.keys());
+  if (aKeys.size != bKeys.size) {
+    return false;
+  }
+  // Tag queries shouldn't reference multiple folders, or named folders like
+  // "TOOLBAR" or "BOOKMARKS_MENU". Just in case, we make sure all folder IDs
+  // are numeric. If they are, we ignore them when comparing the query params.
+  if (aKeys.has("folder") && aParams.getAll("folder").every(isFinite)) {
+    aKeys.delete("folder");
+  }
+  if (bKeys.has("folder") && bParams.getAll("folder").every(isFinite)) {
+    bKeys.delete("folder");
+  }
+  for (let key of aKeys) {
+    if (!bKeys.has(key)) {
+      return false;
+    }
+    if (
+      !CommonUtils.arrayEqual(
+        aParams.getAll(key).sort(),
+        bParams.getAll(key).sort()
+      )
+    ) {
+      return false;
+    }
+  }
+  for (let key of bKeys) {
+    if (!aKeys.has(key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const BOOKMARK_VALIDATOR_VERSION = 1;
 
 /**
  * Result of bookmark validation. Contains the following fields which describe
@@ -21,7 +102,8 @@ this.EXPORTED_SYMBOLS = ["BookmarkValidator", "BookmarkProblemData"];
  * - parentChildMismatches (array of {parent: parentid, child: childid}):
  *   instances where the child's parentid and the parent's children array
  *   do not match
- * - cycles (array of array of ids). List of cycles found in the "tree".
+ * - cycles (array of array of ids). List of cycles found in the server-side tree.
+ * - clientCycles (array of array of ids). List of cycles found in the client-side tree.
  * - orphans (array of {id: string, parent: string}): List of nodes with
  *   either no parentid, or where the parent could not be found.
  * - missingChildren (array of {parent: id, child: id}):
@@ -39,9 +121,9 @@ this.EXPORTED_SYMBOLS = ["BookmarkValidator", "BookmarkProblemData"];
  *   child listed multiple times in their children array
  * - parentNotFolder (array of ids): list of records that have parents that
  *   aren't folders
- * - wrongParentName (array of ids): list of records whose parentName does
- *   not match the parent's actual title
  * - rootOnServer (boolean): true if the root came from the server
+ * - badClientRoots (array of ids): Contains any client-side root ids where
+ *   the root is missing or isn't a (direct) child of the places root.
  *
  * - clientMissing: Array of ids on the server missing from the client
  * - serverMissing: Array of ids on the client missing from the server
@@ -61,6 +143,7 @@ class BookmarkProblemData {
     this.duplicates = [];
     this.parentChildMismatches = [];
     this.cycles = [];
+    this.clientCycles = [];
     this.orphans = [];
     this.missingChildren = [];
     this.deletedChildren = [];
@@ -69,8 +152,8 @@ class BookmarkProblemData {
     this.childrenOnNonFolder = [];
     this.duplicateChildren = [];
     this.parentNotFolder = [];
-    this.wrongParentName = [];
 
+    this.badClientRoots = [];
     this.clientMissing = [];
     this.serverMissing = [];
     this.serverDeleted = [];
@@ -80,28 +163,56 @@ class BookmarkProblemData {
   }
 
   /**
+   * Convert ("difference", [{ differences: ["tags", "name"] }, { differences: ["name"] }]) into
+   * [{ name: "difference:tags", count: 1}, { name: "difference:name", count: 2 }], etc.
+   */
+  _summarizeDifferences(prefix, diffs) {
+    let diffCounts = new Map();
+    for (let { differences } of diffs) {
+      for (let type of differences) {
+        let name = prefix + ":" + type;
+        let count = diffCounts.get(name) || 0;
+        diffCounts.set(name, count + 1);
+      }
+    }
+    return [...diffCounts].map(([name, count]) => ({ name, count }));
+  }
+
+  /**
    * Produce a list summarizing problems found. Each entry contains {name, count},
    * where name is the field name for the problem, and count is the number of times
    * the problem was encountered.
    *
    * Validation has failed if all counts are not 0.
+   *
+   * If the `full` argument is truthy, we also include information about which
+   * properties we saw structural differences in. Currently, this means either
+   * "sdiff:parentid" and "sdiff:childGUIDS" may be present.
    */
-  getSummary() {
-    return [
+  getSummary(full) {
+    let result = [
       { name: "clientMissing", count: this.clientMissing.length },
       { name: "serverMissing", count: this.serverMissing.length },
       { name: "serverDeleted", count: this.serverDeleted.length },
       { name: "serverUnexpected", count: this.serverUnexpected.length },
 
-      { name: "structuralDifferences", count: this.structuralDifferences.length },
+      {
+        name: "structuralDifferences",
+        count: this.structuralDifferences.length,
+      },
       { name: "differences", count: this.differences.length },
 
       { name: "missingIDs", count: this.missingIDs },
       { name: "rootOnServer", count: this.rootOnServer ? 1 : 0 },
 
       { name: "duplicates", count: this.duplicates.length },
-      { name: "parentChildMismatches", count: this.parentChildMismatches.length },
+      {
+        name: "parentChildMismatches",
+        count: this.parentChildMismatches.length,
+      },
       { name: "cycles", count: this.cycles.length },
+      { name: "clientCycles", count: this.clientCycles.length },
+      { name: "badClientRoots", count: this.badClientRoots.length },
       { name: "orphans", count: this.orphans.length },
       { name: "missingChildren", count: this.missingChildren.length },
       { name: "deletedChildren", count: this.deletedChildren.length },
@@ -110,33 +221,516 @@ class BookmarkProblemData {
       { name: "childrenOnNonFolder", count: this.childrenOnNonFolder.length },
       { name: "duplicateChildren", count: this.duplicateChildren.length },
       { name: "parentNotFolder", count: this.parentNotFolder.length },
-      { name: "wrongParentName", count: this.wrongParentName.length },
     ];
+    if (full) {
+      let structural = this._summarizeDifferences(
+        "sdiff",
+        this.structuralDifferences
+      );
+      result.push.apply(result, structural);
+    }
+    return result;
+  }
+}
+
+// Defined lazily to avoid initializing PlacesUtils.bookmarks too soon.
+XPCOMUtils.defineLazyGetter(this, "SYNCED_ROOTS", () => [
+  PlacesUtils.bookmarks.menuGuid,
+  PlacesUtils.bookmarks.toolbarGuid,
+  PlacesUtils.bookmarks.unfiledGuid,
+  PlacesUtils.bookmarks.mobileGuid,
+]);
+
+// Maps root GUIDs to their query folder names from
+// toolkit/components/places/nsNavHistoryQuery.cpp. We follow queries that
+// reference existing folders in the client tree, and detect cycles where a
+// query references its containing folder.
+XPCOMUtils.defineLazyGetter(this, "ROOT_GUID_TO_QUERY_FOLDER_NAME", () => ({
+  [PlacesUtils.bookmarks.rootGuid]: "PLACES_ROOT",
+  [PlacesUtils.bookmarks.menuGuid]: "BOOKMARKS_MENU",
+
+  // Tags should never show up in our client tree, and never form cycles, but we
+  // report them just in case.
+  [PlacesUtils.bookmarks.tagsGuid]: "TAGS",
+
+  [PlacesUtils.bookmarks.unfiledGuid]: "UNFILED_BOOKMARKS",
+  [PlacesUtils.bookmarks.toolbarGuid]: "TOOLBAR",
+  [PlacesUtils.bookmarks.mobileGuid]: "MOBILE_BOOKMARKS",
+}));
+
+async function detectCycles(records) {
+  // currentPath and pathLookup contain the same data. pathLookup is faster to
+  // query, but currentPath gives is the order of traversal that we need in
+  // order to report the members of the cycles.
+  let pathLookup = new Set();
+  let currentPath = [];
+  let cycles = [];
+  let seenEver = new Set();
+  const yieldState = Async.yieldState();
+
+  const traverse = async node => {
+    if (pathLookup.has(node)) {
+      let cycleStart = currentPath.lastIndexOf(node);
+      let cyclePath = currentPath.slice(cycleStart).map(n => n.id);
+      cycles.push(cyclePath);
+      return;
+    } else if (seenEver.has(node)) {
+      // If we're checking the server, this is a problem, but it should already be reported.
+      // On the client, this could happen due to including `node.concrete` in the child list.
+      return;
+    }
+    seenEver.add(node);
+    let children = node.children || [];
+    if (node.concreteItems) {
+      children.push(...node.concreteItems);
+    }
+    if (children.length) {
+      pathLookup.add(node);
+      currentPath.push(node);
+      await Async.yieldingForEach(children, traverse, yieldState);
+      currentPath.pop();
+      pathLookup.delete(node);
+    }
+  };
+
+  await Async.yieldingForEach(
+    records,
+    async record => {
+      if (!seenEver.has(record)) {
+        await traverse(record);
+      }
+    },
+    yieldState
+  );
+
+  return cycles;
+}
+
+class ServerRecordInspection {
+  constructor() {
+    this.serverRecords = null;
+    this.liveRecords = [];
+
+    this.folders = [];
+
+    this.root = null;
+
+    this.idToRecord = new Map();
+
+    this.deletedIds = new Set();
+    this.deletedRecords = [];
+
+    this.problemData = new BookmarkProblemData();
+
+    // These are handled outside of problemData
+    this._orphans = new Map();
+    this._multipleParents = new Map();
+
+    this.yieldState = Async.yieldState();
+  }
+
+  static async create(records) {
+    return new ServerRecordInspection().performInspection(records);
+  }
+
+  async performInspection(records) {
+    await this._setRecords(records);
+    await this._linkParentIDs();
+    await this._linkChildren();
+    await this._findOrphans();
+    await this._finish();
+    return this;
+  }
+
+  // We don't set orphans in this.problemData. Instead, we walk the tree at the
+  // end to find unreachable items.
+  _noteOrphan(id, parentId = undefined) {
+    // This probably shouldn't be called with a parentId twice, but if it
+    // happens we take the most recent one.
+    if (parentId || !this._orphans.has(id)) {
+      this._orphans.set(id, parentId);
+    }
+  }
+
+  noteParent(child, parent) {
+    let parents = this._multipleParents.get(child);
+    if (!parents) {
+      this._multipleParents.set(child, [parent]);
+    } else {
+      parents.push(parent);
+    }
+  }
+
+  noteMismatch(child, parent) {
+    let exists = this.problemData.parentChildMismatches.some(
+      match => match.child == child && match.parent == parent
+    );
+    if (!exists) {
+      this.problemData.parentChildMismatches.push({ child, parent });
+    }
+  }
+
+  // - Populates `this.deletedIds`, `this.folders`, and `this.idToRecord`
+  // - calls `_initRoot` (thus initializing `this.root`).
+  async _setRecords(records) {
+    if (this.serverRecords) {
+      // In general this class is expected to be created, have
+      // `performInspection` called, and then only read from from that point on.
+      throw new Error("Bug: ServerRecordInspection can't `setRecords` twice");
+    }
+    this.serverRecords = records;
+    let rootChildren = [];
+
+    await Async.yieldingForEach(
+      this.serverRecords,
+      async record => {
+        if (!record.id) {
+          ++this.problemData.missingIDs;
+          return;
+        }
+
+        if (record.deleted) {
+          this.deletedIds.add(record.id);
+        }
+        if (this.idToRecord.has(record.id)) {
+          this.problemData.duplicates.push(record.id);
+          return;
+        }
+
+        this.idToRecord.set(record.id, record);
+
+        if (!record.deleted) {
+          this.liveRecords.push(record);
+
+          if (record.parentid == "places") {
+            rootChildren.push(record);
+          }
+        }
+
+        if (!record.children) {
+          return;
+        }
+
+        if (record.type != "folder") {
+          // Due to implementation details in engines/bookmarks.js, (Livemark
+          // subclassing BookmarkFolder) Livemarks will have a children array,
+          // but it should still be empty.
+          if (!record.children.length) {
+            return;
+          }
+          // Otherwise we mark it as an error and still try to resolve the children
+          this.problemData.childrenOnNonFolder.push(record.id);
+        }
+
+        this.folders.push(record);
+
+        if (new Set(record.children).size !== record.children.length) {
+          this.problemData.duplicateChildren.push(record.id);
+        }
+
+        // After we're through with them, folder records store 3 (ugh) arrays that
+        // represent their folder information. The final fields looks like:
+        //
+        // - childGUIDs: The original `children` array, which is an array of
+        //   record IDs.
+        //
+        // - unfilteredChildren: Contains more or less `childGUIDs.map(id =>
+        //   idToRecord.get(id))`, without the nulls for missing children. It will
+        //   still have deleted, duplicate, mismatching, etc. children.
+        //
+        // - children: This is the 'cleaned' version of the child records that are
+        //   safe to iterate over, etc.. If there are no reported problems, it should
+        //   be identical to unfilteredChildren.
+        //
+        // The last two are left alone until later `this._linkChildren`, however.
+        record.childGUIDs = record.children;
+
+        await Async.yieldingForEach(
+          record.childGUIDs,
+          id => {
+            this.noteParent(id, record.id);
+          },
+          this.yieldState
+        );
+
+        record.children = [];
+      },
+      this.yieldState
+    );
+
+    // Finish up some parts we can easily do now that we have idToRecord.
+    this.deletedRecords = Array.from(this.deletedIds, id =>
+      this.idToRecord.get(id)
+    );
+
+    this._initRoot(rootChildren);
+  }
+
+  _initRoot(rootChildren) {
+    let serverRoot = this.idToRecord.get("places");
+    if (serverRoot) {
+      this.root = serverRoot;
+      this.problemData.rootOnServer = true;
+      return;
+    }
+
+    // Fabricate a root. We want to be able to remember that it's fake, but
+    // would like to avoid it needing too much special casing, so we come up
+    // with children for it too (we just get these while we're iterating over
+    // the records to avoid needing two passes over a potentially large number
+    // of records).
+
+    this.root = {
+      id: "places",
+      fake: true,
+      children: rootChildren,
+      childGUIDs: rootChildren.map(record => record.id),
+      type: "folder",
+      title: "",
+    };
+    this.liveRecords.push(this.root);
+    this.idToRecord.set("places", this.root);
+  }
+
+  // Adds `parent` to all records it can that have `parentid`
+  async _linkParentIDs() {
+    await Async.yieldingForEach(
+      this.idToRecord,
+      ([id, record]) => {
+        if (record == this.root || record.deleted) {
+          return false;
+        }
+
+        // Check and update our orphan map.
+        let parentID = record.parentid;
+        let parent = this.idToRecord.get(parentID);
+        if (!parentID || !parent) {
+          this._noteOrphan(id, parentID);
+          return false;
+        }
+
+        record.parent = parent;
+
+        if (parent.deleted) {
+          this.problemData.deletedParents.push(id);
+          return true;
+        } else if (parent.type != "folder") {
+          this.problemData.parentNotFolder.push(record.id);
+          return true;
+        }
+
+        if (parent.id !== "place" || this.problemData.rootOnServer) {
+          if (!parent.childGUIDs.includes(record.id)) {
+            this.noteMismatch(record.id, parent.id);
+          }
+        }
+
+        if (parent.deleted && !record.deleted) {
+          this.problemData.deletedParents.push(record.id);
+        }
+
+        // Note: We used to check if the parentName on the server matches the
+        // actual local parent name, but given this is used only for de-duping a
+        // record the first time it is seen and expensive to keep up-to-date, we
+        // decided to just stop recording it. See bug 1276969 for more.
+        return false;
+      },
+      this.yieldState
+    );
+  }
+
+  // Build the children and unfilteredChildren arrays, (which are of record
+  // objects, not ids)
+  async _linkChildren() {
+    // Check that we aren't missing any children.
+    await Async.yieldingForEach(
+      this.folders,
+      async folder => {
+        folder.children = [];
+        folder.unfilteredChildren = [];
+
+        let idsThisFolder = new Set();
+
+        await Async.yieldingForEach(
+          folder.childGUIDs,
+          childID => {
+            let child = this.idToRecord.get(childID);
+
+            if (!child) {
+              this.problemData.missingChildren.push({
+                parent: folder.id,
+                child: childID,
+              });
+              return;
+            }
+
+            if (child.deleted) {
+              this.problemData.deletedChildren.push({
+                parent: folder.id,
+                child: childID,
+              });
+              return;
+            }
+
+            if (child.parentid != folder.id) {
+              this.noteMismatch(childID, folder.id);
+              return;
+            }
+
+            if (idsThisFolder.has(childID)) {
+              // Already recorded earlier, we just don't want to mess up `children`
+              return;
+            }
+            folder.children.push(child);
+          },
+          this.yieldState
+        );
+      },
+      this.yieldState
+    );
+  }
+
+  // Finds the orphans in the tree using something similar to a `mark and sweep`
+  // strategy. That is, we iterate over the children from the root, remembering
+  // which items we've seen. Then, we iterate all items, and know the ones we
+  // haven't seen are orphans.
+  async _findOrphans() {
+    let seen = new Set([this.root.id]);
+
+    const inCycle = await Async.yieldingForEach(
+      Utils.walkTree(this.root),
+      ([node]) => {
+        if (seen.has(node.id)) {
+          // We're in an infloop due to a cycle.
+          // Return early to avoid reporting false positives for orphans.
+          return true;
+        }
+        seen.add(node.id);
+
+        return false;
+      },
+      this.yieldState
+    );
+
+    if (inCycle) {
+      return;
+    }
+
+    await Async.yieldingForEach(
+      this.liveRecords,
+      (record, i) => {
+        if (!seen.has(record.id)) {
+          // We intentionally don't record the parentid here, since we only record
+          // that if the record refers to a parent that doesn't exist, which we
+          // have already handled (when linking parentid's).
+          this._noteOrphan(record.id);
+        }
+      },
+      this.yieldState
+    );
+
+    await Async.yieldingForEach(
+      this._orphans,
+      ([id, parent]) => {
+        this.problemData.orphans.push({ id, parent });
+      },
+      this.yieldState
+    );
+  }
+
+  async _finish() {
+    this.problemData.cycles = await detectCycles(this.liveRecords);
+
+    for (const [child, recordedParents] of this._multipleParents) {
+      let parents = new Set(recordedParents);
+      if (parents.size > 1) {
+        this.problemData.multipleParents.push({ child, parents: [...parents] });
+      }
+    }
+    // Dedupe simple arrays in the problem data, so that we don't have to worry
+    // about it in the code
+    const idArrayProps = [
+      "duplicates",
+      "deletedParents",
+      "childrenOnNonFolder",
+      "duplicateChildren",
+      "parentNotFolder",
+    ];
+    for (let prop of idArrayProps) {
+      this.problemData[prop] = [...new Set(this.problemData[prop])];
+    }
   }
 }
 
 class BookmarkValidator {
+  constructor() {
+    this.yieldState = Async.yieldState();
+  }
 
-  createClientRecordsFromTree(clientTree) {
+  async canValidate() {
+    return !(await PlacesSyncUtils.bookmarks.havePendingChanges());
+  }
+
+  async _followQueries(recordsByQueryId) {
+    await Async.yieldingForEach(
+      recordsByQueryId.values(),
+      entry => {
+        if (
+          entry.type !== "query" &&
+          (!entry.bmkUri || !entry.bmkUri.startsWith(QUERY_PROTOCOL))
+        ) {
+          return;
+        }
+        let params = new URLSearchParams(
+          entry.bmkUri.slice(QUERY_PROTOCOL.length)
+        );
+        // Queries with `excludeQueries` won't form cycles because they'll
+        // exclude all queries, including themselves, from the result set.
+        let excludeQueries = params.get("excludeQueries");
+        if (excludeQueries === "1" || excludeQueries === "true") {
+          // `nsNavHistoryQuery::ParseQueryBooleanString` allows `1` and `true`.
+          return;
+        }
+        entry.concreteItems = [];
+        let queryIds = params.getAll("folder");
+        for (let queryId of queryIds) {
+          let concreteItem = recordsByQueryId.get(queryId);
+          if (concreteItem) {
+            entry.concreteItems.push(concreteItem);
+          }
+        }
+      },
+      this.yieldState
+    );
+  }
+
+  async createClientRecordsFromTree(clientTree) {
     // Iterate over the treeNode, converting it to something more similar to what
     // the server stores.
     let records = [];
-    function traverse(treeNode) {
-      let guid = BookmarkSpecialIds.specialGUIDForId(treeNode.id) || treeNode.guid;
-      let itemType = 'item';
-      treeNode.ignored = PlacesUtils.annotations.itemHasAnnotation(treeNode.id, BookmarkAnnos.EXCLUDEBACKUP_ANNO);
+    // A map of local IDs and well-known query folder names to records. Unlike
+    // GUIDs, local IDs aren't synced, since they're not stable across devices.
+    // New Places APIs use GUIDs to refer to bookmarks, but the legacy APIs
+    // still use local IDs. We use this mapping to parse `place:` queries that
+    // refer to folders via their local IDs.
+    let recordsByQueryId = new Map();
+    let syncedRoots = SYNCED_ROOTS;
+
+    const traverse = async (treeNode, synced) => {
+      if (!synced) {
+        synced = syncedRoots.includes(treeNode.guid);
+      }
+      let localId = treeNode.id;
+      let guid = PlacesSyncUtils.bookmarks.guidToRecordId(treeNode.guid);
+      let itemType = "item";
+      treeNode.ignored = !synced;
       treeNode.id = guid;
       switch (treeNode.type) {
         case PlacesUtils.TYPE_X_MOZ_PLACE:
-          let query = null;
-          if (treeNode.annos && treeNode.uri.startsWith("place:")) {
-            query = treeNode.annos.find(({name}) =>
-              name === BookmarkAnnos.SMART_BOOKMARKS_ANNO);
-          }
-          if (query && query.value) {
-            itemType = 'query';
+          if (treeNode.uri.startsWith(QUERY_PROTOCOL)) {
+            itemType = "query";
           } else {
-            itemType = 'bookmark';
+            itemType = "bookmark";
           }
           break;
         case PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER:
@@ -155,7 +749,7 @@ class BookmarkValidator {
           itemType = isLivemark ? "livemark" : "folder";
           break;
         case PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR:
-          itemType = 'separator';
+          itemType = "separator";
           break;
       }
 
@@ -168,22 +762,40 @@ class BookmarkValidator {
       treeNode.pos = treeNode.index;
       treeNode.bmkUri = treeNode.uri;
       records.push(treeNode);
-      if (treeNode.type === 'folder') {
+      if (treeNode.guid in ROOT_GUID_TO_QUERY_FOLDER_NAME) {
+        let queryId = ROOT_GUID_TO_QUERY_FOLDER_NAME[treeNode.guid];
+        recordsByQueryId.set(queryId, treeNode);
+      }
+      if (localId) {
+        // Always add the ID, since it's still possible for a query to
+        // reference a root without using the well-known name. For example,
+        // `place:folder=${PlacesUtils.mobileFolderId}` and
+        // `place:folder=MOBILE_BOOKMARKS` are equivalent.
+        recordsByQueryId.set(localId.toString(10), treeNode);
+      }
+      if (treeNode.type === "folder") {
         treeNode.childGUIDs = [];
         if (!treeNode.children) {
           treeNode.children = [];
         }
-        for (let child of treeNode.children) {
-          traverse(child);
-          child.parent = treeNode;
-          child.parentid = guid;
-          child.parentName = treeNode.title;
-          treeNode.childGUIDs.push(child.guid);
-        }
+
+        await Async.yieldingForEach(
+          treeNode.children,
+          async child => {
+            await traverse(child, synced);
+            child.parent = treeNode;
+            child.parentid = guid;
+            treeNode.childGUIDs.push(child.guid);
+          },
+          this.yieldState
+        );
       }
-    }
-    traverse(clientTree);
-    clientTree.id = 'places';
+    };
+
+    await traverse(clientTree, false);
+
+    clientTree.id = "places";
+    await this._followQueries(recordsByQueryId);
     return records;
   }
 
@@ -203,7 +815,7 @@ class BookmarkValidator {
    *       contain any records that could not be found.
    *     - parent (record): The parent to this record.
    *     - Unchanged properties send down from the server: id, title, type,
-   *       parentName, parentid, bmkURI, keyword, tags, pos, queryId, loadInSidebar
+   *       parentName, parentid, bmkURI, keyword, tags, pos, queryId
    * - root: Root of the server-side bookmark tree. Has the same properties as
    *   above.
    * - deletedRecords: As above, but only contains items that the server sent
@@ -212,289 +824,149 @@ class BookmarkValidator {
    *   the fields describing client/server relationship will not have been filled
    *   out yet.
    */
-  inspectServerRecords(serverRecords) {
-    let deletedItemIds = new Set();
-    let idToRecord = new Map();
-    let deletedRecords = [];
-
-    let folders = [];
-    let problems = [];
-
-    let problemData = new BookmarkProblemData();
-
-    let resultRecords = [];
-
-    for (let record of serverRecords) {
-      if (!record.id) {
-        ++problemData.missingIDs;
-        continue;
-      }
-      if (record.deleted) {
-        deletedItemIds.add(record.id);
-      } else {
-        if (idToRecord.has(record.id)) {
-          problemData.duplicates.push(record.id);
-          continue;
-        }
-      }
-      idToRecord.set(record.id, record);
-
-      if (record.children) {
-        if (record.type !== "folder") {
-          // Due to implementation details in engines/bookmarks.js, (Livemark
-          // subclassing BookmarkFolder) Livemarks will have a children array,
-          // but it should still be empty.
-          if (!record.children.length) {
-            continue;
-          }
-          // Otherwise we mark it as an error and still try to resolve the children
-          problemData.childrenOnNonFolder.push(record.id);
-        }
-        folders.push(record);
-
-        if (new Set(record.children).size !== record.children.length) {
-          problemData.duplicateChildren.push(record.id)
-        }
-
-        // This whole next part is a huge hack.
-        // The children array stores special guids as their local guid values,
-        // e.g. 'menu________' instead of 'menu', but all other parts of the
-        // serverside bookmark info stores it as the special value ('menu').
-        //
-        // Since doing a sql query for every entry would be extremely slow, and
-        // wouldn't even be necessarially accurate (since these values are only
-        // the local values for whichever client created the records) We just
-        // strip off the trailing _ and see if that results in a special id.
-        //
-        // To make things worse, this doesn't even work for root________, which has
-        // the special id 'places'.
-        record.childGUIDs = record.children;
-        record.children = record.children.map(childID => {
-          let match = childID.match(/_+$/);
-          if (!match) {
-            return childID;
-          }
-          let possibleSpecialID = childID.slice(0, match.index);
-          if (possibleSpecialID === 'root') {
-            possibleSpecialID = 'places';
-          }
-          if (BookmarkSpecialIds.isSpecialGUID(possibleSpecialID)) {
-            return possibleSpecialID;
-          }
-          return childID;
-        });
-      }
-    }
-
-    for (let deletedId of deletedItemIds) {
-      let record = idToRecord.get(deletedId);
-      if (record && !record.isDeleted) {
-        deletedRecords.push(record);
-        record.isDeleted = true;
-      }
-    }
-
-    let root = idToRecord.get('places');
-
-    if (!root) {
-      // Fabricate a root. We want to remember that it's fake so that we can
-      // avoid complaining about stuff like it missing it's childGUIDs later.
-      root = { id: 'places', children: [], type: 'folder', title: '' };
-      resultRecords.push(root);
-      idToRecord.set('places', root);
-    } else {
-      problemData.rootOnServer = true;
-    }
-
-    // Build the tree, find orphans, and record most problems having to do with
-    // the tree structure.
-    for (let [id, record] of idToRecord) {
-      if (record === root) {
-        continue;
-      }
-
-      if (record.isDeleted) {
-        continue;
-      }
-
-      let parentID = record.parentid;
-      if (!parentID) {
-        problemData.orphans.push({id: record.id, parent: parentID});
-        continue;
-      }
-
-      let parent = idToRecord.get(parentID);
-      if (!parent) {
-        problemData.orphans.push({id: record.id, parent: parentID});
-        continue;
-      }
-
-      if (parent.type !== 'folder') {
-        problemData.parentNotFolder.push(record.id);
-        if (!parent.children) {
-          parent.children = [];
-        }
-        if (!parent.childGUIDs) {
-          parent.childGUIDs = [];
-        }
-      }
-
-      if (!record.isDeleted) {
-        resultRecords.push(record);
-      }
-
-      record.parent = parent;
-      if (parent !== root || problemData.rootOnServer) {
-        let childIndex = parent.children.indexOf(id);
-        if (childIndex < 0) {
-          problemData.parentChildMismatches.push({parent: parent.id, child: record.id});
-        } else {
-          parent.children[childIndex] = record;
-        }
-      } else {
-        parent.children.push(record);
-      }
-
-      if (parent.isDeleted && !record.isDeleted) {
-        problemData.deletedParents.push(record.id);
-      }
-
-      if (record.parentName !== parent.title && parent.id !== 'unfiled') {
-        problemData.wrongParentName.push(record.id);
-      }
-    }
-
-    // Check that we aren't missing any children.
-    for (let folder of folders) {
-      folder.unfilteredChildren = folder.children;
-      folder.children = [];
-      for (let ci = 0; ci < folder.unfilteredChildren.length; ++ci) {
-        let child = folder.unfilteredChildren[ci];
-        let childObject;
-        if (typeof child == "string") {
-          // This can happen the parent refers to a child that has a different
-          // parentid, or if it refers to a missing or deleted child. It shouldn't
-          // be possible with totally valid bookmarks.
-          childObject = idToRecord.get(child);
-          if (!childObject) {
-            problemData.missingChildren.push({parent: folder.id, child});
-          } else {
-            folder.unfilteredChildren[ci] = childObject;
-            if (childObject.isDeleted) {
-              problemData.deletedChildren.push({ parent: folder.id, child });
-            }
-          }
-        } else {
-          childObject = child;
-        }
-
-        if (!childObject) {
-          continue;
-        }
-
-        if (childObject.parentid === folder.id) {
-          folder.children.push(childObject);
-          continue;
-        }
-
-        // The child is very probably in multiple `children` arrays --
-        // see if we already have a problem record about it.
-        let currentProblemRecord = problemData.multipleParents.find(pr =>
-          pr.child === child);
-
-        if (currentProblemRecord) {
-          currentProblemRecord.parents.push(folder.id);
-          continue;
-        }
-
-        let otherParent = idToRecord.get(childObject.parentid);
-        // it's really an ... orphan ... sort of.
-        if (!otherParent) {
-          // if we never end up adding to this parent's list, we filter it out after this loop.
-          problemData.multipleParents.push({
-            child,
-            parents: [folder.id]
-          });
-          if (!problemData.orphans.some(r => r.id === child)) {
-            problemData.orphans.push({
-              id: child,
-              parent: childObject.parentid
-            });
-          }
-          continue;
-        }
-
-        if (otherParent.isDeleted) {
-          if (!problemData.deletedParents.includes(child)) {
-            problemData.deletedParents.push(child);
-          }
-          continue;
-        }
-
-        if (otherParent.childGUIDs && !otherParent.childGUIDs.includes(child)) {
-          if (!problemData.parentChildMismatches.some(r => r.child === child)) {
-            // Might not be possible to get here.
-            problemData.parentChildMismatches.push({ child, parent: folder.id });
-          }
-        }
-
-        problemData.multipleParents.push({
-          child,
-          parents: [childObject.parentid, folder.id]
-        });
-      }
-    }
-    problemData.multipleParents = problemData.multipleParents.filter(record =>
-      record.parents.length >= 2);
-
-    problemData.cycles = this._detectCycles(resultRecords);
-
+  async inspectServerRecords(serverRecords) {
+    const data = await ServerRecordInspection.create(serverRecords);
     return {
-      deletedRecords,
-      records: resultRecords,
-      problemData,
-      root,
+      deletedRecords: data.deletedRecords,
+      records: data.liveRecords,
+      problemData: data.problemData,
+      root: data.root,
     };
   }
 
-  // helper for inspectServerRecords
-  _detectCycles(records) {
-    // currentPath and pathLookup contain the same data. pathLookup is faster to
-    // query, but currentPath gives is the order of traversal that we need in
-    // order to report the members of the cycles.
-    let pathLookup = new Set();
-    let currentPath = [];
-    let cycles = [];
-    let seenEver = new Set();
-    const traverse = node => {
-      if (pathLookup.has(node)) {
-        let cycleStart = currentPath.lastIndexOf(node);
-        let cyclePath = currentPath.slice(cycleStart).map(n => n.id);
-        cycles.push(cyclePath);
-        return;
-      } else if (seenEver.has(node)) {
-        // This is a problem, but we catch it earlier (multipleParents)
-        return;
+  // Perform client-side sanity checking that doesn't involve server data
+  async _validateClient(problemData, clientRecords) {
+    problemData.clientCycles = await detectCycles(clientRecords);
+    for (let rootGUID of SYNCED_ROOTS) {
+      let record = clientRecords.find(record => record.guid === rootGUID);
+      if (!record || record.parentid !== "places") {
+        problemData.badClientRoots.push(rootGUID);
       }
-      seenEver.add(node);
+    }
+  }
 
-      if (node.children) {
-        pathLookup.add(node);
-        currentPath.push(node);
-        for (let child of node.children) {
-          traverse(child);
+  async _computeUnifiedRecordMap(serverRecords, clientRecords) {
+    let allRecords = new Map();
+    await Async.yieldingForEach(
+      serverRecords,
+      sr => {
+        if (sr.fake) {
+          return;
         }
-        currentPath.pop();
-        pathLookup.delete(node);
+        allRecords.set(sr.id, { client: null, server: sr });
+      },
+      this.yieldState
+    );
+
+    await Async.yieldingForEach(
+      clientRecords,
+      cr => {
+        let unified = allRecords.get(cr.id);
+        if (!unified) {
+          allRecords.set(cr.id, { client: cr, server: null });
+        } else {
+          unified.client = cr;
+        }
+      },
+      this.yieldState
+    );
+
+    return allRecords;
+  }
+
+  _recordMissing(problems, id, clientRecord, serverRecord, serverTombstones) {
+    if (!clientRecord && serverRecord) {
+      problems.clientMissing.push(id);
+    }
+    if (!serverRecord && clientRecord) {
+      if (serverTombstones.has(id)) {
+        problems.serverDeleted.push(id);
+      } else if (!clientRecord.ignored && clientRecord.id != "places") {
+        problems.serverMissing.push(id);
       }
-    };
-    for (let record of records) {
-      if (!seenEver.has(record)) {
-        traverse(record);
+    }
+  }
+
+  _compareRecords(client, server) {
+    let structuralDifferences = [];
+    let differences = [];
+
+    // Don't bother comparing titles of roots. It's okay if locally it's
+    // "Mobile Bookmarks", but the server thinks it's "mobile".
+    // TODO: We probably should be handing other localized bookmarks (e.g.
+    // default bookmarks) here as well, see bug 1316041.
+    if (!SYNCED_ROOTS.includes(client.guid)) {
+      // We want to treat undefined, null and an empty string as identical
+      if ((client.title || "") !== (server.title || "")) {
+        differences.push("title");
       }
     }
 
-    return cycles;
+    if (client.parentid || server.parentid) {
+      if (client.parentid !== server.parentid) {
+        structuralDifferences.push("parentid");
+      }
+    }
+
+    if (client.tags || server.tags) {
+      let cl = client.tags ? [...client.tags].sort() : [];
+      let sl = server.tags ? [...server.tags].sort() : [];
+      if (!CommonUtils.arrayEqual(cl, sl)) {
+        differences.push("tags");
+      }
+    }
+
+    let sameType = client.type === server.type;
+    if (!sameType) {
+      if (
+        server.type === "query" &&
+        client.type === "bookmark" &&
+        client.bmkUri.startsWith(QUERY_PROTOCOL)
+      ) {
+        sameType = true;
+      }
+    }
+
+    if (!sameType) {
+      differences.push("type");
+    } else {
+      switch (server.type) {
+        case "bookmark":
+        case "query":
+          if (!areURLsEqual(server.bmkUri, client.bmkUri)) {
+            differences.push("bmkUri");
+          }
+          break;
+        case "separator":
+          if (server.pos != client.pos) {
+            differences.push("pos");
+          }
+          break;
+        case "livemark":
+          if (server.feedUri != client.feedUri) {
+            differences.push("feedUri");
+          }
+          if (server.siteUri != client.siteUri) {
+            differences.push("siteUri");
+          }
+          break;
+        case "folder":
+          if (server.id === "places" && server.fake) {
+            // It's the fabricated places root. It won't have the GUIDs, but
+            // it doesn't matter.
+            break;
+          }
+          if (client.childGUIDs || server.childGUIDs) {
+            let cl = client.childGUIDs || [];
+            let sl = server.childGUIDs || [];
+            if (!CommonUtils.arrayEqual(cl, sl)) {
+              structuralDifferences.push("childGUIDs");
+            }
+          }
+          break;
+      }
+    }
+    return { differences, structuralDifferences };
   }
 
   /**
@@ -507,131 +979,103 @@ class BookmarkValidator {
    * - problemData is the same as for inspectServerRecords, except all properties
    *   will be filled out.
    */
-  compareServerWithClient(serverRecords, clientTree) {
-
-    let clientRecords = this.createClientRecordsFromTree(clientTree);
-    let inspectionInfo = this.inspectServerRecords(serverRecords);
+  async compareServerWithClient(serverRecords, clientTree) {
+    let clientRecords = await this.createClientRecordsFromTree(clientTree);
+    let inspectionInfo = await this.inspectServerRecords(serverRecords);
     inspectionInfo.clientRecords = clientRecords;
 
     // Mainly do this to remove deleted items and normalize child guids.
     serverRecords = inspectionInfo.records;
     let problemData = inspectionInfo.problemData;
 
-    let matches = [];
+    await this._validateClient(problemData, clientRecords);
 
-    let allRecords = new Map();
-    let serverDeletedLookup = new Set(inspectionInfo.deletedRecords.map(r => r.id));
+    let allRecords = await this._computeUnifiedRecordMap(
+      serverRecords,
+      clientRecords
+    );
 
-    for (let sr of serverRecords) {
-      allRecords.set(sr.id, {client: null, server: sr});
-    }
+    let serverDeleted = new Set(inspectionInfo.deletedRecords.map(r => r.id));
 
-    for (let cr of clientRecords) {
-      let unified = allRecords.get(cr.id);
-      if (!unified) {
-        allRecords.set(cr.id, {client: cr, server: null});
-      } else {
-        unified.client = cr;
-      }
-    }
-
-
-    for (let [id, {client, server}] of allRecords) {
-      if (!client && server) {
-        problemData.clientMissing.push(id);
-        continue;
-      }
-      if (!server && client) {
-        if (serverDeletedLookup.has(id)) {
-          problemData.serverDeleted.push(id);
-        } else if (!client.ignored && client.id != "places") {
-          problemData.serverMissing.push(id);
+    await Async.yieldingForEach(
+      allRecords,
+      ([id, { client, server }]) => {
+        if (!client || !server) {
+          this._recordMissing(problemData, id, client, server, serverDeleted);
+          return;
         }
-        continue;
-      }
-      if (server && client && client.ignored) {
-        problemData.serverUnexpected.push(id);
-      }
-      let differences = [];
-      let structuralDifferences = [];
-      // We want to treat undefined, null and an empty string as identical
-      if ((client.title || "") !== (server.title || "")) {
-        differences.push('title');
-      }
-
-      if (client.parentid || server.parentid) {
-        if (client.parentid !== server.parentid) {
-          structuralDifferences.push('parentid');
+        if (server && client && client.ignored) {
+          problemData.serverUnexpected.push(id);
         }
-        // Need to special case 'unfiled' due to it's recent name change
-        // ("Other Bookmarks" vs "Unsorted Bookmarks"), otherwise this has a lot
-        // of false positives.
-        if (client.parentName !== server.parentName && server.parentid !== 'unfiled') {
-          differences.push('parentName');
+        let { differences, structuralDifferences } = this._compareRecords(
+          client,
+          server
+        );
+
+        if (differences.length) {
+          problemData.differences.push({ id, differences });
         }
-      }
-
-      if (client.tags || server.tags) {
-        let cl = client.tags || [];
-        let sl = server.tags || [];
-        if (cl.length !== sl.length || !cl.every((tag, i) => sl.indexOf(tag) >= 0)) {
-          differences.push('tags');
+        if (structuralDifferences.length) {
+          problemData.structuralDifferences.push({
+            id,
+            differences: structuralDifferences,
+          });
         }
-      }
+      },
+      this.yieldState
+    );
 
-      let sameType = client.type === server.type;
-      if (!sameType) {
-        if (server.type === "query" && client.type === "bookmark" && client.bmkUri.startsWith("place:")) {
-          sameType = true;
-        }
-      }
-
-
-      if (!sameType) {
-        differences.push('type');
-      } else {
-        switch (server.type) {
-          case 'bookmark':
-          case 'query':
-            if (server.bmkUri !== client.bmkUri) {
-              differences.push('bmkUri');
-            }
-            break;
-          case "livemark":
-            if (server.feedUri != client.feedUri) {
-              differences.push("feedUri");
-            }
-            if (server.siteUri != client.siteUri) {
-              differences.push("siteUri");
-            }
-            break;
-          case 'folder':
-            if (server.id === 'places' && !problemData.rootOnServer) {
-              // It's the fabricated places root. It won't have the GUIDs, but
-              // it doesn't matter.
-              break;
-            }
-            if (client.childGUIDs || server.childGUIDs) {
-              let cl = client.childGUIDs || [];
-              let sl = server.childGUIDs || [];
-              if (cl.length !== sl.length || !cl.every((id, i) => sl[i] === id)) {
-                structuralDifferences.push('childGUIDs');
-              }
-            }
-            break;
-        }
-      }
-
-      if (differences.length) {
-        problemData.differences.push({id, differences});
-      }
-      if (structuralDifferences.length) {
-        problemData.structuralDifferences.push({ id, differences: structuralDifferences });
-      }
-    }
     return inspectionInfo;
   }
-};
 
+  async _getServerState(engine) {
+    // XXXXX - todo - we need to capture last-modified of the server here and
+    // ensure the repairer only applys with if-unmodified-since that date.
+    let collection = engine.itemSource();
+    let collectionKey = engine.service.collectionKeys.keyForCollection(
+      engine.name
+    );
+    collection.full = true;
+    let result = await collection.getBatched();
+    if (!result.response.success) {
+      throw result.response;
+    }
+    let cleartexts = [];
+    await Async.yieldingForEach(
+      result.records,
+      async record => {
+        await record.decrypt(collectionKey);
+        cleartexts.push(record.cleartext);
+      },
+      this.yieldState
+    );
+    return cleartexts;
+  }
 
+  async validate(engine) {
+    let start = Date.now();
+    let clientTree = await PlacesUtils.promiseBookmarksTree("", {
+      includeItemIds: true,
+    });
+    let serverState = await this._getServerState(engine);
+    let serverRecordCount = serverState.length;
+    let result = await this.compareServerWithClient(serverState, clientTree);
+    let end = Date.now();
+    let duration = end - start;
 
+    engine._log.debug(`Validated bookmarks in ${duration}ms`);
+    engine._log.debug(`Problem summary`);
+    for (let { name, count } of result.problemData.getSummary()) {
+      engine._log.debug(`  ${name}: ${count}`);
+    }
+
+    return {
+      duration,
+      version: this.version,
+      problems: result.problemData,
+      recordCount: serverRecordCount,
+    };
+  }
+}
+
+BookmarkValidator.prototype.version = BOOKMARK_VALIDATOR_VERSION;

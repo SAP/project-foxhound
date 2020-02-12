@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,14 +20,13 @@ class ClientLayerManager;
  * This buffer provides an implementation of ValidateTile using a
  * thebes callback and can support painting using a single paint buffer.
  * Whether a single paint buffer is used is controlled by
- * gfxPrefs::PerTileDrawing().
+ * StaticPrefs::PerTileDrawing().
  */
-class ClientSingleTiledLayerBuffer
-  : public ClientTiledLayerBuffer
-  , public TextureClientAllocator
-{
-  virtual ~ClientSingleTiledLayerBuffer() {}
-public:
+class ClientSingleTiledLayerBuffer : public ClientTiledLayerBuffer,
+                                     public TextureClientAllocator {
+  virtual ~ClientSingleTiledLayerBuffer() = default;
+
+ public:
   ClientSingleTiledLayerBuffer(ClientTiledPaintedLayer& aPaintedLayer,
                                CompositableClient& aCompositableClient,
                                ClientLayerManager* aManager);
@@ -42,33 +42,28 @@ public:
                    const nsIntRegion& aDirtyRegion,
                    LayerManager::DrawPaintedLayerCallback aCallback,
                    void* aCallbackData,
-                   bool aIsProgressive = false) override;
- 
+                   TilePaintFlags aFlags = TilePaintFlags::None) override;
+
   bool SupportsProgressiveUpdate() override { return false; }
-  bool ProgressiveUpdate(nsIntRegion& aValidRegion,
-                         nsIntRegion& aInvalidRegion,
+  bool ProgressiveUpdate(const nsIntRegion& aValidRegion,
+                         const nsIntRegion& aInvalidRegion,
                          const nsIntRegion& aOldValidRegion,
+                         nsIntRegion& aOutDrawnRegion,
                          BasicTiledLayerPaintData* aPaintData,
                          LayerManager::DrawPaintedLayerCallback aCallback,
-                         void* aCallbackData) override
-  {
+                         void* aCallbackData) override {
     MOZ_ASSERT(false, "ProgressiveUpdate not supported!");
     return false;
   }
-  
+
   void ResetPaintedAndValidState() override {
-    mPaintedRegion.SetEmpty();
     mValidRegion.SetEmpty();
     mTile.DiscardBuffers();
   }
-  
-  const nsIntRegion& GetValidRegion() override {
-    return mValidRegion;
-  }
-  
-  bool IsLowPrecision() const override {
-    return false;
-  }
+
+  const nsIntRegion& GetValidRegion() override { return mValidRegion; }
+
+  bool IsLowPrecision() const override { return false; }
 
   void ReleaseTiles();
 
@@ -76,14 +71,11 @@ public:
 
   SurfaceDescriptorTiles GetSurfaceDescriptorTiles();
 
-  void ClearPaintedRegion() {
-    mPaintedRegion.SetEmpty();
-  }
-
-private:
+ private:
   TileClient mTile;
 
-  nsIntRegion mPaintedRegion;
+  RefPtr<ClientLayerManager> mManager;
+
   nsIntRegion mValidRegion;
   bool mWasLastPaintProgressive;
 
@@ -101,35 +93,36 @@ private:
   gfxImageFormat mFormat;
 };
 
-class SingleTiledContentClient : public TiledContentClient
-{
-public:
+class SingleTiledContentClient : public TiledContentClient {
+ public:
   SingleTiledContentClient(ClientTiledPaintedLayer& aPaintedLayer,
                            ClientLayerManager* aManager);
 
-protected:
-  ~SingleTiledContentClient()
-  {
+ protected:
+  ~SingleTiledContentClient() {
     MOZ_COUNT_DTOR(SingleTiledContentClient);
 
     mTiledBuffer->ReleaseTiles();
   }
 
-public:
-  static bool ClientSupportsLayerSize(const gfx::IntSize& aSize, ClientLayerManager* aManager);
+ public:
+  static bool ClientSupportsLayerSize(const gfx::IntSize& aSize,
+                                      ClientLayerManager* aManager);
 
-  virtual void ClearCachedResources() override;
+  void ClearCachedResources() override;
 
-  virtual void UpdatedBuffer(TiledBufferType aType) override;
+  void UpdatedBuffer(TiledBufferType aType) override;
 
-  virtual ClientTiledLayerBuffer* GetTiledBuffer() override { return mTiledBuffer; }
-  virtual ClientTiledLayerBuffer* GetLowPrecisionTiledBuffer() override { return nullptr; }
+  ClientTiledLayerBuffer* GetTiledBuffer() override { return mTiledBuffer; }
+  ClientTiledLayerBuffer* GetLowPrecisionTiledBuffer() override {
+    return nullptr;
+  }
 
-private:
+ private:
   RefPtr<ClientSingleTiledLayerBuffer> mTiledBuffer;
 };
 
-}
-}
+}  // namespace layers
+}  // namespace mozilla
 
 #endif

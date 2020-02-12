@@ -3,8 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Task.jsm");
+var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function test() {
   waitForExplicitFinish();
@@ -23,7 +22,9 @@ function test() {
         continue;
       }
       Services.prefs.clearUserPref("network.proxy.backup." + proxyType);
-      Services.prefs.clearUserPref("network.proxy.backup." + proxyType + "_port");
+      Services.prefs.clearUserPref(
+        "network.proxy.backup." + proxyType + "_port"
+      );
     }
   });
 
@@ -44,22 +45,37 @@ function test() {
   so it has to be opened as a sub dialog of the main pref tab.
   Open the main tab here.
   */
-  open_preferences(Task.async(function* tabOpened(aContentWindow) {
-    is(gBrowser.currentURI.spec, "about:preferences", "about:preferences loaded");
-    let dialog = yield openAndLoadSubDialog(connectionURL);
-    let dialogClosingPromise = waitForEvent(dialog.document.documentElement, "dialogclosing");
+  open_preferences(async function tabOpened(aContentWindow) {
+    is(
+      gBrowser.currentURI.spec,
+      "about:preferences",
+      "about:preferences loaded"
+    );
+    let dialog = await openAndLoadSubDialog(connectionURL);
+    let dialogClosingPromise = BrowserTestUtils.waitForEvent(
+      dialog.document.documentElement,
+      "dialogclosing"
+    );
 
     ok(dialog, "connection window opened");
     dialog.document.documentElement.acceptDialog();
 
-    let dialogClosingEvent = yield dialogClosingPromise;
+    let dialogClosingEvent = await dialogClosingPromise;
     ok(dialogClosingEvent, "connection window closed");
 
     // The SOCKS backup should not be replaced by the shared value
-    is(Services.prefs.getCharPref("network.proxy.backup.socks"), "127.0.0.1", "Shared proxy backup shouldn't be replaced");
-    is(Services.prefs.getIntPref("network.proxy.backup.socks_port"), 9050, "Shared proxy port backup shouldn't be replaced");
+    is(
+      Services.prefs.getCharPref("network.proxy.backup.socks"),
+      "127.0.0.1",
+      "Shared proxy backup shouldn't be replaced"
+    );
+    is(
+      Services.prefs.getIntPref("network.proxy.backup.socks_port"),
+      9050,
+      "Shared proxy port backup shouldn't be replaced"
+    );
 
     gBrowser.removeCurrentTab();
     finish();
-  }));
+  });
 }

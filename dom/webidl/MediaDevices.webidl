@@ -10,15 +10,19 @@
  * liability, trademark and document use rules apply.
  */
 
-[Func="Navigator::HasUserMediaSupport"]
+[Func="Navigator::HasUserMediaSupport",
+ Exposed=Window]
 interface MediaDevices : EventTarget {
   [Pref="media.ondevicechange.enabled"]
   attribute EventHandler ondevicechange;
   MediaTrackSupportedConstraints getSupportedConstraints();
 
-  [Throws]
+  [Throws, NeedsCallerType, UseCounter]
   Promise<sequence<MediaDeviceInfo>> enumerateDevices();
 
-  [Throws]
-  Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints);
+  [Throws, NeedsCallerType, UseCounter]
+  Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints = {});
+
+  [SecureContext, Throws, NeedsCallerType, UseCounter]
+  Promise<MediaStream> getDisplayMedia(optional DisplayMediaStreamConstraints constraints = {});
 };

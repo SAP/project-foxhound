@@ -3,24 +3,25 @@
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 
 <window title="Autocomplete Widget Test 3"
-        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
-<textbox id="autocomplete" type="autocomplete"
-         autocompletesearch="simple"
-         onsearchcomplete="checkResult();"/>
+<html:input id="autocomplete"
+            is="autocomplete-input"
+            autocompletesearch="simple"/>
 
 <script class="testbody" type="application/javascript">
 <![CDATA[
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+
 // Set to indicate whether or not we want autoCompleteSimple to return a result
 var returnResult = true;
 
-const ACR = Components.interfaces.nsIAutoCompleteResult;
+const ACR = Ci.nsIAutoCompleteResult;
 
 // This result can't be constructed in-line, because otherwise we leak memory.
 function nsAutoCompleteSimpleResult(aString)
@@ -54,12 +55,12 @@ var autoCompleteSimpleID = Components.ID("0a2afbdb-f30e-47d1-9cb1-0cd160240aca")
 var autoCompleteSimpleName = "@mozilla.org/autocomplete/search;1?name=simple"
 var autoCompleteSimple = {
   QueryInterface: function(iid) {
-    if (iid.equals(Components.interfaces.nsISupports) ||
-        iid.equals(Components.interfaces.nsIFactory) ||
-        iid.equals(Components.interfaces.nsIAutoCompleteSearch))
+    if (iid.equals(Ci.nsISupports) ||
+        iid.equals(Ci.nsIFactory) ||
+        iid.equals(Ci.nsIAutoCompleteSearch))
       return this;
 
-    throw Components.results.NS_ERROR_NO_INTERFACE;
+    throw Cr.NS_ERROR_NO_INTERFACE;
   },
 
   createInstance: function(outer, iid) {
@@ -75,10 +76,19 @@ var autoCompleteSimple = {
 };
 
 var componentManager = Components.manager
-                                 .QueryInterface(Components.interfaces.nsIComponentRegistrar);
+                                 .QueryInterface(Ci.nsIComponentRegistrar);
 componentManager.registerFactory(autoCompleteSimpleID, "Test Simple Autocomplete",
                                  autoCompleteSimpleName, autoCompleteSimple);
 
+let element = document.getElementById("autocomplete");
+
+// Create stub to intercept `onSearchComplete` event.
+element.onSearchComplete = function(original) {
+  return function() {
+    original.apply(this, arguments);
+    checkResult();
+  };
+}(element.onSearchComplete);
 
 // Test Bug 325842 - completeDefaultIndex
 
@@ -127,12 +137,12 @@ function checkNext() {
   autocomplete.completeDefaultIndex = tests[currentTest].completeDefaultIndex;
   autocomplete.focus();
 
-  synthesizeKey(tests[currentTest].key, {});
+  synthesizeKey(tests[currentTest].key);
 }
 
 function checkResult() {
   var autocomplete = $("autocomplete");
-  var style = window.getComputedStyle(autocomplete, "");
+  var style = window.getComputedStyle(autocomplete);
 
   is(autocomplete.value, tests[currentTest].result,
      "Test " + currentTest + ": autocomplete.value should equal '" +
@@ -152,11 +162,11 @@ function checkResult() {
     setTimeout(checkNext, 0);
   else {
     // TODO (bug 494809): Autocomplete-in-the-middle should take in count RTL
-    // and complete on VK_RIGHT or VK_LEFT based on that.  It should also revert
+    // and complete on KEY_ArrowRight or KEY_ArrowLeft based on that.  It should also revert
     // what user has typed to far if he moves in the opposite direction.
-    if (autocomplete.value.indexOf(">>") == -1) {
+    if (!autocomplete.value.includes(">>")) {
       // Test result if user accepts autocomplete suggestion.
-      synthesizeKey("VK_RIGHT", {});
+      synthesizeKey("KEY_ArrowRight");
       is(autocomplete.value, "Result",
          "Test complete: autocomplete.value should equal 'Result'");
       is(autocomplete.selectionStart, 6,

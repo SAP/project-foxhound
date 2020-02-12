@@ -11,8 +11,11 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-map-element
+[Exposed=Window]
 interface HTMLMapElement : HTMLElement {
-  [SetterThrows, Pure]
+  [HTMLConstructor] constructor();
+
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString name;
   [Constant]
   readonly attribute HTMLCollection areas;

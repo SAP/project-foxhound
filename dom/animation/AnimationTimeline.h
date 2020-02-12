@@ -17,53 +17,46 @@
 #include "nsIGlobalObject.h"
 #include "nsTHashtable.h"
 
-// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
-// GetTickCount().
-#ifdef GetCurrentTime
-#undef GetCurrentTime
-#endif
-
 namespace mozilla {
 namespace dom {
 
 class Animation;
+class Document;
 
-class AnimationTimeline
-  : public nsISupports
-  , public nsWrapperCache
-{
-public:
-  explicit AnimationTimeline(nsIGlobalObject* aWindow)
-    : mWindow(aWindow)
-  {
+class AnimationTimeline : public nsISupports, public nsWrapperCache {
+ public:
+  explicit AnimationTimeline(nsIGlobalObject* aWindow) : mWindow(aWindow) {
     MOZ_ASSERT(mWindow);
   }
 
-protected:
-  virtual ~AnimationTimeline()
-  {
-    mAnimationOrder.clear();
-  }
+ protected:
+  virtual ~AnimationTimeline();
 
-public:
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AnimationTimeline)
 
   nsIGlobalObject* GetParentObject() const { return mWindow; }
 
   // AnimationTimeline methods
-  virtual Nullable<TimeDuration> GetCurrentTime() const = 0;
+  virtual Nullable<TimeDuration> GetCurrentTimeAsDuration() const = 0;
 
   // Wrapper functions for AnimationTimeline DOM methods when called from
   // script.
   Nullable<double> GetCurrentTimeAsDouble() const {
-    return AnimationUtils::TimeDurationToDouble(GetCurrentTime());
+    return AnimationUtils::TimeDurationToDouble(GetCurrentTimeAsDuration());
+  }
+
+  TimeStamp GetCurrentTimeAsTimeStamp() const {
+    Nullable<TimeDuration> currentTime = GetCurrentTimeAsDuration();
+    return !currentTime.IsNull() ? ToTimeStamp(currentTime.Value())
+                                 : TimeStamp();
   }
 
   /**
-   * Returns true if the times returned by GetCurrentTime() are convertible
-   * to and from wallclock-based TimeStamp (e.g. from TimeStamp::Now()) values
-   * using ToTimelineTime() and ToTimeStamp().
+   * Returns true if the times returned by GetCurrentTimeAsDuration() are
+   * convertible to and from wallclock-based TimeStamp (e.g. from
+   * TimeStamp::Now()) values using ToTimelineTime() and ToTimeStamp().
    *
    * Typically this is true, but it will be false in the case when this
    * timeline has no refresh driver or is tied to a refresh driver under test
@@ -78,8 +71,8 @@ public:
    * timestamp from TimeStamp::Now() to this method will not return a
    * meaningful result.
    */
-  virtual Nullable<TimeDuration> ToTimelineTime(const TimeStamp&
-                                                  aTimeStamp) const = 0;
+  virtual Nullable<TimeDuration> ToTimelineTime(
+      const TimeStamp& aTimeStamp) const = 0;
 
   virtual TimeStamp ToTimeStamp(const TimeDuration& aTimelineTime) const = 0;
 
@@ -98,13 +91,13 @@ public:
    * delayed start, so this includes animations that may not be active for some
    * time.
    */
-  bool HasAnimations() const {
-    return !mAnimations.IsEmpty();
-  }
+  bool HasAnimations() const { return !mAnimations.IsEmpty(); }
 
   virtual void RemoveAnimation(Animation* aAnimation);
 
-protected:
+  virtual Document* GetDocument() const = 0;
+
+ protected:
   nsCOMPtr<nsIGlobalObject> mWindow;
 
   // Animations observing this timeline
@@ -119,7 +112,7 @@ protected:
   LinkedList<dom::Animation> mAnimationOrder;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_AnimationTimeline_h
+#endif  // mozilla_dom_AnimationTimeline_h

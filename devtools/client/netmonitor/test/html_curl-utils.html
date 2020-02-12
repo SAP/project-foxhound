@@ -29,39 +29,69 @@
     <iframe name="target"></iframe>
 
     <script type="text/javascript">
+      /* exported performRequests */
+      /* eslint-disable max-nested-callbacks */
+      "use strict";
 
-      function ajaxGet(aUrl, aCallback) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", aUrl + "?param1=value1&param2=value2&param3=value3", true);
+      function ajaxGet(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", url + "?param1=value1&param2=value2&param3=value3", true);
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.onload = function() {
-          aCallback();
+          callback();
         };
         xhr.send();
       }
 
-      function ajaxPost(aUrl, aCallback) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", aUrl, true);
+      function ajaxPost(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
         xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.onload = function() {
-          aCallback();
+          callback();
         };
-        var params = "param1=value1&param2=value2&param3=value3";
+        const params = "param1=value1&param2=value2&param3=value3";
         xhr.send(params);
       }
 
-      function ajaxMultipart(aUrl, aCallback) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", aUrl, true);
+      function ajaxPostJson(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
         xhr.onload = function() {
-          aCallback();
+          callback();
+        };
+        const params = {
+          param1: "value1",
+          param2: "value2",
+        };
+        const jsonParams = JSON.stringify(params);
+        xhr.send(jsonParams);
+      }
+
+      function ajaxPatch(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PATCH", url, true);
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xhr.onload = function() {
+          callback();
+        };
+        const params = "param1=value1&param2=value2&param3=value3";
+        xhr.send(params);
+      }
+
+      function ajaxMultipart(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xhr.onload = function() {
+          callback();
         };
 
         getCanvasElem().toBlob((blob) => {
-          var formData = new FormData();
+          const formData = new FormData();
           formData.append("param1", "value1");
           formData.append("file", blob, "filename.png");
           xhr.send(formData);
@@ -69,7 +99,7 @@
       }
 
       function submitForm() {
-        var form = document.querySelector("#post-form");
+        const form = document.querySelector("#post-form");
         form.submit();
       }
 
@@ -78,18 +108,22 @@
       }
 
       function initCanvas() {
-        var canvas = getCanvasElem();
-        var ctx = canvas.getContext("2d");
-        ctx.fillRect(0,0,100,100);
-        ctx.clearRect(20,20,60,60);
-        ctx.strokeRect(25,25,50,50);
+        const canvas = getCanvasElem();
+        const ctx = canvas.getContext("2d");
+        ctx.fillRect(0, 0, 100, 100);
+        ctx.clearRect(20, 20, 60, 60);
+        ctx.strokeRect(25, 25, 50, 50);
       }
 
-      function performRequests(aUrl) {
-        ajaxGet(aUrl, () => {
-          ajaxPost(aUrl, () => {
-            ajaxMultipart(aUrl, () => {
-              submitForm();
+      function performRequests(url) {
+        ajaxGet(url, () => {
+          ajaxPost(url, () => {
+            ajaxPostJson(url, () => {
+              ajaxPatch(url, () => {
+                ajaxMultipart(url, () => {
+                  submitForm();
+                });
+              });
             });
           });
         });

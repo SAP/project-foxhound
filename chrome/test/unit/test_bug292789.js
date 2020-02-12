@@ -3,28 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-const MANIFESTS = [
-  do_get_file("data/test_bug292789.manifest")
-];
+const MANIFESTS = [do_get_file("data/test_bug292789.manifest")];
 
 registerManifests(MANIFESTS);
 
-var gIOS;
 var gCR;
 
-function check_accessibility(spec, desired)
-{
-  var uri = gIOS.newURI(spec, null, null);
+function check_accessibility(spec, desired) {
+  var uri = Services.io.newURI(spec);
   var actual = gCR.allowContentToAccess(uri);
-  do_check_eq(desired, actual);
+  Assert.equal(desired, actual);
 }
 
-function run_test()
-{
-  gIOS = Cc["@mozilla.org/network/io-service;1"].
-    getService(Ci.nsIIOService);
-  gCR = Cc["@mozilla.org/chrome/chrome-registry;1"].
-    getService(Ci.nsIXULChromeRegistry);
+function run_test() {
+  gCR = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
+    Ci.nsIXULChromeRegistry
+  );
   gCR.checkForNewChrome();
 
   check_accessibility("chrome://test1/content/", false);

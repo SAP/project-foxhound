@@ -26,6 +26,55 @@ interface nsIFile;
 [scriptable, uuid(8bfd34d5-4ddf-4e4b-89dd-9b14f33534c6)]
 interface mozIStorageAsyncConnection : nsISupports {
   /**
+   * Transaction behavior constants.
+   */
+  const int32_t TRANSACTION_DEFAULT = -1;
+  const int32_t TRANSACTION_DEFERRED = 0;
+  const int32_t TRANSACTION_IMMEDIATE = 1;
+  const int32_t TRANSACTION_EXCLUSIVE = 2;
+
+  /**
+   * The default behavior for all transactions run on this connection. Defaults
+   * to `TRANSACTION_DEFERRED`, and can be overridden for individual
+   * transactions.
+   */
+  attribute int32_t defaultTransactionType;
+
+  /**
+   * The maximum number of bound parameters for statements executed on this
+   * connection. If your statement has more params than this limit, you'll
+   * need to chunk them into multiple statements. See `PlacesUtils.chunkArray`
+   * and its callers in Places for examples of how to do this, or read on for
+   * an overview.
+   *
+   * Keep in mind that the variable limit is for the _total_ number of
+   * parameters, including ones bound by name (using the `:VVV`, `@VVV`, or
+   * `?VVV` syntax) and index (`?` and `?NNN`).
+   *
+   * This means, when chunking:
+   *
+   * - If you're binding 1 param per 1 value per chunk (for example, if you
+   *   have a list of GUIDs and a clause like `WHERE guid IN (?, ?, ?, ...)`,
+   *   your chunk length is just `variableLimit`.
+   * - If you're binding 1 param per 1 value per chunk, but using that
+   *   param in multiple positions in the query (for example, `WHERE url_hash
+   *   IN (hash(?1), hash(?2), ...) AND url IN (?1, ?2, ...)`), you can use the
+   *   `?NNN` syntax with a chunk length of `variableLimit`.
+   * - If you're binding N params per 1 value per chunk (for example, if you
+   *   have a list of items with GUIDs and parent GUIDs, and you want to bind
+   *   both), your chunk length is `variableLimit / N`, since you're binding
+   *   two params for each element.
+   * - If you're binding K params per L values per chunk, plus M fixed ones
+   *   (for example, `WHERE parentGuid = :parentGuid AND guid IN (?, ?, ...)`),
+   *   your chunk length is `variableLimit - M`, to ensure there's space for the
+   *   fixed variables.
+   *
+   * If you bind more params than this limit, `create{Async}Statement` will
+   * fail with a "too many SQL variables" error.
+   */
+  readonly attribute int32_t variableLimit;
+
+  /**
    * Close this database connection, allowing all pending statements
    * to complete first.
    *
@@ -42,8 +91,22 @@ interface mozIStorageAsyncConnection : nsISupports {
    *         If called on a connection that has already been closed or was
    *         never properly opened.  The callback will still be dispatched
    *         to the main thread despite the returned error.
+   * @note If this call should fail, the callback won't be invoked.
    */
   void asyncClose([optional] in mozIStorageCompletionCallback aCallback);
+
+  /**
+   * Forcibly closes a database connection synchronously.
+   * This should only be used when it's required to close and replace the
+   * database synchronously to return control to the consumer, for example in
+   * case of a detected corruption on database opening.
+   * Since this spins the events loop, it should be used only in very particular
+   * and rare situations, or it may cause unexpected consequences (crashes).
+   *
+   * @throws NS_ERROR_NOT_SAME_THREAD
+   *         If called on a thread other than the one that opened it.
+   */
+  [noscript] void spinningSynchronousClose();
 
   /**
    * Clone a database and make the clone read only if needed.
@@ -66,6 +129,8 @@ interface mozIStorageAsyncConnection : nsISupports {
    *
    * @note If your connection is already read-only, you will get a read-only
    *       clone.
+   * @note The resulting connection will implement `mozIStorageConnection`, but
+   *       all synchronous methods will throw if called from the main thread.
    * @note Due to a bug in SQLite, if you use the shared cache
    *       (see mozIStorageService), you end up with the same privileges as the
    *       first connection opened regardless of what is specified in aReadOnly.
@@ -79,6 +144,11 @@ interface mozIStorageAsyncConnection : nsISupports {
    *        - journal_size_limit
    *        - synchronous
    *        - wal_autocheckpoint
+   *       All SQL functions are copied over to read-only and writeable clones.
+   *       Additionally, all temporary tables, triggers, and views, as well as
+   *       any indexes on temporary tables, are copied over to writeable clones.
+   *       For temporary tables, only the schemas are copied, not their
+   *       contents.
    */
   void asyncClone(in boolean aReadOnly,
                   in mozIStorageCompletionCallback aCallback);
@@ -88,6 +158,16 @@ interface mozIStorageAsyncConnection : nsISupports {
    * connection refers to an in-memory database.
    */
   readonly attribute nsIFile databaseFile;
+
+  /**
+   * Causes any pending database operation to abort and return at the first
+   * opportunity.
+   * This can only be used on read-only connections that don't implement
+   * the mozIStorageConnection interface.
+   * @note operations that are nearly complete may still be able to complete.
+   * @throws if used on an unsupported connection type, or a closed connection.
+   */
+  void interrupt();
 
   //////////////////////////////////////////////////////////////////////////////
   //// Statement creation
@@ -119,8 +199,6 @@ interface mozIStorageAsyncConnection : nsISupports {
    * @param aStatements
    *        The array of statements to execute asynchronously, in the order they
    *        are given in the array.
-   * @param aNumStatements
-   *        The number of statements in aStatements.
    * @param aCallback [optional]
    *        The callback object that will be notified of progress, errors, and
    *        completion.
@@ -130,8 +208,7 @@ interface mozIStorageAsyncConnection : nsISupports {
    *        re-entrant since they can be called on multiple threads.
    */
   mozIStoragePendingStatement executeAsync(
-    [array, size_is(aNumStatements)] in mozIStorageBaseStatement aStatements,
-    in unsigned long aNumStatements,
+    in Array<mozIStorageBaseStatement> aStatements,
     [optional] in mozIStorageStatementCallback aCallback
   );
 

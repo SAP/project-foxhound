@@ -6,7 +6,6 @@
 
 /********************************* #includes *********************************/
 
-#include "domstubs.idl"                 // nsIDOMElement, nsIDOMWindow
 #include "nsISupports.idl"              // nsISupports
 
 
@@ -14,6 +13,9 @@
 
 interface mozIDOMWindow;
 interface nsIDocShell;
+
+webidl Element;
+webidl Range;
 
 
 /****************************** nsTypeAheadFind ******************************/
@@ -33,13 +35,13 @@ interface nsITypeAheadFind : nsISupports
 
   /* Find aSearchString in page.  If aLinksOnly is true, only search the page's
    * hyperlinks for the string. */
-  unsigned short find(in AString aSearchString, in boolean aLinksOnly);
-
-  /* Find another match in the page. */
-  unsigned short findAgain(in boolean findBackwards, in boolean aLinksOnly);
+  unsigned short find(in AString aSearchString,
+                      in boolean aLinksOnly,
+                      in unsigned long aMode,
+                      in boolean aDontIterateFrames);
 
   /* Return the range of the most recent match. */
-  nsIDOMRange getFoundRange();
+  Range getFoundRange();
 
 
   /**************************** Helper functions ***************************/
@@ -57,8 +59,11 @@ interface nsITypeAheadFind : nsISupports
    * necessarily happen automatically. */
   void collapseSelection();
 
-  /* Check if a range is visible */
-  boolean isRangeVisible(in nsIDOMRange aRange, in boolean aMustBeInViewPort);
+  /* Check if a range is visible using heuristics */
+  boolean isRangeVisible(in Range aRange, in boolean aMustBeInViewPort);
+
+  /* Check if a range is actually rendered (out of viewport always false) */
+  boolean isRangeRendered(in Range aRange);
 
   /******************************* Attributes ******************************/
 
@@ -66,15 +71,22 @@ interface nsITypeAheadFind : nsISupports
                                         // Most recent search string
   attribute boolean caseSensitive;      // Searches are case sensitive
   attribute boolean entireWord;         // Search for whole words only
-  readonly attribute nsIDOMElement foundLink;
+  readonly attribute Element foundLink;
                                         // Most recent elem found, if a link
-  readonly attribute nsIDOMElement foundEditable;
+  readonly attribute Element foundEditable;
                                         // Most recent elem found, if editable
   readonly attribute mozIDOMWindow currentWindow;
                                         // Window of most recent match
 
 
   /******************************* Constants *******************************/
+
+  /* Modes for Find() */
+  const unsigned long FIND_INITIAL = 0;
+  const unsigned long FIND_NEXT = 1;
+  const unsigned long FIND_PREVIOUS = 2;
+  const unsigned long FIND_FIRST = 3;
+  const unsigned long FIND_LAST = 4;
 
   /* Find return codes */
   const unsigned short FIND_FOUND    = 0;

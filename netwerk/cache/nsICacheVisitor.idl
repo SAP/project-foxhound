@@ -32,7 +32,7 @@ interface nsICacheVisitor : nsISupports
      *
      * @param deviceID - specifies the device being visited.
      * @param entryInfo - specifies information about this entry.
-     * 
+     *
      * @return true to visit the next entry on the current device, or if the
      *   end of the device has been reached, advance to the next device.
      * @return false to advance to the next device.
@@ -48,19 +48,19 @@ interface nsICacheDeviceInfo : nsISupports
     /**
      * Get a human readable description of the cache device.
      */
-    readonly attribute string  description;
-    
+    readonly attribute ACString  description;
+
     /**
      * Get a usage report, statistics, miscellaneous data about
      * the cache device.
      */
-    readonly attribute string  usageReport;
-    
+    readonly attribute ACString  usageReport;
+
     /**
      * Get the number of stored cache entries.
      */
     readonly attribute unsigned long  entryCount;
-    
+
     /**
      * Get the total size of the stored cache entries.
      */
@@ -79,18 +79,18 @@ interface nsICacheEntryInfo : nsISupports
     /**
      * Get the client id associated with this cache entry.
      */
-    readonly attribute string  clientID;
+    readonly attribute ACString clientID;
 
     /**
      * Get the id for the device that stores this cache entry.
      */
-    readonly attribute string deviceID;
+    readonly attribute ACString deviceID;
 
     /**
      * Get the key identifying the cache entry.
      */
     readonly attribute ACString key;
-    
+
     /**
      * Get the number of times the cache entry has been opened.
      */

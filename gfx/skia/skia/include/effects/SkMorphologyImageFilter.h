@@ -9,6 +9,7 @@
 #define SkMorphologyImageFilter_DEFINED
 
 #include "SkColor.h"
+#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkSize.h"
 
@@ -16,7 +17,8 @@
 class SK_API SkMorphologyImageFilter : public SkImageFilter {
 public:
     SkRect computeFastBounds(const SkRect& src) const override;
-    SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix&, MapDirection) const override;
+    SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
 
     /**
      * All morphology procs have the same signature: src is the source buffer, dst the
@@ -42,6 +44,7 @@ protected:
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source,
                                         const Context&,
                                         SkIPoint* offset) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
     void flatten(SkWriteBuffer&) const override;
 
     SkISize radius() const { return fRadius; }
@@ -57,32 +60,14 @@ class SK_API SkDilateImageFilter : public SkMorphologyImageFilter {
 public:
     static sk_sp<SkImageFilter> Make(int radiusX, int radiusY,
                                      sk_sp<SkImageFilter> input,
-                                     const CropRect* cropRect = nullptr) {
-        if (radiusX < 0 || radiusY < 0) {
-            return nullptr;
-        }
-        return sk_sp<SkImageFilter>(new SkDilateImageFilter(radiusX, radiusY,
-                                                            std::move(input),
-                                                            cropRect));
-    }
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDilateImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(int radiusX, int radiusY,
-                                 SkImageFilter* input = nullptr,
-                                 const CropRect* cropRect = nullptr) {
-        return Make(radiusX, radiusY,
-                    sk_ref_sp<SkImageFilter>(input),
-                    cropRect).release();
-    }
-#endif
+                                     const CropRect* cropRect = nullptr);
 
 protected:
     Op op() const override { return kDilate_Op; }
 
 private:
+    SK_FLATTENABLE_HOOKS(SkDilateImageFilter)
+
     SkDilateImageFilter(int radiusX, int radiusY,
                         sk_sp<SkImageFilter> input,
                         const CropRect* cropRect)
@@ -96,32 +81,14 @@ class SK_API SkErodeImageFilter : public SkMorphologyImageFilter {
 public:
     static sk_sp<SkImageFilter> Make(int radiusX, int radiusY,
                                      sk_sp<SkImageFilter> input,
-                                     const CropRect* cropRect = nullptr) {
-        if (radiusX < 0 || radiusY < 0) {
-            return nullptr;
-        }
-        return sk_sp<SkImageFilter>(new SkErodeImageFilter(radiusX, radiusY,
-                                                           std::move(input),
-                                                           cropRect));
-    }
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkErodeImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(int radiusX, int radiusY,
-                                 SkImageFilter* input = nullptr,
-                                 const CropRect* cropRect = nullptr) {
-        return Make(radiusX, radiusY,
-                    sk_ref_sp<SkImageFilter>(input),
-                    cropRect).release();
-    }
-#endif
+                                     const CropRect* cropRect = nullptr);
 
 protected:
     Op op() const override { return kErode_Op; }
 
 private:
+    SK_FLATTENABLE_HOOKS(SkErodeImageFilter)
+
     SkErodeImageFilter(int radiusX, int radiusY,
                        sk_sp<SkImageFilter> input, const CropRect* cropRect)
         : INHERITED(radiusX, radiusY, input, cropRect) {}

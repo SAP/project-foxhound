@@ -22,3 +22,35 @@ def join_symbol(group, symbol):
     if group == '?':
         return symbol
     return '{}({})'.format(group, symbol)
+
+
+def add_suffix(treeherder_symbol, suffix):
+    """Add a suffix to a treeherder symbol that may contain a group."""
+    group, symbol = split_symbol(treeherder_symbol)
+    symbol += str(suffix)
+    return join_symbol(group, symbol)
+
+
+def replace_group(treeherder_symbol, new_group):
+    """Add a suffix to a treeherder symbol that may contain a group."""
+    _, symbol = split_symbol(treeherder_symbol)
+    return join_symbol(new_group, symbol)
+
+
+def inherit_treeherder_from_dep(job, dep_job):
+    """Inherit treeherder defaults from dep_job"""
+    treeherder = job.get('treeherder', {})
+
+    dep_th_platform = dep_job.task.get('extra', {}).get(
+        'treeherder', {}).get('machine', {}).get('platform', '')
+    dep_th_collection = dep_job.task.get('extra', {}).get(
+        'treeherder', {}).get('collection', {}).keys()[0]
+    treeherder.setdefault('platform',
+                          "{}/{}".format(dep_th_platform, dep_th_collection))
+    treeherder.setdefault(
+        'tier',
+        dep_job.task.get('extra', {}).get('treeherder', {}).get('tier', 1)
+    )
+    # Does not set symbol
+    treeherder.setdefault('kind', 'build')
+    return treeherder

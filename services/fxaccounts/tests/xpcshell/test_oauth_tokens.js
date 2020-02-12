@@ -3,26 +3,29 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/FxAccounts.jsm");
-Cu.import("resource://gre/modules/FxAccountsClient.jsm");
-Cu.import("resource://gre/modules/FxAccountsCommon.js");
-Cu.import("resource://gre/modules/FxAccountsOAuthGrantClient.jsm");
-Cu.import("resource://services-common/utils.js");
-var {AccountState} = Cu.import("resource://gre/modules/FxAccounts.jsm", {});
+const { FxAccounts } = ChromeUtils.import(
+  "resource://gre/modules/FxAccounts.jsm"
+);
+const { FxAccountsClient } = ChromeUtils.import(
+  "resource://gre/modules/FxAccountsClient.jsm"
+);
+var { AccountState } = ChromeUtils.import(
+  "resource://gre/modules/FxAccounts.jsm",
+  null
+);
 
 function promiseNotification(topic) {
   return new Promise(resolve => {
     let observe = () => {
       Services.obs.removeObserver(observe, topic);
       resolve();
-    }
-    Services.obs.addObserver(observe, topic, false);
+    };
+    Services.obs.addObserver(observe, topic);
   });
 }
 
 // Just enough mocks so we can avoid hawk and storage.
-function MockStorageManager() {
-}
+function MockStorageManager() {}
 
 MockStorageManager.prototype = {
   promiseInitialized: Promise.resolve(),
@@ -53,35 +56,73 @@ MockStorageManager.prototype = {
   deleteAccountData() {
     this.accountData = null;
     return Promise.resolve();
-  }
-}
+  },
+};
 
-function MockFxAccountsClient() {
+function MockFxAccountsClient(activeTokens) {
   this._email = "nobody@example.com";
   this._verified = false;
 
   this.accountStatus = function(uid) {
-    let deferred = Promise.defer();
-    deferred.resolve(!!uid && (!this._deletedOnServer));
-    return deferred.promise;
+    return Promise.resolve(!!uid && !this._deletedOnServer);
   };
 
-  this.signOut = function() { return Promise.resolve(); };
-  this.registerDevice = function() { return Promise.resolve(); };
-  this.updateDevice = function() { return Promise.resolve(); };
-  this.signOutAndDestroyDevice = function() { return Promise.resolve(); };
-  this.getDeviceList = function() { return Promise.resolve(); };
+  this.signOut = function() {
+    return Promise.resolve();
+  };
+  this.registerDevice = function() {
+    return Promise.resolve();
+  };
+  this.updateDevice = function() {
+    return Promise.resolve();
+  };
+  this.signOutAndDestroyDevice = function() {
+    return Promise.resolve();
+  };
+  this.getDeviceList = function() {
+    return Promise.resolve();
+  };
+  this.oauthDestroy = sinon.stub().callsFake((_clientId, token) => {
+    this.activeTokens.delete(token);
+    return Promise.resolve();
+  });
+
+  // Test only stuff.
+  this.activeTokens = activeTokens;
 
   FxAccountsClient.apply(this);
 }
 
 MockFxAccountsClient.prototype = {
-  __proto__: FxAccountsClient.prototype
+  __proto__: FxAccountsClient.prototype,
+};
+
+function MockFxAccountsOAuthGrantClient(activeTokens) {
+  // Test only stuff.
+  this.numTokenFetches = 0;
+  this.activeTokens = activeTokens;
 }
 
-function MockFxAccounts(mockGrantClient) {
+MockFxAccountsOAuthGrantClient.prototype = {
+  serverURL: { href: "http://localhost" },
+  getTokenFromAssertion(assertion, scope) {
+    let token = "token" + this.numTokenFetches;
+    this.numTokenFetches += 1;
+    this.activeTokens.add(token);
+    print("getTokenFromAssertion returning token", token);
+    return Promise.resolve({ access_token: token });
+  },
+};
+
+function MockFxAccounts() {
+  // The FxA "auth" and "oauth" servers both share the same db of tokens,
+  // so we need to simulate the same here in the tests.
+  const activeTokens = new Set();
   return new FxAccounts({
-    fxAccountsClient: new MockFxAccountsClient(),
+    fxAccountsClient: new MockFxAccountsClient(activeTokens),
+    fxAccountsOAuthGrantClient: new MockFxAccountsOAuthGrantClient(
+      activeTokens
+    ),
     getAssertion: () => Promise.resolve("assertion"),
     newAccountState(credentials) {
       // we use a real accountState but mocked storage.
@@ -89,20 +130,14 @@ function MockFxAccounts(mockGrantClient) {
       storage.initialize(credentials);
       return new AccountState(storage);
     },
-    _destroyOAuthToken: function(tokenData) {
-      // somewhat sad duplication of _destroyOAuthToken, but hard to avoid.
-      return mockGrantClient.destroyToken(tokenData.token).then( () => {
-        Services.obs.notifyObservers(null, "testhelper-fxa-revoke-complete", null);
-      });
-    },
     _getDeviceName() {
       return "mock device name";
     },
     fxaPushService: {
       registerPushEndpoint() {
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
           resolve({
-            endpoint: "http://mochi.test:8888"
+            endpoint: "http://mochi.test:8888",
           });
         });
       },
@@ -110,142 +145,109 @@ function MockFxAccounts(mockGrantClient) {
   });
 }
 
-function* createMockFxA(mockGrantClient) {
-  let fxa = new MockFxAccounts(mockGrantClient);
+async function createMockFxA() {
+  let fxa = new MockFxAccounts();
   let credentials = {
     email: "foo@example.com",
     uid: "1234@lcip.org",
     assertion: "foobar",
     sessionToken: "dead",
-    kA: "beef",
-    kB: "cafe",
-    verified: true
+    kSync: "beef",
+    kXCS: "cafe",
+    kExtSync: "bacon",
+    kExtKbHash: "cheese",
+    verified: true,
   };
 
-  yield fxa.setSignedInUser(credentials);
+  await fxa._internal.setSignedInUser(credentials);
   return fxa;
 }
 
 // The tests.
-function run_test() {
-  run_next_test();
-}
 
-function MockFxAccountsOAuthGrantClient() {
-  this.activeTokens = new Set();
-}
-
-MockFxAccountsOAuthGrantClient.prototype = {
-  serverURL: {href: "http://localhost"},
-  getTokenFromAssertion(assertion, scope) {
-    let token = "token" + this.numTokenFetches;
-    this.numTokenFetches += 1;
-    this.activeTokens.add(token);
-    print("getTokenFromAssertion returning token", token);
-    return Promise.resolve({access_token: token});
-  },
-  destroyToken(token) {
-    ok(this.activeTokens.delete(token));
-    print("after destroy have", this.activeTokens.size, "tokens left.");
-    return Promise.resolve({});
-  },
-  // and some stuff used only for tests.
-  numTokenFetches: 0,
-  activeTokens: null,
-}
-
-add_task(function* testRevoke() {
-  let client = new MockFxAccountsOAuthGrantClient();
-  let tokenOptions = { scope: "test-scope", client: client };
-  let fxa = yield createMockFxA(client);
+add_task(async function testRevoke() {
+  let tokenOptions = { scope: "test-scope" };
+  let fxa = await createMockFxA();
+  let client = fxa._internal.fxAccountsClient;
+  let oauthClient = fxa._internal.fxAccountsOAuthGrantClient;
 
   // get our first token and check we hit the mock.
-  let token1 = yield fxa.getOAuthToken(tokenOptions);
-  equal(client.numTokenFetches, 1);
-  equal(client.activeTokens.size, 1);
+  let token1 = await fxa.getOAuthToken(tokenOptions);
+  equal(oauthClient.numTokenFetches, 1);
+  equal(oauthClient.activeTokens.size, 1);
   ok(token1, "got a token");
   equal(token1, "token0");
 
   // drop the new token from our cache.
-  yield fxa.removeCachedOAuthToken({token: token1});
+  await fxa.removeCachedOAuthToken({ token: token1 });
+  ok(client.oauthDestroy.calledOnce);
 
-  // FxA fires an observer when the "background" revoke is complete.
-  yield promiseNotification("testhelper-fxa-revoke-complete");
   // the revoke should have been successful.
-  equal(client.activeTokens.size, 0);
+  equal(oauthClient.activeTokens.size, 0);
   // fetching it again hits the server.
-  let token2 = yield fxa.getOAuthToken(tokenOptions);
-  equal(client.numTokenFetches, 2);
-  equal(client.activeTokens.size, 1);
+  let token2 = await fxa.getOAuthToken(tokenOptions);
+  equal(oauthClient.numTokenFetches, 2);
+  equal(oauthClient.activeTokens.size, 1);
   ok(token2, "got a token");
   notEqual(token1, token2, "got a different token");
 });
 
-add_task(function* testSignOutDestroysTokens() {
-  let client = new MockFxAccountsOAuthGrantClient();
-  let fxa = yield createMockFxA(client);
+add_task(async function testSignOutDestroysTokens() {
+  let fxa = await createMockFxA();
+  let client = fxa._internal.fxAccountsClient;
+  let oauthClient = fxa._internal.fxAccountsOAuthGrantClient;
 
   // get our first token and check we hit the mock.
-  let token1 = yield fxa.getOAuthToken({ scope: "test-scope", client: client });
-  equal(client.numTokenFetches, 1);
-  equal(client.activeTokens.size, 1);
+  let token1 = await fxa.getOAuthToken({ scope: "test-scope" });
+  equal(oauthClient.numTokenFetches, 1);
+  equal(oauthClient.activeTokens.size, 1);
   ok(token1, "got a token");
 
   // get another
-  let token2 = yield fxa.getOAuthToken({ scope: "test-scope-2", client: client });
-  equal(client.numTokenFetches, 2);
-  equal(client.activeTokens.size, 2);
+  let token2 = await fxa.getOAuthToken({ scope: "test-scope-2" });
+  equal(oauthClient.numTokenFetches, 2);
+  equal(oauthClient.activeTokens.size, 2);
   ok(token2, "got a token");
   notEqual(token1, token2, "got a different token");
 
-  // now sign out - they should be removed.
-  yield fxa.signOut();
   // FxA fires an observer when the "background" signout is complete.
-  yield promiseNotification("testhelper-fxa-signout-complete");
+  let signoutComplete = promiseNotification("testhelper-fxa-signout-complete");
+  // now sign out - they should be removed.
+  await fxa.signOut();
+  await signoutComplete;
+  ok(client.oauthDestroy.calledTwice);
   // No active tokens left.
-  equal(client.activeTokens.size, 0);
+  equal(oauthClient.activeTokens.size, 0);
 });
 
-add_task(function* testTokenRaces() {
+add_task(async function testTokenRaces() {
   // Here we do 2 concurrent fetches each for 2 different token scopes (ie,
   // 4 token fetches in total).
-  // This should provoke a potential race in the token fetching but we should
-  // handle and detect that leaving us with one of the fetch tokens being
-  // revoked and the same token value returned to both calls.
-  let client = new MockFxAccountsOAuthGrantClient();
-  let fxa = yield createMockFxA(client);
+  // This should provoke a potential race in the token fetching but we use
+  // a map of in-flight token fetches, so we should still only perform 2
+  // fetches, but each of the 4 calls should resolve with the correct values.
+  let fxa = await createMockFxA();
+  let client = fxa._internal.fxAccountsClient;
+  let oauthClient = fxa._internal.fxAccountsOAuthGrantClient;
 
-  // We should see 2 notifications as part of this - set up the listeners
-  // now (and wait on them later)
-  let notifications = Promise.all([
-    promiseNotification("testhelper-fxa-revoke-complete"),
-    promiseNotification("testhelper-fxa-revoke-complete"),
-  ]);
-  let results = yield Promise.all([
-    fxa.getOAuthToken({scope: "test-scope", client: client}),
-    fxa.getOAuthToken({scope: "test-scope", client: client}),
-    fxa.getOAuthToken({scope: "test-scope-2", client: client}),
-    fxa.getOAuthToken({scope: "test-scope-2", client: client}),
+  let results = await Promise.all([
+    fxa.getOAuthToken({ scope: "test-scope" }),
+    fxa.getOAuthToken({ scope: "test-scope" }),
+    fxa.getOAuthToken({ scope: "test-scope-2" }),
+    fxa.getOAuthToken({ scope: "test-scope-2" }),
   ]);
 
-  equal(client.numTokenFetches, 4, "should have fetched 4 tokens.");
-  // We should see 2 of the 4 revoked due to the race.
-  yield notifications;
+  equal(oauthClient.numTokenFetches, 2, "should have fetched 2 tokens.");
 
   // Should have 2 unique tokens
   results.sort();
   equal(results[0], results[1]);
   equal(results[2], results[3]);
   // should be 2 active.
-  equal(client.activeTokens.size, 2);
-  // Which can each be revoked.
-  notifications = Promise.all([
-    promiseNotification("testhelper-fxa-revoke-complete"),
-    promiseNotification("testhelper-fxa-revoke-complete"),
-  ]);
-  yield fxa.removeCachedOAuthToken({token: results[0]});
-  equal(client.activeTokens.size, 1);
-  yield fxa.removeCachedOAuthToken({token: results[2]});
-  equal(client.activeTokens.size, 0);
-  yield notifications;
+  equal(oauthClient.activeTokens.size, 2);
+  await fxa.removeCachedOAuthToken({ token: results[0] });
+  equal(oauthClient.activeTokens.size, 1);
+  await fxa.removeCachedOAuthToken({ token: results[2] });
+  equal(oauthClient.activeTokens.size, 0);
+  ok(client.oauthDestroy.calledTwice);
 });

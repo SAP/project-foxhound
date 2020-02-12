@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 // Test that we can save a core dump with very deep allocation stacks and read
 // it back into a HeapSnapshot.
@@ -19,15 +20,16 @@ function run_test() {
 
   debuggee.eval("this.objects = []");
   debuggee.eval(
-    (function recursiveAllocate(n) {
-      if (n <= 0)
+    function recursiveAllocate(n) {
+      if (n <= 0) {
         return;
+      }
 
       // Make sure to recurse before pushing the object so that when TCO is
       // implemented sometime in the future, it doesn't invalidate this test.
       recursiveAllocate(n - 1);
       this.objects.push({});
-    }).toString()
+    }.toString()
   );
   debuggee.eval("recursiveAllocate = recursiveAllocate.bind(this);");
   debuggee.eval("recursiveAllocate(200);");
@@ -43,10 +45,11 @@ function run_test() {
   ok(snapshot instanceof HeapSnapshot, "Should be an instanceof HeapSnapshot");
 
   const report = snapshot.takeCensus({
-    breakdown: { by: "allocationStack",
-                 then: { by: "count", bytes: true, count: true },
-                 noStack: { by: "count", bytes: true, count: true }
-               }
+    breakdown: {
+      by: "allocationStack",
+      then: { by: "count", bytes: true, count: true },
+      noStack: { by: "count", bytes: true, count: true },
+    },
   });
 
   // Keep this synchronized with `HeapSnapshot::MAX_STACK_DEPTH`!
@@ -61,8 +64,10 @@ function run_test() {
     foundStacks = true;
     const depth = stackDepth(k);
     dumpn("Stack depth is " + depth);
-    ok(depth <= MAX_STACK_DEPTH,
-       "Every stack should have depth less than or equal to the maximum stack depth");
+    ok(
+      depth <= MAX_STACK_DEPTH,
+      "Every stack should have depth less than or equal to the maximum stack depth"
+    );
   });
   ok(foundStacks);
 

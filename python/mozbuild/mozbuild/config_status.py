@@ -10,7 +10,6 @@ from __future__ import absolute_import, print_function
 
 import logging
 import os
-import subprocess
 import sys
 import time
 
@@ -22,6 +21,7 @@ from mozbuild.base import MachCommandConditions
 from mozbuild.frontend.emitter import TreeMetadataEmitter
 from mozbuild.frontend.reader import BuildReader
 from mozbuild.mozinfo import write_mozinfo
+from mozbuild.util import FileAvoidWrite
 from itertools import chain
 
 from mozbuild.backend import (
@@ -38,13 +38,10 @@ ANDROID_IDE_ADVERTISEMENT = '''
 ADVERTISEMENT
 
 You are building Firefox for Android. After your build completes, you can open
-the top source directory in IntelliJ or Android Studio directly and build using
-Gradle.  See the documentation at
+the top source directory in Android Studio directly and build using Gradle.
+See the documentation at
 
 https://developer.mozilla.org/en-US/docs/Simple_Firefox_for_Android_build
-
-PLEASE BE AWARE THAT GRADLE AND INTELLIJ/ANDROID STUDIO SUPPORT IS EXPERIMENTAL.
-You should verify any changes using |mach build|.
 =============
 '''.strip()
 
@@ -82,14 +79,14 @@ def config_status(topobjdir='.', topsrcdir='.', defines=None,
 
     if 'CONFIG_FILES' in os.environ:
         raise Exception('Using the CONFIG_FILES environment variable is not '
-            'supported.')
+                        'supported.')
     if 'CONFIG_HEADERS' in os.environ:
         raise Exception('Using the CONFIG_HEADERS environment variable is not '
-            'supported.')
+                        'supported.')
 
     if not os.path.isabs(topsrcdir):
         raise Exception('topsrcdir must be defined as an absolute directory: '
-            '%s' % topsrcdir)
+                        '%s' % topsrcdir)
 
     default_backends = ['RecursiveMake']
     default_backends = (substs or {}).get('BUILD_BACKENDS', ['RecursiveMake'])
@@ -114,13 +111,11 @@ def config_status(topobjdir='.', topsrcdir='.', defines=None,
         topobjdir = os.path.abspath('.')
 
     env = ConfigEnvironment(topsrcdir, topobjdir, defines=defines,
-            non_global_defines=non_global_defines, substs=substs,
-            source=source, mozconfig=mozconfig)
+                            non_global_defines=non_global_defines, substs=substs,
+                            source=source, mozconfig=mozconfig)
 
-    # mozinfo.json only needs written if configure changes and configure always
-    # passes this environment variable.
-    if 'WRITE_MOZINFO' in os.environ:
-        write_mozinfo(os.path.join(topobjdir, 'mozinfo.json'), env, os.environ)
+    with FileAvoidWrite(os.path.join(topobjdir, 'mozinfo.json')) as f:
+        write_mozinfo(f, env, os.environ)
 
     cpu_start = time.clock()
     time_start = time.time()
@@ -154,6 +149,9 @@ def config_status(topobjdir='.', topsrcdir='.', defines=None,
         summary = obj.summary()
         print(summary, file=sys.stderr)
         execution_time += summary.execution_time
+        if hasattr(obj, 'gyp_summary'):
+            summary = obj.gyp_summary()
+            print(summary, file=sys.stderr)
 
     cpu_time = time.clock() - cpu_start
     wall_time = time.time() - time_start
@@ -176,7 +174,6 @@ def config_status(topobjdir='.', topsrcdir='.', defines=None,
     if os.name == 'nt' and 'VisualStudio' not in options.backend:
         print(VISUAL_STUDIO_ADVERTISEMENT)
 
-    # Advertise Eclipse if it is appropriate.
+    # Advertise Android Studio if it is appropriate.
     if MachCommandConditions.is_android(env):
-        if 'AndroidEclipse' not in options.backend:
-            print(ANDROID_IDE_ADVERTISEMENT)
+        print(ANDROID_IDE_ADVERTISEMENT)

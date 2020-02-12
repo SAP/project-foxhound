@@ -7,9 +7,11 @@
 #include <IOKit/network/IOEthernetController.h>
 #include <IOKit/network/IOEthernetInterface.h>
 #include <IOKit/network/IONetworkInterface.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 #include <string>
-
 // Note: The original machine_id_mac.cc code is in namespace rlz_lib below.
 // It depends on some external files, which would bring in a log of Chromium
 // code if imported as well.
@@ -178,7 +180,6 @@ std::string SysCFStringRefToUTF8(CFStringRef ref)
 
 } // namespace base
 
-
 namespace rlz_lib {
 
 namespace {
@@ -220,8 +221,9 @@ bool GetMACAddressFromIterator(io_iterator_t primary_interface_iterator,
 
   bzero(buffer, buffer_size);
   base::mac::ScopedIOObject<io_object_t> primary_interface;
-  while (primary_interface.reset(IOIteratorNext(primary_interface_iterator)),
-         primary_interface) {
+  for (primary_interface.reset(IOIteratorNext(primary_interface_iterator));
+       primary_interface;
+       primary_interface.reset(IOIteratorNext(primary_interface_iterator))) {
     io_object_t primary_interface_parent;
     kern_return_t kern_result = IORegistryEntryGetParentEntry(
         primary_interface, kIOServicePlane, &primary_interface_parent);

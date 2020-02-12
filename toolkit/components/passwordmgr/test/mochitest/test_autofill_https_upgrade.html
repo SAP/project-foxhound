@@ -2,11 +2,9 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Test autocomplete on an HTTPS page using upgraded HTTP logins</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/SpawnTask.js"></script>
-  <script type="text/javascript" src="satchel_common.js"></script>
+  <title>Test autofill on an HTTPS page using upgraded HTTP logins</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <script type="text/javascript" src="pwmgr_common.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -18,8 +16,8 @@ const CROSS_ORIGIN_SECURE_PATH = TESTS_DIR + "mochitest/form_cross_origin_secure
 const chromeScript = runChecksAfterCommonInit(false);
 
 let nsLoginInfo = SpecialPowers.wrap(SpecialPowers.Components).Constructor("@mozilla.org/login-manager/loginInfo;1",
-SpecialPowers.Ci.nsILoginInfo,
-"init");
+                                                                           SpecialPowers.Ci.nsILoginInfo,
+                                                                           "init");
 </script>
 <p id="display"></p>
 
@@ -32,72 +30,78 @@ SpecialPowers.Ci.nsILoginInfo,
 <script class="testbody" type="text/javascript">
 let iframe = SpecialPowers.wrap(document.getElementsByTagName("iframe")[0]);
 
-// Check for expected username/password in form.
-function checkACForm(expectedUsername, expectedPassword) {
-  let iframeDoc = iframe.contentDocument;
-  let uname = iframeDoc.getElementById("form-basic-username");
-  let pword = iframeDoc.getElementById("form-basic-password");
-  let formID = uname.parentNode.id;
-  is(uname.value, expectedUsername, "Checking " + formID + " username");
-  is(pword.value, expectedPassword, "Checking " + formID + " password");
-}
-function* prepareLoginsAndProcessForm(url, logins = []) {
-  LoginManager.removeAllLogins();
+async function prepareLoginsAndProcessForm(url, logins = []) {
+  await LoginManager.removeAllLogins();
 
   let dates = Date.now();
   for (let login of logins) {
     SpecialPowers.do_QueryInterface(login, SpecialPowers.Ci.nsILoginMetaInfo);
     // Force all dates to be the same so they don't affect things like deduping.
     login.timeCreated = login.timePasswordChanged = login.timeLastUsed = dates;
-    LoginManager.addLogin(login);
+    await LoginManager.addLogin(login);
   }
 
   iframe.src = url;
-  yield promiseFormsProcessed();
+  await promiseFormsProcessed();
 }
 
-add_task(function* setup() {
-  yield SpecialPowers.pushPrefEnv({"set": [["signon.schemeUpgrades", true]]});
+add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({"set": [
+    ["signon.schemeUpgrades", true],
+    ["signon.includeOtherSubdomainsInLookup", true],
+  ]});
 });
 
-add_task(function* test_simpleNoDupesNoAction() {
-  yield prepareLoginsAndProcessForm("https://example.com" + MISSING_ACTION_PATH, [
+add_task(async function test_simpleNoDupesNoAction() {
+  await prepareLoginsAndProcessForm("https://example.com" + MISSING_ACTION_PATH, [
     new nsLoginInfo("http://example.com", "http://example.com", null,
                     "name2", "pass2", "uname", "pword"),
   ]);
 
-  checkACForm("name2", "pass2");
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name2", pword, "pass2");
 });
 
-add_task(function* test_simpleNoDupesUpgradeOriginAndAction() {
-  yield prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
+add_task(async function test_simpleNoDupesUpgradeOriginAndAction() {
+  await prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
     new nsLoginInfo("http://example.com", "http://another.domain", null,
                     "name2", "pass2", "uname", "pword"),
   ]);
 
-  checkACForm("name2", "pass2");
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name2", pword, "pass2");
 });
 
-add_task(function* test_simpleNoDupesUpgradeOriginOnly() {
-  yield prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
+add_task(async function test_simpleNoDupesUpgradeOriginOnly() {
+  await prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
     new nsLoginInfo("http://example.com", "https://another.domain", null,
                     "name2", "pass2", "uname", "pword"),
   ]);
 
-  checkACForm("name2", "pass2");
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name2", pword, "pass2");
 });
 
-add_task(function* test_simpleNoDupesUpgradeActionOnly() {
-  yield prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
+add_task(async function test_simpleNoDupesUpgradeActionOnly() {
+  await prepareLoginsAndProcessForm("https://example.com" + CROSS_ORIGIN_SECURE_PATH, [
     new nsLoginInfo("https://example.com", "http://another.domain", null,
                     "name2", "pass2", "uname", "pword"),
   ]);
 
-  checkACForm("name2", "pass2");
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name2", pword, "pass2");
 });
 
-add_task(function* test_dedupe() {
-  yield prepareLoginsAndProcessForm("https://example.com" + MISSING_ACTION_PATH, [
+add_task(async function test_dedupe() {
+  await prepareLoginsAndProcessForm("https://example.com" + MISSING_ACTION_PATH, [
     new nsLoginInfo("https://example.com", "https://example.com", null,
                     "name1", "passHTTPStoHTTPS", "uname", "pword"),
     new nsLoginInfo("http://example.com", "http://example.com", null,
@@ -108,7 +112,41 @@ add_task(function* test_dedupe() {
                     "name1", "passHTTPStoHTTP", "uname", "pword"),
   ]);
 
-  checkACForm("name1", "passHTTPStoHTTPS");
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name1", pword, "passHTTPStoHTTPS");
+});
+
+add_task(async function test_dedupe_subdomain() {
+  // subdomain match (should be autofilled)
+  let loginToFill = new nsLoginInfo("http://test1.example.com", "http://test1.example.com", null,
+                                    "name1", "pass1");
+  const loginToFillGUID = "subdomain-match"
+  // Assign a GUID to this login so we can ensure this is the login that gets
+  // filled later.
+  loginToFill.QueryInterface(SpecialPowers.Ci.nsILoginMetaInfo).guid = loginToFillGUID;
+
+  await prepareLoginsAndProcessForm("https://test1.example.com" + MISSING_ACTION_PATH, [
+    // All logins have the same username and password:
+    // https: (scheme match)
+    new nsLoginInfo("https://example.com", "https://example.com", null,
+                    "name1", "pass1"),
+    loginToFill,
+    // formActionOrigin match
+    new nsLoginInfo("http://example.com", "https://test1.example.com", null,
+                    "name1", "pass1"),
+  ]);
+
+  let iframeDoc = iframe.contentDocument;
+  let uname = iframeDoc.getElementById("form-basic-username");
+  let pword = iframeDoc.getElementById("form-basic-password");
+  checkLoginForm(uname, "name1", pword, "pass1");
+
+  const { LoginManagerContent: LMC } = SpecialPowers.Cu.import("resource://gre/modules/LoginManagerContent.jsm", {});
+  let form = iframeDoc.getElementById("form-basic");
+  let filledGUID = LMC.stateForDocument(iframeDoc).fillsByRootElement.get(form).guid;
+  is(filledGUID, loginToFillGUID, "Check the correct login was filled");
 });
 
 </script>

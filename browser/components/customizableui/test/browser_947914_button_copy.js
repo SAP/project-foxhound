@@ -1,59 +1,64 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
 var initialLocation = gBrowser.currentURI.spec;
 var globalClipboard;
 
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({gBrowser, url: "about:blank"}, function*() {
-    info("Check copy button existence and functionality");
+add_task(async function() {
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:blank" },
+    async function() {
+      info("Check copy button existence and functionality");
+      CustomizableUI.addWidgetToArea(
+        "edit-controls",
+        CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+      );
 
-    let testText = "copy text test";
+      await waitForOverflowButtonShown();
 
-    gURLBar.focus();
-    info("The URL bar was focused");
-    yield PanelUI.show();
-    info("Menu panel was opened");
+      let testText = "copy text test";
 
-    let copyButton = document.getElementById("copy-button");
-    ok(copyButton, "Copy button exists in Panel Menu");
-    ok(copyButton.getAttribute("disabled"), "Copy button is initially disabled");
+      gURLBar.focus();
+      info("The URL bar was focused");
+      await document.getElementById("nav-bar").overflowable.show();
+      info("Menu panel was opened");
 
-    // copy text from URL bar
-    gURLBar.value = testText;
-    gURLBar.focus();
-    gURLBar.select();
-    yield PanelUI.show();
-    info("Menu panel was opened");
+      let copyButton = document.getElementById("copy-button");
+      ok(copyButton, "Copy button exists in Panel Menu");
+      ok(
+        copyButton.getAttribute("disabled"),
+        "Copy button is initially disabled"
+      );
 
-    ok(!copyButton.hasAttribute("disabled"), "Copy button is enabled when selecting");
+      // copy text from URL bar
+      gURLBar.value = testText;
+      gURLBar.valueIsTyped = true;
+      gURLBar.focus();
+      gURLBar.select();
+      await document.getElementById("nav-bar").overflowable.show();
+      info("Menu panel was opened");
 
-    copyButton.click();
-    is(gURLBar.value, testText, "Selected text is unaltered when clicking copy");
+      ok(
+        !copyButton.hasAttribute("disabled"),
+        "Copy button is enabled when selecting"
+      );
 
-    // check that the text was added to the clipboard
-    let clipboard = Services.clipboard;
-    let transferable = Cc["@mozilla.org/widget/transferable;1"].createInstance(Ci.nsITransferable);
-    globalClipboard = clipboard.kGlobalClipboard;
+      await SimpleTest.promiseClipboardChange(testText, () => {
+        copyButton.click();
+      });
 
-    transferable.init(null);
-    transferable.addDataFlavor("text/unicode");
-    clipboard.getData(transferable, globalClipboard);
-    let str = {}, strLength = {};
-    transferable.getTransferData("text/unicode", str, strLength);
-    let clipboardValue = "";
-
-    if (str.value) {
-      str.value.QueryInterface(Ci.nsISupportsString);
-      clipboardValue = str.value.data;
+      is(
+        gURLBar.value,
+        testText,
+        "Selected text is unaltered when clicking copy"
+      );
     }
-    is(clipboardValue, testText, "Data was copied to the clipboard.");
-  });
+  );
 });
 
 registerCleanupFunction(function cleanup() {
-  Services.clipboard.emptyClipboard(globalClipboard);
+  CustomizableUI.reset();
 });

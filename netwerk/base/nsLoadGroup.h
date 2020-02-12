@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +8,7 @@
 
 #include "nsILoadGroup.h"
 #include "nsILoadGroupChild.h"
-#include "nsPILoadGroupInternal.h"
-#include "nsAgg.h"
 #include "nsCOMPtr.h"
-#include "nsWeakPtr.h"
 #include "nsWeakReference.h"
 #include "nsISupportsPriority.h"
 #include "PLDHashTable.h"
@@ -27,79 +24,75 @@ namespace net {
 class nsLoadGroup : public nsILoadGroup,
                     public nsILoadGroupChild,
                     public nsISupportsPriority,
-                    public nsSupportsWeakReference,
-                    public nsPILoadGroupInternal
-{
-public:
-    NS_DECL_AGGREGATED
+                    public nsSupportsWeakReference {
+ public:
+  NS_DECL_ISUPPORTS
 
-    ////////////////////////////////////////////////////////////////////////////
-    // nsIRequest methods:
-    NS_DECL_NSIREQUEST
+  ////////////////////////////////////////////////////////////////////////////
+  // nsIRequest methods:
+  NS_DECL_NSIREQUEST
 
-    ////////////////////////////////////////////////////////////////////////////
-    // nsILoadGroup methods:
-    NS_DECL_NSILOADGROUP
-    NS_DECL_NSPILOADGROUPINTERNAL
+  ////////////////////////////////////////////////////////////////////////////
+  // nsILoadGroup methods:
+  NS_DECL_NSILOADGROUP
 
-    ////////////////////////////////////////////////////////////////////////////
-    // nsILoadGroupChild methods:
-    NS_DECL_NSILOADGROUPCHILD
+  ////////////////////////////////////////////////////////////////////////////
+  // nsILoadGroupChild methods:
+  NS_DECL_NSILOADGROUPCHILD
 
-    ////////////////////////////////////////////////////////////////////////////
-    // nsISupportsPriority methods:
-    NS_DECL_NSISUPPORTSPRIORITY
+  ////////////////////////////////////////////////////////////////////////////
+  // nsISupportsPriority methods:
+  NS_DECL_NSISUPPORTSPRIORITY
 
-    ////////////////////////////////////////////////////////////////////////////
-    // nsLoadGroup methods:
+  ////////////////////////////////////////////////////////////////////////////
+  // nsLoadGroup methods:
 
-    explicit nsLoadGroup(nsISupports* outer);
-    virtual ~nsLoadGroup();
+  nsLoadGroup();
 
-    nsresult Init();
+  nsresult Init();
 
-protected:
-    nsresult MergeLoadFlags(nsIRequest *aRequest, nsLoadFlags& flags);
-    nsresult MergeDefaultLoadFlags(nsIRequest *aRequest, nsLoadFlags& flags);
+ protected:
+  virtual ~nsLoadGroup();
 
-private:
-    void TelemetryReport();
-    void TelemetryReportChannel(nsITimedChannel *timedChannel,
-                                bool defaultRequest);
+  nsresult MergeLoadFlags(nsIRequest* aRequest, nsLoadFlags& flags);
+  nsresult MergeDefaultLoadFlags(nsIRequest* aRequest, nsLoadFlags& flags);
 
-protected:
-    uint32_t                        mForegroundCount;
-    uint32_t                        mLoadFlags;
-    uint32_t                        mDefaultLoadFlags;
+ private:
+  void TelemetryReport();
+  void TelemetryReportChannel(nsITimedChannel* timedChannel,
+                              bool defaultRequest);
 
-    nsCOMPtr<nsILoadGroup>          mLoadGroup; // load groups can contain load groups
-    nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
-    nsCOMPtr<nsIRequestContext>  mRequestContext;
-    nsCOMPtr<nsIRequestContextService> mRequestContextService;
+  nsresult RemoveRequestFromHashtable(nsIRequest* aRequest, nsresult aStatus);
+  nsresult NotifyRemovalObservers(nsIRequest* aRequest, nsresult aStatus);
 
-    nsCOMPtr<nsIRequest>            mDefaultLoadRequest;
-    PLDHashTable                    mRequests;
+ protected:
+  uint32_t mForegroundCount;
+  uint32_t mLoadFlags;
+  uint32_t mDefaultLoadFlags;
+  int32_t mPriority;
 
-    nsWeakPtr                       mObserver;
-    nsWeakPtr                       mParentLoadGroup;
+  nsCOMPtr<nsILoadGroup> mLoadGroup;  // load groups can contain load groups
+  nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
+  nsCOMPtr<nsIRequestContext> mRequestContext;
+  nsCOMPtr<nsIRequestContextService> mRequestContextService;
 
-    nsresult                        mStatus;
-    int32_t                         mPriority;
-    bool                            mIsCanceling;
+  nsCOMPtr<nsIRequest> mDefaultLoadRequest;
+  PLDHashTable mRequests;
 
-    /* Telemetry */
-    mozilla::TimeStamp              mDefaultRequestCreationTime;
-    bool                            mDefaultLoadIsTimed;
-    uint32_t                        mTimedRequests;
-    uint32_t                        mCachedRequests;
+  nsWeakPtr mObserver;
+  nsWeakPtr mParentLoadGroup;
 
-    /* For nsPILoadGroupInternal */
-    uint32_t                        mTimedNonCachedRequestsUntilOnEndPageLoad;
+  nsresult mStatus;
+  bool mIsCanceling;
+  bool mDefaultLoadIsTimed;
 
-    nsCString                       mUserAgentOverrideCache;
+  /* Telemetry */
+  mozilla::TimeStamp mDefaultRequestCreationTime;
+  uint32_t mTimedRequests;
+  uint32_t mCachedRequests;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
-#endif // nsLoadGroup_h__
+#endif  // nsLoadGroup_h__

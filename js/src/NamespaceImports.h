@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,40 +28,28 @@ class ConstTwoByteChars;
 class TwoByteChars;
 class TwoByteCharsZ;
 class UTF8Chars;
+class WTF8Chars;
 class UTF8CharsZ;
-
-template <typename T>
-class AutoVectorRooter;
-typedef AutoVectorRooter<Value> AutoValueVector;
-typedef AutoVectorRooter<jsid> AutoIdVector;
-typedef AutoVectorRooter<JSObject*> AutoObjectVector;
-typedef AutoVectorRooter<JSScript*> AutoVector;
 
 using ValueVector = JS::GCVector<JS::Value>;
 using IdVector = JS::GCVector<jsid>;
 using ScriptVector = JS::GCVector<JSScript*>;
 
-template <typename T> class AutoVectorRooter;
-template<typename K, typename V> class AutoHashMapRooter;
-template<typename T> class AutoHashSetRooter;
-
-class MOZ_STACK_CLASS SourceBufferHolder;
+template <typename UnitT>
+class SourceText;
 
 class HandleValueArray;
 
 class ObjectOpResult;
+class PropertyResult;
 
-struct PropertyDescriptor;
+enum class SymbolCode : uint32_t;
 
-class Symbol;
-enum class SymbolCode: uint32_t;
-
-} // namespace JS
+}  // namespace JS
 
 // Do the importing.
 namespace js {
 
-using JS::Value;
 using JS::BooleanValue;
 using JS::DoubleValue;
 using JS::Float32Value;
@@ -71,50 +59,55 @@ using JS::NullValue;
 using JS::NumberValue;
 using JS::ObjectOrNullValue;
 using JS::ObjectValue;
+using JS::PrivateGCThingValue;
 using JS::PrivateUint32Value;
 using JS::PrivateValue;
-using JS::PrivateGCThingValue;
 using JS::StringValue;
 using JS::UndefinedValue;
+using JS::Value;
+using JS::ValueType;
 
+using JS::ConstTwoByteChars;
 using JS::Latin1Char;
 using JS::Latin1Chars;
 using JS::Latin1CharsZ;
-using JS::ConstTwoByteChars;
 using JS::TwoByteChars;
 using JS::TwoByteCharsZ;
-using JS::UTF8Chars;
-using JS::UTF8CharsZ;
 using JS::UniqueChars;
 using JS::UniqueTwoByteChars;
+using JS::UTF8Chars;
+using JS::UTF8CharsZ;
+using JS::WTF8Chars;
 
-using JS::AutoVectorRooter;
-typedef AutoVectorRooter<Value> AutoValueVector;
-typedef AutoVectorRooter<jsid> AutoIdVector;
-typedef AutoVectorRooter<JSObject*> AutoObjectVector;
+using JS::Ok;
+using JS::OOM;
+using JS::Result;
 
-using JS::ValueVector;
+using JS::HandleIdVector;
+using JS::HandleObjectVector;
+using JS::HandleValueVector;
+using JS::MutableHandleIdVector;
+using JS::MutableHandleObjectVector;
+using JS::MutableHandleValueVector;
+using JS::RootedIdVector;
+using JS::RootedObjectVector;
+using JS::RootedValueVector;
+
 using JS::IdVector;
 using JS::ScriptVector;
+using JS::ValueVector;
 
-using JS::AutoHashMapRooter;
-using JS::AutoHashSetRooter;
-
-using JS::GCVector;
 using JS::GCHashMap;
 using JS::GCHashSet;
+using JS::GCVector;
 
 using JS::CallArgs;
 using JS::CallNonGenericMethod;
-using JS::CompileOptions;
 using JS::IsAcceptableThis;
 using JS::NativeImpl;
-using JS::OwningCompileOptions;
-using JS::ReadOnlyCompileOptions;
-using JS::SourceBufferHolder;
-using JS::TransitiveCompileOptions;
 
 using JS::Rooted;
+using JS::RootedBigInt;
 using JS::RootedFunction;
 using JS::RootedId;
 using JS::RootedObject;
@@ -124,6 +117,7 @@ using JS::RootedSymbol;
 using JS::RootedValue;
 
 using JS::PersistentRooted;
+using JS::PersistentRootedBigInt;
 using JS::PersistentRootedFunction;
 using JS::PersistentRootedId;
 using JS::PersistentRootedObject;
@@ -133,6 +127,7 @@ using JS::PersistentRootedSymbol;
 using JS::PersistentRootedValue;
 
 using JS::Handle;
+using JS::HandleBigInt;
 using JS::HandleFunction;
 using JS::HandleId;
 using JS::HandleObject;
@@ -142,6 +137,7 @@ using JS::HandleSymbol;
 using JS::HandleValue;
 
 using JS::MutableHandle;
+using JS::MutableHandleBigInt;
 using JS::MutableHandleFunction;
 using JS::MutableHandleId;
 using JS::MutableHandleObject;
@@ -150,21 +146,24 @@ using JS::MutableHandleString;
 using JS::MutableHandleSymbol;
 using JS::MutableHandleValue;
 
-using JS::NullHandleValue;
-using JS::UndefinedHandleValue;
-using JS::TrueHandleValue;
 using JS::FalseHandleValue;
+using JS::NullHandleValue;
+using JS::TrueHandleValue;
+using JS::UndefinedHandleValue;
 
 using JS::HandleValueArray;
 
 using JS::ObjectOpResult;
+using JS::PropertyResult;
 
-using JS::PropertyDescriptor;
-
+using JS::Compartment;
+using JS::Realm;
 using JS::Zone;
 
 using JS::Symbol;
 using JS::SymbolCode;
+
+using JS::BigInt;
 
 } /* namespace js */
 

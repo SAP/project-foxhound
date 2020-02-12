@@ -2,10 +2,10 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* test_json_parser() {
+add_task(async function test_json_parser() {
   const ID = "json@test.web.extension";
 
-  let xpi = Extension.generateXPI({
+  let xpi = AddonTestUtils.createTempWebExtensionFile({
     files: {
       "manifest.json": String.raw`{
         // This is a manifest.
@@ -17,9 +17,9 @@ add_task(function* test_json_parser() {
   });
 
   let expectedManifest = {
-    "applications": {"gecko": {"id": ID}},
-    "name": "This \" is // not a comment",
-    "version": "0.1\\",
+    applications: { gecko: { id: ID } },
+    name: 'This " is // not a comment',
+    version: "0.1\\",
   };
 
   let fileURI = Services.io.newFileURI(xpi);
@@ -27,11 +27,13 @@ add_task(function* test_json_parser() {
 
   let extension = new ExtensionData(uri);
 
-  yield extension.readManifest();
+  await extension.parseManifest();
 
-  Assert.deepEqual(extension.rawManifest, expectedManifest,
-                   "Manifest with correctly-filtered comments");
+  Assert.deepEqual(
+    extension.rawManifest,
+    expectedManifest,
+    "Manifest with correctly-filtered comments"
+  );
 
-  Services.obs.notifyObservers(xpi, "flush-cache-entry", null);
-  xpi.remove(false);
+  Services.obs.notifyObservers(xpi, "flush-cache-entry");
 });

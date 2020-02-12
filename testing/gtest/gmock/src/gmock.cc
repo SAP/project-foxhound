@@ -26,15 +26,14 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: wan@google.com (Zhanyong Wan)
+
 
 #include "gmock/gmock.h"
 #include "gmock/internal/gmock-port.h"
 
 namespace testing {
 
-// TODO(wan@google.com): support using environment variables to
+// FIXME: support using environment variables to
 // control the flag values, like what Google Test does.
 
 GMOCK_DEFINE_bool_(catch_leaked_mocks, true,
@@ -47,6 +46,13 @@ GMOCK_DEFINE_string_(verbose, internal::kWarningVerbosity,
                      "  info    - prints all messages.\n"
                      "  warning - prints warnings and errors.\n"
                      "  error   - prints errors only.");
+
+GMOCK_DEFINE_int32_(default_mock_behavior, 1,
+                    "Controls the default behavior of mocks."
+                    "  Valid values:\n"
+                    "  0 - by default, mocks act as NiceMocks.\n"
+                    "  1 - by default, mocks act as NaggyMocks.\n"
+                    "  2 - by default, mocks act as StrictMocks.");
 
 namespace internal {
 
@@ -62,7 +68,7 @@ static const char* ParseGoogleMockFlagValue(const char* str,
   if (str == NULL || flag == NULL) return NULL;
 
   // The flag must start with "--gmock_".
-  const String flag_str = String::Format("--gmock_%s", flag);
+  const std::string flag_str = std::string("--gmock_") + flag;
   const size_t flag_len = flag_str.length();
   if (strncmp(str, flag_str.c_str(), flag_len) != 0) return NULL;
 
@@ -106,6 +112,7 @@ static bool ParseGoogleMockBoolFlag(const char* str, const char* flag,
 //
 // On success, stores the value of the flag in *value, and returns
 // true.  On failure, returns false without changing *value.
+template <typename String>
 static bool ParseGoogleMockStringFlag(const char* str, const char* flag,
                                       String* value) {
   // Gets the value of the flag as a string.
@@ -117,6 +124,19 @@ static bool ParseGoogleMockStringFlag(const char* str, const char* flag,
   // Sets *value to the value of the flag.
   *value = value_str;
   return true;
+}
+
+static bool ParseGoogleMockIntFlag(const char* str, const char* flag,
+                                   int* value) {
+  // Gets the value of the flag as a string.
+  const char* const value_str = ParseGoogleMockFlagValue(str, flag, true);
+
+  // Aborts if the parsing failed.
+  if (value_str == NULL) return false;
+
+  // Sets *value to the value of the flag.
+  return ParseInt32(Message() << "The value of flag --" << flag,
+                    value_str, value);
 }
 
 // The internal implementation of InitGoogleMock().
@@ -131,13 +151,15 @@ void InitGoogleMockImpl(int* argc, CharType** argv) {
   if (*argc <= 0) return;
 
   for (int i = 1; i != *argc; i++) {
-    const String arg_string = StreamableToString(argv[i]);
+    const std::string arg_string = StreamableToString(argv[i]);
     const char* const arg = arg_string.c_str();
 
     // Do we see a Google Mock flag?
     if (ParseGoogleMockBoolFlag(arg, "catch_leaked_mocks",
                                 &GMOCK_FLAG(catch_leaked_mocks)) ||
-        ParseGoogleMockStringFlag(arg, "verbose", &GMOCK_FLAG(verbose))) {
+        ParseGoogleMockStringFlag(arg, "verbose", &GMOCK_FLAG(verbose)) ||
+        ParseGoogleMockIntFlag(arg, "default_mock_behavior",
+                               &GMOCK_FLAG(default_mock_behavior))) {
       // Yes.  Shift the remainder of the argv list left by one.  Note
       // that argv has (*argc + 1) elements, the last one always being
       // NULL.  The following loop moves the trailing NULL element as
@@ -169,13 +191,13 @@ void InitGoogleMockImpl(int* argc, CharType** argv) {
 // Since Google Test is needed for Google Mock to work, this function
 // also initializes Google Test and parses its flags, if that hasn't
 // been done.
-void InitGoogleMock(int* argc, char** argv) {
+GTEST_API_ void InitGoogleMock(int* argc, char** argv) {
   internal::InitGoogleMockImpl(argc, argv);
 }
 
 // This overloaded version can be used in Windows programs compiled in
 // UNICODE mode.
-void InitGoogleMock(int* argc, wchar_t** argv) {
+GTEST_API_ void InitGoogleMock(int* argc, wchar_t** argv) {
   internal::InitGoogleMockImpl(argc, argv);
 }
 

@@ -7,20 +7,20 @@
 #include "mozilla/ipc/IOThreadChild.h"
 
 #include "ContentProcess.h"
-
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-#include "mozilla/WindowsVersion.h"
-#endif
-
-#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-#include <stdlib.h>
-#endif
-
-#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
+#include "base/shared_memory.h"
 #include "mozilla/Preferences.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsDirectoryService.h"
-#include "nsDirectoryServiceDefs.h"
+#include "mozilla/recordreplay/ParentIPC.h"
+
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+#  include <stdlib.h>
+#  include "mozilla/Sandbox.h"
+#endif
+
+#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxSettings.h"
+#  include "nsAppDirectoryServiceDefs.h"
+#  include "nsDirectoryService.h"
+#  include "nsDirectoryServiceDefs.h"
 #endif
 
 using mozilla::ipc::IOThreadChild;
@@ -28,19 +28,8 @@ using mozilla::ipc::IOThreadChild;
 namespace mozilla {
 namespace dom {
 
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-static bool
-IsSandboxTempDirRequired()
-{
-  // On Windows, a sandbox-writable temp directory is only used
-  // for Vista or later with sandbox pref level >= 1.
-  return (IsVistaOrLater() &&
-    (Preferences::GetInt("security.sandbox.content.level") >= 1));
-}
-
-static void
-SetTmpEnvironmentVariable(nsIFile* aValue)
-{
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+static void SetTmpEnvironmentVariable(nsIFile* aValue) {
   // Save the TMP environment variable so that is is picked up by GetTempPath().
   // Note that we specifically write to the TMP variable, as that is the first
   // variable that is checked by GetTempPath() to determine its output.
@@ -56,42 +45,22 @@ SetTmpEnvironmentVariable(nsIFile* aValue)
 }
 #endif
 
-#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-static bool
-IsSandboxTempDirRequired()
-{
-  // On OSX, use the sandbox-writable temp when the pref level >= 1.
-  return (Preferences::GetInt("security.sandbox.content.level") >= 1);
-}
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+static void SetUpSandboxEnvironment() {
+  MOZ_ASSERT(
+      nsDirectoryService::gService,
+      "SetUpSandboxEnvironment relies on nsDirectoryService being initialized");
 
-static void
-SetTmpEnvironmentVariable(nsIFile* aValue)
-{
-  nsAutoCString fullTmpPath;
-  nsresult rv = aValue->GetNativePath(fullTmpPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-  Unused << NS_WARN_IF(setenv("TMPDIR", fullTmpPath.get(), 1) != 0);
-}
-#endif
-
-#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-static void
-SetUpSandboxEnvironment()
-{
-  MOZ_ASSERT(nsDirectoryService::gService,
-    "SetUpSandboxEnvironment relies on nsDirectoryService being initialized");
-
-  if (!IsSandboxTempDirRequired()) {
+  // On Windows, a sandbox-writable temp directory is used whenever the sandbox
+  // is enabled.
+  if (!IsContentSandboxEnabled()) {
     return;
   }
 
   nsCOMPtr<nsIFile> sandboxedContentTemp;
-  nsresult rv =
-    nsDirectoryService::gService->Get(NS_APP_CONTENT_PROCESS_TEMP_DIR,
-                                      NS_GET_IID(nsIFile),
-                                      getter_AddRefs(sandboxedContentTemp));
+  nsresult rv = nsDirectoryService::gService->Get(
+      NS_APP_CONTENT_PROCESS_TEMP_DIR, NS_GET_IID(nsIFile),
+      getter_AddRefs(sandboxedContentTemp));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -108,55 +77,138 @@ SetUpSandboxEnvironment()
 }
 #endif
 
-void
-ContentProcess::SetAppDir(const nsACString& aPath)
-{
-  mXREEmbed.SetAppDir(aPath);
-}
+bool ContentProcess::Init(int aArgc, char* aArgv[]) {
+  Maybe<uint64_t> childID;
+  Maybe<bool> isForBrowser;
+  Maybe<const char*> parentBuildID;
+  char* prefsHandle = nullptr;
+  char* prefMapHandle = nullptr;
+  char* prefsLen = nullptr;
+  char* prefMapSize = nullptr;
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  nsCOMPtr<nsIFile> profileDir;
+#endif
 
-#if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
-void
-ContentProcess::SetProfile(const nsACString& aProfile)
-{
-  bool flag;
-  nsresult rv =
-    XRE_GetFileFromPath(aProfile.BeginReading(), getter_AddRefs(mProfileDir));
-  if (NS_FAILED(rv) ||
-      NS_FAILED(mProfileDir->Exists(&flag)) || !flag) {
-    NS_WARNING("Invalid profile directory passed to content process.");
-    mProfileDir = nullptr;
+  for (int i = 1; i < aArgc; i++) {
+    if (!aArgv[i]) {
+      continue;
+    }
+
+    if (strcmp(aArgv[i], "-appdir") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      nsDependentCString appDir(aArgv[i]);
+      mXREEmbed.SetAppDir(appDir);
+
+    } else if (strcmp(aArgv[i], "-childID") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      char* str = aArgv[i];
+      childID = Some(strtoull(str, &str, 10));
+      if (str[0] != '\0') {
+        return false;
+      }
+
+    } else if (strcmp(aArgv[i], "-isForBrowser") == 0) {
+      isForBrowser = Some(true);
+
+    } else if (strcmp(aArgv[i], "-notForBrowser") == 0) {
+      isForBrowser = Some(false);
+
+#ifdef XP_WIN
+    } else if (strcmp(aArgv[i], "-prefsHandle") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      prefsHandle = aArgv[i];
+    } else if (strcmp(aArgv[i], "-prefMapHandle") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      prefMapHandle = aArgv[i];
+#endif
+
+    } else if (strcmp(aArgv[i], "-prefsLen") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      prefsLen = aArgv[i];
+    } else if (strcmp(aArgv[i], "-prefMapSize") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      prefMapSize = aArgv[i];
+    } else if (strcmp(aArgv[i], "-safeMode") == 0) {
+      gSafeMode = true;
+
+    } else if (strcmp(aArgv[i], "-parentBuildID") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      parentBuildID = Some(aArgv[i]);
+
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+    } else if (strcmp(aArgv[i], "-profile") == 0) {
+      if (++i == aArgc) {
+        return false;
+      }
+      bool flag;
+      nsresult rv = XRE_GetFileFromPath(aArgv[i], getter_AddRefs(profileDir));
+      if (NS_FAILED(rv) || NS_FAILED(profileDir->Exists(&flag)) || !flag) {
+        NS_WARNING("Invalid profile directory passed to content process.");
+        profileDir = nullptr;
+      }
+#endif /* XP_MACOSX && MOZ_SANDBOX */
+    }
   }
-}
+
+  // Did we find all the mandatory flags?
+  if (childID.isNothing() || isForBrowser.isNothing() ||
+      parentBuildID.isNothing()) {
+    return false;
+  }
+
+  SharedPreferenceDeserializer deserializer;
+  if (!deserializer.DeserializeFromSharedMemory(prefsHandle, prefMapHandle,
+                                                prefsLen, prefMapSize)) {
+    return false;
+  }
+
+  if (recordreplay::IsMiddleman()) {
+    recordreplay::parent::InitializeMiddleman(aArgc, aArgv, ParentPid(),
+                                              deserializer.GetPrefsHandle(),
+                                              deserializer.GetPrefMapHandle());
+  }
+
+  mContent.Init(IOThreadChild::message_loop(), ParentPid(), *parentBuildID,
+                IOThreadChild::channel(), *childID, *isForBrowser);
+
+  mXREEmbed.Start();
+#if (defined(XP_MACOSX)) && defined(MOZ_SANDBOX)
+  mContent.SetProfileDir(profileDir);
+#  if defined(DEBUG)
+  // For WebReplay middleman processes, the sandbox is
+  // started after receiving the SetProcessSandbox message.
+  if (IsContentSandboxEnabled() &&
+      Preferences::GetBool("security.sandbox.content.mac.earlyinit") &&
+      !recordreplay::IsMiddleman()) {
+    AssertMacSandboxEnabled();
+  }
+#  endif /* DEBUG */
+#endif   /* XP_MACOSX && MOZ_SANDBOX */
+
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+  SetUpSandboxEnvironment();
 #endif
 
-bool
-ContentProcess::Init()
-{
-    mContent.Init(IOThreadChild::message_loop(),
-                  ParentPid(),
-                  IOThreadChild::channel());
-    mXREEmbed.Start();
-    mContent.InitXPCOM();
-    mContent.InitGraphicsDeviceData();
-
-#if (defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-    mContent.SetProfileDir(mProfileDir);
-#endif
-
-#if (defined(XP_WIN) || defined(XP_MACOSX)) && defined(MOZ_CONTENT_SANDBOX)
-    SetUpSandboxEnvironment();
-#endif
-
-    return true;
+  return true;
 }
 
 // Note: CleanUp() never gets called in non-debug builds because we exit early
 // in ContentChild::ActorDestroy().
-void
-ContentProcess::CleanUp()
-{
-    mXREEmbed.Stop();
-}
+void ContentProcess::CleanUp() { mXREEmbed.Stop(); }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla

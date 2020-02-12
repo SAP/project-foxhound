@@ -14,7 +14,8 @@
 #include "nsRefreshDriver.h"
 #include "Units.h"
 
-class nsIPresShell;
+class nsChildView;
+class nsIWidget;
 
 namespace mozilla {
 
@@ -24,10 +25,12 @@ class PanGestureInput;
  * SwipeTracker turns PanGestureInput events into swipe events
  * (WidgetSimpleGestureEvent) and dispatches them into Gecko.
  * The swiping behavior mirrors the behavior of the Cocoa API
- * -[NSEvent trackSwipeEventWithOptions:dampenAmountThresholdMin:max:usingHandler:].
+ * -[NSEvent
+ *     trackSwipeEventWithOptions:dampenAmountThresholdMin:max:usingHandler:].
  * The advantage of using this class over the Cocoa API is that this class
  * properly supports submitting queued up events to it, and that it hopefully
- * doesn't intermittently break scrolling the way the Cocoa API does (bug 927702).
+ * doesn't intermittently break scrolling the way the Cocoa API does (bug
+ * 927702).
  *
  * The swipe direction is either left or right. It is determined before the
  * SwipeTracker is created and stays fixed during the swipe.
@@ -43,38 +46,38 @@ class PanGestureInput;
  * a bounce-back animation.)
  */
 class SwipeTracker final : public nsARefreshObserver {
-public:
+ public:
   NS_INLINE_DECL_REFCOUNTING(SwipeTracker, override)
 
-  SwipeTracker(nsChildView& aWidget,
-               const PanGestureInput& aSwipeStartEvent,
-               uint32_t aAllowedDirections,
-               uint32_t aSwipeDirection);
+  SwipeTracker(nsChildView& aWidget, const PanGestureInput& aSwipeStartEvent,
+               uint32_t aAllowedDirections, uint32_t aSwipeDirection);
 
   void Destroy();
 
   nsEventStatus ProcessEvent(const PanGestureInput& aEvent);
-  void CancelSwipe();
+  void CancelSwipe(const TimeStamp& aTimeStamp);
 
-  static WidgetSimpleGestureEvent
-    CreateSwipeGestureEvent(EventMessage aMsg, nsIWidget* aWidget,
-                            const LayoutDeviceIntPoint& aPosition);
-
+  static WidgetSimpleGestureEvent CreateSwipeGestureEvent(
+      EventMessage aMsg, nsIWidget* aWidget,
+      const LayoutDeviceIntPoint& aPosition, const TimeStamp& aTimeStamp);
 
   // nsARefreshObserver
   void WillRefresh(mozilla::TimeStamp aTime) override;
 
-protected:
+ protected:
   ~SwipeTracker();
 
-  bool SwipingInAllowedDirection() const { return mAllowedDirections & mSwipeDirection; }
+  bool SwipingInAllowedDirection() const {
+    return mAllowedDirections & mSwipeDirection;
+  }
   double SwipeSuccessTargetValue() const;
   double ClampToAllowedRange(double aGestureAmount) const;
   bool ComputeSwipeSuccess() const;
   void StartAnimating(double aTargetValue);
-  void SwipeFinished();
+  void SwipeFinished(const TimeStamp& aTimeStamp);
   void UnregisterFromRefreshDriver();
-  bool SendSwipeEvent(EventMessage aMsg, uint32_t aDirection, double aDelta);
+  bool SendSwipeEvent(EventMessage aMsg, uint32_t aDirection, double aDelta,
+                      const TimeStamp& aTimeStamp);
 
   nsChildView& mWidget;
   RefPtr<nsRefreshDriver> mRefreshDriver;
@@ -91,6 +94,6 @@ protected:
   bool mRegisteredWithRefreshDriver;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // SwipeTracker_h
+#endif  // SwipeTracker_h

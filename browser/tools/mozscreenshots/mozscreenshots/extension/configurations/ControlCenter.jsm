@@ -4,20 +4,27 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ControlCenter"];
+var EXPORTED_SYMBOLS = ["ControlCenter"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { BrowserTestUtils } = ChromeUtils.import(
+  "resource://testing-common/BrowserTestUtils.jsm"
+);
+const { SitePermissions } = ChromeUtils.import(
+  "resource:///modules/SitePermissions.jsm"
+);
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://testing-common/BrowserTestUtils.jsm");
-Cu.import("resource:///modules/SitePermissions.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+let { UrlClassifierTestUtils } = ChromeUtils.import(
+  "resource://testing-common/UrlClassifierTestUtils.jsm"
+);
 
-let {UrlClassifierTestUtils} = Cu.import("resource://testing-common/UrlClassifierTestUtils.jsm", {});
-
-const RESOURCE_PATH = "extensions/mozscreenshots/browser/chrome/mozscreenshots/lib/controlCenter";
+const RESOURCE_PATH =
+  "browser/browser/tools/mozscreenshots/mozscreenshots/extension/mozscreenshots/browser/resources/lib/controlCenter";
 const HTTP_PAGE = "http://example.com/";
 const HTTPS_PAGE = "https://example.com/";
 const PERMISSIONS_PAGE = "https://test1.example.com/";
@@ -27,217 +34,289 @@ const MIXED_ACTIVE_CONTENT_URL = `https://example.com/${RESOURCE_PATH}/mixed_act
 const MIXED_PASSIVE_CONTENT_URL = `https://example.com/${RESOURCE_PATH}/mixed_passive.html`;
 const TRACKING_PAGE = `http://tracking.example.org/${RESOURCE_PATH}/tracking.html`;
 
-this.ControlCenter = {
-  init(libDir) { },
+var ControlCenter = {
+  init(libDir) {},
 
   configurations: {
     about: {
-      applyConfig: Task.async(function* () {
-        yield loadPage("about:home");
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage("about:rights");
+        await openIdentityPopup();
+      },
     },
 
     localFile: {
-      applyConfig: Task.async(function* () {
+      // This selector is different so we can exclude the changing file: path
+      selectors: ["#identity-popup-security"],
+      async applyConfig() {
         let channel = NetUtil.newChannel({
-            uri: "chrome://mozscreenshots/content/lib/mozscreenshots.html",
-            loadUsingSystemPrincipal: true
+          uri: "resource://mozscreenshots/lib/mozscreenshots.html",
+          loadUsingSystemPrincipal: true,
         });
         channel = channel.QueryInterface(Ci.nsIFileChannel);
-        let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+        let browserWindow = Services.wm.getMostRecentWindow(
+          "navigator:browser"
+        );
         let gBrowser = browserWindow.gBrowser;
         BrowserTestUtils.loadURI(gBrowser.selectedBrowser, channel.file.path);
-        yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-        yield openIdentityPopup();
-      }),
+        await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+        await openIdentityPopup();
+      },
     },
 
     http: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTP_PAGE);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTP_PAGE);
+        await openIdentityPopup();
+      },
     },
 
     httpSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTP_PAGE);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTP_PAGE);
+        await openIdentityPopup(true);
+      },
     },
 
     https: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTPS_PAGE);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTPS_PAGE);
+        await openIdentityPopup();
+      },
     },
 
     httpsSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTPS_PAGE);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTPS_PAGE);
+        await openIdentityPopup(true);
+      },
     },
 
     singlePermission: {
-      applyConfig: Task.async(function* () {
-        let uri = Services.io.newURI(PERMISSIONS_PAGE, null, null)
-        SitePermissions.set(uri, "camera", SitePermissions.ALLOW);
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+          PERMISSIONS_PAGE
+        );
+        SitePermissions.setForPrincipal(
+          principal,
+          "camera",
+          SitePermissions.ALLOW
+        );
 
-        yield loadPage(PERMISSIONS_PAGE);
-        yield openIdentityPopup();
-      }),
+        await loadPage(PERMISSIONS_PAGE);
+        await openIdentityPopup();
+      },
     },
 
     allPermissions: {
-      applyConfig: Task.async(function* () {
-        // there are 3 possible non-default permission states, so we alternate between them
-        let states = [SitePermissions.ALLOW, SitePermissions.BLOCK, SitePermissions.SESSION];
-        let uri = Services.io.newURI(PERMISSIONS_PAGE, null, null)
-        SitePermissions.listPermissions().forEach(function (permission, index) {
-          SitePermissions.set(uri, permission, states[index % 3]);
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        // TODO: (Bug 1330601) Rewrite this to consider temporary (TAB) permission states.
+        // There are 2 possible non-default permission states, so we alternate between them.
+        let states = [SitePermissions.ALLOW, SitePermissions.BLOCK];
+        let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+          PERMISSIONS_PAGE
+        );
+        SitePermissions.listPermissions().forEach(function(permission, index) {
+          SitePermissions.setForPrincipal(
+            principal,
+            permission,
+            states[index % 2]
+          );
         });
 
-        yield loadPage(PERMISSIONS_PAGE);
-        yield openIdentityPopup();
-      }),
+        await loadPage(PERMISSIONS_PAGE);
+        await openIdentityPopup();
+      },
     },
 
     mixed: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_CONTENT_URL);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_CONTENT_URL);
+        await openIdentityPopup();
+      },
     },
 
     mixedSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_CONTENT_URL);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_CONTENT_URL);
+        await openIdentityPopup(true);
+      },
     },
 
     mixedPassive: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_PASSIVE_CONTENT_URL);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_PASSIVE_CONTENT_URL);
+        await openIdentityPopup();
+      },
     },
 
     mixedPassiveSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_PASSIVE_CONTENT_URL);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_PASSIVE_CONTENT_URL);
+        await openIdentityPopup(true);
+      },
     },
 
     mixedActive: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_ACTIVE_CONTENT_URL);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_ACTIVE_CONTENT_URL);
+        await openIdentityPopup();
+      },
     },
 
     mixedActiveSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(MIXED_ACTIVE_CONTENT_URL);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(MIXED_ACTIVE_CONTENT_URL);
+        await openIdentityPopup(true);
+      },
     },
 
     mixedActiveUnblocked: {
-      applyConfig: Task.async(function* () {
-        let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        let browserWindow = Services.wm.getMostRecentWindow(
+          "navigator:browser"
+        );
         let gBrowser = browserWindow.gBrowser;
-        yield loadPage(MIXED_ACTIVE_CONTENT_URL);
+        await loadPage(MIXED_ACTIVE_CONTENT_URL);
         gBrowser.ownerGlobal.gIdentityHandler.disableMixedContentProtection();
-        yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, MIXED_ACTIVE_CONTENT_URL);
-        yield openIdentityPopup();
-      }),
+        await BrowserTestUtils.browserLoaded(
+          gBrowser.selectedBrowser,
+          false,
+          MIXED_ACTIVE_CONTENT_URL
+        );
+        await openIdentityPopup();
+      },
     },
 
     mixedActiveUnblockedSubView: {
-      applyConfig: Task.async(function* () {
-        let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        let browserWindow = Services.wm.getMostRecentWindow(
+          "navigator:browser"
+        );
         let gBrowser = browserWindow.gBrowser;
-        yield loadPage(MIXED_ACTIVE_CONTENT_URL);
+        await loadPage(MIXED_ACTIVE_CONTENT_URL);
         gBrowser.ownerGlobal.gIdentityHandler.disableMixedContentProtection();
-        yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, MIXED_ACTIVE_CONTENT_URL);
-        yield openIdentityPopup(true);
-      }),
+        await BrowserTestUtils.browserLoaded(
+          gBrowser.selectedBrowser,
+          false,
+          MIXED_ACTIVE_CONTENT_URL
+        );
+        await openIdentityPopup(true);
+      },
     },
 
     httpPassword: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTP_PASSWORD_PAGE);
-        yield openIdentityPopup();
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTP_PASSWORD_PAGE);
+        await openIdentityPopup();
+      },
     },
 
     httpPasswordSubView: {
-      applyConfig: Task.async(function* () {
-        yield loadPage(HTTP_PASSWORD_PAGE);
-        yield openIdentityPopup(true);
-      }),
+      selectors: ["#navigator-toolbox", "#identity-popup"],
+      async applyConfig() {
+        await loadPage(HTTP_PASSWORD_PAGE);
+        await openIdentityPopup(true);
+      },
     },
 
     trackingProtectionNoElements: {
-      applyConfig: Task.async(function* () {
+      selectors: ["#navigator-toolbox", "#protections-popup"],
+      async applyConfig() {
         Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
 
-        yield loadPage(HTTP_PAGE);
-        yield openIdentityPopup();
-      }),
+        await loadPage(HTTP_PAGE);
+        await openProtectionsPopup();
+      },
     },
 
     trackingProtectionEnabled: {
-      applyConfig: Task.async(function* () {
+      selectors: ["#navigator-toolbox", "#protections-popup"],
+      async applyConfig() {
         Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
-        Services.prefs.setIntPref("privacy.trackingprotection.introCount", 20);
-        yield UrlClassifierTestUtils.addTestTrackers();
+        await UrlClassifierTestUtils.addTestTrackers();
 
-        yield loadPage(TRACKING_PAGE);
-        yield openIdentityPopup();
-      }),
+        await loadPage(TRACKING_PAGE);
+        await openProtectionsPopup();
+      },
     },
 
     trackingProtectionDisabled: {
-      applyConfig: Task.async(function* () {
-        let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+      selectors: ["#navigator-toolbox", "#protections-popup"],
+      async applyConfig() {
+        let browserWindow = Services.wm.getMostRecentWindow(
+          "navigator:browser"
+        );
         let gBrowser = browserWindow.gBrowser;
         Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
-        Services.prefs.setIntPref("privacy.trackingprotection.introCount", 20);
-        yield UrlClassifierTestUtils.addTestTrackers();
+        await UrlClassifierTestUtils.addTestTrackers();
 
-        yield loadPage(TRACKING_PAGE);
-        yield openIdentityPopup();
+        await loadPage(TRACKING_PAGE);
+
         // unblock the page
-        gBrowser.ownerGlobal.document.querySelector("#tracking-action-unblock").click();
-        yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, TRACKING_PAGE);
-        yield openIdentityPopup();
-      }),
+        let loaded = BrowserTestUtils.browserLoaded(
+          gBrowser.selectedBrowser,
+          false,
+          TRACKING_PAGE
+        );
+        gBrowser.ownerGlobal.gProtectionsHandler.disableForCurrentPage();
+        await loaded;
+        await openProtectionsPopup();
+      },
     },
   },
 };
 
-function* loadPage(url) {
+async function loadPage(url) {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let gBrowser = browserWindow.gBrowser;
   BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
-  yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, url);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, url);
 }
 
-function* openIdentityPopup(expand) {
+async function openIdentityPopup(expand) {
   let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
   let gBrowser = browserWindow.gBrowser;
   let { gIdentityHandler } = gBrowser.ownerGlobal;
   gIdentityHandler._identityPopup.hidePopup();
+  // Disable the popup shadow on OSX until we have figured out bug 1425253.
+  if (AppConstants.platform == "macosx") {
+    gIdentityHandler._identityPopup.classList.add("no-shadow");
+  }
   gIdentityHandler._identityBox.querySelector("#identity-icon").click();
   if (expand) {
     // give some time for opening to avoid weird style issues
-    yield new Promise((c) => setTimeout(c, 500));
-    gIdentityHandler._identityPopup.querySelector("#identity-popup-security-expander").click();
+    await new Promise(c => setTimeout(c, 500));
+    gIdentityHandler._identityPopup
+      .querySelector("#identity-popup-security-expander")
+      .click();
   }
+}
+
+async function openProtectionsPopup() {
+  let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  let gBrowser = browserWindow.gBrowser;
+  let { gProtectionsHandler } = gBrowser.ownerGlobal;
+  gProtectionsHandler._protectionsPopup.hidePopup();
+  // Disable the popup shadow on OSX until we have figured out bug 1425253.
+  if (AppConstants.platform == "macosx") {
+    gProtectionsHandler._protectionsPopup.classList.add("no-shadow");
+  }
+  gProtectionsHandler.showProtectionsPopup();
 }

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,19 +10,18 @@
 #include "nsIGfxInfo.h"
 #include "nsIFile.h"
 #include "nsString.h"
-#include "mozilla/Function.h"
+#include <functional>
 #include <string>
 
 namespace mozilla {
 
 namespace dom {
 class ContentParent;
-} // namespace dom
+}  // namespace dom
 
 namespace gfx {
 
-enum class DriverInitStatus
-{
+enum class DriverInitStatus {
   // Drivers have not been initialized yet.
   Unknown,
 
@@ -35,12 +35,12 @@ enum class DriverInitStatus
   Crashed
 };
 
-enum class CrashGuardType : uint32_t
-{
+enum class CrashGuardType : uint32_t {
   D3D11Layers,
   D3D9Video,
   GLContext,
   D3D11Video,
+  WMFVPXVideo,
   // Add new entries above this line, update the name array in
   // DriverCrashGuard.cpp, and make sure to add an entry in
   // ContentParent.cpp.
@@ -49,7 +49,7 @@ enum class CrashGuardType : uint32_t
 };
 
 // DriverCrashGuard is used to detect crashes at graphics driver callsites.
-// 
+//
 // If the graphics environment is unrecognized or has changed since the last
 // session, the crash guard will activate and will detect any crashes within
 // the scope of the guard object.
@@ -57,9 +57,8 @@ enum class CrashGuardType : uint32_t
 // If a callsite has a previously encountered crash, and the environment has
 // not changed since the last session, then the guard will set a status flag
 // indicating that the driver should not be used.
-class DriverCrashGuard
-{
-public:
+class DriverCrashGuard {
+ public:
   DriverCrashGuard(CrashGuardType aType, dom::ContentParent* aContentParent);
   virtual ~DriverCrashGuard();
 
@@ -83,23 +82,32 @@ public:
     Proxy
   };
 
-  typedef mozilla::function<void(const char* aName, const char* aPrefName)>
-    CrashGuardCallback;
+  typedef std::function<void(const char* aName, const char* aPrefName)>
+      CrashGuardCallback;
   static void ForEachActiveCrashGuard(const CrashGuardCallback& aCallback);
 
-protected:
+ protected:
   virtual void Initialize();
-  virtual bool UpdateEnvironment() = 0;
+  // UpdateEnvironment needs to return true should we need to attempt the
+  // operation once again.
+  // It should return true once only so that in case of a crash, we won't
+  // needlessly attempt the operation over and over again leading to continual
+  // crashes. several times
+  virtual bool UpdateEnvironment() {
+    // We don't care about any extra preferences here.
+    return false;
+  }
   virtual void LogCrashRecovery() = 0;
   virtual void LogFeatureDisabled() = 0;
 
   // Helper functions.
-  bool FeatureEnabled(int aFeature, bool aDefault=true);
-  bool CheckAndUpdatePref(const char* aPrefName, const nsAString& aCurrentValue);
+  bool FeatureEnabled(int aFeature, bool aDefault = true);
+  bool CheckAndUpdatePref(const char* aPrefName,
+                          const nsAString& aCurrentValue);
   bool CheckAndUpdateBoolPref(const char* aPrefName, bool aCurrentValue);
   std::string GetFullPrefName(const char* aPref);
 
-private:
+ private:
   // Either process.
   void InitializeIfNeeded();
   bool CheckOrRefreshEnvironment();
@@ -113,7 +121,7 @@ private:
   void FlushPreferences();
   void SetStatus(DriverInitStatus aStatus);
 
-private:
+ private:
   CrashGuardType mType;
   Mode mMode;
   bool mInitialized;
@@ -121,13 +129,12 @@ private:
   bool mCrashDetected;
   nsCOMPtr<nsIFile> mGuardFile;
 
-protected:
+ protected:
   nsCString mStatusPref;
   nsCOMPtr<nsIGfxInfo> mGfxInfo;
 };
 
-class D3D11LayersCrashGuard final : public DriverCrashGuard
-{
+class D3D11LayersCrashGuard final : public DriverCrashGuard {
  public:
   explicit D3D11LayersCrashGuard(dom::ContentParent* aContentParent = nullptr);
 
@@ -141,30 +148,25 @@ class D3D11LayersCrashGuard final : public DriverCrashGuard
   void RecordTelemetry(TelemetryState aState);
 };
 
-class D3D9VideoCrashGuard final : public DriverCrashGuard
-{
+class D3D9VideoCrashGuard final : public DriverCrashGuard {
  public:
   explicit D3D9VideoCrashGuard(dom::ContentParent* aContentParent = nullptr);
 
  protected:
-  bool UpdateEnvironment() override;
   void LogCrashRecovery() override;
   void LogFeatureDisabled() override;
 };
 
-class D3D11VideoCrashGuard final : public DriverCrashGuard
-{
+class D3D11VideoCrashGuard final : public DriverCrashGuard {
  public:
   explicit D3D11VideoCrashGuard(dom::ContentParent* aContentParent = nullptr);
 
  protected:
-  bool UpdateEnvironment() override;
   void LogCrashRecovery() override;
   void LogFeatureDisabled() override;
 };
 
-class GLContextCrashGuard final : public DriverCrashGuard
-{
+class GLContextCrashGuard final : public DriverCrashGuard {
  public:
   explicit GLContextCrashGuard(dom::ContentParent* aContentParent = nullptr);
   void Initialize() override;
@@ -175,8 +177,16 @@ class GLContextCrashGuard final : public DriverCrashGuard
   void LogFeatureDisabled() override;
 };
 
-} // namespace gfx
-} // namespace mozilla
+class WMFVPXVideoCrashGuard final : public DriverCrashGuard {
+ public:
+  explicit WMFVPXVideoCrashGuard(dom::ContentParent* aContentParent = nullptr);
 
-#endif // gfx_src_DriverCrashGuard_h__
+ protected:
+  void LogCrashRecovery() override;
+  void LogFeatureDisabled() override;
+};
 
+}  // namespace gfx
+}  // namespace mozilla
+
+#endif  // gfx_src_DriverCrashGuard_h__

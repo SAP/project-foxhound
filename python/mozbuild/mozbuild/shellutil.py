@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import re
 
 
@@ -15,18 +17,19 @@ def _tokens2re(**tokens):
     # which matches the pattern and captures it in a named match group.
     # The group names and patterns are given as arguments.
     all_tokens = '|'.join('(?P<%s>%s)' % (name, value)
-                          for name, value in tokens.iteritems())
+                          for name, value in tokens.items())
     nonescaped = r'(?<!\\)(?:%s)' % all_tokens
 
     # The final pattern matches either the above pattern, or an escaped
     # backslash, captured in the "escape" match group.
     return re.compile('(?:%s|%s)' % (nonescaped, r'(?P<escape>\\\\)'))
 
+
 UNQUOTED_TOKENS_RE = _tokens2re(
   whitespace=r'[\t\r\n ]+',
   quote=r'[\'"]',
   comment='#',
-  special=r'[<>&|`~(){}$;\*\?]',
+  special=r'[<>&|`(){}$;\*\?]',
   backslashed=r'\\[^\\]',
 )
 
@@ -41,7 +44,7 @@ ESCAPED_NEWLINES_RE = re.compile(r'\\\n')
 
 # This regexp contains the same characters as all those listed in
 # UNQUOTED_TOKENS_RE. Please keep in sync.
-SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
+SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`(){}$;\*\?]')
 
 
 class MetaCharacterException(Exception):
@@ -54,6 +57,7 @@ class _ClineSplitter(object):
     Parses a given command line string and creates a list of command
     and arguments, with wildcard expansion.
     '''
+
     def __init__(self, cline):
         self.arg = None
         self.cline = cline
@@ -184,7 +188,7 @@ def _quote(s):
         return '%d' % s
 
     # Empty strings need to be quoted to have any significance
-    if s and not SHELL_QUOTE_RE.search(s):
+    if s and not SHELL_QUOTE_RE.search(s) and not s.startswith('~'):
         return s
 
     # Single quoted strings can contain any characters unescaped except the

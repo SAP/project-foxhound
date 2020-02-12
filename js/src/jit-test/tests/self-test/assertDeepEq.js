@@ -77,7 +77,8 @@ assertDeepEq(q, p);
 assertNotDeepEq(() => 1, () => 2);
 assertNotDeepEq((...x) => 1, x => 1);
 assertNotDeepEq(function f(){}, function g(){});
-var f1 = function () {}, f2 = function () {};
+// Avoid setting name property.
+var [f1, f2] = [function () {}, function () {}];
 assertDeepEq(f1, f1);
 assertDeepEq(f1, f2);  // same text, close enough
 f1.prop = 1;
@@ -104,7 +105,7 @@ var y = [x];
 assertDeepEq([y], [y]);
 
 // cross-compartment
-var g1 = newGlobal(), g2 = newGlobal();
+var g1 = newGlobal({newCompartment: true}), g2 = newGlobal({newCompartment: true});
 assertDeepEq(g1, g2);
 assertDeepEq(g1, g2, {strictEquivalence: true});
 Object.preventExtensions(g2.Math.abs);  // make some miniscule change

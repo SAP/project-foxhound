@@ -1,11 +1,15 @@
+setJitCompilerOption("ion.warmup.trigger", 50);
+setJitCompilerOption("offthread-compilation.enable", 0);
+gcPreserveCode();
+
 var caughtInvalidArguments = false;
 var a = -1
 try {
     var buf = new Uint8ClampedArray(a);
     throw new Error("didn't throw");
 } catch (e) {
-    assertEq(e instanceof TypeError, true,
-             "expected TypeError, instead threw: " + e);
+    assertEq(e instanceof RangeError, true,
+             "expected RangeError, instead threw: " + e);
     caughtInvalidArguments = true;
 }
 assertEq(caughtInvalidArguments, true);
@@ -20,8 +24,8 @@ while (true) {
         assertEq(buf.length, 300);
     } catch (e) {
         assertEq(a, -1);
-        assertEq(e instanceof TypeError, true,
-                "expected TypeError, instead threw: " + e);
+        assertEq(e instanceof RangeError, true,
+                "expected RangeError, instead threw: " + e);
         caughtInvalidArguments = true;
         break;
     }
@@ -38,8 +42,8 @@ while (true) {
         assertEq(buf.length, 0);
     } catch (e) {
         assertEq(a, -1);
-        assertEq(e instanceof TypeError, true,
-                "expected TypeError, instead threw: " + e);
+        assertEq(e instanceof RangeError, true,
+                "expected RangeError, instead threw: " + e);
         caughtInvalidArguments = true;
         break;
     }

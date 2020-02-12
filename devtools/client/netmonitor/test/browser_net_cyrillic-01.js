@@ -7,39 +7,58 @@
  * Tests if cyrillic text is rendered correctly in the source editor.
  */
 
-add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(CYRILLIC_URL);
+add_task(async function() {
+  const { tab, monitor } = await initNetMonitor(CYRILLIC_URL);
   info("Starting test... ");
 
-  let { document, EVENTS, Editor, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  const { getDisplayedRequests, getSortedRequests } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
 
-  RequestsMenu.lazyUpdate = false;
+  store.dispatch(Actions.batchEnable(false));
 
-  let wait = waitForNetworkEvents(monitor, 1);
-  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
-    content.wrappedJSObject.performRequests();
-  });
-  yield wait;
+  // Execute requests.
+  await performRequests(monitor, tab, 1);
 
-  verifyRequestItemTarget(RequestsMenu.getItemAtIndex(0),
-    "GET", CONTENT_TYPE_SJS + "?fmt=txt", {
+  const requestItem = document.querySelectorAll(".request-list-item")[0];
+  const requestsListStatus = requestItem.querySelector(".status-code");
+  requestItem.scrollIntoView();
+  EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+  await waitUntil(() => requestsListStatus.title);
+
+  verifyRequestItemTarget(
+    document,
+    getDisplayedRequests(store.getState()),
+    getSortedRequests(store.getState()).get(0),
+    "GET",
+    CONTENT_TYPE_SJS + "?fmt=txt",
+    {
       status: 200,
-      statusText: "DA DA DA"
-    });
+      statusText: "DA DA DA",
+    }
+  );
 
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.getElementById("details-pane-toggle"));
-  EventUtils.sendMouseEvent({ type: "mousedown" },
-    document.querySelectorAll("#details-pane tab")[3]);
+  let wait = waitForDOM(document, "#headers-panel");
+  EventUtils.sendMouseEvent(
+    { type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[0]
+  );
+  await wait;
+  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  EventUtils.sendMouseEvent(
+    { type: "click" },
+    document.querySelector("#response-tab")
+  );
+  await wait;
 
-  yield monitor.panelWin.once(EVENTS.RESPONSE_BODY_DISPLAYED);
-  let editor = yield NetMonitorView.editor("#response-content-textarea");
-  // u044F = я
-  is(editor.getText().indexOf("\u044F"), 26,
-    "The text shown in the source editor is correct.");
-  is(editor.getMode(), Editor.modes.text,
-    "The mode active in the source editor is correct.");
+  ok(
+    getCodeMirrorValue(monitor).includes(
+      "\u0411\u0440\u0430\u0442\u0430\u043d"
+    ),
+    "The text shown in the source editor is correct."
+  );
 
-  yield teardown(monitor);
+  return teardown(monitor);
 });

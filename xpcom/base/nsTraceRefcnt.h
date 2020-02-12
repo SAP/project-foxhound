@@ -3,28 +3,24 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsTraceRefcnt_h___
-#define nsTraceRefcnt_h___
+#ifndef nsTraceRefcnt_h
+#define nsTraceRefcnt_h
 
-#include <stdio.h> // for FILE
+#include <stdio.h>  // for FILE
 #include "nscore.h"
 
-class nsTraceRefcnt
-{
-public:
+class nsTraceRefcnt {
+ public:
   static void Shutdown();
 
-  enum StatisticsType {
-    ALL_STATS,
-    NEW_STATS
-  };
-
-  static nsresult DumpStatistics(StatisticsType aType = ALL_STATS,
-                                 FILE* aOut = 0);
+  static nsresult DumpStatistics();
 
   static void ResetStatistics();
 
   static void WalkTheStack(FILE* aStream);
+#ifdef ANDROID
+  static void WalkTheStack(void (*aWriter)(uint32_t, void*, void*, void*));
+#endif
 
   /**
    * Tell nsTraceRefcnt whether refcounting, allocation, and destruction
@@ -34,13 +30,4 @@ public:
   static void SetActivityIsLegal(bool aLegal);
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// And now for that utility that you've all been asking for...
-
-extern "C" void
-NS_MeanAndStdDev(double aNumberOfValues,
-                 double aSumOfValues, double aSumOfSquaredValues,
-                 double* aMeanResult, double* aStdDevResult);
-
-////////////////////////////////////////////////////////////////////////////////
-#endif
+#endif  // nsTraceRefcnt_h

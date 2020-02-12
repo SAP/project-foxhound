@@ -24,79 +24,6 @@
 #include "sk_types_priv.h"
 
 const struct {
-    sk_colortype_t  fC;
-    SkColorType     fSK;
-} gColorTypeMap[] = {
-    { UNKNOWN_SK_COLORTYPE,     kUnknown_SkColorType    },
-    { RGBA_8888_SK_COLORTYPE,   kRGBA_8888_SkColorType  },
-    { BGRA_8888_SK_COLORTYPE,   kBGRA_8888_SkColorType  },
-    { ALPHA_8_SK_COLORTYPE,     kAlpha_8_SkColorType    },
-};
-
-const struct {
-    sk_alphatype_t  fC;
-    SkAlphaType     fSK;
-} gAlphaTypeMap[] = {
-    { OPAQUE_SK_ALPHATYPE,      kOpaque_SkAlphaType     },
-    { PREMUL_SK_ALPHATYPE,      kPremul_SkAlphaType     },
-    { UNPREMUL_SK_ALPHATYPE,    kUnpremul_SkAlphaType   },
-};
-
-static bool from_c_colortype(sk_colortype_t cCT, SkColorType* skCT) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gColorTypeMap); ++i) {
-        if (gColorTypeMap[i].fC == cCT) {
-            if (skCT) {
-                *skCT = gColorTypeMap[i].fSK;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool to_c_colortype(SkColorType skCT, sk_colortype_t* cCT) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gColorTypeMap); ++i) {
-        if (gColorTypeMap[i].fSK == skCT) {
-            if (cCT) {
-                *cCT = gColorTypeMap[i].fC;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool from_c_alphatype(sk_alphatype_t cAT, SkAlphaType* skAT) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gAlphaTypeMap); ++i) {
-        if (gAlphaTypeMap[i].fC == cAT) {
-            if (skAT) {
-                *skAT = gAlphaTypeMap[i].fSK;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool from_c_info(const sk_imageinfo_t& cinfo, SkImageInfo* info) {
-    SkColorType ct;
-    SkAlphaType at;
-
-    if (!from_c_colortype(cinfo.colorType, &ct)) {
-        // optionally report error to client?
-        return false;
-    }
-    if (!from_c_alphatype(cinfo.alphaType, &at)) {
-        // optionally report error to client?
-        return false;
-    }
-    if (info) {
-        *info = SkImageInfo::Make(cinfo.width, cinfo.height, ct, at);
-    }
-    return true;
-}
-
-const struct {
     sk_pixelgeometry_t fC;
     SkPixelGeometry    fSK;
 } gPixelGeometryMap[] = {
@@ -208,23 +135,10 @@ static sk_picture_t* ToPicture(SkPicture* pic) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-sk_colortype_t sk_colortype_get_default_8888() {
-    sk_colortype_t ct;
-    if (!to_c_colortype(kN32_SkColorType, &ct)) {
-        ct = UNKNOWN_SK_COLORTYPE;
-    }
-    return ct;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////
-
 sk_image_t* sk_image_new_raster_copy(const sk_imageinfo_t* cinfo, const void* pixels,
                                      size_t rowBytes) {
-    SkImageInfo info;
-    if (!from_c_info(*cinfo, &info)) {
-        return NULL;
-    }
-    return (sk_image_t*)SkImage::MakeRasterCopy(SkPixmap(info, pixels, rowBytes)).release();
+    const SkImageInfo* info = reinterpret_cast<const SkImageInfo*>(cinfo);
+    return (sk_image_t*)SkImage::MakeRasterCopy(SkPixmap(*info, pixels, rowBytes)).release();
 }
 
 sk_image_t* sk_image_new_from_encoded(const sk_data_t* cdata, const sk_irect_t* subset) {
@@ -233,7 +147,7 @@ sk_image_t* sk_image_new_from_encoded(const sk_data_t* cdata, const sk_irect_t* 
 }
 
 sk_data_t* sk_image_encode(const sk_image_t* cimage) {
-    return ToData(AsImage(cimage)->encode());
+    return ToData(AsImage(cimage)->encodeToData().release());
 }
 
 void sk_image_ref(const sk_image_t* cimage) {
@@ -423,33 +337,27 @@ void sk_canvas_draw_picture(sk_canvas_t* ccanvas, const sk_picture_t* cpicture,
 
 sk_surface_t* sk_surface_new_raster(const sk_imageinfo_t* cinfo,
                                     const sk_surfaceprops_t* props) {
-    SkImageInfo info;
-    if (!from_c_info(*cinfo, &info)) {
-        return NULL;
-    }
+    const SkImageInfo* info = reinterpret_cast<const SkImageInfo*>(cinfo);
     SkPixelGeometry geo = kUnknown_SkPixelGeometry;
     if (props && !from_c_pixelgeometry(props->pixelGeometry, &geo)) {
         return NULL;
     }
 
     SkSurfaceProps surfProps(0, geo);
-    return (sk_surface_t*)SkSurface::MakeRaster(info, &surfProps).release();
+    return (sk_surface_t*)SkSurface::MakeRaster(*info, &surfProps).release();
 }
 
 sk_surface_t* sk_surface_new_raster_direct(const sk_imageinfo_t* cinfo, void* pixels,
                                            size_t rowBytes,
                                            const sk_surfaceprops_t* props) {
-    SkImageInfo info;
-    if (!from_c_info(*cinfo, &info)) {
-        return NULL;
-    }
+    const SkImageInfo* info = reinterpret_cast<const SkImageInfo*>(cinfo);
     SkPixelGeometry geo = kUnknown_SkPixelGeometry;
     if (props && !from_c_pixelgeometry(props->pixelGeometry, &geo)) {
         return NULL;
     }
 
     SkSurfaceProps surfProps(0, geo);
-    return (sk_surface_t*)SkSurface::MakeRasterDirect(info, pixels, rowBytes, &surfProps).release();
+    return (sk_surface_t*)SkSurface::MakeRasterDirect(*info, pixels, rowBytes, &surfProps).release();
 }
 
 void sk_surface_unref(sk_surface_t* csurf) {
@@ -499,179 +407,6 @@ uint32_t sk_picture_get_unique_id(sk_picture_t* cpic) {
 
 sk_rect_t sk_picture_get_bounds(sk_picture_t* cpic) {
     return ToRect(AsPicture(cpic)->cullRect());
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////
-
-#include "../../include/effects/SkGradientShader.h"
-#include "sk_shader.h"
-
-const struct {
-    sk_shader_tilemode_t    fC;
-    SkShader::TileMode      fSK;
-} gTileModeMap[] = {
-    { CLAMP_SK_SHADER_TILEMODE,     SkShader::kClamp_TileMode },
-    { REPEAT_SK_SHADER_TILEMODE,    SkShader::kRepeat_TileMode },
-    { MIRROR_SK_SHADER_TILEMODE,    SkShader::kMirror_TileMode  },
-};
-
-static bool from_c_tilemode(sk_shader_tilemode_t cMode, SkShader::TileMode* skMode) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gTileModeMap); ++i) {
-        if (cMode == gTileModeMap[i].fC) {
-            if (skMode) {
-                *skMode = gTileModeMap[i].fSK;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-void sk_shader_ref(sk_shader_t* cshader) {
-    SkSafeRef(AsShader(cshader));
-}
-
-void sk_shader_unref(sk_shader_t* cshader) {
-    SkSafeUnref(AsShader(cshader));
-}
-
-sk_shader_t* sk_shader_new_linear_gradient(const sk_point_t pts[2],
-                                           const sk_color_t colors[],
-                                           const float colorPos[],
-                                           int colorCount,
-                                           sk_shader_tilemode_t cmode,
-                                           const sk_matrix_t* cmatrix) {
-    SkShader::TileMode mode;
-    if (!from_c_tilemode(cmode, &mode)) {
-        return NULL;
-    }
-    SkMatrix matrix;
-    if (cmatrix) {
-        from_c_matrix(cmatrix, &matrix);
-    } else {
-        matrix.setIdentity();
-    }
-    return (sk_shader_t*)SkGradientShader::MakeLinear(reinterpret_cast<const SkPoint*>(pts),
-                                                      reinterpret_cast<const SkColor*>(colors),
-                                                      colorPos, colorCount,
-                                                      mode, 0, &matrix).release();
-}
-
-static const SkPoint& to_skpoint(const sk_point_t& p) {
-    return reinterpret_cast<const SkPoint&>(p);
-}
-
-sk_shader_t* sk_shader_new_radial_gradient(const sk_point_t* ccenter,
-                                           float radius,
-                                           const sk_color_t colors[],
-                                           const float colorPos[],
-                                           int colorCount,
-                                           sk_shader_tilemode_t cmode,
-                                           const sk_matrix_t* cmatrix) {
-    SkShader::TileMode mode;
-    if (!from_c_tilemode(cmode, &mode)) {
-        return NULL;
-    }
-    SkMatrix matrix;
-    if (cmatrix) {
-        from_c_matrix(cmatrix, &matrix);
-    } else {
-        matrix.setIdentity();
-    }
-    SkPoint center = to_skpoint(*ccenter);
-    return (sk_shader_t*)SkGradientShader::MakeRadial(center, (SkScalar)radius,
-                                                      reinterpret_cast<const SkColor*>(colors),
-                                                      reinterpret_cast<const SkScalar*>(colorPos),
-                                                      colorCount, mode, 0, &matrix).release();
-}
-
-sk_shader_t* sk_shader_new_sweep_gradient(const sk_point_t* ccenter,
-                                          const sk_color_t colors[],
-                                          const float colorPos[],
-                                          int colorCount,
-                                          const sk_matrix_t* cmatrix) {
-    SkMatrix matrix;
-    if (cmatrix) {
-        from_c_matrix(cmatrix, &matrix);
-    } else {
-        matrix.setIdentity();
-    }
-    return (sk_shader_t*)SkGradientShader::MakeSweep((SkScalar)(ccenter->x),
-                                                     (SkScalar)(ccenter->y),
-                                                     reinterpret_cast<const SkColor*>(colors),
-                                                     reinterpret_cast<const SkScalar*>(colorPos),
-                                                     colorCount, 0, &matrix).release();
-}
-
-sk_shader_t* sk_shader_new_two_point_conical_gradient(const sk_point_t* start,
-                                                      float startRadius,
-                                                      const sk_point_t* end,
-                                                      float endRadius,
-                                                      const sk_color_t colors[],
-                                                      const float colorPos[],
-                                                      int colorCount,
-                                                      sk_shader_tilemode_t cmode,
-                                                      const sk_matrix_t* cmatrix) {
-    SkShader::TileMode mode;
-    if (!from_c_tilemode(cmode, &mode)) {
-        return NULL;
-    }
-    SkMatrix matrix;
-    if (cmatrix) {
-        from_c_matrix(cmatrix, &matrix);
-    } else {
-        matrix.setIdentity();
-    }
-    SkPoint skstart = to_skpoint(*start);
-    SkPoint skend = to_skpoint(*end);
-    return (sk_shader_t*)SkGradientShader::MakeTwoPointConical(skstart, (SkScalar)startRadius,
-                                                        skend, (SkScalar)endRadius,
-                                                        reinterpret_cast<const SkColor*>(colors),
-                                                        reinterpret_cast<const SkScalar*>(colorPos),
-                                                        colorCount, mode, 0, &matrix).release();
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////
-
-#include "../../include/effects/SkBlurMaskFilter.h"
-#include "sk_maskfilter.h"
-
-const struct {
-    sk_blurstyle_t  fC;
-    SkBlurStyle     fSk;
-} gBlurStylePairs[] = {
-    { NORMAL_SK_BLUR_STYLE, kNormal_SkBlurStyle },
-    { SOLID_SK_BLUR_STYLE,  kSolid_SkBlurStyle },
-    { OUTER_SK_BLUR_STYLE,  kOuter_SkBlurStyle },
-    { INNER_SK_BLUR_STYLE,  kInner_SkBlurStyle },
-};
-
-static bool find_blurstyle(sk_blurstyle_t csrc, SkBlurStyle* dst) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gBlurStylePairs); ++i) {
-        if (gBlurStylePairs[i].fC == csrc) {
-            if (dst) {
-                *dst = gBlurStylePairs[i].fSk;
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-void sk_maskfilter_ref(sk_maskfilter_t* cfilter) {
-    SkSafeRef(AsMaskFilter(cfilter));
-}
-
-void sk_maskfilter_unref(sk_maskfilter_t* cfilter) {
-    SkSafeUnref(AsMaskFilter(cfilter));
-}
-
-sk_maskfilter_t* sk_maskfilter_new_blur(sk_blurstyle_t cstyle, float sigma) {
-    SkBlurStyle style;
-    if (!find_blurstyle(cstyle, &style)) {
-        return NULL;
-    }
-    return ToMaskFilter(SkBlurMaskFilter::Make(style, sigma).release());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////

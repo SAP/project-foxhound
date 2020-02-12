@@ -8,92 +8,95 @@
 #define mozilla_dom_SVGPatternElement_h
 
 #include "nsAutoPtr.h"
-#include "nsSVGEnum.h"
-#include "nsSVGLength2.h"
-#include "nsSVGString.h"
-#include "nsSVGElement.h"
-#include "nsSVGViewBox.h"
+#include "SVGAnimatedEnumeration.h"
+#include "SVGAnimatedLength.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
-#include "nsSVGAnimatedTransformList.h"
+#include "SVGAnimatedString.h"
+#include "SVGAnimatedTransformList.h"
+#include "SVGAnimatedViewBox.h"
+#include "mozilla/dom/SVGElement.h"
 
 class nsSVGPatternFrame;
 
-nsresult NS_NewSVGPatternElement(nsIContent **aResult,
-                                 already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+nsresult NS_NewSVGPatternElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
-class SVGAnimatedTransformList;
+class DOMSVGAnimatedTransformList;
 
-typedef nsSVGElement SVGPatternElementBase;
+typedef SVGElement SVGPatternElementBase;
 
-class SVGPatternElement final : public SVGPatternElementBase
-{
+class SVGPatternElement final : public SVGPatternElementBase {
   friend class ::nsSVGPatternFrame;
 
-protected:
-  friend nsresult (::NS_NewSVGPatternElement(nsIContent **aResult,
-                                             already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGPatternElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
-  virtual JSObject* WrapNode(JSContext *cx, JS::Handle<JSObject*> aGivenProto) override;
+ protected:
+  friend nsresult(::NS_NewSVGPatternElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGPatternElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  virtual JSObject* WrapNode(JSContext* cx,
+                             JS::Handle<JSObject*> aGivenProto) override;
 
-public:
-  typedef mozilla::SVGAnimatedPreserveAspectRatio SVGAnimatedPreserveAspectRatio;
+ public:
+  typedef mozilla::SVGAnimatedPreserveAspectRatio
+      SVGAnimatedPreserveAspectRatio;
 
   // nsIContent interface
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* name) const override;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   // nsSVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
-  virtual mozilla::nsSVGAnimatedTransformList*
-    GetAnimatedTransformList(uint32_t aFlags = 0) override;
-  virtual nsIAtom* GetTransformListAttrName() const override {
+  virtual mozilla::SVGAnimatedTransformList* GetAnimatedTransformList(
+      uint32_t aFlags = 0) override;
+  virtual nsStaticAtom* GetTransformListAttrName() const override {
     return nsGkAtoms::patternTransform;
   }
 
   // WebIDL
   already_AddRefed<SVGAnimatedRect> ViewBox();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
-  already_AddRefed<SVGAnimatedEnumeration> PatternUnits();
-  already_AddRefed<SVGAnimatedEnumeration> PatternContentUnits();
-  already_AddRefed<SVGAnimatedTransformList> PatternTransform();
-  already_AddRefed<SVGAnimatedLength> X();
-  already_AddRefed<SVGAnimatedLength> Y();
-  already_AddRefed<SVGAnimatedLength> Width();
-  already_AddRefed<SVGAnimatedLength> Height();
-  already_AddRefed<SVGAnimatedString> Href();
+  already_AddRefed<DOMSVGAnimatedEnumeration> PatternUnits();
+  already_AddRefed<DOMSVGAnimatedEnumeration> PatternContentUnits();
+  already_AddRefed<DOMSVGAnimatedTransformList> PatternTransform();
+  already_AddRefed<DOMSVGAnimatedLength> X();
+  already_AddRefed<DOMSVGAnimatedLength> Y();
+  already_AddRefed<DOMSVGAnimatedLength> Width();
+  already_AddRefed<DOMSVGAnimatedLength> Height();
+  already_AddRefed<DOMSVGAnimatedString> Href();
 
-protected:
-
+ protected:
   virtual LengthAttributesInfo GetLengthInfo() override;
   virtual EnumAttributesInfo GetEnumInfo() override;
-  virtual nsSVGViewBox *GetViewBox() override;
-  virtual SVGAnimatedPreserveAspectRatio *GetPreserveAspectRatio() override;
   virtual StringAttributesInfo GetStringInfo() override;
+  virtual SVGAnimatedPreserveAspectRatio* GetAnimatedPreserveAspectRatio()
+      override;
+  virtual SVGAnimatedViewBox* GetAnimatedViewBox() override;
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  nsSVGLength2 mLengthAttributes[4];
+  SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   enum { PATTERNUNITS, PATTERNCONTENTUNITS };
-  nsSVGEnum mEnumAttributes[2];
+  SVGAnimatedEnumeration mEnumAttributes[2];
   static EnumInfo sEnumInfo[2];
 
-  nsAutoPtr<mozilla::nsSVGAnimatedTransformList> mPatternTransform;
+  nsAutoPtr<mozilla::SVGAnimatedTransformList> mPatternTransform;
 
   enum { HREF, XLINK_HREF };
-  nsSVGString mStringAttributes[2];
+  SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
   // SVGFitToViewbox properties
-  nsSVGViewBox mViewBox;
+  SVGAnimatedViewBox mViewBox;
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGPatternElement_h
+#endif  // mozilla_dom_SVGPatternElement_h

@@ -12,22 +12,21 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-meter-element
+[Exposed=Window]
 interface HTMLMeterElement : HTMLElement {
-           [SetterThrows]
-           attribute double value;
-           [SetterThrows]
-           attribute double min;
-           [SetterThrows]
-           attribute double max;
-           [SetterThrows]
-           attribute double low;
-           [SetterThrows]
-           attribute double high;
-           [SetterThrows]
-           attribute double optimum;
+  [HTMLConstructor] constructor();
 
-  /**
-   * The labels attribute will be done with bug 556743.
-   */
-  //readonly attribute NodeList labels;
+           [CEReactions, SetterThrows]
+           attribute double value;
+           [CEReactions, SetterThrows]
+           attribute double min;
+           [CEReactions, SetterThrows]
+           attribute double max;
+           [CEReactions, SetterThrows]
+           attribute double low;
+           [CEReactions, SetterThrows]
+           attribute double high;
+           [CEReactions, SetterThrows]
+           attribute double optimum;
+           readonly attribute NodeList labels;
 };

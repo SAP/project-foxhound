@@ -6,8 +6,7 @@
 
 var testNums = [1, 2, 3, 4];
 
-function setup()
-{
+function setup() {
   getOpenedDatabase().createTable("function_tests", "id INTEGER PRIMARY KEY");
 
   var stmt = createStatement("INSERT INTO function_tests (id) VALUES(?1)");
@@ -37,75 +36,73 @@ var testSquareAndSumFunction = {
     var retval = this._sas;
     this._sas = 0; // Prepare for next group
     return retval;
-  }
+  },
 };
 
-function test_aggregate_registration()
-{
+function test_aggregate_registration() {
   var msc = getOpenedDatabase();
   msc.createAggregateFunction("test_sas_aggr", 1, testSquareAndSumFunction);
 }
 
-function test_aggregate_no_double_registration()
-{
+function test_aggregate_no_double_registration() {
   var msc = getOpenedDatabase();
   try {
     msc.createAggregateFunction("test_sas_aggr", 2, testSquareAndSumFunction);
     do_throw("We shouldn't get here!");
   } catch (e) {
-    do_check_eq(Cr.NS_ERROR_FAILURE, e.result);
+    Assert.equal(Cr.NS_ERROR_FAILURE, e.result);
   }
 }
 
-function test_aggregate_removal()
-{
+function test_aggregate_removal() {
   var msc = getOpenedDatabase();
   msc.removeFunction("test_sas_aggr");
   // Should be Ok now
   msc.createAggregateFunction("test_sas_aggr", 1, testSquareAndSumFunction);
 }
 
-function test_aggregate_no_aliases()
-{
+function test_aggregate_no_aliases() {
   var msc = getOpenedDatabase();
   try {
     msc.createAggregateFunction("test_sas_aggr2", 1, testSquareAndSumFunction);
     do_throw("We shouldn't get here!");
   } catch (e) {
-    do_check_eq(Cr.NS_ERROR_FAILURE, e.result);
+    Assert.equal(Cr.NS_ERROR_FAILURE, e.result);
   }
 }
 
-function test_aggregate_call()
-{
+function test_aggregate_call() {
   var stmt = createStatement("SELECT test_sas_aggr(id) FROM function_tests");
   while (stmt.executeStep()) {
     // Do nothing.
   }
-  do_check_eq(testNums.length, testSquareAndSumFunction.calls);
+  Assert.equal(testNums.length, testSquareAndSumFunction.calls);
   testSquareAndSumFunction.reset();
   stmt.finalize();
 }
 
-function test_aggregate_result()
-{
+function test_aggregate_result() {
   var sas = 0;
   for (var i = 0; i < testNums.length; ++i) {
     sas += testNums[i] * testNums[i];
   }
   var stmt = createStatement("SELECT test_sas_aggr(id) FROM function_tests");
   stmt.executeStep();
-  do_check_eq(sas, stmt.getInt32(0));
+  Assert.equal(sas, stmt.getInt32(0));
   testSquareAndSumFunction.reset();
   stmt.finalize();
 }
 
-var tests = [test_aggregate_registration, test_aggregate_no_double_registration,
-             test_aggregate_removal, test_aggregate_no_aliases, test_aggregate_call,
-             test_aggregate_result];
+var tests = [
+  test_aggregate_registration,
+  test_aggregate_no_double_registration,
+  test_aggregate_removal,
+  test_aggregate_no_aliases,
+  test_aggregate_call,
+  test_aggregate_result,
+];
 
-function run_test()
-{
+function run_test() {
   setup();
 
   for (var i = 0; i < tests.length; i++) {

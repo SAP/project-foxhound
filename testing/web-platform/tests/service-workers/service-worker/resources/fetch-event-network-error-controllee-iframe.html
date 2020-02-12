@@ -40,7 +40,8 @@ function run_tests() {
     { name: 'unused-body', expect_load: true },
     { name: 'used-body', expect_load: false },
     { name: 'unused-fetched-body', expect_load: true },
-    { name: 'used-fetched-body', expect_load: false }
+    { name: 'used-fetched-body', expect_load: false },
+    { name: 'throw-exception', expect_load: true },
   ].map(make_test);
 
   Promise.all(tests)
@@ -53,7 +54,7 @@ function run_tests() {
 }
 
 if (!navigator.serviceWorker.controller)
-  window.parent.notify_done('FAIL: no controller');
+  window.parent.notify_test_done('FAIL: no controller');
 else
   run_tests();
 </script>

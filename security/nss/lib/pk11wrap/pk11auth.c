@@ -636,7 +636,7 @@ PK11_DoPassword(PK11SlotInfo *slot, CK_SESSION_HANDLE session,
             break;
     }
     if (rv == SECSuccess) {
-        if (!PK11_IsFriendly(slot)) {
+        if (!contextSpecific && !PK11_IsFriendly(slot)) {
             nssTrustDomain_UpdateCachedTokenCerts(slot->nssToken->trustDomain,
                                                   slot->nssToken);
         }
@@ -704,9 +704,11 @@ PRBool
 PK11_NeedPWInit()
 {
     PK11SlotInfo *slot = PK11_GetInternalKeySlot();
-    PRBool ret = PK11_NeedPWInitForSlot(slot);
-
-    PK11_FreeSlot(slot);
+    PRBool ret = PR_FALSE;
+    if (slot) {
+        ret = PK11_NeedPWInitForSlot(slot);
+        PK11_FreeSlot(slot);
+    }
     return ret;
 }
 

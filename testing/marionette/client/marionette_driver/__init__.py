@@ -2,7 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-__version__ = '2.0.0'
+from __future__ import absolute_import
+
+__version__ = '3.0.0'
 
 from marionette_driver import (
     addons,
@@ -14,12 +16,11 @@ from marionette_driver import (
     geckoinstance,
     gestures,
     keys,
+    localization,
     marionette,
-    selection,
     wait,
 )
 from marionette_driver.by import By
 from marionette_driver.date_time_value import DateTimeValue
 from marionette_driver.gestures import smooth_scroll, pinch
-from marionette_driver.marionette import Actions
 from marionette_driver.wait import Wait

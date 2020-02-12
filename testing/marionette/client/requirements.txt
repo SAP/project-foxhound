@@ -1,1 +1,3 @@
-mozrunner >= 6.12
+mozrunner >= 7.4.0
+mozversion >= 2.1.0
+six

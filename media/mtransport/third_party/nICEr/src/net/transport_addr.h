@@ -35,6 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _transport_addr_h
 #define _transport_addr_h
 
+#include <stdbool.h>
 #include <sys/types.h>
 #ifdef WIN32
 #include <winsock2.h>
@@ -43,6 +44,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/socket.h>
 #include <netinet/in.h>
 #endif
+
+#include "r_types.h"
 
 /* Length of a string  hex representation of a MD5 hash */
 #define MAXIFNAME 33
@@ -66,6 +69,8 @@ typedef struct nr_transport_addr_ {
   /* A string version.
      56 = 5 ("IP6:[") + 39 (ipv6 address) + 2 ("]:") + 5 (port) + 4 (/UDP) + 1 (null) */
   char as_string[56];
+  char tls_host[256];
+  bool is_proxied;
 } nr_transport_addr;
 
 typedef struct nr_transport_addr_mask_ {
@@ -92,6 +97,9 @@ int nr_transport_addr_is_wildcard(nr_transport_addr *addr);
 int nr_transport_addr_is_loopback(nr_transport_addr *addr);
 int nr_transport_addr_get_private_addr_range(nr_transport_addr *addr);
 int nr_transport_addr_is_link_local(nr_transport_addr *addr);
+int nr_transport_addr_is_mac_based(nr_transport_addr *addr);
+int nr_transport_addr_is_teredo(nr_transport_addr *addr);
+int nr_transport_addr_check_compatibility(nr_transport_addr *addr1, nr_transport_addr *addr2);
 int nr_transport_addr_copy(nr_transport_addr *to, nr_transport_addr *from);
 int nr_transport_addr_copy_keep_ifname(nr_transport_addr *to, nr_transport_addr *from);
 int nr_transport_addr_fmt_addr_string(nr_transport_addr *addr);

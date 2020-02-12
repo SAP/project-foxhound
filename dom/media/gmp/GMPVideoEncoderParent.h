@@ -24,12 +24,15 @@ class GMPContentParent;
 class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
                               public PGMPVideoEncoderParent,
                               public GMPSharedMemManager,
-                              public GMPCrashHelperHolder
-{
-public:
-  NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent)
+                              public GMPCrashHelperHolder {
+  friend class PGMPVideoEncoderParent;
 
-  explicit GMPVideoEncoderParent(GMPContentParent *aPlugin);
+ public:
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPVideoEncoderParent.
+  NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent, final)
+
+  explicit GMPVideoEncoderParent(GMPContentParent* aPlugin);
 
   GMPVideoHostImpl& Host();
   void Shutdown();
@@ -39,8 +42,7 @@ public:
   GMPErr InitEncode(const GMPVideoCodec& aCodecSettings,
                     const nsTArray<uint8_t>& aCodecSpecific,
                     GMPVideoEncoderCallbackProxy* aCallback,
-                    int32_t aNumberOfCores,
-                    uint32_t aMaxPayloadSize) override;
+                    int32_t aNumberOfCores, uint32_t aMaxPayloadSize) override;
   GMPErr Encode(GMPUniquePtr<GMPVideoi420Frame> aInputFrame,
                 const nsTArray<uint8_t>& aCodecSpecificInfo,
                 const nsTArray<GMPVideoFrameType>& aFrameTypes) override;
@@ -50,32 +52,30 @@ public:
   uint32_t GetPluginId() const override { return mPluginId; }
 
   // GMPSharedMemManager
-  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType, Shmem* aMem) override
-  {
+  bool Alloc(size_t aSize, Shmem::SharedMemory::SharedMemoryType aType,
+             Shmem* aMem) override {
 #ifdef GMP_SAFE_SHMEM
     return AllocShmem(aSize, aType, aMem);
 #else
     return AllocUnsafeShmem(aSize, aType, aMem);
 #endif
   }
-  void Dealloc(Shmem& aMem) override
-  {
-    DeallocShmem(aMem);
-  }
+  void Dealloc(Shmem&& aMem) override { DeallocShmem(aMem); }
 
-private:
-  virtual ~GMPVideoEncoderParent();
+ private:
+  virtual ~GMPVideoEncoderParent(){};
 
   // PGMPVideoEncoderParent
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  bool RecvEncoded(const GMPVideoEncodedFrameData& aEncodedFrame,
-                   InfallibleTArray<uint8_t>&& aCodecSpecificInfo) override;
-  bool RecvError(const GMPErr& aError) override;
-  bool RecvShutdown() override;
-  bool RecvParentShmemForPool(Shmem&& aFrameBuffer) override;
-  bool AnswerNeedShmem(const uint32_t& aEncodedBufferSize,
-                       Shmem* aMem) override;
-  bool Recv__delete__() override;
+  mozilla::ipc::IPCResult RecvEncoded(
+      const GMPVideoEncodedFrameData& aEncodedFrame,
+      nsTArray<uint8_t>&& aCodecSpecificInfo) override;
+  mozilla::ipc::IPCResult RecvError(const GMPErr& aError) override;
+  mozilla::ipc::IPCResult RecvShutdown() override;
+  mozilla::ipc::IPCResult RecvParentShmemForPool(Shmem&& aFrameBuffer) override;
+  mozilla::ipc::IPCResult AnswerNeedShmem(const uint32_t& aEncodedBufferSize,
+                                          Shmem* aMem) override;
+  mozilla::ipc::IPCResult Recv__delete__() override;
 
   bool mIsOpen;
   bool mShuttingDown;
@@ -83,11 +83,10 @@ private:
   RefPtr<GMPContentParent> mPlugin;
   GMPVideoEncoderCallbackProxy* mCallback;
   GMPVideoHostImpl mVideoHost;
-  nsCOMPtr<nsIThread> mEncodedThread;
   const uint32_t mPluginId;
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPVideoEncoderParent_h_
+#endif  // GMPVideoEncoderParent_h_

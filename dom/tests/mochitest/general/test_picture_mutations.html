@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Image srcset mutations</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -293,9 +293,7 @@
     }
 
     addEventListener("load", function() {
-      SpecialPowers.pushPrefEnv({'set': [ ["layout.css.devPixelsPerPx", "1.0" ],
-                                          [ "dom.image.srcset.enabled",  true ],
-                                          [ "dom.image.picture.enabled", true ]] },
+      SpecialPowers.pushPrefEnv({'set': [["layout.css.devPixelsPerPx", "1.0" ]] },
                                 function() {
         // Create these after the pref is set, as it is guarding webIDL attributes
         img = document.createElement("img");

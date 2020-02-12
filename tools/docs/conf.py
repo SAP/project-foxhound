@@ -2,11 +2,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import unicode_literals
+from __future__ import absolute_import, unicode_literals
 
 import os
 import re
 import sys
+
+from recommonmark.parser import CommonMarkParser
 
 from datetime import datetime
 
@@ -16,14 +18,15 @@ topsrcdir = os.path.normpath(os.path.join(OUR_DIR, '..', '..'))
 
 EXTRA_PATHS = (
     'layout/tools/reftest',
-    'python/futures',
-    'python/jsmin',
     'python/mach',
     'python/mozbuild',
-    'python/which',
+    'python/mozversioncontrol',
     'testing/mozbase/manifestparser',
     'testing/mozbase/mozfile',
     'testing/mozbase/mozprocess',
+    'third_party/python/futures',
+    'third_party/python/jsmin',
+    'third_party/python/which',
 )
 
 sys.path[:0] = [os.path.join(topsrcdir, p) for p in EXTRA_PATHS]
@@ -33,12 +36,32 @@ sys.path.insert(0, OUR_DIR)
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.graphviz',
+    'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'mozbuild.sphinx',
+    'sphinx_js',
+    'sphinxcontrib.mermaid',
 ]
+
+# JSDoc must run successfully for dirs specified, so running
+# tree-wide (the default) will not work currently.
+js_source_path = [
+    'browser/components/extensions',
+    'testing/marionette',
+    'toolkit/components/extensions',
+    'toolkit/components/extensions/parent',
+    'toolkit/components/featuregates',
+    'toolkit/mozapps/extensions',
+]
+root_for_relative_js_paths = '.'
+jsdoc_config_path = 'jsdoc.json'
 
 templates_path = ['_templates']
 source_suffix = '.rst'
+source_suffix = ['.rst', '.md']
+source_parsers = {
+   '.md': CommonMarkParser,
+}
 master_doc = 'index'
 project = u'Mozilla Source Tree Docs'
 year = datetime.now().year
@@ -80,3 +103,5 @@ else:
 
 html_static_path = ['_static']
 htmlhelp_basename = 'MozillaTreeDocs'
+
+moz_project_name = 'main'

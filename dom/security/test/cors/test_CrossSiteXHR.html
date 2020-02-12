@@ -3,7 +3,7 @@
 <head>
   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
   <title>Test for Cross Site XMLHttpRequest</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="initTest()">
@@ -11,10 +11,10 @@
 <iframe id=loader></iframe>
 </p>
 <div id="content" style="display: none">
-  
+
 </div>
 <pre id="test">
-<script class="testbody" type="application/javascript;version=1.8">
+<script class="testbody" type="application/javascript">
 
 const runPreflightTests = 1;
 const runCookieTests = 1;
@@ -25,20 +25,23 @@ var gen;
 function initTest() {
   SimpleTest.waitForExplicitFinish();
   // Allow all cookies, then do the actual test initialization
-  SpecialPowers.pushPrefEnv({"set": [["network.cookie.cookieBehavior", 0]]}, initTestCallback);
+  SpecialPowers.pushPrefEnv({"set": [["network.cookie.cookieBehavior", 0],
+  																	 ["security.allow_eval_with_system_principal", true]]},
+  																	  initTestCallback);
 }
 
 function initTestCallback() {
   window.addEventListener("message", function(e) {
-    gen.send(e.data);
-  }, false);
+    gen.next(e.data);
+  });
 
   gen = runTest();
-  
+
   gen.next()
 }
 
-function runTest() {
+// eslint-disable-next-line complexity
+function* runTest() {
   var loader = document.getElementById('loader');
   var loaderWindow = loader.contentWindow;
   loader.onload = function () { gen.next() };
@@ -81,9 +84,7 @@ function runTest() {
                },
 
                // nonempty password
-               // XXXbz this passes for now, because we ignore passwords
-               // without usernames in most cases.
-               { pass: 1,
+               { pass: 0,
                  method: "GET",
                  noAllowPreflight: 1,
                  password: "password",
@@ -664,16 +665,16 @@ function runTest() {
         return lName != "accept" &&
                lName != "accept-language" &&
                (lName != "content-type" ||
-                ["text/plain",
+                !["text/plain",
                  "multipart/form-data",
                  "application/x-www-form-urlencoded"]
-                   .indexOf(test.headers[name].toLowerCase()) == -1);
+                   .includes(test.headers[name].toLowerCase()));
       }
       req.url += "&headers=" + escape(test.headers.toSource());
       reqHeaders =
         escape(Object.keys(test.headers)
                .filter(isUnsafeHeader)
-               .map(String.toLowerCase)
+               .map(s => s.toLowerCase())
                .sort()
                .join(","));
       req.url += reqHeaders ? "&requestHeaders=" + reqHeaders : "";
@@ -731,7 +732,7 @@ function runTest() {
       }
       if (test.responseHeaders) {
         for (header in test.responseHeaders) {
-          if (test.expectedResponseHeaders.indexOf(header) == -1) {
+          if (!test.expectedResponseHeaders.includes(header)) {
             is(res.responseHeaders[header], null,
                "|xhr.getResponseHeader()|wrong response header (" + header + ") in test for " +
                test.toSource());
@@ -743,7 +744,7 @@ function runTest() {
             is(res.responseHeaders[header], test.responseHeaders[header],
                "|xhr.getResponseHeader()|wrong response header (" + header + ") in test for " +
                test.toSource());
-            is(res.allResponseHeaders[header], test.responseHeaders[header],
+            is(res.allResponseHeaders[header.toLowerCase()], test.responseHeaders[header],
               "|xhr.getAllResponseHeaderss()|wrong response header (" + header + ") in test for " +
               test.toSource());
           }
@@ -759,20 +760,12 @@ function runTest() {
          "wrong responseXML in test for " + test.toSource());
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
-      var expectedProgressCount = 0;
       if (!res.sendThrew) {
-        if (test.username) {
-          expectedProgressCount = 1;
-          is(res.events.join(","),
-             "opening,rs1,sending,loadstart,rs4,error,loadend",
-             "wrong events in test for " + test.toSource());
-        } else {
-          is(res.events.join(","),
-             "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
-             "wrong events in test for " + test.toSource());
-        }
+        is(res.events.join(","),
+           "opening,rs1,sending,loadstart,rs4,error,loadend",
+           "wrong events in test for " + test.toSource());
       }
-      is(res.progressEvents, expectedProgressCount,
+      is(res.progressEvents, 0,
          "wrong events in test for " + test.toSource());
       if (test.responseHeaders) {
         for (header in test.responseHeaders) {
@@ -910,7 +903,7 @@ function runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + test.toSource());
       is(res.progressEvents, 0,
          "wrong events in test for " + test.toSource());
@@ -1124,7 +1117,25 @@ function runTest() {
                     },
                     ],
            },
-           { pass: 0,
+           { pass: 1,
+             method: "POST",
+             body: "hi there",
+             headers: { "Content-Type": "text/plain",
+                        "my-header": "myValue",
+                      },
+             hops: [{ server: "http://example.org",
+                    },
+                    { server: "http://example.com",
+                      allowOrigin: origin,
+                      allowHeaders: "my-header",
+                    },
+                    { server: "http://sub1.test1.example.org",
+                      allowOrigin: "*",
+                      allowHeaders: "my-header",
+                    },
+                    ],
+           },
+           { pass: 1,
              method: "POST",
              body: "hi there",
              headers: { "Content-Type": "text/plain",
@@ -1198,7 +1209,21 @@ function runTest() {
                     },
                     ],
            },
-           { pass: 0,
+           { pass: 1,
+             method: "DELETE",
+             hops: [{ server: "http://example.org",
+                    },
+                    { server: "http://example.com",
+                      allowOrigin: origin,
+                      allowMethods: "DELETE",
+                    },
+                    { server: "http://sub1.test1.example.org",
+                      allowOrigin: "*",
+                      allowMethods: "DELETE",
+                    },
+                    ],
+           },
+           { pass: 1,
              method: "DELETE",
              hops: [{ server: "http://example.org",
                     },
@@ -1444,7 +1469,7 @@ function runTest() {
       is(res.responseText, "",
          "wrong responseText in test for " + test.toSource());
       is(res.events.join(","),
-         "opening,rs1,sending,loadstart,rs2,rs4,error,loadend",
+         "opening,rs1,sending,loadstart,rs4,error,loadend",
          "wrong events in test for " + test.toSource());
       is(res.progressEvents, 0,
          "wrong progressevents in test for " + test.toSource());
@@ -1453,8 +1478,6 @@ function runTest() {
 
 
   SimpleTest.finish();
-
-  yield undefined;
 }
 
 </script>

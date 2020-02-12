@@ -22,19 +22,13 @@
 #include "js/RootingAPI.h"
 
 namespace JS {
-template<typename T>
-struct GCPolicy<mozilla::OwningNonNull<T>>
-{
+template <typename T>
+struct GCPolicy<mozilla::OwningNonNull<T>> {
   typedef mozilla::OwningNonNull<T> SmartPtrType;
 
-  static SmartPtrType initial()
-  {
-    return SmartPtrType();
-  }
+  static SmartPtrType initial() { return SmartPtrType(); }
 
-  static void trace(JSTracer* trc, SmartPtrType* tp,
-                    const char* name)
-  {
+  static void trace(JSTracer* trc, SmartPtrType* tp, const char* name) {
     // We have to be very careful here.  Normally, OwningNonNull can't be null.
     // But binding code can end up in a situation where it sets up a
     // Rooted<OwningNonNull> and then before it gets a chance to assign to it
@@ -47,27 +41,18 @@ struct GCPolicy<mozilla::OwningNonNull<T>>
       (*tp)->Trace(trc);
     }
   }
+
+  static bool isValid(const SmartPtrType& v) {
+    return !v.isInitialized() || GCPolicy<T>::isValid(v);
+  }
 };
-} // namespace JS
+}  // namespace JS
 
 namespace js {
-template<typename T>
-struct RootedBase<mozilla::OwningNonNull<T>>
-{
-  typedef mozilla::OwningNonNull<T> SmartPtrType;
-
-  operator SmartPtrType& () const
-  {
-    auto& self = *static_cast<const JS::Rooted<SmartPtrType>*>(this);
-    return self.get();
-  }
-
-  operator T& () const
-  {
-    auto& self = *static_cast<const JS::Rooted<SmartPtrType>*>(this);
-    return self.get();
-  }
+template <typename T, typename Wrapper>
+struct WrappedPtrOperations<mozilla::OwningNonNull<T>, Wrapper> {
+  operator T&() const { return static_cast<const Wrapper*>(this)->get(); }
 };
-} // namespace js
+}  // namespace js
 
 #endif /* mozilla_RootedOwningNonNull_h__ */

@@ -9,15 +9,9 @@ with Files('*'):
 
 DIRS += ['blink']
 
-TEST_DIRS += ['compiledtest']
-
 MOCHITEST_MANIFESTS += [
     'test/blink/mochitest.ini',
     'test/mochitest.ini',
-]
-
-BROWSER_CHROME_MANIFESTS += [
-    'test/browser.ini',
 ]
 
 TEST_HARNESS_FILES.testing.mochitest.tests.dom.media.webaudio.test.blink += [
@@ -31,8 +25,8 @@ EXPORTS += [
     'AudioBlock.h',
     'AudioEventTimeline.h',
     'AudioNodeEngine.h',
-    'AudioNodeExternalInputStream.h',
-    'AudioNodeStream.h',
+    'AudioNodeExternalInputTrack.h',
+    'AudioNodeTrack.h',
     'AudioParamTimeline.h',
     'MediaBufferDecoder.h',
     'ThreeDPoint.h',
@@ -53,10 +47,17 @@ EXPORTS.mozilla.dom += [
     'AudioListener.h',
     'AudioNode.h',
     'AudioParam.h',
+    'AudioParamDescriptorMap.h',
+    'AudioParamMap.h',
     'AudioProcessingEvent.h',
+    'AudioScheduledSourceNode.h',
+    'AudioWorkletGlobalScope.h',
+    'AudioWorkletNode.h',
+    'AudioWorkletProcessor.h',
     'BiquadFilterNode.h',
     'ChannelMergerNode.h',
     'ChannelSplitterNode.h',
+    'ConstantSourceNode.h',
     'ConvolverNode.h',
     'DelayNode.h',
     'DynamicsCompressorNode.h',
@@ -65,7 +66,7 @@ EXPORTS.mozilla.dom += [
     'MediaElementAudioSourceNode.h',
     'MediaStreamAudioDestinationNode.h',
     'MediaStreamAudioSourceNode.h',
-    'OfflineAudioCompletionEvent.h',
+    'MediaStreamTrackAudioSourceNode.h',
     'OscillatorNode.h',
     'PannerNode.h',
     'PeriodicWave.h',
@@ -85,14 +86,20 @@ UNIFIED_SOURCES += [
     'AudioListener.cpp',
     'AudioNode.cpp',
     'AudioNodeEngine.cpp',
-    'AudioNodeExternalInputStream.cpp',
-    'AudioNodeStream.cpp',
+    'AudioNodeExternalInputTrack.cpp',
+    'AudioNodeTrack.cpp',
     'AudioParam.cpp',
+    'AudioParamMap.cpp',
     'AudioProcessingEvent.cpp',
+    'AudioScheduledSourceNode.cpp',
+    'AudioWorkletGlobalScope.cpp',
+    'AudioWorkletImpl.cpp',
+    'AudioWorkletNode.cpp',
+    'AudioWorkletProcessor.cpp',
     'BiquadFilterNode.cpp',
-    'BufferDecoder.cpp',
     'ChannelMergerNode.cpp',
     'ChannelSplitterNode.cpp',
+    'ConstantSourceNode.cpp',
     'ConvolverNode.cpp',
     'DelayBuffer.cpp',
     'DelayNode.cpp',
@@ -104,7 +111,7 @@ UNIFIED_SOURCES += [
     'MediaElementAudioSourceNode.cpp',
     'MediaStreamAudioDestinationNode.cpp',
     'MediaStreamAudioSourceNode.cpp',
-    'OfflineAudioCompletionEvent.cpp',
+    'MediaStreamTrackAudioSourceNode.cpp',
     'OscillatorNode.cpp',
     'PannerNode.cpp',
     'PeriodicWave.cpp',
@@ -115,12 +122,14 @@ UNIFIED_SOURCES += [
     'WebAudioUtils.cpp',
 ]
 
-if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['BUILD_ARM_NEON']:
+if CONFIG['CPU_ARCH'] == 'aarch64' or CONFIG['BUILD_ARM_NEON']:
+    DEFINES['USE_NEON'] = True
     SOURCES += ['AudioNodeEngineNEON.cpp']
     SOURCES['AudioNodeEngineNEON.cpp'].flags += CONFIG['NEON_FLAGS']
-    LOCAL_INCLUDES += [
-        '/media/openmax_dl/dl/api/'
-    ]
+    if CONFIG['BUILD_ARM_NEON']:
+        LOCAL_INCLUDES += [
+            '/media/openmax_dl/dl/api/'
+        ]
 
 # Are we targeting x86 or x64?  If so, build SSE2 files.
 if CONFIG['INTEL_ARCHITECTURE']:
@@ -136,5 +145,5 @@ LOCAL_INCLUDES += [
     '..'
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

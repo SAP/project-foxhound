@@ -6,22 +6,28 @@ const Services = require("Services");
 const { Preferences } = require("resource://gre/modules/Preferences.jsm");
 
 // Prefs to revert to default once tests finish. Keep these in sync with
-// all the preferences defined in devtools/client/preferences/devtools.js.
-exports.MEMORY_SAMPLE_PROB_PREF = "devtools.performance.memory.sample-probability";
+// all the preferences defined in devtools/client/preferences/devtools-client.js.
+exports.MEMORY_SAMPLE_PROB_PREF =
+  "devtools.performance.memory.sample-probability";
 exports.MEMORY_MAX_LOG_LEN_PREF = "devtools.performance.memory.max-log-length";
 exports.PROFILER_BUFFER_SIZE_PREF = "devtools.performance.profiler.buffer-size";
-exports.PROFILER_SAMPLE_RATE_PREF = "devtools.performance.profiler.sample-frequency-khz";
+exports.PROFILER_SAMPLE_RATE_PREF =
+  "devtools.performance.profiler.sample-frequency-hz";
 
 exports.UI_EXPERIMENTAL_PREF = "devtools.performance.ui.experimental";
 exports.UI_INVERT_CALL_TREE_PREF = "devtools.performance.ui.invert-call-tree";
 exports.UI_INVERT_FLAME_PREF = "devtools.performance.ui.invert-flame-graph";
-exports.UI_FLATTEN_RECURSION_PREF = "devtools.performance.ui.flatten-tree-recursion";
-exports.UI_SHOW_PLATFORM_DATA_PREF = "devtools.performance.ui.show-platform-data";
+exports.UI_FLATTEN_RECURSION_PREF =
+  "devtools.performance.ui.flatten-tree-recursion";
+exports.UI_SHOW_PLATFORM_DATA_PREF =
+  "devtools.performance.ui.show-platform-data";
 exports.UI_SHOW_IDLE_BLOCKS_PREF = "devtools.performance.ui.show-idle-blocks";
 exports.UI_ENABLE_FRAMERATE_PREF = "devtools.performance.ui.enable-framerate";
 exports.UI_ENABLE_MEMORY_PREF = "devtools.performance.ui.enable-memory";
-exports.UI_ENABLE_ALLOCATIONS_PREF = "devtools.performance.ui.enable-allocations";
-exports.UI_ENABLE_MEMORY_FLAME_CHART = "devtools.performance.ui.enable-memory-flame";
+exports.UI_ENABLE_ALLOCATIONS_PREF =
+  "devtools.performance.ui.enable-allocations";
+exports.UI_ENABLE_MEMORY_FLAME_CHART =
+  "devtools.performance.ui.enable-memory-flame";
 
 exports.DEFAULT_PREF_VALUES = [
   "devtools.debugger.log",
@@ -52,21 +58,21 @@ exports.DEFAULT_PREF_VALUES = [
  * Invokes callback when a pref which is not in the `DEFAULT_PREF_VALUES` store
  * is changed. Returns a cleanup function.
  */
-exports.whenUnknownPrefChanged = function (branch, callback) {
+exports.whenUnknownPrefChanged = function(branch, callback) {
   function onObserve(subject, topic, data) {
     if (!(data in exports.DEFAULT_PREF_VALUES)) {
       callback(data);
     }
   }
-  Services.prefs.addObserver(branch, onObserve, false);
+  Services.prefs.addObserver(branch, onObserve);
   return () => Services.prefs.removeObserver(branch, onObserve);
 };
 
 /**
  * Reverts all known preferences to their default values.
  */
-exports.rollbackPrefsToDefault = function () {
-  for (let prefName of Object.keys(exports.DEFAULT_PREF_VALUES)) {
+exports.rollbackPrefsToDefault = function() {
+  for (const prefName of Object.keys(exports.DEFAULT_PREF_VALUES)) {
     Preferences.set(prefName, exports.DEFAULT_PREF_VALUES[prefName]);
   }
 };

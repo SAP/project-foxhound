@@ -3,9 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-this.EXPORTED_SYMBOLS = ["WindowsRegistry"];
+var EXPORTED_SYMBOLS = ["WindowsRegistry"];
 
 var WindowsRegistry = {
   /**
@@ -23,11 +22,12 @@ var WindowsRegistry = {
    * @return The key value or undefined if it doesn't exist.  If the key is
    *         a REG_MULTI_SZ, an array is returned.
    */
-  readRegKey: function(aRoot, aPath, aKey, aRegistryNode=0) {
+  readRegKey(aRoot, aPath, aKey, aRegistryNode = 0) {
     const kRegMultiSz = 7;
     const kMode = Ci.nsIWindowsRegKey.ACCESS_READ | aRegistryNode;
-    let registry = Cc["@mozilla.org/windows-registry-key;1"].
-                   createInstance(Ci.nsIWindowsRegKey);
+    let registry = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
+      Ci.nsIWindowsRegKey
+    );
     try {
       registry.open(aRoot, aPath, kMode);
       if (registry.hasValue(aKey)) {
@@ -66,14 +66,16 @@ var WindowsRegistry = {
    *        to access a 64-bit (32-bit) key from either a 32-bit or 64-bit application.
    * @return True if the key was removed or never existed, false otherwise.
    */
-  removeRegKey: function(aRoot, aPath, aKey, aRegistryNode=0) {
-    let registry = Cc["@mozilla.org/windows-registry-key;1"].
-                   createInstance(Ci.nsIWindowsRegKey);
+  removeRegKey(aRoot, aPath, aKey, aRegistryNode = 0) {
+    let registry = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
+      Ci.nsIWindowsRegKey
+    );
     let result = false;
     try {
-      let mode = Ci.nsIWindowsRegKey.ACCESS_QUERY_VALUE |
-                 Ci.nsIWindowsRegKey.ACCESS_SET_VALUE |
-                 aRegistryNode;
+      let mode =
+        Ci.nsIWindowsRegKey.ACCESS_QUERY_VALUE |
+        Ci.nsIWindowsRegKey.ACCESS_SET_VALUE |
+        aRegistryNode;
       registry.open(aRoot, aPath, mode);
       if (registry.hasValue(aKey)) {
         registry.removeValue(aKey);
@@ -84,7 +86,7 @@ var WindowsRegistry = {
     } catch (ex) {
     } finally {
       registry.close();
-      return result;
     }
-  }
+    return result;
+  },
 };

@@ -4,7 +4,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=572270
 -->
 <head>
   <title>Test TimeEvents dispatching</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -148,7 +148,7 @@ function testCreateEvent()
 {
   var evt;
   try {
-    evt = document.createEvent("TimeEvents");
+    evt = document.createEvent("TimeEvent");
   } catch (e) {
     ok(false, "Failed to create TimeEvent via script: " + e);
     return;
@@ -200,8 +200,8 @@ function testRegistration()
 
   // Add bogus handlers
   gAnim.setAttribute('onbeginElement', 'handleOnBegin(evt)');
-  gAnim.addEventListener("begin", handleOnBegin, false);
-  gAnim.addEventListener("onbegin", handleOnBegin, false);
+  gAnim.addEventListener("begin", handleOnBegin);
+  gAnim.addEventListener("onbegin", handleOnBegin);
 
   // We should now have just one legitimate listener: the one registered to
   // handle 'beginElement'
@@ -236,14 +236,15 @@ function sanityCheckEvent(evt)
   is(evt.eventPhase, evt.AT_TARGET);
   is(evt.bubbles, false, "Event should not bubble");
   is(evt.cancelable, false, "Event should not be cancelable");
-  if (SpecialPowers.getBoolPref("dom.event.highrestimestamp.enabled")) {
-    var now = window.performance.now();
-    ok(evt.timeStamp > 0 && evt.timeStamp < now,
-       "Event timeStamp (" + evt.timeStamp + ") should be > 0 but " +
-       "before the current time (" + now + ")");
-  } else {
-    is(evt.timeStamp, 0, "Event timeStamp should be 0");
-  }
+  var lessThanOrEqualsAllowed = SpecialPowers.getBoolPref("privacy.reduceTimerPrecision");
+  var now = window.performance.now();
+  ok(evt.timeStamp > 0 &&
+      (
+      (evt.timeStamp < now && !lessThanOrEqualsAllowed) ||
+      (evt.timeStamp <= now && lessThanOrEqualsAllowed)
+      ),
+      "Event timeStamp (" + evt.timeStamp + ") should be > 0 but " +
+      "before the current time (" + now + ")");
   ok(evt.view !== null, "Event view not set");
 }
 
@@ -278,15 +279,15 @@ function parentHandler(evt)
   ok(false, "Handler on parent got called but event shouldn't bubble.");
 }
 
-window.addEventListener("load", continueTest, false);
+window.addEventListener("load", continueTest);
 
 // Register event handlers *in addition* to the handlers already added via the
 // "onbegin", "onend", "onrepeat" attributes on the <animate> and <circle>
 // elements. This is to test that both types of registration work.
-gAnim.addEventListener("beginEvent", handleOnBegin, false);
-gAnim.addEventListener("repeatEvent", handleOnRepeat, false);
-gAnim.addEventListener("endEvent", handleOnEnd, false);
-gCircle.addEventListener("beginEvent", parentHandler, false);
+gAnim.addEventListener("beginEvent", handleOnBegin);
+gAnim.addEventListener("repeatEvent", handleOnRepeat);
+gAnim.addEventListener("endEvent", handleOnEnd);
+gCircle.addEventListener("beginEvent", parentHandler);
 
 var expectedEvents =
   ["begin", "beginEvent", "repeat", "repeatEvent", "end", "endEvent", "SVGZoom", "zoom"];
@@ -305,7 +306,7 @@ for (var i = 0; i < timeEvents.length; ++i) {
   });
 
   // Without "Event" suffix.
-  var e = document.createEvent("timeevent");
+  let e = document.createEvent("timeevent");
   e.initEvent(timeEvents[i], true, true);
   d.dispatchEvent(e);
 
@@ -321,14 +322,6 @@ d.addEventListener("zoom", function(e) {
   is(e.type, expectedEvents[0]);
   expectedEvents.shift();
 });
-
-var zoomEvent = document.createEvent("svgzoomevent");
-zoomEvent.initEvent("zoom", true, true);
-d.dispatchEvent(zoomEvent);
-zoomEvent = document.createEvent("svgzoomevent");
-zoomEvent.initEvent("SVGZoom", true, true);
-d.dispatchEvent(zoomEvent);
-is(expectedEvents.length, 0, "Got all the expected events.");
 
 ]]>
 </script>

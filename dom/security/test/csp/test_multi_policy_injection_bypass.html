@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=717511
 -->
 <head>
   <title>Test for Bug 717511</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -39,11 +39,11 @@ window.tests = {
 // This is used to watch the blocked data bounce off CSP and allowed data
 // get sent out to the wire.
 function examiner() {
-  SpecialPowers.addObserver(this, "csp-on-violate-policy", false);
-  SpecialPowers.addObserver(this, "specialpowers-http-notify-request", false);
+  SpecialPowers.addObserver(this, "csp-on-violate-policy");
+  SpecialPowers.addObserver(this, "specialpowers-http-notify-request");
 }
 examiner.prototype  = {
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     var testpat = new RegExp("testid=([a-z0-9_]+)");
 
     //_good things better be allowed!
@@ -80,7 +80,7 @@ examiner.prototype  = {
 
   // must eventually call this to remove the listener,
   // or mochitests might get borked.
-  remove: function() {
+  remove() {
     SpecialPowers.removeObserver(this, "csp-on-violate-policy");
     SpecialPowers.removeObserver(this, "specialpowers-http-notify-request");
   }

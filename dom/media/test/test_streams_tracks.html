@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test MediaStreamTrack interfaces</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -42,7 +42,7 @@ function startTest(test, token) {
   element.src = test.name;
   element.test = test;
   element.stream = element.mozCaptureStreamUntilEnded();
-  element.addEventListener("ended", onended, false);
+  element.addEventListener("ended", onended);
 
   element.play();
 }

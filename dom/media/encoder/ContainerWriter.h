@@ -7,7 +7,7 @@
 #define ContainerWriter_h_
 
 #include "nsTArray.h"
-#include "EncodedFrameContainer.h"
+#include "EncodedFrame.h"
 #include "TrackMetadataBase.h"
 
 namespace mozilla {
@@ -15,48 +15,44 @@ namespace mozilla {
  * ContainerWriter packs encoded track data into a specific media container.
  */
 class ContainerWriter {
-public:
-  ContainerWriter()
-    : mInitialized(false)
-    , mIsWritingComplete(false)
-  {}
+ public:
+  ContainerWriter() : mInitialized(false), mIsWritingComplete(false) {}
   virtual ~ContainerWriter() {}
-  // Mapping to DOMLocalMediaStream::TrackTypeHints
+  // Mapping to DOMMediaStream::TrackTypeHints
   enum {
     CREATE_AUDIO_TRACK = 1 << 0,
     CREATE_VIDEO_TRACK = 1 << 1,
   };
-  enum {
-    END_OF_STREAM = 1 << 0
-  };
+  enum { END_OF_STREAM = 1 << 0 };
 
   /**
-   * Writes encoded track data from aBuffer to a packet, and insert this packet
-   * into the internal stream of container writer. aDuration is the playback
-   * duration of this packet in number of samples. aFlags is true with
-   * END_OF_STREAM if this is the last packet of track.
-   * Currently, WriteEncodedTrack doesn't support multiple tracks.
+   * Writes encoded track data from aData into the internal stream of container
+   * writer. aFlags is used to signal the impl of different conditions
+   * such as END_OF_STREAM. Each impl may handle different flags, and should be
+   * documented accordingly. Currently, WriteEncodedTrack doesn't support
+   * explicit track specification, though each impl may provide logic to
+   * allocate frames into different tracks.
    */
-  virtual nsresult WriteEncodedTrack(const EncodedFrameContainer& aData,
-                                     uint32_t aFlags = 0) = 0;
+  virtual nsresult WriteEncodedTrack(
+      const nsTArray<RefPtr<EncodedFrame>>& aData, uint32_t aFlags = 0) = 0;
 
   /**
-   * Set the meta data pointer into muxer
-   * This function will check the integrity of aMetadata.
-   * If the meta data isn't well format, this function will return NS_ERROR_FAILURE to caller,
-   * else save the pointer to mMetadata and return NS_OK.
+   * Stores the metadata for all given tracks to the muxer.
+   *
+   * This method checks the integrity of aMetadata.
+   * If the metadata isn't well formatted, this method returns NS_ERROR_FAILURE.
+   * If the metadata is well formatted, it stores the metadata and returns
+   * NS_OK.
    */
-  virtual nsresult SetMetadata(TrackMetadataBase* aMetadata) = 0;
+  virtual nsresult SetMetadata(
+      const nsTArray<RefPtr<TrackMetadataBase>>& aMetadata) = 0;
 
   /**
    * Indicate if the writer has finished to output data
    */
   virtual bool IsWritingComplete() { return mIsWritingComplete; }
 
-  enum {
-    FLUSH_NEEDED = 1 << 0,
-    GET_HEADER = 1 << 1
-  };
+  enum { FLUSH_NEEDED = 1 << 0, GET_HEADER = 1 << 1 };
 
   /**
    * Copies the final container data to a buffer if it has accumulated enough
@@ -66,13 +62,14 @@ public:
    * even it is not full, and copy these container data to a buffer for
    * aOutputBufs to append.
    */
-  virtual nsresult GetContainerData(nsTArray<nsTArray<uint8_t> >* aOutputBufs,
+  virtual nsresult GetContainerData(nsTArray<nsTArray<uint8_t>>* aOutputBufs,
                                     uint32_t aFlags = 0) = 0;
-protected:
+
+ protected:
   bool mInitialized;
   bool mIsWritingComplete;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

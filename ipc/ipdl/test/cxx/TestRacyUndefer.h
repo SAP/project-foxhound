@@ -9,62 +9,54 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestRacyUndeferParent : public PTestRacyUndeferParent {
+  friend class PTestRacyUndeferParent;
 
-class TestRacyUndeferParent :
-    public PTestRacyUndeferParent
-{
-public:
-    TestRacyUndeferParent();
-    virtual ~TestRacyUndeferParent();
+ public:
+  TestRacyUndeferParent();
+  virtual ~TestRacyUndeferParent();
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    void Main();
+  void Main();
 
-protected:    
-    virtual bool AnswerSpam() override;
+ protected:
+  mozilla::ipc::IPCResult AnswerSpam();
 
-    virtual bool AnswerRaceWinTwice() override;
+  mozilla::ipc::IPCResult AnswerRaceWinTwice();
 
-    virtual bool RecvDone() override;
+  mozilla::ipc::IPCResult RecvDone();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestRacyUndeferChild : public PTestRacyUndeferChild {
+  friend class PTestRacyUndeferChild;
 
-class TestRacyUndeferChild :
-    public PTestRacyUndeferChild
-{
-public:
-    TestRacyUndeferChild();
-    virtual ~TestRacyUndeferChild();
+ public:
+  TestRacyUndeferChild();
+  virtual ~TestRacyUndeferChild();
 
-protected:
-    virtual bool RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool RecvAwakenSpam() override;
-    virtual bool RecvAwakenRaceWinTwice() override;
+  mozilla::ipc::IPCResult RecvAwakenSpam();
+  mozilla::ipc::IPCResult RecvAwakenRaceWinTwice();
 
-    virtual bool AnswerRace() override;
+  mozilla::ipc::IPCResult AnswerRace();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestRacyUndefer_h
+#endif  // ifndef mozilla__ipdltest_TestRacyUndefer_h

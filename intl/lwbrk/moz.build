@@ -4,27 +4,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-TEST_DIRS += ['tests']
+TEST_DIRS += ['gtest']
 
-XPIDL_SOURCES += [
-    'nsISemanticUnitScanner.idl',
-]
-
-XPIDL_MODULE = 'lwbrk'
-
-EXPORTS += [
-    'nsILineBreaker.h',
-    'nsIWordBreaker.h',
-    'nsLWBrkCIID.h',
+EXPORTS.mozilla.intl += [
+    'LineBreaker.h',
+    'WordBreaker.h',
 ]
 
 UNIFIED_SOURCES += [
-    'nsJISx4051LineBreaker.cpp',
-    'nsSampleWordBreaker.cpp',
-    'nsSemanticUnitScanner.cpp',
+    'LineBreaker.cpp',
+    'WordBreaker.cpp',
 ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     SOURCES += [
         'nsPangoBreaker.cpp',
     ]

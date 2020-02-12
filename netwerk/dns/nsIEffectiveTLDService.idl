@@ -27,8 +27,8 @@ interface nsIEffectiveTLDService : nsISupports
      *
      * @returns the public suffix
      *
-     * @throws NS_ERROR_UNEXPECTED 
-     *         or other error returned by nsIIDNService::normalize when 
+     * @throws NS_ERROR_UNEXPECTED
+     *         or other error returned by nsIIDNService::normalize when
      *         the hostname contains characters disallowed in URIs
      * @throws NS_ERROR_HOST_IS_IP_ADDRESS
      *         if the host is a numeric IPv4 or IPv6 address (as determined by
@@ -64,8 +64,8 @@ interface nsIEffectiveTLDService : nsISupports
      *
      * @returns the base domain (public suffix plus the requested number of additional parts)
      *
-     * @throws NS_ERROR_UNEXPECTED 
-     *         or other error returned by nsIIDNService::normalize when 
+     * @throws NS_ERROR_UNEXPECTED
+     *         or other error returned by nsIIDNService::normalize when
      *         the hostname contains characters disallowed in URIs
      * @throws NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS
      *         when there are insufficient subdomain levels in the hostname to satisfy the
@@ -121,5 +121,16 @@ interface nsIEffectiveTLDService : nsISupports
      *                  be performed as specified in getBaseDomain().
      */
     ACString getNextSubDomain(in AUTF8String aHost);
+
+    /**
+     * Returns true if the |aInput| in is part of the root domain of |aHost|.
+     * For example, if |aInput| is "www.mozilla.org", and we pass in
+     * "mozilla.org" as |aHost|, this will return true.  It would return false
+     * the other way around.
+     *
+     * @param aInput The host to be analyzed.
+     * @param aHost  The host to compare to.
+     */
+    bool hasRootDomain(in AUTF8String aInput, in AUTF8String aHost);
 };
 

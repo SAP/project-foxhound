@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=450191
 -->
 <head>
   <title>Test for Bug 450191</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="run()">
@@ -26,11 +26,11 @@ function run() {
   var doctext = "<div style='font-size: 2em'>div text <table><tr><td id='t'>table text</td></tr></table></div>";
 
   function subdoc_body_font() {
-    return subwin.getComputedStyle(subdoc.body, "").fontSize;
+    return subwin.getComputedStyle(subdoc.body).fontSize;
   }
 
   function subdoc_cell_font() {
-    return subwin.getComputedStyle(subdoc.getElementById("t"), "").fontSize;
+    return subwin.getComputedStyle(subdoc.getElementById("t")).fontSize;
   }
 
   subdoc.open();

@@ -4,12 +4,12 @@
 /*---
 description: >
     Object.getOwnPropertyDescriptors should not have its behavior impacted by modifications to Object.getOwnPropertyDescriptor
-esid: pending
+esid: sec-object.getownpropertydescriptors
 author: Jordan Harband
 ---*/
 
 function fakeObjectGetOwnPropertyDescriptor() {
-    $ERROR('The overriden version of Object.getOwnPropertyDescriptor was called!');
+  $ERROR('The overriden version of Object.getOwnPropertyDescriptor was called!');
 }
 Object.getOwnPropertyDescriptor = fakeObjectGetOwnPropertyDescriptor;
 
@@ -19,4 +19,8 @@ assert.sameValue(
   'Sanity check failed: could not modify the global Object.getOwnPropertyDescriptor'
 );
 
-assert.sameValue(Object.keys(Object.getOwnPropertyDescriptors({ a: 1 })).length, 1, 'Expected object with 1 key to have 1 descriptor');
+assert.sameValue(Object.keys(Object.getOwnPropertyDescriptors({
+  a: 1
+})).length, 1, 'Expected object with 1 key to have 1 descriptor');
+
+reportCompare(0, 0);

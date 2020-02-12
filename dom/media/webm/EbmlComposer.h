@@ -14,76 +14,77 @@ namespace mozilla {
  * A WebM muxer helper for package the valid WebM format.
  */
 class EbmlComposer {
-public:
-  EbmlComposer();
+ public:
+  EbmlComposer() = default;
   /*
-   * Assign the parameter which header required.
+   * Assign the parameters which header requires. These can be called multiple
+   * times to change paramter values until GenerateHeader() is called, when this
+   * becomes illegal to call again.
    */
   void SetVideoConfig(uint32_t aWidth, uint32_t aHeight, uint32_t aDisplayWidth,
-                      uint32_t aDisplayHeight, float aFrameRate);
-
+                      uint32_t aDisplayHeight);
   void SetAudioConfig(uint32_t aSampleFreq, uint32_t aChannels);
   /*
    * Set the CodecPrivateData for writing in header.
    */
-  void SetAudioCodecPrivateData(nsTArray<uint8_t>& aBufs)
-  {
+  void SetAudioCodecPrivateData(nsTArray<uint8_t>& aBufs) {
     mCodecPrivateData.AppendElements(aBufs);
   }
   /*
-   * Generate the whole WebM header and output to mBuff.
+   * Generate the whole WebM header with the configured tracks, and make
+   * available to ExtractBuffer. Must only be called once.
    */
   void GenerateHeader();
   /*
    * Insert media encoded buffer into muxer and it would be package
-   * into SimpleBlock. If no cluster is opened, new cluster will start for writing.
+   * into SimpleBlock. If no cluster is opened, new cluster will start for
+   * writing. Frames passed to this function should already have any codec delay
+   * applied.
    */
   void WriteSimpleBlock(EncodedFrame* aFrame);
   /*
    * Get valid cluster data.
    */
-  void ExtractBuffer(nsTArray<nsTArray<uint8_t> >* aDestBufs,
+  void ExtractBuffer(nsTArray<nsTArray<uint8_t>>* aDestBufs,
                      uint32_t aFlag = 0);
-private:
-  // Move the metadata data to mClusterCanFlushBuffs.
-  void FinishMetadata();
-  // Close current cluster and move data to mClusterCanFlushBuffs.
+  /*
+   * True if we have an open cluster.
+   */
+  bool WritingCluster() const { return !mCurrentCluster.IsEmpty(); }
+
+ private:
+  // Close current cluster and move data to mFinishedClusters. Idempotent.
   void FinishCluster();
-  // The temporary storage for cluster data.
-  nsTArray<nsTArray<uint8_t> > mClusterBuffs;
-  // The storage which contain valid cluster data.
-  nsTArray<nsTArray<uint8_t> > mClusterCanFlushBuffs;
-
-  // Indicate the data types in mClusterBuffs.
-  enum {
-    FLUSH_NONE = 0,
-    FLUSH_METADATA = 1 << 0,
-    FLUSH_CLUSTER = 1 << 1
-  };
-  uint32_t mFlushState;
-  // Indicate the cluster header index in mClusterBuffs.
-  uint32_t mClusterHeaderIndex;
+  // The current cluster. Each element in the outer array corresponds to a block
+  // in the cluster. When the cluster is finished it is moved to
+  // mFinishedClusters.
+  nsTArray<nsTArray<uint8_t>> mCurrentCluster;
   // The cluster length position.
-  uint64_t mClusterLengthLoc;
-  // Audio codec specific header data.
-  nsTArray<uint8_t> mCodecPrivateData;
-  // Codec delay in nanoseconds.
-  uint64_t mCodecDelay;
-
+  uint64_t mCurrentClusterLengthLoc = 0;
   // The timecode of the cluster.
-  uint64_t mClusterTimecode;
+  uint64_t mCurrentClusterTimecode = 0;
+
+  // Finished clusters to be flushed out by ExtractBuffer().
+  nsTArray<nsTArray<uint8_t>> mFinishedClusters;
+
+  // True when Metadata has been serialized into mFinishedClusters.
+  bool mMetadataFinished = false;
 
   // Video configuration
-  int mWidth;
-  int mHeight;
-  int mDisplayWidth;
-  int mDisplayHeight;
-  float mFrameRate;
+  int mWidth = 0;
+  int mHeight = 0;
+  int mDisplayWidth = 0;
+  int mDisplayHeight = 0;
+  bool mHasVideo = false;
+
   // Audio configuration
-  float mSampleFreq;
-  int mChannels;
+  float mSampleFreq = 0;
+  int mChannels = 0;
+  bool mHasAudio = false;
+  // Audio codec specific header data.
+  nsTArray<uint8_t> mCodecPrivateData;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
 #endif

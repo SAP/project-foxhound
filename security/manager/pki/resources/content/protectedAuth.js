@@ -4,10 +4,10 @@
 /* import-globals-from pippki.js */
 "use strict";
 
-function onLoad()
-{
-  let protectedAuthThread =
-    window.arguments[0].QueryInterface(Components.interfaces.nsIProtectedAuthThread);
+function onLoad() {
+  let protectedAuthThread = window.arguments[0].QueryInterface(
+    Ci.nsIProtectedAuthThread
+  );
 
   if (!protectedAuthThread) {
     window.close();
@@ -27,7 +27,7 @@ function onLoad()
         if (topic == "operation-completed") {
           window.close();
         }
-      }
+      },
     };
 
     protectedAuthThread.login(obs);
@@ -36,7 +36,6 @@ function onLoad()
   }
 }
 
-function onClose()
-{
+function onClose() {
   window.setCursor("auto");
 }

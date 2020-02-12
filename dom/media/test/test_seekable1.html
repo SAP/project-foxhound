@@ -3,19 +3,19 @@
 <head>
 <title>Test seekable member for media elements</title>
 <script type="text/javascript" src="/MochiKit/MochiKit.js"></script>
-<script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 <script type="text/javascript" src="manifest.js"></script>
 </head>
 <body>
 <pre id='test'>
-<script class="testbody" type='application/javascript;version=1.8'>
+<script class="testbody" type='application/javascript'>
 
 let manager = new MediaTestManager;
 
 function finish_test(element) {
   if (element.parentNode)
-    element.parentNode.removeChild(element);
+    element.remove();
   element.src="";
   manager.finished(element.token);
 }
@@ -31,7 +31,7 @@ setup : function(element) {
               is(element.seekable.start(0), 0.0, "The start of the first range should be the initialTime.");
               is(element.seekable.end(0), element.duration, "The end of the first range should be the duration.")
               finish_test(element);
-              }, false);
+              });
         }
 }
 ];

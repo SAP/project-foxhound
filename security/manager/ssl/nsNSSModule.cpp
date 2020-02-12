@@ -4,350 +4,160 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "CertBlocklist.h"
+#include "nsNSSModule.h"
+
+#ifndef MOZ_NEW_CERT_STORAGE
+#  include "CertBlocklist.h"
+#endif
 #include "ContentSignatureVerifier.h"
 #include "NSSErrorsService.h"
+#include "OSKeyStore.h"
+#include "OSReauthenticator.h"
+#include "PKCS11ModuleDB.h"
 #include "PSMContentListener.h"
 #include "SecretDecoderRing.h"
 #include "TransportSecurityInfo.h"
-#include "WeakCryptoOverride.h"
+#include "mozilla/MacroArgs.h"
 #include "mozilla/ModuleUtils.h"
+#include "mozilla/SyncRunnable.h"
 #include "nsCURILoader.h"
 #include "nsCertOverrideService.h"
-#include "nsCertPicker.h"
-#include "nsCrypto.h"
 #include "nsCryptoHash.h"
-#include "nsDOMCID.h" // For the NS_CRYPTO_CONTRACTID define
-#include "nsDataSignatureVerifier.h"
 #include "nsICategoryManager.h"
 #include "nsKeyModule.h"
-#include "nsKeygenHandler.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSCertificateDB.h"
-#include "nsNSSCertificateFakeTransport.h"
 #include "nsNSSComponent.h"
-#include "nsNSSU2FToken.h"
 #include "nsNSSVersion.h"
-#include "nsNTLMAuthModule.h"
 #include "nsNetCID.h"
 #include "nsPK11TokenDB.h"
 #include "nsPKCS11Slot.h"
 #include "nsRandomGenerator.h"
-#include "nsSSLSocketProvider.h"
-#include "nsSSLStatus.h"
 #include "nsSecureBrowserUIImpl.h"
 #include "nsSiteSecurityService.h"
-#include "nsTLSSocketProvider.h"
 #include "nsXULAppAPI.h"
 
 #ifdef MOZ_XUL
-#include "nsCertTree.h"
+#  include "nsCertTree.h"
 #endif
 
-#define NS_IS_PROCESS_DEFAULT                                                 \
-    (GeckoProcessType_Default == XRE_GetProcessType())
+namespace mozilla {
+namespace psm {
 
-#define NS_NSS_INSTANTIATE(ensureOperator, _InstanceClass)                    \
-    PR_BEGIN_MACRO                                                            \
-        _InstanceClass * inst;                                                \
-        inst = new _InstanceClass();                                          \
-        NS_ADDREF(inst);                                                      \
-        rv = inst->QueryInterface(aIID, aResult);                             \
-        NS_RELEASE(inst);                                                     \
-    PR_END_MACRO
+// Many of the implementations in this module call NSS functions and as a result
+// require that PSM has successfully initialized NSS before being used.
+// Additionally, some of the implementations have various restrictions on which
+// process and threads they can be used on (e.g. some can only be used in the
+// parent process and some must be initialized only on the main thread).
+// The following initialization framework allows these requirements to be
+// succinctly expressed and implemented.
 
-#define NS_NSS_INSTANTIATE_INIT(ensureOperator, _InstanceClass, _InitMethod)  \
-    PR_BEGIN_MACRO                                                            \
-        _InstanceClass * inst;                                                \
-        inst = new _InstanceClass();                                          \
-        NS_ADDREF(inst);                                                      \
-        rv = inst->_InitMethod();                                             \
-        if(NS_SUCCEEDED(rv)) {                                                \
-            rv = inst->QueryInterface(aIID, aResult);                         \
-        }                                                                     \
-        NS_RELEASE(inst);                                                     \
-   PR_END_MACRO
-
-
-#define NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(ensureOperator,                    \
-                                           _InstanceClass)                    \
-   NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_BYPROCESS(ensureOperator,               \
-                                                _InstanceClass,               \
-                                                _InstanceClass)
-
-// These two macros are ripped off from nsIGenericFactory.h and slightly
-// modified.
-#define NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_BYPROCESS(ensureOperator,          \
-                                                     _InstanceClassChrome,    \
-                                                     _InstanceClassContent)   \
-static nsresult                                                               \
-_InstanceClassChrome##Constructor(nsISupports *aOuter, REFNSIID aIID,         \
-                                  void **aResult)                             \
-{                                                                             \
-    nsresult rv;                                                              \
-                                                                              \
-    *aResult = nullptr;                                                          \
-    if (nullptr != aOuter) {                                                     \
-        rv = NS_ERROR_NO_AGGREGATION;                                         \
-        return rv;                                                            \
-    }                                                                         \
-                                                                              \
-    if (!NS_IS_PROCESS_DEFAULT &&                                             \
-        ensureOperator == nssEnsureChromeOrContent) {                         \
-        if (!EnsureNSSInitializedChromeOrContent()) {                         \
-            return NS_ERROR_FAILURE;                                          \
-        }                                                                     \
-    } else if (!EnsureNSSInitialized(ensureOperator)) {                       \
-        return NS_ERROR_FAILURE;                                              \
-    }                                                                         \
-                                                                              \
-    if (NS_IS_PROCESS_DEFAULT)                                                \
-        NS_NSS_INSTANTIATE(ensureOperator, _InstanceClassChrome);             \
-    else                                                                      \
-        NS_NSS_INSTANTIATE(ensureOperator, _InstanceClassContent);            \
-                                                                              \
-    if (ensureOperator == nssLoadingComponent)                                \
-    {                                                                         \
-        if (NS_SUCCEEDED(rv))                                                 \
-            EnsureNSSInitialized(nssInitSucceeded);                           \
-        else                                                                  \
-            EnsureNSSInitialized(nssInitFailed);                              \
-    }                                                                         \
-                                                                              \
-    return rv;                                                                \
+template <class InstanceClass, nsresult (InstanceClass::*InitMethod)()>
+MOZ_ALWAYS_INLINE static nsresult Instantiate(REFNSIID aIID, void** aResult) {
+  InstanceClass* inst = new InstanceClass();
+  NS_ADDREF(inst);
+  nsresult rv = InitMethod != nullptr ? (inst->*InitMethod)() : NS_OK;
+  if (NS_SUCCEEDED(rv)) {
+    rv = inst->QueryInterface(aIID, aResult);
+  }
+  NS_RELEASE(inst);
+  return rv;
 }
 
- 
-#define NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(ensureOperator,               \
-                                                _InstanceClass,               \
-                                                _InitMethod)                  \
-    NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT_BYPROCESS(ensureOperator,         \
-                                                      _InstanceClass,         \
-                                                      _InstanceClass,         \
-                                                      _InitMethod)
+enum class ThreadRestriction {
+  // must be initialized on the main thread (but can be used on any thread)
+  MainThreadOnly,
+  // can be initialized and used on any thread
+  AnyThread,
+};
 
-#define NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT_BYPROCESS(ensureOperator,     \
-                                                _InstanceClassChrome,         \
-                                                _InstanceClassContent,        \
-                                                _InitMethod)                  \
-static nsresult                                                               \
-_InstanceClassChrome##Constructor(nsISupports *aOuter, REFNSIID aIID,         \
-                                  void **aResult)                             \
-{                                                                             \
-    nsresult rv;                                                              \
-                                                                              \
-    *aResult = nullptr;                                                       \
-    if (nullptr != aOuter) {                                                  \
-        rv = NS_ERROR_NO_AGGREGATION;                                         \
-        return rv;                                                            \
-    }                                                                         \
-                                                                              \
-    if (!NS_IS_PROCESS_DEFAULT &&                                             \
-        ensureOperator == nssEnsureChromeOrContent) {                         \
-        if (!EnsureNSSInitializedChromeOrContent()) {                         \
-            return NS_ERROR_FAILURE;                                          \
-        }                                                                     \
-    } else if (!EnsureNSSInitialized(ensureOperator)) {                       \
-        return NS_ERROR_FAILURE;                                              \
-    }                                                                         \
-                                                                              \
-    if (NS_IS_PROCESS_DEFAULT)                                                \
-        NS_NSS_INSTANTIATE_INIT(ensureOperator,                               \
-                                _InstanceClassChrome,                         \
-                                _InitMethod);                                 \
-    else                                                                      \
-        NS_NSS_INSTANTIATE_INIT(ensureOperator,                               \
-                                _InstanceClassContent,                        \
-                                _InitMethod);                                 \
-                                                                              \
-    if (ensureOperator == nssLoadingComponent)                                \
-    {                                                                         \
-        if (NS_SUCCEEDED(rv))                                                 \
-            EnsureNSSInitialized(nssInitSucceeded);                           \
-        else                                                                  \
-            EnsureNSSInitialized(nssInitFailed);                              \
-    }                                                                         \
-                                                                              \
-    return rv;                                                                \
+enum class ProcessRestriction {
+  ParentProcessOnly,
+  AnyProcess,
+};
+
+template <class InstanceClass,
+          nsresult (InstanceClass::*InitMethod)() = nullptr,
+          ProcessRestriction processRestriction =
+              ProcessRestriction::ParentProcessOnly,
+          ThreadRestriction threadRestriction = ThreadRestriction::AnyThread>
+static nsresult Constructor(nsISupports* aOuter, REFNSIID aIID,
+                            void** aResult) {
+  *aResult = nullptr;
+  if (aOuter != nullptr) {
+    return NS_ERROR_NO_AGGREGATION;
+  }
+
+  if (processRestriction == ProcessRestriction::ParentProcessOnly &&
+      !XRE_IsParentProcess()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (threadRestriction == ThreadRestriction::MainThreadOnly &&
+      !NS_IsMainThread()) {
+    nsCOMPtr<nsIThread> mainThread;
+    nsresult rv = NS_GetMainThread(getter_AddRefs(mainThread));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    // Forward to the main thread synchronously.
+    mozilla::SyncRunnable::DispatchToThread(
+        mainThread,
+        new SyncRunnable(NS_NewRunnableFunction("psm::Constructor", [&]() {
+          rv = Instantiate<InstanceClass, InitMethod>(aIID, aResult);
+        })));
+
+    return rv;
+  }
+
+  return Instantiate<InstanceClass, InitMethod>(aIID, aResult);
 }
 
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssLoadingComponent, nsNSSComponent,
-                                        Init)
+#define IMPL(type, ...)                                                  \
+  template <>                                                            \
+  nsresult NSSConstructor<type>(nsISupports * aOuter, const nsIID& aIID, \
+                                void** aResult) {                        \
+    return Constructor<type, __VA_ARGS__>(aOuter, aIID, aResult);        \
+  }
 
-using namespace mozilla::psm;
-
-namespace {
-
-// Use the special factory constructor for everything this module implements,
-// because all code could potentially require the NSS library.
-// Our factory constructor takes an additional boolean parameter.
-// Only for the nsNSSComponent, set this to true.
-// All other classes must have this set to false.
-
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsSSLSocketProvider)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsTLSSocketProvider)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, SecretDecoderRing)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsPK11TokenDB)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsPKCS11ModuleDB)
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(PSMContentListener, init)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_BYPROCESS(nssEnsureOnChromeOnly,
-                                             nsNSSCertificate,
-                                             nsNSSCertificateFakeTransport)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsNSSCertificateDB)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_BYPROCESS(nssEnsureOnChromeOnly,
-                                             nsNSSCertList,
-                                             nsNSSCertListFakeTransport)
+// Components that require main thread initialization could cause a deadlock
+// in necko code (bug 1418752). To prevent it we initialize all such components
+// on main thread in advance in net_EnsurePSMInit(). Update that function when
+// new component with ThreadRestriction::MainThreadOnly is added.
+IMPL(SecretDecoderRing, nullptr)
+IMPL(nsPK11TokenDB, nullptr)
+IMPL(PKCS11ModuleDB, nullptr)
+IMPL(nsNSSCertificate, nullptr, ProcessRestriction::AnyProcess)
+IMPL(nsNSSCertificateDB, nullptr)
+IMPL(nsNSSCertList, nullptr, ProcessRestriction::AnyProcess)
 #ifdef MOZ_XUL
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsCertTree)
+IMPL(nsCertTree, nullptr)
 #endif
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsPkcs11)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsCertPicker)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssEnsure, nsNTLMAuthModule, InitTest)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureChromeOrContent, nsCryptoHash)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureChromeOrContent, nsCryptoHMAC)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureChromeOrContent, nsKeyObject)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureChromeOrContent, nsKeyObjectFactory)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsDataSignatureVerifier)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, ContentSignatureVerifier)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureChromeOrContent, nsRandomGenerator)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssEnsure, nsNSSU2FToken, Init)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureOnChromeOnly, nsSSLStatus)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureOnChromeOnly, TransportSecurityInfo)
-
-typedef mozilla::psm::NSSErrorsService NSSErrorsService;
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(NSSErrorsService, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsNSSVersion)
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsCertOverrideService, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsSecureBrowserUIImpl)
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(CertBlocklist, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsSiteSecurityService, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(WeakCryptoOverride)
-
-NS_DEFINE_NAMED_CID(NS_NSSCOMPONENT_CID);
-NS_DEFINE_NAMED_CID(NS_SSLSOCKETPROVIDER_CID);
-NS_DEFINE_NAMED_CID(NS_STARTTLSSOCKETPROVIDER_CID);
-NS_DEFINE_NAMED_CID(NS_SECRETDECODERRING_CID);
-NS_DEFINE_NAMED_CID(NS_PK11TOKENDB_CID);
-NS_DEFINE_NAMED_CID(NS_PKCS11MODULEDB_CID);
-NS_DEFINE_NAMED_CID(NS_PSMCONTENTLISTEN_CID);
-NS_DEFINE_NAMED_CID(NS_X509CERT_CID);
-NS_DEFINE_NAMED_CID(NS_X509CERTDB_CID);
-NS_DEFINE_NAMED_CID(NS_X509CERTLIST_CID);
-NS_DEFINE_NAMED_CID(NS_FORMPROCESSOR_CID);
-#ifdef MOZ_XUL
-NS_DEFINE_NAMED_CID(NS_CERTTREE_CID);
+IMPL(nsCryptoHash, nullptr, ProcessRestriction::AnyProcess)
+IMPL(nsCryptoHMAC, nullptr, ProcessRestriction::AnyProcess)
+IMPL(nsKeyObject, nullptr, ProcessRestriction::AnyProcess)
+IMPL(nsKeyObjectFactory, nullptr, ProcessRestriction::AnyProcess)
+IMPL(ContentSignatureVerifier, nullptr)
+IMPL(nsCertOverrideService, &nsCertOverrideService::Init,
+     ProcessRestriction::ParentProcessOnly, ThreadRestriction::MainThreadOnly)
+IMPL(nsRandomGenerator, nullptr, ProcessRestriction::AnyProcess)
+IMPL(TransportSecurityInfo, nullptr, ProcessRestriction::AnyProcess)
+IMPL(nsSiteSecurityService, &nsSiteSecurityService::Init,
+     ProcessRestriction::AnyProcess, ThreadRestriction::MainThreadOnly)
+#ifndef MOZ_NEW_CERT_STORAGE
+IMPL(CertBlocklist, &CertBlocklist::Init, ProcessRestriction::ParentProcessOnly,
+     ThreadRestriction::MainThreadOnly)
 #endif
-NS_DEFINE_NAMED_CID(NS_PKCS11_CID);
-NS_DEFINE_NAMED_CID(NS_CRYPTO_HASH_CID);
-NS_DEFINE_NAMED_CID(NS_CRYPTO_HMAC_CID);
-NS_DEFINE_NAMED_CID(NS_CERT_PICKER_CID);
-NS_DEFINE_NAMED_CID(NS_NTLMAUTHMODULE_CID);
-NS_DEFINE_NAMED_CID(NS_KEYMODULEOBJECT_CID);
-NS_DEFINE_NAMED_CID(NS_KEYMODULEOBJECTFACTORY_CID);
-NS_DEFINE_NAMED_CID(NS_DATASIGNATUREVERIFIER_CID);
-NS_DEFINE_NAMED_CID(NS_CONTENTSIGNATUREVERIFIER_CID);
-NS_DEFINE_NAMED_CID(NS_CERTOVERRIDE_CID);
-NS_DEFINE_NAMED_CID(NS_RANDOMGENERATOR_CID);
-NS_DEFINE_NAMED_CID(NS_NSSU2FTOKEN_CID);
-NS_DEFINE_NAMED_CID(NS_SSLSTATUS_CID);
-NS_DEFINE_NAMED_CID(TRANSPORTSECURITYINFO_CID);
-NS_DEFINE_NAMED_CID(NS_NSSERRORSSERVICE_CID);
-NS_DEFINE_NAMED_CID(NS_NSSVERSION_CID);
-NS_DEFINE_NAMED_CID(NS_SECURE_BROWSER_UI_CID);
-NS_DEFINE_NAMED_CID(NS_SITE_SECURITY_SERVICE_CID);
-NS_DEFINE_NAMED_CID(NS_CERT_BLOCKLIST_CID);
-NS_DEFINE_NAMED_CID(NS_WEAKCRYPTOOVERRIDE_CID);
+IMPL(OSKeyStore, nullptr, ProcessRestriction::ParentProcessOnly,
+     ThreadRestriction::MainThreadOnly)
+IMPL(OSReauthenticator, nullptr, ProcessRestriction::ParentProcessOnly,
+     ThreadRestriction::MainThreadOnly)
+#undef IMPL
 
-static const mozilla::Module::CIDEntry kNSSCIDs[] = {
-  { &kNS_NSSCOMPONENT_CID, false, nullptr, nsNSSComponentConstructor },
-  { &kNS_SSLSOCKETPROVIDER_CID, false, nullptr, nsSSLSocketProviderConstructor },
-  { &kNS_STARTTLSSOCKETPROVIDER_CID, false, nullptr, nsTLSSocketProviderConstructor },
-  { &kNS_SECRETDECODERRING_CID, false, nullptr, SecretDecoderRingConstructor },
-  { &kNS_PK11TOKENDB_CID, false, nullptr, nsPK11TokenDBConstructor },
-  { &kNS_PKCS11MODULEDB_CID, false, nullptr, nsPKCS11ModuleDBConstructor },
-  { &kNS_PSMCONTENTLISTEN_CID, false, nullptr, PSMContentListenerConstructor },
-  { &kNS_X509CERT_CID, false, nullptr, nsNSSCertificateConstructor },
-  { &kNS_X509CERTDB_CID, false, nullptr, nsNSSCertificateDBConstructor },
-  { &kNS_X509CERTLIST_CID, false, nullptr, nsNSSCertListConstructor },
-  { &kNS_FORMPROCESSOR_CID, false, nullptr, nsKeygenFormProcessor::Create },
-#ifdef MOZ_XUL
-  { &kNS_CERTTREE_CID, false, nullptr, nsCertTreeConstructor },
-#endif
-  { &kNS_PKCS11_CID, false, nullptr, nsPkcs11Constructor },
-  { &kNS_CRYPTO_HASH_CID, false, nullptr, nsCryptoHashConstructor },
-  { &kNS_CRYPTO_HMAC_CID, false, nullptr, nsCryptoHMACConstructor },
-  { &kNS_CERT_PICKER_CID, false, nullptr, nsCertPickerConstructor },
-  { &kNS_NTLMAUTHMODULE_CID, false, nullptr, nsNTLMAuthModuleConstructor },
-  { &kNS_KEYMODULEOBJECT_CID, false, nullptr, nsKeyObjectConstructor },
-  { &kNS_KEYMODULEOBJECTFACTORY_CID, false, nullptr, nsKeyObjectFactoryConstructor },
-  { &kNS_DATASIGNATUREVERIFIER_CID, false, nullptr, nsDataSignatureVerifierConstructor },
-  { &kNS_CONTENTSIGNATUREVERIFIER_CID, false, nullptr, ContentSignatureVerifierConstructor },
-  { &kNS_CERTOVERRIDE_CID, false, nullptr, nsCertOverrideServiceConstructor },
-  { &kNS_RANDOMGENERATOR_CID, false, nullptr, nsRandomGeneratorConstructor },
-  { &kNS_NSSU2FTOKEN_CID, false, nullptr, nsNSSU2FTokenConstructor },
-  { &kNS_SSLSTATUS_CID, false, nullptr, nsSSLStatusConstructor },
-  { &kTRANSPORTSECURITYINFO_CID, false, nullptr, TransportSecurityInfoConstructor },
-  { &kNS_NSSERRORSSERVICE_CID, false, nullptr, NSSErrorsServiceConstructor },
-  { &kNS_NSSVERSION_CID, false, nullptr, nsNSSVersionConstructor },
-  { &kNS_SECURE_BROWSER_UI_CID, false, nullptr, nsSecureBrowserUIImplConstructor },
-  { &kNS_SITE_SECURITY_SERVICE_CID, false, nullptr, nsSiteSecurityServiceConstructor },
-  { &kNS_CERT_BLOCKLIST_CID, false, nullptr, CertBlocklistConstructor},
-  { &kNS_WEAKCRYPTOOVERRIDE_CID, false, nullptr, WeakCryptoOverrideConstructor },
-  { nullptr }
-};
-
-static const mozilla::Module::ContractIDEntry kNSSContracts[] = {
-  { PSM_COMPONENT_CONTRACTID, &kNS_NSSCOMPONENT_CID },
-  { NS_NSS_ERRORS_SERVICE_CONTRACTID, &kNS_NSSERRORSSERVICE_CID },
-  { NS_NSSVERSION_CONTRACTID, &kNS_NSSVERSION_CID },
-  { NS_SSLSOCKETPROVIDER_CONTRACTID, &kNS_SSLSOCKETPROVIDER_CID },
-  { NS_STARTTLSSOCKETPROVIDER_CONTRACTID, &kNS_STARTTLSSOCKETPROVIDER_CID },
-  { NS_SECRETDECODERRING_CONTRACTID, &kNS_SECRETDECODERRING_CID },
-  { NS_PK11TOKENDB_CONTRACTID, &kNS_PK11TOKENDB_CID },
-  { NS_PKCS11MODULEDB_CONTRACTID, &kNS_PKCS11MODULEDB_CID },
-  { NS_PSMCONTENTLISTEN_CONTRACTID, &kNS_PSMCONTENTLISTEN_CID },
-  { NS_X509CERTDB_CONTRACTID, &kNS_X509CERTDB_CID },
-  { NS_X509CERTLIST_CONTRACTID, &kNS_X509CERTLIST_CID },
-  { NS_FORMPROCESSOR_CONTRACTID, &kNS_FORMPROCESSOR_CID },
-#ifdef MOZ_XUL
-  { NS_CERTTREE_CONTRACTID, &kNS_CERTTREE_CID },
-#endif
-  { NS_PKCS11_CONTRACTID, &kNS_PKCS11_CID },
-  { NS_CRYPTO_HASH_CONTRACTID, &kNS_CRYPTO_HASH_CID },
-  { NS_CRYPTO_HMAC_CONTRACTID, &kNS_CRYPTO_HMAC_CID },
-  { NS_CERT_PICKER_CONTRACTID, &kNS_CERT_PICKER_CID },
-  { "@mozilla.org/uriloader/psm-external-content-listener;1", &kNS_PSMCONTENTLISTEN_CID },
-  { NS_CRYPTO_FIPSINFO_SERVICE_CONTRACTID, &kNS_PKCS11MODULEDB_CID },
-  { NS_NTLMAUTHMODULE_CONTRACTID, &kNS_NTLMAUTHMODULE_CID },
-  { NS_KEYMODULEOBJECT_CONTRACTID, &kNS_KEYMODULEOBJECT_CID },
-  { NS_KEYMODULEOBJECTFACTORY_CONTRACTID, &kNS_KEYMODULEOBJECTFACTORY_CID },
-  { NS_DATASIGNATUREVERIFIER_CONTRACTID, &kNS_DATASIGNATUREVERIFIER_CID },
-  { NS_CONTENTSIGNATUREVERIFIER_CONTRACTID, &kNS_CONTENTSIGNATUREVERIFIER_CID },
-  { NS_CERTOVERRIDE_CONTRACTID, &kNS_CERTOVERRIDE_CID },
-  { NS_RANDOMGENERATOR_CONTRACTID, &kNS_RANDOMGENERATOR_CID },
-  { NS_NSSU2FTOKEN_CONTRACTID, &kNS_NSSU2FTOKEN_CID },
-  { NS_SECURE_BROWSER_UI_CONTRACTID, &kNS_SECURE_BROWSER_UI_CID },
-  { NS_SSSERVICE_CONTRACTID, &kNS_SITE_SECURITY_SERVICE_CID },
-  { NS_CERTBLOCKLIST_CONTRACTID, &kNS_CERT_BLOCKLIST_CID },
-  { NS_WEAKCRYPTOOVERRIDE_CONTRACTID, &kNS_WEAKCRYPTOOVERRIDE_CID },
-  { nullptr }
-};
-
-static const mozilla::Module::CategoryEntry kNSSCategories[] = {
-  { NS_CONTENT_LISTENER_CATEGORYMANAGER_ENTRY, "application/x-x509-ca-cert", "@mozilla.org/uriloader/psm-external-content-listener;1" },
-  { NS_CONTENT_LISTENER_CATEGORYMANAGER_ENTRY, "application/x-x509-server-cert", "@mozilla.org/uriloader/psm-external-content-listener;1" },
-  { NS_CONTENT_LISTENER_CATEGORYMANAGER_ENTRY, "application/x-x509-user-cert", "@mozilla.org/uriloader/psm-external-content-listener;1" },
-  { NS_CONTENT_LISTENER_CATEGORYMANAGER_ENTRY, "application/x-x509-email-cert", "@mozilla.org/uriloader/psm-external-content-listener;1" },
-  { nullptr }
-};
-
-static const mozilla::Module kNSSModule = {
-  mozilla::Module::kVersion,
-  kNSSCIDs,
-  kNSSContracts,
-  kNSSCategories
-};
-
-} // unnamed namespace
-
-NSMODULE_DEFN(NSS) = &kNSSModule;
+}  // namespace psm
+}  // namespace mozilla

@@ -15,16 +15,20 @@ enum RTCSdpType {
 };
 
 dictionary RTCSessionDescriptionInit {
-  RTCSdpType? type = null;
-  DOMString? sdp = "";
+  required RTCSdpType type;
+  DOMString sdp = "";
 };
 
 [Pref="media.peerconnection.enabled",
  JSImplementation="@mozilla.org/dom/rtcsessiondescription;1",
- Constructor(optional RTCSessionDescriptionInit descriptionInitDict)]
+ Exposed=Window]
 interface RTCSessionDescription {
-  attribute RTCSdpType? type;
-  attribute DOMString? sdp;
+  [Throws]
+  constructor(optional RTCSessionDescriptionInit descriptionInitDict = {});
 
-  jsonifier;
+  // These should be readonly, but writing causes deprecation warnings for a bit
+  attribute RTCSdpType type;
+  attribute DOMString sdp;
+
+  [Default] object toJSON();
 };

@@ -6,31 +6,63 @@
 
 "use strict";
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+function run_test() {
+  let mutator = Cc[
+    "@mozilla.org/network/standard-url-mutator;1"
+  ].createInstance(Ci.nsIURIMutator);
+  Assert.ok(mutator, "Mutator constructor works");
 
-const StandardURL = Components.Constructor("@mozilla.org/network/standard-url;1",
-                                           "nsIStandardURL",
-                                           "init");
-function run_test()
-{
-    // Bug 1301621 makes invalid ports throw
-    Assert.throws(() => {
-        new StandardURL(Ci.nsIStandardURL.URLTYPE_AUTHORITY, 65536,
-                "http://localhost", "UTF-8", null)
-    }, "invalid port during creation");
-    let url = new StandardURL(Ci.nsIStandardURL.URLTYPE_AUTHORITY, 65535,
-                              "http://localhost", "UTF-8", null)
-                .QueryInterface(Ci.nsIStandardURL)
+  let url = Cc["@mozilla.org/network/standard-url-mutator;1"]
+    .createInstance(Ci.nsIStandardURLMutator)
+    .init(
+      Ci.nsIStandardURL.URLTYPE_AUTHORITY,
+      65535,
+      "http://localhost",
+      "UTF-8",
+      null
+    )
+    .finalize();
 
-    Assert.throws(() => {
-        url.setDefaultPort(65536);
-    }, "invalid port in setDefaultPort");
-    Assert.throws(() => {
-        url.port = 65536;
-    }, "invalid port in port setter");
+  // Bug 1301621 makes invalid ports throw
+  Assert.throws(
+    () => {
+      url = Cc["@mozilla.org/network/standard-url-mutator;1"]
+        .createInstance(Ci.nsIStandardURLMutator)
+        .init(
+          Ci.nsIStandardURL.URLTYPE_AUTHORITY,
+          65536,
+          "http://localhost",
+          "UTF-8",
+          null
+        )
+        .finalize();
+    },
+    /NS_ERROR_MALFORMED_URI/,
+    "invalid port during creation"
+  );
 
-    do_check_eq(url.QueryInterface(Ci.nsIURI).port, -1);
-    do_test_finished();
+  Assert.throws(
+    () => {
+      url = url
+        .mutate()
+        .QueryInterface(Ci.nsIStandardURLMutator)
+        .setDefaultPort(65536)
+        .finalize();
+    },
+    /NS_ERROR_MALFORMED_URI/,
+    "invalid port in setDefaultPort"
+  );
+  Assert.throws(
+    () => {
+      url = url
+        .mutate()
+        .setPort(65536)
+        .finalize();
+    },
+    /NS_ERROR_MALFORMED_URI/,
+    "invalid port in port setter"
+  );
+
+  Assert.equal(url.port, -1);
+  do_test_finished();
 }
-

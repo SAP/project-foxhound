@@ -5,9 +5,9 @@
   -->
   <head>
     <title>Bug 633602</title>
-    <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js">
+    <script src="/tests/SimpleTest/SimpleTest.js">
     </script>
-    <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js">
+    <script src="/tests/SimpleTest/EventUtils.js">
     </script>
     <script type="application/javascript" src="pointerlock_utils.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
@@ -48,7 +48,7 @@
                                       false );
             div.requestPointerLock();
           }
-        }, false);
+        });
 
         document.addEventListener("pointerlockerror", function (e) {
           prefDisabled = true;
@@ -59,7 +59,7 @@
             SimpleTest.finish();
           });
           document.exitFullscreen();
-        }, false);
+        });
 
         function start() {
           addFullscreenChangeContinuation("enter", function() {

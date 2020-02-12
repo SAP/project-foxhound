@@ -1,21 +1,23 @@
-function run_test()
-{
-  if (!("@mozilla.org/toolkit/crash-reporter;1" in Components.classes)) {
-    dump("INFO | test_crash_after_js_large_allocation_failure.js | Can't test crashreporter in a non-libxul build.\n");
+function run_test() {
+  if (!("@mozilla.org/toolkit/crash-reporter;1" in Cc)) {
+    dump(
+      "INFO | test_crash_after_js_large_allocation_failure.js | Can't test crashreporter in a non-libxul build.\n"
+    );
     return;
   }
 
   do_crash(
     function() {
       crashType = CrashTestUtils.CRASH_MOZ_CRASH;
-      crashReporter.annotateCrashReport("TestingOOMCrash", "Yes");
-      Components.utils.getJSTestingFunctions().reportLargeAllocationFailure();
-      Components.utils.forceGC();
+      crashReporter.annotateCrashReport("TestKey", "Yes");
+      Cu.getJSTestingFunctions().reportLargeAllocationFailure();
+      Cu.forceGC();
     },
     function(mdump, extra) {
-      do_check_eq(extra.TestingOOMCrash, "Yes");
-      do_check_false("JSOutOfMemory" in extra);
-      do_check_eq(extra.JSLargeAllocationFailure, "Recovered");
+      Assert.equal(extra.TestKey, "Yes");
+      Assert.equal(false, "JSOutOfMemory" in extra);
+      Assert.equal(extra.JSLargeAllocationFailure, "Recovered");
     },
-    true);
+    true
+  );
 }

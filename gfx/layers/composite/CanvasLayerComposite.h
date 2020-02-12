@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_CanvasLayerComposite_H
 #define GFX_CanvasLayerComposite_H
 
-#include "Layers.h"                     // for CanvasLayer, etc
-#include "mozilla/Attributes.h"         // for override
-#include "mozilla/RefPtr.h"             // for RefPtr
+#include "Layers.h"                                // for CanvasLayer, etc
+#include "mozilla/Attributes.h"                    // for override
+#include "mozilla/RefPtr.h"                        // for RefPtr
 #include "mozilla/layers/LayerManagerComposite.h"  // for LayerComposite, etc
-#include "mozilla/layers/LayersTypes.h"  // for LayerRenderState, etc
-#include "nsDebug.h"                    // for NS_RUNTIMEABORT
-#include "nsRect.h"                     // for mozilla::gfx::IntRect
-#include "nscore.h"                     // for nsACString
+#include "mozilla/layers/LayersTypes.h"            // for LayerRenderState, etc
+#include "nsRect.h"                                // for mozilla::gfx::IntRect
+#include "nscore.h"                                // for nsACString
 
 namespace mozilla {
 namespace layers {
@@ -23,59 +23,50 @@ class CompositableHost;
 // canvas is identical to compositing an image.
 class ImageHost;
 
-class CanvasLayerComposite : public CanvasLayer,
-                             public LayerComposite
-{
-public:
+class CanvasLayerComposite : public CanvasLayer, public LayerComposite {
+ public:
   explicit CanvasLayerComposite(LayerManagerComposite* aManager);
 
-protected:
+ protected:
   virtual ~CanvasLayerComposite();
 
-public:
-  // CanvasLayer impl
-  virtual void Initialize(const Data& aData) override
-  {
-    NS_RUNTIMEABORT("Incompatibe surface type");
-  }
+ public:
+  bool SetCompositableHost(CompositableHost* aHost) override;
 
-  virtual LayerRenderState GetRenderState() override;
+  void Disconnect() override { Destroy(); }
 
-  virtual bool SetCompositableHost(CompositableHost* aHost) override;
+  void SetLayerManager(HostLayerManager* aManager) override;
 
-  virtual void Disconnect() override
-  {
-    Destroy();
-  }
+  Layer* GetLayer() override;
+  void RenderLayer(const gfx::IntRect& aClipRect,
+                   const Maybe<gfx::Polygon>& aGeometry) override;
 
-  virtual void SetLayerManager(LayerManagerComposite* aManager) override;
+  void CleanupResources() override;
 
-  virtual Layer* GetLayer() override;
-  virtual void RenderLayer(const gfx::IntRect& aClipRect) override;
-
-  virtual void CleanupResources() override;
-
-  virtual void GenEffectChain(EffectChain& aEffect) override;
+  void GenEffectChain(EffectChain& aEffect) override;
 
   CompositableHost* GetCompositableHost() override;
 
-  virtual LayerComposite* AsLayerComposite() override { return this; }
+  HostLayer* AsHostLayer() override { return this; }
 
-  void SetBounds(gfx::IntRect aBounds) { mBounds = aBounds; }
+  const char* Name() const override { return "CanvasLayerComposite"; }
 
-  virtual const char* Name() const override { return "CanvasLayerComposite"; }
+ protected:
+  CanvasRenderer* CreateCanvasRendererInternal() override {
+    MOZ_CRASH("Incompatible surface type");
+    return nullptr;
+  }
 
-protected:
-  virtual void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
+  void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
 
-private:
+ private:
   gfx::SamplingFilter GetSamplingFilter();
 
-private:
+ private:
   RefPtr<CompositableHost> mCompositableHost;
 };
 
-} // namespace layers
-} // namespace mozilla
+}  // namespace layers
+}  // namespace mozilla
 
 #endif /* GFX_CanvasLayerComposite_H */

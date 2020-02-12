@@ -8,10 +8,13 @@
 #ifndef SkMatrixConvolutionImageFilter_DEFINED
 #define SkMatrixConvolutionImageFilter_DEFINED
 
+#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkScalar.h"
 #include "SkSize.h"
 #include "SkPoint.h"
+
+class SkBitmap;
 
 /*! \class SkMatrixConvolutionImageFilter
     Matrix convolution image filter.  This filter applies an NxM image
@@ -26,10 +29,13 @@ public:
       kClamp_TileMode = 0,         /*!< Clamp to the image's edge pixels. */
       kRepeat_TileMode,        /*!< Wrap around to the image's opposite edge. */
       kClampToBlack_TileMode,  /*!< Fill with transparent black. */
+      kLast_TileMode = kClampToBlack_TileMode,
+
+      // TODO: remove kMax - it is non-standard but used by Chromium!
       kMax_TileMode = kClampToBlack_TileMode
     };
 
-    virtual ~SkMatrixConvolutionImageFilter();
+    ~SkMatrixConvolutionImageFilter() override;
 
     /** Construct a matrix convolution image filter.
         @param kernelSize     The kernel size in pixels, in each dimension (N by M).
@@ -52,18 +58,15 @@ public:
                               passed to filterImage() is used instead.
         @param cropRect       The rectangle to which the output processing will be limited.
     */
-    static SkImageFilter* Create(const SkISize& kernelSize,
-                                 const SkScalar* kernel,
-                                 SkScalar gain,
-                                 SkScalar bias,
-                                 const SkIPoint& kernelOffset,
-                                 TileMode tileMode,
-                                 bool convolveAlpha,
-                                 SkImageFilter* input = NULL,
-                                 const CropRect* cropRect = NULL);
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkMatrixConvolutionImageFilter)
+    static sk_sp<SkImageFilter> Make(const SkISize& kernelSize,
+                                     const SkScalar* kernel,
+                                     SkScalar gain,
+                                     SkScalar bias,
+                                     const SkIPoint& kernelOffset,
+                                     TileMode tileMode,
+                                     bool convolveAlpha,
+                                     sk_sp<SkImageFilter> input,
+                                     const CropRect* cropRect = nullptr);
 
 protected:
     SkMatrixConvolutionImageFilter(const SkISize& kernelSize,
@@ -73,21 +76,20 @@ protected:
                                    const SkIPoint& kernelOffset,
                                    TileMode tileMode,
                                    bool convolveAlpha,
-                                   SkImageFilter* input,
+                                   sk_sp<SkImageFilter> input,
                                    const CropRect* cropRect);
     void flatten(SkWriteBuffer&) const override;
 
-    bool onFilterImageDeprecated(Proxy*, const SkBitmap& src, const Context&,
-                                 SkBitmap* result, SkIPoint* loc) const override;
-    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
+    sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
+                                        SkIPoint* offset) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
+    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
     bool affectsTransparentBlack() const override;
 
-#if SK_SUPPORT_GPU
-    bool asFragmentProcessor(GrFragmentProcessor**, GrTexture*, const SkMatrix&,
-                             const SkIRect& bounds) const override;
-#endif
-
 private:
+    SK_FLATTENABLE_HOOKS(SkMatrixConvolutionImageFilter)
+
     SkISize   fKernelSize;
     SkScalar* fKernel;
     SkScalar  fGain;
@@ -95,26 +97,31 @@ private:
     SkIPoint  fKernelOffset;
     TileMode  fTileMode;
     bool      fConvolveAlpha;
-    typedef SkImageFilter INHERITED;
 
     template <class PixelFetcher, bool convolveAlpha>
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
+                      SkIVector& offset,
                       const SkIRect& rect,
                       const SkIRect& bounds) const;
     template <class PixelFetcher>
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
+                      SkIVector& offset,
                       const SkIRect& rect,
                       const SkIRect& bounds) const;
     void filterInteriorPixels(const SkBitmap& src,
                               SkBitmap* result,
+                              SkIVector& offset,
                               const SkIRect& rect,
                               const SkIRect& bounds) const;
     void filterBorderPixels(const SkBitmap& src,
                             SkBitmap* result,
+                            SkIVector& offset,
                             const SkIRect& rect,
                             const SkIRect& bounds) const;
+
+    typedef SkImageFilter INHERITED;
 };
 
 #endif

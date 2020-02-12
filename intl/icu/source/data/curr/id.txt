@@ -1,11 +1,5 @@
-﻿// ***************************************************************************
-// *
-// * Copyright (C) 2015 International Business Machines
-// * Corporation and others. All Rights Reserved.
-// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
-// * Source File: <path>/common/main/id.xml
-// *
-// ***************************************************************************
+﻿// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html#License
 id{
     Currencies{
         ADP{
@@ -220,9 +214,13 @@ id{
             "BYB",
             "Rubel Baru Belarus (1994–1999)",
         }
+        BYN{
+            "BYN",
+            "Rubel Belarusia",
+        }
         BYR{
             "BYR",
-            "Rubel Belarusia",
+            "Rubel Belarusia (2000–2016)",
         }
         BZD{
             "BZD",
@@ -260,9 +258,13 @@ id{
             "CLP",
             "Peso Cile",
         }
+        CNH{
+            "CNH",
+            "Yuan Tiongkok (luar negeri)",
+        }
         CNY{
             "CN¥",
-            "Yuan China",
+            "Yuan Tiongkok",
         }
         COP{
             "COP",
@@ -674,6 +676,10 @@ id{
         }
         MRO{
             "MRO",
+            "Ouguiya Mauritania (1973–2017)",
+        }
+        MRU{
+            "MRU",
             "Ouguiya Mauritania",
         }
         MTL{
@@ -774,7 +780,7 @@ id{
         }
         PEN{
             "PEN",
-            "Nuevo Sol Peru",
+            "Sol Peru",
         }
         PES{
             "PES",
@@ -906,6 +912,10 @@ id{
         }
         STD{
             "STD",
+            "Dobra Sao Tome dan Principe (1977–2017)",
+        }
+        STN{
+            "STN",
             "Dobra Sao Tome dan Principe",
         }
         SUR{
@@ -1026,6 +1036,10 @@ id{
         }
         VEF{
             "VEF",
+            "Bolivar Venezuela (2008–2018)",
+        }
+        VES{
+            "VES",
             "Bolivar Venezuela",
         }
         VND{
@@ -1182,101 +1196,8 @@ id{
         }
     }
     Currencies%narrow{
-        AOA{"Kz"}
-        ARS{"$"}
-        AUD{"$"}
-        BAM{"KM"}
-        BBD{"$"}
-        BDT{"৳"}
-        BMD{"$"}
-        BND{"$"}
-        BOB{"Bs"}
-        BRL{"R$"}
-        BSD{"$"}
-        BWP{"P"}
-        BYR{"р."}
-        BZD{"$"}
-        CAD{"$"}
-        CLP{"$"}
-        CNY{"¥"}
-        COP{"$"}
-        CRC{"₡"}
-        CUC{"$"}
-        CUP{"$"}
-        CZK{"Kč"}
-        DKK{"kr"}
-        DOP{"$"}
-        EGP{"E£"}
-        EUR{"€"}
-        FJD{"$"}
-        FKP{"£"}
-        GBP{"£"}
-        GIP{"£"}
-        GNF{"FG"}
-        GTQ{"Q"}
-        GYD{"$"}
-        HKD{"$"}
-        HNL{"L"}
-        HRK{"kn"}
-        HUF{"Ft"}
         IDR{"Rp"}
-        ILS{"₪"}
-        INR{"₹"}
-        ISK{"kr"}
-        JMD{"$"}
-        JPY{"¥"}
-        KHR{"៛"}
-        KMF{"CF"}
-        KPW{"₩"}
-        KRW{"₩"}
-        KYD{"$"}
-        KZT{"₸"}
-        LAK{"₭"}
-        LBP{"L£"}
-        LKR{"Rs"}
-        LRD{"$"}
-        MGA{"Ar"}
-        MMK{"K"}
-        MNT{"₮"}
-        MUR{"Rs"}
-        MXN{"$"}
-        MYR{"RM"}
-        NAD{"$"}
-        NGN{"₦"}
-        NIO{"C$"}
-        NOK{"kr"}
-        NPR{"Rs"}
-        NZD{"$"}
-        PHP{"₱"}
-        PKR{"Rs"}
-        PLN{"zł"}
-        PYG{"₲"}
-        RUB{"₽"}
-        RWF{"RF"}
-        SBD{"$"}
-        SEK{"kr"}
-        SGD{"$"}
-        SHP{"£"}
-        SRD{"$"}
-        SSP{"£"}
-        STD{"Db"}
-        SYP{"£"}
-        THB{"฿"}
-        TOP{"T$"}
-        TRY{"₺"}
-        TTD{"$"}
         TWD{"NT$"}
-        UAH{"₴"}
-        USD{"$"}
-        UYU{"$"}
-        VEF{"Bs"}
-        VND{"₫"}
-        XCD{"$"}
-        ZAR{"R"}
-        ZMW{"ZK"}
-    }
-    Currencies%variant{
-        TRY{"TL"}
     }
     CurrencyPlurals{
         AED{
@@ -1405,8 +1326,11 @@ id{
         BYB{
             other{"Rubel Baru Belarus (1994–1999)"}
         }
-        BYR{
+        BYN{
             other{"Rubel Belarusia"}
+        }
+        BYR{
+            other{"Rubel Belarusia (2000–2016)"}
         }
         BZD{
             other{"Dolar Belize"}
@@ -1423,8 +1347,11 @@ id{
         CLP{
             other{"Peso Cile"}
         }
+        CNH{
+            other{"Yuan Tiongkok (luar negeri)"}
+        }
         CNY{
-            other{"Yuan China"}
+            other{"Yuan Tiongkok"}
         }
         COP{
             other{"Peso Kolombia"}
@@ -1631,6 +1558,9 @@ id{
             other{"Pataca Makau"}
         }
         MRO{
+            other{"Ouguiya Mauritania (1973–2017)"}
+        }
+        MRU{
             other{"Ouguiya Mauritania"}
         }
         MUR{
@@ -1688,7 +1618,7 @@ id{
             other{"Balboa Panama"}
         }
         PEN{
-            other{"Nuevo Sol Peru"}
+            other{"Sol Peru"}
         }
         PES{
             other{"Sol Peru (1863–1965)"}
@@ -1772,6 +1702,9 @@ id{
             other{"Pound Sudan Selatan"}
         }
         STD{
+            other{"Dobra Sao Tome dan Principe (1977–2017)"}
+        }
+        STN{
             other{"Dobra Sao Tome dan Principe"}
         }
         SYP{
@@ -1838,6 +1771,9 @@ id{
             other{"Bolivar Venezuela (1871–2008)"}
         }
         VEF{
+            other{"Bolivar Venezuela (2008–2018)"}
+        }
+        VES{
             other{"Bolivar Venezuela"}
         }
         VND{
@@ -1865,7 +1801,7 @@ id{
             other{"Franc CFP"}
         }
         XXX{
-            other{"Mata Uang Tidak Dikenal"}
+            other{"(mata uang tidak dikenal)"}
         }
         YER{
             other{"Rial Yaman"}
@@ -1904,5 +1840,5 @@ id{
     CurrencyUnitPatterns{
         other{"{0} {1}"}
     }
-    Version{"2.1.19.17"}
+    Version{"2.1.48.42"}
 }

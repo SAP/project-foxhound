@@ -23,55 +23,62 @@ namespace indexedDB {
 class FileInfo;
 class SerializedStructuredCloneReadInfo;
 
-struct StructuredCloneFile
-{
+struct StructuredCloneFile {
+  enum FileType {
+    eBlob,
+    eMutableFile,
+    eStructuredClone,
+    eWasmBytecode,
+    eWasmCompiled,
+    eEndGuard
+  };
+
   RefPtr<Blob> mBlob;
   RefPtr<IDBMutableFile> mMutableFile;
   RefPtr<FileInfo> mFileInfo;
-  bool mMutable;
+  FileType mType;
 
   // In IndexedDatabaseInlines.h
-  inline
-  StructuredCloneFile();
+  inline StructuredCloneFile();
 
   // In IndexedDatabaseInlines.h
-  inline
-  ~StructuredCloneFile();
+  inline ~StructuredCloneFile();
 
   // In IndexedDatabaseInlines.h
-  inline bool
-  operator==(const StructuredCloneFile& aOther) const;
+  inline bool operator==(const StructuredCloneFile& aOther) const;
 };
 
-struct StructuredCloneReadInfo
-{
+struct StructuredCloneReadInfo {
   JSStructuredCloneData mData;
   nsTArray<StructuredCloneFile> mFiles;
   IDBDatabase* mDatabase;
+  bool mHasPreprocessInfo;
 
   // In IndexedDatabaseInlines.h
-  inline
-  StructuredCloneReadInfo();
+  inline explicit StructuredCloneReadInfo(JS::StructuredCloneScope aScope);
 
   // In IndexedDatabaseInlines.h
-  inline
-  ~StructuredCloneReadInfo();
+  inline StructuredCloneReadInfo();
 
   // In IndexedDatabaseInlines.h
-  inline
-  StructuredCloneReadInfo(StructuredCloneReadInfo&& aOther);
+  inline ~StructuredCloneReadInfo();
 
   // In IndexedDatabaseInlines.h
-  inline StructuredCloneReadInfo&
-  operator=(StructuredCloneReadInfo&& aOther);
+  inline StructuredCloneReadInfo(StructuredCloneReadInfo&& aOther);
 
   // In IndexedDatabaseInlines.h
-  inline
-  MOZ_IMPLICIT StructuredCloneReadInfo(SerializedStructuredCloneReadInfo&& aOther);
+  inline StructuredCloneReadInfo& operator=(StructuredCloneReadInfo&& aOther);
+
+  // In IndexedDatabaseInlines.h
+  inline MOZ_IMPLICIT StructuredCloneReadInfo(
+      SerializedStructuredCloneReadInfo&& aOther);
+
+  // In IndexedDatabaseInlines.h
+  inline size_t Size() const;
 };
 
-} // namespace indexedDB
-} // namespace dom
-} // namespace mozilla
+}  // namespace indexedDB
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_indexeddatabase_h__
+#endif  // mozilla_dom_indexeddatabase_h__

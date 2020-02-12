@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=561636
 -->
 <head>
   <title>Test for Bug 561636</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -47,36 +47,20 @@ function runTest()
   var formSubmitted = [ false, false ];
   var invalidHandled = false;
 
-  var os = SpecialPowers.Cc['@mozilla.org/observer-service;1']
-                        .getService(SpecialPowers.Ci.nsIObserverService);
-  var observers = os.enumerateObservers("invalidformsubmit");
-
-  // The following test should not be done if there is no observer for
-  // "invalidformsubmit" because the form submission will not be canceled in that
-  // case.
-  if (!observers.hasMoreElements()) {
-    SimpleTest.finish();
-    return;
-  }
-
   // Initialize
   document.forms[0].addEventListener('submit', function(aEvent) {
-    aEvent.target.removeEventListener('submit', arguments.callee, false);
     formSubmitted[0] = true;
-  }, false);
+  }, {once: true});
 
   document.forms[1].addEventListener('submit', function(aEvent) {
-    aEvent.target.removeEventListener('submit', arguments.callee, false);
     formSubmitted[1] = true;
-  }, false);
+  }, {once: true});
 
   document.forms[2].addEventListener('submit', function(aEvent) {
-    aEvent.target.removeEventListener('submit', arguments.callee, false);
     formSubmitted[2] = true;
-  }, false);
+  }, {once: true});
 
   document.forms[3].addEventListener('submit', function(aEvent) {
-    aEvent.target.removeEventListener('submit', arguments.callee, false);
     formSubmitted[3] = true;
 
     ok(!formSubmitted[0], "Form 1 should not have been submitted because invalid");
@@ -86,29 +70,26 @@ function runTest()
 
     // Next test.
     document.forms[4].submit();
-  }, false);
+  }, {once: true});
 
   document.forms[4].elements[0].addEventListener('invalid', function(aEvent) {
-    aEvent.target.removeEventListener('invalid', arguments.callee, false);
     invalidHandled = true;
-  }, false);
+  }, {once: true});
 
   document.getElementById('i').addEventListener('load', function(aEvent) {
-    aEvent.target.removeEventListener('load', arguments.callee, false);
-
     SimpleTest.executeSoon(function () {
       ok(true, "Form 5 should have been submitted because submit() has been used even if invalid");
       ok(!invalidHandled, "Invalid event should not have been sent");
 
       SimpleTest.finish();
     });
-  }, false);
+  }, {once: true});
 
   document.getElementById('a').click();
   document.getElementById('b').click();
   var c = document.getElementById('c');
   c.focus();
-  synthesizeKey("KEY_Enter", { code: "Enter" });
+  synthesizeKey("KEY_Enter");
   document.getElementById('s2').click();
 }
 

@@ -8,7 +8,7 @@ Telemetry is a feature that allows data collection. This is being used to collec
 
 Client-side, this consists of:
 
-* data collection in `Histograms <https://developer.mozilla.org/en-US/docs/Mozilla/Performance/Adding_a_new_Telemetry_probe>`_, :doc:`collection/scalars` and other data structures
+* :doc:`data collection <collection/index>`, e.g. in histograms and scalars
 * assembling :doc:`concepts/pings` with the general information and the data payload
 * sending them to the server and local ping retention
 
@@ -18,8 +18,9 @@ Client-side, this consists of:
    :maxdepth: 5
    :titlesonly:
 
+   start/index
    concepts/index
    collection/index
    data/index
    internals/index
-   fhr/index
+   obsolete/index

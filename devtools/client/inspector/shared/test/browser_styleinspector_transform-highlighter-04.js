@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -27,34 +26,38 @@ const TEST_URI = `
 
 const TYPE = "CssTransformHighlighter";
 
-add_task(function* () {
-  yield addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
-  let {inspector, view} = yield openRuleView();
-  yield selectNode(".test", inspector);
+add_task(async function() {
+  await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
+  const { inspector, view } = await openRuleView();
+  await selectNode(".test", inspector);
 
-  let hs = view.highlighters;
+  const hs = view.highlighters;
 
   info("Faking a mousemove on the overriden property");
-  let {valueSpan} = getRuleViewProperty(view, "div", "transform");
-  hs._onMouseMove({target: valueSpan});
-  ok(!hs.highlighters[TYPE],
-    "No highlighter was created for the overriden property");
+  let { valueSpan } = getRuleViewProperty(view, "div", "transform");
+  hs.onMouseMove({ target: valueSpan });
+  ok(
+    !hs.highlighters[TYPE],
+    "No highlighter was created for the overriden property"
+  );
 
   info("Disabling the applied property");
-  let classRuleEditor = getRuleViewRuleEditor(view, 1);
-  let propEditor = classRuleEditor.rule.textProps[0].editor;
+  const classRuleEditor = getRuleViewRuleEditor(view, 1);
+  const propEditor = classRuleEditor.rule.textProps[0].editor;
   propEditor.enable.click();
-  yield classRuleEditor.rule._applyingModifications;
+  await classRuleEditor.rule._applyingModifications;
 
   info("Faking a mousemove on the disabled property");
-  ({valueSpan} = getRuleViewProperty(view, ".test", "transform"));
-  hs._onMouseMove({target: valueSpan});
-  ok(!hs.highlighters[TYPE],
-    "No highlighter was created for the disabled property");
+  ({ valueSpan } = getRuleViewProperty(view, ".test", "transform"));
+  hs.onMouseMove({ target: valueSpan });
+  ok(
+    !hs.highlighters[TYPE],
+    "No highlighter was created for the disabled property"
+  );
 
   info("Faking a mousemove on the now unoverriden property");
-  ({valueSpan} = getRuleViewProperty(view, "div", "transform"));
-  let onHighlighterShown = hs.once("highlighter-shown");
-  hs._onMouseMove({target: valueSpan});
-  yield onHighlighterShown;
+  ({ valueSpan } = getRuleViewProperty(view, "div", "transform"));
+  const onHighlighterShown = hs.once("highlighter-shown");
+  hs.onMouseMove({ target: valueSpan });
+  await onHighlighterShown;
 });

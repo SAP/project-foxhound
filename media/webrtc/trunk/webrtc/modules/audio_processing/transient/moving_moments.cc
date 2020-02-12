@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "webrtc/modules/audio_processing/transient/moving_moments.h"
+#include "modules/audio_processing/transient/moving_moments.h"
 
 #include <math.h>
 #include <string.h>
 
-#include "webrtc/base/scoped_ptr.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
@@ -22,7 +22,7 @@ MovingMoments::MovingMoments(size_t length)
       queue_(),
       sum_(0.0),
       sum_of_squares_(0.0) {
-  assert(length > 0);
+  RTC_DCHECK_GT(length, 0);
   for (size_t i = 0; i < length; ++i) {
     queue_.push(0.0);
   }
@@ -32,7 +32,10 @@ MovingMoments::~MovingMoments() {}
 
 void MovingMoments::CalculateMoments(const float* in, size_t in_length,
                                      float* first, float* second) {
-  assert(in && in_length > 0 && first && second);
+  RTC_DCHECK(in);
+  RTC_DCHECK_GT(in_length, 0);
+  RTC_DCHECK(first);
+  RTC_DCHECK(second);
 
   for (size_t i = 0; i < in_length; ++i) {
     const float old_value = queue_.front();

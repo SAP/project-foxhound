@@ -4,7 +4,7 @@
 
 # This modules provides functionality for dealing with compiler warnings.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, print_function, unicode_literals
 
 import errno
 import json
@@ -33,6 +33,15 @@ RE_CLANG_WARNING = re.compile(r"""
     \[(?P<flag>[^\]]+)
     """, re.X)
 
+# This captures Clang-cl warning format.
+RE_CLANG_CL_WARNING = re.compile(r"""
+    (?P<file>.*)
+    \((?P<line>\d+),(?P<column>\d+)\)
+    \s?:\s+warning:\s
+    (?P<message>.*)
+    \[(?P<flag>[^\]]+)
+    """, re.X)
+
 # This captures Visual Studio's warning format.
 RE_MSVC_WARNING = re.compile(r"""
     (?P<file>.*)
@@ -58,6 +67,12 @@ class CompilerWarning(dict):
         self['message'] = None
         self['flag'] = None
 
+    def copy(self):
+        """Returns a copy of this compiler warning."""
+        w = CompilerWarning()
+        w.update(self)
+        return w
+
     # Since we inherit from dict, functools.total_ordering gets confused.
     # Thus, we define a key function, a generic comparison, and then
     # implement all the rich operators with those; approach is from:
@@ -72,22 +87,22 @@ class CompilerWarning(dict):
         return func(self._cmpkey(), other._cmpkey())
 
     def __eq__(self, other):
-        return self._compare(other, lambda s,o: s == o)
+        return self._compare(other, lambda s, o: s == o)
 
     def __neq__(self, other):
-        return self._compare(other, lambda s,o: s != o)
+        return self._compare(other, lambda s, o: s != o)
 
     def __lt__(self, other):
-        return self._compare(other, lambda s,o: s < o)
+        return self._compare(other, lambda s, o: s < o)
 
     def __le__(self, other):
-        return self._compare(other, lambda s,o: s <= o)
+        return self._compare(other, lambda s, o: s <= o)
 
     def __gt__(self, other):
-        return self._compare(other, lambda s,o: s > o)
+        return self._compare(other, lambda s, o: s > o)
 
     def __ge__(self, other):
-        return self._compare(other, lambda s,o: s >= o)
+        return self._compare(other, lambda s, o: s >= o)
 
     def __hash__(self):
         """Define so this can exist inside a set, etc."""
@@ -117,6 +132,7 @@ class WarningsDatabase(object):
     Callers should periodically prune old, invalid warnings from the database
     by calling prune(). A good time to do this is at the end of a build.
     """
+
     def __init__(self):
         """Create an empty database."""
         self._files = {}
@@ -283,21 +299,24 @@ class WarningsCollector(object):
     """Collects warnings from text data.
 
     Instances of this class receive data (usually the output of compiler
-    invocations) and parse it into warnings and add these warnings to a
-    database.
+    invocations) and parse it into warnings.
 
     The collector works by incrementally receiving data, usually line-by-line
     output from the compiler. Therefore, it can maintain state to parse
     multi-line warning messages.
     """
-    def __init__(self, database=None, objdir=None, resolve_files=True):
-        self.database = database
-        self.objdir = objdir
-        self.resolve_files = resolve_files
-        self.included_from = []
 
-        if database is None:
-            self.database = WarningsDatabase()
+    def __init__(self, cb, objdir=None):
+        """Initialize a new collector.
+
+        ``cb`` is a callable that is called with a ``CompilerWarning``
+        instance whenever a new warning is parsed.
+
+         ``objdir`` is the object directory. Used for normalizing paths.
+         """
+        self.cb = cb
+        self.objdir = objdir
+        self.included_from = []
 
     def process_line(self, line):
         """Take a line of text and process it for a warning."""
@@ -321,9 +340,19 @@ class WarningsCollector(object):
 
         # TODO make more efficient so we run minimal regexp matches.
         match_clang = RE_CLANG_WARNING.match(filtered)
+        match_clang_cl = RE_CLANG_CL_WARNING.match(filtered)
         match_msvc = RE_MSVC_WARNING.match(filtered)
         if match_clang:
             d = match_clang.groupdict()
+
+            filename = d['file']
+            warning['line'] = int(d['line'])
+            warning['column'] = int(d['column'])
+            warning['flag'] = d['flag']
+            warning['message'] = d['message'].rstrip()
+
+        elif match_clang_cl:
+            d = match_clang_cl.groupdict()
 
             filename = d['file']
             warning['line'] = int(d['line'])
@@ -349,13 +378,9 @@ class WarningsCollector(object):
         if not os.path.isabs(filename):
             filename = self._normalize_relative_path(filename)
 
-        if not os.path.exists(filename) and self.resolve_files:
-            raise Exception('Could not find file containing warning: %s' %
-                    filename)
-
         warning['filename'] = filename
 
-        self.database.insert(warning, compute_hash=self.resolve_files)
+        self.cb(warning)
 
         return warning
 

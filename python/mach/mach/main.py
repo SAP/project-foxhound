@@ -6,47 +6,49 @@
 # (mach). It is packaged as a module because everything is a library.
 
 from __future__ import absolute_import, print_function, unicode_literals
-from collections import Iterable
 
 import argparse
 import codecs
+import errno
 import imp
 import logging
 import os
 import sys
 import traceback
 import uuid
+from collections import Iterable
+
+from six import string_types
 
 from .base import (
     CommandContext,
     MachError,
+    MissingFileError,
     NoCommandError,
     UnknownCommandError,
     UnrecognizedArgumentError,
+    FailedCommandError,
 )
-
-from .decorators import (
-    CommandArgument,
-    CommandProvider,
-    Command,
-)
-
 from .config import ConfigSettings
+from .decorators import (
+    CommandProvider,
+)
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
+from .util import setenv
 
-
+SUGGEST_MACH_BUSTED = r'''
+You can invoke |./mach busted| to check if this issue is already on file. If it
+isn't, please use |./mach busted file| to report it. If |./mach busted| is
+misbehaving, you can also inspect the dependencies of bug 1543241.
+'''.lstrip()
 
 MACH_ERROR = r'''
 The error occurred in mach itself. This is likely a bug in mach itself or a
 fundamental problem with a loaded module.
 
-Please consider filing a bug against mach by going to the URL:
-
-    https://bugzilla.mozilla.org/enter_bug.cgi?product=Core&component=mach
-
-'''.lstrip()
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 ERROR_FOOTER = r'''
 If filing a bug, please include the full output of mach, including this error
@@ -59,15 +61,13 @@ COMMAND_ERROR = r'''
 The error occurred in the implementation of the invoked mach command.
 
 This should never occur and is likely a bug in the implementation of that
-command. Consider filing a bug for this issue.
-'''.lstrip()
+command.
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 MODULE_ERROR = r'''
 The error occurred in code that was called by the mach command. This is either
 a bug in the called code itself or in the way that mach is calling it.
-
-You should consider filing a bug for this issue.
-'''.lstrip()
+'''.lstrip() + SUGGEST_MACH_BUSTED
 
 NO_COMMAND_ERROR = r'''
 It looks like you tried to run mach without a command.
@@ -101,6 +101,7 @@ You are seeing this because there is an error in an external module attempting
 to implement a mach command. Please fix the error, or uninstall the module from
 your system.
 '''.lstrip()
+
 
 class ArgumentParser(argparse.ArgumentParser):
     """Custom implementation argument parser to make things look pretty."""
@@ -256,13 +257,19 @@ To see more help for a specific command, run:
         if module_name is None:
             # Ensure parent module is present otherwise we'll (likely) get
             # an error due to unknown parent.
-            if b'mach.commands' not in sys.modules:
-                mod = imp.new_module(b'mach.commands')
-                sys.modules[b'mach.commands'] = mod
+            if 'mach.commands' not in sys.modules:
+                mod = imp.new_module('mach.commands')
+                sys.modules['mach.commands'] = mod
 
-            module_name = 'mach.commands.%s' % uuid.uuid1().get_hex()
+            module_name = 'mach.commands.%s' % uuid.uuid4().hex
 
-        imp.load_source(module_name, path)
+        try:
+            imp.load_source(module_name, path)
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
+
+            raise MissingFileError('%s does not exist' % path)
 
     def load_commands_from_entry_point(self, group='mach.providers'):
         """Scan installed packages for mach command provider entry points. An
@@ -330,22 +337,32 @@ To see more help for a specific command, run:
         sys.stdout = stdout
         sys.stderr = stderr
 
+        orig_env = dict(os.environ)
+
         try:
-            if stdin.encoding is None:
-                sys.stdin = codecs.getreader('utf-8')(stdin)
+            if sys.version_info < (3, 0):
+                if stdin.encoding is None:
+                    sys.stdin = codecs.getreader('utf-8')(stdin)
 
-            if stdout.encoding is None:
-                sys.stdout = codecs.getwriter('utf-8')(stdout)
+                if stdout.encoding is None:
+                    sys.stdout = codecs.getwriter('utf-8')(stdout)
 
-            if stderr.encoding is None:
-                sys.stderr = codecs.getwriter('utf-8')(stderr)
+                if stderr.encoding is None:
+                    sys.stderr = codecs.getwriter('utf-8')(stderr)
+
+            # Allow invoked processes (which may not have a handle on the
+            # original stdout file descriptor) to know if the original stdout
+            # is a TTY. This provides a mechanism to allow said processes to
+            # enable emitting code codes, for example.
+            if os.isatty(orig_stdout.fileno()):
+                setenv('MACH_STDOUT_ISATTY', '1')
 
             return self._run(argv)
         except KeyboardInterrupt:
             print('mach interrupted by signal or user action. Stopping.')
             return 1
 
-        except Exception as e:
+        except Exception:
             # _run swallows exceptions in invoked handlers and converts them to
             # a proper exit code. So, the only scenario where we should get an
             # exception here is if _run itself raises. If _run raises, that's a
@@ -362,6 +379,9 @@ To see more help for a specific command, run:
             return 1
 
         finally:
+            os.environ.clear()
+            os.environ.update(orig_env)
+
             sys.stdin = orig_stdin
             sys.stdout = orig_stdout
             sys.stderr = orig_stderr
@@ -374,8 +394,8 @@ To see more help for a specific command, run:
         self.load_settings(self.settings_paths)
 
         context = CommandContext(cwd=self.cwd,
-            settings=self.settings, log_manager=self.log_manager,
-            commands=Registrar)
+                                 settings=self.settings, log_manager=self.log_manager,
+                                 commands=Registrar)
 
         if self.populate_context_handler:
             self.populate_context_handler(context)
@@ -397,13 +417,20 @@ To see more help for a specific command, run:
             print(NO_COMMAND_ERROR)
             return 1
         except UnknownCommandError as e:
-            suggestion_message = SUGGESTED_COMMANDS_MESSAGE % (e.verb, ', '.join(e.suggested_commands)) if e.suggested_commands else ''
-            print(UNKNOWN_COMMAND_ERROR % (e.verb, e.command, suggestion_message))
+            suggestion_message = SUGGESTED_COMMANDS_MESSAGE % (
+                e.verb, ', '.join(e.suggested_commands)) if e.suggested_commands else ''
+            print(UNKNOWN_COMMAND_ERROR %
+                  (e.verb, e.command, suggestion_message))
             return 1
         except UnrecognizedArgumentError as e:
             print(UNRECOGNIZED_ARGUMENT_ERROR % (e.command,
-                ' '.join(e.arguments)))
+                                                 ' '.join(e.arguments)))
             return 1
+
+        if not hasattr(args, 'mach_handler'):
+            raise MachError('ArgumentParser result missing mach handler info.')
+
+        handler = getattr(args, 'mach_handler')
 
         # Add JSON logging to a file if requested.
         if args.logfile:
@@ -423,24 +450,24 @@ To see more help for a specific command, run:
         # Always enable terminal logging. The log manager figures out if we are
         # actually in a TTY or are a pipe and does the right thing.
         self.log_manager.add_terminal_logging(level=log_level,
-            write_interval=args.log_interval, write_times=write_times)
+                                              write_interval=args.log_interval,
+                                              write_times=write_times)
 
         if args.settings_file:
             # Argument parsing has already happened, so settings that apply
             # to command line handling (e.g alias, defaults) will be ignored.
             self.load_settings(args.settings_file)
 
-        if not hasattr(args, 'mach_handler'):
-            raise MachError('ArgumentParser result missing mach handler info.')
-
-        handler = getattr(args, 'mach_handler')
-
         try:
             return Registrar._run_command_handler(handler, context=context,
-                debug_command=args.debug_command, **vars(args.command_args))
+                                                  debug_command=args.debug_command,
+                                                  **vars(args.command_args))
         except KeyboardInterrupt as ki:
             raise ki
-        except Exception as e:
+        except FailedCommandError as e:
+            print(e.message)
+            return e.exit_code
+        except Exception:
             exc_type, exc_value, exc_tb = sys.exc_info()
 
             # The first two frames are us and are never used.
@@ -455,7 +482,7 @@ To see more help for a specific command, run:
             if not len(stack):
                 print(COMMAND_ERROR)
                 self._print_exception(sys.stdout, exc_type, exc_value,
-                    traceback.extract_tb(exc_tb))
+                                      traceback.extract_tb(exc_tb))
                 return 1
 
             # Split the frames into those from the module containing the
@@ -489,7 +516,7 @@ To see more help for a specific command, run:
     def log(self, level, action, params, format_str):
         """Helper method to record a structured log event."""
         self.logger.log(level, format_str,
-            extra={'action': action, 'params': params})
+                        extra={'action': action, 'params': params})
 
     def _print_error_header(self, argv, fh):
         fh.write('Error running mach:\n\n')
@@ -516,10 +543,11 @@ To see more help for a specific command, run:
 
             machrc, .machrc
         """
-        if isinstance(paths, basestring):
+        if isinstance(paths, string_types):
             paths = [paths]
 
         valid_names = ('machrc', '.machrc')
+
         def find_in_dir(base):
             if os.path.isfile(base):
                 return base
@@ -538,38 +566,42 @@ To see more help for a specific command, run:
         """Returns an argument parser for the command-line interface."""
 
         parser = ArgumentParser(add_help=False,
-            usage='%(prog)s [global arguments] command [command arguments]')
+                                usage='%(prog)s [global arguments] '
+                                'command [command arguments]')
 
         # Order is important here as it dictates the order the auto-generated
         # help messages are printed.
         global_group = parser.add_argument_group('Global Arguments')
 
         global_group.add_argument('-v', '--verbose', dest='verbose',
-            action='store_true', default=False,
-            help='Print verbose output.')
+                                  action='store_true', default=False,
+                                  help='Print verbose output.')
         global_group.add_argument('-l', '--log-file', dest='logfile',
-            metavar='FILENAME', type=argparse.FileType('ab'),
-            help='Filename to write log data to.')
+                                  metavar='FILENAME', type=argparse.FileType('ab'),
+                                  help='Filename to write log data to.')
         global_group.add_argument('--log-interval', dest='log_interval',
-            action='store_true', default=False,
-            help='Prefix log line with interval from last message rather '
-                'than relative time. Note that this is NOT execution time '
-                'if there are parallel operations.')
+                                  action='store_true', default=False,
+                                  help='Prefix log line with interval from last message rather '
+                                  'than relative time. Note that this is NOT execution time '
+                                  'if there are parallel operations.')
         suppress_log_by_default = False
         if 'INSIDE_EMACS' in os.environ:
             suppress_log_by_default = True
         global_group.add_argument('--log-no-times', dest='log_no_times',
-            action='store_true', default=suppress_log_by_default,
-            help='Do not prefix log lines with times. By default, mach will '
-                'prefix each output line with the time since command start.')
+                                  action='store_true', default=suppress_log_by_default,
+                                  help='Do not prefix log lines with times. By default, '
+                                  'mach will prefix each output line with the time since '
+                                  'command start.')
         global_group.add_argument('-h', '--help', dest='help',
-            action='store_true', default=False,
-            help='Show this help message.')
+                                  action='store_true', default=False,
+                                  help='Show this help message.')
         global_group.add_argument('--debug-command', action='store_true',
-            help='Start a Python debugger when command is dispatched.')
+                                  help='Start a Python debugger when command is dispatched.')
         global_group.add_argument('--settings', dest='settings_file',
-            metavar='FILENAME', default=None,
-            help='Path to settings file.')
+                                  metavar='FILENAME', default=None,
+                                  help='Path to settings file.')
+        global_group.add_argument('--print-command', action='store_true',
+                                  help=argparse.SUPPRESS)
 
         for args, kwargs in self.global_arguments:
             global_group.add_argument(*args, **kwargs)
@@ -577,6 +609,6 @@ To see more help for a specific command, run:
         # We need to be last because CommandAction swallows all remaining
         # arguments and argparse parses arguments in the order they were added.
         parser.add_argument('command', action=CommandAction,
-            registrar=Registrar, context=context)
+                            registrar=Registrar, context=context)
 
         return parser

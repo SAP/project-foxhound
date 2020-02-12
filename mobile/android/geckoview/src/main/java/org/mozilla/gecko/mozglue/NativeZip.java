@@ -5,6 +5,7 @@
 
 package org.mozilla.gecko.mozglue;
 
+import android.support.annotation.Keep;
 import org.mozilla.gecko.annotation.JNITarget;
 
 import java.io.InputStream;
@@ -17,14 +18,14 @@ public class NativeZip implements NativeReference {
     private static final int STORE = 0;
 
     private volatile long mObj;
-    @JNITarget
+    @Keep
     private InputStream mInput;
 
-    public NativeZip(String path) {
+    public NativeZip(final String path) {
         mObj = getZip(path);
     }
 
-    public NativeZip(InputStream input) {
+    public NativeZip(final InputStream input) {
         if (!(input instanceof ByteBufferInputStream)) {
             throw new IllegalArgumentException("Got " + input.getClass()
                                                + ", but expected ByteBufferInputStream!");
@@ -53,7 +54,7 @@ public class NativeZip implements NativeReference {
         return (mObj == 0);
     }
 
-    public InputStream getInputStream(String path) {
+    public InputStream getInputStream(final String path) {
         if (isReleased()) {
             throw new IllegalStateException("Can't get path \"" + path
                                             + "\" because NativeZip is closed!");
@@ -67,7 +68,7 @@ public class NativeZip implements NativeReference {
     private native InputStream _getInputStream(long obj, String path);
 
     @JNITarget
-    private InputStream createInputStream(ByteBuffer buffer, int compression) {
+    private InputStream createInputStream(final ByteBuffer buffer, final int compression) {
         if (compression != STORE && compression != DEFLATE) {
             throw new IllegalArgumentException("Unexpected compression: " + compression);
         }

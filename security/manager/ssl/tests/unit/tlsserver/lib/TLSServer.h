@@ -25,45 +25,41 @@ namespace mozilla {
 
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePRDir, PRDir, PR_CloseDir);
 
-} // namespace mozilla
+}  // namespace mozilla
 
-namespace mozilla { namespace test {
+namespace mozilla {
+namespace test {
 
-enum DebugLevel
-{
-  DEBUG_ERRORS = 1,
-  DEBUG_WARNINGS  = 2,
-  DEBUG_VERBOSE = 3
-};
+enum DebugLevel { DEBUG_ERRORS = 1, DEBUG_WARNINGS = 2, DEBUG_VERBOSE = 3 };
 
 extern DebugLevel gDebugLevel;
 
-void PrintPRError(const char *aPrefix);
+void PrintPRError(const char* aPrefix);
 
 // The default certificate is trusted for localhost and *.example.com
 extern const char DEFAULT_CERT_NICKNAME[];
 
+// ConfigSecureServerWithNamedCert sets up the hostname name provided. If the
+// extraData parameter is presented, extraData->certChain will be automatically
+// filled in using database information.
 // Pass DEFAULT_CERT_NICKNAME as certName unless you need a specific
 // certificate.
-SECStatus
-ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
-                                /*optional*/ UniqueCERTCertificate* cert,
-                                /*optional*/ SSLKEAType* kea);
+SECStatus ConfigSecureServerWithNamedCert(
+    PRFileDesc* fd, const char* certName,
+    /*optional*/ UniqueCERTCertificate* cert,
+    /*optional*/ SSLKEAType* kea,
+    /*optional*/ SSLExtraServerCertData* extraData);
 
-SECStatus
-InitializeNSS(const char* nssCertDBDir);
+SECStatus InitializeNSS(const char* nssCertDBDir);
 
-int
-StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
-            void *sniSocketConfigArg);
+int StartServer(int argc, char* argv[], SSLSNISocketConfig sniSocketConfig,
+                void* sniSocketConfigArg);
 
 template <typename Host>
-inline const Host *
-GetHostForSNI(const SECItem *aSrvNameArr, uint32_t aSrvNameArrSize,
-              const Host *hosts)
-{
+inline const Host* GetHostForSNI(const SECItem* aSrvNameArr,
+                                 uint32_t aSrvNameArrSize, const Host* hosts) {
   for (uint32_t i = 0; i < aSrvNameArrSize; i++) {
-    for (const Host *host = hosts; host->mHostName; ++host) {
+    for (const Host* host = hosts; host->mHostName; ++host) {
       SECItem hostName;
       hostName.data = BitwiseCast<unsigned char*, const char*>(host->mHostName);
       hostName.len = strlen(host->mHostName);
@@ -84,6 +80,7 @@ GetHostForSNI(const SECItem *aSrvNameArr, uint32_t aSrvNameArrSize,
   return nullptr;
 }
 
-} } // namespace mozilla::test
+}  // namespace test
+}  // namespace mozilla
 
-#endif // TLSServer_h
+#endif  // TLSServer_h

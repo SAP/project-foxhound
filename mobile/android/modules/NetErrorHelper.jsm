@@ -3,13 +3,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
-Cu.import("resource://gre/modules/UITelemetry.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { EventDispatcher } = ChromeUtils.import(
+  "resource://gre/modules/Messaging.jsm"
+);
+const { UITelemetry } = ChromeUtils.import(
+  "resource://gre/modules/UITelemetry.jsm"
+);
 
-this.EXPORTED_SYMBOLS = ["NetErrorHelper"];
+var EXPORTED_SYMBOLS = ["NetErrorHelper"];
 
 const KEY_CODE_ENTER = 13;
 
@@ -47,13 +49,13 @@ function NetErrorHelper(browser) {
 
 NetErrorHelper.attachToBrowser = function(browser) {
   return new NetErrorHelper(browser);
-}
+};
 
 NetErrorHelper.prototype = {
   handleClick: function(event) {
     let node = event.target;
 
-    while(node) {
+    while (node) {
       if (node.id in handlers && handlers[node.id].handleClick) {
         handlers[node.id].handleClick(event);
         return;
@@ -62,7 +64,7 @@ NetErrorHelper.prototype = {
       node = node.parentNode;
     }
   },
-}
+};
 
 handlers.searchbutton = {
   onPageShown: function(browser) {
@@ -80,7 +82,7 @@ handlers.searchbutton = {
     } else {
       let text = browser.contentDocument.querySelector("#searchtext");
       text.value = tab.userRequested;
-      text.addEventListener("keypress", (event) => {
+      text.addEventListener("keypress", event => {
         if (event.keyCode === KEY_CODE_ENTER) {
           this.doSearch(event.target.value);
         }
@@ -100,34 +102,41 @@ handlers.searchbutton = {
 
     let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
     // Reset the user search to whatever the new search term was
-    browserWin.BrowserApp.loadURI(uri.spec, undefined, { isSearch: true, userRequested: value });
-  }
+    browserWin.BrowserApp.loadURI(uri.spec, undefined, {
+      isSearch: true,
+      userRequested: value,
+    });
+  },
 };
 
 handlers.wifi = {
   // This registers itself with the nsIObserverService as a weak ref,
   // so we have to implement GetWeakReference as well.
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIObserver,
+    Ci.nsISupportsWeakReference,
+  ]),
 
   GetWeakReference: function() {
     return Cu.getWeakReference(this);
   },
 
   onPageShown: function(browser) {
-      // If we have a connection, don't bother showing the wifi toggle.
-      let network = Cc["@mozilla.org/network/network-link-service;1"].getService(Ci.nsINetworkLinkService);
-      if (network.isLinkUp && network.linkStatusKnown) {
-        let nodes = browser.contentDocument.querySelectorAll("#wifi");
-        for (let i = 0; i < nodes.length; i++) {
-          nodes[i].style.display = "none";
-        }
+    // If we have a connection, don't bother showing the wifi toggle.
+    let network = Cc["@mozilla.org/network/network-link-service;1"].getService(
+      Ci.nsINetworkLinkService
+    );
+    if (network.isLinkUp && network.linkStatusKnown) {
+      let nodes = browser.contentDocument.querySelectorAll("#wifi");
+      for (let i = 0; i < nodes.length; i++) {
+        nodes[i].style.display = "none";
       }
+    }
   },
 
   handleClick: function(event) {
     let node = event.target;
-    while(node && node.id !== "wifi") {
+    while (node && node.id !== "wifi") {
       node = node.parentNode;
     }
 
@@ -143,8 +152,8 @@ handlers.wifi = {
     this.node = Cu.getWeakReference(node);
     Services.obs.addObserver(this, "network:link-status-changed", true);
 
-    Messaging.sendRequest({
-      type: "Wifi:Enable"
+    EventDispatcher.instance.sendRequest({
+      type: "Wifi:Enable",
     });
   },
 
@@ -158,7 +167,9 @@ handlers.wifi = {
     node.disabled = false;
     node.classList.remove("inProgress");
 
-    let network = Cc["@mozilla.org/network/network-link-service;1"].getService(Ci.nsINetworkLinkService);
+    let network = Cc["@mozilla.org/network/network-link-service;1"].getService(
+      Ci.nsINetworkLinkService
+    );
     if (network.isLinkUp && network.linkStatusKnown) {
       // If everything worked, reload the page
       UITelemetry.addEvent("neterror.1", "button", null, "wifitoggle.reload");
@@ -166,10 +177,9 @@ handlers.wifi = {
 
       // Even at this point, Android sometimes lies about the real state of the network and this reload request fails.
       // Add a 500ms delay before refreshing the page.
-      node.ownerDocument.defaultView.setTimeout(function() {
+      node.ownerGlobal.setTimeout(function() {
         node.ownerDocument.location.reload(false);
       }, 500);
     }
-  }
-}
-
+  },
+};

@@ -110,8 +110,7 @@
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
-#include "base/containers/hash_tables.h"
-#include "base/macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "build/build_config.h"
@@ -125,13 +124,20 @@
 #define FILE_PATH_USES_WIN_SEPARATORS
 #endif  // OS_WIN
 
-// To print path names portably use PRIsFP (based on PRIuS and friends from
+// To print path names portably use PRFilePath (based on PRIuS and friends from
 // C99 and format_macros.h) like this:
-// base::StringPrintf("Path is %" PRIsFP ".\n", path.value().c_str());
-#if defined(OS_POSIX)
-#define PRIsFP "s"
-#elif defined(OS_WIN)
-#define PRIsFP "ls"
+// base::StringPrintf("Path is %" PRFilePath ".\n", path.value().c_str());
+#if defined(OS_WIN)
+#define PRFilePath "ls"
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#define PRFilePath "s"
+#endif  // OS_WIN
+
+// Macros for string literal initialization of FilePath::CharType[].
+#if defined(OS_WIN)
+#define FILE_PATH_LITERAL(x) L##x
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
+#define FILE_PATH_LITERAL(x) x
 #endif  // OS_WIN
 
 namespace base {
@@ -143,15 +149,15 @@ class PickleIterator;
 // pathnames on different platforms.
 class BASE_EXPORT FilePath {
  public:
-#if defined(OS_POSIX)
+#if defined(OS_WIN)
+  // On Windows, for Unicode-aware applications, native pathnames are wchar_t
+  // arrays encoded in UTF-16.
+  typedef base::string16 StringType;
+#elif defined(OS_POSIX) || defined(OS_FUCHSIA)
   // On most platforms, native pathnames are char arrays, and the encoding
   // may or may not be specified.  On Mac OS X, native pathnames are encoded
   // in UTF-8.
   typedef std::string StringType;
-#elif defined(OS_WIN)
-  // On Windows, for Unicode-aware applications, native pathnames are wchar_t
-  // arrays encoded in UTF-16.
-  typedef std::wstring StringType;
 #endif  // OS_WIN
 
   typedef BasicStringPiece<StringType> StringPieceType;
@@ -163,7 +169,7 @@ class BASE_EXPORT FilePath {
   // when composing pathnames.
   static const CharType kSeparators[];
 
-  // arraysize(kSeparators).
+  // base::size(kSeparators).
   static const size_t kSeparatorsLength;
 
   // A special path component meaning "this directory."
@@ -180,6 +186,13 @@ class BASE_EXPORT FilePath {
   explicit FilePath(StringPieceType path);
   ~FilePath();
   FilePath& operator=(const FilePath& that);
+
+  // Constructs FilePath with the contents of |that|, which is left in valid but
+  // unspecified state.
+  FilePath(FilePath&& that) noexcept;
+  // Replaces the contents with those of |that|, which is left in valid but
+  // unspecified state.
+  FilePath& operator=(FilePath&& that);
 
   bool operator==(const FilePath& that) const;
 
@@ -211,11 +224,12 @@ class BASE_EXPORT FilePath {
   // Windows:  "C:\foo\bar"  ->  [ "C:", "\\", "foo", "bar" ]
   void GetComponents(std::vector<FilePath::StringType>* components) const;
 
-  // Returns true if this FilePath is a strict parent of the |child|. Absolute
-  // and relative paths are accepted i.e. is /foo parent to /foo/bar and
-  // is foo parent to foo/bar. Does not convert paths to absolute, follow
-  // symlinks or directory navigation (e.g. ".."). A path is *NOT* its own
-  // parent.
+  // Returns true if this FilePath is a parent or ancestor of the |child|.
+  // Absolute and relative paths are accepted i.e. /foo is a parent to /foo/bar,
+  // and foo is a parent to foo/bar. Any ancestor is considered a parent i.e. /a
+  // is a parent to both /a/b and /a/b/c.  Does not convert paths to absolute,
+  // follow symlinks or directory navigation (e.g. ".."). A path is *NOT* its
+  // own parent.
   bool IsParent(const FilePath& child) const;
 
   // If IsParent(child) holds, appends to path (if non-NULL) the
@@ -232,7 +246,8 @@ class BASE_EXPORT FilePath {
   // named by this object, stripping away the file component.  If this object
   // only contains one component, returns a FilePath identifying
   // kCurrentDirectory.  If this object already refers to the root directory,
-  // returns a FilePath identifying the root directory.
+  // returns a FilePath identifying the root directory. Please note that this
+  // doesn't resolve directory navigation, e.g. the result for "../a" is "..".
   FilePath DirName() const WARN_UNUSED_RESULT;
 
   // Returns a FilePath corresponding to the last path component of this
@@ -286,6 +301,10 @@ class BASE_EXPORT FilePath {
   // Adds |extension| to |file_name|. Returns the current FilePath if
   // |extension| is empty. Returns "" if BaseName() == "." or "..".
   FilePath AddExtension(StringPieceType extension) const WARN_UNUSED_RESULT;
+
+  // Like above, but takes the extension as an ASCII string. See AppendASCII for
+  // details on how this is handled.
+  FilePath AddExtensionASCII(StringPiece extension) const WARN_UNUSED_RESULT;
 
   // Replaces the extension of |file_name| with |extension|.  If |file_name|
   // does not have an extension, then |extension| is added.  If |extension| is
@@ -372,10 +391,10 @@ class BASE_EXPORT FilePath {
   // internally calls SysWideToNativeMB() on POSIX systems other than Mac
   // and Chrome OS, to mitigate the encoding issue. See the comment at
   // AsUTF8Unsafe() for details.
-  static FilePath FromUTF8Unsafe(const std::string& utf8);
+  static FilePath FromUTF8Unsafe(StringPiece utf8);
 
   // Similar to FromUTF8Unsafe, but accepts UTF-16 instead.
-  static FilePath FromUTF16Unsafe(const string16& utf16);
+  static FilePath FromUTF16Unsafe(StringPiece16 utf16);
 
   void WriteToPickle(Pickle* pickle) const;
   bool ReadFromPickle(PickleIterator* iter);
@@ -443,35 +462,22 @@ class BASE_EXPORT FilePath {
   StringType path_;
 };
 
-// This is required by googletest to print a readable output on test failures.
-// This is declared here for use in gtest-based unit tests but is defined in
-// the test_support_base target. Depend on that to use this in your unit test.
-// This should not be used in production code - call ToString() instead.
-void PrintTo(const FilePath& path, std::ostream* out);
+BASE_EXPORT std::ostream& operator<<(std::ostream& out,
+                                     const FilePath& file_path);
 
 }  // namespace base
 
-// Macros for string literal initialization of FilePath::CharType[], and for
-// using a FilePath::CharType[] in a printf-style format string.
-#if defined(OS_POSIX)
-#define FILE_PATH_LITERAL(x) x
-#define PRFilePath "s"
-#elif defined(OS_WIN)
-#define FILE_PATH_LITERAL(x) L ## x
-#define PRFilePath "ls"
-#endif  // OS_WIN
+namespace std {
 
-// Provide a hash function so that hash_sets and maps can contain FilePath
-// objects.
-namespace BASE_HASH_NAMESPACE {
-
-template<>
+template <>
 struct hash<base::FilePath> {
-  size_t operator()(const base::FilePath& f) const {
+  typedef base::FilePath argument_type;
+  typedef std::size_t result_type;
+  result_type operator()(argument_type const& f) const {
     return hash<base::FilePath::StringType>()(f.value());
   }
 };
 
-}  // namespace BASE_HASH_NAMESPACE
+}  // namespace std
 
 #endif  // BASE_FILES_FILE_PATH_H_

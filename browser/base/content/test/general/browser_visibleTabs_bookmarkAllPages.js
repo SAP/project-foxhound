@@ -5,14 +5,12 @@
 function test() {
   waitForExplicitFinish();
 
-  let tabOne = gBrowser.addTab("about:blank");
-  let tabTwo = gBrowser.addTab("http://mochi.test:8888/");
+  let tabOne = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  let tabTwo = BrowserTestUtils.addTab(gBrowser, "http://mochi.test:8888/");
   gBrowser.selectedTab = tabTwo;
 
   let browser = gBrowser.getBrowserForTab(tabTwo);
-  let onLoad = function() {
-    browser.removeEventListener("load", onLoad, true);
-
+  BrowserTestUtils.browserLoaded(browser).then(() => {
     gBrowser.showOnlyTheseTabs([tabTwo]);
 
     is(gBrowser.visibleTabs.length, 1, "Only one tab is visible");
@@ -20,15 +18,18 @@ function test() {
     let uris = PlacesCommandHook.uniqueCurrentPages;
     is(uris.length, 1, "Only one uri is returned");
 
-    is(uris[0].uri.spec, tabTwo.linkedBrowser.currentURI.spec, "It's the correct URI");
+    is(
+      uris[0].uri.spec,
+      tabTwo.linkedBrowser.currentURI.spec,
+      "It's the correct URI"
+    );
 
     gBrowser.removeTab(tabOne);
     gBrowser.removeTab(tabTwo);
-    Array.forEach(gBrowser.tabs, function(tab) {
+    for (let tab of gBrowser.tabs) {
       gBrowser.showTab(tab);
-    });
+    }
 
     finish();
-  }
-  browser.addEventListener("load", onLoad, true);
+  });
 }

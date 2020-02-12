@@ -3,17 +3,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* jshint esnext:true, globalstrict:true, moz:true, undef:true, unused:true */
-/* globals Components, dump */
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = ["ReceiverStateMachine"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["ReceiverStateMachine"]; // jshint ignore:line
 
-const { utils: Cu } = Components;
-
-/* globals State, CommandType */
-Cu.import("resource://gre/modules/presentation/StateMachineHelper.jsm");
+const { CommandType, State } = ChromeUtils.import(
+  "resource://gre/modules/presentation/StateMachineHelper.jsm"
+);
 
 const DEBUG = false;
 function debug(str) {
@@ -29,7 +26,7 @@ var handlers = [
     switch (command.type) {
       case CommandType.CONNECT:
         stateMachine._sendCommand({
-          type: CommandType.CONNECT_ACK
+          type: CommandType.CONNECT_ACK,
         });
         stateMachine.state = State.CONNECTED;
         stateMachine._notifyDeviceConnected(command.deviceId);
@@ -51,11 +48,10 @@ var handlers = [
         stateMachine._notifyDisconnected(command.reason);
         break;
       case CommandType.LAUNCH:
-        stateMachine._notifyLaunch(command.presentationId,
-                                   command.url);
+        stateMachine._notifyLaunch(command.presentationId, command.url);
         stateMachine._sendCommand({
           type: CommandType.LAUNCH_ACK,
-          presentationId: command.presentationId
+          presentationId: command.presentationId,
         });
         break;
       case CommandType.TERMINATE:
@@ -69,11 +65,10 @@ var handlers = [
         stateMachine._notifyChannelDescriptor(command);
         break;
       case CommandType.RECONNECT:
-        stateMachine._notifyReconnect(command.presentationId,
-                                      command.url);
+        stateMachine._notifyReconnect(command.presentationId, command.url);
         stateMachine._sendCommand({
           type: CommandType.RECONNECT_ACK,
-          presentationId: command.presentationId
+          presentationId: command.presentationId,
         });
         break;
       default:
@@ -115,7 +110,7 @@ ReceiverStateMachine.prototype = {
     if (this.state === State.CONNECTED) {
       this._sendCommand({
         type: CommandType.TERMINATE,
-        presentationId: presentationId,
+        presentationId,
       });
     }
   },
@@ -124,7 +119,7 @@ ReceiverStateMachine.prototype = {
     if (this.state === State.CONNECTED) {
       this._sendCommand({
         type: CommandType.TERMINATE_ACK,
-        presentationId: presentationId,
+        presentationId,
       });
     }
   },
@@ -142,7 +137,7 @@ ReceiverStateMachine.prototype = {
     if (this.state === State.CONNECTED) {
       this._sendCommand({
         type: CommandType.ANSWER,
-        answer: answer,
+        answer,
       });
     }
   },
@@ -151,7 +146,7 @@ ReceiverStateMachine.prototype = {
     if (this.state === State.CONNECTED) {
       this._sendCommand({
         type: CommandType.ICE_CANDIDATE,
-        candidate: candidate,
+        candidate,
       });
     }
   },
@@ -175,7 +170,7 @@ ReceiverStateMachine.prototype = {
         } else {
           this._sendCommand({
             type: CommandType.DISCONNECT,
-            reason: reason
+            reason,
           });
           this.state = State.CLOSING;
           this._closeReason = reason;
@@ -194,7 +189,8 @@ ReceiverStateMachine.prototype = {
         }
         break;
       default:
-        DEBUG && debug("unexpected channel close: " + reason + ", " + isByRemote); // jshint ignore:line
+        DEBUG &&
+          debug("unexpected channel close: " + reason + ", " + isByRemote); // jshint ignore:line
         break;
     }
   },
@@ -234,5 +230,3 @@ ReceiverStateMachine.prototype = {
     }
   },
 };
-
-this.ReceiverStateMachine = ReceiverStateMachine; // jshint ignore:line

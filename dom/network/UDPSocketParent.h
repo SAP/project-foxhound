@@ -11,79 +11,72 @@
 #include "nsCOMPtr.h"
 #include "nsIUDPSocket.h"
 #include "nsISocketFilter.h"
-#include "mozilla/net/OfflineObserver.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 
 namespace mozilla {
 namespace net {
 class PNeckoParent;
-} // namespace net
+}  // namespace net
 
 namespace dom {
 
-class UDPSocketParent : public mozilla::net::PUDPSocketParent
-                      , public nsIUDPSocketListener
-                      , public mozilla::net::DisconnectableParent
-{
-public:
+class UDPSocketParent : public mozilla::net::PUDPSocketParent,
+                        public nsIUDPSocketListener {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
 
   explicit UDPSocketParent(PBackgroundParent* aManager);
   explicit UDPSocketParent(PNeckoParent* aManager);
 
-  bool Init(const IPC::Principal& aPrincipal, const nsACString& aFilter);
+  bool Init(nsIPrincipal* aPrincipal, const nsACString& aFilter);
 
-  virtual bool RecvBind(const UDPAddressInfo& aAddressInfo,
-                        const bool& aAddressReuse, const bool& aLoopback,
-                        const uint32_t& recvBufferSize,
-                        const uint32_t& sendBufferSize) override;
-  virtual bool RecvConnect(const UDPAddressInfo& aAddressInfo) override;
+  mozilla::ipc::IPCResult RecvBind(const UDPAddressInfo& aAddressInfo,
+                                   const bool& aAddressReuse,
+                                   const bool& aLoopback,
+                                   const uint32_t& recvBufferSize,
+                                   const uint32_t& sendBufferSize);
+  mozilla::ipc::IPCResult RecvConnect(const UDPAddressInfo& aAddressInfo);
   void DoSendConnectResponse(const UDPAddressInfo& aAddressInfo);
-  void SendConnectResponse(nsIEventTarget *aThread,
+  void SendConnectResponse(nsIEventTarget* aThread,
                            const UDPAddressInfo& aAddressInfo);
   void DoConnect(nsCOMPtr<nsIUDPSocket>& aSocket,
                  nsCOMPtr<nsIEventTarget>& aReturnThread,
                  const UDPAddressInfo& aAddressInfo);
 
-  virtual bool RecvOutgoingData(const UDPData& aData, const UDPSocketAddr& aAddr) override;
+  mozilla::ipc::IPCResult RecvOutgoingData(const UDPData& aData,
+                                           const UDPSocketAddr& aAddr);
 
-  virtual bool RecvClose() override;
-  virtual bool RecvRequestDelete() override;
-  virtual bool RecvJoinMulticast(const nsCString& aMulticastAddress,
-                                 const nsCString& aInterface) override;
-  virtual bool RecvLeaveMulticast(const nsCString& aMulticastAddress,
-                                  const nsCString& aInterface) override;
-  virtual nsresult OfflineNotification(nsISupports *) override;
-  virtual uint32_t GetAppId() override;
+  mozilla::ipc::IPCResult RecvClose();
+  mozilla::ipc::IPCResult RecvRequestDelete();
+  mozilla::ipc::IPCResult RecvJoinMulticast(const nsCString& aMulticastAddress,
+                                            const nsCString& aInterface);
+  mozilla::ipc::IPCResult RecvLeaveMulticast(const nsCString& aMulticastAddress,
+                                             const nsCString& aInterface);
 
-private:
+ private:
   virtual ~UDPSocketParent();
 
   virtual void ActorDestroy(ActorDestroyReason why) override;
-  void Send(const InfallibleTArray<uint8_t>& aData, const UDPSocketAddr& aAddr);
-  void Send(const InputStreamParams& aStream, const UDPSocketAddr& aAddr);
+  void Send(const nsTArray<uint8_t>& aData, const UDPSocketAddr& aAddr);
+  void Send(const IPCStream& aStream, const UDPSocketAddr& aAddr);
   nsresult BindInternal(const nsCString& aHost, const uint16_t& aPort,
                         const bool& aAddressReuse, const bool& aLoopback,
                         const uint32_t& recvBufferSize,
                         const uint32_t& sendBufferSize);
   nsresult ConnectInternal(const nsCString& aHost, const uint16_t& aPort);
   void FireInternalError(uint32_t aLineNo);
-  void SendInternalError(nsIEventTarget *aThread,
-                         uint32_t aLineNo);
+  void SendInternalError(nsIEventTarget* aThread, uint32_t aLineNo);
 
-  // One of these will be null and the other non-null.
   PBackgroundParent* mBackgroundManager;
-  PNeckoParent* mNeckoManager;
 
   bool mIPCOpen;
   nsCOMPtr<nsIUDPSocket> mSocket;
   nsCOMPtr<nsISocketFilter> mFilter;
-  RefPtr<mozilla::net::OfflineObserver> mObserver;
   nsCOMPtr<nsIPrincipal> mPrincipal;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // !defined(mozilla_dom_UDPSocketParent_h__)
+#endif  // !defined(mozilla_dom_UDPSocketParent_h__)

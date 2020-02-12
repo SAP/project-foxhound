@@ -4,17 +4,24 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
-  "MockRegistrar",
-];
+var EXPORTED_SYMBOLS = ["MockRegistrar"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr, manager: Cm} = Components;
+const Cm = Components.manager;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 var logger = Log.repository.getLogger("MockRegistrar");
 
-this.MockRegistrar = Object.freeze({
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "UUIDGen",
+  "@mozilla.org/uuid-generator;1",
+  "nsIUUIDGenerator"
+);
+
+var MockRegistrar = Object.freeze({
   _registeredComponents: new Map(),
   _originalCIDs: new Map(),
   get registrar() {
@@ -45,6 +52,8 @@ this.MockRegistrar = Object.freeze({
 
     let originalFactory = Cm.getClassObject(originalCID, Ci.nsIFactory);
 
+    let cid = UUIDGen.generateUUID();
+
     let factory = {
       createInstance(outer, iid) {
         if (outer) {
@@ -62,7 +71,7 @@ this.MockRegistrar = Object.freeze({
         try {
           let genuine = originalFactory.createInstance(outer, iid);
           wrappedMock._genuine = genuine;
-        } catch(ex) {
+        } catch (ex) {
           logger.info("Creating original instance failed", ex);
         }
 
@@ -71,22 +80,23 @@ this.MockRegistrar = Object.freeze({
       lockFactory(lock) {
         throw Cr.NS_ERROR_NOT_IMPLEMENTED;
       },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIFactory])
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
     };
 
-    this.registrar.unregisterFactory(originalCID, originalFactory);
-    this.registrar.registerFactory(originalCID,
-                                   "A Mock for " + contractID,
-                                   contractID,
-                                   factory);
+    this.registrar.registerFactory(
+      cid,
+      "A Mock for " + contractID,
+      contractID,
+      factory
+    );
 
-    this._registeredComponents.set(originalCID, {
-      contractID: contractID,
-      factory: factory,
-      originalFactory: originalFactory
+    this._registeredComponents.set(cid, {
+      contractID,
+      factory,
+      originalCID,
     });
 
-    return originalCID;
+    return cid;
   },
 
   /**
@@ -101,11 +111,15 @@ this.MockRegistrar = Object.freeze({
     }
 
     this.registrar.unregisterFactory(cid, component.factory);
-    if (component.originalFactory) {
-      this.registrar.registerFactory(cid,
-                                     "",
-                                     component.contractID,
-                                     component.originalFactory);
+    if (component.originalCID) {
+      // Passing `null` for the factory re-maps the contract ID to the
+      // entry for its original CID.
+      this.registrar.registerFactory(
+        component.originalCID,
+        "",
+        component.contractID,
+        null
+      );
     }
 
     this._registeredComponents.delete(cid);
@@ -118,6 +132,5 @@ this.MockRegistrar = Object.freeze({
     for (let cid of this._registeredComponents.keys()) {
       this.unregister(cid);
     }
-  }
-
+  },
 });

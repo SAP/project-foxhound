@@ -4,13 +4,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-void
-nsTDependentString_CharT::Rebind(const string_type& str, uint32_t startPos)
-{
-  MOZ_ASSERT(str.Flags() & F_TERMINATED, "Unterminated flat string");
+template <typename T>
+nsTDependentString<T>::nsTDependentString(const char_type* aStart,
+                                          const char_type* aEnd)
+    : string_type(const_cast<char_type*>(aStart), uint32_t(aEnd - aStart),
+                  DataFlags::TERMINATED, ClassFlags(0)) {
+  MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
+  this->AssertValidDependentString();
+}
+
+template <typename T>
+void nsTDependentString<T>::Rebind(const string_type& str, uint32_t startPos) {
+  MOZ_ASSERT(str.GetDataFlags() & DataFlags::TERMINATED,
+             "Unterminated flat string");
 
   // If we currently own a buffer, release it.
-  Finalize();
+  this->Finalize();
 
   size_type strLength = str.Length();
 
@@ -18,11 +27,20 @@ nsTDependentString_CharT::Rebind(const string_type& str, uint32_t startPos)
     startPos = strLength;
   }
 
-  mData = const_cast<char_type*>(static_cast<const char_type*>(str.Data())) + startPos;
-  mLength = strLength - startPos;
-
-  SetDataFlags(str.Flags() & (F_TERMINATED | F_LITERAL));
-
+  char_type* newData =
+      const_cast<char_type*>(static_cast<const char_type*>(str.Data())) +
+      startPos;
+  size_type newLen = strLength - startPos;
+  DataFlags newDataFlags =
+      str.GetDataFlags() & (DataFlags::TERMINATED | DataFlags::LITERAL);
+  this->SetData(newData, newLen, newDataFlags);
   // TaintFox: propagate taint.
-  AssignTaint(str.Taint().subtaint(startPos, str.Length()));
+  this->AssignTaint(str.Taint().subtaint(startPos, str.Length()));
+}
+
+template <typename T>
+void nsTDependentString<T>::Rebind(const char_type* aStart,
+                                   const char_type* aEnd) {
+  MOZ_RELEASE_ASSERT(aStart <= aEnd, "Overflow!");
+  this->Rebind(aStart, uint32_t(aEnd - aStart));
 }

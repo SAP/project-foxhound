@@ -4,22 +4,26 @@
 
 "use strict";
 
-add_task(function*() {
+add_task(async function() {
   info("Check that toggleable toolbars dropdown in always shown");
 
   info("Remove all possible custom toolbars");
-  yield removeCustomToolbars();
+  await removeCustomToolbars();
 
   info("Enter customization mode");
-  yield startCustomizing();
+  await startCustomizing();
 
-  let toolbarsToggle = document.getElementById("customization-toolbar-visibility-button");
+  let toolbarsToggle = document.getElementById(
+    "customization-toolbar-visibility-button"
+  );
   ok(toolbarsToggle, "The toolbars toggle dropdown exists");
-  ok(!toolbarsToggle.hasAttribute("hidden"),
-     "The toolbars toggle dropdown is displayed");
+  ok(
+    !toolbarsToggle.hasAttribute("hidden"),
+    "The toolbars toggle dropdown is displayed"
+  );
 });
 
-add_task(function* asyncCleanup() {
+add_task(async function asyncCleanup() {
   info("Exit customization mode");
-  yield endCustomizing();
+  await endCustomizing();
 });

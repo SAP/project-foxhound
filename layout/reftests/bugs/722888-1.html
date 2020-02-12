@@ -4,14 +4,14 @@
     <script>
       function tweak() {
         var b = document.getElementsByTagName("span")[0];
-        b.parentNode.removeChild(b);
+        b.remove();
         document.documentElement.removeAttribute("class");
       }
-      window.addEventListener("MozReftestInvalidate", tweak, false);
+      window.addEventListener("MozReftestInvalidate", tweak);
     </script>
   </head>
   <body>
-    <div style="-moz-column-count: 2;
+    <div style="column-count: 2;
                 height: 50px;
                 width: 100px;
                 background: yellow">

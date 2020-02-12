@@ -14,20 +14,18 @@ PerformanceMeasure::PerformanceMeasure(nsISupports* aParent,
                                        const nsAString& aName,
                                        DOMHighResTimeStamp aStartTime,
                                        DOMHighResTimeStamp aEndTime)
-: PerformanceEntry(aParent, aName, NS_LITERAL_STRING("measure")),
-  mStartTime(aStartTime),
-  mDuration(aEndTime - aStartTime)
-{
-  // mParent is null in workers.
-  MOZ_ASSERT(mParent || !NS_IsMainThread());
+    : PerformanceEntry(aParent, aName, NS_LITERAL_STRING("measure")),
+      mStartTime(aStartTime),
+      mDuration(aEndTime - aStartTime) {}
+
+PerformanceMeasure::~PerformanceMeasure() {}
+
+JSObject* PerformanceMeasure::WrapObject(JSContext* aCx,
+                                         JS::Handle<JSObject*> aGivenProto) {
+  return PerformanceMeasure_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-PerformanceMeasure::~PerformanceMeasure()
-{
-}
-
-JSObject*
-PerformanceMeasure::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return PerformanceMeasureBinding::Wrap(aCx, this, aGivenProto);
+size_t PerformanceMeasure::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }

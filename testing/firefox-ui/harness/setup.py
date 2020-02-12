@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+
+from __future__ import absolute_import
 import os
 import re
 from setuptools import setup, find_packages
@@ -18,6 +20,7 @@ def get_version():
     return re.findall("__version__ = '([\d\.]+)'",
                       read('firefox_ui_harness', '__init__.py'), re.M)[0]
 
+
 long_description = """Custom Marionette runner classes and entry scripts for Firefox Desktop
 specific Marionette tests.
 """
@@ -26,7 +29,9 @@ setup(name='firefox-ui-harness',
       version=get_version(),
       description="Firefox UI Harness",
       long_description=long_description,
-      classifiers=[],  # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+      classifiers=['Programming Language :: Python :: 2.7',
+                   'Programming Language :: Python :: 2 :: Only'],
+      # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
       keywords='mozilla',
       author='Auto-tools',
       author_email='tools-marionette@lists.mozilla.org',
@@ -39,6 +44,5 @@ setup(name='firefox-ui-harness',
       entry_points="""
         [console_scripts]
         firefox-ui-functional = firefox_ui_harness.cli_functional:cli
-        firefox-ui-update = firefox_ui_harness.cli_update:cli
       """,
       )

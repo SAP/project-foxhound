@@ -4,207 +4,250 @@
 
 @import url("chrome://global/skin/in-content/info-pages.css");
 
-:root {
-  --color-grey-lightest: #fbfbfb;
-  --color-grey: #b1b1b1;
-
-  --color-blue: #0996f8;
-  --color-blue-dark: #0670cc;
-  --color-blue-darker: #005bab;
-
-  --icon-margin: 64px;
-}
-
 html.private {
-  --in-content-page-color: #beb8cc;
-  --in-content-text-color: #beb8cc;
-  --in-content-page-background: #1c023c;
+  --in-content-page-color: white;
+  --in-content-text-color: white;
+  --in-content-page-background: #25003e;
+  --in-content-link-color-hover: white;
+  --in-content-link-color-active: white;
+  --in-content-banner-background: #f9f9fe;
+  --in-content-banner-text-color: #0c0c0d;
+  --in-content-button-background-hover: rgba(12,12,13,.1);
+  --in-content-button-background-active: rgba(12,12,13,.15);
 }
 
-body {
-  padding: 40px;
+/**
+ * When the showBanner class is applied, the banner is displayed at the top
+ * of the page, and we need to adjust the padding, so that the banner is
+ * spread across the full page width.
+ */
+body.showBanner {
+  padding: 0px 0px 40px;
+  min-height: 0;
+}
+
+.showBanner > .showPrivate {
+  padding: 40px 48px 0px;
 }
 
 a:link {
-  color: var(--color-blue);
-  text-decoration: none;
-}
-
-a:hover {
-  color: var(--color-blue-dark);
+  color: inherit;
   text-decoration: underline;
 }
 
-a:hover:active {
-  color: var(--color-blue-darker);
+a:link:hover {
+  color: inherit;
 }
 
-a:visited {
-  color: var(--color-blue-darker);
-}
-
-.about-content-container {
-  max-width: 780px;
-}
-
-.section-main {
-  margin-bottom: 48px;
-  margin-inline-start: var(--icon-margin);
-  padding-inline-start: 24px;
-}
-
-.section-main:last-child {
-  margin-bottom: 0;
+.container {
+  max-width: 768px;
 }
 
 p {
   line-height: 1.5em;
 }
 
-.list-row {
-  overflow: auto;
-}
-
-.list-row > ul > li {
-  float: left;
-  width: 220px;
-  line-height: 1.5em;
-  margin-inline-start: 1em;
-  margin-bottom: 0;
-}
-
-.list-row > ul > li:dir(rtl) {
-  float: right;
-}
-
-.title {
-  background-image: url("chrome://browser/skin/privatebrowsing/private-browsing.svg");
-  background-size: 64px;
-  background-position: left, center;
-  font-weight: lighter;
-  line-height: 1.5em;
-  min-height: 64px;
-  margin-inline-start: 0;
-  padding-inline-start: calc(var(--icon-margin) + 24px);
-}
-
-.title:dir(rtl) {
-  background-position: right, center;
-}
-
-.about-subheader {
-  display: flex;
+.logo-and-wordmark {
   align-items: center;
-  font-size: 1.5em;
-  font-weight: lighter;
-  min-height: 32px;
-  background-image: url("chrome://browser/skin/privatebrowsing/tracking-protection.svg");
+  display: flex;
+  justify-content: center;
+  margin-bottom: 50px;
+}
+
+.logo {
+  background: url("chrome://branding/content/icon128.png") no-repeat center center;
+  background-size: 96px;
+  display: inline-block;
+  height: 96px;
+  width: 96px;
+}
+
+.wordmark {
+  background: url("resource://activity-stream/data/content/assets/firefox-wordmark.svg") no-repeat center center;
+  background-size: 172px;
+  -moz-context-properties: fill;
+  display: inline-block;
+  fill: #fff;
+  height: 96px;
+  margin-inline-start: 15px;
+  width: 172px;
+}
+
+.search-inner-wrapper {
+  display: flex;
+  height: 48px;
+  margin-bottom: 64px;
+  padding: 0 22px;
+}
+
+.search-handoff-button,
+.search-handoff-button:active,
+.search-handoff-button:enabled:hover:active  {
+  background: #fff var(--newtab-search-icon) 12px center no-repeat;
+  background-size: 24px;
+  border: solid 1px rgba(249, 249, 250, 0.2);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px 0 rgba(12, 12, 13, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: text;
+  font-size: 15px;
+  margin: 0;
+  padding: 0;
+  padding-inline-end: 48px;
+  padding-inline-start: 46px;
+  position: relative;
+  opacity: 1;
+  transition: opacity 500ms;
+  width: 100%;
+}
+
+.search-handoff-button.focused {
+  border: solid 1px #0060df;
+  box-shadow: 0 0 0 1px #0060df, 0 0 0 4px rgba(0, 96, 223, 0.3);
+}
+
+.search-handoff-button.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.search-handoff-button:dir(rtl),
+.search-handoff-button:active:dir(rtl),
+.search-handoff-button:enabled:hover:active:dir(rtl) {
+  background-position-x: right 12px;
+}
+
+.search-inner-wrapper .search-handoff-button:hover {
+  background-color: #fff;
+}
+
+.search-handoff-button.focused .fake-caret {
+  display: block;
+}
+
+.fake-editable:focus {
+  outline: none;
+  caret-color: transparent;
+}
+
+.fake-editable {
+  border: 0;
+  height: 100%;
+  left: 0;
+  opacity: 0;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.fake-textbox {
+  color: rgb(12, 12, 13);
+  opacity: 0.54;
+  text-align: start;
+}
+
+@keyframes caret-animation {
+  to {
+    visibility: hidden;
+  }
+}
+
+.fake-caret {
+  animation: caret-animation 1.3s steps(5, start) infinite;
+  background: rgb(12, 12, 13);
+  display: none;
+  inset-inline-start: 47px;
+  height: 17px;
+  position: absolute;
+  top: 16px;
+  width: 1px;
+}
+
+.dummy-input {
+  display: none;
+}
+
+.search-banner {
+  width: 100%;
+  background-color: var(--in-content-banner-background);
+  color: var(--in-content-banner-text-color);
+}
+
+.banner-body {
+  margin: auto;
+  width: max-content;
+  background-image: url("chrome://browser/skin/preferences/in-content/general.svg");
+  background-position: left 0 top 50px;
   background-repeat: no-repeat;
   background-size: 32px;
-  margin-inline-start: calc(var(--icon-margin) - 32px);
-  padding-inline-start: 56px;
+  letter-spacing: -.2px;
+  padding: 50px 0;
+  padding-inline-start: 44px;
 }
 
-.about-subheader:dir(rtl) {
-  background-position: right;
+.banner-body:dir(rtl) {
+  background-position-x: right;
 }
 
-.about-subheader.tp-off {
-  background-image: url("chrome://browser/skin/privatebrowsing/tracking-protection-off.svg");
+.banner-body h1 {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--in-content-banner-text-color);
+  line-height: 1em;
+  margin: 7px 0;
 }
 
-.about-info {
-  font-size: .875em;
+.banner-body p {
+  font-size: 15px;
+  line-height: 1em;
+  margin: 4px 0;
 }
 
-.tpTitle {
-  margin-inline-end: 12px;
-}
-
-.private strong {
-  color: var(--color-grey-lightest);
-  font-weight: normal;
-}
-
-a.button {
-  padding: 5px 40px;
-  background-color: #381e59;
-  border: 1px solid #43256a;
-  border-radius: 4px;
-  text-decoration: none;
-  display: inline-block;
-}
-
-.toggle + .toggle-btn {
-  box-sizing: border-box;
-  cursor: pointer;
-  min-width: 60px;
-  height: 24px;
-  border-radius: 12px;
-  background-color: var(--color-grey);
-  border: 1px var(--color-grey) solid;
-  padding: 2px;
-}
-
-.toggle + .toggle-btn::after,
-.toggle + .toggle-btn::before {
-  position: relative;
-  display: block;
-  content: "";
-  width: 19px;
-  height: 100%;
-}
-
-.toggle + .toggle-btn::after {
-  left: 0;
-  box-shadow: 0 0 1px 1px hsla(0, 0%, 0%, .1),
-              0 1px 0 hsla(0, 0%, 0%, .2);
-  border-radius: 50%;
-  background: white;
-  transition: left .2s ease;
-}
-
-.toggle + .toggle-btn::before {
-  float: left;
-  left: 9px;
-  visibility: hidden;
-  background-size: 16px;
+.info {
+  background-color: rgba(0, 0, 0, 0.2);
+  background-image: url("chrome://browser/skin/privatebrowsing/private-browsing.svg");
+  background-position: left 32px top 20px;
   background-repeat: no-repeat;
-  background-color: transparent;
-  background-image: url("chrome://browser/skin/privatebrowsing/check.svg");
+  background-size: 32px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+  padding: 20px;
+  padding-inline-start: 76px;
 }
 
-.toggle + .toggle-btn:dir(rtl)::after {
-  left: auto;
-  right: 0;
-  transition-property: right;
+.info:dir(rtl) {
+  background-position: right 32px top 20px;
 }
 
-.toggle + .toggle-btn:dir(rtl)::before {
-  float: right;
-  left: auto;
-  right: 9px;
+.info h1 {
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 28px;
 }
 
-.toggle:checked + .toggle-btn {
-  background: #3fc455;
-  border: 1px solid #269939;
+.info p {
+  font-size: 15px;
+  line-height: 25px;
 }
 
-.toggle:checked + .toggle-btn::after {
-  left: 35px;
+.search-banner-close-button {
+  float: inline-end;
+  /* min-width and min-height override values set on button elements. */
+  min-width: 28px;
+  min-height: 28px;
+  /* Forcing height and line-height ensure the button hover is displayed correctly
+     as a square box (and focus box). No text gets displayed here so that's ok. */
+  height: 28px;
+  line-height: 0;
+  margin: 16px;
+  padding: 0;
+  background-color: inherit;
+  border: 0;
 }
 
-.toggle:checked + .toggle-btn:dir(rtl)::after {
-  right: 35px;
-}
-
-.toggle:checked + .toggle-btn::before {
-  visibility: visible;
-}
-
-.toggle:-moz-focusring + .toggle-btn {
-  outline: 2px solid rgba(0, 149, 221, 0.5);
-  outline-offset: 1px;
-  -moz-outline-radius: 2px;
+.search-banner-close-image {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0;
+  width: 28px;
 }

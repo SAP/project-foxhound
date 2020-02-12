@@ -7,55 +7,57 @@
 #ifndef mozilla_DeviceChangeCallback_h
 #define mozilla_DeviceChangeCallback_h
 
+#include "mozilla/Mutex.h"
+#include "nsTArray.h"
+
 namespace mozilla {
 
-class DeviceChangeCallback
-{
-public:
-  virtual void OnDeviceChange()
-  {
+class DeviceChangeCallback {
+ public:
+  virtual ~DeviceChangeCallback() = default;
+  virtual void OnDeviceChange() = 0;
+};
+
+class DeviceChangeNotifier {
+ public:
+  DeviceChangeNotifier()
+      : mCallbackMutex("mozilla::DeviceChangeCallback::mCallbackMutex") {}
+
+  void NotifyDeviceChange() {
     MutexAutoLock lock(mCallbackMutex);
-    for (DeviceChangeCallback* observer : mDeviceChangeCallbackList)
-    {
+    for (DeviceChangeCallback* observer : mDeviceChangeCallbackList) {
       observer->OnDeviceChange();
     }
   }
 
-  virtual int AddDeviceChangeCallback(DeviceChangeCallback* aCallback)
-  {
+  virtual int AddDeviceChangeCallback(DeviceChangeCallback* aCallback) {
     MutexAutoLock lock(mCallbackMutex);
-    if (mDeviceChangeCallbackList.IndexOf(aCallback) == mDeviceChangeCallbackList.NoIndex)
+    if (mDeviceChangeCallbackList.IndexOf(aCallback) ==
+        mDeviceChangeCallbackList.NoIndex)
       mDeviceChangeCallbackList.AppendElement(aCallback);
     return 0;
   }
 
-  virtual int RemoveDeviceChangeCallback(DeviceChangeCallback* aCallback)
-  {
+  int RemoveDeviceChangeCallback(DeviceChangeCallback* aCallback) {
     MutexAutoLock lock(mCallbackMutex);
     return RemoveDeviceChangeCallbackLocked(aCallback);
   }
 
-  virtual int RemoveDeviceChangeCallbackLocked(DeviceChangeCallback* aCallback)
-  {
+  int RemoveDeviceChangeCallbackLocked(DeviceChangeCallback* aCallback) {
     mCallbackMutex.AssertCurrentThreadOwns();
-    if (mDeviceChangeCallbackList.IndexOf(aCallback) != mDeviceChangeCallbackList.NoIndex)
+    if (mDeviceChangeCallbackList.IndexOf(aCallback) !=
+        mDeviceChangeCallbackList.NoIndex)
       mDeviceChangeCallbackList.RemoveElement(aCallback);
     return 0;
   }
 
-  DeviceChangeCallback() : mCallbackMutex("mozilla::media::DeviceChangeCallback::mCallbackMutex")
-  {
-  }
+  virtual ~DeviceChangeNotifier() = default;
 
-  virtual ~DeviceChangeCallback()
-  {
-  }
-
-protected:
+ protected:
   nsTArray<DeviceChangeCallback*> mDeviceChangeCallbackList;
   Mutex mCallbackMutex;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_DeviceChangeCallback_h
+#endif  // mozilla_DeviceChangeCallback_h

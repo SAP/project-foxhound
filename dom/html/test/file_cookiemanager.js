@@ -1,12 +1,8 @@
-let { classes: Cc, interfaces: Ci } = Components;
 addMessageListener("getCookieFromManager", ({ host, path }) => {
-  let cm = Cc["@mozilla.org/cookiemanager;1"]
-             .getService(Ci.nsICookieManager);
+  let cm = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager);
   let values = [];
-  path = path.substring(0, path.lastIndexOf("/") + 1);
-  let e = cm.enumerator;
-  while (e.hasMoreElements()) {
-    let cookie = e.getNext().QueryInterface(Ci.nsICookie);
+  path = path.substring(0, path.lastIndexOf("/"));
+  for (let cookie of cm.enumerator) {
     if (!cookie) {
       break;
     }
@@ -16,5 +12,7 @@ addMessageListener("getCookieFromManager", ({ host, path }) => {
     values.push(cookie.name + "=" + cookie.value);
   }
 
-  sendAsyncMessage("getCookieFromManager:return", { cookie: values.join("; ") });
+  sendAsyncMessage("getCookieFromManager:return", {
+    cookie: values.join("; "),
+  });
 });

@@ -16,10 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
     var FRAME_SCRIPT_WINDOW = "data:,sendSyncMessage('test', 'window')";
     var FRAME_SCRIPT_GROUP  = "data:,sendSyncMessage('test', 'group')";
 
-    var Cc = Components.classes;
-    var Ci = Components.interfaces;
-    var globalMM = Cc["@mozilla.org/globalmessagemanager;1"]
-                     .getService(Ci.nsIMessageListenerManager);
+    var globalMM = Cc["@mozilla.org/globalmessagemanager;1"].getService();
 
     function is(val, exp, msg) {
       opener.wrappedJSObject.is(val, exp, msg);
@@ -42,10 +39,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=990812
         }
       });
 
-      var browser = document.createElement("browser");
+      var browser = document.createXULElement("browser");
       browser.setAttribute("messagemanagergroup", "test");
       browser.setAttribute("src", "about:mozilla");
-      browser.setAttribute("type", "content-targetable");
+      browser.setAttribute("type", "content");
       document.documentElement.appendChild(browser);
 
       globalMM.removeDelayedFrameScript(FRAME_SCRIPT_GLOBAL);

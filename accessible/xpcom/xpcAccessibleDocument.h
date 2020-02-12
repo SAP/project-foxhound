@@ -21,35 +21,32 @@ namespace a11y {
  * XPCOM wrapper around DocAccessible class.
  */
 class xpcAccessibleDocument : public xpcAccessibleHyperText,
-                              public nsIAccessibleDocument
-{
-public:
-  explicit xpcAccessibleDocument(DocAccessible* aIntl) :
-    xpcAccessibleHyperText(aIntl), mCache(kDefaultCacheLength), mRemote(false) { }
+                              public nsIAccessibleDocument {
+ public:
+  explicit xpcAccessibleDocument(DocAccessible* aIntl)
+      : xpcAccessibleHyperText(aIntl),
+        mCache(kDefaultCacheLength),
+        mRemote(false) {}
 
-  xpcAccessibleDocument(ProxyAccessible* aProxy, uint32_t aInterfaces) :
-    xpcAccessibleHyperText(aProxy, aInterfaces), mCache(kDefaultCacheLength),
-    mRemote(true) {}
+  xpcAccessibleDocument(ProxyAccessible* aProxy, uint32_t aInterfaces)
+      : xpcAccessibleHyperText(aProxy, aInterfaces),
+        mCache(kDefaultCacheLength),
+        mRemote(true) {}
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(xpcAccessibleDocument,
-                                           xpcAccessibleGeneric)
 
   // nsIAccessibleDocument
-  NS_IMETHOD GetURL(nsAString& aURL) final override;
-  NS_IMETHOD GetTitle(nsAString& aTitle) final override;
-  NS_IMETHOD GetMimeType(nsAString& aType) final override;
-  NS_IMETHOD GetDocType(nsAString& aType) final override;
-  NS_IMETHOD GetDOMDocument(nsIDOMDocument** aDOMDocument) final override;
-  NS_IMETHOD GetWindow(mozIDOMWindowProxy** aDOMWindow) final override;
-  NS_IMETHOD GetParentDocument(nsIAccessibleDocument** aDocument)
-    final override;
-  NS_IMETHOD GetChildDocumentCount(uint32_t* aCount) final override;
+  NS_IMETHOD GetURL(nsAString& aURL) final;
+  NS_IMETHOD GetTitle(nsAString& aTitle) final;
+  NS_IMETHOD GetMimeType(nsAString& aType) final;
+  NS_IMETHOD GetDocType(nsAString& aType) final;
+  NS_IMETHOD GetDOMDocument(dom::Document** aDOMDocument) final;
+  NS_IMETHOD GetWindow(mozIDOMWindowProxy** aDOMWindow) final;
+  NS_IMETHOD GetParentDocument(nsIAccessibleDocument** aDocument) final;
+  NS_IMETHOD GetChildDocumentCount(uint32_t* aCount) final;
   NS_IMETHOD GetChildDocumentAt(uint32_t aIndex,
-                                nsIAccessibleDocument** aDocument)
-    final override;
-  NS_IMETHOD GetVirtualCursor(nsIAccessiblePivot** aVirtualCursor)
-    final override;
+                                nsIAccessibleDocument** aDocument) final;
+  NS_IMETHOD GetVirtualCursor(nsIAccessiblePivot** aVirtualCursor) final;
 
   /**
    * Return XPCOM wrapper for the internal accessible.
@@ -59,12 +56,11 @@ public:
 
   virtual void Shutdown() override;
 
-protected:
+ protected:
   virtual ~xpcAccessibleDocument() {}
 
-private:
-  DocAccessible* Intl()
-  {
+ private:
+  DocAccessible* Intl() {
     if (Accessible* acc = mIntl.AsAccessible()) {
       return acc->AsDoc();
     }
@@ -72,79 +68,77 @@ private:
     return nullptr;
   }
 
-  void NotifyOfShutdown(Accessible* aAccessible)
-  {
+  void NotifyOfShutdown(Accessible* aAccessible) {
     MOZ_ASSERT(!mRemote);
-    xpcAccessibleGeneric* xpcAcc = mCache.GetWeak(aAccessible);
-    if (xpcAcc)
+    xpcAccessibleGeneric* xpcAcc = mCache.Get(aAccessible);
+    if (xpcAcc) {
       xpcAcc->Shutdown();
+    }
 
     mCache.Remove(aAccessible);
+    if (mCache.Count() == 0 && mRefCnt == 1) {
+      GetAccService()->RemoveFromXPCDocumentCache(
+          mIntl.AsAccessible()->AsDoc());
+    }
   }
 
-  void NotifyOfShutdown(ProxyAccessible* aProxy)
-  {
+  void NotifyOfShutdown(ProxyAccessible* aProxy) {
     MOZ_ASSERT(mRemote);
-    xpcAccessibleGeneric* acc = mCache.GetWeak(aProxy);
-    if (acc) {
-      acc->Shutdown();
+    xpcAccessibleGeneric* xpcAcc = mCache.Get(aProxy);
+    if (xpcAcc) {
+      xpcAcc->Shutdown();
     }
 
     mCache.Remove(aProxy);
+    if (mCache.Count() == 0 && mRefCnt == 1) {
+      GetAccService()->RemoveFromRemoteXPCDocumentCache(
+          mIntl.AsProxy()->AsDoc());
+    }
   }
 
   friend class DocManager;
   friend class DocAccessible;
   friend class ProxyAccessible;
   friend class ProxyAccessibleBase<ProxyAccessible>;
+  friend class xpcAccessibleGeneric;
 
   xpcAccessibleDocument(const xpcAccessibleDocument&) = delete;
-  xpcAccessibleDocument& operator =(const xpcAccessibleDocument&) = delete;
+  xpcAccessibleDocument& operator=(const xpcAccessibleDocument&) = delete;
 
-  nsRefPtrHashtable<nsPtrHashKey<const void>, xpcAccessibleGeneric> mCache;
+  nsDataHashtable<nsPtrHashKey<const void>, xpcAccessibleGeneric*> mCache;
   bool mRemote;
 };
 
-inline xpcAccessibleGeneric*
-ToXPC(Accessible* aAccessible)
-{
-  if (!aAccessible)
-    return nullptr;
+inline xpcAccessibleGeneric* ToXPC(Accessible* aAccessible) {
+  if (!aAccessible) return nullptr;
 
-  if (aAccessible->IsApplication())
-    return XPCApplicationAcc();
+  if (aAccessible->IsApplication()) return XPCApplicationAcc();
 
   xpcAccessibleDocument* xpcDoc =
-    GetAccService()->GetXPCDocument(aAccessible->Document());
+      GetAccService()->GetXPCDocument(aAccessible->Document());
   return xpcDoc ? xpcDoc->GetAccessible(aAccessible) : nullptr;
 }
 
 xpcAccessibleGeneric* ToXPC(AccessibleOrProxy aAcc);
 
-inline xpcAccessibleHyperText*
-ToXPCText(HyperTextAccessible* aAccessible)
-{
-  if (!aAccessible)
-    return nullptr;
+inline xpcAccessibleHyperText* ToXPCText(HyperTextAccessible* aAccessible) {
+  if (!aAccessible) return nullptr;
 
   xpcAccessibleDocument* xpcDoc =
-    GetAccService()->GetXPCDocument(aAccessible->Document());
-  return static_cast<xpcAccessibleHyperText*>(xpcDoc->GetAccessible(aAccessible));
+      GetAccService()->GetXPCDocument(aAccessible->Document());
+  return static_cast<xpcAccessibleHyperText*>(
+      xpcDoc->GetAccessible(aAccessible));
 }
 
-inline xpcAccessibleDocument*
-ToXPCDocument(DocAccessible* aAccessible)
-{
+inline xpcAccessibleDocument* ToXPCDocument(DocAccessible* aAccessible) {
   return GetAccService()->GetXPCDocument(aAccessible);
 }
 
-inline xpcAccessibleDocument*
-ToXPCDocument(DocAccessibleParent* aAccessible)
-{
+inline xpcAccessibleDocument* ToXPCDocument(DocAccessibleParent* aAccessible) {
   return GetAccService()->GetXPCDocument(aAccessible);
 }
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

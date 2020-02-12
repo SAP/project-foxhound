@@ -18,7 +18,7 @@
 #include "base/base_paths_android.h"
 #endif
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) || defined(OS_FUCHSIA)
 #include "base/base_paths_posix.h"
 #endif
 
@@ -30,11 +30,11 @@ enum BasePathKey {
   DIR_CURRENT,       // Current directory.
   DIR_EXE,           // Directory containing FILE_EXE.
   DIR_MODULE,        // Directory containing FILE_MODULE.
+  DIR_ASSETS,        // Directory that contains application assets.
   DIR_TEMP,          // Temporary directory.
   DIR_HOME,          // User's root home directory. On Windows this will look
-                     // like "C:\Users\you" (or on XP
-                     // "C:\Document and Settings\you") which isn't necessarily
-                     // a great place to put files.
+                     // like "C:\Users\<user>"  which isn't necessarily a great
+                     // place to put files.
   FILE_EXE,          // Path and filename of the current executable.
   FILE_MODULE,       // Path and filename of the module containing the code for
                      // the PathService (which could differ from FILE_EXE if the
@@ -45,7 +45,7 @@ enum BasePathKey {
                      // should not be used outside of test code.
   DIR_USER_DESKTOP,  // The current user's Desktop.
 
-  DIR_TEST_DATA,     // Used only for testing.
+  DIR_TEST_DATA,  // Used only for testing.
 
   PATH_END
 };

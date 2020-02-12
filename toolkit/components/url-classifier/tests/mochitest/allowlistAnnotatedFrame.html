@@ -17,7 +17,7 @@ var xhrItem = "untouched";
 var fetchItem = "untouched";
 var mediaItem1 = "untouched";
 
-function checkLoads() {
+async function checkLoads() {
   window.parent.is(scriptItem1, "spoiled", "Should not block tracking js 1");
   window.parent.is(scriptItem2, "spoiled", "Should not block tracking js 2");
   window.parent.is(imageItem1, "spoiled", "Should not block tracking img 1");
@@ -27,11 +27,11 @@ function checkLoads() {
   window.parent.is(mediaItem1, "loaded", "Should not block tracking video");
   window.parent.is(xhrItem, "loaded", "Should not block tracking XHR");
   window.parent.is(fetchItem, "loaded", "Should not block fetches from tracking domains");
-  window.parent.is(window.document.blockedTrackingNodeCount, 0,
+  window.parent.is(window.document.blockedNodeByClassifierCount, 0,
     "No elements should be blocked");
 
   // End (parent) test.
-  window.parent.clearPermissions();
+  await window.parent.clearPermissions();
   window.parent.SimpleTest.finish();
 }
 
@@ -88,21 +88,21 @@ v.addEventListener("error", function() {
 var newScript = document.createElement("script");
 newScript.id = "badscript2";
 newScript.src = "http://tracking.example.com/tests/toolkit/components/url-classifier/tests/mochitest/evil.js";
-newScript.addEventListener("load", function onload() {scriptItem2 = 'spoiled';});
+newScript.addEventListener("load", function onload() { scriptItem2 = "spoiled"; });
 document.body.appendChild(newScript);
 
-/// Try loading from a tracking image URI (2)
+// / Try loading from a tracking image URI (2)
 var newImage = document.createElement("img");
 newImage.id = "badimage2";
 newImage.src = "http://tracking.example.com/tests/toolkit/components/url-classifier/tests/mochitest/raptor.jpg";
-newImage.addEventListener("load", function onload() {imageItem2 = 'spoiled'});
+newImage.addEventListener("load", function onload() { imageItem2 = "spoiled"; });
 document.body.appendChild(newImage);
 
 // Try loading from a tracking iframe URI (2)
 var newFrame = document.createElement("iframe");
 newFrame.id = "badframe2";
-newFrame.src = "http://tracking.example.com/tests/toolkit/components/url-classifier/tests/mochitest/track.html"
-newFrame.addEventListener("load", function onload() {frameItem2 = 'spoiled'});
+newFrame.src = "http://tracking.example.com/tests/toolkit/components/url-classifier/tests/mochitest/track.html";
+newFrame.addEventListener("load", function onload() { frameItem2 = "spoiled"; });
 document.body.appendChild(newFrame);
 
 // Try doing an XHR against a tracking domain (bug 1216793)
@@ -127,7 +127,7 @@ oReq.send();
 
 // Fetch from a tracking domain
 fetch("http://tracking.example.com/tests/toolkit/components/url-classifier/tests/mochitest/evil.js").then(function(response) {
-    if(response.ok) {
+    if (response.ok) {
         fetchItem = "loaded";
         loaded("fetch");
     } else {

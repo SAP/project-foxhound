@@ -12,11 +12,11 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         '/accessible/windows/msaa',
     ]
 else:
-    DIRS += ['other']
+    DIRS += ['other', 'extension']
     LOCAL_INCLUDES += [
         '/accessible/ipc/other',
     ]
-    if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
         LOCAL_INCLUDES += [
             '/accessible/atk',
         ]
@@ -24,12 +24,20 @@ else:
         LOCAL_INCLUDES += [
             '/accessible/mac',
         ]
+    elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+        LOCAL_INCLUDES += [
+            '/accessible/android',
+        ]
     else:
         LOCAL_INCLUDES += [
             '/accessible/other',
         ]
 
-if CONFIG['GNU_CXX']:
+EXPORTS.mozilla.a11y += [
+    'IPCTypes.h',
+]
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 if CONFIG['ACCESSIBILITY']:
@@ -37,6 +45,7 @@ if CONFIG['ACCESSIBILITY']:
         'DocAccessibleChildBase.h',
         'DocAccessibleParent.h',
         'ProxyAccessibleBase.h',
+        'ProxyAccessibleShared.h',
     ]
 
     UNIFIED_SOURCES += [
@@ -54,3 +63,6 @@ if CONFIG['ACCESSIBILITY']:
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

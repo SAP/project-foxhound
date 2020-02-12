@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 **********************************************************************
 *   Copyright (C) 2001-2015 IBM and others. All rights reserved.
@@ -222,7 +224,7 @@ inline int32_t * addTouint32_tArray(int32_t    *destination,
         if (U_FAILURE(*status)) {
             return NULL;
         }
-        uprv_memcpy(temp, destination, sizeof(int32_t) * offset);
+        uprv_memcpy(temp, destination, sizeof(int32_t) * (size_t)offset);
         *destinationlength = newlength;
         destination        = temp;
     }
@@ -264,7 +266,7 @@ inline int64_t * addTouint64_tArray(int64_t    *destination,
             return NULL;
         }
 
-        uprv_memcpy(temp, destination, sizeof(int64_t) * offset);
+        uprv_memcpy(temp, destination, sizeof(int64_t) * (size_t)offset);
         *destinationlength = newlength;
         destination        = temp;
     }
@@ -496,7 +498,7 @@ inline void setShiftTable(int16_t   shift[], int16_t backshift[],
     for (count = 0; count < cesize; count ++) {
         // number of ces from right of array to the count
         int temp = defaultforward - count - 1;
-        shift[hashFromCE32(cetable[count])] = temp > 1 ? temp : 1;
+        shift[hashFromCE32(cetable[count])] = temp > 1 ? static_cast<int16_t>(temp) : 1;
     }
     shift[hashFromCE32(cetable[cesize])] = 1;
     // for ignorables we just shift by one. see test examples.
@@ -1379,7 +1381,7 @@ inline UChar * addToUCharArray(      UChar      *destination,
         }
     }
     if (source1length != 0) {
-        uprv_memcpy(destination, source1, sizeof(UChar) * source1length);
+        u_memcpy(destination, source1, source1length);
     }
     if (source2length != 0) {
         uprv_memcpy(destination + source1length, source2,
@@ -3542,9 +3544,7 @@ const CEI *CEIBuffer::get(int32_t index) {
     //   Verify that it is the next one in sequence, which is all
     //   that is allowed.
     if (index != limitIx) {
-        U_ASSERT(FALSE);
-
-        return NULL;
+        UPRV_UNREACHABLE;
     }
 
     // Manage the circular CE buffer indexing
@@ -3581,9 +3581,7 @@ const CEI *CEIBuffer::getPrevious(int32_t index) {
     //   Verify that it is the next one in sequence, which is all
     //   that is allowed.
     if (index != limitIx) {
-        U_ASSERT(FALSE);
-
-        return NULL;
+        UPRV_UNREACHABLE;
     }
 
     // Manage the circular CE buffer indexing

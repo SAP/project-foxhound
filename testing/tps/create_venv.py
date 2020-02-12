@@ -9,6 +9,8 @@ It's probably best to specify a path NOT inside the repo, otherwise
 all the virtualenv files will show up in e.g. hg status.
 """
 
+from __future__ import absolute_import, print_function
+
 import optparse
 import os
 import shutil
@@ -38,7 +40,7 @@ See runtps --help for all options
 
 # Link to the folder, which contains the zip archives of virtualenv
 URL_VIRTUALENV = 'https://codeload.github.com/pypa/virtualenv/zip/'
-VERSION_VIRTUALENV = '1.11.6'
+VERSION_VIRTUALENV = '15.0.0'
 
 
 if sys.platform == 'win32':
@@ -64,7 +66,7 @@ def setup_virtualenv(target, python_bin=None):
     script_path = os.path.join(here, 'virtualenv-%s' % VERSION_VIRTUALENV,
                                'virtualenv.py')
 
-    print 'Downloading virtualenv %s' % VERSION_VIRTUALENV
+    print('Downloading virtualenv {}'.format(VERSION_VIRTUALENV))
     zip_path = download(URL_VIRTUALENV + VERSION_VIRTUALENV,
                         os.path.join(here, 'virtualenv.zip'))
 
@@ -72,7 +74,7 @@ def setup_virtualenv(target, python_bin=None):
         with zipfile.ZipFile(zip_path, 'r') as f:
             f.extractall(here)
 
-        print 'Creating new virtual environment'
+        print('Creating new virtual environment')
         cmd_args = [sys.executable, script_path, target]
 
         if python_bin:
@@ -105,6 +107,10 @@ def update_configfile(source, target, replacements):
 
 def main():
     parser = optparse.OptionParser('Usage: %prog [options] path_to_venv')
+    parser.add_option('--keep-config',
+                      dest='keep_config',
+                      action='store_true',
+                      help='Keep the existing config file.')
     parser.add_option('--password',
                       type='string',
                       dest='password',
@@ -145,7 +151,7 @@ def main():
     (options, args) = parser.parse_args(args=None, values=None)
 
     if len(args) != 1:
-         parser.error('Path to the environment has to be specified')
+        parser.error('Path to the environment has to be specified')
     target = args[0]
     assert(target)
 
@@ -153,7 +159,7 @@ def main():
 
     # Activate tps environment
     tps_env = os.path.join(target, activate_env)
-    execfile(tps_env, dict(__file__=tps_env))
+    exec(open(tps_env).read(), dict(__file__=tps_env))
 
     # Install TPS in environment
     subprocess.check_call([os.path.join(target, python_env),
@@ -170,25 +176,27 @@ def main():
         testdir = os.path.join(here, 'tests')
         extdir = os.path.join(here, 'extensions')
 
-    update_configfile(os.path.join(here, 'config', 'config.json.in'),
-                      os.path.join(target, 'config.json'),
-                      replacements={
-                      '__TESTDIR__': testdir.replace('\\','/'),
-                      '__EXTENSIONDIR__': extdir.replace('\\','/'),
-                      '__FX_ACCOUNT_USERNAME__': options.username,
-                      '__FX_ACCOUNT_PASSWORD__': options.password,
-                      '__SYNC_ACCOUNT_USERNAME__': options.sync_username,
-                      '__SYNC_ACCOUNT_PASSWORD__': options.sync_password,
-                      '__SYNC_ACCOUNT_PASSPHRASE__': options.sync_passphrase})
+    if not options.keep_config:
+        update_configfile(os.path.join(here, 'config', 'config.json.in'),
+                          os.path.join(target, 'config.json'),
+                          replacements={
+                          '__TESTDIR__': testdir.replace('\\', '/'),
+                          '__EXTENSIONDIR__': extdir.replace('\\', '/'),
+                          '__FX_ACCOUNT_USERNAME__': options.username,
+                          '__FX_ACCOUNT_PASSWORD__': options.password,
+                          '__SYNC_ACCOUNT_USERNAME__': options.sync_username,
+                          '__SYNC_ACCOUNT_PASSWORD__': options.sync_password,
+                          '__SYNC_ACCOUNT_PASSPHRASE__': options.sync_passphrase})
 
-    if not (options.username and options.password):
-        print '\nFirefox Account credentials not specified.'
-    if not (options.sync_username and options.sync_password and options.passphrase):
-        print '\nFirefox Sync account credentials not specified.'
+        if not (options.username and options.password):
+            print('\nFirefox Account credentials not specified.')
+        if not (options.sync_username and options.sync_password and options.passphrase):
+            print('\nFirefox Sync account credentials not specified.')
 
     # Print the user instructions
-    print usage_message.format(TARGET=target,
-                               BIN_NAME=bin_name)
+    print(usage_message.format(TARGET=target,
+                               BIN_NAME=bin_name))
+
 
 if __name__ == "__main__":
     main()

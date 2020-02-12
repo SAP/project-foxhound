@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=606817
 -->
 <head>
   <title>Test for Bug 606817</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -39,13 +39,8 @@ for (var i=0; i<75; ++i) {
 input.setCustomValidity(msg);
 checkMessage(input, msg, false);
 
-// The input is still invalid but x-moz-errormessage will be used as the message.
-input.setAttribute("x-moz-errormessage", msg);
-checkMessage(input, msg, false);
-
 // Cleaning.
 input.setCustomValidity("");
-input.removeAttribute("x-moz-errormessage");
 
 // Testing with pattern and titl.
 input.pattern = "[0-9]*";

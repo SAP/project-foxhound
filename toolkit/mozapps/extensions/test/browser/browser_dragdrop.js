@@ -12,223 +12,207 @@
 // we only need EventUtils.js for a few files which is why we are using loadSubScript.
 var gManagerWindow;
 var EventUtils = {};
-this._scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                     getService(Ci.mozIJSSubScriptLoader);
-this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
+Services.scriptloader.loadSubScript(
+  "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
+  EventUtils
+);
 
-// This listens for the next opened window and checks it is of the right url.
-// opencallback is called when the new window is fully loaded
-// closecallback is called when the window is closed
-function WindowOpenListener(url, opencallback, closecallback) {
-  this.url = url;
-  this.opencallback = opencallback;
-  this.closecallback = closecallback;
+async function checkInstallConfirmation(...names) {
+  let notificationCount = 0;
+  let observer = {
+    observe(aSubject, aTopic, aData) {
+      let installInfo = aSubject.wrappedJSObject;
+      isnot(
+        installInfo.browser,
+        null,
+        "Notification should have non-null browser"
+      );
 
-  var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
-                     .getService(Components.interfaces.nsIWindowMediator);
-  wm.addListener(this);
-}
+      is(
+        installInfo.installs.length,
+        1,
+        "Got one AddonInstall instance as expected"
+      );
 
-WindowOpenListener.prototype = {
-  url: null,
-  opencallback: null,
-  closecallback: null,
-  window: null,
-  domwindow: null,
+      Assert.deepEqual(
+        installInfo.installs[0].installTelemetryInfo,
+        { source: "about:addons", method: "drag-and-drop" },
+        "Got the expected installTelemetryInfo"
+      );
 
-  handleEvent: function(event) {
-    is(this.domwindow.document.location.href, this.url, "Should have opened the correct window");
+      notificationCount++;
+    },
+  };
+  Services.obs.addObserver(observer, "addon-install-started");
 
-    this.domwindow.removeEventListener("load", this, false);
-    // Allow any other load handlers to execute
-    var self = this;
-    executeSoon(function() { self.opencallback(self.domwindow); } );
-  },
+  let results = [];
 
-  onWindowTitleChange: function(window, title) {
-  },
+  let promise = promisePopupNotificationShown("addon-webext-permissions");
+  for (let i = 0; i < names.length; i++) {
+    let panel = await promise;
+    let name = panel.getAttribute("name");
+    results.push(name);
 
-  onOpenWindow: function(window) {
-    if (this.window)
-      return;
+    info(`Saw install for ${name}`);
+    if (results.length < names.length) {
+      info(
+        `Waiting for installs for ${names.filter(n => !results.includes(n))}`
+      );
 
-    this.window = window;
-    this.domwindow = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                           .getInterface(Components.interfaces.nsIDOMWindow);
-    this.domwindow.addEventListener("load", this, false);
-  },
-
-  onCloseWindow: function(window) {
-    if (this.window != window)
-      return;
-
-    var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
-                       .getService(Components.interfaces.nsIWindowMediator);
-    wm.removeListener(this);
-    this.opencallback = null;
-    this.window = null;
-    this.domwindow = null;
-
-    // Let the window close complete
-    executeSoon(this.closecallback);
-    this.closecallback = null;
-  }
-};
-
-var gSawInstallNotification = false;
-var gInstallNotificationObserver = {
-  observe: function(aSubject, aTopic, aData) {
-    var installInfo = aSubject.QueryInterface(Ci.amIWebInstallInfo);
-    if (gTestInWindow)
-      is(installInfo.browser, null, "Notification should have a null browser");
-    else
-      isnot(installInfo.browser, null, "Notification should have non-null browser");
-    gSawInstallNotification = true;
-    Services.obs.removeObserver(this, "addon-install-started");
-  }
-};
-
-
-function test() {
-  waitForExplicitFinish();
-
-  open_manager("addons://list/extension", function(aWindow) {
-    gManagerWindow = aWindow;
-    run_next_test();
-  });
-}
-
-function end_test() {
-  close_manager(gManagerWindow, function() {
-    finish();
-  });
-}
-
-function test_confirmation(aWindow, aExpectedURLs) {
-  var list = aWindow.document.getElementById("itemList");
-  is(list.childNodes.length, aExpectedURLs.length, "Should be the right number of installs");
-
-  for (let url of aExpectedURLs) {
-    let found = false;
-    for (let node of list.children) {
-      if (node.url == url) {
-        found = true;
-        break;
-      }
+      promise = promisePopupNotificationShown("addon-webext-permissions");
     }
-    ok(found, "Should have seen " + url + " in the list");
+    panel.secondaryButton.click();
   }
 
-  aWindow.document.documentElement.cancelDialog();
+  Assert.deepEqual(results.sort(), names.sort(), "Got expected installs");
+
+  is(
+    notificationCount,
+    names.length,
+    `Saw ${names.length} addon-install-started notification`
+  );
+  Services.obs.removeObserver(observer, "addon-install-started");
+}
+
+function getViewContainer(gManagerWindow) {
+  return gManagerWindow.document.getElementById("category-box");
 }
 
 // Simulates dropping a URL onto the manager
-add_test(function() {
-  var url = TESTROOT + "addons/browser_dragdrop1.xpi";
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
-
-  new WindowOpenListener(INSTALL_URI, function(aWindow) {
-    test_confirmation(aWindow, [url]);
-  }, function() {
-    is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
-    run_next_test();
-  });
-
-  var viewContainer = gManagerWindow.document.getElementById("view-port");
-  var effect = EventUtils.synthesizeDrop(viewContainer, viewContainer,
-               [[{type: "text/x-moz-url", data: url}]],
-               "copy", gManagerWindow);
+add_task(async function test_drop_url() {
+  let url = TESTROOT + "addons/browser_dragdrop1.xpi";
+  gManagerWindow = await open_manager("addons://list/extension");
+  let promise = checkInstallConfirmation("Drag Drop test 1");
+  let viewContainer = getViewContainer(gManagerWindow);
+  let effect = EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [[{ type: "text/x-moz-url", data: url }]],
+    "copy",
+    gManagerWindow
+  );
   is(effect, "copy", "Drag should be accepted");
+  await promise;
+  await close_manager(gManagerWindow);
 });
 
 // Simulates dropping a file onto the manager
-add_test(function() {
-  var fileurl = get_addon_file_url("browser_dragdrop1.xpi");
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
-
-  new WindowOpenListener(INSTALL_URI, function(aWindow) {
-    test_confirmation(aWindow, [fileurl.spec]);
-  }, function() {
-    is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
-    run_next_test();
-  });
-
-  var viewContainer = gManagerWindow.document.getElementById("view-port");
-  var effect = EventUtils.synthesizeDrop(viewContainer, viewContainer,
-               [[{type: "application/x-moz-file", data: fileurl.file}]],
-               "copy", gManagerWindow);
+add_task(async function test_drop_file() {
+  let fileurl = get_addon_file_url("browser_dragdrop1.xpi");
+  gManagerWindow = await open_manager("addons://list/extension");
+  await wait_for_view_load(gManagerWindow);
+  let promise = checkInstallConfirmation("Drag Drop test 1");
+  let viewContainer = getViewContainer(gManagerWindow);
+  let effect = EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [[{ type: "application/x-moz-file", data: fileurl.file }]],
+    "copy",
+    gManagerWindow
+  );
   is(effect, "copy", "Drag should be accepted");
+  await promise;
+  await close_manager(gManagerWindow);
 });
 
 // Simulates dropping two urls onto the manager
-add_test(function() {
-  var url1 = TESTROOT + "addons/browser_dragdrop1.xpi";
-  var url2 = TESTROOT2 + "addons/browser_dragdrop2.xpi";
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
-
-  new WindowOpenListener(INSTALL_URI, function(aWindow) {
-    test_confirmation(aWindow, [url1, url2]);
-  }, function() {
-    is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
-    run_next_test();
-  });
-
-  var viewContainer = gManagerWindow.document.getElementById("view-port");
-  var effect = EventUtils.synthesizeDrop(viewContainer, viewContainer,
-               [[{type: "text/x-moz-url", data: url1}],
-                [{type: "text/x-moz-url", data: url2}]],
-               "copy", gManagerWindow);
+add_task(async function test_drop_multiple_urls() {
+  let url1 = TESTROOT + "addons/browser_dragdrop1.xpi";
+  let url2 = TESTROOT2 + "addons/browser_dragdrop2.xpi";
+  gManagerWindow = await open_manager("addons://list/extension");
+  await wait_for_view_load(gManagerWindow);
+  let promise = checkInstallConfirmation(
+    "Drag Drop test 1",
+    "Drag Drop test 2"
+  );
+  let viewContainer = getViewContainer(gManagerWindow);
+  let effect = EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [
+      [{ type: "text/x-moz-url", data: url1 }],
+      [{ type: "text/x-moz-url", data: url2 }],
+    ],
+    "copy",
+    gManagerWindow
+  );
   is(effect, "copy", "Drag should be accepted");
+  await promise;
+  await close_manager(gManagerWindow);
 });
 
 // Simulates dropping two files onto the manager
-add_test(function() {
-  var fileurl1 = get_addon_file_url("browser_dragdrop1.xpi");
-  var fileurl2 = get_addon_file_url("browser_dragdrop2.xpi");
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
-
-  new WindowOpenListener(INSTALL_URI, function(aWindow) {
-    test_confirmation(aWindow, [fileurl1.spec, fileurl2.spec]);
-  }, function() {
-    is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
-    run_next_test();
-  });
-
-  var viewContainer = gManagerWindow.document.getElementById("view-port");
-  var effect = EventUtils.synthesizeDrop(viewContainer, viewContainer,
-               [[{type: "application/x-moz-file", data: fileurl1.file}],
-                [{type: "application/x-moz-file", data: fileurl2.file}]],
-               "copy", gManagerWindow);
+add_task(async function test_drop_multiple_files() {
+  let fileurl1 = get_addon_file_url("browser_dragdrop1.xpi");
+  let fileurl2 = get_addon_file_url("browser_dragdrop2.xpi");
+  gManagerWindow = await open_manager("addons://list/extension");
+  await wait_for_view_load(gManagerWindow);
+  let promise = checkInstallConfirmation(
+    "Drag Drop test 1",
+    "Drag Drop test 2"
+  );
+  let viewContainer = getViewContainer(gManagerWindow);
+  let effect = EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [
+      [{ type: "application/x-moz-file", data: fileurl1.file }],
+      [{ type: "application/x-moz-file", data: fileurl2.file }],
+    ],
+    "copy",
+    gManagerWindow
+  );
   is(effect, "copy", "Drag should be accepted");
+  await promise;
+  await close_manager(gManagerWindow);
 });
 
 // Simulates dropping a file and a url onto the manager (weird, but should still work)
-add_test(function() {
-  var url = TESTROOT + "addons/browser_dragdrop1.xpi";
-  var fileurl = get_addon_file_url("browser_dragdrop2.xpi");
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
-
-  new WindowOpenListener(INSTALL_URI, function(aWindow) {
-    test_confirmation(aWindow, [url, fileurl.spec]);
-  }, function() {
-    is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
-    run_next_test();
-  });
-
-  var viewContainer = gManagerWindow.document.getElementById("view-port");
-  var effect = EventUtils.synthesizeDrop(viewContainer, viewContainer,
-               [[{type: "text/x-moz-url", data: url}],
-                [{type: "application/x-moz-file", data: fileurl.file}]],
-               "copy", gManagerWindow);
+add_task(async function test_drop_file_and_url() {
+  let url = TESTROOT + "addons/browser_dragdrop1.xpi";
+  let fileurl = get_addon_file_url("browser_dragdrop2.xpi");
+  gManagerWindow = await open_manager("addons://list/extension");
+  await wait_for_view_load(gManagerWindow);
+  let promise = checkInstallConfirmation(
+    "Drag Drop test 1",
+    "Drag Drop test 2"
+  );
+  let viewContainer = getViewContainer(gManagerWindow);
+  let effect = EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [
+      [{ type: "text/x-moz-url", data: url }],
+      [{ type: "application/x-moz-file", data: fileurl.file }],
+    ],
+    "copy",
+    gManagerWindow
+  );
   is(effect, "copy", "Drag should be accepted");
+  await promise;
+  await close_manager(gManagerWindow);
+});
+
+// Test that drag-and-drop of an incompatible addon generates
+// an error.
+add_task(async function test_drop_incompat_file() {
+  let gManagerWindow = await open_manager("addons://list/extension");
+  await wait_for_view_load(gManagerWindow);
+
+  let errorPromise = TestUtils.topicObserved("addon-install-failed");
+
+  let url = `${TESTROOT}/addons/browser_dragdrop_incompat.xpi`;
+  let viewContainer = getViewContainer(gManagerWindow);
+  EventUtils.synthesizeDrop(
+    viewContainer,
+    viewContainer,
+    [[{ type: "text/x-moz-url", data: url }]],
+    "copy",
+    gManagerWindow
+  );
+
+  await errorPromise;
+  ok(true, "Got addon-install-failed event");
+
+  await close_manager(gManagerWindow);
 });

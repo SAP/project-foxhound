@@ -18,119 +18,110 @@ namespace _ipdltest {
 //-----------------------------------------------------------------------------
 // Top-level
 //
-class TestFailedCtorParent :
-    public PTestFailedCtorParent
-{
-public:
-    TestFailedCtorParent() { }
-    virtual ~TestFailedCtorParent() { }
+class TestFailedCtorParent : public PTestFailedCtorParent {
+  friend class PTestFailedCtorParent;
 
-    static bool RunTestInProcesses() { return true; }
+ public:
+  TestFailedCtorParent() {}
+  virtual ~TestFailedCtorParent() {}
 
-    // FIXME/bug 703322 Disabled because child calls exit() to end
-    //                  test, not clear how to handle failed ctor in
-    //                  threaded mode.
-    static bool RunTestInThreads() { return false; }
+  static bool RunTestInProcesses() { return true; }
 
-    void Main();
+  // FIXME/bug 703322 Disabled because child calls exit() to end
+  //                  test, not clear how to handle failed ctor in
+  //                  threaded mode.
+  static bool RunTestInThreads() { return false; }
 
-protected:
-    virtual PTestFailedCtorSubParent* AllocPTestFailedCtorSubParent() override;
-    virtual bool DeallocPTestFailedCtorSubParent(PTestFailedCtorSubParent* actor) override;
+  void Main();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (AbnormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+ protected:
+  PTestFailedCtorSubParent* AllocPTestFailedCtorSubParent();
+  bool DeallocPTestFailedCtorSubParent(PTestFailedCtorSubParent* actor);
+
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (AbnormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 };
 
+class TestFailedCtorChild : public PTestFailedCtorChild {
+  friend class PTestFailedCtorChild;
 
-class TestFailedCtorChild :
-    public PTestFailedCtorChild
-{
-public:
-    TestFailedCtorChild() { }
-    virtual ~TestFailedCtorChild() { }
+ public:
+  TestFailedCtorChild() {}
+  virtual ~TestFailedCtorChild() {}
 
-protected:
-    virtual PTestFailedCtorSubChild* AllocPTestFailedCtorSubChild() override;
+ protected:
+  PTestFailedCtorSubChild* AllocPTestFailedCtorSubChild();
 
-    virtual bool AnswerPTestFailedCtorSubConstructor(PTestFailedCtorSubChild* actor) override;
+  mozilla::ipc::IPCResult AnswerPTestFailedCtorSubConstructor(
+      PTestFailedCtorSubChild* actor) override;
 
-    virtual bool DeallocPTestFailedCtorSubChild(PTestFailedCtorSubChild* actor) override;
+  bool DeallocPTestFailedCtorSubChild(PTestFailedCtorSubChild* actor);
 
-    virtual void ProcessingError(Result aCode, const char* aReason) override;
+  virtual void ProcessingError(Result aCode, const char* aReason) override;
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        fail("should have _exit()ed");
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    fail("should have _exit()ed");
+  }
 };
-
 
 //-----------------------------------------------------------------------------
 // First descendent
 //
 class TestFailedCtorSubsub;
 
-class TestFailedCtorSubParent :
-    public PTestFailedCtorSubParent
-{
-public:
-    TestFailedCtorSubParent() : mOne(nullptr), mTwo(nullptr), mThree(nullptr) { }
-    virtual ~TestFailedCtorSubParent();
+class TestFailedCtorSubParent : public PTestFailedCtorSubParent {
+  friend class PTestFailedCtorSubParent;
 
-protected:
-    virtual PTestFailedCtorSubsubParent* AllocPTestFailedCtorSubsubParent() override;
+ public:
+  TestFailedCtorSubParent() : mOne(nullptr), mTwo(nullptr), mThree(nullptr) {}
+  virtual ~TestFailedCtorSubParent();
 
-    virtual bool DeallocPTestFailedCtorSubsubParent(PTestFailedCtorSubsubParent* actor) override;
-    virtual bool RecvSync() override { return true; }
+ protected:
+  PTestFailedCtorSubsubParent* AllocPTestFailedCtorSubsubParent();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override;
+  bool DeallocPTestFailedCtorSubsubParent(PTestFailedCtorSubsubParent* actor);
+  mozilla::ipc::IPCResult RecvSync() { return IPC_OK(); }
 
-    TestFailedCtorSubsub* mOne;
-    TestFailedCtorSubsub* mTwo;
-    TestFailedCtorSubsub* mThree;
+  virtual void ActorDestroy(ActorDestroyReason why) override;
+
+  TestFailedCtorSubsub* mOne;
+  TestFailedCtorSubsub* mTwo;
+  TestFailedCtorSubsub* mThree;
 };
 
+class TestFailedCtorSubChild : public PTestFailedCtorSubChild {
+  friend class PTestFailedCtorSubChild;
 
-class TestFailedCtorSubChild :
-    public PTestFailedCtorSubChild
-{
-public:
-    TestFailedCtorSubChild() { }
-    virtual ~TestFailedCtorSubChild() { }
+ public:
+  TestFailedCtorSubChild() {}
+  virtual ~TestFailedCtorSubChild() {}
 
-protected:
-    virtual PTestFailedCtorSubsubChild* AllocPTestFailedCtorSubsubChild() override;
-    virtual bool DeallocPTestFailedCtorSubsubChild(PTestFailedCtorSubsubChild* actor) override;
+ protected:
+  PTestFailedCtorSubsubChild* AllocPTestFailedCtorSubsubChild();
+  bool DeallocPTestFailedCtorSubsubChild(PTestFailedCtorSubsubChild* actor);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override;
+  virtual void ActorDestroy(ActorDestroyReason why) override;
 };
-
 
 //-----------------------------------------------------------------------------
 // Grand-descendent
 //
-class TestFailedCtorSubsub :
-        public PTestFailedCtorSubsubParent,
-        public PTestFailedCtorSubsubChild
-{
-public:
-    TestFailedCtorSubsub() : mWhy(ActorDestroyReason(-1)), mDealloced(false) {}
-    virtual ~TestFailedCtorSubsub() {}
+class TestFailedCtorSubsub : public PTestFailedCtorSubsubParent,
+                             public PTestFailedCtorSubsubChild {
+ public:
+  TestFailedCtorSubsub() : mWhy(ActorDestroyReason(-1)), mDealloced(false) {}
+  virtual ~TestFailedCtorSubsub() {}
 
-    virtual void ActorDestroy(ActorDestroyReason why) override { mWhy = why; }
+  virtual void ActorDestroy(ActorDestroyReason why) override { mWhy = why; }
 
-    ActorDestroyReason mWhy;
-    bool mDealloced;
+  ActorDestroyReason mWhy;
+  bool mDealloced;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-}
-}
-
-#endif // ifndef mozilla_ipdltest_TestFailedCtor_h
+#endif  // ifndef mozilla_ipdltest_TestFailedCtor_h

@@ -8,8 +8,11 @@
 #ifndef SkTLList_DEFINED
 #define SkTLList_DEFINED
 
+#include "SkMalloc.h"
 #include "SkTInternalLList.h"
+#include "SkTemplates.h"
 #include "SkTypes.h"
+#include <new>
 #include <utility>
 
 /** Doubly-linked list of objects. The objects' lifetimes are controlled by the list. I.e. the
@@ -29,7 +32,7 @@ template <typename T, unsigned int N> class SkTLList : SkNoncopyable {
 private:
     struct Block;
     struct Node {
-        char fObj[sizeof(T)];
+        SkAlignedSTStorage<1, T> fObj;
         SK_DECLARE_INTERNAL_LLIST_INTERFACE(Node);
         Block* fBlock; // owning block.
     };
@@ -38,21 +41,17 @@ private:
 public:
     class Iter;
 
-    SkTLList() : fCount(0) {
-        fFirstBlock.fNodesInUse = 0;
-        for (unsigned int i = 0; i < N; ++i) {
-            fFreeList.addToHead(fFirstBlock.fNodes + i);
-            fFirstBlock.fNodes[i].fBlock = &fFirstBlock;
-        }
-        this->validate();
-    }
+    // Having fCount initialized to -1 indicates that the first time we attempt to grab a free node
+    // all the nodes in the pre-allocated first block need to be inserted into the free list. This
+    // allows us to skip that loop in instances when the list is never populated.
+    SkTLList() : fCount(-1) {}
 
     ~SkTLList() {
         this->validate();
         typename NodeList::Iter iter;
         Node* node = iter.init(fList, Iter::kHead_IterStart);
         while (node) {
-            SkTCast<T*>(node->fObj)->~T();
+            reinterpret_cast<T*>(node->fObj.get())->~T();
             Block* block = node->fBlock;
             node = iter.next();
             if (0 == --block->fNodesInUse) {
@@ -72,7 +71,7 @@ public:
         Node* node = this->createNode();
         fList.addToHead(node);
         this->validate();
-        return new (node->fObj)  T(std::forward<Args>(args)...);
+        return new (node->fObj.get())  T(std::forward<Args>(args)...);
     }
 
     /** Adds a new element to the list at the tail. */
@@ -81,7 +80,7 @@ public:
         Node* node = this->createNode();
         fList.addToTail(node);
         this->validate();
-        return new (node->fObj) T(std::forward<Args>(args)...);
+        return new (node->fObj.get()) T(std::forward<Args>(args)...);
     }
 
     /** Adds a new element to the list before the location indicated by the iterator. If the
@@ -91,7 +90,7 @@ public:
         Node* node = this->createNode();
         fList.addBefore(node, location.getNode());
         this->validate();
-        return new (node->fObj) T(std::forward<Args>(args)...);
+        return new (node->fObj.get()) T(std::forward<Args>(args)...);
     }
 
     /** Adds a new element to the list after the location indicated by the iterator. If the
@@ -101,7 +100,7 @@ public:
         Node* node = this->createNode();
         fList.addAfter(node, location.getNode());
         this->validate();
-        return new (node->fObj) T(std::forward<Args>(args)...);
+        return new (node->fObj.get()) T(std::forward<Args>(args)...);
     }
 
     /** Convenience methods for getting an iterator initialized to the head/tail of the list. */
@@ -134,7 +133,7 @@ public:
     void remove(T* t) {
         this->validate();
         Node* node = reinterpret_cast<Node*>(t);
-        SkASSERT(reinterpret_cast<T*>(node->fObj) == t);
+        SkASSERT(reinterpret_cast<T*>(node->fObj.get()) == t);
         this->removeNode(node);
         this->validate();
     }
@@ -148,18 +147,19 @@ public:
             this->remove(iter.get());
             iter = next;
         }
-        SkASSERT(0 == fCount);
+        SkASSERT(0 == fCount || -1 == fCount);
         this->validate();
     }
 
-    int count() const { return fCount; }
-    bool isEmpty() const { this->validate(); return 0 == fCount; }
+    int count() const { return SkTMax(fCount ,0); }
+    bool isEmpty() const { this->validate(); return 0 == fCount || -1 == fCount; }
 
     bool operator== (const SkTLList& list) const {
         if (this == &list) {
             return true;
         }
-        if (fCount != list.fCount) {
+        // Call count() rather than use fCount because an empty list may have fCount = 0 or -1.
+        if (this->count() != list.count()) {
             return false;
         }
         for (Iter a(*this, Iter::kHead_IterStart), b(list, Iter::kHead_IterStart);
@@ -210,7 +210,7 @@ public:
 
         T* nodeToObj(Node* node) {
             if (node) {
-                return reinterpret_cast<T*>(node->fObj);
+                return reinterpret_cast<T*>(node->fObj.get());
             } else {
                 return nullptr;
             }
@@ -223,7 +223,21 @@ private:
         Node fNodes[N];
     };
 
+    void delayedInit() {
+        SkASSERT(-1 == fCount);
+        fFirstBlock.fNodesInUse = 0;
+        for (unsigned int i = 0; i < N; ++i) {
+            fFreeList.addToHead(fFirstBlock.fNodes + i);
+            fFirstBlock.fNodes[i].fBlock = &fFirstBlock;
+        }
+        fCount = 0;
+        this->validate();
+    }
+
     Node* createNode() {
+        if (-1 == fCount) {
+            this->delayedInit();
+        }
         Node* node = fFreeList.head();
         if (node) {
             fFreeList.remove(node);
@@ -250,7 +264,7 @@ private:
     void removeNode(Node* node) {
         SkASSERT(node);
         fList.remove(node);
-        SkTCast<T*>(node->fObj)->~T();
+        reinterpret_cast<T*>(node->fObj.get())->~T();
         Block* block = node->fBlock;
         // Don't ever elease the first block, just add its nodes to the free list
         if (0 == --block->fNodesInUse && block != &fFirstBlock) {
@@ -270,11 +284,17 @@ private:
 
     void validate() const {
 #ifdef SK_DEBUG
-        SkASSERT((0 == fCount) == fList.isEmpty());
-        if (0 == fCount) {
+        bool isEmpty = false;
+        if (-1 == fCount) {
+            // We should not yet have initialized the free list.
+            SkASSERT(fFreeList.isEmpty());
+            isEmpty = true;
+        } else if (0 == fCount) {
             // Should only have the nodes from the first block in the free list.
             SkASSERT(fFreeList.countEntries() == N);
+            isEmpty = true;
         }
+        SkASSERT(isEmpty == fList.isEmpty());
         fList.validate();
         fFreeList.validate();
         typename NodeList::Iter iter;
@@ -318,7 +338,7 @@ private:
             SkASSERT(activeCnt == block->fNodesInUse);
             activeNode = iter.next();
         }
-        SkASSERT(count == fCount);
+        SkASSERT(count == fCount || (0 == count && -1 == fCount));
 #endif
     }
 

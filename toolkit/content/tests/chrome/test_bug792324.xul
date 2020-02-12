@@ -7,8 +7,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=792324
 <window title="Mozilla Bug 792324"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 <body  xmlns="http://www.w3.org/1999/xhtml">
   <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=792324">Mozilla Bug 792324</a>
 
@@ -35,7 +35,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=792324
   />
 </panel>
 
-<script class="testbody" type="application/javascript;version=1.7"><![CDATA[
+<script class="testbody" type="application/javascript"><![CDATA[
 
 /** Test for Bug 792324 **/
 let after_click;
@@ -54,7 +54,7 @@ function checkAccessKeyOnPanel(panelid, buttonid, cb) {
       panel.hidePopup();
       cb();
     }
-    synthesizeKey("X", {});
+    sendString("X");
   });
  panel.openPopup(null, "", 100, 100, false, false);
 }

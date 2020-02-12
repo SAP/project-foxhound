@@ -2,13 +2,13 @@
 <head>
 <style>
 div:first-letter { float: left; } 
-div { -moz-column-count: 2; width: 0; }
+div { column-count: 2; width: 0; }
 </style>
 <script>
 function boom()
 {
   var v = document.getElementById("v");
-  v.removeChild(v.firstChild);
+  v.firstChild.remove();
 }
 </script>
 </head>

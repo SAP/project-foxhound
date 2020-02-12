@@ -2,42 +2,49 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.EXPORTED_SYMBOLS = ['FormEngine', 'FormRec', 'FormValidator'];
+var EXPORTED_SYMBOLS = ["FormEngine", "FormRec", "FormValidator"];
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
-var Cu = Components.utils;
+const { Store, SyncEngine, Tracker } = ChromeUtils.import(
+  "resource://services-sync/engines.js"
+);
+const { CryptoWrapper } = ChromeUtils.import(
+  "resource://services-sync/record.js"
+);
+const { Svc, Utils } = ChromeUtils.import("resource://services-sync/util.js");
+const { SCORE_INCREMENT_MEDIUM } = ChromeUtils.import(
+  "resource://services-sync/constants.js"
+);
+const { CollectionProblemData, CollectionValidator } = ChromeUtils.import(
+  "resource://services-sync/collection_validator.js"
+);
+const { Async } = ChromeUtils.import("resource://services-common/async.js");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "FormHistory",
+  "resource://gre/modules/FormHistory.jsm"
+);
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/record.js");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/collection_validator.js");
-Cu.import("resource://gre/modules/Log.jsm");
+const FORMS_TTL = 3 * 365 * 24 * 60 * 60; // Three years in seconds.
 
-const FORMS_TTL = 3 * 365 * 24 * 60 * 60;   // Three years in seconds.
-
-this.FormRec = function FormRec(collection, id) {
+function FormRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
 }
 FormRec.prototype = {
   __proto__: CryptoWrapper.prototype,
   _logName: "Sync.Record.Form",
-  ttl: FORMS_TTL
+  ttl: FORMS_TTL,
 };
 
 Utils.deferGetSet(FormRec, "cleartext", ["name", "value"]);
-
 
 var FormWrapper = {
   _log: Log.repository.getLogger("Sync.Engine.Forms"),
 
   _getEntryCols: ["fieldname", "value"],
-  _guidCols:     ["guid"],
+  _guidCols: ["guid"],
 
-  _promiseSearch: function(terms, searchData) {
+  async _search(terms, searchData) {
     return new Promise(resolve => {
       let results = [];
       let callbacks = {
@@ -46,63 +53,58 @@ var FormWrapper = {
         },
         handleCompletion(reason) {
           resolve(results);
-        }
+        },
       };
-      Svc.FormHistory.search(terms, searchData, callbacks);
-    })
+      FormHistory.search(terms, searchData, callbacks);
+    });
   },
 
-  // Do a "sync" search by spinning the event loop until it completes.
-  _searchSpinningly: function(terms, searchData) {
-    return Async.promiseSpinningly(this._promiseSearch(terms, searchData));
-  },
-
-  _updateSpinningly: function(changes) {
-    if (!Svc.FormHistory.enabled) {
+  async _update(changes) {
+    if (!FormHistory.enabled) {
       return; // update isn't going to do anything.
     }
-    let cb = Async.makeSpinningCallback();
-    let callbacks = {
-      handleCompletion: function(reason) {
-        cb();
-      }
-    };
-    Svc.FormHistory.update(changes, callbacks);
-    return cb.wait();
+    await new Promise(resolve => {
+      let callbacks = {
+        handleCompletion(reason) {
+          resolve();
+        },
+      };
+      FormHistory.update(changes, callbacks);
+    });
   },
 
-  getEntry: function (guid) {
-    let results = this._searchSpinningly(this._getEntryCols, {guid: guid});
+  async getEntry(guid) {
+    let results = await this._search(this._getEntryCols, { guid });
     if (!results.length) {
       return null;
     }
-    return {name: results[0].fieldname, value: results[0].value};
+    return { name: results[0].fieldname, value: results[0].value };
   },
 
-  getGUID: function (name, value) {
+  async getGUID(name, value) {
     // Query for the provided entry.
-    let query = { fieldname: name, value: value };
-    let results = this._searchSpinningly(this._guidCols, query);
+    let query = { fieldname: name, value };
+    let results = await this._search(this._guidCols, query);
     return results.length ? results[0].guid : null;
   },
 
-  hasGUID: function (guid) {
-    // We could probably use a count function here, but searchSpinningly exists...
-    return this._searchSpinningly(this._guidCols, {guid: guid}).length != 0;
+  async hasGUID(guid) {
+    // We could probably use a count function here, but search exists...
+    let results = await this._search(this._guidCols, { guid });
+    return results.length != 0;
   },
 
-  replaceGUID: function (oldGUID, newGUID) {
+  async replaceGUID(oldGUID, newGUID) {
     let changes = {
       op: "update",
       guid: oldGUID,
       newGuid: newGUID,
-    }
-    this._updateSpinningly(changes);
-  }
-
+    };
+    await this._update(changes);
+  },
 };
 
-this.FormEngine = function FormEngine(service) {
+function FormEngine(service) {
   SyncEngine.call(this, "Forms", service);
 }
 FormEngine.prototype = {
@@ -110,8 +112,6 @@ FormEngine.prototype = {
   _storeObj: FormStore,
   _trackerObj: FormTracker,
   _recordObj: FormRec,
-  applyIncomingBatchSize: FORMS_STORE_BATCH_SIZE,
-  allowSkippedRecord: true,
 
   syncPriority: 6,
 
@@ -119,9 +119,9 @@ FormEngine.prototype = {
     return "history";
   },
 
-  _findDupe: function _findDupe(item) {
+  async _findDupe(item) {
     return FormWrapper.getGUID(item.name, item.value);
-  }
+  },
 };
 
 function FormStore(name, engine) {
@@ -130,7 +130,7 @@ function FormStore(name, engine) {
 FormStore.prototype = {
   __proto__: Store.prototype,
 
-  _processChange: function (change) {
+  async _processChange(change) {
     // If this._changes is defined, then we are applying a batch, so we
     // can defer it.
     if (this._changes) {
@@ -138,23 +138,24 @@ FormStore.prototype = {
       return;
     }
 
-    // Otherwise we must handle the change synchronously, right now.
-    FormWrapper._updateSpinningly(change);
+    // Otherwise we must handle the change right now.
+    await FormWrapper._update(change);
   },
 
-  applyIncomingBatch: function (records) {
+  async applyIncomingBatch(records) {
+    Async.checkAppReady();
     // We collect all the changes to be made then apply them all at once.
     this._changes = [];
-    let failures = Store.prototype.applyIncomingBatch.call(this, records);
+    let failures = await Store.prototype.applyIncomingBatch.call(this, records);
     if (this._changes.length) {
-      FormWrapper._updateSpinningly(this._changes);
+      await FormWrapper._update(this._changes);
     }
     delete this._changes;
     return failures;
   },
 
-  getAllIDs: function () {
-    let results = FormWrapper._searchSpinningly(["guid"], [])
+  async getAllIDs() {
+    let results = await FormWrapper._search(["guid"], []);
     let guids = {};
     for (let result of results) {
       guids[result.guid] = true;
@@ -162,17 +163,17 @@ FormStore.prototype = {
     return guids;
   },
 
-  changeItemID: function (oldID, newID) {
-    FormWrapper.replaceGUID(oldID, newID);
+  async changeItemID(oldID, newID) {
+    await FormWrapper.replaceGUID(oldID, newID);
   },
 
-  itemExists: function (id) {
+  async itemExists(id) {
     return FormWrapper.hasGUID(id);
   },
 
-  createRecord: function (id, collection) {
+  async createRecord(id, collection) {
     let record = new FormRec(collection, id);
-    let entry = FormWrapper.getEntry(id);
+    let entry = await FormWrapper.getEntry(id);
     if (entry != null) {
       record.name = entry.name;
       record.value = entry.value;
@@ -182,35 +183,36 @@ FormStore.prototype = {
     return record;
   },
 
-  create: function (record) {
+  async create(record) {
     this._log.trace("Adding form record for " + record.name);
     let change = {
       op: "add",
+      guid: record.id,
       fieldname: record.name,
-      value: record.value
+      value: record.value,
     };
-    this._processChange(change);
+    await this._processChange(change);
   },
 
-  remove: function (record) {
+  async remove(record) {
     this._log.trace("Removing form record: " + record.id);
     let change = {
       op: "remove",
-      guid: record.id
+      guid: record.id,
     };
-    this._processChange(change);
+    await this._processChange(change);
   },
 
-  update: function (record) {
+  async update(record) {
     this._log.trace("Ignoring form record update request!");
   },
 
-  wipe: function () {
+  async wipe() {
     let change = {
-      op: "remove"
+      op: "remove",
     };
-    FormWrapper._updateSpinningly(change);
-  }
+    await FormWrapper._update(change);
+  },
 };
 
 function FormTracker(name, engine) {
@@ -219,57 +221,60 @@ function FormTracker(name, engine) {
 FormTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  QueryInterface: XPCOMUtils.generateQI([
+  QueryInterface: ChromeUtils.generateQI([
     Ci.nsIObserver,
-    Ci.nsISupportsWeakReference]),
+    Ci.nsISupportsWeakReference,
+  ]),
 
-  startTracking: function() {
-    Svc.Obs.add("satchel-storage-changed", this);
+  onStart() {
+    Svc.Obs.add("satchel-storage-changed", this.asyncObserver);
   },
 
-  stopTracking: function() {
-    Svc.Obs.remove("satchel-storage-changed", this);
+  onStop() {
+    Svc.Obs.remove("satchel-storage-changed", this.asyncObserver);
   },
 
-  observe: function (subject, topic, data) {
-    Tracker.prototype.observe.call(this, subject, topic, data);
-
+  async observe(subject, topic, data) {
+    if (this.ignoreAll) {
+      return;
+    }
     switch (topic) {
       case "satchel-storage-changed":
         if (data == "formhistory-add" || data == "formhistory-remove") {
           let guid = subject.QueryInterface(Ci.nsISupportsString).toString();
-          this.trackEntry(guid);
+          await this.trackEntry(guid);
         }
         break;
     }
   },
 
-  trackEntry: function (guid) {
-    this.addChangedID(guid);
-    this.score += SCORE_INCREMENT_MEDIUM;
+  async trackEntry(guid) {
+    const added = await this.addChangedID(guid);
+    if (added) {
+      this.score += SCORE_INCREMENT_MEDIUM;
+    }
   },
 };
-
 
 class FormsProblemData extends CollectionProblemData {
   getSummary() {
     // We don't support syncing deleted form data, so "clientMissing" isn't a problem
-    return super.getSummary().filter(entry =>
-      entry.name !== "clientMissing");
+    return super.getSummary().filter(entry => entry.name !== "clientMissing");
   }
 }
 
 class FormValidator extends CollectionValidator {
   constructor() {
     super("forms", "id", ["name", "value"]);
+    this.ignoresMissingClients = true;
   }
 
   emptyProblemData() {
     return new FormsProblemData();
   }
 
-  getClientItems() {
-    return FormWrapper._promiseSearch(["guid", "fieldname", "value"], {});
+  async getClientItems() {
+    return FormWrapper._search(["guid", "fieldname", "value"], {});
   }
 
   normalizeClientItem(item) {
@@ -283,15 +288,18 @@ class FormValidator extends CollectionValidator {
     };
   }
 
-  normalizeServerItem(item) {
-    let res = Object.assign({
-      guid: item.id,
-      fieldname: item.name,
-      original: item,
-    }, item);
+  async normalizeServerItem(item) {
+    let res = Object.assign(
+      {
+        guid: item.id,
+        fieldname: item.name,
+        original: item,
+      },
+      item
+    );
     // Missing `name` or `value` causes the getGUID call to throw
     if (item.name !== undefined && item.value !== undefined) {
-      let guid = FormWrapper.getGUID(item.name, item.value);
+      let guid = await FormWrapper.getGUID(item.name, item.value);
       if (guid) {
         res.guid = guid;
         res.id = guid;

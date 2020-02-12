@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=588683
 -->
 <head>
   <title>Test for form attributes 1</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -424,7 +424,7 @@ for (var name of elementNames) {
   for (var func of functions) {
     // Clean-up.
     while (content.firstChild) {
-      content.removeChild(content.firstChild);
+      content.firstChild.remove();
     }
     for (form of forms) {
       content.appendChild(form);
@@ -462,7 +462,7 @@ for (var name of elementNames) {
 
   // Cleaning-up.
   for (e of elements) {
-    e.parentNode.removeChild(e);
+    e.remove();
     e = null;
   }
 }

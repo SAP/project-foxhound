@@ -1,45 +1,34 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Test for SharedWorker - Private Browsing</title>
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"?>
 </head>
 <body>
 
 <script type="application/javascript">
-
-const Ci = Components.interfaces;
+const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
 var mainWindow;
 
 var contentPage = "http://mochi.test:8888/chrome/dom/workers/test/empty.html";
 
 function testOnWindow(aIsPrivate, aCallback) {
   var win = mainWindow.OpenBrowserWindow({private: aIsPrivate});
-  win.addEventListener("load", function onLoad() {
-    win.removeEventListener("load", onLoad, false);
+  win.addEventListener("load", function() {
     win.addEventListener("DOMContentLoaded", function onInnerLoad() {
       if (win.content.location.href != contentPage) {
-        win.gBrowser.loadURI(contentPage);
+        BrowserTestUtils.loadURI(win.gBrowser, contentPage);
         return;
       }
 
       win.removeEventListener("DOMContentLoaded", onInnerLoad, true);
       SimpleTest.executeSoon(function() { aCallback(win); });
     }, true);
-
-    if (!aIsPrivate) {
-      win.gBrowser.loadURI(contentPage);
-    }
-  }, true);
+  }, {capture: true, once: true});
 }
 
 function setupWindow() {
-  mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIWebNavigation)
-                     .QueryInterface(Ci.nsIDocShellTreeItem)
-                     .rootTreeItem
-                     .QueryInterface(Ci.nsIInterfaceRequestor)
-                     .getInterface(Ci.nsIDOMWindow);
+  mainWindow = window.docShell.rootTreeItem.domWindow;
   runTest();
 }
 
@@ -50,20 +39,20 @@ function doTests() {
   testOnWindow(false, function(aWin) {
     wN = aWin;
 
-    testOnWindow(true, function(aWin) {
-      wP = aWin;
+    testOnWindow(true, function(win) {
+      wP = win;
 
       var sharedWorker1 = new wP.content.SharedWorker('sharedWorker_privateBrowsing.js');
       sharedWorker1.port.onmessage = function(event) {
         is(event.data, 1, "Only 1 sharedworker expected in the private window");
 
         var sharedWorker2 = new wN.content.SharedWorker('sharedWorker_privateBrowsing.js');
-        sharedWorker2.port.onmessage = function(event) {
-          is(event.data, 1, "Only 1 sharedworker expected in the normal window");
+        sharedWorker2.port.onmessage = function(event1) {
+          is(event1.data, 1, "Only 1 sharedworker expected in the normal window");
 
           var sharedWorker3 = new wP.content.SharedWorker('sharedWorker_privateBrowsing.js');
-          sharedWorker3.port.onmessage = function(event) {
-            is(event.data, 2, "Only 2 sharedworker expected in the private window");
+          sharedWorker3.port.onmessage = function(event2) {
+            is(event2.data, 2, "Only 2 sharedworker expected in the private window");
             runTest();
           }
         }

@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=311681
 -->
 <head>
   <title>Test for Bug 311681</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -63,7 +63,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=311681
 
     node = testNode.cloneNode(true);
     newParent.appendChild(node);
-    testNode.parentNode.removeChild(testNode);
+    testNode.remove();
 
     // Check what getElementById returns, no flushing
     is(getCont(), node, "Should be getting clone pre-flush");
@@ -78,7 +78,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=311681
 
   function clear(node) {
     while (node.hasChildNodes()) {
-      node.removeChild(node.firstChild);
+      node.firstChild.remove();
     }
   }
 

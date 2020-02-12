@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_
+#ifndef MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_
+#define MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_
 
-#include "webrtc/modules/audio_processing/ns/defines.h"
+#include "modules/audio_processing/ns/defines.h"
 
 typedef struct NSParaExtract_ {
   // Bin size of histogram.
@@ -51,10 +51,10 @@ typedef struct NSParaExtract_ {
 
 typedef struct NoiseSuppressionC_ {
   uint32_t fs;
-  int blockLen;
-  int windShift;
-  int anaLen;
-  int magnLen;
+  size_t blockLen;
+  size_t windShift;
+  size_t anaLen;
+  size_t magnLen;
   int aggrMode;
   const float* window;
   float analyzeBuf[ANAL_BLOCKL_MAX];
@@ -74,7 +74,7 @@ typedef struct NoiseSuppressionC_ {
   float denoiseBound;
   int gainmap;
   // FFT work arrays.
-  int ip[IP_LENGTH];
+  size_t ip[IP_LENGTH];
   float wfft[W_LENGTH];
 
   // Parameters for new method: some not needed, will reduce/cleanup later.
@@ -181,10 +181,10 @@ void WebRtcNs_AnalyzeCore(NoiseSuppressionC* self, const float* speechFrame);
  */
 void WebRtcNs_ProcessCore(NoiseSuppressionC* self,
                           const float* const* inFrame,
-                          int num_bands,
+                          size_t num_bands,
                           float* const* outFrame);
 
 #ifdef __cplusplus
 }
 #endif
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_
+#endif  // MODULES_AUDIO_PROCESSING_NS_NS_CORE_H_

@@ -8,31 +8,33 @@
 #define mozilla_dom_SVGMetadataElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsSVGElement.h"
+#include "SVGElement.h"
 
-nsresult NS_NewSVGMetadataElement(nsIContent **aResult,
-                                  already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
-
-typedef nsSVGElement SVGMetadataElementBase;
+nsresult NS_NewSVGMetadataElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
 namespace mozilla {
 namespace dom {
 
-class SVGMetadataElement final : public SVGMetadataElementBase
-{
-protected:
-  friend nsresult (::NS_NewSVGMetadataElement(nsIContent **aResult,
-                                              already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
-  explicit SVGMetadataElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
+typedef SVGElement SVGMetadataElementBase;
 
-  virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
+class SVGMetadataElement final : public SVGMetadataElementBase {
+ protected:
+  friend nsresult(::NS_NewSVGMetadataElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+  explicit SVGMetadataElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
   nsresult Init();
 
-public:
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+ public:
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_SVGMetadataElement_h
+#endif  // mozilla_dom_SVGMetadataElement_h

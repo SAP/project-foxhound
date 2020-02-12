@@ -9,15 +9,12 @@
 
 #include <string>
 
-#include "sandbox/win/src/policy_low_level.h"
-
 #include "base/strings/string16.h"
 #include "sandbox/win/src/crosscall_server.h"
+#include "sandbox/win/src/policy_low_level.h"
 #include "sandbox/win/src/sandbox_policy.h"
 
 namespace sandbox {
-
-enum EvalResult;
 
 // This class centralizes most of the knowledge related to process execution.
 class ProcessPolicy {
@@ -50,7 +47,7 @@ class ProcessPolicy {
                                     HANDLE* handle);
 
   // Opens the token associated with the process and returns the duplicated
-  // handle to the child. We only allow the child processes to open his own
+  // handle to the child. We only allow the child processes to open its own
   // token (using ::GetCurrentProcess()).
   static NTSTATUS OpenProcessTokenAction(const ClientInfo& client_info,
                                          HANDLE process,
@@ -58,7 +55,7 @@ class ProcessPolicy {
                                          HANDLE* handle);
 
   // Opens the token associated with the process and returns the duplicated
-  // handle to the child. We only allow the child processes to open his own
+  // handle to the child. We only allow the child processes to open its own
   // token (using ::GetCurrentProcess()).
   static NTSTATUS OpenProcessTokenExAction(const ClientInfo& client_info,
                                            HANDLE process,
@@ -71,14 +68,25 @@ class ProcessPolicy {
   // 'eval_result' : The desired policy action to accomplish.
   // 'app_name' : The full path of the process to be created.
   // 'command_line' : The command line passed to the created process.
+  // 'current_dir' : The CWD with which to spawn the child process.
   static DWORD CreateProcessWAction(EvalResult eval_result,
                                     const ClientInfo& client_info,
-                                    const base::string16 &app_name,
-                                    const base::string16 &command_line,
+                                    const base::string16& app_name,
+                                    const base::string16& command_line,
+                                    const base::string16& current_dir,
                                     PROCESS_INFORMATION* process_info);
+
+  // Processes a 'CreateThread()' request from the target.
+  // 'client_info' : the target process that is making the request.
+  static DWORD CreateThreadAction(const ClientInfo& client_info,
+                                  SIZE_T stack_size,
+                                  LPTHREAD_START_ROUTINE start_address,
+                                  PVOID parameter,
+                                  DWORD creation_flags,
+                                  LPDWORD thread_id,
+                                  HANDLE* handle);
 };
 
 }  // namespace sandbox
-
 
 #endif  // SANDBOX_SRC_PROCESS_THREAD_POLICY_H_

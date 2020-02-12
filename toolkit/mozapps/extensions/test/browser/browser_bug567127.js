@@ -8,129 +8,83 @@ var MockFilePicker = SpecialPowers.MockFilePicker;
 MockFilePicker.init(window);
 
 var gManagerWindow;
-var gSawInstallNotification = false;
 
-// This listens for the next opened window and checks it is of the right url.
-// opencallback is called when the new window is fully loaded
-// closecallback is called when the window is closed
-function WindowOpenListener(url, opencallback, closecallback) {
-  this.url = url;
-  this.opencallback = opencallback;
-  this.closecallback = closecallback;
+async function checkInstallConfirmation(...names) {
+  let notificationCount = 0;
+  let observer = {
+    observe(aSubject, aTopic, aData) {
+      var installInfo = aSubject.wrappedJSObject;
+      isnot(
+        installInfo.browser,
+        null,
+        "Notification should have non-null browser"
+      );
+      Assert.deepEqual(
+        installInfo.installs[0].installTelemetryInfo,
+        {
+          source: "about:addons",
+          method: "install-from-file",
+        },
+        "Got the expected installTelemetryInfo"
+      );
+      notificationCount++;
+    },
+  };
+  Services.obs.addObserver(observer, "addon-install-started");
 
-  var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
-                     .getService(Components.interfaces.nsIWindowMediator);
-  wm.addListener(this);
-}
+  let results = [];
 
-WindowOpenListener.prototype = {
-  url: null,
-  opencallback: null,
-  closecallback: null,
-  window: null,
-  domwindow: null,
+  let promise = promisePopupNotificationShown("addon-webext-permissions");
+  for (let i = 0; i < names.length; i++) {
+    let panel = await promise;
+    let name = panel.getAttribute("name");
+    results.push(name);
 
-  handleEvent: function(event) {
-    is(this.domwindow.document.location.href, this.url, "Should have opened the correct window");
+    info(`Saw install for ${name}`);
+    if (results.length < names.length) {
+      info(
+        `Waiting for installs for ${names.filter(n => !results.includes(n))}`
+      );
 
-    this.domwindow.removeEventListener("load", this, false);
-    // Allow any other load handlers to execute
-    var self = this;
-    executeSoon(function() { self.opencallback(self.domwindow); } );
-  },
-
-  onWindowTitleChange: function(window, title) {
-  },
-
-  onOpenWindow: function(window) {
-    if (this.window)
-      return;
-
-    this.window = window;
-    this.domwindow = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
-                           .getInterface(Components.interfaces.nsIDOMWindow);
-    this.domwindow.addEventListener("load", this, false);
-  },
-
-  onCloseWindow: function(window) {
-    if (this.window != window)
-      return;
-
-    var wm = Components.classes["@mozilla.org/appshell/window-mediator;1"]
-                       .getService(Components.interfaces.nsIWindowMediator);
-    wm.removeListener(this);
-    this.opencallback = null;
-    this.window = null;
-    this.domwindow = null;
-
-    // Let the window close complete
-    executeSoon(this.closecallback);
-    this.closecallback = null;
-  }
-};
-
-
-var gInstallNotificationObserver = {
-  observe: function(aSubject, aTopic, aData) {
-    var installInfo = aSubject.QueryInterface(Ci.amIWebInstallInfo);
-    if (gTestInWindow)
-      is(installInfo.browser, null, "Notification should have a null browser");
-    else
-      isnot(installInfo.browser, null, "Notification should have non-null browser");
-    gSawInstallNotification = true;
-    Services.obs.removeObserver(this, "addon-install-started");
-  }
-};
-
-
-function test_confirmation(aWindow, aExpectedURLs) {
-  var list = aWindow.document.getElementById("itemList");
-  is(list.childNodes.length, aExpectedURLs.length, "Should be the right number of installs");
-
-  for (let url of aExpectedURLs) {
-    let found = false;
-    for (let node of list.children) {
-      if (node.url == url) {
-        found = true;
-        break;
-      }
+      promise = promisePopupNotificationShown("addon-webext-permissions");
     }
-    ok(found, "Should have seen " + url + " in the list");
+    panel.secondaryButton.click();
   }
 
-  aWindow.document.documentElement.cancelDialog();
+  Assert.deepEqual(results.sort(), names.sort(), "Got expected installs");
+
+  is(
+    notificationCount,
+    names.length,
+    `Saw ${names.length} addon-install-started notification`
+  );
+  Services.obs.removeObserver(observer, "addon-install-started");
 }
 
-add_task(function* test_install_from_file() {
-  gManagerWindow = yield open_manager("addons://list/extension");
+add_task(async function test_install_from_file() {
+  gManagerWindow = await open_manager("addons://list/extension");
 
   var filePaths = [
-                   get_addon_file_url("browser_bug567127_1.xpi"),
-                   get_addon_file_url("browser_bug567127_2.xpi")
-                  ];
-  MockFilePicker.returnFiles = filePaths.map(aPath => aPath.file);
-
-  Services.obs.addObserver(gInstallNotificationObserver,
-                           "addon-install-started", false);
+    get_addon_file_url("browser_dragdrop1.xpi"),
+    get_addon_file_url("browser_dragdrop2.xpi"),
+  ];
+  for (let uri of filePaths) {
+    ok(uri.file != null, `Should have file for ${uri.spec}`);
+    ok(uri.file instanceof Ci.nsIFile, `Should have nsIFile for ${uri.spec}`);
+  }
+  MockFilePicker.setFiles(filePaths.map(aPath => aPath.file));
 
   // Set handler that executes the core test after the window opens,
   // and resolves the promise when the window closes
-  let pInstallURIClosed = new Promise((resolve, reject) => {
-    new WindowOpenListener(INSTALL_URI, function(aWindow) {
-      try {
-        test_confirmation(aWindow, filePaths.map(aPath => aPath.spec));
-      } catch (e) {
-        reject(e);
-      }
-    }, resolve);
-  });
+  let pInstallURIClosed = checkInstallConfirmation(
+    "Drag Drop test 1",
+    "Drag Drop test 2"
+  );
 
   gManagerWindow.gViewController.doCommand("cmd_installFromFile");
 
-  yield pInstallURIClosed;
-
-  is(gSawInstallNotification, true, "Should have seen addon-install-started notification.");
+  await pInstallURIClosed;
 
   MockFilePicker.cleanup();
-  yield close_manager(gManagerWindow);
+  await close_manager(gManagerWindow);
 });

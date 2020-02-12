@@ -10,15 +10,18 @@
 typedef long long GLint64;
 typedef unsigned long long GLuint64;
 
-[Pref="webgl.enable-webgl2"]
+[Pref="webgl.enable-webgl2",
+ Exposed=Window]
 interface WebGLSampler {
 };
 
-[Pref="webgl.enable-webgl2"]
+[Pref="webgl.enable-webgl2",
+ Exposed=Window]
 interface WebGLSync {
 };
 
-[Pref="webgl.enable-webgl2"]
+[Pref="webgl.enable-webgl2",
+ Exposed=Window]
 interface WebGLTransformFeedback {
 };
 
@@ -26,13 +29,13 @@ typedef (Uint32Array or sequence<GLuint>) Uint32List;
 
 // WebGL2 spec has this as an empty interface that pulls in everything
 // via WebGL2RenderingContextBase.
-[Pref="webgl.enable-webgl2"]
+[Pref="webgl.enable-webgl2",
+ Exposed=Window]
 interface WebGL2RenderingContext
 {
 };
 
-[NoInterfaceObject]
-interface WebGL2RenderingContextBase
+interface mixin WebGL2RenderingContextBase
 {
     const GLenum READ_BUFFER                                   = 0x0C02;
     const GLenum UNPACK_ROW_LENGTH                             = 0x0CF2;
@@ -280,6 +283,7 @@ interface WebGL2RenderingContextBase
     const GLenum ALREADY_SIGNALED                              = 0x911A;
     const GLenum TIMEOUT_EXPIRED                               = 0x911B;
     const GLenum CONDITION_SATISFIED                           = 0x911C;
+    [NeedsWindowsUndef]
     const GLenum WAIT_FAILED                                   = 0x911D;
     const GLenum SYNC_FLUSH_COMMANDS_BIT                       = 0x00000001;
     const GLenum VERTEX_ATTRIB_ARRAY_DIVISOR                   = 0x88FE;
@@ -511,19 +515,19 @@ interface WebGL2RenderingContextBase
                            GLint x, GLint y, GLsizei width, GLsizei height);
 
     void compressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width,
-                              GLsizei height, GLint border, GLintptr offset);
+                              GLsizei height, GLint border, GLsizei imageSize,  GLintptr offset);
     void compressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width,
                               GLsizei height, GLint border, ArrayBufferView srcData,
                               optional GLuint srcOffset = 0, optional GLuint srcLengthOverride = 0);
 
     void compressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width,
-                              GLsizei height, GLsizei depth, GLint border, GLintptr offset);
+                              GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, GLintptr offset);
     void compressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width,
                               GLsizei height, GLsizei depth, GLint border, ArrayBufferView srcData,
                               optional GLuint srcOffset = 0, optional GLuint srcLengthOverride = 0);
 
     void compressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
-                                 GLsizei width, GLsizei height, GLenum format, GLintptr offset);
+                                 GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, GLintptr offset);
     void compressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                                  GLsizei width, GLsizei height, GLenum format,
                                  ArrayBufferView srcData,
@@ -532,7 +536,7 @@ interface WebGL2RenderingContextBase
 
     void compressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                                  GLint zoffset, GLsizei width, GLsizei height, GLsizei depth,
-                                 GLenum format, GLintptr offset);
+                                 GLenum format, GLsizei imageSize, GLintptr offset);
     void compressedTexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                                  GLint zoffset, GLsizei width, GLsizei height, GLsizei depth,
                                  GLenum format, ArrayBufferView srcData,
@@ -611,14 +615,14 @@ interface WebGL2RenderingContextBase
 
     /* Reading back pixels */
     // WebGL1:
-    [Throws] // Throws on readback in a write-only context.
+    [Throws, NeedsCallerType] // Throws on readback in a write-only context.
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type,
                     ArrayBufferView? dstData);
     // WebGL2:
-    [Throws] // Throws on readback in a write-only context.
+    [Throws, NeedsCallerType] // Throws on readback in a write-only context.
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type,
                     GLintptr offset);
-    [Throws] // Throws on readback in a write-only context.
+    [Throws, NeedsCallerType] // Throws on readback in a write-only context.
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type,
                     ArrayBufferView dstData, GLuint dstOffset);
 
@@ -693,9 +697,21 @@ interface WebGL2RenderingContextBase
     void bindVertexArray(WebGLVertexArrayObject? array);
 };
 
-WebGL2RenderingContextBase implements WebGLRenderingContextBase;
-WebGL2RenderingContext implements WebGL2RenderingContextBase;
+WebGL2RenderingContext includes WebGLRenderingContextBase;
+WebGL2RenderingContext includes WebGL2RenderingContextBase;
 
-[NoInterfaceObject]
+[NoInterfaceObject,
+ Exposed=Window]
 interface EXT_color_buffer_float {
+};
+
+[NoInterfaceObject,
+ Exposed=Window]
+interface OVR_multiview2 {
+    const GLenum FRAMEBUFFER_ATTACHMENT_TEXTURE_NUM_VIEWS_OVR = 0x9630;
+    const GLenum FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR = 0x9632;
+    const GLenum MAX_VIEWS_OVR = 0x9631;
+    const GLenum FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_OVR = 0x9633;
+
+    void framebufferTextureMultiviewOVR(GLenum target, GLenum attachment, WebGLTexture? texture, GLint level, GLint baseViewIndex, GLsizei numViews);
 };

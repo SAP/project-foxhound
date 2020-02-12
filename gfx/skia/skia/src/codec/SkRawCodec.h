@@ -28,22 +28,26 @@ public:
      * Creates a RAW decoder
      * Takes ownership of the stream
      */
-    static SkCodec* NewFromStream(SkStream*);
+    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
 
     ~SkRawCodec() override;
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t dstRowBytes, const Options&,
-            SkPMColor*, int*, int*) override;
+            int*) override;
 
-    SkEncodedFormat onGetEncodedFormat() const override {
-        return kDNG_SkEncodedFormat;
+    SkEncodedImageFormat onGetEncodedFormat() const override {
+        return SkEncodedImageFormat::kDNG;
     }
 
     SkISize onGetScaledDimensions(float desiredScale) const override;
 
     bool onDimensionsSupported(const SkISize&) override;
+
+    // SkCodec only applies the colorXform if it's necessary for color space
+    // conversion. SkRawCodec will always convert, so tell SkCodec not to.
+    bool usesColorXform() const override { return false; }
 
 private:
 
@@ -53,7 +57,7 @@ private:
      */
     SkRawCodec(SkDngImage* dngImage);
 
-    SkAutoTDelete<SkDngImage> fDngImage;
+    std::unique_ptr<SkDngImage> fDngImage;
 
     typedef SkCodec INHERITED;
 };

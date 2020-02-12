@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=922681
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 922681</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
   function testInnerHTMLParserInsertionMode() {
@@ -76,11 +76,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=922681
     testInnerHTML(c, "<body>", "");
 
     function testTableBody(tag) {
-        var c = document.createElement(tag);
-        testInnerHTML(c, "abc", "abc");
-        testInnerHTML(c, "<td>", "<tr><td></td></tr>");
-        testInnerHTML(c, "</body>", "");
-        testInnerHTML(c, "<input>", "<input>");
+        var e = document.createElement(tag);
+        testInnerHTML(e, "abc", "abc");
+        testInnerHTML(e, "<td>", "<tr><td></td></tr>");
+        testInnerHTML(e, "</body>", "");
+        testInnerHTML(e, "<input>", "<input>");
     }
     testTableBody("thead");
     testTableBody("tbody");

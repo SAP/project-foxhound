@@ -9,103 +9,99 @@
 #include "mozilla/TimeStamp.h"
 
 #define NR_TRIALS 10000
-#define NR_SPAMS  25000
+#define NR_SPAMS 25000
 
 namespace mozilla {
 namespace _ipdltest {
 
-class TestLatencyParent :
-    public PTestLatencyParent
-{
-private:
-    typedef mozilla::TimeStamp TimeStamp;
-    typedef mozilla::TimeDuration TimeDuration;
+class TestLatencyParent : public PTestLatencyParent {
+  friend class PTestLatencyParent;
 
-public:
-    TestLatencyParent();
-    virtual ~TestLatencyParent();
+ private:
+  typedef mozilla::TimeStamp TimeStamp;
+  typedef mozilla::TimeDuration TimeDuration;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestLatencyParent();
+  virtual ~TestLatencyParent();
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:
-    virtual bool RecvPong() override;
-    virtual bool RecvPong5() override;
+  void Main();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
+ protected:
+  mozilla::ipc::IPCResult RecvPong();
+  mozilla::ipc::IPCResult RecvPong5();
 
-        passed("\n"
-               "  average #ping-pong/sec:        %g\n"
-               "  average #ping5-pong5/sec:      %g\n"
-               "  average #RPC call-answer/sec:  %g\n"
-               "  average #spams/sec:            %g\n"
-               "  pct. spams compressed away:    %g\n",
-               double(NR_TRIALS) / mPPTimeTotal.ToSecondsSigDigits(),
-               double(NR_TRIALS) / mPP5TimeTotal.ToSecondsSigDigits(),
-               double(NR_TRIALS) / mRpcTimeTotal.ToSecondsSigDigits(),
-               double(NR_SPAMS) / mSpamTimeTotal.ToSecondsSigDigits(),
-               100.0 * (double(NR_SPAMS - mNumChildProcessedCompressedSpams) /
-                        double(NR_SPAMS)));
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
 
-        QuitParent();
-    }
+    passed(
+        "\n"
+        "  average #ping-pong/sec:        %g\n"
+        "  average #ping5-pong5/sec:      %g\n"
+        "  average #RPC call-answer/sec:  %g\n"
+        "  average #spams/sec:            %g\n"
+        "  pct. spams compressed away:    %g\n",
+        double(NR_TRIALS) / mPPTimeTotal.ToSecondsSigDigits(),
+        double(NR_TRIALS) / mPP5TimeTotal.ToSecondsSigDigits(),
+        double(NR_TRIALS) / mRpcTimeTotal.ToSecondsSigDigits(),
+        double(NR_SPAMS) / mSpamTimeTotal.ToSecondsSigDigits(),
+        100.0 * (double(NR_SPAMS - mNumChildProcessedCompressedSpams) /
+                 double(NR_SPAMS)));
 
-private:
-    void PingPongTrial();
-    void Ping5Pong5Trial();
-    void RpcTrials();
-    void SpamTrial();
-    void CompressedSpamTrial();
-    void Exit();
+    QuitParent();
+  }
 
-    TimeStamp mStart;
-    TimeDuration mPPTimeTotal;
-    TimeDuration mPP5TimeTotal;
-    TimeDuration mRpcTimeTotal;
-    TimeDuration mSpamTimeTotal;
+ private:
+  void PingPongTrial();
+  void Ping5Pong5Trial();
+  void RpcTrials();
+  void SpamTrial();
+  void CompressedSpamTrial();
+  void Exit();
 
-    int mPPTrialsToGo;
-    int mPP5TrialsToGo;
-    uint32_t mNumChildProcessedCompressedSpams;
+  TimeStamp mStart;
+  TimeDuration mPPTimeTotal;
+  TimeDuration mPP5TimeTotal;
+  TimeDuration mRpcTimeTotal;
+  TimeDuration mSpamTimeTotal;
+
+  int mPPTrialsToGo;
+  int mPP5TrialsToGo;
+  uint32_t mNumChildProcessedCompressedSpams;
+  uint32_t mWhichPong5;
 };
 
+class TestLatencyChild : public PTestLatencyChild {
+  friend class PTestLatencyChild;
 
-class TestLatencyChild :
-    public PTestLatencyChild
-{
-public:
-    TestLatencyChild();
-    virtual ~TestLatencyChild();
+ public:
+  TestLatencyChild();
+  virtual ~TestLatencyChild();
 
-protected:
-    virtual bool RecvPing() override;
-    virtual bool RecvPing5() override;
-    virtual bool AnswerRpc() override;
-    virtual bool RecvSpam() override;
-    virtual bool AnswerSynchro() override;
-    virtual bool RecvCompressedSpam(const uint32_t& seqno) override;
-    virtual bool AnswerSynchro2(uint32_t* lastSeqno,
-                                uint32_t* numMessagesDispatched) override;
+ protected:
+  mozilla::ipc::IPCResult RecvPing();
+  mozilla::ipc::IPCResult RecvPing5();
+  mozilla::ipc::IPCResult AnswerRpc();
+  mozilla::ipc::IPCResult RecvSpam();
+  mozilla::ipc::IPCResult AnswerSynchro();
+  mozilla::ipc::IPCResult RecvCompressedSpam(const uint32_t& seqno);
+  mozilla::ipc::IPCResult AnswerSynchro2(uint32_t* lastSeqno,
+                                         uint32_t* numMessagesDispatched);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 
-    uint32_t mLastSeqno;
-    uint32_t mNumProcessedCompressedSpams;
+  uint32_t mLastSeqno;
+  uint32_t mNumProcessedCompressedSpams;
+  uint32_t mWhichPing5;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestLatency_h
+#endif  // ifndef mozilla__ipdltest_TestLatency_h

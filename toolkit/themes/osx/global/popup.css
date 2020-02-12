@@ -3,11 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
 
 menupopup,
 panel {
   -moz-appearance: menupopup;
+  -moz-font-smoothing-background-color: -moz-mac-menupopup;
   background-color: Menu;
+  color: MenuText;
 }
 
 menupopup > menu > menupopup {
@@ -41,86 +44,67 @@ panel[type="arrow"][side="right"] {
 
 .panel-arrowcontent {
   -moz-appearance: none;
-  background: var(--panel-arrowcontent-background);
-  border-radius: var(--panel-arrowcontent-border-radius);
-  box-shadow: 0 0 0 1px var(--panel-arrowcontent-border-color);
-  color: var(--panel-arrowcontent-color);
+  -moz-font-smoothing-background-color: var(--arrowpanel-background);
+  background: var(--arrowpanel-background);
+  border-radius: var(--arrowpanel-border-radius);
+  box-shadow: 0 0 0 1px var(--arrowpanel-border-color);
+  color: var(--arrowpanel-color);
   border: none;
-  padding: var(--panel-arrowcontent-padding);
+  padding: var(--arrowpanel-padding);
   margin: 1px;
 }
 
-.panel-arrow[side="top"] {
-  list-style-image: var(--panel-arrow-image-vertical,
-                        url("chrome://global/skin/arrow/panelarrow-vertical.png"));
+.panel-arrowcontent > html|slot {
+  /* propagate border-radius from arrowcontent to slotted children */
+  border-radius: inherit;
+}
+
+panel[type="arrow"].panel-no-padding::part(arrowcontent) {
+  padding: 0;
+  overflow: hidden; /* Don't let panel content overflow the border-radius */
+}
+
+:-moz-any(panel, menupopup)::part(arrow) {
+  -moz-context-properties: fill, stroke;
+  fill: var(--arrowpanel-background);
+  stroke: var(--arrowpanel-border-color);
+}
+
+:-moz-any(panel, menupopup)[side="top"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
   margin-left: 16px;
   margin-right: 16px;
   margin-bottom: -1px;
 }
 
-.panel-arrow[side="bottom"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.png");
+:-moz-any(panel, menupopup)[side="bottom"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
   -moz-transform: scaleY(-1);
   margin-left: 16px;
   margin-right: 16px;
   margin-top: -1px;
 }
 
-.panel-arrow[side="left"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.png");
+:-moz-any(panel, menupopup)[side="left"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   margin-top: 16px;
   margin-bottom: 16px;
   margin-right: -1px;
 }
 
-.panel-arrow[side="right"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.png");
+:-moz-any(panel, menupopup)[side="right"]::part(arrow) {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
   transform: scaleX(-1);
   margin-top: 16px;
   margin-bottom: 16px;
   margin-left: -1px;
 }
 
-@media (min-resolution: 2dppx) {
-  .panel-arrow[side="top"],
-  .panel-arrow[side="bottom"] {
-    list-style-image: var(--panel-arrow-image-vertical,
-                          url("chrome://global/skin/arrow/panelarrow-vertical@2x.png"));
-    width: 18px;
-    height: 10px;
-  }
-
-  .panel-arrow[side="left"],
-  .panel-arrow[side="right"] {
-    list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal@2x.png");
-    width: 10px;
-    height: 18px;
-  }
-}
-
-/* ::::: tooltip ::::: */
-
-tooltip {
-  -moz-appearance: tooltip;
-  margin-top: 18px;
-  padding: 2px 3px;
-  max-width: 40em;
-  color: InfoText;
-  font: message-box;
-  cursor: default;
-}
-
-tooltip[titletip="true"] {
- /* See bug 32157 comment 128
-  * margin: -2px 0px 0px -3px;
-  */
-  max-width: none;
-}
-
 /* rules for popups associated with menulists */
 
 menulist > menupopup {
   min-width: 0px;
+  padding: 4px 0;
 }
 
 menulist > menupopup:not([position]) {
@@ -128,14 +112,8 @@ menulist > menupopup:not([position]) {
   margin-top: -2px;
 }
 
-menulist[editable="true"] > menupopup {
+menupopup[customoptionstyling="true"] {
   -moz-appearance: none;
-}
-
-menulist > menupopup > .popup-internal-box {
-  padding: 0;
-}
-
-menulist:not([editable="true"]) > menupopup {
-  padding: 4px 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }

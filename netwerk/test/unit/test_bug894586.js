@@ -3,18 +3,17 @@
  * should not fail for channels of unknown size
  */
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+"use strict";
 
-var contentSecManager = Cc["@mozilla.org/contentsecuritymanager;1"]
-                          .getService(Ci.nsIContentSecurityManager);
+var contentSecManager = Cc["@mozilla.org/contentsecuritymanager;1"].getService(
+  Ci.nsIContentSecurityManager
+);
 
 function ProtocolHandler() {
-  this.uri = Cc["@mozilla.org/network/simple-uri;1"].
-               createInstance(Ci.nsIURI);
-  this.uri.spec = this.scheme + ":dummy";
-  this.uri.QueryInterface(Ci.nsIMutable).mutable = false;
+  this.uri = Cc["@mozilla.org/network/simple-uri-mutator;1"]
+    .createInstance(Ci.nsIURIMutator)
+    .setSpec(this.scheme + ":dummy")
+    .finalize();
 }
 
 ProtocolHandler.prototype = {
@@ -26,24 +25,20 @@ ProtocolHandler.prototype = {
     return -1;
   },
   get protocolFlags() {
-    return Ci.nsIProtocolHandler.URI_NORELATIVE |
-           Ci.nsIProtocolHandler.URI_NOAUTH |
-           Ci.nsIProtocolHandler.URI_IS_UI_RESOURCE |
-           Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE |
-           Ci.nsIProtocolHandler.URI_NON_PERSISTABLE |
-           Ci.nsIProtocolHandler.URI_SYNC_LOAD_IS_OK;
+    return (
+      Ci.nsIProtocolHandler.URI_NORELATIVE |
+      Ci.nsIProtocolHandler.URI_NOAUTH |
+      Ci.nsIProtocolHandler.URI_IS_UI_RESOURCE |
+      Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE |
+      Ci.nsIProtocolHandler.URI_NON_PERSISTABLE |
+      Ci.nsIProtocolHandler.URI_SYNC_LOAD_IS_OK
+    );
   },
-  newURI: function(aSpec, aOriginCharset, aBaseURI) {
-    return this.uri;
-  },
-  newChannel2: function(aURI, aLoadInfo) {
+  newChannel(aURI, aLoadInfo) {
     this.loadInfo = aLoadInfo;
     return this;
   },
-  newChannel: function(aURI) {
-    return this;
-  },
-  allowPort: function(port, scheme) {
+  allowPort(port, scheme) {
     return port != -1;
   },
 
@@ -62,42 +57,38 @@ ProtocolHandler.prototype = {
   get contentType() {
     return "text/css";
   },
-  set contentType(val) {
-  },
+  set contentType(val) {},
   contentCharset: "UTF-8",
   get contentLength() {
     return -1;
   },
   set contentLength(val) {
-    throw Components.Exception("Setting content length", NS_ERROR_NOT_IMPLEMENTED);
+    throw Components.Exception(
+      "Setting content length",
+      NS_ERROR_NOT_IMPLEMENTED
+    );
   },
-  open: function() {
-    var file = do_get_file("test_bug894586.js", false);
-    do_check_true(file.exists());
-    var url = Services.io.newFileURI(file);
-    return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true}).open2();
-  },
-  open2: function() {
+  open() {
     // throws an error if security checks fail
     contentSecManager.performSecurityCheck(this, null);
-    return this.open();
+
+    var file = do_get_file("test_bug894586.js", false);
+    Assert.ok(file.exists());
+    var url = Services.io.newFileURI(file);
+    return NetUtil.newChannel({
+      uri: url,
+      loadUsingSystemPrincipal: true,
+    }).open();
   },
-  asyncOpen: function(aListener, aContext) {
-    throw Components.Exception("Not implemented",
-                               Cr.NS_ERROR_NOT_IMPLEMENTED);
-  },
-  asyncOpen2: function(aListener, aContext) {
-    throw Components.Exception("Not implemented",
-                               Cr.NS_ERROR_NOT_IMPLEMENTED);
+  asyncOpen(aListener, aContext) {
+    throw Components.Exception("Not implemented", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
   contentDisposition: Ci.nsIChannel.DISPOSITION_INLINE,
   get contentDispositionFilename() {
-    throw Components.Exception("No file name",
-                               Cr.NS_ERROR_NOT_AVAILABLE);
+    throw Components.Exception("No file name", Cr.NS_ERROR_NOT_AVAILABLE);
   },
   get contentDispositionHeader() {
-    throw Components.Exception("No header",
-                               Cr.NS_ERROR_NOT_AVAILABLE);
+    throw Components.Exception("No header", Cr.NS_ERROR_NOT_AVAILABLE);
   },
 
   /** nsIRequest */
@@ -108,51 +99,59 @@ ProtocolHandler.prototype = {
   get status() {
     return Cr.NS_OK;
   },
-  cancel: function(status) {},
+  cancel(status) {},
   loadGroup: null,
-  loadFlags: Ci.nsIRequest.LOAD_NORMAL |
-             Ci.nsIRequest.INHIBIT_CACHING |
-             Ci.nsIRequest.LOAD_BYPASS_CACHE,
+  loadFlags:
+    Ci.nsIRequest.LOAD_NORMAL |
+    Ci.nsIRequest.INHIBIT_CACHING |
+    Ci.nsIRequest.LOAD_BYPASS_CACHE,
 
   /** nsIFactory */
-  createInstance: function(aOuter, aIID) {
+  createInstance(aOuter, aIID) {
     if (aOuter) {
-      throw Components.Exception("createInstance no aggregation",
-                                 Cr.NS_ERROR_NO_AGGREGATION);
+      throw Components.Exception(
+        "createInstance no aggregation",
+        Cr.NS_ERROR_NO_AGGREGATION
+      );
     }
     return this.QueryInterface(aIID);
   },
-  lockFactory: function() {},
+  lockFactory() {},
 
   /** nsISupports */
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIProtocolHandler,
-                                         Ci.nsIRequest,
-                                         Ci.nsIChannel,
-                                         Ci.nsIFactory]),
-  classID: Components.ID("{16d594bc-d9d8-47ae-a139-ea714dc0c35c}")
+  QueryInterface: ChromeUtils.generateQI([
+    Ci.nsIProtocolHandler,
+    Ci.nsIRequest,
+    Ci.nsIChannel,
+    Ci.nsIFactory,
+  ]),
+  classID: Components.ID("{16d594bc-d9d8-47ae-a139-ea714dc0c35c}"),
 };
 
 /**
  * Attempt a sync load; we use the stylesheet service to do this for us,
  * based on the knowledge that it forces a sync load under the hood.
  */
-function run_test()
-{
+function run_test() {
   var handler = new ProtocolHandler();
-  var registrar = Components.manager.
-                             QueryInterface(Ci.nsIComponentRegistrar);
-  registrar.registerFactory(handler.classID, "",
-                            "@mozilla.org/network/protocol;1?name=" + handler.scheme,
-                            handler);
+  var registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
+  registrar.registerFactory(
+    handler.classID,
+    "",
+    "@mozilla.org/network/protocol;1?name=" + handler.scheme,
+    handler
+  );
   try {
-    var ss = Cc["@mozilla.org/content/style-sheet-service;1"].
-               getService(Ci.nsIStyleSheetService);
+    var ss = Cc["@mozilla.org/content/style-sheet-service;1"].getService(
+      Ci.nsIStyleSheetService
+    );
     ss.loadAndRegisterSheet(handler.uri, Ci.nsIStyleSheetService.AGENT_SHEET);
-    do_check_true(ss.sheetRegistered(handler.uri, Ci.nsIStyleSheetService.AGENT_SHEET));
+    Assert.ok(
+      ss.sheetRegistered(handler.uri, Ci.nsIStyleSheetService.AGENT_SHEET)
+    );
   } finally {
     registrar.unregisterFactory(handler.classID, handler);
   }
 }
 
 // vim: set et ts=2 :
-

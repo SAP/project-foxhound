@@ -13,12 +13,13 @@ enum MediaDeviceKind {
   "videoinput"
 };
 
-[Func="Navigator::HasUserMediaSupport"]
+[Func="Navigator::HasUserMediaSupport",
+ Exposed=Window]
 interface MediaDeviceInfo {
   readonly attribute DOMString       deviceId;
   readonly attribute MediaDeviceKind kind;
   readonly attribute DOMString       label;
   readonly attribute DOMString       groupId;
 
-  jsonifier;
+  [Default] object toJSON();
 };

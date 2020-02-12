@@ -10,6 +10,7 @@ package org.mozilla.gecko.mozglue;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -22,15 +23,16 @@ import java.util.ArrayList;
 public class SafeIntent {
     private static final String LOGTAG = "Gecko" + SafeIntent.class.getSimpleName();
 
-    private final Intent intent;
+    private final Intent mIntent;
 
     public SafeIntent(final Intent intent) {
-        this.intent = intent;
+        stripDataUri(intent);
+        mIntent = intent;
     }
 
-    public boolean hasExtra(String name) {
+    public boolean hasExtra(final String name) {
         try {
-            return intent.hasExtra(name);
+            return mIntent.hasExtra(name);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't determine if intent had an extra: OOM. Malformed?");
             return false;
@@ -40,9 +42,21 @@ public class SafeIntent {
         }
     }
 
+    public @Nullable Bundle getExtras() {
+        try {
+            return mIntent.getExtras();
+        } catch (OutOfMemoryError e) {
+            Log.w(LOGTAG, "Couldn't get intent extras: OOM. Malformed?");
+            return null;
+        } catch (RuntimeException e) {
+            Log.w(LOGTAG, "Couldn't get intent extras.", e);
+            return null;
+        }
+    }
+
     public boolean getBooleanExtra(final String name, final boolean defaultValue) {
         try {
-            return intent.getBooleanExtra(name, defaultValue);
+            return mIntent.getBooleanExtra(name, defaultValue);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent extras: OOM. Malformed?");
             return defaultValue;
@@ -54,7 +68,7 @@ public class SafeIntent {
 
     public int getIntExtra(final String name, final int defaultValue) {
         try {
-            return intent.getIntExtra(name, defaultValue);
+            return mIntent.getIntExtra(name, defaultValue);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent extras: OOM. Malformed?");
             return defaultValue;
@@ -66,7 +80,7 @@ public class SafeIntent {
 
     public String getStringExtra(final String name) {
         try {
-            return intent.getStringExtra(name);
+            return mIntent.getStringExtra(name);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent extras: OOM. Malformed?");
             return null;
@@ -78,7 +92,7 @@ public class SafeIntent {
 
     public Bundle getBundleExtra(final String name) {
         try {
-            return intent.getBundleExtra(name);
+            return mIntent.getBundleExtra(name);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent extras: OOM. Malformed?");
             return null;
@@ -89,12 +103,12 @@ public class SafeIntent {
     }
 
     public String getAction() {
-        return intent.getAction();
+        return mIntent.getAction();
     }
 
     public String getDataString() {
         try {
-            return intent.getDataString();
+            return mIntent.getDataString();
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent data string: OOM. Malformed?");
             return null;
@@ -106,7 +120,7 @@ public class SafeIntent {
 
     public ArrayList<String> getStringArrayListExtra(final String name) {
         try {
-            return intent.getStringArrayListExtra(name);
+            return mIntent.getStringArrayListExtra(name);
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent data string: OOM. Malformed?");
             return null;
@@ -118,7 +132,7 @@ public class SafeIntent {
 
     public Uri getData() {
         try {
-            return intent.getData();
+            return mIntent.getData();
         } catch (OutOfMemoryError e) {
             Log.w(LOGTAG, "Couldn't get intent data: OOM. Malformed?");
             return null;
@@ -129,6 +143,21 @@ public class SafeIntent {
     }
 
     public Intent getUnsafe() {
-        return intent;
+        return mIntent;
+    }
+
+    private static void stripDataUri(final Intent intent) {
+        // We should limit intent filters and check incoming intents against white-list
+        // But for now we just strip 'about:reader?url='
+        if (intent != null && intent.getData() != null) {
+            final String url = intent.getData().toString();
+            final String prefix = "about:reader?url=";
+            if (url != null && url.startsWith(prefix)) {
+                final String strippedUrl = url.replace(prefix, "");
+                if (strippedUrl != null) {
+                    intent.setData(Uri.parse(strippedUrl));
+                }
+            }
+        }
     }
 }

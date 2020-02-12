@@ -7,7 +7,7 @@ Test swapFrameLoaders with different frame types and remoteness
 -->
 <window title="Mozilla Bug 1242644"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
 
   <!-- test results are displayed in the html:body -->
   <body xmlns="http://www.w3.org/1999/xhtml">
@@ -19,7 +19,7 @@ Test swapFrameLoaders with different frame types and remoteness
   <script type="application/javascript"><![CDATA[
   SimpleTest.waitForExplicitFinish();
 
-  window.open("window_swapFrameLoaders.xul", "bug1242644",
-              "chrome,width=600,height=600");
+  window.openDialog("window_swapFrameLoaders.xul", "bug1242644",
+                    "chrome,width=600,height=600,noopener", window);
   ]]></script>
 </window>

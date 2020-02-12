@@ -10,22 +10,20 @@
 
 G_BEGIN_DECLS
 
-typedef struct _maiRedundantObjectFactory       maiRedundantObjectFactory;
-typedef struct _maiRedundantObjectFactoryClass  maiRedundantObjectFactoryClass;
+typedef struct _maiRedundantObjectFactory maiRedundantObjectFactory;
+typedef struct _maiRedundantObjectFactoryClass maiRedundantObjectFactoryClass;
 
-struct _maiRedundantObjectFactory
-{
+struct _maiRedundantObjectFactory {
   AtkObjectFactory parent;
 };
 
-struct _maiRedundantObjectFactoryClass
-{
+struct _maiRedundantObjectFactoryClass {
   AtkObjectFactoryClass parent_class;
 };
 
 GType mai_redundant_object_factory_get_type();
 
-AtkObjectFactory *mai_redundant_object_factory_new();
+AtkObjectFactory* mai_redundant_object_factory_new();
 
 G_END_DECLS
 

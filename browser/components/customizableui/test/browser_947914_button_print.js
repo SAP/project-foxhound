@@ -1,45 +1,55 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
-  * License, v. 2.0. If a copy of the MPL was not distributed with this
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const isOSX = (Services.appinfo.OS === "Darwin");
+const isOSX = Services.appinfo.OS === "Darwin";
 
-add_task(function*() {
-  yield BrowserTestUtils.withNewTab({
-    gBrowser,
-    url: "http://example.com/",
-  }, function* () {
-    info("Check print button existence and functionality");
+add_task(async function() {
+  CustomizableUI.addWidgetToArea(
+    "print-button",
+    CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
+  );
+  registerCleanupFunction(() => CustomizableUI.reset());
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "http://example.com/",
+    },
+    async function() {
+      info("Check print button existence and functionality");
 
-    yield PanelUI.show();
-    info("Menu panel was opened");
+      await waitForOverflowButtonShown();
 
-    yield waitForCondition(() => document.getElementById("print-button") != null);
+      await document.getElementById("nav-bar").overflowable.show();
+      info("Menu panel was opened");
 
-    let printButton = document.getElementById("print-button");
-    ok(printButton, "Print button exists in Panel Menu");
+      await waitForCondition(
+        () => document.getElementById("print-button") != null
+      );
 
-    if (isOSX) {
-      let panelHiddenPromise = promisePanelHidden(window);
-      PanelUI.hide();
-      yield panelHiddenPromise;
-      info("Menu panel was closed");
-    }
-    else {
-      printButton.click();
-      yield waitForCondition(() => gInPrintPreviewMode);
+      let printButton = document.getElementById("print-button");
+      ok(printButton, "Print button exists in Panel Menu");
 
-      ok(gInPrintPreviewMode, "Entered print preview mode");
+      if (isOSX) {
+        let panelHiddenPromise = promiseOverflowHidden(window);
+        document.getElementById("widget-overflow").hidePopup();
+        await panelHiddenPromise;
+        info("Menu panel was closed");
+      } else {
+        printButton.click();
+        await waitForCondition(() => gInPrintPreviewMode);
 
-      // close print preview
-      if (gInPrintPreviewMode) {
-        PrintUtils.exitPrintPreview();
-        yield waitForCondition(() => !window.gInPrintPreviewMode);
-        info("Exited print preview")
+        ok(gInPrintPreviewMode, "Entered print preview mode");
+
+        // close print preview
+        if (gInPrintPreviewMode) {
+          PrintUtils.exitPrintPreview();
+          await waitForCondition(() => !window.gInPrintPreviewMode);
+          info("Exited print preview");
+        }
       }
     }
-  });
+  );
 });
-

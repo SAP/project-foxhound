@@ -6,13 +6,13 @@
         onload="setTimeout(runTest, 0)"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript" src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <script>
 SimpleTest.waitForExplicitFinish();
 function runTest()
 {
-  window.open("window_tooltip.xul", "_blank", "chrome,width=700,height=700");
+  window.openDialog("window_tooltip.xul", "_blank", "chrome,width=700,height=700,noopener", window);
 }
 </script>
 

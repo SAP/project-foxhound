@@ -1,6 +1,4 @@
-var Ci = Components.interfaces,
-    Cc = Components.classes,
-    CC = Components.Constructor;
+var CC = Components.Constructor;
 var converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
                   .createInstance(Ci.nsIScriptableUnicodeConverter);
 converter.charset = "UTF-8";
@@ -17,7 +15,7 @@ function test_char(code) {
     var utf8Result = stream.read(stream.available());
     stream.close();
     var result = converter.ConvertToUnicode(utf8Result);
-    do_check_eq(escape(original), escape(result));
+    Assert.equal(escape(original), escape(result));
 }
 
 function run_test() {

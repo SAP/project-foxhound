@@ -6,67 +6,92 @@
  */
 
 #include "SkCodecImageGenerator.h"
+#include "SkMakeUnique.h"
+#include "SkPixmapPriv.h"
+#include "SkYUVAIndex.h"
 
-SkImageGenerator* SkCodecImageGenerator::NewFromEncodedCodec(SkData* data) {
-    SkCodec* codec = SkCodec::NewFromData(data);
+std::unique_ptr<SkImageGenerator> SkCodecImageGenerator::MakeFromEncodedCodec(sk_sp<SkData> data) {
+    auto codec = SkCodec::MakeFromData(data);
     if (nullptr == codec) {
         return nullptr;
     }
 
-    return new SkCodecImageGenerator(codec, data);
+    return std::unique_ptr<SkImageGenerator>(new SkCodecImageGenerator(std::move(codec), data));
 }
 
-// FIXME: We should expose information about the encoded format on the
-//        SkImageGenerator, so the client can interpret the encoded
-//        format and request an output format.  For now, as a workaround,
-//        we guess what output format the client wants.
-static SkImageInfo fix_info(const SkCodec& codec) {
-    const SkImageInfo& info = codec.getInfo();
-    SkAlphaType alphaType = (kUnpremul_SkAlphaType == info.alphaType()) ? kPremul_SkAlphaType :
-            info.alphaType();
-
-    // Crudely guess that the presence of a color space means sRGB.
-    SkColorProfileType profileType = (codec.getColorSpace()) ? kSRGB_SkColorProfileType :
-            kLinear_SkColorProfileType;
-
-    return SkImageInfo::Make(info.width(), info.height(), info.colorType(), alphaType, profileType);
+std::unique_ptr<SkImageGenerator>
+SkCodecImageGenerator::MakeFromCodec(std::unique_ptr<SkCodec> codec) {
+    return codec
+        ? std::unique_ptr<SkImageGenerator>(new SkCodecImageGenerator(std::move(codec), nullptr))
+        : nullptr;
 }
 
-SkCodecImageGenerator::SkCodecImageGenerator(SkCodec* codec, SkData* data)
-    : INHERITED(fix_info(*codec))
-    , fCodec(codec)
-    , fData(SkRef(data))
+static SkImageInfo adjust_info(SkCodec* codec) {
+    SkImageInfo info = codec->getInfo();
+    if (kUnpremul_SkAlphaType == info.alphaType()) {
+        info = info.makeAlphaType(kPremul_SkAlphaType);
+    }
+    if (SkPixmapPriv::ShouldSwapWidthHeight(codec->getOrigin())) {
+        info = SkPixmapPriv::SwapWidthHeight(info);
+    }
+    return info;
+}
+
+SkCodecImageGenerator::SkCodecImageGenerator(std::unique_ptr<SkCodec> codec, sk_sp<SkData> data)
+    : INHERITED(adjust_info(codec.get()))
+    , fCodec(std::move(codec))
+    , fData(std::move(data))
 {}
 
-SkData* SkCodecImageGenerator::onRefEncodedData(SK_REFENCODEDDATA_CTXPARAM) {
-    return SkRef(fData.get());
+sk_sp<SkData> SkCodecImageGenerator::onRefEncodedData() {
+    return fData;
 }
 
-bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
-        SkPMColor ctable[], int* ctableCount) {
+bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& requestInfo, void* requestPixels,
+                                        size_t requestRowBytes, const Options&) {
+    SkPixmap dst(requestInfo, requestPixels, requestRowBytes);
 
-    SkCodec::Result result = fCodec->getPixels(info, pixels, rowBytes, nullptr, ctable,
-            ctableCount);
-    switch (result) {
-        case SkCodec::kSuccess:
-        case SkCodec::kIncompleteInput:
-            return true;
-        default:
-            return false;
-    }
+    auto decode = [this](const SkPixmap& pm) {
+        SkCodec::Result result = fCodec->getPixels(pm);
+        switch (result) {
+            case SkCodec::kSuccess:
+            case SkCodec::kIncompleteInput:
+            case SkCodec::kErrorInInput:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    return SkPixmapPriv::Orient(dst, fCodec->getOrigin(), decode);
 }
 
-bool SkCodecImageGenerator::onQueryYUV8(SkYUVSizeInfo* sizeInfo, SkYUVColorSpace* colorSpace) const
-{
+bool SkCodecImageGenerator::onQueryYUVA8(SkYUVASizeInfo* sizeInfo,
+                                         SkYUVAIndex yuvaIndices[SkYUVAIndex::kIndexCount],
+                                         SkYUVColorSpace* colorSpace) const {
+    // This image generator always returns 3 separate non-interleaved planes
+    yuvaIndices[SkYUVAIndex::kY_Index].fIndex = 0;
+    yuvaIndices[SkYUVAIndex::kY_Index].fChannel = SkColorChannel::kR;
+    yuvaIndices[SkYUVAIndex::kU_Index].fIndex = 1;
+    yuvaIndices[SkYUVAIndex::kU_Index].fChannel = SkColorChannel::kR;
+    yuvaIndices[SkYUVAIndex::kV_Index].fIndex = 2;
+    yuvaIndices[SkYUVAIndex::kV_Index].fChannel = SkColorChannel::kR;
+    yuvaIndices[SkYUVAIndex::kA_Index].fIndex = -1;
+    yuvaIndices[SkYUVAIndex::kA_Index].fChannel = SkColorChannel::kR;
+
     return fCodec->queryYUV8(sizeInfo, colorSpace);
 }
 
-bool SkCodecImageGenerator::onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) {
+bool SkCodecImageGenerator::onGetYUVA8Planes(const SkYUVASizeInfo& sizeInfo,
+                                             const SkYUVAIndex indices[SkYUVAIndex::kIndexCount],
+                                             void* planes[]) {
     SkCodec::Result result = fCodec->getYUV8Planes(sizeInfo, planes);
+    // TODO: check indices
 
     switch (result) {
         case SkCodec::kSuccess:
         case SkCodec::kIncompleteInput:
+        case SkCodec::kErrorInInput:
             return true;
         default:
             return false;

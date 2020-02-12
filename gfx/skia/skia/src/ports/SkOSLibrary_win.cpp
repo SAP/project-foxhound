@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 #include "SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN32)
+#if defined(SK_BUILD_FOR_WIN)
 
 #include "SkOSLibrary.h"
-#include <windows.h>
+#include "SkLeanWindows.h"
 
 void* DynamicLoadLibrary(const char* libraryName) {
     return LoadLibraryA(libraryName);
@@ -18,4 +18,4 @@ void* GetProcedureAddress(void* library, const char* functionName) {
     return reinterpret_cast<void*>(::GetProcAddress((HMODULE)library, functionName));
 }
 
-#endif//defined(SK_BUILD_FOR_WIN32)
+#endif//defined(SK_BUILD_FOR_WIN)

@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test that a video element has set video dimensions on loadedmetadata</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -54,7 +54,7 @@ var startTest = function(test, token) {
     }
 
     if (v === v2) {
-      vout.src = URL.createObjectURL(v2.mozCaptureStreamUntilEnded());
+      vout.srcObject = v2.mozCaptureStreamUntilEnded();
       v2.play();
       vout.play();
     }

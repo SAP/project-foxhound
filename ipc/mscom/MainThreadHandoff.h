@@ -20,23 +20,32 @@ namespace mscom {
 
 struct ArrayData;
 
-class MainThreadHandoff final : public IInterceptorSink
-                              , public ICallFrameWalker
-{
-public:
-  static HRESULT Create(IInterceptorSink** aOutput);
+class MainThreadHandoff final : public IInterceptorSink,
+                                public ICallFrameWalker {
+ public:
+  static HRESULT Create(IHandlerProvider* aHandlerProvider,
+                        IInterceptorSink** aOutput);
 
   template <typename Interface>
   static HRESULT WrapInterface(STAUniquePtr<Interface> aTargetInterface,
-                               Interface** aOutInterface)
-  {
+                               Interface** aOutInterface) {
+    return WrapInterface<Interface>(std::move(aTargetInterface), nullptr,
+                                    aOutInterface);
+  }
+
+  template <typename Interface>
+  static HRESULT WrapInterface(STAUniquePtr<Interface> aTargetInterface,
+                               IHandlerProvider* aHandlerProvider,
+                               Interface** aOutInterface) {
     MOZ_ASSERT(!IsProxy(aTargetInterface.get()));
     RefPtr<IInterceptorSink> handoff;
-    HRESULT hr = MainThreadHandoff::Create(getter_AddRefs(handoff));
+    HRESULT hr =
+        MainThreadHandoff::Create(aHandlerProvider, getter_AddRefs(handoff));
     if (FAILED(hr)) {
       return hr;
     }
-    return CreateInterceptor(Move(aTargetInterface), handoff, aOutInterface);
+    return CreateInterceptor(std::move(aTargetInterface), handoff,
+                             aOutInterface);
   }
 
   // IUnknown
@@ -49,23 +58,31 @@ public:
 
   // IInterceptorSink
   STDMETHODIMP SetInterceptor(IWeakReference* aInterceptor) override;
+  STDMETHODIMP GetHandler(NotNull<CLSID*> aHandlerClsid) override;
+  STDMETHODIMP GetHandlerPayloadSize(NotNull<IInterceptor*> aInterceptor,
+                                     NotNull<DWORD*> aOutPayloadSize) override;
+  STDMETHODIMP WriteHandlerPayload(NotNull<IInterceptor*> aInterceptor,
+                                   NotNull<IStream*> aStream) override;
+  STDMETHODIMP_(REFIID) MarshalAs(REFIID aIid) override;
+  STDMETHODIMP DisconnectHandlerRemotes() override;
 
   // ICallFrameWalker
   STDMETHODIMP OnWalkInterface(REFIID aIid, PVOID* aInterface, BOOL aIsInParam,
                                BOOL aIsOutParam) override;
 
-private:
-  MainThreadHandoff();
+ private:
+  explicit MainThreadHandoff(IHandlerProvider* aHandlerProvider);
   ~MainThreadHandoff();
-  HRESULT FixArrayElements(ICallFrame* aFrame,
-                           const ArrayData& aArrayData);
+  HRESULT FixArrayElements(ICallFrame* aFrame, const ArrayData& aArrayData);
+  HRESULT FixIServiceProvider(ICallFrame* aFrame);
 
-private:
-  ULONG                   mRefCnt;
-  RefPtr<IWeakReference>  mInterceptor;
+ private:
+  ULONG mRefCnt;
+  RefPtr<IWeakReference> mInterceptor;
+  RefPtr<IHandlerProvider> mHandlerProvider;
 };
 
-} // namespace mscom
-} // namespace mozilla
+}  // namespace mscom
+}  // namespace mozilla
 
-#endif // mozilla_mscom_MainThreadHandoff_h
+#endif  // mozilla_mscom_MainThreadHandoff_h

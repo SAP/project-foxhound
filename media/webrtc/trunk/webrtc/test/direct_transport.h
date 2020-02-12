@@ -7,19 +7,19 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#ifndef WEBRTC_VIDEO_ENGINE_TEST_COMMON_DIRECT_TRANSPORT_H_
-#define WEBRTC_VIDEO_ENGINE_TEST_COMMON_DIRECT_TRANSPORT_H_
+#ifndef TEST_DIRECT_TRANSPORT_H_
+#define TEST_DIRECT_TRANSPORT_H_
 
 #include <assert.h>
 
-#include <deque>
+#include <memory>
 
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/event_wrapper.h"
-#include "webrtc/system_wrappers/interface/thread_wrapper.h"
-#include "webrtc/test/fake_network_pipe.h"
-#include "webrtc/transport.h"
+#include "api/call/transport.h"
+#include "call/call.h"
+#include "rtc_base/sequenced_task_checker.h"
+#include "rtc_base/thread_annotations.h"
+#include "test/fake_network_pipe.h"
+#include "test/single_threaded_task_queue.h"
 
 namespace webrtc {
 
@@ -28,34 +28,59 @@ class PacketReceiver;
 
 namespace test {
 
-class DirectTransport : public newapi::Transport {
+// Objects of this class are expected to be allocated and destroyed  on the
+// same task-queue - the one that's passed in via the constructor.
+class DirectTransport : public Transport {
  public:
-  DirectTransport();
-  explicit DirectTransport(const FakeNetworkPipe::Config& config);
-  ~DirectTransport();
+  DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
+                  Call* send_call,
+                  const std::map<uint8_t, MediaType>& payload_type_map);
+
+  DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
+                  const FakeNetworkPipe::Config& config,
+                  Call* send_call,
+                  const std::map<uint8_t, MediaType>& payload_type_map);
+
+  DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
+                  const FakeNetworkPipe::Config& config,
+                  Call* send_call,
+                  std::unique_ptr<Demuxer> demuxer);
+
+  DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
+                  std::unique_ptr<FakeNetworkPipe> pipe, Call* send_call);
+
+  ~DirectTransport() override;
 
   void SetConfig(const FakeNetworkPipe::Config& config);
 
-  virtual void StopSending();
+  RTC_DEPRECATED void StopSending();
+
+  // TODO(holmer): Look into moving this to the constructor.
   virtual void SetReceiver(PacketReceiver* receiver);
 
-  bool SendRtp(const uint8_t* data, size_t length) override;
+  bool SendRtp(const uint8_t* data,
+               size_t length,
+               const PacketOptions& options) override;
   bool SendRtcp(const uint8_t* data, size_t length) override;
 
- private:
-  static bool NetworkProcess(void* transport);
-  bool SendPackets();
+  int GetAverageDelayMs();
 
-  rtc::scoped_ptr<CriticalSectionWrapper> lock_;
-  rtc::scoped_ptr<EventWrapper> packet_event_;
-  rtc::scoped_ptr<ThreadWrapper> thread_;
+ private:
+  void SendPackets();
+  void Start();
+
+  Call* const send_call_;
   Clock* const clock_;
 
-  bool shutting_down_;
+  SingleThreadedTaskQueueForTesting* const task_queue_;
+  SingleThreadedTaskQueueForTesting::TaskId next_scheduled_task_
+      RTC_GUARDED_BY(&sequence_checker_);
 
-  FakeNetworkPipe fake_network_;
+  std::unique_ptr<FakeNetworkPipe> fake_network_;
+
+  rtc::SequencedTaskChecker sequence_checker_;
 };
 }  // namespace test
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_ENGINE_TEST_COMMON_DIRECT_TRANSPORT_H_
+#endif  // TEST_DIRECT_TRANSPORT_H_

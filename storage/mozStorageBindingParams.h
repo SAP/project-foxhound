@@ -22,10 +22,9 @@
 namespace mozilla {
 namespace storage {
 
-class BindingParams : public mozIStorageBindingParams
-                    , public IStorageBindingParamsInternal
-{
-public:
+class BindingParams : public mozIStorageBindingParams,
+                      public IStorageBindingParamsInternal {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_MOZISTORAGEBINDINGPARAMS
   NS_DECL_ISTORAGEBINDINGPARAMSINTERNAL
@@ -44,27 +43,27 @@ public:
    *        and our invariant requires us to have this, so you need to tell us
    *        again.
    */
-  void unlock(Statement *aOwningStatement);
+  void unlock(Statement* aOwningStatement);
 
   /**
    * @returns the pointer to the owning BindingParamsArray.  Used by a
    *          BindingParamsArray to verify that we belong to it when added.
    */
-  const mozIStorageBindingParamsArray *getOwner() const;
+  const mozIStorageBindingParamsArray* getOwner() const;
 
-  BindingParams(mozIStorageBindingParamsArray *aOwningArray,
-                Statement *aOwningStatement);
-protected:
+  BindingParams(mozIStorageBindingParamsArray* aOwningArray,
+                Statement* aOwningStatement);
+
+ protected:
   virtual ~BindingParams() {}
 
-  explicit BindingParams(mozIStorageBindingParamsArray *aOwningArray);
+  explicit BindingParams(mozIStorageBindingParamsArray* aOwningArray);
   // Note that this is managed as a sparse array, so particular caution should
   // be used for out-of-bounds usage.
   nsTArray<RefPtr<Variant_base> > mParameters;
   bool mLocked;
 
-private:
-
+ private:
   /**
    * Track the BindingParamsArray that created us until we are added to it.
    * (Once we are added we are locked and no one needs to look up our owner.)
@@ -78,7 +77,7 @@ private:
    * Not reference-counted because this is only non-null as long as mOwningArray
    * is non-null and mOwningArray also holds a statement reference.
    */
-  Statement *mOwningStatement;
+  Statement* mOwningStatement;
   uint32_t mParamCount;
 };
 
@@ -91,23 +90,22 @@ private:
  * We support *either* binding by name or binding by index.  Trying to do both
  * results in only binding by name at sqlite3_stmt bind time.
  */
-class AsyncBindingParams : public BindingParams
-{
-public:
-  NS_IMETHOD BindByName(const nsACString & aName,
-                                      nsIVariant *aValue);
-  NS_IMETHOD BindByIndex(uint32_t aIndex, nsIVariant *aValue);
+class AsyncBindingParams : public BindingParams {
+ public:
+  NS_IMETHOD BindByName(const nsACString& aName, nsIVariant* aValue) override;
+  NS_IMETHOD BindByIndex(uint32_t aIndex, nsIVariant* aValue) override;
 
-  virtual already_AddRefed<mozIStorageError> bind(sqlite3_stmt * aStatement);
+  virtual already_AddRefed<mozIStorageError> bind(
+      sqlite3_stmt* aStatement) override;
 
-  explicit AsyncBindingParams(mozIStorageBindingParamsArray *aOwningArray);
+  explicit AsyncBindingParams(mozIStorageBindingParamsArray* aOwningArray);
   virtual ~AsyncBindingParams() {}
 
-private:
+ private:
   nsInterfaceHashtable<nsCStringHashKey, nsIVariant> mNamedParameters;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
-#endif // mozStorageBindingParams_h
+#endif  // mozStorageBindingParams_h

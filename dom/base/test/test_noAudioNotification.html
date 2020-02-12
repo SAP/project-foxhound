@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for video controller in windows</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -14,7 +14,7 @@
 SimpleTest.waitForExplicitFinish();
 
 var observer = {
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     ok(false, "should not receive audio-playback notification!");
   }
 };
@@ -39,7 +39,7 @@ video.onplay = video.onpause  = function() {
 
 var tests = [
   function() {
-    observerService.addObserver(observer, "audio-playback", false);
+    observerService.addObserver(observer, "audio-playback");
     ok(true, "Observer set");
     runTest();
   },

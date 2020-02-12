@@ -5,23 +5,31 @@
 
 #include "nsISupports.idl"
 
-interface nsIDOMStorage;
 interface nsIPrincipal;
 interface mozIDOMWindow;
 
+webidl Storage;
+
 /**
  * General purpose interface that has two implementations, for localStorage
- * resp. sessionStorage with "@mozilla.org/dom/localStorage-manager;1" resp.
- * "@mozilla.org/dom/sessionStorage-manager;1" contract IDs.
+ * with "@mozilla.org/dom/localStorage-manager;1".
  */
 [scriptable, uuid(a20c742e-3ed1-44fb-b897-4080a75b1662)]
 interface nsIDOMStorageManager : nsISupports
 {
   /**
    * This starts async preloading of a storage cache for scope
-   * defined by the principal.
+   * defined by the principal and storage principal.
+   *
+   * Because of how multi-e10s support was implemented in bug 1285898, the
+   * StorageCache instance can no longer use a timer to keep itself alive.  So a
+   * Storage instance is returned if precaching believes the storage principal may
+   * have localStorage data.  (Previously the StorageCache would be brought into
+   * existence and kept alive by the timer so that it could be returned if a
+   * call to createStorage was made due to a request by the page.)
    */
-  void precacheStorage(in nsIPrincipal aPrincipal);
+  Storage precacheStorage(in nsIPrincipal aPrincipal,
+                          in nsIPrincipal aStoragePrincipal);
 
   /**
    * Returns instance of DOM storage object for given principal.
@@ -32,15 +40,24 @@ interface nsIDOMStorageManager : nsISupports
    *    The parent window.
    * @param aPrincipal
    *    Principal to bound storage to.
+   * @param aStoragePrincipal
+   *    StoragePrincipal to bound storage to.
    * @param aDocumentURI
    *    URL of the demanding document, used for DOM storage event only.
    * @param aPrivate
    *    Whether the demanding document is running in Private Browsing mode or not.
    */
-  nsIDOMStorage createStorage(in mozIDOMWindow aWindow,
-                              in nsIPrincipal aPrincipal,
-                              in DOMString aDocumentURI);
+  Storage createStorage(in mozIDOMWindow aWindow,
+                        in nsIPrincipal aPrincipal,
+                        in nsIPrincipal aStoragePrincipal,
+                        in AString aDocumentURI,
+                        [optional] in bool aPrivate);
   /**
+   * DEPRECATED.  The only good reason to use this was if you were writing a
+   * test and wanted to hackily determine if a preload happened.  That's now
+   * covered by `nsILocalStorageManager.isPreloaded` and you should use that if
+   * that's what you want.  If LSNG is in use, this will throw.
+   *
    * Returns instance of DOM storage object for given principal.
    * If there is no storage managed for the scope, then null is returned and
    * no object is created.  Otherwise, an object (new) for the existing storage
@@ -50,11 +67,15 @@ interface nsIDOMStorageManager : nsISupports
    *    The parent window.
    * @param aPrincipal
    *    Principal to bound storage to.
+   * @param aStoragePrincipal
+   *    StoragePrincipal to bound storage to.
    * @param aPrivate
    *    Whether the demanding document is running in Private Browsing mode or not.
    */
-  nsIDOMStorage getStorage(in mozIDOMWindow aWindow,
-                           in nsIPrincipal aPrincipal);
+  Storage getStorage(in mozIDOMWindow aWindow,
+                     in nsIPrincipal aPrincipal,
+                     in nsIPrincipal aStoragePrincipal,
+                     [optional] in bool aPrivate);
 
   /**
    * Clones given storage into this storage manager.
@@ -65,7 +86,7 @@ interface nsIDOMStorageManager : nsISupports
    *    the moment this method was called.  Modification to this new object will
    *    not affect the original storage content we cloned from and vice versa.
    */
-  void cloneStorage(in nsIDOMStorage aStorageToCloneFrom);
+  void cloneStorage(in Storage aStorageToCloneFrom);
 
   /**
    * Returns true if the storage belongs to the given principal and is managed
@@ -82,21 +103,5 @@ interface nsIDOMStorageManager : nsISupports
    *    false otherwise
    */
   bool checkStorage(in nsIPrincipal aPrincipal,
-                    in nsIDOMStorage aStorage);
-
-  /**
-   * @deprecated
-   *
-   * Returns instance of localStorage object for aURI's origin.
-   * This method ensures there is always only a single instance
-   * for a single origin.
-   *
-   * Currently just forwards to the createStorage method of this
-   * interface.
-   *
-   * Extension developers are strongly encouraged to use getStorage
-   * or createStorage method instead.
-   */
-  nsIDOMStorage getLocalStorageForPrincipal(in nsIPrincipal aPrincipal,
-                                            in DOMString aDocumentURI);
+                    in Storage aStorage);
 };

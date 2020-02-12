@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(nsMediaFragmentURIParser_h__)
-#define nsMediaFragmentURIParser_h__
+#  define nsMediaFragmentURIParser_h__
 
-#include "mozilla/Maybe.h"
-#include "nsStringFwd.h"
-#include "nsRect.h"
+#  include "mozilla/Maybe.h"
+#  include "nsStringFwd.h"
+#  include "nsRect.h"
 
 class nsIURI;
 
@@ -21,17 +21,16 @@ class nsIURI;
 //    using e.g. HasStartTime().
 // c) If the values are valid, obtain them using e.g. GetStartTime().
 
-namespace mozilla { namespace net {
+namespace mozilla {
+namespace net {
 
-enum ClipUnit
-{
+enum ClipUnit {
   eClipUnit_Pixel,
   eClipUnit_Percent,
 };
 
-class nsMediaFragmentURIParser
-{
-public:
+class nsMediaFragmentURIParser {
+ public:
   // Create a parser with the provided URI.
   explicit nsMediaFragmentURIParser(nsIURI* aURI);
 
@@ -64,11 +63,7 @@ public:
   // returns the unit used.
   ClipUnit GetClipUnit() const { return mClipUnit; }
 
-  bool HasSampleSize() const { return mSampleSize.isSome(); }
-
-  int GetSampleSize() const { return *mSampleSize; }
-
-private:
+ private:
   // Parse the URI ref provided, looking for media fragments. This is
   // the top-level parser the invokes the others below.
   void Parse(nsACString& aRef);
@@ -90,17 +85,15 @@ private:
   bool ParseNPTSS(nsDependentSubstring& aString, uint32_t& aSecond);
   bool ParseXYWH(nsDependentSubstring aString);
   bool ParseMozResolution(nsDependentSubstring aString);
-  bool ParseMozSampleSize(nsDependentSubstring aString);
 
   // Media fragment information.
-  Maybe<double>    mStart;
-  Maybe<double>    mEnd;
+  Maybe<double> mStart;
+  Maybe<double> mEnd;
   Maybe<nsIntRect> mClip;
-  ClipUnit         mClipUnit;
-  Maybe<int>       mSampleSize;
+  ClipUnit mClipUnit;
 };
 
-} // namespace net
-} // namespace mozilla
+}  // namespace net
+}  // namespace mozilla
 
 #endif

@@ -9,36 +9,26 @@
 #define SkColorFilterImageFilter_DEFINED
 
 #include "SkImageFilter.h"
-
-class SkColorFilter;
+#include "SkColorFilter.h"
 
 class SK_API SkColorFilterImageFilter : public SkImageFilter {
 public:
     static sk_sp<SkImageFilter> Make(sk_sp<SkColorFilter> cf,
                                      sk_sp<SkImageFilter> input,
-                                     const CropRect* cropRect = NULL);
-
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkColorFilterImageFilter)
-
-#ifdef SK_SUPPORT_LEGACY_IMAGEFILTER_PTR
-    static SkImageFilter* Create(SkColorFilter* cf,
-                                 SkImageFilter* input = NULL,
-                                 const CropRect* cropRect = NULL) {
-        return Make(sk_ref_sp<SkColorFilter>(cf),
-                    sk_ref_sp<SkImageFilter>(input),
-                    cropRect).release();
-    }
-#endif
+                                     const CropRect* cropRect = nullptr);
 
 protected:
     void flatten(SkWriteBuffer&) const override;
-    bool onFilterImageDeprecated(Proxy*, const SkBitmap& src, const Context&, SkBitmap* result,
-                                 SkIPoint* loc) const override;
+    sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
+                                        SkIPoint* offset) const override;
+    sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
     bool onIsColorFilterNode(SkColorFilter**) const override;
+    bool onCanHandleComplexCTM() const override { return true; }
     bool affectsTransparentBlack() const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkColorFilterImageFilter)
+
     SkColorFilterImageFilter(sk_sp<SkColorFilter> cf,
                              sk_sp<SkImageFilter> input,
                              const CropRect* cropRect);

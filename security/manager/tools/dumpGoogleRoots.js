@@ -13,31 +13,34 @@
 // 4. [paste the output into the appropriate section in
 //     security/manager/tools/PreloadedHPKPins.json]
 
-var Cc = Components.classes;
-var Ci = Components.interfaces;
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 function downloadRoots() {
-  let req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-              .createInstance(Ci.nsIXMLHttpRequest);
+  let req = new XMLHttpRequest();
   req.open("GET", "https://pki.google.com/roots.pem", false);
   try {
     req.send();
-  }
-  catch (e) {
+  } catch (e) {
     throw new Error("ERROR: problem downloading Google Root PEMs: " + e);
   }
 
   if (req.status != 200) {
-    throw new Error("ERROR: problem downloading Google Root PEMs. Status: " +
-                    req.status);
+    throw new Error(
+      "ERROR: problem downloading Google Root PEMs. Status: " + req.status
+    );
   }
 
   let pem = req.responseText;
   let roots = [];
   let currentPEM = "";
   let readingRoot = false;
-  let certDB = Cc["@mozilla.org/security/x509certdb;1"]
-                 .getService(Ci.nsIX509CertDB);
+  let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
   for (let line of pem.split(/[\r\n]/)) {
     if (line == "-----END CERTIFICATE-----") {
       if (currentPEM) {
@@ -58,20 +61,11 @@ function downloadRoots() {
 }
 
 function makeFormattedNickname(cert) {
-  if (cert.nickname.startsWith("Builtin Object Token:")) {
-    return `"${cert.nickname.substring("Builtin Object Token:".length)}"`;
+  if (cert.isBuiltInRoot) {
+    return `"${cert.displayName}"`;
   }
   // Otherwise, this isn't a built-in and we have to comment it out.
-  if (cert.commonName) {
-    return `// "${cert.commonName}"`;
-  }
-  if (cert.organizationalUnit) {
-    return `// "${cert.organizationalUnit}"`;
-  }
-  if (cert.organization) {
-    return `// "${cert.organization}"`;
-  }
-  throw new Error(`couldn't make nickname for ${cert.subjectName}`);
+  return `// "${cert.displayName}"`;
 }
 
 var roots = downloadRoots();
@@ -91,8 +85,8 @@ rootNicknames.sort(function(rootA, rootB) {
   return 0;
 });
 dump("    {\n");
-dump("      \"name\": \"google_root_pems\",\n");
-dump("      \"sha256_hashes\": [\n");
+dump('      "name": "google_root_pems",\n');
+dump('      "sha256_hashes": [\n');
 var first = true;
 for (var nickname of rootNicknames) {
   if (!first) {

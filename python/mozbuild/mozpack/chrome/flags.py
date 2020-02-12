@@ -2,9 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function, unicode_literals
 
 import re
+import six
 from distutils.version import LooseVersion
 from mozpack.errors import errors
 from collections import OrderedDict
@@ -17,6 +18,7 @@ class Flag(object):
         "flag=yes|true|1"
         "flag=no|false|0"
     '''
+
     def __init__(self, name):
         '''
         Initialize a Flag with the given name.
@@ -62,6 +64,9 @@ class Flag(object):
             return self.name
         return '%s=%s' % (self.name, self.value)
 
+    def __eq__(self, other):
+        return str(self) == other
+
 
 class StringFlag(object):
     '''
@@ -69,6 +74,7 @@ class StringFlag(object):
         "flag=string"
         "flag!=string"
     '''
+
     def __init__(self, name):
         '''
         Initialize a StringFlag with the given name.
@@ -94,6 +100,7 @@ class StringFlag(object):
         Return whether one of the string flag definitions matches the given
         value.
         For example,
+
             flag = StringFlag('foo')
             flag.add_definition('foo!=bar')
             flag.matches('bar') returns False
@@ -125,6 +132,9 @@ class StringFlag(object):
                 res.append('%s!=%s' % (self.name, val))
         return ' '.join(res)
 
+    def __eq__(self, other):
+        return str(self) == other
+
 
 class VersionFlag(object):
     '''
@@ -135,6 +145,7 @@ class VersionFlag(object):
         "flag>=version"
         "flag>version"
     '''
+
     def __init__(self, name):
         '''
         Initialize a VersionFlag with the given name.
@@ -165,6 +176,7 @@ class VersionFlag(object):
         Return whether one of the version flag definitions matches the given
         value.
         For example,
+
             flag = VersionFlag('foo')
             flag.add_definition('foo>=1.0')
             flag.matches('1.0') returns True
@@ -198,11 +210,15 @@ class VersionFlag(object):
                 res.append('%s%s%s' % (self.name, comparison, val))
         return ' '.join(res)
 
+    def __eq__(self, other):
+        return str(self) == other
+
 
 class Flags(OrderedDict):
     '''
     Class to handle a set of flags definitions given on a single manifest
     entry.
+
     '''
     FLAGS = {
         'application': StringFlag,
@@ -228,10 +244,10 @@ class Flags(OrderedDict):
         for f in flags:
             name = self.RE.split(f)
             name = name[0]
-            if not name in self.FLAGS:
+            if name not in self.FLAGS:
                 errors.fatal('Unknown flag: %s' % name)
                 continue
-            if not name in self:
+            if name not in self:
                 self[name] = self.FLAGS[name](name)
             self[name].add_definition(f)
 
@@ -246,12 +262,14 @@ class Flags(OrderedDict):
         Return whether the set of flags match the set of given filters.
             flags = Flags('contentaccessible=yes', 'appversion>=3.5',
                           'application=foo')
+
             flags.match(application='foo') returns True
             flags.match(application='foo', appversion='3.5') returns True
             flags.match(application='foo', appversion='3.0') returns False
+
         '''
-        for name, value in filter.iteritems():
-            if not name in self:
+        for name, value in six.iteritems(filter):
+            if name not in self:
                 continue
             if not self[name].matches(value):
                 return False

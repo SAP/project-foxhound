@@ -8,17 +8,15 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_
-#define WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_
+#ifndef MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_
+#define MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_
 
-#include "webrtc/modules/audio_processing/aec/aec_core.h"
+#include "modules/audio_processing/aec/aec_core.h"
 
-enum {
-  kResamplingDelay = 1
-};
-enum {
-  kResamplerBufferSize = FRAME_LEN * 4
-};
+namespace webrtc {
+
+enum { kResamplingDelay = 1 };
+enum { kResamplerBufferSize = FRAME_LEN * 4 };
 
 // Unless otherwise specified, functions return 0 on success and -1 on error.
 void* WebRtcAec_CreateResampler();  // Returns NULL on error.
@@ -36,4 +34,6 @@ void WebRtcAec_ResampleLinear(void* resampInst,
                               float* outspeech,
                               size_t* size_out);
 
-#endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_
+}  // namespace webrtc
+
+#endif  // MODULES_AUDIO_PROCESSING_AEC_AEC_RESAMPLER_H_

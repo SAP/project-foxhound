@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
 XPIDL_SOURCES += [
     'nsIConsoleAPIStorage.idl',
 ]
@@ -20,26 +23,35 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'Console.h',
+    'ConsoleInstance.h',
+    'ConsoleUtils.h',
 ]
 
 UNIFIED_SOURCES += [
     'Console.cpp',
+    'ConsoleInstance.cpp',
     'ConsoleReportCollector.cpp',
+    'ConsoleUtils.cpp',
 ]
 
-EXTRA_COMPONENTS += [
-    'ConsoleAPI.manifest',
-    'ConsoleAPIStorage.js',
+EXTRA_JS_MODULES += [
+    'ConsoleAPIStorage.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
 ]
 
 LOCAL_INCLUDES += [
     '/docshell/base',
     '/dom/base',
-    '/dom/workers',
     '/js/xpconnect/src',
 ]
 
 MOCHITEST_MANIFESTS += [ 'tests/mochitest.ini' ]
 MOCHITEST_CHROME_MANIFESTS += [ 'tests/chrome.ini' ]
+XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
+
+include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'

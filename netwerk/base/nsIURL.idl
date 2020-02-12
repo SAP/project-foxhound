@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIURI.idl"
+interface nsIURIMutator;
 
 /**
  * The nsIURL interface provides convenience methods that further
@@ -19,30 +20,17 @@
  *                            |
  *                        filePath
  */
-[scriptable, uuid(86adcd89-0b70-47a2-b0fe-5bb2c5f37e31)]
+[scriptable, builtinclass, uuid(86adcd89-0b70-47a2-b0fe-5bb2c5f37e31)]
 interface nsIURL : nsIURI
 {
     /*************************************************************************
      * The URL path is broken down into the following principal components:
-     */
-
-    /**
-     * Returns a path including the directory and file portions of a
-     * URL.  For example, the filePath of "http://host/foo/bar.html#baz"
-     * is "/foo/bar.html".
      *
-     * Some characters may be escaped.
-     */
-    attribute AUTF8String filePath;
-
-    /**
-     * Returns the query portion (the part after the "?") of the URL.
-     * If there isn't one, an empty string is returned.
+     * attribute AUTF8String filePath;
+     * attribute AUTF8String query;
      *
-     * Some characters may be escaped.
+     * These are inherited from nsIURI.
      */
-    attribute AUTF8String query;
-
 
     /*************************************************************************
      * The URL filepath is broken down into the following sub-components:
@@ -60,19 +48,18 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String directory;
+    readonly attribute AUTF8String directory;
 
     /**
      * Returns the file name portion of a URL.  If the URL denotes a path to a
      * directory and not a file, e.g. http://host/foo/bar/, then the Directory
      * attribute accesses the complete /foo/bar/ portion, and the FileName is
      * the empty string. Note that this is purely based on searching for the
-     * last trailing slash. And hence don't rely on this to be a definite file. 
+     * last trailing slash. And hence don't rely on this to be a definite file.
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileName;
-
+    readonly attribute AUTF8String fileName;
 
     /*************************************************************************
      * The URL filename is broken down even further:
@@ -83,7 +70,7 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileBaseName;
+    readonly attribute AUTF8String fileBaseName;
 
     /**
      * Returns the file extension portion of a filename in a url.  If a file
@@ -91,11 +78,11 @@ interface nsIURL : nsIURI
      *
      * Some characters may be escaped.
      */
-    attribute AUTF8String fileExtension;
+    readonly attribute AUTF8String fileExtension;
 
     /**
      * This method takes a uri and compares the two.  The common uri portion
-     * is returned as a string.  The minimum common uri portion is the 
+     * is returned as a string.  The minimum common uri portion is the
      * protocol, and any of these if present:  login, password, host and port
      * If no commonality is found, "" is returned.  If they are identical, the
      * whole path with file/ref/etc. is returned.  For file uris, it is
@@ -132,4 +119,12 @@ interface nsIURL : nsIURI
      */
     AUTF8String getRelativeSpec(in nsIURI aURIToCompare);
 
+};
+
+[scriptable, builtinclass, uuid(25072eb8-f1e6-482f-9ca9-eddd3d65169a)]
+interface nsIURLMutator : nsISupports
+{
+    [must_use] nsIURIMutator setFileName(in AUTF8String aFileName);
+    [must_use] nsIURIMutator setFileBaseName(in AUTF8String aFileBaseName);
+    [must_use] nsIURIMutator setFileExtension(in AUTF8String aFileExtension);
 };

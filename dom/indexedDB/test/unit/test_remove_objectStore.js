@@ -5,8 +5,7 @@
 
 var testGenerator = testSteps();
 
-function testSteps()
-{
+function* testSteps() {
   const name = this.window ? window.location.pathname : "Splendid Test";
   const objectStoreName = "Objects";
 
@@ -22,19 +21,20 @@ function testSteps()
   let db = event.target.result;
   is(db.objectStoreNames.length, 0, "Correct objectStoreNames list");
 
-  let objectStore = db.createObjectStore(objectStoreName,
-                                         { keyPath: "foo" });
+  let objectStore = db.createObjectStore(objectStoreName, { keyPath: "foo" });
 
   let addedCount = 0;
 
   for (let i = 0; i < 100; i++) {
-    request = objectStore.add({foo: i});
+    request = objectStore.add({ foo: i });
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       if (++addedCount == 100) {
-        executeSoon(function() { testGenerator.next(); });
+        executeSoon(function() {
+          testGenerator.next();
+        });
       }
-    }
+    };
   }
   yield undefined;
 
@@ -68,8 +68,7 @@ function testSteps()
   try {
     trans.objectStore(objectStoreName);
     ok(false, "should have thrown");
-  }
-  catch(ex) {
+  } catch (ex) {
     ok(ex instanceof DOMException, "Got a DOMException");
     is(ex.name, "NotFoundError", "expect a NotFoundError");
     is(ex.code, DOMException.NOT_FOUND_ERR, "expect a NOT_FOUND_ERR");
@@ -78,15 +77,19 @@ function testSteps()
   objectStore = db.createObjectStore(objectStoreName, { keyPath: "foo" });
   is(db.objectStoreNames.length, 1, "Correct objectStoreNames list");
   is(db.objectStoreNames.item(0), objectStoreName, "Correct name");
-  is(trans.objectStore(objectStoreName), objectStore, "Correct new objectStore");
+  is(
+    trans.objectStore(objectStoreName),
+    objectStore,
+    "Correct new objectStore"
+  );
   isnot(oldObjectStore, objectStore, "Old objectStore is not new objectStore");
 
   request = objectStore.openCursor();
   request.onerror = errorHandler;
   request.onsuccess = function(event) {
     is(event.target.result, null, "ObjectStore shouldn't have any items");
-    testGenerator.send(event);
-  }
+    testGenerator.next(event);
+  };
   event = yield undefined;
 
   db.deleteObjectStore(objectStore.name);
@@ -113,7 +116,7 @@ function testSteps()
 
   objectStore = db.createObjectStore(objectStoreName, { keyPath: "foo" });
 
-  request = objectStore.add({foo:"bar"});
+  request = objectStore.add({ foo: "bar" });
   request.onerror = errorHandler;
   request.onsuccess = grabEventAndContinueHandler;
 
@@ -125,5 +128,4 @@ function testSteps()
   event = yield undefined;
 
   finishTest();
-  yield undefined;
 }

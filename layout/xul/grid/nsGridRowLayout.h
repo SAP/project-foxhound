@@ -1,10 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- 
+
   Author:
   Eric D Vaughan
 
@@ -28,33 +29,38 @@ class nsGrid;
  */
 // XXXldb This needs a name that indicates that it's a base class for
 // both row and rows (row-group).
-class nsGridRowLayout : public nsSprocketLayout,
-                        public nsIGridPart
-{
-public:
+class nsGridRowLayout : public nsSprocketLayout, public nsIGridPart {
+ public:
   NS_DECL_ISUPPORTS_INHERITED
 
-  virtual nsGridRowGroupLayout* CastToRowGroupLayout() override { return nullptr; }
+  virtual nsGridRowGroupLayout* CastToRowGroupLayout() override {
+    return nullptr;
+  }
   virtual nsGridLayout2* CastToGridLayout() override { return nullptr; }
-  virtual nsGrid* GetGrid(nsIFrame* aBox, int32_t* aIndex, nsGridRowLayout* aRequestor=nullptr) override;
-  virtual nsIGridPart* GetParentGridPart(nsIFrame* aBox, nsIFrame** aParentBox) override;
-  virtual void ChildrenInserted(nsIFrame* aBox, nsBoxLayoutState& aState,
-                                nsIFrame* aPrevBox,
-                                const nsFrameList::Slice& aNewChildren) override;
-  virtual void ChildrenAppended(nsIFrame* aBox, nsBoxLayoutState& aState,
-                                const nsFrameList::Slice& aNewChildren) override;
-  virtual void ChildrenRemoved(nsIFrame* aBox, nsBoxLayoutState& aState, nsIFrame* aChildList) override;
-  virtual void ChildrenSet(nsIFrame* aBox, nsBoxLayoutState& aState, nsIFrame* aChildList) override;
+  virtual nsGrid* GetGrid(nsIFrame* aBox, int32_t* aIndex,
+                          nsGridRowLayout* aRequestor = nullptr) override;
+  virtual nsIGridPart* GetParentGridPart(nsIFrame* aBox,
+                                         nsIFrame** aParentBox) override;
+  virtual void ChildrenInserted(
+      nsIFrame* aBox, nsBoxLayoutState& aState, nsIFrame* aPrevBox,
+      const nsFrameList::Slice& aNewChildren) override;
+  virtual void ChildrenAppended(
+      nsIFrame* aBox, nsBoxLayoutState& aState,
+      const nsFrameList::Slice& aNewChildren) override;
+  virtual void ChildrenRemoved(nsIFrame* aBox, nsBoxLayoutState& aState,
+                               nsIFrame* aChildList) override;
+  virtual void ChildrenSet(nsIFrame* aBox, nsBoxLayoutState& aState,
+                           nsIFrame* aChildList) override;
   virtual nsMargin GetTotalMargin(nsIFrame* aBox, bool aIsHorizontal) override;
 
   virtual nsIGridPart* AsGridPart() override { return this; }
 
-protected:
-  virtual void ChildAddedOrRemoved(nsIFrame* aBox, nsBoxLayoutState& aState)=0;
+ protected:
+  virtual void ChildAddedOrRemoved(nsIFrame* aBox,
+                                   nsBoxLayoutState& aState) = 0;
 
   nsGridRowLayout();
   virtual ~nsGridRowLayout();
 };
 
 #endif
-

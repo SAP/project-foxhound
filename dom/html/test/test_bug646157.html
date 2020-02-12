@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=646157
 -->
 <head>
   <title>Test for Bug 646157</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="reflect.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
@@ -70,8 +70,8 @@ function clickhandler(e) {
 }
 
 for (var i = 1; i <= 10; i++) {
-  document.getElementById("l" + i).addEventListener('click', clickhandler, false);
-  document.getElementById("c" + i).addEventListener('click', clickhandler, false);
+  document.getElementById("l" + i).addEventListener('click', clickhandler);
+  document.getElementById("c" + i).addEventListener('click', clickhandler);
 }
 
 document.getElementById("l10").click();

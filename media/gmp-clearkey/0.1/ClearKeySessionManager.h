@@ -17,84 +17,75 @@
 #ifndef __ClearKeyDecryptor_h__
 #define __ClearKeyDecryptor_h__
 
-#include <map>
-#include <set>
-#include <string>
-#include <vector>
-
 #include "ClearKeyDecryptionManager.h"
+#include "ClearKeyPersistence.h"
 #include "ClearKeySession.h"
 #include "ClearKeyUtils.h"
-#include "gmp-api/gmp-decryption.h"
+// This include is required in order for content_decryption_module to work
+// on Unix systems.
+#include "stddef.h"
+#include "content_decryption_module.h"
 #include "RefCounted.h"
 
-class ClearKeySessionManager final : public GMPDecryptor
-                                   , public RefCounted
-{
-public:
-  ClearKeySessionManager();
+#include <functional>
+#include <map>
+#include <queue>
+#include <set>
+#include <string>
 
-  virtual void Init(GMPDecryptorCallback* aCallback,
-                    bool aDistinctiveIdentifierAllowed,
-                    bool aPersistentStateAllowed) override;
+class ClearKeySessionManager final : public RefCounted {
+ public:
+  explicit ClearKeySessionManager(cdm::Host_10* aHost);
 
-  virtual void CreateSession(uint32_t aCreateSessionToken,
-                             uint32_t aPromiseId,
-                             const char* aInitDataType,
-                             uint32_t aInitDataTypeSize,
-                             const uint8_t* aInitData,
-                             uint32_t aInitDataSize,
-                             GMPSessionType aSessionType) override;
+  void Init(bool aDistinctiveIdentifierAllowed, bool aPersistentStateAllowed);
 
-  virtual void LoadSession(uint32_t aPromiseId,
-                           const char* aSessionId,
-                           uint32_t aSessionIdLength) override;
+  void CreateSession(uint32_t aPromiseId, cdm::InitDataType aInitDataType,
+                     const uint8_t* aInitData, uint32_t aInitDataSize,
+                     cdm::SessionType aSessionType);
 
-  virtual void UpdateSession(uint32_t aPromiseId,
-                             const char* aSessionId,
-                             uint32_t aSessionIdLength,
-                             const uint8_t* aResponse,
-                             uint32_t aResponseSize) override;
+  void LoadSession(uint32_t aPromiseId, const char* aSessionId,
+                   uint32_t aSessionIdLength);
 
-  virtual void CloseSession(uint32_t aPromiseId,
-                            const char* aSessionId,
-                            uint32_t aSessionIdLength) override;
+  void UpdateSession(uint32_t aPromiseId, const char* aSessionId,
+                     uint32_t aSessionIdLength, const uint8_t* aResponse,
+                     uint32_t aResponseSize);
 
-  virtual void RemoveSession(uint32_t aPromiseId,
-                             const char* aSessionId,
-                             uint32_t aSessionIdLength) override;
+  void CloseSession(uint32_t aPromiseId, const char* aSessionId,
+                    uint32_t aSessionIdLength);
 
-  virtual void SetServerCertificate(uint32_t aPromiseId,
-                                    const uint8_t* aServerCert,
-                                    uint32_t aServerCertSize) override;
+  void RemoveSession(uint32_t aPromiseId, const char* aSessionId,
+                     uint32_t aSessionIdLength);
 
-  virtual void Decrypt(GMPBuffer* aBuffer,
-                       GMPEncryptedBufferMetadata* aMetadata) override;
+  void SetServerCertificate(uint32_t aPromiseId, const uint8_t* aServerCert,
+                            uint32_t aServerCertSize);
 
-  virtual void DecryptingComplete() override;
+  cdm::Status Decrypt(const cdm::InputBuffer_2& aBuffer,
+                      cdm::DecryptedBlock* aDecryptedBlock);
 
-  void PersistentSessionDataLoaded(GMPErr aStatus,
-                                   uint32_t aPromiseId,
+  void DecryptingComplete();
+
+  void PersistentSessionDataLoaded(uint32_t aPromiseId,
                                    const std::string& aSessionId,
                                    const uint8_t* aKeyData,
                                    uint32_t aKeyDataSize);
 
-private:
+ private:
   ~ClearKeySessionManager();
 
-  void DoDecrypt(GMPBuffer* aBuffer, GMPEncryptedBufferMetadata* aMetadata);
-  void Shutdown();
-
   void ClearInMemorySessionData(ClearKeySession* aSession);
-  void Serialize(const ClearKeySession* aSession, std::vector<uint8_t>& aOutKeyData);
+  bool MaybeDeferTillInitialized(std::function<void()>&& aMaybeDefer);
+  void Serialize(const ClearKeySession* aSession,
+                 std::vector<uint8_t>& aOutKeyData);
 
   RefPtr<ClearKeyDecryptionManager> mDecryptionManager;
+  RefPtr<ClearKeyPersistence> mPersistence;
 
-  GMPDecryptorCallback* mCallback;
-  GMPThread* mThread;
+  cdm::Host_10* mHost = nullptr;
 
   std::set<KeyId> mKeyIds;
   std::map<std::string, ClearKeySession*> mSessions;
+
+  std::queue<std::function<void()>> mDeferredInitialize;
 };
 
-#endif // __ClearKeyDecryptor_h__
+#endif  // __ClearKeyDecryptor_h__

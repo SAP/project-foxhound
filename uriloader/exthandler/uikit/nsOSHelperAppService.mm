@@ -6,59 +6,43 @@
 
 #include "nsOSHelperAppService.h"
 
-nsOSHelperAppService::nsOSHelperAppService()
-  : nsExternalHelperAppService()
-{}
+nsOSHelperAppService::nsOSHelperAppService() : nsExternalHelperAppService() {}
 
-nsOSHelperAppService::~nsOSHelperAppService()
-{}
+nsOSHelperAppService::~nsOSHelperAppService() {}
 
-nsresult
-nsOSHelperAppService::OSProtocolHandlerExists(const char* aProtocolScheme,
-                                              bool* aHandlerExists)
-{
+nsresult nsOSHelperAppService::OSProtocolHandlerExists(const char* aProtocolScheme,
+                                                       bool* aHandlerExists) {
   *aHandlerExists = false;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsOSHelperAppService::GetApplicationDescription(const nsACString& aScheme,
-                                                nsAString& _retval)
-{
+nsOSHelperAppService::GetApplicationDescription(const nsACString& aScheme, nsAString& _retval) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsresult
-nsOSHelperAppService::GetFileTokenForPath(const char16_t* aPlatformAppPath,
-                                          nsIFile** aFile)
-{
+nsresult nsOSHelperAppService::GetFileTokenForPath(const char16_t* aPlatformAppPath,
+                                                   nsIFile** aFile) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsOSHelperAppService::GetFromTypeAndExtension(const nsACString& aType,
-                                              const nsACString& aFileExt,
-                                              nsIMIMEInfo** aMIMEInfo)
-{
-  return nsExternalHelperAppService::GetFromTypeAndExtension(aType,
-                                                             aFileExt,
-                                                             aMIMEInfo);
+nsOSHelperAppService::GetFromTypeAndExtension(const nsACString& aType, const nsACString& aFileExt,
+                                              nsIMIMEInfo** aMIMEInfo) {
+  return nsExternalHelperAppService::GetFromTypeAndExtension(aType, aFileExt, aMIMEInfo);
 }
 
-already_AddRefed<nsIMIMEInfo>
-nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
-                                        const nsACString& aFileExt,
-                                        bool* aFound)
-{
+NS_IMETHODIMP nsOSHelperAppService::GetMIMEInfoFromOS(const nsACString& aMIMEType,
+                                                      const nsACString& aFileExt, bool* aFound,
+                                                      nsIMIMEInfo** aMIMEInfo) {
+  *aMIMEInfo = nullptr;
   *aFound = false;
-  return nullptr;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-nsOSHelperAppService::GetProtocolHandlerInfoFromOS(const nsACString& aScheme,
-                                                   bool* found,
-                                                   nsIHandlerInfo** _retval)
-{
+nsOSHelperAppService::GetProtocolHandlerInfoFromOS(const char* aScheme, bool* found,
+                                                   nsIHandlerInfo** _retval) {
   *found = false;
   return NS_OK;
 }

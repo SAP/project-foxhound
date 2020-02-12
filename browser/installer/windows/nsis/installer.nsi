@@ -6,6 +6,7 @@
 # AppAssocReg    http://nsis.sourceforge.net/Application_Association_Registration_plug-in
 # ApplicationID  http://nsis.sourceforge.net/ApplicationID_plug-in
 # CityHash       http://dxr.mozilla.org/mozilla-central/source/other-licenses/nsis/Contrib/CityHash
+# nsJSON         http://nsis.sourceforge.net/NsJSON_plug-in
 # ShellLink      http://nsis.sourceforge.net/ShellLink_plug-in
 # UAC            http://nsis.sourceforge.net/UAC_plug-in
 # ServicesHelper Mozilla specific plugin that is located in /other-licenses/nsis
@@ -21,13 +22,9 @@ CRCCheck on
 
 RequestExecutionLevel user
 
-; The commands inside this ifdef require NSIS 3.0a2 or greater so the ifdef can
-; be removed after we require NSIS 3.0a2 or greater.
-!ifdef NSIS_PACKEDVERSION
-  Unicode true
-  ManifestSupportedOS all
-  ManifestDPIAware true
-!endif
+Unicode true
+ManifestSupportedOS all
+ManifestDPIAware true
 
 !addplugindir ./
 
@@ -38,15 +35,29 @@ Var AddTaskbarSC
 Var AddQuickLaunchSC
 Var AddDesktopSC
 Var InstallMaintenanceService
+Var InstallOptionalExtensions
+Var ExtensionRecommender
 Var PageName
 Var PreventRebootRequired
+
+; Telemetry ping fields
+Var SetAsDefault
+Var HadOldInstall
+Var DefaultInstDir
+Var IntroPhaseStart
+Var OptionsPhaseStart
+Var InstallPhaseStart
+Var FinishPhaseStart
+Var FinishPhaseEnd
+Var InstallResult
+Var LaunchedNewApp
 
 ; By defining NO_STARTMENU_DIR an installer that doesn't provide an option for
 ; an application's Start Menu PROGRAMS directory and doesn't define the
 ; StartMenuDir variable can use the common InstallOnInitCommon macro.
 !define NO_STARTMENU_DIR
 
-; On Vista and above attempt to elevate Standard Users in addition to users that
+; Attempt to elevate Standard Users in addition to users that
 ; are a member of the Administrators group.
 !define NONADMIN_ELEVATE
 
@@ -86,6 +97,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro CleanUpdateDirectories
 !insertmacro CopyFilesFromDir
 !insertmacro CreateRegKey
+!insertmacro GetFirstInstallPath
 !insertmacro GetLongPath
 !insertmacro GetPathFromString
 !insertmacro GetParent
@@ -108,6 +120,11 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro UnloadUAC
 !insertmacro WriteRegStr2
 !insertmacro WriteRegDWORD2
+
+; This needs to be inserted after InitHashAppModelId because it uses
+; $AppUserModelID and the compiler can't handle using variables lexically before
+; they've been declared.
+!insertmacro GetInstallerRegistryPref
 
 !include shared.nsh
 
@@ -141,6 +158,11 @@ ShowInstDetails nevershow
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
 !define MUI_WELCOMEFINISHPAGE_BITMAP wizWatermark.bmp
+; By default MUI_BGCOLOR is hardcoded to FFFFFF, which is only correct if the
+; Windows theme or high-contrast mode hasn't changed it, so we need to
+; override that with GetSysColor(COLOR_WINDOW) (this string ends up getting
+; passed to SetCtlColors, which uses this custom syntax to mean that).
+!define MUI_BGCOLOR SYSCLR:WINDOW
 
 ; Use a right to left header image when the language is right to left
 !ifdef ${AB_CD}_rtl
@@ -154,6 +176,8 @@ ShowInstDetails nevershow
  */
 ; Welcome Page
 !define MUI_PAGE_CUSTOMFUNCTION_PRE preWelcome
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW showWelcome
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE leaveWelcome
 !insertmacro MUI_PAGE_WELCOME
 
 ; Custom Options Page
@@ -173,6 +197,11 @@ Page custom preComponents leaveComponents
 ; Custom Shortcuts Page
 Page custom preShortcuts leaveShortcuts
 
+; Custom Extensions Page
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+Page custom preExtensions leaveExtensions
+!endif
+
 ; Custom Summary Page
 Page custom preSummary leaveSummary
 
@@ -185,6 +214,8 @@ Page custom preSummary leaveSummary
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchApp
 !define MUI_FINISHPAGE_RUN_TEXT $(LAUNCH_TEXT)
 !define MUI_PAGE_CUSTOMFUNCTION_PRE preFinish
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW showFinish
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE postFinish
 !insertmacro MUI_PAGE_FINISH
 
 ; Use the default dialog for IDD_VERIFY for a simple Banner
@@ -195,6 +226,9 @@ ChangeUI IDD_VERIFY "${NSISDIR}\Contrib\UIs\default.exe"
 
 ; Cleanup operations to perform at the start of the installation.
 Section "-InstallStartCleanup"
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $InstallPhaseStart
+
   SetDetailsPrint both
   DetailPrint $(STATUS_CLEANUP)
   SetDetailsPrint none
@@ -217,6 +251,16 @@ Section "-InstallStartCleanup"
     ${EndIf}
   ${EndUnless}
 
+  ${GetParameters} $R8
+  ${InstallGetOption} $R8 "RemoveDistributionDir" $R9
+  ${If} $R9 == "0"
+    StrCpy $R9 "false"
+  ${EndIf}
+  ${InstallGetOption} $R8 "PreventRebootRequired" $PreventRebootRequired
+  ${If} $PreventRebootRequired == "1"
+    StrCpy $PreventRebootRequired "true"
+  ${EndIf}
+
   ; Remove directories and files we always control before parsing the uninstall
   ; log so empty directories can be removed.
   ${If} ${FileExists} "$INSTDIR\updates"
@@ -228,9 +272,6 @@ Section "-InstallStartCleanup"
   ${If} ${FileExists} "$INSTDIR\defaults\shortcuts"
     RmDir /r "$INSTDIR\defaults\shortcuts"
   ${EndIf}
-  ; Only remove the distribution directory if it exists and if the installer
-  ; isn't launched with an ini file that has RemoveDistributionDir=false in the
-  ; install section.
   ${If} ${FileExists} "$INSTDIR\distribution"
   ${AndIf} $R9 != "false"
     RmDir /r "$INSTDIR\distribution"
@@ -252,7 +293,7 @@ Section "-InstallStartCleanup"
   ; setup the application model id registration value
   ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
 
-  ; Remove the updates directory for Vista and above
+  ; Remove the updates directory
   ${CleanUpdateDirectories} "Mozilla\Firefox" "Mozilla\updates"
 
   ${RemoveDeprecatedFiles}
@@ -311,6 +352,16 @@ Section "-Application" APP_IDX
 
   ClearErrors
 
+  ${RegisterDLL} "$INSTDIR\AccessibleHandler.dll"
+  ${If} ${Errors}
+    ${LogMsg} "** ERROR Registering: $INSTDIR\AccessibleHandler.dll **"
+  ${Else}
+    ${LogUninstall} "DLLReg: \AccessibleHandler.dll"
+    ${LogMsg} "Registered: $INSTDIR\AccessibleHandler.dll"
+  ${EndIf}
+
+  ClearErrors
+
   ; Default for creating Start Menu shortcut
   ; (1 = create, 0 = don't create)
   ${If} $AddStartMenuSC == ""
@@ -330,6 +381,12 @@ Section "-Application" APP_IDX
   ; Default for creating Desktop shortcut (1 = create, 0 = don't create)
   ${If} $AddDesktopSC == ""
     StrCpy $AddDesktopSC "1"
+  ${EndIf}
+
+  ${CreateUpdateDir} "Mozilla"
+  ${If} ${Errors}
+    Pop $0
+    ${LogMsg} "** ERROR Failed to create update directory: $0"
   ${EndIf}
 
   ${LogHeader} "Adding Registry Entries"
@@ -357,6 +414,7 @@ Section "-Application" APP_IDX
   ${EndIf}
 
   ${RemoveDeprecatedKeys}
+  ${Set32to64DidMigrateReg}
 
   ; The previous installer adds several regsitry values to both HKLM and HKCU.
   ; We now try to add to HKLM and if that fails to HKCU
@@ -382,56 +440,28 @@ Section "-Application" APP_IDX
 
   ; In Win8, the delegate execute handler picks up the value in FirefoxURL and
   ; FirefoxHTML to launch the desktop browser when it needs to.
-  ${AddDisabledDDEHandlerValues} "FirefoxHTML" "$2" "$8,1" \
+  ${AddDisabledDDEHandlerValues} "FirefoxHTML-$AppUserModelID" "$2" "$8,1" \
                                  "${AppRegName} Document" ""
-  ${AddDisabledDDEHandlerValues} "FirefoxURL" "$2" "$8,1" "${AppRegName} URL" \
-                                 "true"
+  ${AddDisabledDDEHandlerValues} "FirefoxURL-$AppUserModelID" "$2" "$8,1" \
+                                 "${AppRegName} URL" "true"
 
   ; For pre win8, the following keys should only be set if we can write to HKLM.
-  ; For post win8, the keys below get set in both HKLM and HKCU.
+  ; For post win8, the keys below can be set in HKCU if needed.
   ${If} $TmpVal == "HKLM"
-    ; Set the Start Menu Internet and Vista Registered App HKLM registry keys.
+    ; Set the Start Menu Internet and Registered App HKLM registry keys.
     ${SetStartMenuInternet} "HKLM"
     ${FixShellIconHandler} "HKLM"
-
-    ; If we are writing to HKLM and create either the desktop or start menu
-    ; shortcuts set IconsVisible to 1 otherwise to 0.
-    ; Taskbar shortcuts imply having a start menu shortcut.
-    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
-    StrCpy $0 "Software\Clients\StartMenuInternet\$R9\InstallInfo"
-    ${If} $AddDesktopSC == 1
-    ${OrIf} $AddStartMenuSC == 1
-    ${OrIf} $AddTaskbarSC == 1
-      WriteRegDWORD HKLM "$0" "IconsVisible" 1
-    ${Else}
-      WriteRegDWORD HKLM "$0" "IconsVisible" 0
-    ${EndIf}
-  ${EndIf}
-
-  ${If} ${AtLeastWin8}
-    ; Set the Start Menu Internet and Vista Registered App HKCU registry keys.
+  ${ElseIf} ${AtLeastWin8}
+    ; Set the Start Menu Internet and Registered App HKCU registry keys.
     ${SetStartMenuInternet} "HKCU"
     ${FixShellIconHandler} "HKCU"
-
-    ; If we create either the desktop or start menu shortcuts, then
-    ; set IconsVisible to 1 otherwise to 0.
-    ; Taskbar shortcuts imply having a start menu shortcut.
-    ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
-    StrCpy $0 "Software\Clients\StartMenuInternet\$R9\InstallInfo"
-    ${If} $AddDesktopSC == 1
-    ${OrIf} $AddStartMenuSC == 1
-    ${OrIf} $AddTaskbarSC == 1
-      WriteRegDWORD HKCU "$0" "IconsVisible" 1
-    ${Else}
-      WriteRegDWORD HKCU "$0" "IconsVisible" 0
-    ${EndIf}
   ${EndIf}
 
 !ifdef MOZ_MAINTENANCE_SERVICE
-  ; If the maintenance service page was displayed then a value was already 
-  ; explicitly selected for installing the maintenance service and 
+  ; If the maintenance service page was displayed then a value was already
+  ; explicitly selected for installing the maintenance service and
   ; and so InstallMaintenanceService will already be 0 or 1.
-  ; If the maintenance service page was not displayed then 
+  ; If the maintenance service page was not displayed then
   ; InstallMaintenanceService will be equal to "".
   ${If} $InstallMaintenanceService == ""
     Call IsUserAdmin
@@ -439,14 +469,8 @@ Section "-Application" APP_IDX
     ${If} $R0 == "true"
     ; Only proceed if we have HKLM write access
     ${AndIf} $TmpVal == "HKLM"
-      ; On Windows < XP SP3 we do not install the maintenance service.
-      ${If} ${IsWinXP}
-      ${AndIf} ${AtMostServicePack} 2
-        StrCpy $InstallMaintenanceService "0"
-      ${Else}
-        ; The user is an admin, so we should default to installing the service.
-        StrCpy $InstallMaintenanceService "1"
-      ${EndIf}
+      ; The user is an admin, so we should default to installing the service.
+      StrCpy $InstallMaintenanceService "1"
     ${Else}
       ; The user is not admin, so we can't install the service.
       StrCpy $InstallMaintenanceService "0"
@@ -455,7 +479,7 @@ Section "-Application" APP_IDX
 
   ${If} $InstallMaintenanceService == "1"
     ; The user wants to install the maintenance service, so execute
-    ; the pre-packaged maintenance service installer. 
+    ; the pre-packaged maintenance service installer.
     ; This option can only be turned on if the user is an admin so there
     ; is no need to use ExecShell w/ verb runas to enforce elevated.
     nsExec::Exec "$\"$INSTDIR\maintenanceservice_installer.exe$\""
@@ -474,9 +498,19 @@ Section "-Application" APP_IDX
   ${CreateRegKey} "$TmpVal" "$0" 0
 
   ${If} $TmpVal == "HKLM"
-    ; Set the permitted LSP Categories for WinVista and above
+    ; Set the permitted LSP Categories
     ${SetAppLSPCategories} ${LSP_CATEGORIES}
   ${EndIf}
+
+!ifdef MOZ_LAUNCHER_PROCESS
+  ; Launcher telemetry is opt-out, so we always enable it by default in new
+  ; installs. We always use HKCU because this value is a reflection of a pref
+  ; from the user profile. While this is not a perfect abstraction (given the
+  ; possibility of multiple Firefox profiles owned by the same Windows user), it
+  ; is more accurate than a machine-wide setting, and should be accurate in the
+  ; majority of cases.
+  WriteRegDWORD HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry" 1
+!endif
 
   ; Create shortcuts
   ${LogHeader} "Adding Shortcuts"
@@ -490,9 +524,9 @@ Section "-Application" APP_IDX
   ; Always add the application's shortcuts to the shortcuts log ini file. The
   ; DeleteShortcuts macro will do the right thing on uninstall if the
   ; shortcuts don't exist.
-  ${LogStartMenuShortcut} "${BrandFullName}.lnk"
-  ${LogQuickLaunchShortcut} "${BrandFullName}.lnk"
-  ${LogDesktopShortcut} "${BrandFullName}.lnk"
+  ${LogStartMenuShortcut} "${BrandShortName}.lnk"
+  ${LogQuickLaunchShortcut} "${BrandShortName}.lnk"
+  ${LogDesktopShortcut} "${BrandShortName}.lnk"
 
   ; Best effort to update the Win7 taskbar and start menu shortcut app model
   ; id's. The possible contexts are current user / system and the user that
@@ -522,39 +556,76 @@ Section "-Application" APP_IDX
   ; since this will either add it for the user if unelevated or All Users if
   ; elevated.
   ${If} $AddStartMenuSC == 1
-    CreateShortCut "$SMPROGRAMS\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
+    ; See if there's an existing shortcut for this installation using the old
+    ; name that we should just rename, instead of creating a new shortcut.
+    ; We could do this renaming even when $AddStartMenuSC is false; the idea
+    ; behind not doing that is to interpret "false" as "don't do anything
+    ; involving start menu shortcuts at all." We could also try to do this for
+    ; both shell contexts, but that won't typically accomplish anything.
     ${If} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandFullName}.lnk" \
-                                           "$INSTDIR"
-      ${If} ${AtLeastWin7}
-      ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$SMPROGRAMS\${BrandFullName}.lnk" "$AppUserModelID" "true"
+      ShellLink::GetShortCutTarget "$SMPROGRAMS\${BrandFullName}.lnk"
+      Pop $0
+      ${GetLongPath} "$0" $0
+      ${If} $0 == "$INSTDIR\${FileMainEXE}"
+      ${AndIfNot} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        Rename "$SMPROGRAMS\${BrandFullName}.lnk" \
+               "$SMPROGRAMS\${BrandShortName}.lnk"
+        ${LogMsg} "Renamed existing shortcut to $SMPROGRAMS\${BrandShortName}.lnk"
       ${EndIf}
-      ${LogMsg} "Added Shortcut: $SMPROGRAMS\${BrandFullName}.lnk"
     ${Else}
-      ${LogMsg} "** ERROR Adding Shortcut: $SMPROGRAMS\${BrandFullName}.lnk"
+      CreateShortCut "$SMPROGRAMS\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+      ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandShortName}.lnk" \
+                                               "$INSTDIR"
+        ${If} "$AppUserModelID" != ""
+          ApplicationID::Set "$SMPROGRAMS\${BrandShortName}.lnk" \
+                             "$AppUserModelID" "true"
+        ${EndIf}
+        ${LogMsg} "Added Shortcut: $SMPROGRAMS\${BrandShortName}.lnk"
+      ${Else}
+        ${LogMsg} "** ERROR Adding Shortcut: $SMPROGRAMS\${BrandShortName}.lnk"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 
   ; Update lastwritetime of the Start Menu shortcut to clear the tile cache.
+  ; Do this for both shell contexts in case the user has shortcuts in multiple
+  ; locations, then restore the previous context at the end.
   ${If} ${AtLeastWin8}
-  ${AndIf} ${FileExists} "$SMPROGRAMS\${BrandFullName}.lnk"
-    FileOpen $0 "$SMPROGRAMS\${BrandFullName}.lnk" a
-    FileClose $0
+    SetShellVarContext all
+    ${TouchStartMenuShortcut}
+    SetShellVarContext current
+    ${TouchStartMenuShortcut}
+    ${If} $TmpVal == "HKLM"
+      SetShellVarContext all
+    ${ElseIf} $TmpVal == "HKCU"
+      SetShellVarContext current
+    ${EndIf}
   ${EndIf}
 
   ${If} $AddDesktopSC == 1
-    CreateShortCut "$DESKTOP\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
     ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
-      ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandFullName}.lnk" \
-                                             "$INSTDIR"
-      ${If} ${AtLeastWin7}
-      ${AndIf} "$AppUserModelID" != ""
-        ApplicationID::Set "$DESKTOP\${BrandFullName}.lnk" "$AppUserModelID"  "true"
+      ShellLink::GetShortCutTarget "$DESKTOP\${BrandFullName}.lnk"
+      Pop $0
+      ${GetLongPath} "$0" $0
+      ${If} $0 == "$INSTDIR\${FileMainEXE}"
+      ${AndIfNot} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        Rename "$DESKTOP\${BrandFullName}.lnk" "$DESKTOP\${BrandShortName}.lnk"
+        ${LogMsg} "Renamed existing shortcut to $DESKTOP\${BrandShortName}.lnk"
       ${EndIf}
-      ${LogMsg} "Added Shortcut: $DESKTOP\${BrandFullName}.lnk"
     ${Else}
-      ${LogMsg} "** ERROR Adding Shortcut: $DESKTOP\${BrandFullName}.lnk"
+      CreateShortCut "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+      ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
+                                               "$INSTDIR"
+        ${If} "$AppUserModelID" != ""
+          ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" \
+                             "$AppUserModelID" "true"
+        ${EndIf}
+        ${LogMsg} "Added Shortcut: $DESKTOP\${BrandShortName}.lnk"
+      ${Else}
+        ${LogMsg} "** ERROR Adding Shortcut: $DESKTOP\${BrandShortName}.lnk"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 
@@ -567,17 +638,53 @@ Section "-Application" APP_IDX
       ${GetOptions} "$0" "/UAC:" $0
       ${If} ${Errors}
         Call AddQuickLaunchShortcut
-        ${LogMsg} "Added Shortcut: $QUICKLAUNCH\${BrandFullName}.lnk"
+        ${LogMsg} "Added Shortcut: $QUICKLAUNCH\${BrandShortName}.lnk"
       ${Else}
         ; It is not possible to add a log entry from the unelevated process so
         ; add the log entry without the path since there is no simple way to
         ; know the correct full path.
-        ${LogMsg} "Added Quick Launch Shortcut: ${BrandFullName}.lnk"
+        ${LogMsg} "Added Quick Launch Shortcut: ${BrandShortName}.lnk"
         GetFunctionAddress $0 AddQuickLaunchShortcut
         UAC::ExecCodeSegment $0
       ${EndIf}
     ${EndUnless}
   ${EndIf}
+
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+  ${If} ${FileExists} "$INSTDIR\distribution\optional-extensions"
+    ${LogHeader} "Installing optional extensions if requested"
+
+    ${If} $InstallOptionalExtensions != "0"
+    ${AndIf} ${FileExists} "$INSTDIR\distribution\setup.ini"
+      ${Unless} ${FileExists} "$INSTDIR\distribution\extensions"
+        CreateDirectory "$INSTDIR\distribution\extensions"
+      ${EndUnless}
+
+      StrCpy $0 0
+      ${Do}
+        ClearErrors
+        ReadINIStr $1 "$INSTDIR\distribution\setup.ini" "OptionalExtensions" \
+                                                        "extension.$0.id"
+        ${If} ${Errors}
+          ${ExitDo}
+        ${EndIf}
+
+        ReadINIStr $2 "$INSTDIR\distribution\setup.ini" "OptionalExtensions" \
+                                                        "extension.$0.checked"
+        ${If} $2 != ${BST_UNCHECKED}
+          ${LogMsg} "Installing optional extension: $1"
+          CopyFiles /SILENT "$INSTDIR\distribution\optional-extensions\$1.xpi" \
+                            "$INSTDIR\distribution\extensions"
+        ${EndIf}
+
+        IntOp $0 $0 + 1
+      ${Loop}
+    ${EndIf}
+
+    ${LogMsg} "Removing the optional-extensions directory"
+    RMDir /r /REBOOTOK "$INSTDIR\distribution\optional-extensions"
+  ${EndIf}
+!endif
 
 !ifdef MOZ_MAINTENANCE_SERVICE
   ${If} $TmpVal == "HKLM"
@@ -594,22 +701,21 @@ Section "-InstallEndCleanup"
   SetDetailsPrint none
 
   ${Unless} ${Silent}
+    ClearErrors
     ${MUI_INSTALLOPTIONS_READ} $0 "summary.ini" "Field 4" "State"
     ${If} "$0" == "1"
-      ; NB: this code is duplicated in stub.nsi. Please keep in sync.
+      StrCpy $SetAsDefault true
       ; For data migration in the app, we want to know what the default browser
       ; value was before we changed it. To do so, we read it here and store it
       ; in our own registry key.
       StrCpy $0 ""
-      ${If} ${AtLeastWinVista}
-        AppAssocReg::QueryCurrentDefault "http" "protocol" "effective"
-        Pop $1
-        ; If the method hasn't failed, $1 will contain the progid. Check:
-        ${If} "$1" != "method failed"
-        ${AndIf} "$1" != "method not available"
-          ; Read the actual command from the progid
-          ReadRegStr $0 HKCR "$1\shell\open\command" ""
-        ${EndIf}
+      AppAssocReg::QueryCurrentDefault "http" "protocol" "effective"
+      Pop $1
+      ; If the method hasn't failed, $1 will contain the progid. Check:
+      ${If} "$1" != "method failed"
+      ${AndIf} "$1" != "method not available"
+        ; Read the actual command from the progid
+        ReadRegStr $0 HKCR "$1\shell\open\command" ""
       ${EndIf}
       ; If using the App Association Registry didn't happen or failed, fall back
       ; to the effective http default:
@@ -632,7 +738,8 @@ Section "-InstallEndCleanup"
         GetFunctionAddress $0 SetAsDefaultAppUserHKCU
         UAC::ExecCodeSegment $0
       ${EndIf}
-    ${Else}
+    ${ElseIfNot} ${Errors}
+      StrCpy $SetAsDefault false
       ${LogHeader} "Writing default-browser opt-out"
       ClearErrors
       WriteRegStr HKCU "Software\Mozilla\Firefox" "DefaultBrowserOptOut" "True"
@@ -690,6 +797,14 @@ Section "-InstallEndCleanup"
         Rename "$INSTDIR\helper.exe" "$INSTDIR\${FileMainEXE}"
       ${EndUnless}
     ${EndIf}
+  ${EndIf}
+
+  StrCpy $InstallResult "success"
+
+  ; When we're using the GUI, .onGUIEnd sends the ping, but of course that isn't
+  ; invoked when we're running silently.
+  ${If} ${Silent}
+    Call SendPing
   ${EndIf}
 SectionEnd
 
@@ -764,9 +879,9 @@ FunctionEnd
 # Helper Functions
 
 Function AddQuickLaunchShortcut
-  CreateShortCut "$QUICKLAUNCH\${BrandFullName}.lnk" "$INSTDIR\${FileMainEXE}"
-  ${If} ${FileExists} "$QUICKLAUNCH\${BrandFullName}.lnk"
-    ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandFullName}.lnk" \
+  CreateShortCut "$QUICKLAUNCH\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
+  ${If} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
+    ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandShortName}.lnk" \
                                            "$INSTDIR"
   ${EndIf}
 FunctionEnd
@@ -834,24 +949,184 @@ Function LaunchApp
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
-    Exec "$\"$INSTDIR\${FileMainEXE}$\""
+    ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
     UAC::ExecCodeSegment $0
   ${EndIf}
+
+  StrCpy $LaunchedNewApp true
 FunctionEnd
 
 Function LaunchAppFromElevatedProcess
-  ; Find the installation directory when launching using GetFunctionAddress
-  ; from an elevated installer since $INSTDIR will not be set in this installer
-  ${StrFilter} "${FileMainEXE}" "+" "" "" $R9
-  ReadRegStr $0 HKLM "Software\Clients\StartMenuInternet\$R9\DefaultIcon" ""
-  ${GetPathFromString} "$0" $0
-  ${GetParent} "$0" $1
   ; Set our current working directory to the application's install directory
   ; otherwise the 7-Zip temp directory will be in use and won't be deleted.
-  SetOutPath "$1"
-  Exec "$\"$0$\""
+  SetOutPath "$INSTDIR"
+  ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
+FunctionEnd
+
+Function SendPing
+  ${GetParameters} $0
+  ${GetOptions} $0 "/LaunchedFromStub" $0
+  ${IfNot} ${Errors}
+    Return
+  ${EndIf}
+
+  ; Create a GUID to use as the unique document ID.
+  System::Call "rpcrt4::UuidCreate(g . r0)i"
+  ; StringFromGUID2 (which is what System::Call uses internally to stringify
+  ; GUIDs) includes braces in its output, and we don't want those.
+  StrCpy $0 $0 -1 1
+
+  ; Configure the HTTP request for the ping
+  nsJSON::Set /tree ping /value "{}"
+  nsJSON::Set /tree ping "Url" /value \
+    '"${TELEMETRY_BASE_URL}/${TELEMETRY_NAMESPACE}/${TELEMETRY_INSTALL_PING_DOCTYPE}/${TELEMETRY_INSTALL_PING_VERSION}/$0"'
+  nsJSON::Set /tree ping "Verb" /value '"POST"'
+  nsJSON::Set /tree ping "DataType" /value '"JSON"'
+  nsJSON::Set /tree ping "AccessType" /value '"PreConfig"'
+
+  ; Fill in the ping payload
+  nsJSON::Set /tree ping "Data" /value "{}"
+  nsJSON::Set /tree ping "Data" "installer_type" /value '"full"'
+  nsJSON::Set /tree ping "Data" "installer_version" /value '"${AppVersion}"'
+  nsJSON::Set /tree ping "Data" "build_channel" /value '"${Channel}"'
+  nsJSON::Set /tree ping "Data" "update_channel" /value '"${UpdateChannel}"'
+  nsJSON::Set /tree ping "Data" "locale" /value '"${AB_CD}"'
+
+  ReadINIStr $0 "$INSTDIR\application.ini" "App" "Version"
+  nsJSON::Set /tree ping "Data" "version" /value '"$0"'
+  ReadINIStr $0 "$INSTDIR\application.ini" "App" "BuildID"
+  nsJSON::Set /tree ping "Data" "build_id" /value '"$0"'
+
+  ${GetParameters} $0
+  ${GetOptions} $0 "/LaunchedFromMSI" $0
+  ${IfNot} ${Errors}
+    nsJSON::Set /tree ping "Data" "from_msi" /value true
+  ${EndIf}
+
+  !ifdef HAVE_64BIT_BUILD
+    nsJSON::Set /tree ping "Data" "64bit_build" /value true
+  !else
+    nsJSON::Set /tree ping "Data" "64bit_build" /value false
+  !endif
+
+  ${If} ${RunningX64}
+    nsJSON::Set /tree ping "Data" "64bit_os" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "64bit_os" /value false
+  ${EndIf}
+
+  ; Though these values are sometimes incorrect due to bug 444664 it happens
+  ; so rarely it isn't worth working around it by reading the registry values.
+  ${WinVerGetMajor} $0
+  ${WinVerGetMinor} $1
+  ${WinVerGetBuild} $2
+  nsJSON::Set /tree ping "Data" "os_version" /value '"$0.$1.$2"'
+  ${If} ${IsServerOS}
+    nsJSON::Set /tree ping "Data" "server_os" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "server_os" /value false
+  ${EndIf}
+
+  ClearErrors
+  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" \
+                   "Write Test"
+  ${If} ${Errors}
+    nsJSON::Set /tree ping "Data" "admin_user" /value false
+  ${Else}
+    DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
+    nsJSON::Set /tree ping "Data" "admin_user" /value true
+  ${EndIf}
+
+  ${If} $DefaultInstDir == $INSTDIR
+    nsJSON::Set /tree ping "Data" "default_path" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "default_path" /value false
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "set_default" /value "$SetAsDefault"
+
+  nsJSON::Set /tree ping "Data" "new_default" /value false
+  nsJSON::Set /tree ping "Data" "old_default" /value false
+
+  AppAssocReg::QueryCurrentDefault "http" "protocol" "effective"
+  Pop $0
+  ReadRegStr $0 HKCR "$0\shell\open\command" ""
+  ${If} $0 != ""
+    ${GetPathFromString} "$0" $0
+    ${GetParent} "$0" $1
+    ${GetLongPath} "$1" $1
+    ${If} $1 == $INSTDIR
+      nsJSON::Set /tree ping "Data" "new_default" /value true
+    ${Else}
+      StrCpy $0 "$0" "" -11 # 11 == length of "firefox.exe"
+      ${If} "$0" == "${FileMainEXE}"
+        nsJSON::Set /tree ping "Data" "old_default" /value true
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "had_old_install" /value "$HadOldInstall"
+
+  ${If} ${Silent}
+    ; In silent mode, only the install phase is executed, and the GUI events
+    ; that initialize most of the phase times are never called; only
+    ; $InstallPhaseStart and $FinishPhaseStart have usable values.
+    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $0
+
+    nsJSON::Set /tree ping "Data" "intro_time" /value 0
+    nsJSON::Set /tree ping "Data" "options_time" /value 0
+    nsJSON::Set /tree ping "Data" "install_time" /value "$0"
+    nsJSON::Set /tree ping "Data" "finish_time" /value 0
+  ${Else}
+    ; In GUI mode, all we can be certain of is that the intro phase has started;
+    ; the user could have canceled at any time and phases after that won't
+    ; have run at all. So we have to be prepared for anything after
+    ; $IntroPhaseStart to be uninitialized. For anything that isn't filled in
+    ; yet we'll use the current tick count. That means that any phases that
+    ; weren't entered at all will get 0 for their times because the start and
+    ; end tick counts will be the same.
+    System::Call "kernel32::GetTickCount()l .s"
+    Pop $0
+
+    ${If} $OptionsPhaseStart == 0
+      StrCpy $OptionsPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $IntroPhaseStart $OptionsPhaseStart $1
+    nsJSON::Set /tree ping "Data" "intro_time" /value "$1"
+
+    ${If} $InstallPhaseStart == 0
+      StrCpy $InstallPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $OptionsPhaseStart $InstallPhaseStart $1
+    nsJSON::Set /tree ping "Data" "options_time" /value "$1"
+
+    ${If} $FinishPhaseStart == 0
+      StrCpy $FinishPhaseStart $0
+    ${EndIf}
+    ${GetSecondsElapsed} $InstallPhaseStart $FinishPhaseStart $1
+    nsJSON::Set /tree ping "Data" "install_time" /value "$1"
+
+    ${If} $FinishPhaseEnd == 0
+      StrCpy $FinishPhaseEnd $0
+    ${EndIf}
+    ${GetSecondsElapsed} $FinishPhaseStart $FinishPhaseEnd $1
+    nsJSON::Set /tree ping "Data" "finish_time" /value "$1"
+  ${EndIf}
+
+  nsJSON::Set /tree ping "Data" "new_launched" /value "$LaunchedNewApp"
+
+  nsJSON::Set /tree ping "Data" "succeeded" /value false
+  ${If} $InstallResult == "cancel"
+    nsJSON::Set /tree ping "Data" "user_cancelled" /value true
+  ${ElseIf} $InstallResult == "success"
+    nsJSON::Set /tree ping "Data" "succeeded" /value true
+  ${EndIf}
+
+  ; Send the ping request. This call will block until a response is received,
+  ; but we shouldn't have any windows still open, so we won't jank anything.
+  nsJSON::Set /http ping
 FunctionEnd
 
 ################################################################################
@@ -862,6 +1137,9 @@ FunctionEnd
 !verbose 3
 !include "overrideLocale.nsh"
 !include "customLocale.nsh"
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+!include "extensionsLocale.nsh"
+!endif
 !verbose pop
 
 ; Set this after the locale files to override it if it is in the locale
@@ -877,9 +1155,43 @@ Function preWelcome
     Delete "$PLUGINSDIR\modern-wizard.bmp"
     CopyFiles /SILENT "$EXEDIR\core\distribution\modern-wizard.bmp" "$PLUGINSDIR\modern-wizard.bmp"
   ${EndIf}
+
+  ; We don't want the header bitmap showing on the welcome page.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_HIDE}
+
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $IntroPhaseStart
+FunctionEnd
+
+Function showWelcome
+  ; The welcome and finish pages don't get the correct colors for their labels
+  ; like the other pages do, presumably because they're built by filling in an
+  ; InstallOptions .ini file instead of from a dialog resource like the others.
+  ; Field 2 is the header and Field 3 is the body text.
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 2" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+FunctionEnd
+
+Function leaveWelcome
+  ; Bring back the header bitmap for the next pages.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_SHOW}
 FunctionEnd
 
 Function preOptions
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $OptionsPhaseStart
+
+  ; The header and subheader on the wizard pages don't get the correct text
+  ; color by default for some reason, even though the other controls do.
+  GetDlgItem $0 $HWNDPARENT 1037
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+  GetDlgItem $0 $HWNDPARENT 1038
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
   StrCpy $PageName "Options"
   ${If} ${FileExists} "$EXEDIR\core\distribution\modern-header.bmp"
   ${AndIf} $hHeaderBitmap == ""
@@ -913,6 +1225,8 @@ FunctionEnd
 Function preDirectory
   StrCpy $PageName "Directory"
   ${PreDirectoryCommon}
+
+  StrCpy $DefaultInstDir $INSTDIR
 FunctionEnd
 
 Function leaveDirectory
@@ -957,12 +1271,6 @@ Function preComponents
     Abort
   ${EndIf}
 
-  ; On Windows < XP SP3 we do not install the maintenance service.
-  ${If} ${IsWinXP}
-  ${AndIf} ${AtMostServicePack} 2
-    Abort
-  ${EndIf}
-
   ; Don't show the custom components page if the
   ; user is not an admin
   Call IsUserAdmin
@@ -996,6 +1304,119 @@ Function leaveComponents
   ${MUI_INSTALLOPTIONS_READ} $InstallMaintenanceService "components.ini" "Field 2" "State"
   ${If} $InstallType == ${INSTALLTYPE_CUSTOM}
     Call CheckExistingInstall
+  ${EndIf}
+FunctionEnd
+!endif
+
+!ifdef MOZ_OPTIONAL_EXTENSIONS
+Function preExtensions
+  StrCpy $PageName "Extensions"
+  ${CheckCustomCommon}
+
+  ; Abort if no optional extensions configured in distribution/setup.ini
+  ${If} ${FileExists} "$EXEDIR\core\distribution\setup.ini"
+    ClearErrors
+    ReadINIStr $ExtensionRecommender "$EXEDIR\core\distribution\setup.ini" \
+      "OptionalExtensions" "Recommender.${AB_CD}"
+    ${If} ${Errors}
+      ClearErrors
+      ReadINIStr $ExtensionRecommender "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "Recommender"
+    ${EndIf}
+
+    ${If} ${Errors}
+      ClearErrors
+      Abort
+    ${EndIf}
+  ${Else}
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "$(EXTENSIONS_PAGE_TITLE)" "$(EXTENSIONS_PAGE_SUBTITLE)"
+  !insertmacro MUI_INSTALLOPTIONS_DISPLAY "extensions.ini"
+FunctionEnd
+
+Function leaveExtensions
+  ${MUI_INSTALLOPTIONS_READ} $0 "extensions.ini" "Settings" "NumFields"
+  ${MUI_INSTALLOPTIONS_READ} $1 "extensions.ini" "Settings" "State"
+
+  ; $0 is count of checkboxes
+  IntOp $0 $0 - 1
+
+  ${If} $1 > $0
+    Abort
+  ${ElseIf} $1 == 0
+    ; $1 is count of selected optional extension(s)
+    StrCpy $1 0
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "State"
+      ${If} $3 == ${BST_CHECKED}
+        IntOp $1 $1 + 1
+      ${EndIf}
+
+      IntOp $4 $2 - 2
+      WriteINIStr "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$4.checked" "$3"
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    ; Different from state of field 1, "0" means no optional extensions selected
+    ${If} $1 > 0
+      StrCpy $InstallOptionalExtensions "1"
+    ${Else}
+      StrCpy $InstallOptionalExtensions "0"
+    ${EndIf}
+
+    ${If} $InstallType == ${INSTALLTYPE_CUSTOM}
+      Call CheckExistingInstall
+    ${EndIf}
+  ${ElseIf} $1 == 1
+    ; Check/uncheck all optional extensions with field 1
+    ${MUI_INSTALLOPTIONS_READ} $1 "extensions.ini" "Field 1" "State"
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "HWND"
+      SendMessage $3 ${BM_SETCHECK} $1 0
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    Abort
+  ${ElseIf} $1 > 1
+    StrCpy $1 ${BST_CHECKED}
+
+    StrCpy $2 2
+    ${Do}
+      ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field $2" "State"
+      ${If} $3 == ${BST_UNCHECKED}
+        StrCpy $1 ${BST_UNCHECKED}
+        ${ExitDo}
+      ${EndIf}
+
+      ${If} $0 == $2
+        ${ExitDo}
+      ${Else}
+        IntOp $2 $2 + 1
+      ${EndIf}
+    ${Loop}
+
+    ; Check field 1 only if all optional extensions are selected
+    ${MUI_INSTALLOPTIONS_READ} $3 "extensions.ini" "Field 1" "HWND"
+    SendMessage $3 ${BM_SETCHECK} $1 0
+
+    Abort
   ${EndIf}
 FunctionEnd
 !endif
@@ -1051,9 +1472,6 @@ Function preSummary
     ; Check if Firefox is the http handler for this user.
     SetShellVarContext current ; Set SHCTX to the current user
     ${IsHandlerForInstallDir} "http" $R9
-    ${If} $TmpVal == "HKLM"
-      SetShellVarContext all ; Set SHCTX to all users
-    ${EndIf}
     ; If Firefox isn't the http handler for this user show the option to set
     ; Firefox as the default browser.
     ${If} "$R9" != "true"
@@ -1119,9 +1537,35 @@ FunctionEnd
 ; When we add an optional action to the finish page the cancel button is
 ; enabled. This disables it and leaves the finish button as the only choice.
 Function preFinish
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $FinishPhaseStart
+
   StrCpy $PageName ""
   ${EndInstallLog} "${BrandFullName}"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "ioSpecial.ini" "settings" "cancelenabled" "0"
+
+  ; We don't want the header bitmap showing on the finish page.
+  GetDlgItem $0 $HWNDPARENT 1046
+  ShowWindow $0 ${SW_HIDE}
+FunctionEnd
+
+Function showFinish
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 2" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; Field 4 is the launch checkbox. Since it's a checkbox, we need to
+  ; clear the theme from it before we can set its background color.
+  ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 4" "HWND"
+  System::Call 'uxtheme::SetWindowTheme(i $0, w " ", w " ")'
+  SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+FunctionEnd
+
+Function postFinish
+  System::Call "kernel32::GetTickCount()l .s"
+  Pop $FinishPhaseEnd
 FunctionEnd
 
 ################################################################################
@@ -1132,19 +1576,29 @@ Function .onInit
   ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
   System::Call 'kernel32::SetDllDirectoryW(w "")'
 
+  ; Initialize the variables used for telemetry
+  StrCpy $SetAsDefault true
+  StrCpy $HadOldInstall false
+  StrCpy $DefaultInstDir $INSTDIR
+  StrCpy $IntroPhaseStart 0
+  StrCpy $OptionsPhaseStart 0
+  StrCpy $InstallPhaseStart 0
+  StrCpy $FinishPhaseStart 0
+  StrCpy $FinishPhaseEnd 0
+  StrCpy $InstallResult "cancel"
+  StrCpy $LaunchedNewApp false
+
   StrCpy $PageName ""
   StrCpy $LANGUAGE 0
   ${SetBrandNameVars} "$EXEDIR\core\distribution\setup.ini"
 
   ; Don't install on systems that don't support SSE2. The parameter value of
   ; 10 is for PF_XMMI64_INSTRUCTIONS_AVAILABLE which will check whether the
-  ; SSE2 instruction set is available.
+  ; SSE2 instruction set is available. Result returned in $R7.
   System::Call "kernel32::IsProcessorFeaturePresent(i 10)i .R7"
 
-!ifdef HAVE_64BIT_BUILD
-  ; Restrict x64 builds from being installed on x86 and pre Win7
-  ${Unless} ${RunningX64}
-  ${OrUnless} ${AtLeastWin7}
+  ; Windows NT 6.0 (Vista/Server 2008) and lower are not supported.
+  ${Unless} ${AtLeastWin7}
     ${If} "$R7" == "0"
       strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
     ${Else}
@@ -1155,64 +1609,49 @@ Function .onInit
     Quit
   ${EndUnless}
 
-  SetRegView 64
-!else
-  StrCpy $R8 "0"
-  ${If} ${AtMostWin2000}
-    StrCpy $R8 "1"
-  ${EndIf}
-
-  ${If} ${IsWinXP}
-  ${AndIf} ${AtMostServicePack} 1
-    StrCpy $R8 "1"
-  ${EndIf}
-
-  ${If} $R8 == "1"
-    ; XXX-rstrong - some systems failed the AtLeastWin2000 test that we
-    ; used to use for an unknown reason and likely fail the AtMostWin2000
-    ; and possibly the IsWinXP test as well. To work around this also
-    ; check if the Windows NT registry Key exists and if it does if the
-    ; first char in CurrentVersion is equal to 3 (Windows NT 3.5 and
-    ; 3.5.1), 4 (Windows NT 4), or 5 (Windows 2000 and Windows XP).
-    StrCpy $R8 ""
-    ClearErrors
-    ReadRegStr $R8 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "CurrentVersion"
-    StrCpy $R8 "$R8" 1
-    ${If} ${Errors}
-    ${OrIf} "$R8" == "3"
-    ${OrIf} "$R8" == "4"
-    ${OrIf} "$R8" == "5"
-      ${If} "$R7" == "0"
-        strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
-      ${Else}
-        strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_MSG)"
-      ${EndIf}
-      MessageBox MB_OKCANCEL|MB_ICONSTOP "$R7" IDCANCEL +2
-      ExecShell "open" "${URLSystemRequirements}"
-      Quit
-    ${EndIf}
-  ${EndUnless}
-!endif
-
+  ; SSE2 CPU support
   ${If} "$R7" == "0"
     MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_CPU_MSG)" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
     Quit
   ${EndIf}
 
-  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
-
-; The commands inside this ifndef are needed prior to NSIS 3.0a2 and can be
-; removed after we require NSIS 3.0a2 or greater.
-!ifndef NSIS_PACKEDVERSION
-  ${If} ${AtLeastWinVista}
-    System::Call 'user32::SetProcessDPIAware()'
+!ifdef HAVE_64BIT_BUILD
+  ${If} "${ARCH}" == "AArch64"
+    ${IfNot} ${IsNativeARM64}
+    ${OrIfNot} ${AtLeastWin10}
+      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+      ExecShell "open" "${URLSystemRequirements}"
+      Quit
+    ${EndIf}
+  ${ElseIfNot} ${RunningX64}
+    MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+    ExecShell "open" "${URLSystemRequirements}"
+    Quit
   ${EndIf}
+  SetRegView 64
 !endif
+
+  SetShellVarContext all
+  ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
+  ${If} "$0" == "false"
+    SetShellVarContext current
+    ${GetFirstInstallPath} "Software\Mozilla\${BrandFullNameInternal}" $0
+    ${If} "$0" == "false"
+      StrCpy $HadOldInstall false
+    ${Else}
+      StrCpy $HadOldInstall true
+    ${EndIf}
+  ${Else}
+    StrCpy $HadOldInstall true
+  ${EndIf}
+
+  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
 
   !insertmacro InitInstallOptionsFile "options.ini"
   !insertmacro InitInstallOptionsFile "shortcuts.ini"
   !insertmacro InitInstallOptionsFile "components.ini"
+  !insertmacro InitInstallOptionsFile "extensions.ini"
   !insertmacro InitInstallOptionsFile "summary.ini"
 
   WriteINIStr "$PLUGINSDIR\options.ini" "Settings" NumFields "5"
@@ -1317,6 +1756,74 @@ Function .onInit
   WriteINIStr "$PLUGINSDIR\components.ini" "Field 2" State  "1"
   WriteINIStr "$PLUGINSDIR\components.ini" "Field 2" Flags  "GROUP"
 
+  ; Setup the extensions.ini file for the Custom Extensions Page
+  StrCpy $R9 0
+  StrCpy $R8 ${BST_CHECKED}
+
+  ${If} ${FileExists} "$EXEDIR\core\distribution\setup.ini"
+    ${Do}
+      IntOp $R7 $R9 + 2
+
+      ClearErrors
+      ReadINIStr $R6 "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$R9.name.${AB_CD}"
+      ${If} ${Errors}
+        ClearErrors
+        ReadINIStr $R6 "$EXEDIR\core\distribution\setup.ini" \
+          "OptionalExtensions" "extension.$R9.name"
+      ${EndIf}
+
+      ${If} ${Errors}
+        ${ExitDo}
+      ${EndIf}
+
+      ; Each row moves down by 13 DLUs
+      IntOp $R2 $R9 * 13
+      IntOp $R2 $R2 + 21
+      IntOp $R1 $R2 + 10
+
+      ClearErrors
+      ReadINIStr $R0 "$EXEDIR\core\distribution\setup.ini" \
+        "OptionalExtensions" "extension.$R9.checked"
+      ${If} ${Errors}
+        StrCpy $R0 ${BST_CHECKED}
+      ${ElseIf} $R0 == "0"
+        StrCpy $R8 ${BST_UNCHECKED}
+      ${EndIf}
+
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Type   "checkbox"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Text   "$R6"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Left   "11"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Right  "-1"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Top    "$R2"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Bottom "$R1"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" State  "$R0"
+      WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R7" Flags  "NOTIFY"
+
+      IntOp $R9 $R9 + 1
+    ${Loop}
+  ${EndIf}
+
+  IntOp $R9 $R9 + 2
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Settings" NumFields "$R9"
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Type   "checkbox"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Text   "$(OPTIONAL_EXTENSIONS_CHECKBOX_DESC)"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Left   "0"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Right  "-1"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Top    "5"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Bottom "15"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" State  "$R8"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field 1" Flags  "GROUP|NOTIFY"
+
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Type   "label"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Text   "$(OPTIONAL_EXTENSIONS_DESC)"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Left   "0"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Right  "-1"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Top    "-23"
+  WriteINIStr "$PLUGINSDIR\extensions.ini" "Field $R9" Bottom "-5"
+
   ; There must always be a core directory.
   ${GetSize} "$EXEDIR\core\" "/S=0K" $R5 $R7 $R8
   SectionSetSize ${APP_IDX} $R5
@@ -1328,4 +1835,5 @@ FunctionEnd
 
 Function .onGUIEnd
   ${OnEndCommon}
+  Call SendPing
 FunctionEnd

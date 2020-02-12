@@ -13,7 +13,7 @@
 
 #include "secoidt.h"
 #include "certt.h"
-#include "keyt.h"
+#include "keythi.h"
 #include "hasht.h"
 #include "pkcs7t.h"
 
@@ -285,6 +285,26 @@ extern SEC_PKCS7ContentInfo *SEC_PKCS7CreateData(void);
 extern SEC_PKCS7ContentInfo *
 SEC_PKCS7CreateEncryptedData(SECOidTag algorithm, int keysize,
                              SECKEYGetPasswordKey pwfn, void *pwfn_arg);
+
+/*
+ * Create an empty PKCS7 encrypted content info.
+ *
+ * Similar to SEC_PKCS7CreateEncryptedData(), but this is capable of
+ * creating encrypted content for PKCS #5 v2 algorithms.
+ *
+ * "pbe_algorithm" specifies the PBE algorithm to use.
+ * "cipher_algorithm" specifies the bulk encryption algorithm to use.
+ * "prf_algorithm" specifies the PRF algorithm which pbe_algorithm uses.
+ *
+ * An error results in a return value of NULL and an error set.
+ * (Retrieve specific errors via PORT_GetError()/XP_GetError().)
+ */
+extern SEC_PKCS7ContentInfo *
+SEC_PKCS7CreateEncryptedDataWithPBEV2(SECOidTag pbe_algorithm,
+                                      SECOidTag cipher_algorithm,
+                                      SECOidTag prf_algorithm,
+                                      int keysize,
+                                      SECKEYGetPasswordKey pwfn, void *pwfn_arg);
 
 /*
  * All of the following things return SECStatus to signal success or failure.

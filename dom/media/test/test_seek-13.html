@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Media test: seek tests</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
   <script type="text/javascript" src="seek_support.js"></script>
@@ -58,10 +58,10 @@ function playbackEnded() {
   finish();
 }
 
-v.addEventListener("loadedmetadata", startTest, false);
-v.addEventListener("seeking", seekStarted, false);
-v.addEventListener("seeked", seekEnded, false);
-v.addEventListener("ended", playbackEnded, false);
+v.addEventListener("loadedmetadata", startTest);
+v.addEventListener("seeking", seekStarted);
+v.addEventListener("seeked", seekEnded);
+v.addEventListener("ended", playbackEnded);
 }
 
 manager.runTests(createTestArray(), startTest);

@@ -7,7 +7,9 @@
 #define GMPServiceChild_h_
 
 #include "GMPService.h"
+#include "MediaResult.h"
 #include "base/process.h"
+#include "mozilla/dom/PContent.h"
 #include "mozilla/ipc/Transport.h"
 #include "mozilla/gmp/PGMPServiceChild.h"
 #include "nsRefPtrHashtable.h"
@@ -18,35 +20,17 @@ namespace gmp {
 class GMPContentParent;
 class GMPServiceChild;
 
-class GetServiceChildCallback
-{
-public:
-  GetServiceChildCallback()
-  {
-    MOZ_COUNT_CTOR(GetServiceChildCallback);
-  }
-  virtual ~GetServiceChildCallback()
-  {
-    MOZ_COUNT_DTOR(GetServiceChildCallback);
-  }
-  virtual void Done(GMPServiceChild* aGMPServiceChild) = 0;
-};
-
-class GeckoMediaPluginServiceChild : public GeckoMediaPluginService
-{
+class GeckoMediaPluginServiceChild : public GeckoMediaPluginService {
   friend class GMPServiceChild;
 
-public:
+ public:
   static already_AddRefed<GeckoMediaPluginServiceChild> GetSingleton();
 
-  NS_IMETHOD GetPluginVersionForAPI(const nsACString& aAPI,
-                                    nsTArray<nsCString>* aTags,
-                                    bool* aHasPlugin,
-                                    nsACString& aOutVersion) override;
+  NS_IMETHOD HasPluginForAPI(const nsACString& aAPI, nsTArray<nsCString>* aTags,
+                             bool* aRetVal) override;
   NS_IMETHOD GetNodeId(const nsAString& aOrigin,
                        const nsAString& aTopLevelOrigin,
                        const nsAString& aGMPName,
-                       bool aInPrivateBrowsingMode,
                        UniquePtr<GetNodeIdCallback>&& aCallback) override;
 
   NS_DECL_NSIOBSERVER
@@ -55,49 +39,58 @@ public:
 
   void RemoveGMPContentParent(GMPContentParent* aGMPContentParent);
 
-protected:
-  void InitializePlugins(AbstractThread*) override
-  {
+  static void UpdateGMPCapabilities(
+      nsTArray<mozilla::dom::GMPCapabilityData>&& aCapabilities);
+
+  void BeginShutdown();
+
+ protected:
+  void InitializePlugins(AbstractThread*) override {
     // Nothing to do here.
   }
-  bool GetContentParentFrom(GMPCrashHelper* aHelper,
-                            const nsACString& aNodeId,
-                            const nsCString& aAPI,
-                            const nsTArray<nsCString>& aTags,
-                            UniquePtr<GetGMPContentParentCallback>&& aCallback)
-    override;
 
-private:
+  RefPtr<GetGMPContentParentPromise> GetContentParent(
+      GMPCrashHelper* aHelper, const nsACString& aNodeIdString,
+      const nsCString& aAPI, const nsTArray<nsCString>& aTags) override;
+
+  RefPtr<GetGMPContentParentPromise> GetContentParent(
+      GMPCrashHelper* aHelper, const NodeId& aNodeId, const nsCString& aAPI,
+      const nsTArray<nsCString>& aTags) override;
+
+ private:
   friend class OpenPGMPServiceChild;
 
-  void GetServiceChild(UniquePtr<GetServiceChildCallback>&& aCallback);
+  typedef MozPromise<GMPServiceChild*, MediaResult, /* IsExclusive = */ true>
+      GetServiceChildPromise;
+  RefPtr<GetServiceChildPromise> GetServiceChild();
 
+  nsTArray<MozPromiseHolder<GetServiceChildPromise>> mGetServiceChildPromises;
   UniquePtr<GMPServiceChild> mServiceChild;
-  nsTArray<UniquePtr<GetServiceChildCallback>> mGetServiceChildCallbacks;
 };
 
-class GMPServiceChild : public PGMPServiceChild
-{
-public:
+class GMPServiceChild : public PGMPServiceChild {
+ public:
   explicit GMPServiceChild();
   virtual ~GMPServiceChild();
 
-  PGMPContentParent* AllocPGMPContentParent(Transport* aTransport,
-                                            ProcessId aOtherPid) override;
+  already_AddRefed<GMPContentParent> GetBridgedGMPContentParent(
+      ProcessId aOtherPid, ipc::Endpoint<PGMPContentParent>&& endpoint);
 
-  void GetBridgedGMPContentParent(ProcessId aOtherPid,
-                                  GMPContentParent** aGMPContentParent);
   void RemoveGMPContentParent(GMPContentParent* aGMPContentParent);
 
   void GetAlreadyBridgedTo(nsTArray<ProcessId>& aAlreadyBridgedTo);
 
-  static PGMPServiceChild* Create(Transport* aTransport, ProcessId aOtherPid);
+  static bool Create(Endpoint<PGMPServiceChild>&& aGMPService);
 
-private:
+  ipc::IPCResult RecvBeginShutdown() override;
+
+  bool HaveContentParents() const;
+
+ private:
   nsRefPtrHashtable<nsUint64HashKey, GMPContentParent> mContentParents;
 };
 
-} // namespace gmp
-} // namespace mozilla
+}  // namespace gmp
+}  // namespace mozilla
 
-#endif // GMPServiceChild_h_
+#endif  // GMPServiceChild_h_

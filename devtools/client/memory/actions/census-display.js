@@ -7,10 +7,10 @@ const { assert } = require("devtools/shared/DevToolsUtils");
 const { actions } = require("../constants");
 const { refresh } = require("./refresh");
 
-exports.setCensusDisplayAndRefresh = function (heapWorker, display) {
-  return function* (dispatch, getState) {
+exports.setCensusDisplayAndRefresh = function(heapWorker, display) {
+  return async function(dispatch, getState) {
     dispatch(setCensusDisplay(display));
-    yield dispatch(refresh(heapWorker));
+    await dispatch(refresh(heapWorker));
   };
 };
 
@@ -20,15 +20,18 @@ exports.setCensusDisplayAndRefresh = function (heapWorker, display) {
  *
  * @param {censusDisplayModel} display
  */
-const setCensusDisplay = exports.setCensusDisplay = function (display) {
-  assert(typeof display === "object"
-         && display
-         && display.breakdown
-         && display.breakdown.by,
-    `Breakdowns must be an object with a \`by\` property, attempted to set: ${uneval(display)}`);
+const setCensusDisplay = (exports.setCensusDisplay = function(display) {
+  assert(
+    typeof display === "object" &&
+      display &&
+      display.breakdown &&
+      display.breakdown.by,
+    "Breakdowns must be an object with a `by` property, attempted to set: " +
+      uneval(display)
+  );
 
   return {
     type: actions.SET_CENSUS_DISPLAY,
     display,
   };
-};
+});

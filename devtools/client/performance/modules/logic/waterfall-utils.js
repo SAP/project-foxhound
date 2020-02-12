@@ -7,8 +7,9 @@
  * Utility functions for collapsing markers into a waterfall.
  */
 
-const { extend } = require("sdk/util/object");
-const { MarkerBlueprintUtils } = require("devtools/client/performance/modules/marker-blueprint-utils");
+const {
+  MarkerBlueprintUtils,
+} = require("devtools/client/performance/modules/marker-blueprint-utils");
 
 /**
  * Creates a parent marker, which functions like a regular marker,
@@ -19,7 +20,7 @@ const { MarkerBlueprintUtils } = require("devtools/client/performance/modules/ma
  * @return object
  */
 function createParentNode(marker) {
-  return extend(marker, { submarkers: [] });
+  return Object.assign({}, marker, { submarkers: [] });
 }
 
 /**
@@ -29,14 +30,14 @@ function createParentNode(marker) {
  * @param array filter
  */
 function collapseMarkersIntoNode({ rootNode, markersList, filter }) {
-  let {
+  const {
     getCurrentParentNode,
     pushNode,
-    popParentNode
+    popParentNode,
   } = createParentNodeFactory(rootNode);
 
   for (let i = 0, len = markersList.length; i < len; i++) {
-    let curr = markersList[i];
+    const curr = markersList[i];
 
     // If this marker type should not be displayed, just skip
     if (!MarkerBlueprintUtils.shouldDisplayMarker(curr, filter)) {
@@ -44,19 +45,20 @@ function collapseMarkersIntoNode({ rootNode, markersList, filter }) {
     }
 
     let parentNode = getCurrentParentNode();
-    let blueprint = MarkerBlueprintUtils.getBlueprintFor(curr);
+    const blueprint = MarkerBlueprintUtils.getBlueprintFor(curr);
 
-    let nestable = "nestable" in blueprint ? blueprint.nestable : true;
-    let collapsible = "collapsible" in blueprint ? blueprint.collapsible : true;
+    const nestable = "nestable" in blueprint ? blueprint.nestable : true;
+    const collapsible =
+      "collapsible" in blueprint ? blueprint.collapsible : true;
 
     let finalized = false;
 
-    // If this marker is collapsible, turn it into a parent marker.
-    // If there are no children within it later, it will be turned
-    // back into a normal node.
+    // Extend the marker with extra properties needed in the marker tree
+    const extendedProps = { index: i };
     if (collapsible) {
-      curr = createParentNode(curr);
+      extendedProps.submarkers = [];
     }
+    Object.assign(curr, extendedProps);
 
     // If not nestible, just push it inside the root node. Additionally,
     // markers originating outside the main thread are considered to be
@@ -77,10 +79,12 @@ function collapseMarkersIntoNode({ rootNode, markersList, filter }) {
       // make it a child of the current parent and stop going upwards.
       // If the markers aren't from the same process, attach them to the root
       // node as well. Every process has its own main thread.
-      if (nestable &&
-          curr.start >= parentNode.start &&
-          curr.end <= parentNode.end &&
-          curr.processType == parentNode.processType) {
+      if (
+        nestable &&
+        curr.start >= parentNode.start &&
+        curr.end <= parentNode.end &&
+        curr.processType == parentNode.processType
+      ) {
         pushNode(parentNode, curr);
         finalized = true;
         break;
@@ -110,8 +114,8 @@ function collapseMarkersIntoNode({ rootNode, markersList, filter }) {
  * @return {object}
  */
 function createParentNodeFactory(root) {
-  let parentMarkers = [];
-  let factory = {
+  const parentMarkers = [];
+  const factory = {
     /**
      * Pops the most recent parent node off the stack, finalizing it.
      * Sets the `end` time based on the most recent child if not defined.
@@ -121,12 +125,13 @@ function createParentNodeFactory(root) {
         throw new Error("Cannot pop parent markers when none exist.");
       }
 
-      let lastParent = parentMarkers.pop();
+      const lastParent = parentMarkers.pop();
 
       // If this finished parent marker doesn't have an end time,
       // so probably a synthesized marker, use the last marker's end time.
       if (lastParent.end == void 0) {
-        lastParent.end = lastParent.submarkers[lastParent.submarkers.length - 1].end;
+        lastParent.end =
+          lastParent.submarkers[lastParent.submarkers.length - 1].end;
       }
 
       // If no children were ever pushed into this parent node,
@@ -142,9 +147,8 @@ function createParentNodeFactory(root) {
     /**
      * Returns the most recent parent node.
      */
-    getCurrentParentNode: () => parentMarkers.length
-      ? parentMarkers[parentMarkers.length - 1]
-      : null,
+    getCurrentParentNode: () =>
+      parentMarkers.length ? parentMarkers[parentMarkers.length - 1] : null,
 
     /**
      * Push this marker into the most recent parent node.
@@ -157,7 +161,7 @@ function createParentNodeFactory(root) {
       if (marker.submarkers) {
         parentMarkers.push(marker);
       }
-    }
+    },
   };
 
   return factory;

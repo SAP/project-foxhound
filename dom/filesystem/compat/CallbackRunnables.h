@@ -18,88 +18,102 @@ namespace dom {
 
 class FileSystemEntriesCallback;
 
-class EntryCallbackRunnable final : public Runnable
-{
-public:
+class EntryCallbackRunnable final : public Runnable {
+ public:
   EntryCallbackRunnable(FileSystemEntryCallback* aCallback,
                         FileSystemEntry* aEntry);
 
-  NS_IMETHOD
-  Run() override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
+  // bug 1535398.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
-private:
-  RefPtr<FileSystemEntryCallback> mCallback;
-  RefPtr<FileSystemEntry> mEntry;
+ private:
+  const RefPtr<FileSystemEntryCallback> mCallback;
+  const RefPtr<FileSystemEntry> mEntry;
 };
 
-class ErrorCallbackRunnable final : public Runnable
-{
-public:
+class ErrorCallbackRunnable final : public Runnable {
+ public:
   ErrorCallbackRunnable(nsIGlobalObject* aGlobalObject,
-                        ErrorCallback* aCallback,
-                        nsresult aError);
+                        ErrorCallback* aCallback, nsresult aError);
 
-  NS_IMETHOD
-  Run() override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
+  // bug 1535398.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
-private:
+ private:
   nsCOMPtr<nsIGlobalObject> mGlobal;
-  RefPtr<ErrorCallback> mCallback;
+  const RefPtr<ErrorCallback> mCallback;
   nsresult mError;
 };
 
-class EmptyEntriesCallbackRunnable final : public Runnable
-{
-public:
+class EmptyEntriesCallbackRunnable final : public Runnable {
+ public:
   explicit EmptyEntriesCallbackRunnable(FileSystemEntriesCallback* aCallback);
 
-  NS_IMETHOD
-  Run() override;
+  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until Runnable::Run is MOZ_CAN_RUN_SCRIPT.  See
+  // bug 1535398.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
-private:
-  RefPtr<FileSystemEntriesCallback> mCallback;
+ private:
+  const RefPtr<FileSystemEntriesCallback> mCallback;
 };
 
-class GetEntryHelper final : public PromiseNativeHandler
-{
-public:
+class GetEntryHelper final : public PromiseNativeHandler {
+ public:
   NS_DECL_ISUPPORTS
 
-  GetEntryHelper(nsIGlobalObject* aGlobalObject,
-                 FileSystem* aFileSystem,
+  GetEntryHelper(FileSystemDirectoryEntry* aParentEntry, Directory* aDirectory,
+                 nsTArray<nsString>& aParts, FileSystem* aFileSystem,
                  FileSystemEntryCallback* aSuccessCallback,
                  ErrorCallback* aErrorCallback,
                  FileSystemDirectoryEntry::GetInternalType aType);
 
-  virtual void
-  ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
+  void Run();
 
-  virtual void
-  RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override;
+  MOZ_CAN_RUN_SCRIPT
+  virtual void ResolvedCallback(JSContext* aCx,
+                                JS::Handle<JS::Value> aValue) override;
 
-private:
+  virtual void RejectedCallback(JSContext* aCx,
+                                JS::Handle<JS::Value> aValue) override;
+
+ private:
   ~GetEntryHelper();
 
-  void
-  Error(nsresult aError);
+  void Error(nsresult aError);
 
-  nsCOMPtr<nsIGlobalObject> mGlobal;
+  void ContinueRunning(JSObject* aObj);
+
+  MOZ_CAN_RUN_SCRIPT void CompleteOperation(JSObject* aObj);
+
+  RefPtr<FileSystemDirectoryEntry> mParentEntry;
+  RefPtr<Directory> mDirectory;
+  nsTArray<nsString> mParts;
   RefPtr<FileSystem> mFileSystem;
-  RefPtr<FileSystemEntryCallback> mSuccessCallback;
+
+  const RefPtr<FileSystemEntryCallback> mSuccessCallback;
   RefPtr<ErrorCallback> mErrorCallback;
+
   FileSystemDirectoryEntry::GetInternalType mType;
 };
 
-class ErrorCallbackHelper
-{
-public:
-  static void
-  Call(nsIGlobalObject* aGlobal,
-       const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
-       nsresult aError);
+class FileSystemEntryCallbackHelper {
+ public:
+  static void Call(
+      nsIGlobalObject* aGlobalObject,
+      const Optional<OwningNonNull<FileSystemEntryCallback>>& aEntryCallback,
+      FileSystemEntry* aEntry);
 };
 
-} // dom namespace
-} // mozilla namespace
+class ErrorCallbackHelper {
+ public:
+  static void Call(nsIGlobalObject* aGlobal,
+                   const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
+                   nsresult aError);
+};
 
-#endif // mozilla_dom_CallbackRunnables_h
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_CallbackRunnables_h

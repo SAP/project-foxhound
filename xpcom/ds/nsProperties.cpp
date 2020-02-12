@@ -8,14 +8,10 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NS_IMPL_AGGREGATED(nsProperties)
-NS_INTERFACE_MAP_BEGIN_AGGREGATED(nsProperties)
-  NS_INTERFACE_MAP_ENTRY(nsIProperties)
-NS_INTERFACE_MAP_END
+NS_IMPL_ISUPPORTS(nsProperties, nsIProperties)
 
 NS_IMETHODIMP
-nsProperties::Get(const char* prop, const nsIID& uuid, void** result)
-{
+nsProperties::Get(const char* prop, const nsIID& uuid, void** result) {
   if (NS_WARN_IF(!prop)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -28,8 +24,7 @@ nsProperties::Get(const char* prop, const nsIID& uuid, void** result)
 }
 
 NS_IMETHODIMP
-nsProperties::Set(const char* prop, nsISupports* value)
-{
+nsProperties::Set(const char* prop, nsISupports* value) {
   if (NS_WARN_IF(!prop)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -38,61 +33,33 @@ nsProperties::Set(const char* prop, nsISupports* value)
 }
 
 NS_IMETHODIMP
-nsProperties::Undefine(const char* prop)
-{
+nsProperties::Undefine(const char* prop) {
   if (NS_WARN_IF(!prop)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCOMPtr<nsISupports> value;
-  if (!nsProperties_HashBase::Get(prop, getter_AddRefs(value))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  Remove(prop);
-  return NS_OK;
+  return nsProperties_HashBase::Remove(prop) ? NS_OK : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsProperties::Has(const char* prop, bool* result)
-{
+nsProperties::Has(const char* prop, bool* result) {
   if (NS_WARN_IF(!prop)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCOMPtr<nsISupports> value;
-  *result = nsProperties_HashBase::Get(prop, getter_AddRefs(value));
+  *result = nsProperties_HashBase::Contains(prop);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsProperties::GetKeys(uint32_t* aCount, char*** aKeys)
-{
-  if (NS_WARN_IF(!aCount) || NS_WARN_IF(!aKeys)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
+nsProperties::GetKeys(nsTArray<nsCString>& aKeys) {
   uint32_t count = Count();
-  char** keys = (char**)moz_xmalloc(count * sizeof(char*));
-  uint32_t j = 0;
+  aKeys.SetCapacity(count);
 
   for (auto iter = this->Iter(); !iter.Done(); iter.Next()) {
-    const char* key = iter.Key();
-    keys[j] = strdup(key);
-
-    if (!keys[j]) {
-      // Free 'em all
-      for (uint32_t i = 0; i < j; i++) {
-        free(keys[i]);
-      }
-      free(keys);
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    j++;
+    aKeys.AppendElement(iter.Key());
   }
 
-  *aCount = count;
-  *aKeys = keys;
   return NS_OK;
 }
 

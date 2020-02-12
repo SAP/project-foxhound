@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test garbage collection of captured stream (bug 806754)</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -31,9 +31,9 @@ function doTest() {
       a.addEventListener("ended", function() {
         ok(true, "GC completed OK");
         SimpleTest.finish();
-      }, false);
-    }, false);
-  }, false);
+      });
+    });
+  });
 
   a.currentTime = a.duration;
   setTimeout(forceGC, 0);

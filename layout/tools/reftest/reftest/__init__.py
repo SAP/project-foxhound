@@ -34,6 +34,7 @@ PREF_ITEMS = (
     'ref-pref',
 )
 
+
 class ReftestManifest(object):
     """Represents a parsed reftest manifest.
 
@@ -115,12 +116,12 @@ class ReftestManifest(object):
                     tests.append(items[i+1])
                     break
 
-                if item == '==' or item == '!=':
+                if item == '==' or item == '!=' or item == 'print':
                     tests.extend(items[i+1:i+3])
                     break
 
             for f in tests:
-                # We can't package about: or data: URIs.
+                # We can't package about:, data:, or chrome: URIs.
                 # Discarding data isn't correct for a parser. But retaining
                 # all data isn't currently a requirement.
                 if RE_PROTOCOL.match(f):

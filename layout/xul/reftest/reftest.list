@@ -1,6 +1,7 @@
-fails-if(Android||B2G) skip-if((B2G&&browserIsRemote)||Mulet) == textbox-multiline-noresize.xul textbox-multiline-ref.xul # reference is blank on Android (due to no native theme support?) # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) != textbox-multiline-resize.xul textbox-multiline-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) == popup-explicit-size.xul popup-explicit-size-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-random-if(Android) skip-if((B2G&&browserIsRemote)||Mulet) == image-size.xul image-size-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) == image-scaling-min-height-1.xul image-scaling-min-height-1-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
-skip-if((B2G&&browserIsRemote)||Mulet) == textbox-text-transform.xul textbox-text-transform-ref.xul # Initial mulet triage: parity with B2G/B2G Desktop
+== chrome://reftest/content/xul/reftest/popup-explicit-size.xul chrome://reftest/content/xul/reftest/popup-explicit-size-ref.xul
+fuzzy-if(skiaContent,0-16,0-128) random-if(Android) == chrome://reftest/content/xul/reftest/image-size.xul chrome://reftest/content/xul/reftest/image-size-ref.xul
+== chrome://reftest/content/xul/reftest/image-scaling-min-height-1.xul chrome://reftest/content/xul/reftest/image-scaling-min-height-1-ref.xul
+== chrome://reftest/content/xul/reftest/textbox-text-transform.xul chrome://reftest/content/xul/reftest/textbox-text-transform-ref.xul
+
+== chrome://reftest/content/xul/reftest/checkbox-dynamic-change.xul chrome://reftest/content/xul/reftest/checkbox-dynamic-change-ref.xul
+== chrome://reftest/content/xul/reftest/radio-dynamic-change.xul chrome://reftest/content/xul/reftest/radio-dynamic-change-ref.xul

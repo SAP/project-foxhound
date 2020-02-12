@@ -2,18 +2,19 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from firefox_ui_harness.testcases import FirefoxTestCase
-
+from __future__ import absolute_import
+from firefox_puppeteer import PuppeteerMixin
 from firefox_puppeteer.errors import NoCertificateError
+from marionette_harness import MarionetteTestCase
 
 
-class TestTabBar(FirefoxTestCase):
+class TestTabBar(PuppeteerMixin, MarionetteTestCase):
 
     def tearDown(self):
         try:
             self.browser.tabbar.close_all_tabs([self.browser.tabbar.tabs[0]])
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestTabBar, self).tearDown()
 
     def test_basics(self):
         tabbar = self.browser.tabbar
@@ -23,8 +24,8 @@ class TestTabBar(FirefoxTestCase):
         self.assertEqual(len(tabbar.tabs), 1)
         self.assertEqual(tabbar.tabs[0].handle, self.marionette.current_window_handle)
 
-        self.assertEqual(tabbar.newtab_button.get_attribute('localName'), 'toolbarbutton')
-        self.assertEqual(tabbar.toolbar.get_attribute('localName'), 'tabs')
+        self.assertEqual(tabbar.newtab_button.get_property('localName'), 'toolbarbutton')
+        self.assertEqual(tabbar.toolbar.get_property('localName'), 'tabs')
 
     def test_open_close(self):
         tabbar = self.browser.tabbar
@@ -73,7 +74,7 @@ class TestTabBar(FirefoxTestCase):
         tabbar = self.browser.tabbar
 
         new_tab = tabbar.open_tab()
-        tabbar.close_tab(tabbar.tabs[0])
+        tabbar.close_tab(tabbar.tabs[0], trigger="button")
 
         self.assertEqual(len(tabbar.tabs), 1)
         self.assertEqual(new_tab, tabbar.tabs[0])
@@ -114,21 +115,21 @@ class TestTabBar(FirefoxTestCase):
         tabbar.close_tab(tabbar.tabs[1])
 
 
-class TestTab(FirefoxTestCase):
+class TestTab(PuppeteerMixin, MarionetteTestCase):
 
     def tearDown(self):
         try:
             self.browser.tabbar.close_all_tabs([self.browser.tabbar.tabs[0]])
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestTab, self).tearDown()
 
     def test_basic(self):
         tab = self.browser.tabbar.tabs[0]
 
         self.assertEqual(tab.window, self.browser)
 
-        self.assertEqual(tab.tab_element.get_attribute('localName'), 'tab')
-        self.assertEqual(tab.close_button.get_attribute('localName'), 'toolbarbutton')
+        self.assertEqual(tab.tab_element.get_property('localName'), 'tab')
+        self.assertEqual(tab.close_button.get_property('localName'), 'image')
 
     def test_certificate(self):
         url = self.marionette.absolute_url('layout/mozilla.html')
@@ -156,11 +157,13 @@ class TestTab(FirefoxTestCase):
         for trigger in close_strategies:
             new_tab = tabbar.open_tab()
             self.assertEqual(len(tabbar.tabs), 2)
+            self.assertEqual(len(self.marionette.window_handles), 2)
             self.assertEqual(new_tab.handle, self.marionette.current_window_handle)
             self.assertEqual(new_tab.handle, tabbar.tabs[1].handle)
 
             new_tab.close(trigger=trigger)
             self.assertEqual(len(tabbar.tabs), 1)
+            self.assertEqual(len(self.marionette.window_handles), 1)
             self.assertEqual(tabbar.tabs[0].handle, self.marionette.current_window_handle)
             self.assertNotEqual(new_tab.handle, tabbar.tabs[0].handle)
 

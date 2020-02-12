@@ -10,10 +10,10 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGViewElement : SVGElement {
-  readonly attribute SVGStringList viewTarget;
 };
 
-SVGViewElement implements SVGFitToViewBox;
-SVGViewElement implements SVGZoomAndPan;
+SVGViewElement includes SVGFitToViewBox;
+SVGViewElement includes SVGZoomAndPan;
 

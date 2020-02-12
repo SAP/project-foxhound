@@ -1,10 +1,9 @@
 <?xml version="1.0"?>
 <?xml-stylesheet href="chrome://global/skin" type="text/css"?>
 
-<page xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-<script type="application/javascript"
-        src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+<script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <menupopup id="popup" onpopupshowing="if (isSecondTest) popupShowing(event)" onpopupshown="popupShown()"
                       onpopuphidden="nextTest()">
@@ -27,8 +26,8 @@ function openPopup()
 function popupShowing(event)
 {
   var buttonrect = document.getElementById("button").getBoundingClientRect();
-  parent.opener.wrappedJSObject.SimpleTest.is(event.clientX, buttonrect.left + 6, "popup clientX with mouse");
-  parent.opener.wrappedJSObject.SimpleTest.is(event.clientY, buttonrect.top + 6, "popup clientY with mouse");
+  parent.arguments[0].SimpleTest.is(event.clientX, buttonrect.left + 6, "popup clientX with mouse");
+  parent.arguments[0].SimpleTest.is(event.clientY, buttonrect.top + 6, "popup clientY with mouse");
 }
 
 function popupShown()
@@ -56,8 +55,8 @@ function popupShown()
   }
 
   var testid = isSecondTest ? "with mouse" : "anchored to parent frame";
-  parent.opener.wrappedJSObject.SimpleTest.is(Math.round(popuprect.left), left, "popup left " + testid);
-  parent.opener.wrappedJSObject.SimpleTest.is(Math.round(popuprect.top), top, "popup top " + testid);
+  parent.arguments[0].SimpleTest.is(Math.round(popuprect.left), left, "popup left " + testid);
+  parent.arguments[0].SimpleTest.is(Math.round(popuprect.top), top, "popup top " + testid);
 
   document.getElementById("popup").hidePopup();
 }
@@ -65,7 +64,7 @@ function popupShown()
 function nextTest()
 {
   if (isSecondTest) {
-    parent.opener.wrappedJSObject.SimpleTest.finish();
+    parent.arguments[0].SimpleTest.finish();
     parent.close();
   }
   else {
@@ -79,4 +78,4 @@ function nextTest()
 ]]>
 </script>
 
-</page>
+</window>

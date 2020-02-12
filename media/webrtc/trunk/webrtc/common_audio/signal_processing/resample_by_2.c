@@ -15,7 +15,7 @@
  *
  */
 
-#include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "common_audio/signal_processing/include/signal_processing_library.h"
 
 #ifdef WEBRTC_ARCH_ARM_V7
 
@@ -67,10 +67,10 @@ static const uint16_t kResampleAllpass2[3] = {12199, 37471, 60255};
 
 // decimator
 #if !defined(MIPS32_LE)
-void WebRtcSpl_DownsampleBy2(const int16_t* in, int len,
+void WebRtcSpl_DownsampleBy2(const int16_t* in, size_t len,
                              int16_t* out, int32_t* filtState) {
   int32_t tmp1, tmp2, diff, in32, out32;
-  int i;
+  size_t i;
 
   register int32_t state0 = filtState[0];
   register int32_t state1 = filtState[1];
@@ -83,7 +83,7 @@ void WebRtcSpl_DownsampleBy2(const int16_t* in, int len,
 
   for (i = (len >> 1); i > 0; i--) {
     // lower allpass filter
-    in32 = (int32_t)(*in++) << 10;
+    in32 = (int32_t)(*in++) * (1 << 10);
     diff = in32 - state1;
     tmp1 = MUL_ACCUM_1(kResampleAllpass2[0], diff, state0);
     state0 = in32;
@@ -95,7 +95,7 @@ void WebRtcSpl_DownsampleBy2(const int16_t* in, int len,
     state2 = tmp2;
 
     // upper allpass filter
-    in32 = (int32_t)(*in++) << 10;
+    in32 = (int32_t)(*in++) * (1 << 10);
     diff = in32 - state5;
     tmp1 = MUL_ACCUM_1(kResampleAllpass1[0], diff, state4);
     state4 = in32;
@@ -125,10 +125,10 @@ void WebRtcSpl_DownsampleBy2(const int16_t* in, int len,
 #endif  // #if defined(MIPS32_LE)
 
 
-void WebRtcSpl_UpsampleBy2(const int16_t* in, int len,
+void WebRtcSpl_UpsampleBy2(const int16_t* in, size_t len,
                            int16_t* out, int32_t* filtState) {
   int32_t tmp1, tmp2, diff, in32, out32;
-  int i;
+  size_t i;
 
   register int32_t state0 = filtState[0];
   register int32_t state1 = filtState[1];
@@ -141,7 +141,7 @@ void WebRtcSpl_UpsampleBy2(const int16_t* in, int len,
 
   for (i = len; i > 0; i--) {
     // lower allpass filter
-    in32 = (int32_t)(*in++) << 10;
+    in32 = (int32_t)(*in++) * (1 << 10);
     diff = in32 - state1;
     tmp1 = MUL_ACCUM_1(kResampleAllpass1[0], diff, state0);
     state0 = in32;

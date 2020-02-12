@@ -15,23 +15,10 @@
 
 interface StackFrame;
 
-[NoInterfaceObject,
- Exposed=(Window,Worker)]
-interface ExceptionMembers
+interface mixin ExceptionMembers
 {
-  // A custom message set by the thrower.  LenientThis so it can be
-  // gotten on the prototype, which Error.prototype.toString will do
-  // if someone tries to stringify DOMException.prototype.
-  [LenientThis]
-  readonly attribute DOMString               message;
   // The nsresult associated with this exception.
   readonly attribute unsigned long           result;
-  // The name of the error code (ie, a string repr of |result|).
-  // LenientThis so it can be gotten on the prototype, which
-  // Error.prototype.toString will do if someone tries to stringify
-  // DOMException.prototype.
-  [LenientThis]
-  readonly attribute DOMString               name;
 
   // Filename location.  This is the location that caused the
   // error, which may or may not be a source file location.
@@ -58,24 +45,37 @@ interface ExceptionMembers
   readonly attribute nsISupports?            data;
 
   // Formatted exception stack
-  [Throws, Replaceable]
+  [Replaceable]
   readonly attribute DOMString               stack;
 };
 
 [NoInterfaceObject, Exposed=(Window,Worker)]
 interface Exception {
+  // The name of the error code (ie, a string repr of |result|).
+  readonly attribute DOMString               name;
+  // A custom message set by the thrower.
+  [BinaryName="messageMoz"]
+  readonly attribute DOMString               message;
   // A generic formatter - make it suitable to print, etc.
   stringifier;
 };
 
-Exception implements ExceptionMembers;
+Exception includes ExceptionMembers;
 
 // XXXkhuey this is an 'exception', not an interface, but we don't have any
 // parser or codegen mechanisms for dealing with exceptions.
 [ExceptionClass,
- Exposed=(Window, Worker),
- Constructor(optional DOMString message = "", optional DOMString name)]
+ Exposed=(Window, Worker)]
 interface DOMException {
+  constructor(optional DOMString message = "", optional DOMString name);
+
+  // The name of the error code (ie, a string repr of |result|).
+  readonly attribute DOMString               name;
+  // A custom message set by the thrower.
+  [BinaryName="messageMoz"]
+  readonly attribute DOMString               message;
+  readonly attribute unsigned short code;
+
   const unsigned short INDEX_SIZE_ERR = 1;
   const unsigned short DOMSTRING_SIZE_ERR = 2; // historical
   const unsigned short HIERARCHY_REQUEST_ERR = 3;
@@ -101,10 +101,8 @@ interface DOMException {
   const unsigned short TIMEOUT_ERR = 23;
   const unsigned short INVALID_NODE_TYPE_ERR = 24;
   const unsigned short DATA_CLONE_ERR = 25;
-
-  readonly attribute unsigned short code;
 };
 
 // XXXkhuey copy all of Gecko's non-standard stuff onto DOMException, but leave
 // the prototype chain sane.
-DOMException implements ExceptionMembers;
+DOMException includes ExceptionMembers;

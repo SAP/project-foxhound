@@ -8,10 +8,10 @@ interface nsIWorkerDebuggerListener : nsISupports
 {
   void onClose();
 
-  void onError(in DOMString filename, in unsigned long lineno,
-               in DOMString message);
+  void onError(in AString filename, in unsigned long lineno,
+               in AString message);
 
-  void onMessage(in DOMString message);
+  void onMessage(in AString message);
 };
 
 [scriptable, builtinclass, uuid(22f93aa3-8a05-46be-87e0-fa93bf8a8eff)]
@@ -31,7 +31,7 @@ interface nsIWorkerDebugger : nsISupports
 
   readonly attribute unsigned long type;
 
-  readonly attribute DOMString url;
+  readonly attribute AString url;
 
   readonly attribute mozIDOMWindow window;
 
@@ -39,12 +39,27 @@ interface nsIWorkerDebugger : nsISupports
 
   readonly attribute unsigned long serviceWorkerID;
 
-  void initialize(in DOMString url);
+  readonly attribute AString id;
+
+  void initialize(in AString url);
 
   [binaryname(PostMessageMoz)]
-  void postMessage(in DOMString message);
+  void postMessage(in AString message);
 
   void addListener(in nsIWorkerDebuggerListener listener);
 
   void removeListener(in nsIWorkerDebuggerListener listener);
+
+  // Indicate whether the debugger has finished initializing. By default the
+  // debugger will be considered initialized when the onRegister hooks in all
+  // nsIWorkerDebuggerManagerListener have been called.
+  //
+  // setDebuggerReady(false) can be called during an onRegister hook to mark
+  // the debugger as not being ready yet. This will prevent all content from
+  // running in the worker, including the worker's main script and any messages
+  // posted to it. Other runnables will still execute in the worker as normal.
+  //
+  // When the debugger is ready, setDebuggerReady(true) should then be called
+  // to allow the worker to begin executing content.
+  void setDebuggerReady(in boolean ready);
 };

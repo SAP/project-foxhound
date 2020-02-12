@@ -6,7 +6,7 @@
 <html>
 <head>
   <title>Test for URL object in workers</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -18,33 +18,33 @@
   var worker = new Worker("url_worker.js");
 
   worker.onmessage = function(event) {
-    is(event.target, worker);
+    is(event.target, worker, "Correct worker");
 
-    if (event.data.type == 'finish') {
+    if (event.data.type == "finish") {
       runTest();
-    } else if (event.data.type == 'status') {
+    } else if (event.data.type == "status") {
       ok(event.data.status, event.data.msg);
-    } else if (event.data.type == 'url') {
+    } else if (event.data.type == "url") {
       var xhr = new XMLHttpRequest();
-      xhr.open('GET', event.data.url, false);
+      xhr.open("GET", event.data.url, false);
       xhr.onreadystatechange = function() {
         if (xhr.readyState == 4) {
           ok(true, "Blob readable!");
         }
-      }
+      };
       xhr.send();
     }
   };
 
   worker.onerror = function(event) {
-    is(event.target, worker);
+    is(event.target, worker, "Correct worker");
     ok(false, "Worker had an error: " + event.message);
     SimpleTest.finish();
   };
 
   var tests = [
     function() { worker.postMessage(0); },
-    function() { worker.postMessage(1); }
+    function() { worker.postMessage(1); },
   ];
 
   function runTest() {

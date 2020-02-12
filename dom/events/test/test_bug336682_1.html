@@ -8,7 +8,7 @@ http://creativecommons.org/licenses/publicdomain/
 -->
 <head>
   <title>Test for Bug 336682 (online/offline events)</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body ononline="trace('<body ononline=...>');
@@ -28,34 +28,21 @@ http://creativecommons.org/licenses/publicdomain/
 
 function makeBodyHandler(eventName) {
   return function (aThis, aEvent) {
-    var handler = makeHandler("<body on%1='...'>", eventName, [3,4]);
+    var handler = makeHandler("<body on%1='...'>", eventName, [1]);
     handler(aEvent);
   }
 }
 addLoadEvent(function() {
   /** @see test_bug336682.js */
-  MAX_STATE = 4;
+  MAX_STATE = 2;
 
   for (var event of ["online", "offline"]) {
-    document.body.addEventListener(
-      event,
-      makeHandler("document.body.addEventListener('%1', ..., false)",
-                  event, [1]),
-      false);
-
-    document.addEventListener(
-      event,
-      makeHandler("document.addEventListener('%1', ..., false)",
-                  event, [2]),
-      false);
-
     window["bodyOn" + event] = makeBodyHandler(event);
 
     window.addEventListener(
       event,
       makeHandler("window.addEventListener('%1', ..., false)",
-                  event, [3,4]),
-      false);
+                  event, [2]));
   }
 
   doTest();

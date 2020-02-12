@@ -16,35 +16,32 @@ namespace cache {
 
 class Manager;
 
-class CacheParent final : public PCacheParent
-{
-public:
+class CacheParent final : public PCacheParent {
+  friend class PCacheParent;
+
+ public:
   CacheParent(cache::Manager* aManager, CacheId aCacheId);
   virtual ~CacheParent();
 
-private:
+ private:
   // PCacheParent methods
   virtual void ActorDestroy(ActorDestroyReason aReason) override;
 
-  virtual PCacheOpParent*
-  AllocPCacheOpParent(const CacheOpArgs& aOpArgs) override;
+  PCacheOpParent* AllocPCacheOpParent(const CacheOpArgs& aOpArgs);
 
-  virtual bool
-  DeallocPCacheOpParent(PCacheOpParent* aActor) override;
+  bool DeallocPCacheOpParent(PCacheOpParent* aActor);
 
-  virtual bool
-  RecvPCacheOpConstructor(PCacheOpParent* actor,
-                          const CacheOpArgs& aOpArgs) override;
+  virtual mozilla::ipc::IPCResult RecvPCacheOpConstructor(
+      PCacheOpParent* actor, const CacheOpArgs& aOpArgs) override;
 
-  virtual bool
-  RecvTeardown() override;
+  mozilla::ipc::IPCResult RecvTeardown();
 
   RefPtr<cache::Manager> mManager;
   const CacheId mCacheId;
 };
 
-} // namespace cache
-} // namespace dom
-} // namespace mozilla
+}  // namespace cache
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_cache_CacheParent_h
+#endif  // mozilla_dom_cache_CacheParent_h

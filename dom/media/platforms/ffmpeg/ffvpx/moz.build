@@ -20,7 +20,7 @@ SOURCES += [
 ]
 LOCAL_INCLUDES += [
     '..',
-    '../ffmpeg57/include',
+    '../ffmpeg58/include',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -28,15 +28,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         '../ffmpeg57/include',
     ]
 
-if CONFIG['GNU_CXX']:
-  CXXFLAGS += [ '-Wno-deprecated-declarations' ]
-if CONFIG['CLANG_CXX']:
+CXXFLAGS += [ '-Wno-deprecated-declarations' ]
+if CONFIG['CC_TYPE'] == 'clang':
   CXXFLAGS += [
     '-Wno-unknown-attributes',
-  ]
-if CONFIG['_MSC_VER']:
-  CXXFLAGS += [
-    '-wd4996', # deprecated declaration
   ]
 
 DEFINES['FFVPX_VERSION'] = 46465650

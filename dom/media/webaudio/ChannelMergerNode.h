@@ -13,38 +13,55 @@ namespace mozilla {
 namespace dom {
 
 class AudioContext;
+struct ChannelMergerOptions;
 
-class ChannelMergerNode final : public AudioNode
-{
-public:
-  ChannelMergerNode(AudioContext* aContext,
-                    uint16_t aInputCount);
+class ChannelMergerNode final : public AudioNode {
+ public:
+  static already_AddRefed<ChannelMergerNode> Create(
+      AudioContext& aAudioContext, const ChannelMergerOptions& aOptions,
+      ErrorResult& aRv);
 
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(ChannelMergerNode, AudioNode)
 
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
+  static already_AddRefed<ChannelMergerNode> Constructor(
+      const GlobalObject& aGlobal, AudioContext& aAudioContext,
+      const ChannelMergerOptions& aOptions, ErrorResult& aRv) {
+    return Create(aAudioContext, aOptions, aRv);
+  }
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
 
   uint16_t NumberOfInputs() const override { return mInputCount; }
 
-  const char* NodeType() const override
-  {
-    return "ChannelMergerNode";
+  const char* NodeType() const override { return "ChannelMergerNode"; }
+
+  virtual void SetChannelCount(uint32_t aChannelCount,
+                               ErrorResult& aRv) override {
+    if (aChannelCount != 1) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    }
   }
 
-  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override
-  {
+  virtual void SetChannelCountModeValue(ChannelCountMode aMode,
+                                        ErrorResult& aRv) override {
+    if (aMode != ChannelCountMode::Explicit) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    }
+  }
+
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
   }
 
-protected:
-  virtual ~ChannelMergerNode();
+ private:
+  ChannelMergerNode(AudioContext* aContext, uint16_t aInputCount);
+  ~ChannelMergerNode() = default;
 
-private:
   const uint16_t mInputCount;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif
-

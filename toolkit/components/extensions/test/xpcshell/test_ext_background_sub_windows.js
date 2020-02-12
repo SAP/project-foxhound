@@ -2,7 +2,7 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-add_task(function* testBackgroundWindow() {
+add_task(async function testBackgroundWindow() {
   let extension = ExtensionTestUtils.loadExtension({
     background() {
       browser.test.log("background script executed");
@@ -10,7 +10,8 @@ add_task(function* testBackgroundWindow() {
       browser.test.sendMessage("background-script-load");
 
       let img = document.createElement("img");
-      img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+      img.src =
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
       document.body.appendChild(img);
 
       img.onload = () => {
@@ -35,11 +36,11 @@ add_task(function* testBackgroundWindow() {
     loadCount++;
   });
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield extension.awaitFinish("background sub-window test done");
+  await extension.awaitFinish("background sub-window test done");
 
   equal(loadCount, 1, "background script loaded only once");
 
-  yield extension.unload();
+  await extension.unload();
 });

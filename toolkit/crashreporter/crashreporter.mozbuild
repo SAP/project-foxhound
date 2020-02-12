@@ -5,23 +5,32 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 LOCAL_INCLUDES += [
+    '/toolkit/crashreporter/breakpad-client',
     '/toolkit/crashreporter/google-breakpad/src',
 ]
 
 # Suppress warnings in third-party code.
-if CONFIG['_MSC_VER']:
+if CONFIG['CC_TYPE'] == 'clang-cl':
     CXXFLAGS += [
-        '-wd4005', # macro redefinition
+        '-Wno-macro-redefined',
     ]
-elif CONFIG['GNU_CXX']:
+elif CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += [
         '-Wno-unused-local-typedefs',
         '-Wno-shadow',
+        '-Wno-deprecated-declarations',
+        '-Wno-bool-compare',
+        '-Wno-unused-but-set-variable',
     ]
-    if CONFIG['CLANG_CXX']:
-        CXXFLAGS += ['-Wno-implicit-fallthrough']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    DEFINES['ELFSIZE'] = 32
+if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
+     CXXFLAGS += [
+         '-Wno-c++11-narrowing',
+     ]
+
+if CONFIG['CC_TYPE'] != 'clang-cl':
+     CXXFLAGS += [
+         '-Wno-implicit-fallthrough',
+     ]
 
 DEFINES['NO_STABS_SUPPORT'] = True

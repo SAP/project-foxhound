@@ -26,7 +26,7 @@ class DomainPolicyClone;
 [ptr] native JSObjectPtr(JSObject);
 [ptr] native DomainPolicyClonePtr(mozilla::dom::DomainPolicyClone);
 
-[scriptable, uuid(da831650-4241-4892-806c-cce8465a2ba8)]
+[scriptable, builtinclass, uuid(51daad87-3a0c-44cc-b620-7356801c9022)]
 interface nsIScriptSecurityManager : nsISupports
 {
     /**
@@ -126,6 +126,13 @@ interface nsIScriptSecurityManager : nsISupports
                                       in AUTF8String uri,
                                       in unsigned long flags);
 
+    /**
+     * Returns true if the URI is from a domain that is allow-listed through
+     * prefs to be allowed to use file:// URIs.
+     * @param aUri the URI to be tested
+     */
+    bool inFileURIAllowlist(in nsIURI aUri);
+
     ///////////////// Principals ///////////////////////
 
     /**
@@ -134,48 +141,26 @@ interface nsIScriptSecurityManager : nsISupports
     nsIPrincipal getSystemPrincipal();
 
     /**
-     * Returns a principal that has the given information.
-     * @param appId is the app id of the principal. It can't be UNKNOWN_APP_ID.
-     * @param inMozBrowser is true if the principal has to be considered as
-     * inside a mozbrowser frame.
-     *
-     * @deprecated use createCodebasePrincipal instead.
+     * Returns a principal that has the OriginAttributes of the load context.
+     * @param loadContext to get the OriginAttributes from.
      */
-    [deprecated] nsIPrincipal getAppCodebasePrincipal(in nsIURI uri,
-                                                      in unsigned long appId,
-                                                      in boolean inMozBrowser);
-
-    /**
-     * Returns a principal that has the appId and inMozBrowser of the load
-     * context.
-     * @param loadContext to get appId/inMozBrowser from.
-     */
-    nsIPrincipal getLoadContextCodebasePrincipal(in nsIURI uri,
+    nsIPrincipal getLoadContextContentPrincipal(in nsIURI uri,
                                                  in nsILoadContext loadContext);
 
     /**
-     * Returns a principal that has the appId and inMozBrowser of the docshell
-     * inside a mozbrowser frame.
-     * @param docShell to get appId/inMozBrowser from.
+     * Returns a principal that has the OriginAttributes of the docshell.
+     * @param docShell to get the OriginAttributes from.
      */
-    nsIPrincipal getDocShellCodebasePrincipal(in nsIURI uri,
+    nsIPrincipal getDocShellContentPrincipal(in nsIURI uri,
                                               in nsIDocShell docShell);
 
     /**
-     * Returns a principal with that has the same origin as uri and is not part
-     * of an appliction.
-     * The returned principal will have appId = NO_APP_ID.
-     *
-     * @deprecated use createCodebasePrincipal instead.
+     * If this is a content principal, return a copy with different
+     * origin attributes.
      */
-    [deprecated] nsIPrincipal getNoAppCodebasePrincipal(in nsIURI uri);
-
-    /**
-     * Legacy method for getting a principal with no origin attributes.
-     *
-     * @deprecated use createCodebasePrincipal instead.
-     */
-    [deprecated] nsIPrincipal getCodebasePrincipal(in nsIURI uri);
+    [implicit_jscontext]
+    nsIPrincipal principalWithOA(in nsIPrincipal principal,
+                                 in jsval originAttributes);
 
     /**
      * Returns a principal whose origin is composed of |uri| and |originAttributes|.
@@ -183,14 +168,27 @@ interface nsIScriptSecurityManager : nsISupports
      * ChromeUtils.webidl for a list of origin attributes and their defaults.
      */
     [implicit_jscontext]
-    nsIPrincipal createCodebasePrincipal(in nsIURI uri, in jsval originAttributes);
+    nsIPrincipal createContentPrincipal(in nsIURI uri, in jsval originAttributes);
 
     /**
      * Returns a principal whose origin is the one we pass in.
      * See nsIPrincipal.idl for a description of origin attributes, and
      * ChromeUtils.webidl for a list of origin attributes and their defaults.
      */
-    nsIPrincipal createCodebasePrincipalFromOrigin(in ACString origin);
+    nsIPrincipal createContentPrincipalFromOrigin(in ACString origin);
+
+    /**
+     * Takes a principal and returns a string representation of it or a nullptr if it can't be serialized.
+     * Example output: `{"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}`
+     */
+    ACString principalToJSON(in nsIPrincipal principal);
+
+    /**
+     * Takes a string of the following format:
+     * `{"1": {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}}`
+     * and turns it into a principal or a nullptr on error.
+     */
+    nsIPrincipal JSONToPrincipal(in ACString json);
 
     /**
      * Returns a unique nonce principal with |originAttributes|.
@@ -205,16 +203,37 @@ interface nsIScriptSecurityManager : nsISupports
      * (scheme, host, and port).
      * ReportError flag suppresses error reports for functions that
      * don't need reporting.
+     * FromPrivateWindow indicates whether the error occurs in a private
+     * window or not.
      */
     void checkSameOriginURI(in nsIURI aSourceURI,
                             in nsIURI aTargetURI,
-                            in boolean reportError);
+                            in boolean reportError,
+                            in boolean fromPrivateWindow);
+
     /**
      * Get the principal for the given channel.  This will typically be the
-     * channel owner if there is one, and the codebase principal for the
+     * channel owner if there is one, and the content principal for the
      * channel's URI otherwise.  aChannel must not be null.
      */
     nsIPrincipal getChannelResultPrincipal(in nsIChannel aChannel);
+
+    /**
+     * Get the storage principal for the given channel.  This is basically the
+     * same of getChannelResultPrincipal() execept for trackers, where we
+     * return a principal with a different OriginAttributes.
+     */
+    nsIPrincipal getChannelResultStoragePrincipal(in nsIChannel aChannel);
+
+    /**
+     * This method does getChannelResultPrincipal() +
+     * getChannelResultStoragePrincipal().
+     * This method is mainly done for Document::Reset(). There are no other
+     * reasons to use this method.
+     */
+    void getChannelResultPrincipals(in nsIChannel aChannel,
+                                    out nsIPrincipal aPrincipal,
+                                    out nsIPrincipal aStoragePrincipal);
 
     /**
      * Temporary API until bug 1220687 is fixed.
@@ -235,38 +254,12 @@ interface nsIScriptSecurityManager : nsISupports
     nsIPrincipal getChannelResultPrincipalIfNotSandboxed(in nsIChannel aChannel);
 
     /**
-     * Get the codebase principal for the channel's URI.
+     * Get the content principal for the channel's URI.
      * aChannel must not be null.
      */
     nsIPrincipal getChannelURIPrincipal(in nsIChannel aChannel);
 
-    /**
-     * Check whether a given principal is a system principal.  This allows us
-     * to avoid handing back the system principal to script while allowing
-     * script to check whether a given principal is system.
-     */
-    boolean isSystemPrincipal(in nsIPrincipal aPrincipal);
-%{C++
-    bool IsSystemPrincipal(nsIPrincipal* aPrincipal) {
-      bool isSystem = false;
-      IsSystemPrincipal(aPrincipal, &isSystem);
-      return isSystem;
-    }
-%}
-
-    const unsigned long NO_APP_ID = 0;
-    const unsigned long UNKNOWN_APP_ID = 4294967295; // UINT32_MAX
-    const unsigned long SAFEBROWSING_APP_ID = 4294967294; // UINT32_MAX - 1
-
     const unsigned long DEFAULT_USER_CONTEXT_ID = 0;
-
-    /**
-     * Returns the jar prefix for the app.
-     * appId can be NO_APP_ID or a valid app id. appId should not be
-     * UNKNOWN_APP_ID.
-     * inMozBrowser has to be true if the app is inside a mozbrowser iframe.
-     */
-    AUTF8String getJarPrefix(in unsigned long appId, in boolean inMozBrowser);
 
     /**
      * Per-domain controls to enable and disable script. This system is designed
@@ -303,7 +296,7 @@ interface nsIScriptSecurityManager : nsISupports
      *
      * If domainPolicyEnabled is false, this simply returns the current value
      * of javascript.enabled. Otherwise, it returns the same value, but taking
-     * the various blacklist/whitelist exceptions into account.
+     * the various blocklist/allowlist exceptions into account.
      */
     bool policyAllowsScript(in nsIURI aDomain);
 };

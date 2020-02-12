@@ -12,21 +12,21 @@
       'type': 'executable',
       'sources': [
         'der_getint_unittest.cc',
-        'der_private_key_import_unittest.cc',
+        'der_quickder_unittest.cc',
+        'p12_import_unittest.cc',
         '<(DEPTH)/gtests/common/gtests.cc'
       ],
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
         '<(DEPTH)/gtests/google_test/google_test.gyp:gtest',
+        '<(DEPTH)/lib/util/util.gyp:nssutil3',
+        '<(DEPTH)/lib/ssl/ssl.gyp:ssl3',
+        '<(DEPTH)/lib/nss/nss.gyp:nss3',
+        '<(DEPTH)/lib/pkcs12/pkcs12.gyp:pkcs12',
+        '<(DEPTH)/lib/pkcs7/pkcs7.gyp:pkcs7',
       ]
     }
   ],
-  'target_defaults': {
-    'include_dirs': [
-      '../../gtests/google_test/gtest/include',
-      '../../gtests/common'
-    ]
-  },
   'variables': {
     'module': 'nss'
   }

@@ -9,15 +9,18 @@
 const kClientIdPref = "browser.translation.bing.clientIdOverride";
 const kClientSecretPref = "browser.translation.bing.apiKeyOverride";
 
-const {BingTranslator} = Cu.import("resource:///modules/translation/BingTranslator.jsm", {});
-const {TranslationDocument} = Cu.import("resource:///modules/translation/TranslationDocument.jsm", {});
-const {Promise} = Cu.import("resource://gre/modules/Promise.jsm", {});
+const { BingTranslator } = ChromeUtils.import(
+  "resource:///modules/translation/BingTranslator.jsm"
+);
+const { TranslationDocument } = ChromeUtils.import(
+  "resource:///modules/translation/TranslationDocument.jsm"
+);
 
-add_task(function* setup() {
+add_task(async function setup() {
   Services.prefs.setCharPref(kClientIdPref, "testClient");
   Services.prefs.setCharPref(kClientSecretPref, "testSecret");
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref(kClientIdPref);
     Services.prefs.clearUserPref(kClientSecretPref);
   });
@@ -26,26 +29,34 @@ add_task(function* setup() {
 /**
  * Checks if the translation is happening.
  */
-add_task(function* test_bing_translation() {
-
+add_task(async function test_bing_translation() {
   // Ensure the correct client id is used for authentication.
   Services.prefs.setCharPref(kClientIdPref, "testClient");
 
   // Loading the fixture page.
   let url = constructFixtureURL("bug1022725-fr.html");
-  let tab = yield promiseTestPageLoad(url);
+  let tab = await promiseTestPageLoad(url);
 
   // Translating the contents of the loaded tab.
   gBrowser.selectedTab = tab;
   let browser = tab.linkedBrowser;
 
-  yield ContentTask.spawn(browser, null, function*() {
-    Cu.import("resource:///modules/translation/BingTranslator.jsm");
-    Cu.import("resource:///modules/translation/TranslationDocument.jsm");
+  await ContentTask.spawn(browser, null, async function() {
+    // eslint-disable-next-line no-shadow
+    const { BingTranslator } = ChromeUtils.import(
+      "resource:///modules/translation/BingTranslator.jsm"
+    );
+    // eslint-disable-next-line no-shadow
+    const { TranslationDocument } = ChromeUtils.import(
+      "resource:///modules/translation/TranslationDocument.jsm"
+    );
 
     let client = new BingTranslator(
-      new TranslationDocument(content.document), "fr", "en");
-    let result = yield client.translate();
+      new TranslationDocument(content.document),
+      "fr",
+      "en"
+    );
+    let result = await client.translate();
 
     // XXXmikedeboer; here you would continue the test/ content inspection.
     Assert.ok(result, "There should be a result");
@@ -61,35 +72,46 @@ add_task(function* test_bing_translation() {
  * should catch this error and classify it as Service Unavailable.
  *
  */
-add_task(function* test_handling_out_of_valid_key_error() {
-
+add_task(async function test_handling_out_of_valid_key_error() {
   // Simulating request from inactive subscription.
   Services.prefs.setCharPref(kClientIdPref, "testInactive");
 
   // Loading the fixture page.
   let url = constructFixtureURL("bug1022725-fr.html");
-  let tab = yield promiseTestPageLoad(url);
+  let tab = await promiseTestPageLoad(url);
 
   // Translating the contents of the loaded tab.
   gBrowser.selectedTab = tab;
   let browser = tab.linkedBrowser;
 
-  yield ContentTask.spawn(browser, null, function*() {
-    Cu.import("resource:///modules/translation/BingTranslator.jsm");
-    Cu.import("resource:///modules/translation/TranslationDocument.jsm");
+  await ContentTask.spawn(browser, null, async function() {
+    // eslint-disable-next-line no-shadow
+    const { BingTranslator } = ChromeUtils.import(
+      "resource:///modules/translation/BingTranslator.jsm"
+    );
+    // eslint-disable-next-line no-shadow
+    const { TranslationDocument } = ChromeUtils.import(
+      "resource:///modules/translation/TranslationDocument.jsm"
+    );
 
     let client = new BingTranslator(
-      new TranslationDocument(content.document), "fr", "en");
+      new TranslationDocument(content.document),
+      "fr",
+      "en"
+    );
     client._resetToken();
     try {
-      yield client.translate();
+      await client.translate();
     } catch (ex) {
       // It is alright that the translation fails.
     }
     client._resetToken();
 
     // Checking if the client detected service and unavailable.
-    Assert.ok(client._serviceUnavailable, "Service should be detected unavailable.");
+    Assert.ok(
+      client._serviceUnavailable,
+      "Service should be detected unavailable."
+    );
   });
 
   // Cleaning up.
@@ -103,13 +125,17 @@ add_task(function* test_handling_out_of_valid_key_error() {
  *
  * @param filename  Name of a fixture file.
  */
-function constructFixtureURL(filename){
+function constructFixtureURL(filename) {
   // Deduce the Mochitest server address in use from a pref that was pre-processed.
-  let server = Services.prefs.getCharPref("browser.translation.bing.authURL")
-                             .replace("http://", "");
+  let server = Services.prefs
+    .getCharPref("browser.translation.bing.authURL")
+    .replace("http://", "");
   server = server.substr(0, server.indexOf("/"));
-  let url = "http://" + server +
-    "/browser/browser/components/translation/test/fixtures/" + filename;
+  let url =
+    "http://" +
+    server +
+    "/browser/browser/components/translation/test/fixtures/" +
+    filename;
   return url;
 }
 
@@ -119,15 +145,16 @@ function constructFixtureURL(filename){
  * @param String url  A URL to be loaded in the new tab.
  */
 function promiseTestPageLoad(url) {
-  let deferred = Promise.defer();
-  let tab = gBrowser.selectedTab = gBrowser.addTab(url);
-  let browser = gBrowser.selectedBrowser;
-  browser.addEventListener("load", function listener() {
-    if (browser.currentURI.spec == "about:blank")
-      return;
-    info("Page loaded: " + browser.currentURI.spec);
-    browser.removeEventListener("load", listener, true);
-    deferred.resolve(tab);
-  }, true);
-  return deferred.promise;
+  return new Promise(resolve => {
+    let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, url));
+    let browser = gBrowser.selectedBrowser;
+    BrowserTestUtils.browserLoaded(
+      browser,
+      false,
+      loadurl => loadurl != "about:blank"
+    ).then(() => {
+      info("Page loaded: " + browser.currentURI.spec);
+      resolve(tab);
+    });
+  });
 }

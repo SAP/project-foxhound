@@ -9,71 +9,56 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestUrgentHangsParent : public PTestUrgentHangsParent {
+ public:
+  TestUrgentHangsParent();
+  virtual ~TestUrgentHangsParent();
 
-class TestUrgentHangsParent :
-    public PTestUrgentHangsParent
-{
-public:
-    TestUrgentHangsParent();
-    virtual ~TestUrgentHangsParent();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return false; }
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return false; }
+  void Main();
+  void SecondStage();
+  void ThirdStage();
 
-    void Main();
-    void SecondStage();
-    void ThirdStage();
+  mozilla::ipc::IPCResult RecvTest1_2();
+  mozilla::ipc::IPCResult RecvTestInner();
+  mozilla::ipc::IPCResult RecvTestInnerUrgent();
 
-    bool RecvTest1_2();
-    bool RecvTestInner();
-    bool RecvTestInnerUrgent();
-
-    bool ShouldContinueFromReplyTimeout() override
-    {
-      return false;
+  bool ShouldContinueFromReplyTimeout() override { return false; }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (mInnerCount != 1) {
+      fail("wrong mInnerCount");
     }
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-	if (mInnerCount != 1) {
-	    fail("wrong mInnerCount");
-	}
-	if (mInnerUrgentCount != 2) {
-	    fail("wrong mInnerUrgentCount");
-	}
-        passed("ok");
-        QuitParent();
+    if (mInnerUrgentCount != 2) {
+      fail("wrong mInnerUrgentCount");
     }
+    passed("ok");
+    QuitParent();
+  }
 
-private:
-    size_t mInnerCount, mInnerUrgentCount;
+ private:
+  size_t mInnerCount, mInnerUrgentCount;
 };
 
+class TestUrgentHangsChild : public PTestUrgentHangsChild {
+ public:
+  TestUrgentHangsChild();
+  virtual ~TestUrgentHangsChild();
 
-class TestUrgentHangsChild :
-    public PTestUrgentHangsChild
-{
-public:
-    TestUrgentHangsChild();
-    virtual ~TestUrgentHangsChild();
+  mozilla::ipc::IPCResult RecvTest1_1();
+  mozilla::ipc::IPCResult RecvTest1_3();
+  mozilla::ipc::IPCResult RecvTest2();
+  mozilla::ipc::IPCResult RecvTest3();
+  mozilla::ipc::IPCResult RecvTest4();
+  mozilla::ipc::IPCResult RecvTest4_1();
+  mozilla::ipc::IPCResult RecvTest5();
+  mozilla::ipc::IPCResult RecvTest5_1();
 
-    bool RecvTest1_1();
-    bool RecvTest1_3();
-    bool RecvTest2();
-    bool RecvTest3();
-    bool RecvTest4();
-    bool RecvTest4_1();
-    bool RecvTest5();
-    bool RecvTest5_1();
-
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override { QuitChild(); }
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestUrgentHangs_h
+#endif  // ifndef mozilla__ipdltest_TestUrgentHangs_h

@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=952456
 -->
 <head>
   <title>Test for copy image</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -26,14 +26,13 @@ function testCopyImage () {
   function getClipboardData(mime) {
     var transferable = Cc['@mozilla.org/widget/transferable;1']
                        .createInstance(Ci.nsITransferable);
-    var loadingContext = SpecialPowers.wrap(window).QueryInterface(Ci.nsIInterfaceRequestor)
-                                      .getInterface(Ci.nsIWebNavigation)
+    var loadingContext = SpecialPowers.wrap(window).docShell
                                       .QueryInterface(Ci.nsILoadContext);
     transferable.init(loadingContext);
     transferable.addDataFlavor(mime);
     clipboard.getData(transferable, 1);
     var data = SpecialPowers.createBlankObject();
-    transferable.getTransferData(mime, data, {});
+    transferable.getTransferData(mime, data);
     return data;
   }
 
@@ -50,10 +49,7 @@ function testCopyImage () {
   var node = document.getElementById('logo');
 
   // Set node and copy image.
-  var webnav = SpecialPowers.wrap(window)
-               .QueryInterface(Ci.nsIInterfaceRequestor)
-               .getInterface(Ci.nsIWebNavigation)
-  var docShell = webnav.QueryInterface(Ci.nsIDocShell);
+  var docShell = SpecialPowers.wrap(window).docShell;
   var documentViewer = docShell.contentViewer
                                .QueryInterface(Ci.nsIContentViewerEdit);
   documentViewer.setCommandNode(node);
@@ -62,17 +58,17 @@ function testCopyImage () {
   //--------- Let's check the content of the clipboard now.
 
   // Does the clipboard contain text/unicode data ?
-  ok(clipboard.hasDataMatchingFlavors(["text/unicode"], 1, clipboard.kGlobalClipboard), "clipboard contains unicode text");
+  ok(clipboard.hasDataMatchingFlavors(["text/unicode"], clipboard.kGlobalClipboard), "clipboard contains unicode text");
   // Does the clipboard contain text/html data ?
-  ok(clipboard.hasDataMatchingFlavors(["text/html"], 1, clipboard.kGlobalClipboard), "clipboard contains html text");
+  ok(clipboard.hasDataMatchingFlavors(["text/html"], clipboard.kGlobalClipboard), "clipboard contains html text");
   // Does the clipboard contain image data ?
-  ok(clipboard.hasDataMatchingFlavors(["image/png"], 1, clipboard.kGlobalClipboard), "clipboard contains image");
+  ok(clipboard.hasDataMatchingFlavors(["image/png"], clipboard.kGlobalClipboard), "clipboard contains image");
 
   // Is the text/uncodie data correct ?
   testClipboardValue('text/unicode', 'about:logo');
   // Is the text/html data correct ?
   var expected = '<img id="logo" src="about:logo">';
-  if (navigator.platform.indexOf("Win") >= 0) {
+  if (navigator.platform.includes("Win")) {
     expected = "<html><body>\n<!--StartFragment-->" + expected + "<!--EndFragment-->\n</body>\n</html>";
   }
   testClipboardValue('text/html', expected);

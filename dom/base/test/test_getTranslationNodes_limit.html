@@ -2,14 +2,12 @@
 <html>
 <head>
   <title>Test for nsIDOMWindowUtils.getTranslationNodes</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body onload="runTest()">
 <script type="application/javascript">
-  var utils = SpecialPowers.wrap(window).
-              QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
-              getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
+  var utils = SpecialPowers.getDOMWindowUtils(window);
 
   function runTest() {
     isnot(utils, null, "nsIDOMWindowUtils");

@@ -7,34 +7,43 @@
 #ifndef MOZSTORAGESTATEMENTROW_H
 #define MOZSTORAGESTATEMENTROW_H
 
-#include "mozIStorageStatementRow.h"
-#include "nsIXPCScriptable.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/ErrorResult.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace storage {
 
 class Statement;
 
-class StatementRow final : public mozIStorageStatementRow
-                         , public nsIXPCScriptable
-{
-public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_MOZISTORAGESTATEMENTROW
-  NS_DECL_NSIXPCSCRIPTABLE
+class StatementRow final : public nsISupports, public nsWrapperCache {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(StatementRow)
 
-  explicit StatementRow(Statement *aStatement);
-protected:
+  explicit StatementRow(nsPIDOMWindowInner* aWindow, Statement* aStatement);
 
+  void NamedGetter(JSContext* aCx, const nsAString& aName, bool& aFound,
+                   JS::MutableHandle<JS::Value> aResult,
+                   mozilla::ErrorResult& aRv);
+  void GetSupportedNames(nsTArray<nsString>& aNames);
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  nsPIDOMWindowInner* GetParentObject() const { return mWindow; }
+
+ private:
   ~StatementRow() {}
 
-  Statement *mStatement;
+  nsCOMPtr<nsPIDOMWindowInner> mWindow;
+  Statement* mStatement;
 
   friend class StatementRowHolder;
 };
 
-} // namespace storage
-} // namespace mozilla
+}  // namespace storage
+}  // namespace mozilla
 
 #endif /* MOZSTORAGESTATEMENTROW_H */

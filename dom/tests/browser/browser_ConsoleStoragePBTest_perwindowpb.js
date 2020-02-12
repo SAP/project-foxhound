@@ -12,52 +12,64 @@ function test() {
   let consoleObserver;
   let testURI =
     "http://example.com/browser/dom/tests/browser/test-console-api.html";
-  let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
-                            .getService(Ci.nsIConsoleAPIStorage);
+  let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
+    Ci.nsIConsoleAPIStorage
+  );
 
   function getInnerWindowId(aWindow) {
-    return aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                  .getInterface(Ci.nsIDOMWindowUtils)
-                  .currentInnerWindowID;
+    return aWindow.windowUtils.currentInnerWindowID;
   }
 
   function whenNewWindowLoaded(aOptions, aCallback) {
     let win = OpenBrowserWindow(aOptions);
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad, false);
-      aCallback(win);
-    }, false);
+    win.addEventListener(
+      "load",
+      function() {
+        aCallback(win);
+      },
+      { once: true }
+    );
   }
 
   function doTest(aIsPrivateMode, aWindow, aCallback) {
-    aWindow.gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-      aWindow.gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+    BrowserTestUtils.browserLoaded(aWindow.gBrowser.selectedBrowser).then(
+      () => {
+        consoleObserver = {
+          observe(aSubject, aTopic, aData) {
+            if (aTopic == "console-api-log-event") {
+              afterEvents = ConsoleAPIStorage.getEvents(innerID);
+              is(
+                beforeEvents.length == afterEvents.length - 1,
+                storageShouldOccur,
+                "storage should" + (storageShouldOccur ? "" : " not") + " occur"
+              );
 
-      consoleObserver = {
-        observe: function(aSubject, aTopic, aData) {
-          if (aTopic == "console-api-log-event") {
-            afterEvents = ConsoleAPIStorage.getEvents(innerID);
-            is(beforeEvents.length == afterEvents.length - 1, storageShouldOccur,
-              "storage should" + (storageShouldOccur ? "" : " not") + " occur");
+              executeSoon(function() {
+                Services.obs.removeObserver(
+                  consoleObserver,
+                  "console-api-log-event"
+                );
+                aCallback();
+              });
+            }
+          },
+        };
 
-            executeSoon(function() {
-              Services.obs.removeObserver(consoleObserver, "console-api-log-event");
-              aCallback();
-            });
-          }
-        }
-      };
-
-      aWindow.Services.obs.addObserver(
-        consoleObserver, "console-api-log-event", false);
-      aWindow.nativeConsole.log("foo bar baz (private: " + aIsPrivateMode + ")");
-    }, true);
+        aWindow.Services.obs.addObserver(
+          consoleObserver,
+          "console-api-log-event"
+        );
+        aWindow.nativeConsole.log(
+          "foo bar baz (private: " + aIsPrivateMode + ")"
+        );
+      }
+    );
 
     // We expect that console API messages are always stored.
     storageShouldOccur = true;
     innerID = getInnerWindowId(aWindow);
     beforeEvents = ConsoleAPIStorage.getEvents(innerID);
-    aWindow.gBrowser.selectedBrowser.loadURI(testURI);
+    BrowserTestUtils.loadURI(aWindow.gBrowser.selectedBrowser, testURI);
   }
 
   function testOnWindow(aOptions, aCallback) {
@@ -68,9 +80,9 @@ function test() {
       // call whenNewWindowLoaded() instead of testOnWindow() on your test.
       executeSoon(() => aCallback(aWin));
     });
-  };
+  }
 
-   // this function is called after calling finish() on the test.
+  // this function is called after calling finish() on the test.
   registerCleanupFunction(function() {
     windowsToClose.forEach(function(aWin) {
       aWin.close();
@@ -81,7 +93,7 @@ function test() {
   testOnWindow({}, function(aWin) {
     doTest(false, aWin, function() {
       // then test when on private mode
-      testOnWindow({private: true}, function(aWin) {
+      testOnWindow({ private: true }, function(aWin) {
         doTest(true, aWin, finish);
       });
     });

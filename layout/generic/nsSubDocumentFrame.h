@@ -1,127 +1,110 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef NSSUBDOCUMENTFRAME_H_
 #define NSSUBDOCUMENTFRAME_H_
 
+#include "Layers.h"
+#include "LayerState.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/layers/WebRenderScrollData.h"
+#include "nsDisplayList.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsIReflowCallback.h"
 #include "nsFrameLoader.h"
 #include "Units.h"
 
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
+
 /******************************************************************************
  * nsSubDocumentFrame
  *****************************************************************************/
-class nsSubDocumentFrame : public nsAtomicContainerFrame,
-                           public nsIReflowCallback
-{
-public:
-  NS_DECL_QUERYFRAME_TARGET(nsSubDocumentFrame)
-  NS_DECL_FRAMEARENA_HELPERS
+class nsSubDocumentFrame final : public nsAtomicContainerFrame,
+                                 public nsIReflowCallback {
+ public:
+  NS_DECL_FRAMEARENA_HELPERS(nsSubDocumentFrame)
 
-  explicit nsSubDocumentFrame(nsStyleContext* aContext);
+  explicit nsSubDocumentFrame(ComputedStyle* aStyle,
+                              nsPresContext* aPresContext);
 
 #ifdef DEBUG_FRAME_DUMP
-  void List(FILE* out = stderr, const char* aPrefix = "", uint32_t aFlags = 0) const override;
-  virtual nsresult GetFrameName(nsAString& aResult) const override;
+  void List(FILE* out = stderr, const char* aPrefix = "",
+            uint32_t aFlags = 0) const override;
+  nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   NS_DECL_QUERYFRAME
 
-  virtual nsIAtom* GetType() const override;
-
-  virtual bool IsFrameOfType(uint32_t aFlags) const override
-  {
-    return nsAtomicContainerFrame::IsFrameOfType(aFlags &
-      ~(nsIFrame::eReplaced |
-        nsIFrame::eReplacedSizing |
-        nsIFrame::eReplacedContainsBlock));
+  bool IsFrameOfType(uint32_t aFlags) const override {
+    return nsAtomicContainerFrame::IsFrameOfType(
+        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedSizing |
+                   nsIFrame::eReplacedContainsBlock));
   }
 
-  virtual void Init(nsIContent*       aContent,
-                    nsContainerFrame* aParent,
-                    nsIFrame*         aPrevInFlow) override;
+  void Init(nsIContent* aContent, nsContainerFrame* aParent,
+            nsIFrame* aPrevInFlow) override;
 
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+  void DestroyFrom(nsIFrame* aDestructRoot,
+                   PostDestroyData& aPostDestroyData) override;
 
-  virtual nscoord GetMinISize(nsRenderingContext *aRenderingContext) override;
-  virtual nscoord GetPrefISize(nsRenderingContext *aRenderingContext) override;
+  nscoord GetMinISize(gfxContext* aRenderingContext) override;
+  nscoord GetPrefISize(gfxContext* aRenderingContext) override;
 
-  virtual mozilla::IntrinsicSize GetIntrinsicSize() override;
-  virtual nsSize  GetIntrinsicRatio() override;
+  mozilla::IntrinsicSize GetIntrinsicSize() override;
+  mozilla::AspectRatio GetIntrinsicRatio() override;
 
-  virtual mozilla::LogicalSize
-  ComputeAutoSize(nsRenderingContext *aRenderingContext,
-                  mozilla::WritingMode aWritingMode,
-                  const mozilla::LogicalSize& aCBSize,
-                  nscoord aAvailableISize,
-                  const mozilla::LogicalSize& aMargin,
-                  const mozilla::LogicalSize& aBorder,
-                  const mozilla::LogicalSize& aPadding,
-                  bool aShrinkWrap) override;
+  mozilla::LogicalSize ComputeAutoSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
+      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
+      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
-  virtual mozilla::LogicalSize
-  ComputeSize(nsRenderingContext *aRenderingContext,
-              mozilla::WritingMode aWritingMode,
-              const mozilla::LogicalSize& aCBSize,
-              nscoord aAvailableISize,
-              const mozilla::LogicalSize& aMargin,
-              const mozilla::LogicalSize& aBorder,
-              const mozilla::LogicalSize& aPadding,
-              ComputeSizeFlags aFlags) override;
+  mozilla::LogicalSize ComputeSize(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
+      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
+      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
+      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
-  virtual void Reflow(nsPresContext*           aPresContext,
-                      ReflowOutput&     aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus&          aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
 
-  virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
-  virtual nsresult AttributeChanged(int32_t aNameSpaceID,
-                                    nsIAtom* aAttribute,
-                                    int32_t aModType) override;
+  nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                            int32_t aModType) override;
+
+  void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   // if the content is "visibility:hidden", then just hide the view
   // and all our contents. We don't extend "visibility:hidden" to
   // the child content ourselves, since it belongs to a different
   // document and CSS doesn't inherit in there.
-  virtual bool SupportsVisibilityHidden() override { return false; }
+  bool SupportsVisibilityHidden() override { return false; }
 
 #ifdef ACCESSIBILITY
-  virtual mozilla::a11y::AccType AccessibleType() override;
+  mozilla::a11y::AccType AccessibleType() override;
 #endif
 
-  nsresult GetDocShell(nsIDocShell **aDocShell);
+  nsIDocShell* GetDocShell();
   nsresult BeginSwapDocShells(nsIFrame* aOther);
   void EndSwapDocShells(nsIFrame* aOther);
   nsView* EnsureInnerView();
+  nsPoint GetExtraOffset() const;
   nsIFrame* GetSubdocumentRootFrame();
-  enum {
-    IGNORE_PAINT_SUPPRESSION = 0x1
-  };
-  nsIPresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
+  enum { IGNORE_PAINT_SUPPRESSION = 0x1 };
+  mozilla::PresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
   mozilla::ScreenIntSize GetSubdocumentSize();
 
   // nsIReflowCallback
-  virtual bool ReflowFinished() override;
-  virtual void ReflowCallbackCanceled() override;
-
-  bool ShouldClipSubdocument()
-  {
-    nsFrameLoader* frameLoader = FrameLoader();
-    return !frameLoader || frameLoader->ShouldClipSubdocument();
-  }
-
-  bool ShouldClampScrollPosition()
-  {
-    nsFrameLoader* frameLoader = FrameLoader();
-    return !frameLoader || frameLoader->ShouldClampScrollPosition();
-  }
+  bool ReflowFinished() override;
+  void ReflowCallbackCanceled() override;
 
   /**
    * Return true if pointer event hit-testing should be allowed to target
@@ -129,13 +112,25 @@ public:
    */
   bool PassPointerEventsToChildren();
 
-protected:
+  void MaybeShowViewer() {
+    if (!mDidCreateDoc && !mCallingShow) {
+      ShowViewer();
+    }
+  }
+
+  nsFrameLoader* FrameLoader() const;
+  void ResetFrameLoader();
+
+  void PropagateIsUnderHiddenEmbedderElementToSubView(
+      bool aIsUnderHiddenEmbedderElement);
+
+  void ClearDisplayItems();
+
+ protected:
   friend class AsyncFrameInit;
 
   // Helper method to look up the HTML marginwidth & marginheight attributes.
   mozilla::CSSIntSize GetMarginAttributes();
-
-  nsFrameLoader* FrameLoader();
 
   bool IsInline() { return mIsInline; }
 
@@ -148,7 +143,7 @@ protected:
   void ShowViewer();
 
   /* Obtains the frame we should use for intrinsic size information if we are
-   * an HTML <object>, <embed> or <applet> (a replaced element - not <iframe>)
+   * an HTML <object> or <embed>  (a replaced element - not <iframe>)
    * and our sub-document has an intrinsic size. The frame returned is the
    * frame for the document element of the document we're embedding.
    *
@@ -157,12 +152,69 @@ protected:
    */
   nsIFrame* ObtainIntrinsicSizeFrame();
 
-  RefPtr<nsFrameLoader> mFrameLoader;
+  nsView* GetViewInternal() const override { return mOuterView; }
+  void SetViewInternal(nsView* aView) override { mOuterView = aView; }
+
+  mutable RefPtr<nsFrameLoader> mFrameLoader;
+
+  nsView* mOuterView;
   nsView* mInnerView;
   bool mIsInline;
   bool mPostedReflowCallback;
   bool mDidCreateDoc;
   bool mCallingShow;
+};
+
+/**
+ * A nsDisplayRemote will graft a remote frame's shadow layer tree (for a given
+ * nsFrameLoader) into its parent frame's layer tree.
+ */
+class nsDisplayRemote final : public nsPaintedDisplayItem {
+  typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
+  typedef mozilla::dom::TabId TabId;
+  typedef mozilla::gfx::Matrix4x4 Matrix4x4;
+  typedef mozilla::layers::EventRegionsOverride EventRegionsOverride;
+  typedef mozilla::layers::Layer Layer;
+  typedef mozilla::layers::LayersId LayersId;
+  typedef mozilla::layers::RefLayer RefLayer;
+  typedef mozilla::layers::StackingContextHelper StackingContextHelper;
+  typedef mozilla::LayerState LayerState;
+  typedef mozilla::LayoutDeviceRect LayoutDeviceRect;
+  typedef mozilla::LayoutDeviceIntPoint LayoutDeviceIntPoint;
+
+ public:
+  nsDisplayRemote(nsDisplayListBuilder* aBuilder, nsSubDocumentFrame* aFrame);
+
+  LayerState GetLayerState(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aParameters) override;
+
+  already_AddRefed<Layer> BuildLayer(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aContainerParameters) override;
+
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+  bool UpdateScrollData(
+      mozilla::layers::WebRenderScrollData* aData,
+      mozilla::layers::WebRenderLayerScrollData* aLayerData) override;
+
+  NS_DISPLAY_DECL_NAME("Remote", TYPE_REMOTE)
+
+ private:
+  friend class nsDisplayItemBase;
+  nsFrameLoader* GetFrameLoader() const;
+
+  TabId mTabId;
+  LayersId mLayersId;
+  LayoutDeviceIntPoint mOffset;
+  EventRegionsOverride mEventRegionsOverride;
 };
 
 #endif /* NSSUBDOCUMENTFRAME_H_ */

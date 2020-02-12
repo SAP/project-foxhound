@@ -1,3 +1,5 @@
+# flake8: noqa: F821
+
 test.compile("source.cpp")
 test.run_analysis_script('gcTypes')
 
@@ -20,17 +22,45 @@ assert('cell5' not in hazmap)
 assert('cell6' not in hazmap)
 assert('<returnvalue>' in hazmap)
 
-# All hazards should be in f()
+# All hazards should be in f(), loopy(), and safevals()
 assert(hazmap['cell2'].function == 'Cell* f()')
-assert(len(set(haz.function for haz in hazards)) == 1)
+print(len(set(haz.function for haz in hazards)))
+assert(len(set(haz.function for haz in hazards)) == 3)
 
 # Check that the correct GC call is reported for each hazard. (cell3 has a
 # hazard from two different GC calls; it doesn't really matter which is
 # reported.)
 assert(hazmap['cell2'].GCFunction == 'void halfSuppressedFunction()')
-assert(hazmap['cell3'].GCFunction in ('void halfSuppressedFunction()', 'void unsuppressedFunction()'))
+assert(hazmap['cell3'].GCFunction in (
+    'void halfSuppressedFunction()', 'void unsuppressedFunction()'))
 assert(hazmap['<returnvalue>'].GCFunction == 'void GCInDestructor::~GCInDestructor()')
+
+assert('container1' in hazmap);
+assert('container2' not in hazmap);
 
 # Type names are handy to have in the report.
 assert(hazmap['cell2'].type == 'Cell*')
 assert(hazmap['<returnvalue>'].type == 'Cell*')
+
+# loopy hazards. See comments in source.
+assert('haz1' not in hazmap)
+assert('haz2' not in hazmap)
+assert('haz3' in hazmap)
+assert('haz4' in hazmap)
+assert('haz5' in hazmap)
+assert('haz6' not in hazmap)
+assert('haz7' not in hazmap)
+assert('haz8' in hazmap)
+
+# safevals hazards. See comments in source.
+assert('unsafe1' in hazmap)
+assert('safe2' not in hazmap)
+assert('unsafe3' in hazmap)
+assert('unsafe3b' in hazmap)
+assert('unsafe4' in hazmap)
+assert('safe5' not in hazmap)
+assert('safe6' not in hazmap)
+assert('unsafe7' in hazmap)
+assert('safe8' not in hazmap)
+assert('safe9' not in hazmap)
+assert('safe10' not in hazmap)

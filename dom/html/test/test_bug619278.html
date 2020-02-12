@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=619278
 -->
 <head>
   <title>Test for Bug 619278</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -31,21 +31,19 @@ function doElementMatchesSelector(aElement, aSelector)
 var e = document.forms[0].elements[0];
 
 e.addEventListener("invalid", function(event) {
-  e.addEventListener("invalid", arguments.callee, false);
+  e.addEventListener("invalid", arguments.callee);
 
   SimpleTest.executeSoon(function() {
     doElementMatchesSelector(e, ":-moz-ui-invalid");
     SimpleTest.finish();
   });
-}, false);
+});
 
 e.addEventListener("focus", function() {
-  e.removeEventListener("focus", arguments.callee, false);
-
   SimpleTest.executeSoon(function() {
-    synthesizeKey("VK_RETURN", {});
+    synthesizeKey("KEY_Enter");
   });
-}, false);
+}, {once: true});
 
 SimpleTest.waitForExplicitFinish();
 SimpleTest.waitForFocus(function() {

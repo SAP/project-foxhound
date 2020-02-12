@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=604067
 -->
 <head>
   <title>Test for Bug 604067</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="text/javascript" src="manifest.js"></script>
 </head>
@@ -49,16 +49,7 @@ if (!t) {
 
   var f = document.createElement("iframe");
   f.src = t.name;
-  f.addEventListener("load", function() {
-    if (documentVideo().error) {
-      info("Error occured by the time we got |load| - checking directly.");
-      check();
-    } else {
-      //TODO: Fix this todo in Bug 1295923.
-      todo(false, "Error hasn't occurred yet - adding |error| event listener. This shouldn't happen, see bug 608634.");
-      documentVideo().addEventListener("error", check);
-    }
-  }, false);
+  f.addEventListener("load", check);
   document.body.appendChild(f);
 }
 

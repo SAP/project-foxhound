@@ -1,7 +1,7 @@
 <html>
 <head>
   <title>NPAPI Cookie Tests</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script type="application/javascript" src="plugin-utils.js"></script>
 
   <link rel="stylesheet" type="text/css" 
@@ -20,7 +20,7 @@
       for (var n in pluginElement) {
         ++c;
         ok(n in pluginElement, "Enumerated property which doesn't exist?");
-        if (n == 'setColor')
+        if (n == "setColor")
           foundSetColor = true;
       }
       ok(c > 0, "Should have enumerated some properties");

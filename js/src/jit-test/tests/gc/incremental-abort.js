@@ -1,7 +1,6 @@
-// Test aborting an incremental GC in all possible states
+// |jit-test| skip-if: !getBuildConfiguration()['has-gczeal']
 
-if (!("gcstate" in this && "gczeal" in this && "abortgc" in this))
-    quit();
+// Test aborting an incremental GC in all possible states
 
 gczeal(0);
 gc();
@@ -13,7 +12,7 @@ function testAbort(zoneCount, objectCount, sliceCount, abortState)
 
     var zones = [];
     for (var i = 0; i < zoneCount; i++) {
-        var zone = newGlobal();
+        var zone = newGlobal({newCompartment: true});
         evaluate("var objects; " +
                  "function makeObjectGraph(objectCount) { " +
                  "    objects = []; " +
@@ -25,11 +24,13 @@ function testAbort(zoneCount, objectCount, sliceCount, abortState)
         zones.push(zone);
     }
 
+    gc();
+
     var didAbort = false;
     startgc(sliceCount, "shrinking");
+    assertEq(currentgc().isShrinking, true);
     while (gcstate() !== "NotActive") {
-        var state = gcstate();
-        if (state == abortState) {
+        if (gcstate() == abortState) {
             abortgc();
             didAbort = true;
             break;

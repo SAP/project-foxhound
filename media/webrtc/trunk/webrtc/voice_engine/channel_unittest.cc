@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/voice_engine/channel.h"
+#include "test/gtest.h"
+#include "voice_engine/channel.h"
 
 // Empty test just to get coverage metrics.
 TEST(ChannelTest, EmptyTestToGetCodeCoverage) {}

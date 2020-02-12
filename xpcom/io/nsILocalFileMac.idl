@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsILocalFile.idl"
+#include "nsIFile.idl"
 
 %{C++
 #include <Carbon/Carbon.h>
@@ -17,7 +17,7 @@
       native CFURLRef(CFURLRef);
 
 [scriptable, builtinclass, uuid(623eca5b-c25d-4e27-be5a-789a66c4b2f7)]
-interface nsILocalFileMac : nsILocalFile
+interface nsILocalFileMac : nsIFile
 {
    /**
     * initWithCFURL
@@ -58,10 +58,10 @@ interface nsILocalFileMac : nsILocalFile
     * NOTE: Supported only for XP_MACOSX
     *
     * @return
-    *  
-    */ 
+    *
+    */
   [noscript] CFURLRef getCFURL();
- 
+
     /**
     * getFSRef
     *
@@ -75,10 +75,10 @@ interface nsILocalFileMac : nsILocalFile
     * NOTE: Supported only for XP_MACOSX
     *
     * @return
-    *  
-    */ 
+    *
+    */
   [noscript] FSRef getFSRef();
-   
+
    /**
     * getFSSpec
     *
@@ -90,13 +90,13 @@ interface nsILocalFileMac : nsILocalFile
     * the unresolved alias file.
     *
     * @return
-    *  
-    */ 
+    *
+    */
   [noscript] FSSpec getFSSpec();
 
    /**
     * fileSizeWithResFork
-    * 
+    *
     * Returns the combined size of both the data fork and the resource
     * fork (if present) rather than just the size of the data fork
     * as returned by GetFileSize()
@@ -148,7 +148,7 @@ interface nsILocalFileMac : nsILocalFile
    /**
     * bundleDisplayName
     *
-    * returns the display name of the application bundle (usually the human 
+    * returns the display name of the application bundle (usually the human
     * readable name of the application)
     */
    readonly attribute AString bundleDisplayName;

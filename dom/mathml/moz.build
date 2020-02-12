@@ -4,9 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "MathML")
+
+EXPORTS.mozilla.dom += [
+    'MathMLElement.h',
+]
+
 UNIFIED_SOURCES += [
-    'nsMathMLElement.cpp',
-    'nsMathMLElementFactory.cpp',
+    'MathMLElement.cpp',
+    'MathMLElementFactory.cpp',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

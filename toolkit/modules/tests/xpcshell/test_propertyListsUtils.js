@@ -3,32 +3,35 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-Components.utils.import("resource://gre/modules/PropertyListUtils.jsm");
+const { PropertyListUtils } = ChromeUtils.import(
+  "resource://gre/modules/PropertyListUtils.jsm"
+);
 
 function checkValue(aPropertyListObject, aType, aValue) {
-  do_check_eq(PropertyListUtils.getObjectType(aPropertyListObject), aType);
+  Assert.equal(PropertyListUtils.getObjectType(aPropertyListObject), aType);
   if (aValue !== undefined) {
     // Perform strict equality checks until Bug 714467 is fixed.
     let strictEqualityCheck = function(a, b) {
-      do_check_eq(typeof(a), typeof(b));
-      do_check_eq(a, b);
+      Assert.equal(typeof a, typeof b);
+      Assert.equal(a, b);
     };
 
-    if (typeof(aPropertyListObject) == "object")
+    if (typeof aPropertyListObject == "object") {
       strictEqualityCheck(aPropertyListObject.valueOf(), aValue.valueOf());
-    else
+    } else {
       strictEqualityCheck(aPropertyListObject, aValue);
+    }
   }
 }
 
 function checkLazyGetterValue(aObject, aPropertyName, aType, aValue) {
   let descriptor = Object.getOwnPropertyDescriptor(aObject, aPropertyName);
-  do_check_eq(typeof(descriptor.get), "function");
-  do_check_eq(typeof(descriptor.value), "undefined");
+  Assert.equal(typeof descriptor.get, "function");
+  Assert.equal(typeof descriptor.value, "undefined");
   checkValue(aObject[aPropertyName], aType, aValue);
   descriptor = Object.getOwnPropertyDescriptor(aObject, aPropertyName);
-  do_check_eq(typeof(descriptor.get), "undefined");
-  do_check_neq(typeof(descriptor.value), "undefined");
+  Assert.equal(typeof descriptor.get, "undefined");
+  Assert.notEqual(typeof descriptor.value, "undefined");
 }
 
 function checkMainPropertyList(aPropertyListRoot) {
@@ -44,7 +47,7 @@ function checkMainPropertyList(aPropertyListRoot) {
 
   let array = aPropertyListRoot.get("Array");
   checkValue(array, PropertyListUtils.TYPE_ARRAY);
-  do_check_eq(array.length, 8);
+  Assert.equal(array.length, 8);
 
   // Test both long and short values, since binary property lists store
   // long values a little bit differently (see readDataLengthAndOffset).
@@ -58,29 +61,43 @@ function checkMainPropertyList(aPropertyListRoot) {
   // Long unicode string
   checkLazyGetterValue(array, 3, PRIMITIVE, new Array(1001).join("\u05D0"));
   // Unicode surrogate pair
-  checkLazyGetterValue(array, 4, PRIMITIVE,
-                       "\uD800\uDC00\uD800\uDC00\uD800\uDC00");
+  checkLazyGetterValue(
+    array,
+    4,
+    PRIMITIVE,
+    "\uD800\uDC00\uD800\uDC00\uD800\uDC00"
+  );
 
   // Date
-  checkLazyGetterValue(array, 5, PropertyListUtils.TYPE_DATE,
-                       new Date("2011-12-31T11:15:23Z"));
+  checkLazyGetterValue(
+    array,
+    5,
+    PropertyListUtils.TYPE_DATE,
+    new Date("2011-12-31T11:15:23Z")
+  );
 
   // Data
   checkLazyGetterValue(array, 6, PropertyListUtils.TYPE_UINT8_ARRAY);
-  let dataAsString = Array.from(array[6]).map(b => String.fromCharCode(b)).join("");
-  do_check_eq(dataAsString, "2011-12-31T11:15:33Z");
+  let dataAsString = Array.from(array[6])
+    .map(b => String.fromCharCode(b))
+    .join("");
+  Assert.equal(dataAsString, "2011-12-31T11:15:33Z");
 
   // Dict
   let dict = array[7];
   checkValue(dict, PropertyListUtils.TYPE_DICTIONARY);
   checkValue(dict.get("Negative Number"), PRIMITIVE, -400);
   checkValue(dict.get("Real Number"), PRIMITIVE, 2.71828183);
-  checkValue(dict.get("Big Int"),
-             PropertyListUtils.TYPE_INT64,
-             "9007199254740993");
-  checkValue(dict.get("Negative Big Int"),
-             PropertyListUtils.TYPE_INT64,
-             "-9007199254740993");
+  checkValue(
+    dict.get("Big Int"),
+    PropertyListUtils.TYPE_INT64,
+    "9007199254740993"
+  );
+  checkValue(
+    dict.get("Negative Big Int"),
+    PropertyListUtils.TYPE_INT64,
+    "-9007199254740993"
+  );
 }
 
 function readPropertyList(aFile, aCallback) {
@@ -89,18 +106,26 @@ function readPropertyList(aFile, aCallback) {
     // Note: It is important not to run do_check_n/eq directly on Dict and array
     // objects, because it cases their toString to get invoked, doing away with
     // all the lazy getter we'd like to test later.
-    do_check_true(aPropertyListRoot !== null);
+    Assert.ok(aPropertyListRoot !== null);
     aCallback(aPropertyListRoot);
     run_next_test();
   });
 }
 
 function run_test() {
-  add_test(readPropertyList.bind(this,
-    do_get_file("propertyLists/bug710259_propertyListBinary.plist", false),
-    checkMainPropertyList));
-  add_test(readPropertyList.bind(this,
-    do_get_file("propertyLists/bug710259_propertyListXML.plist", false),
-    checkMainPropertyList));
+  add_test(
+    readPropertyList.bind(
+      this,
+      do_get_file("propertyLists/bug710259_propertyListBinary.plist", false),
+      checkMainPropertyList
+    )
+  );
+  add_test(
+    readPropertyList.bind(
+      this,
+      do_get_file("propertyLists/bug710259_propertyListXML.plist", false),
+      checkMainPropertyList
+    )
+  );
   run_next_test();
 }

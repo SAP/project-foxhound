@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/filesystem_dispatcher.h"
 #include "sandbox/win/src/handle_dispatcher.h"
@@ -47,6 +46,7 @@ TopLevelDispatcher::TopLevelDispatcher(PolicyBase* policy) : policy_(policy) {
   ipc_targets_[IPC_CREATEPROCESSW_TAG] = dispatcher;
   ipc_targets_[IPC_NTOPENPROCESSTOKEN_TAG] = dispatcher;
   ipc_targets_[IPC_NTOPENPROCESSTOKENEX_TAG] = dispatcher;
+  ipc_targets_[IPC_CREATETHREAD_TAG] = dispatcher;
   thread_process_dispatcher_.reset(dispatcher);
 
   dispatcher = new SyncDispatcher(policy_);
@@ -67,6 +67,19 @@ TopLevelDispatcher::TopLevelDispatcher(PolicyBase* policy) : policy_(policy) {
   ipc_targets_[IPC_GDI_GDIDLLINITIALIZE_TAG] = dispatcher;
   ipc_targets_[IPC_GDI_GETSTOCKOBJECT_TAG] = dispatcher;
   ipc_targets_[IPC_USER_REGISTERCLASSW_TAG] = dispatcher;
+  ipc_targets_[IPC_USER_ENUMDISPLAYMONITORS_TAG] = dispatcher;
+  ipc_targets_[IPC_USER_ENUMDISPLAYDEVICES_TAG] = dispatcher;
+  ipc_targets_[IPC_USER_GETMONITORINFO_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_CREATEOPMPROTECTEDOUTPUTS_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETCERTIFICATE_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETCERTIFICATESIZE_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_DESTROYOPMPROTECTEDOUTPUT_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_CONFIGUREOPMPROTECTEDOUTPUT_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETOPMINFORMATION_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETOPMRANDOMNUMBER_TAG] = dispatcher;
+  ipc_targets_[IPC_GDI_GETSUGGESTEDOPMPROTECTEDOUTPUTARRAYSIZE_TAG] =
+      dispatcher;
+  ipc_targets_[IPC_GDI_SETOPMSIGNINGKEYANDSEQUENCENUMBERS_TAG] = dispatcher;
   process_mitigations_win32k_dispatcher_.reset(dispatcher);
 }
 
@@ -90,7 +103,7 @@ Dispatcher* TopLevelDispatcher::OnMessageReady(IPCParams* ipc,
   Dispatcher* dispatcher = GetDispatcher(ipc->ipc_tag);
   if (!dispatcher) {
     NOTREACHED();
-    return NULL;
+    return nullptr;
   }
   return dispatcher->OnMessageReady(ipc, callback);
 }
@@ -138,7 +151,7 @@ bool TopLevelDispatcher::Ping(IPCInfo* ipc, void* arg1) {
 
 Dispatcher* TopLevelDispatcher::GetDispatcher(int ipc_tag) {
   if (ipc_tag >= IPC_LAST_TAG || ipc_tag <= IPC_UNUSED_TAG)
-    return NULL;
+    return nullptr;
 
   return ipc_targets_[ipc_tag];
 }

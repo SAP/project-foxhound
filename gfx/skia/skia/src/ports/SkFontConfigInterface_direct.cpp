@@ -7,8 +7,9 @@
 
 /* migrated from chrome/src/skia/ext/SkFontHost_fontconfig_direct.cpp */
 
+#include "SkAutoMalloc.h"
 #include "SkBuffer.h"
-#include "SkDataTable.h"
+#include "SkFixed.h"
 #include "SkFontConfigInterface_direct.h"
 #include "SkFontStyle.h"
 #include "SkMutex.h"
@@ -18,10 +19,59 @@
 #include "SkTDArray.h"
 #include "SkTemplates.h"
 #include "SkTypeface.h"
-#include "SkTypes.h"
 
 #include <fontconfig/fontconfig.h>
 #include <unistd.h>
+
+#ifdef SK_DEBUG
+#    include "SkTLS.h"
+#endif
+
+namespace {
+
+// Fontconfig is not threadsafe before 2.10.91. Before that, we lock with a global mutex.
+// See https://bug.skia.org/1497 for background.
+SK_DECLARE_STATIC_MUTEX(gFCMutex);
+
+#ifdef SK_DEBUG
+void* CreateThreadFcLocked() { return new bool(false); }
+void DeleteThreadFcLocked(void* v) { delete static_cast<bool*>(v); }
+#   define THREAD_FC_LOCKED \
+        static_cast<bool*>(SkTLS::Get(CreateThreadFcLocked, DeleteThreadFcLocked))
+#endif
+
+struct FCLocker {
+    // Assume FcGetVersion() has always been thread safe.
+
+    FCLocker() {
+        if (FcGetVersion() < 21091) {
+            gFCMutex.acquire();
+        } else {
+            SkDEBUGCODE(bool* threadLocked = THREAD_FC_LOCKED);
+            SkASSERT(false == *threadLocked);
+            SkDEBUGCODE(*threadLocked = true);
+        }
+    }
+
+    ~FCLocker() {
+        AssertHeld();
+        if (FcGetVersion() < 21091) {
+            gFCMutex.release();
+        } else {
+            SkDEBUGCODE(*THREAD_FC_LOCKED = false);
+        }
+    }
+
+    static void AssertHeld() { SkDEBUGCODE(
+        if (FcGetVersion() < 21091) {
+            gFCMutex.assertHeld();
+        } else {
+            SkASSERT(true == *THREAD_FC_LOCKED);
+        }
+    ) }
+};
+
+} // namespace
 
 size_t SkFontConfigInterface::FontIdentity::writeToMemory(void* addr) const {
     size_t size = sizeof(fID) + sizeof(fTTCIndex);
@@ -110,11 +160,9 @@ static void fontconfiginterface_unittest() {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Returns the string from the pattern, or nullptr
-static const char* get_name(FcPattern* pattern, const char field[],
-                            int index = 0) {
+static const char* get_string(FcPattern* pattern, const char field[], int index = 0) {
     const char* name;
-    if (FcPatternGetString(pattern, field, index,
-                           (FcChar8**)&name) != FcResultMatch) {
+    if (FcPatternGetString(pattern, field, index, (FcChar8**)&name) != FcResultMatch) {
         name = nullptr;
     }
     return name;
@@ -211,24 +259,28 @@ FontEquivClass GetFontEquivClass(const char* fontname)
         { PMINCHO, "MS PMincho" },
         { PMINCHO, "\xef\xbc\xad\xef\xbc\xb3 \xef\xbc\xb0"
                    "\xe6\x98\x8e\xe6\x9c\x9d"},
+        { PMINCHO, "Noto Serif CJK JP" },
         { PMINCHO, "IPAPMincho" },
         { PMINCHO, "MotoyaG04Mincho" },
 
         // ＭＳ 明朝
         { MINCHO, "MS Mincho" },
         { MINCHO, "\xef\xbc\xad\xef\xbc\xb3 \xe6\x98\x8e\xe6\x9c\x9d" },
+        { MINCHO, "Noto Serif CJK JP" },
         { MINCHO, "IPAMincho" },
         { MINCHO, "MotoyaG04MinchoMono" },
 
         // 宋体
         { SIMSUN, "Simsun" },
         { SIMSUN, "\xe5\xae\x8b\xe4\xbd\x93" },
+        { SIMSUN, "Noto Serif CJK SC" },
         { SIMSUN, "MSung GB18030" },
         { SIMSUN, "Song ASC" },
 
         // 新宋体
         { NSIMSUN, "NSimsun" },
         { NSIMSUN, "\xe6\x96\xb0\xe5\xae\x8b\xe4\xbd\x93" },
+        { NSIMSUN, "Noto Serif CJK SC" },
         { NSIMSUN, "MSung GB18030" },
         { NSIMSUN, "N Song ASC" },
 
@@ -242,21 +294,25 @@ FontEquivClass GetFontEquivClass(const char* fontname)
         // 新細明體
         { PMINGLIU, "PMingLiU"},
         { PMINGLIU, "\xe6\x96\xb0\xe7\xb4\xb0\xe6\x98\x8e\xe9\xab\x94" },
+        { PMINGLIU, "Noto Serif CJK TC"},
         { PMINGLIU, "MSung B5HK"},
 
         // 細明體
         { MINGLIU, "MingLiU"},
         { MINGLIU, "\xe7\xb4\xb0\xe6\x98\x8e\xe9\xab\x94" },
+        { MINGLIU, "Noto Serif CJK TC"},
         { MINGLIU, "MSung B5HK"},
 
         // 新細明體
         { PMINGLIUHK, "PMingLiU_HKSCS"},
         { PMINGLIUHK, "\xe6\x96\xb0\xe7\xb4\xb0\xe6\x98\x8e\xe9\xab\x94_HKSCS" },
+        { PMINGLIUHK, "Noto Serif CJK TC"},
         { PMINGLIUHK, "MSung B5HK"},
 
         // 細明體
         { MINGLIUHK, "MingLiU_HKSCS"},
         { MINGLIUHK, "\xe7\xb4\xb0\xe6\x98\x8e\xe9\xab\x94_HKSCS" },
+        { MINGLIUHK, "Noto Serif CJK TC"},
         { MINGLIUHK, "MSung B5HK"},
 
         // Cambria
@@ -304,36 +360,139 @@ bool IsFallbackFontAllowed(const SkString& family) {
 }
 
 // Retrieves |is_bold|, |is_italic| and |font_family| properties from |font|.
-SkTypeface::Style GetFontStyle(FcPattern* font) {
-    int resulting_bold;
-    if (FcPatternGetInteger(font, FC_WEIGHT, 0, &resulting_bold))
-        resulting_bold = FC_WEIGHT_NORMAL;
-
-    int resulting_italic;
-    if (FcPatternGetInteger(font, FC_SLANT, 0, &resulting_italic))
-        resulting_italic = FC_SLANT_ROMAN;
-
-    // If we ask for an italic font, fontconfig might take a roman font and set
-    // the undocumented property FC_MATRIX to a skew matrix. It'll then say
-    // that the font is italic or oblique. So, if we see a matrix, we don't
-    // believe that it's italic.
-    FcValue matrix;
-    const bool have_matrix = FcPatternGet(font, FC_MATRIX, 0, &matrix) == 0;
-
-    // If we ask for an italic font, fontconfig might take a roman font and set
-    // FC_EMBOLDEN.
-    FcValue embolden;
-    const bool have_embolden = FcPatternGet(font, FC_EMBOLDEN, 0, &embolden) == 0;
-
-    int styleBits = 0;
-    if (resulting_bold > FC_WEIGHT_MEDIUM && !have_embolden) {
-        styleBits |= SkTypeface::kBold;
+static int get_int(FcPattern* pattern, const char object[], int missing) {
+    int value;
+    if (FcPatternGetInteger(pattern, object, 0, &value) != FcResultMatch) {
+        return missing;
     }
-    if (resulting_italic > FC_SLANT_ROMAN && !have_matrix) {
-        styleBits |= SkTypeface::kItalic;
+    return value;
+}
+
+static int map_range(SkScalar value,
+                     SkScalar old_min, SkScalar old_max,
+                     SkScalar new_min, SkScalar new_max)
+{
+    SkASSERT(old_min < old_max);
+    SkASSERT(new_min <= new_max);
+    return new_min + ((value - old_min) * (new_max - new_min) / (old_max - old_min));
+}
+
+struct MapRanges {
+    SkScalar old_val;
+    SkScalar new_val;
+};
+
+static SkScalar map_ranges(SkScalar val, MapRanges const ranges[], int rangesCount) {
+    // -Inf to [0]
+    if (val < ranges[0].old_val) {
+        return ranges[0].new_val;
     }
 
-    return (SkTypeface::Style)styleBits;
+    // Linear from [i] to [i+1]
+    for (int i = 0; i < rangesCount - 1; ++i) {
+        if (val < ranges[i+1].old_val) {
+            return map_range(val, ranges[i].old_val, ranges[i+1].old_val,
+                                  ranges[i].new_val, ranges[i+1].new_val);
+        }
+    }
+
+    // From [n] to +Inf
+    // if (fcweight < Inf)
+    return ranges[rangesCount-1].new_val;
+}
+
+#ifndef FC_WEIGHT_DEMILIGHT
+#define FC_WEIGHT_DEMILIGHT        65
+#endif
+
+static SkFontStyle skfontstyle_from_fcpattern(FcPattern* pattern) {
+    typedef SkFontStyle SkFS;
+
+    static constexpr MapRanges weightRanges[] = {
+        { FC_WEIGHT_THIN,       SkFS::kThin_Weight },
+        { FC_WEIGHT_EXTRALIGHT, SkFS::kExtraLight_Weight },
+        { FC_WEIGHT_LIGHT,      SkFS::kLight_Weight },
+        { FC_WEIGHT_DEMILIGHT,  350 },
+        { FC_WEIGHT_BOOK,       380 },
+        { FC_WEIGHT_REGULAR,    SkFS::kNormal_Weight },
+        { FC_WEIGHT_MEDIUM,     SkFS::kMedium_Weight },
+        { FC_WEIGHT_DEMIBOLD,   SkFS::kSemiBold_Weight },
+        { FC_WEIGHT_BOLD,       SkFS::kBold_Weight },
+        { FC_WEIGHT_EXTRABOLD,  SkFS::kExtraBold_Weight },
+        { FC_WEIGHT_BLACK,      SkFS::kBlack_Weight },
+        { FC_WEIGHT_EXTRABLACK, SkFS::kExtraBlack_Weight },
+    };
+    SkScalar weight = map_ranges(get_int(pattern, FC_WEIGHT, FC_WEIGHT_REGULAR),
+                                 weightRanges, SK_ARRAY_COUNT(weightRanges));
+
+    static constexpr MapRanges widthRanges[] = {
+        { FC_WIDTH_ULTRACONDENSED, SkFS::kUltraCondensed_Width },
+        { FC_WIDTH_EXTRACONDENSED, SkFS::kExtraCondensed_Width },
+        { FC_WIDTH_CONDENSED,      SkFS::kCondensed_Width },
+        { FC_WIDTH_SEMICONDENSED,  SkFS::kSemiCondensed_Width },
+        { FC_WIDTH_NORMAL,         SkFS::kNormal_Width },
+        { FC_WIDTH_SEMIEXPANDED,   SkFS::kSemiExpanded_Width },
+        { FC_WIDTH_EXPANDED,       SkFS::kExpanded_Width },
+        { FC_WIDTH_EXTRAEXPANDED,  SkFS::kExtraExpanded_Width },
+        { FC_WIDTH_ULTRAEXPANDED,  SkFS::kUltraExpanded_Width },
+    };
+    SkScalar width = map_ranges(get_int(pattern, FC_WIDTH, FC_WIDTH_NORMAL),
+                                widthRanges, SK_ARRAY_COUNT(widthRanges));
+
+    SkFS::Slant slant = SkFS::kUpright_Slant;
+    switch (get_int(pattern, FC_SLANT, FC_SLANT_ROMAN)) {
+        case FC_SLANT_ROMAN:   slant = SkFS::kUpright_Slant; break;
+        case FC_SLANT_ITALIC : slant = SkFS::kItalic_Slant ; break;
+        case FC_SLANT_OBLIQUE: slant = SkFS::kOblique_Slant; break;
+        default: SkASSERT(false); break;
+    }
+
+    return SkFontStyle(SkScalarRoundToInt(weight), SkScalarRoundToInt(width), slant);
+}
+
+static void fcpattern_from_skfontstyle(SkFontStyle style, FcPattern* pattern) {
+    typedef SkFontStyle SkFS;
+
+    static constexpr MapRanges weightRanges[] = {
+        { SkFS::kThin_Weight,       FC_WEIGHT_THIN },
+        { SkFS::kExtraLight_Weight, FC_WEIGHT_EXTRALIGHT },
+        { SkFS::kLight_Weight,      FC_WEIGHT_LIGHT },
+        { 350,                      FC_WEIGHT_DEMILIGHT },
+        { 380,                      FC_WEIGHT_BOOK },
+        { SkFS::kNormal_Weight,     FC_WEIGHT_REGULAR },
+        { SkFS::kMedium_Weight,     FC_WEIGHT_MEDIUM },
+        { SkFS::kSemiBold_Weight,   FC_WEIGHT_DEMIBOLD },
+        { SkFS::kBold_Weight,       FC_WEIGHT_BOLD },
+        { SkFS::kExtraBold_Weight,  FC_WEIGHT_EXTRABOLD },
+        { SkFS::kBlack_Weight,      FC_WEIGHT_BLACK },
+        { SkFS::kExtraBlack_Weight, FC_WEIGHT_EXTRABLACK },
+    };
+    int weight = map_ranges(style.weight(), weightRanges, SK_ARRAY_COUNT(weightRanges));
+
+    static constexpr MapRanges widthRanges[] = {
+        { SkFS::kUltraCondensed_Width, FC_WIDTH_ULTRACONDENSED },
+        { SkFS::kExtraCondensed_Width, FC_WIDTH_EXTRACONDENSED },
+        { SkFS::kCondensed_Width,      FC_WIDTH_CONDENSED },
+        { SkFS::kSemiCondensed_Width,  FC_WIDTH_SEMICONDENSED },
+        { SkFS::kNormal_Width,         FC_WIDTH_NORMAL },
+        { SkFS::kSemiExpanded_Width,   FC_WIDTH_SEMIEXPANDED },
+        { SkFS::kExpanded_Width,       FC_WIDTH_EXPANDED },
+        { SkFS::kExtraExpanded_Width,  FC_WIDTH_EXTRAEXPANDED },
+        { SkFS::kUltraExpanded_Width,  FC_WIDTH_ULTRAEXPANDED },
+    };
+    int width = map_ranges(style.width(), widthRanges, SK_ARRAY_COUNT(widthRanges));
+
+    int slant = FC_SLANT_ROMAN;
+    switch (style.slant()) {
+        case SkFS::kUpright_Slant: slant = FC_SLANT_ROMAN  ; break;
+        case SkFS::kItalic_Slant : slant = FC_SLANT_ITALIC ; break;
+        case SkFS::kOblique_Slant: slant = FC_SLANT_OBLIQUE; break;
+        default: SkASSERT(false); break;
+    }
+
+    FcPatternAddInteger(pattern, FC_WEIGHT, weight);
+    FcPatternAddInteger(pattern, FC_WIDTH , width);
+    FcPatternAddInteger(pattern, FC_SLANT , slant);
 }
 
 }  // anonymous namespace
@@ -341,9 +500,13 @@ SkTypeface::Style GetFontStyle(FcPattern* font) {
 ///////////////////////////////////////////////////////////////////////////////
 
 #define kMaxFontFamilyLength    2048
+#ifdef SK_FONT_CONFIG_INTERFACE_ONLY_ALLOW_SFNT_FONTS
+const char* kFontFormatTrueType = "TrueType";
+const char* kFontFormatCFF = "CFF";
+#endif
 
 SkFontConfigInterfaceDirect::SkFontConfigInterfaceDirect() {
-    SkAutoMutexAcquire ac(mutex_);
+    FCLocker lock;
 
     FcInit();
 
@@ -361,18 +524,27 @@ bool SkFontConfigInterfaceDirect::isAccessible(const char* filename) {
 }
 
 bool SkFontConfigInterfaceDirect::isValidPattern(FcPattern* pattern) {
-#ifdef SK_FONT_CONFIG_ONLY_ALLOW_SCALABLE_FONTS
-    FcBool is_scalable;
-    if (FcPatternGetBool(pattern, FC_SCALABLE, 0, &is_scalable) != FcResultMatch
-        || !is_scalable) {
+#ifdef SK_FONT_CONFIG_INTERFACE_ONLY_ALLOW_SFNT_FONTS
+    const char* font_format = get_string(pattern, FC_FONTFORMAT);
+    if (font_format
+        && strcmp(font_format, kFontFormatTrueType) != 0
+        && strcmp(font_format, kFontFormatCFF) != 0)
+    {
         return false;
     }
 #endif
 
     // fontconfig can also return fonts which are unreadable
-    const char* c_filename = get_name(pattern, FC_FILE);
+    const char* c_filename = get_string(pattern, FC_FILE);
     if (!c_filename) {
         return false;
+    }
+    const char* sysroot = (const char*)FcConfigGetSysRoot(nullptr);
+    SkString resolvedFilename;
+    if (sysroot) {
+        resolvedFilename = sysroot;
+        resolvedFilename += c_filename;
+        c_filename = resolvedFilename.c_str();
     }
     return this->isAccessible(c_filename);
 }
@@ -395,7 +567,7 @@ FcPattern* SkFontConfigInterfaceDirect::MatchFont(FcFontSet* font_set,
   if (match && !IsFallbackFontAllowed(family)) {
     bool acceptable_substitute = false;
     for (int id = 0; id < 255; ++id) {
-      const char* post_match_family = get_name(match, FC_FAMILY, id);
+      const char* post_match_family = get_string(match, FC_FAMILY, id);
       if (!post_match_family)
         break;
       acceptable_substitute =
@@ -418,28 +590,24 @@ FcPattern* SkFontConfigInterfaceDirect::MatchFont(FcFontSet* font_set,
 }
 
 bool SkFontConfigInterfaceDirect::matchFamilyName(const char familyName[],
-                                                  SkTypeface::Style style,
+                                                  SkFontStyle style,
                                                   FontIdentity* outIdentity,
                                                   SkString* outFamilyName,
-                                                  SkTypeface::Style* outStyle) {
+                                                  SkFontStyle* outStyle) {
     SkString familyStr(familyName ? familyName : "");
     if (familyStr.size() > kMaxFontFamilyLength) {
         return false;
     }
 
-    SkAutoMutexAcquire ac(mutex_);
+    FCLocker lock;
 
     FcPattern* pattern = FcPatternCreate();
 
     if (familyName) {
         FcPatternAddString(pattern, FC_FAMILY, (FcChar8*)familyName);
     }
-    FcPatternAddInteger(pattern, FC_WEIGHT,
-                        (style & SkTypeface::kBold) ? FC_WEIGHT_BOLD
-                                                    : FC_WEIGHT_NORMAL);
-    FcPatternAddInteger(pattern, FC_SLANT,
-                        (style & SkTypeface::kItalic) ? FC_SLANT_ITALIC
-                                                      : FC_SLANT_ROMAN);
+    fcpattern_from_skfontstyle(style, pattern);
+
     FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
 
     FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
@@ -474,14 +642,14 @@ bool SkFontConfigInterfaceDirect::matchFamilyName(const char familyName[],
     //
     // However, we special-case fallback fonts; see IsFallbackFontAllowed().
 
-    const char* post_config_family = get_name(pattern, FC_FAMILY);
+    const char* post_config_family = get_string(pattern, FC_FAMILY);
     if (!post_config_family) {
         // we can just continue with an empty name, e.g. default font
         post_config_family = "";
     }
 
     FcResult result;
-    FcFontSet* font_set = FcFontSort(0, pattern, 0, 0, &result);
+    FcFontSet* font_set = FcFontSort(nullptr, pattern, 0, nullptr, &result);
     if (!font_set) {
         FcPatternDestroy(pattern);
         return false;
@@ -498,23 +666,26 @@ bool SkFontConfigInterfaceDirect::matchFamilyName(const char familyName[],
 
     // From here out we just extract our results from 'match'
 
-    post_config_family = get_name(match, FC_FAMILY);
+    post_config_family = get_string(match, FC_FAMILY);
     if (!post_config_family) {
         FcFontSetDestroy(font_set);
         return false;
     }
 
-    const char* c_filename = get_name(match, FC_FILE);
+    const char* c_filename = get_string(match, FC_FILE);
     if (!c_filename) {
         FcFontSetDestroy(font_set);
         return false;
     }
-
-    int face_index;
-    if (FcPatternGetInteger(match, FC_INDEX, 0, &face_index) != FcResultMatch) {
-        FcFontSetDestroy(font_set);
-        return false;
+    const char* sysroot = (const char*)FcConfigGetSysRoot(nullptr);
+    SkString resolvedFilename;
+    if (sysroot) {
+        resolvedFilename = sysroot;
+        resolvedFilename += c_filename;
+        c_filename = resolvedFilename.c_str();
     }
+
+    int face_index = get_int(match, FC_INDEX, 0);
 
     FcFontSetDestroy(font_set);
 
@@ -526,59 +697,11 @@ bool SkFontConfigInterfaceDirect::matchFamilyName(const char familyName[],
         outFamilyName->set(post_config_family);
     }
     if (outStyle) {
-        *outStyle = GetFontStyle(match);
+        *outStyle = skfontstyle_from_fcpattern(match);
     }
     return true;
 }
 
 SkStreamAsset* SkFontConfigInterfaceDirect::openStream(const FontIdentity& identity) {
-    return SkStream::NewFromFile(identity.fString.c_str());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-static bool find_name(const SkTDArray<const char*>& list, const char* str) {
-    int count = list.count();
-    for (int i = 0; i < count; ++i) {
-        if (!strcmp(list[i], str)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-SkDataTable* SkFontConfigInterfaceDirect::getFamilyNames() {
-    SkAutoMutexAcquire ac(mutex_);
-
-    FcPattern* pat = FcPatternCreate();
-    SkAutoTCallVProc<FcPattern, FcPatternDestroy> autoDestroyPat(pat);
-    if (nullptr == pat) {
-        return nullptr;
-    }
-
-    FcObjectSet* os = FcObjectSetBuild(FC_FAMILY, (char *)0);
-    SkAutoTCallVProc<FcObjectSet, FcObjectSetDestroy> autoDestroyOs(os);
-    if (nullptr == os) {
-        return nullptr;
-    }
-
-    FcFontSet* fs = FcFontList(nullptr, pat, os);
-    SkAutoTCallVProc<FcFontSet, FcFontSetDestroy> autoDestroyFs(fs);
-    if (nullptr == fs) {
-        return nullptr;
-    }
-
-    SkTDArray<const char*> names;
-    SkTDArray<size_t> sizes;
-    for (int i = 0; i < fs->nfont; ++i) {
-        FcPattern* match = fs->fonts[i];
-        const char* famName = get_name(match, FC_FAMILY);
-        if (famName && !find_name(names, famName)) {
-            *names.append() = famName;
-            *sizes.append() = strlen(famName) + 1;
-        }
-    }
-
-    return SkDataTable::NewCopyArrays((const void*const*)names.begin(),
-                                      sizes.begin(), names.count());
+    return SkStream::MakeFromFile(identity.fString.c_str()).release();
 }

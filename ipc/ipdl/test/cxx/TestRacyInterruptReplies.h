@@ -9,65 +9,57 @@
 namespace mozilla {
 namespace _ipdltest {
 
+class TestRacyInterruptRepliesParent : public PTestRacyInterruptRepliesParent {
+  friend class PTestRacyInterruptRepliesParent;
 
-class TestRacyInterruptRepliesParent :
-    public PTestRacyInterruptRepliesParent
-{
-public:
-    TestRacyInterruptRepliesParent();
-    virtual ~TestRacyInterruptRepliesParent();
+ public:
+  TestRacyInterruptRepliesParent();
+  virtual ~TestRacyInterruptRepliesParent();
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-    void Main();
+  void Main();
 
-protected:    
-    virtual bool RecvA_() override;
+ protected:
+  mozilla::ipc::IPCResult RecvA_();
 
-    virtual bool Answer_R(int* replyNum) override;
+  mozilla::ipc::IPCResult Answer_R(int* replyNum);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");  
-        passed("ok");
-        QuitParent();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    passed("ok");
+    QuitParent();
+  }
 
-private:
-    int mReplyNum;
+ private:
+  int mReplyNum;
 };
 
+class TestRacyInterruptRepliesChild : public PTestRacyInterruptRepliesChild {
+  friend class PTestRacyInterruptRepliesChild;
 
-class TestRacyInterruptRepliesChild :
-    public PTestRacyInterruptRepliesChild
-{
-public:
-    TestRacyInterruptRepliesChild();
-    virtual ~TestRacyInterruptRepliesChild();
+ public:
+  TestRacyInterruptRepliesChild();
+  virtual ~TestRacyInterruptRepliesChild();
 
-protected:
-    virtual bool AnswerR_(int* replyNum) override;
+ protected:
+  mozilla::ipc::IPCResult AnswerR_(int* replyNum);
 
-    virtual bool RecvChildTest() override;
+  mozilla::ipc::IPCResult RecvChildTest();
 
-    virtual bool Recv_A() override;
+  mozilla::ipc::IPCResult Recv_A();
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 
-private:
-    int mReplyNum;
+ private:
+  int mReplyNum;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestRacyInterruptReplies_h
+#endif  // ifndef mozilla__ipdltest_TestRacyInterruptReplies_h

@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -9,14 +8,14 @@
 const TEST_URL = URL_ROOT + "doc_markup_dragdrop.html";
 const TEST_DATA = ["html", "head", "body"];
 
-add_task(function* () {
-  let {inspector} = yield openInspectorForURL(TEST_URL);
+add_task(async function() {
+  const { inspector } = await openInspectorForURL(TEST_URL);
 
-  for (let selector of TEST_DATA) {
+  for (const selector of TEST_DATA) {
     info("Try to drag/drop node " + selector);
-    yield simulateNodeDrag(inspector, selector);
+    await simulateNodeDrag(inspector, selector);
 
-    let container = yield getContainerForSelector(selector, inspector);
+    const container = await getContainerForSelector(selector, inspector);
     ok(!container.isDragging, "The container hasn't been marked as dragging");
   }
 });

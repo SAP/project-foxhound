@@ -40,8 +40,8 @@ public:
      */
     void add(SkCanvas* canvas,
              const SkPicture* picture,
-             const SkMatrix* matrix = NULL,
-             const SkPaint* paint = NULL);
+             const SkMatrix* matrix = nullptr,
+             const SkPaint* paint = nullptr);
 
     /**
      *  Perform all the previously added draws. This will reset the state
@@ -57,7 +57,7 @@ public:
 
 private:
     struct DrawData {
-        SkCanvas*        fCanvas;  // reffed
+        SkCanvas*        fCanvas;
         const SkPicture* fPicture; // reffed
         SkMatrix         fMatrix;
         SkPaint*         fPaint;   // owned

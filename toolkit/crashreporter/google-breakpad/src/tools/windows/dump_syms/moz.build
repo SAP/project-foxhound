@@ -17,13 +17,18 @@ HOST_SOURCES += [
 
 HOST_CXXFLAGS += [
     '-O2',
-    '-EHsc',
-    '-MD'
 ]
 
+if CONFIG['HOST_CC_TYPE'] == 'clang-cl':
+    HOST_CXXFLAGS += [
+        '-EHsc',
+        '-MD'
+    ]
+
 HOST_OS_LIBS += [
+    'dbghelp',
     'diaguids',
-    'imagehlp'
+    'imagehlp',
 ]
 
 LOCAL_INCLUDES += [

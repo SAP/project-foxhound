@@ -5,10 +5,10 @@
 
 var testGenerator = testSteps();
 
-function testSteps() {
-  const dbName = this.window ?
-                 window.location.pathname :
-                 "test_objectStore_openKeyCursor";
+function* testSteps() {
+  const dbName = this.window
+    ? window.location.pathname
+    : "test_objectStore_openKeyCursor";
   const dbVersion = 1;
   const objectStoreName = "foo";
   const keyCount = 100;
@@ -34,8 +34,9 @@ function testSteps() {
   event = yield undefined;
 
   db = event.target.result;
-  objectStore = db.transaction(objectStoreName, "readwrite")
-                  .objectStore(objectStoreName);
+  objectStore = db
+    .transaction(objectStoreName, "readwrite")
+    .objectStore(objectStoreName);
 
   info("Getting all keys");
   objectStore.getAllKeys().onsuccess = grabEventAndContinueHandler;
@@ -62,7 +63,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -70,7 +71,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -112,7 +113,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -120,7 +121,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -179,7 +180,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -187,7 +188,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -231,7 +232,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -239,7 +240,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -300,7 +301,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -308,7 +309,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -355,7 +356,7 @@ function testSteps() {
     let exception = null;
     try {
       cursor.update(10);
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "update() throws for key cursor");
@@ -363,7 +364,7 @@ function testSteps() {
     exception = null;
     try {
       cursor.delete();
-    } catch(e) {
+    } catch (e) {
       exception = e;
     }
     ok(!!exception, "delete() throws for key cursor");
@@ -396,5 +397,4 @@ function testSteps() {
   ok(match, "All keys matched");
 
   finishTest();
-  yield undefined;
 }

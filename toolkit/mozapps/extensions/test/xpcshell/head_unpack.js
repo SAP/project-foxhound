@@ -1,3 +1,3 @@
-/*globals Services, TEST_UNPACKED: true*/
-Services.prefs.setBoolPref("extensions.alwaysUnpack", true);
+/* globals Services, TEST_UNPACKED: true */
+/* exported TEST_UNPACKED */
 TEST_UNPACKED = true;

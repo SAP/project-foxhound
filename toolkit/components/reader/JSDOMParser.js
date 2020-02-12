@@ -460,16 +460,15 @@
             else
               this.children.push(newNode);
           }
-        } else {
+        } else if (oldNode.nodeType === Node.ELEMENT_NODE) {
           // new node is not an element node.
           // if the old one was, update its element siblings:
-          if (oldNode.nodeType === Node.ELEMENT_NODE) {
-            if (oldNode.previousElementSibling)
-              oldNode.previousElementSibling.nextElementSibling = oldNode.nextElementSibling;
-            if (oldNode.nextElementSibling)
-              oldNode.nextElementSibling.previousElementSibling = oldNode.previousElementSibling;
-            this.children.splice(this.children.indexOf(oldNode), 1);
-          }
+          if (oldNode.previousElementSibling)
+            oldNode.previousElementSibling.nextElementSibling = oldNode.nextElementSibling;
+          if (oldNode.nextElementSibling)
+            oldNode.nextElementSibling.previousElementSibling = oldNode.previousElementSibling;
+          this.children.splice(this.children.indexOf(oldNode), 1);
+
           // If the old node wasn't an element, neither the new nor the old node was an element,
           // and the children array and its members shouldn't need any updating.
         }
@@ -489,8 +488,8 @@
     __JSDOMParser__: true,
   };
 
-  for (var i in nodeTypes) {
-    Node[i] = Node.prototype[i] = nodeTypes[i];
+  for (var nodeType in nodeTypes) {
+    Node[nodeType] = Node.prototype[nodeType] = nodeTypes[nodeType];
   }
 
   var Attribute = function (name, value) {
@@ -559,9 +558,10 @@
       this._textContent = newText;
       delete this._innerHTML;
     },
-  }
+  };
 
-  var Document = function () {
+  var Document = function (url) {
+    this.documentURI = url;
     this.styleSheets = [];
     this.childNodes = [];
     this.children = [];
@@ -601,9 +601,30 @@
       node.textContent = text;
       return node;
     },
+
+    get baseURI() {
+      if (!this.hasOwnProperty("_baseURI")) {
+        this._baseURI = this.documentURI;
+        var baseElements = this.getElementsByTagName("base");
+        var href = baseElements[0] && baseElements[0].getAttribute("href");
+        if (href) {
+          try {
+            this._baseURI = (new URL(href, this._baseURI)).href;
+          } catch (ex) {/* Just fall back to documentURI */}
+        }
+      }
+      return this._baseURI;
+    },
   };
 
   var Element = function (tag) {
+    // We use this to find the closing tag.
+    this._matchingTag = tag;
+    // We're explicitly a non-namespace aware parser, we just pretend it's all HTML.
+    var lastColonIndex = tag.lastIndexOf(":");
+    if (lastColonIndex != -1) {
+      tag = tag.substring(lastColonIndex + 1);
+    }
     this.attributes = [];
     this.childNodes = [];
     this.children = [];
@@ -670,7 +691,7 @@
               // the attribute value will be HTML escaped.
               var val = attr.value;
               var quote = (val.indexOf('"') === -1 ? '"' : "'");
-              arr.push(" " + attr.name + '=' + quote + val + quote);
+              arr.push(" " + attr.name + "=" + quote + val + quote);
             }
 
             if (child.localName in voidElems && !child.childNodes.length) {
@@ -771,7 +792,13 @@
           break;
         }
       }
-    }
+    },
+
+    hasAttribute: function (name) {
+      return this.attributes.some(function (attr) {
+        return attr.name == name;
+      });
+    },
   };
 
   var Style = function (node) {
@@ -829,7 +856,7 @@
       Style.prototype.__defineSetter__(jsName, function (value) {
         this.setStyle(cssName, value);
       });
-    }) (styleMap[jsName]);
+    })(styleMap[jsName]);
   }
 
   var JSDOMParser = function () {
@@ -943,7 +970,7 @@
         strBuf.push(c);
         c = this.nextChar();
       }
-      var tag = strBuf.join('');
+      var tag = strBuf.join("");
 
       if (!tag)
         return false;
@@ -954,7 +981,9 @@
       while (c !== "/" && c !== ">") {
         if (c === undefined)
           return false;
-        while (whitespace.indexOf(this.html[this.currentChar++]) != -1);
+        while (whitespace.indexOf(this.html[this.currentChar++]) != -1) {
+          // Advance cursor to first non-whitespace char.
+        }
         this.currentChar--;
         c = this.nextChar();
         if (c !== "/" && c !== ">") {
@@ -976,7 +1005,7 @@
 
       retPair[0] = node;
       retPair[1] = closed;
-      return true
+      return true;
     },
 
     /**
@@ -1018,46 +1047,6 @@
       }
     },
 
-    readScript: function (node) {
-      while (this.currentChar < this.html.length) {
-        var c = this.nextChar();
-        var nextC = this.peekNext();
-        if (c === "<") {
-          if (nextC === "!" || nextC === "?") {
-            // We're still before the ! or ? that is starting this comment:
-            this.currentChar++;
-            node.appendChild(this.discardNextComment());
-            continue;
-          }
-          if (nextC === "/" && this.html.substr(this.currentChar, 8 /*"/script>".length */).toLowerCase() == "/script>") {
-            // Go back before the '<' so we find the end tag.
-            this.currentChar--;
-            // Done with this script tag, the caller will close:
-            return;
-          }
-        }
-        // Either c wasn't a '<' or it was but we couldn't find either a comment
-        // or a closing script tag, so we should just parse as text until the next one
-        // comes along:
-
-        var haveTextNode = node.lastChild && node.lastChild.nodeType === Node.TEXT_NODE;
-        var textNode = haveTextNode ? node.lastChild : new Text();
-        var n = this.html.indexOf("<", this.currentChar);
-        // Decrement this to include the current character *afterwards* so we don't get stuck
-        // looking for the same < all the time.
-        this.currentChar--;
-        if (n === -1) {
-          textNode.innerHTML += this.html.substring(this.currentChar, this.html.length);
-          this.currentChar = this.html.length;
-        } else {
-          textNode.innerHTML += this.html.substring(this.currentChar, n);
-          this.currentChar = n;
-        }
-        if (!haveTextNode)
-          node.appendChild(textNode);
-      }
-    },
-
     discardNextComment: function() {
       if (this.match("--")) {
         this.discardTo("-->");
@@ -1088,9 +1077,10 @@
         return null;
 
       // Read any text as Text node
+      var textNode;
       if (c !== "<") {
         --this.currentChar;
-        var textNode = new Text();
+        textNode = new Text();
         var n = this.html.indexOf("<", this.currentChar);
         if (n === -1) {
           textNode.innerHTML = this.html.substring(this.currentChar, this.html.length);
@@ -1099,6 +1089,18 @@
           textNode.innerHTML = this.html.substring(this.currentChar, n);
           this.currentChar = n;
         }
+        return textNode;
+      }
+
+      if (this.match("![CDATA[")) {
+        var endChar = this.html.indexOf("]]>", this.currentChar);
+        if (endChar === -1) {
+          this.error("unclosed CDATA section");
+          return null;
+        }
+        textNode = new Text();
+        textNode.textContent = this.html.substring(this.currentChar, endChar);
+        this.currentChar = endChar + ("]]>").length;
         return textNode;
       }
 
@@ -1132,12 +1134,8 @@
 
       // If this isn't a void Element, read its child nodes
       if (!closed) {
-        if (localName == "script") {
-          this.readScript(node);
-        } else {
-          this.readChildren(node);
-        }
-        var closingTag = "</" + localName + ">";
+        this.readChildren(node);
+        var closingTag = "</" + node._matchingTag + ">";
         if (!this.match(closingTag)) {
           this.error("expected '" + closingTag + "' and got " + this.html.substr(this.currentChar, closingTag.length));
           return null;
@@ -1163,9 +1161,9 @@
     /**
      * Parses an HTML string and returns a JS implementation of the Document.
      */
-    parse: function (html) {
+    parse: function (html, url) {
       this.html = html;
-      var doc = this.doc = new Document();
+      var doc = this.doc = new Document(url);
       this.readChildren(doc);
 
       // If this is an HTML document, remove root-level children except for the
@@ -1193,4 +1191,4 @@
   // Attach JSDOMParser to the global scope
   global.JSDOMParser = JSDOMParser;
 
-}) (this);
+})(this);

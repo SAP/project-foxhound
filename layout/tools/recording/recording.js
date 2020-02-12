@@ -4,9 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var CC = Components.classes;
-const CI = Components.interfaces;
-
 const NS_GFXINFO_CONTRACTID = "@mozilla.org/gfx/info;1";
 
 var gContainingWindow = null;
@@ -14,34 +11,42 @@ var gContainingWindow = null;
 var gBrowser;
 
 function OnDocumentLoad(evt) {
-    if (evt.target != gBrowser.contentDocument || evt.target.location == "about:blank")
-        return;
-    gBrowser.removeEventListener("load", OnDocumentLoad, true);
-    gContainingWindow.close();
+  if (
+    evt.target != gBrowser.contentDocument ||
+    evt.target.location == "about:blank"
+  ) {
+    return;
+  }
+  gBrowser.removeEventListener("load", OnDocumentLoad, true);
+  gContainingWindow.close();
 }
 
 this.OnRecordingLoad = function OnRecordingLoad(win) {
-    if (win === undefined || win == null) {
-        win = window;
-    }
-    if (gContainingWindow == null && win != null) {
-        gContainingWindow = win;
-    }
+  if (win === undefined || win == null) {
+    win = window;
+  }
+  if (gContainingWindow == null && win != null) {
+    gContainingWindow = win;
+  }
 
-    gBrowser = gContainingWindow.document.getElementById("browser");
+  gBrowser = gContainingWindow.document.getElementById("browser");
 
-    var gfxInfo = (NS_GFXINFO_CONTRACTID in CC) && CC[NS_GFXINFO_CONTRACTID].getService(CI.nsIGfxInfo);
-    var info = gfxInfo.getInfo();
-    dump(info.AzureContentBackend + "\n");
-    if (info.AzureContentBackend == "none") {
-        alert("Page recordings may only be made with Azure content enabled.");
-        gContainingWindow.close();
-        return;
-    }
+  var gfxInfo =
+    NS_GFXINFO_CONTRACTID in Cc &&
+    Cc[NS_GFXINFO_CONTRACTID].getService(Ci.nsIGfxInfo);
+  var info = gfxInfo.getInfo();
+  dump(info.AzureContentBackend + "\n");
+  if (info.AzureContentBackend == "none") {
+    alert("Page recordings may only be made with Azure content enabled.");
+    gContainingWindow.close();
+    return;
+  }
 
-    gBrowser.addEventListener("load", OnDocumentLoad, true);
+  gBrowser.addEventListener("load", OnDocumentLoad, true);
 
-    var args = window.arguments[0].wrappedJSObject;
+  var args = window.arguments[0].wrappedJSObject;
 
-    gBrowser.loadURI(args.uri);
+  gBrowser.loadURI(args.uri, {
+    triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
+  });
 };

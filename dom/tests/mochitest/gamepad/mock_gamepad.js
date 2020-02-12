@@ -3,10 +3,17 @@
 
 var GamepadService;
 
-function runGamepadTest (callback) {
-  SpecialPowers.pushPrefEnv({"set" : [["dom.gamepad.test.enabled", true]]},
-                      () => {
-                        GamepadService = navigator.requestGamepadServiceTest();
-                        callback();
-                      });
+async function setGamepadPreferenceAndCreateIframe(iframeSrc) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.gamepad.test.enabled", true]],
+  });
+
+  let iframe = document.createElement("iframe");
+  iframe.src = iframeSrc;
+  document.body.appendChild(iframe);
+}
+
+function runGamepadTest(callback) {
+  GamepadService = navigator.requestGamepadServiceTest();
+  callback();
 }

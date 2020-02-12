@@ -5,9 +5,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=332655
 -->
 <head>
   <title>Test for Bug 332655</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/WindowSnapshot.js"></script>
-  <script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/WindowSnapshot.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="test()">
@@ -29,21 +29,18 @@ function test() {
   var s1, s2, s3, equal, str1, str2;
 
   textInput.focus();
-  synthesizeKey("a", { });
-  synthesizeKey("b", { });
-  synthesizeKey(" ", { });
-  synthesizeKey("\u05d0", { });
-  synthesizeKey("\u05d1", { });
+  sendString("ab ");
+  sendString("\u05d0\u05d1");
   s1 = snapshotWindow(window);
 
-  synthesizeKey(" ", { });
+  sendString(" ");
   s2 = snapshotWindow(window);
 
   [equal, str1, str2] = compareSnapshots(s1, s2, true);
   ok(equal, "space after LTR + RTL shouldn't change direction: expected " +
      str1 + " but got " + str2);
 
-  synthesizeKey("VK_BACK_SPACE", { });
+  synthesizeKey("KEY_Backspace");
   s3 = snapshotWindow(window);
 
   [equal, str1, str2] = compareSnapshots(s1, s3, true);

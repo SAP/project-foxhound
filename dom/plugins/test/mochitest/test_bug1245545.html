@@ -3,7 +3,7 @@
   <head>
     <meta><charset="utf-8"/>
     <title>Test Modifying Plugin click-to-play Flag</title>
-    <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <script type="application/javascript" src="plugin-utils.js"></script>
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   </head>
@@ -12,7 +12,7 @@
      SimpleTest.waitForExplicitFinish();
      setTestPluginEnabledState(SpecialPowers.Ci.nsIPluginTag.STATE_ENABLED);
      SpecialPowers.pushPrefEnv({ "set": [
-       ['dom.ipc.plugins.unloadTimeoutSecs', 0]
+       ["dom.ipc.plugins.unloadTimeoutSecs", 0],
      ] });
 
      function startTest() {
@@ -23,7 +23,7 @@
        ok(testPlugin, "Should have Test Plug-in");
        is(testPlugin.loaded, true, "Test plugin should be loaded");
        var pluginNode = document.getElementById("theplugin");
-       pluginNode.parentNode.removeChild(pluginNode);
+       pluginNode.remove();
        // Poll for plugin to unload.
        function testContentUnload() {
          if (!testPlugin.loaded) {
@@ -40,7 +40,7 @@
            ok(true, "Test plugin unloaded in chrome process");
            SimpleTest.finish();
          } else {
-           var results = script.sendAsyncMessage("check-plugin-unload");
+           script.sendAsyncMessage("check-plugin-unload");
          }
        }
        testContentUnload();

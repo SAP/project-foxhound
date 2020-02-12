@@ -9,123 +9,96 @@
 namespace mozilla {
 namespace _ipdltest {
 
-mozilla::ipc::RacyInterruptPolicy
-MediateRace(const mozilla::ipc::MessageChannel::MessageInfo& parent,
-            const mozilla::ipc::MessageChannel::MessageInfo& child);
+mozilla::ipc::RacyInterruptPolicy MediateRace(
+    const mozilla::ipc::MessageChannel::MessageInfo& parent,
+    const mozilla::ipc::MessageChannel::MessageInfo& child);
 
-class TestInterruptRacesParent :
-    public PTestInterruptRacesParent
-{
-public:
-    TestInterruptRacesParent() : mHasReply(false),
-                           mChildHasReply(false),
-                           mAnsweredParent(false)
-    { }
-    virtual ~TestInterruptRacesParent() { }
+class TestInterruptRacesParent : public PTestInterruptRacesParent {
+  friend class PTestInterruptRacesParent;
 
-    static bool RunTestInProcesses() { return true; }
-    static bool RunTestInThreads() { return true; }
+ public:
+  TestInterruptRacesParent()
+      : mHasReply(false), mChildHasReply(false), mAnsweredParent(false) {}
+  virtual ~TestInterruptRacesParent() {}
 
-    void Main();
+  static bool RunTestInProcesses() { return true; }
+  static bool RunTestInThreads() { return true; }
 
-protected:
-    virtual bool
-    RecvStartRace() override;
+  void Main();
 
-    virtual bool
-    AnswerRace(bool* hasRace) override;
+ protected:
+  mozilla::ipc::IPCResult RecvStartRace();
 
-    virtual bool
-    AnswerStackFrame() override;
+  mozilla::ipc::IPCResult AnswerRace(bool* hasRace);
 
-    virtual bool
-    AnswerStackFrame3() override;
+  mozilla::ipc::IPCResult AnswerStackFrame();
 
-    virtual bool
-    AnswerParent() override;
+  mozilla::ipc::IPCResult AnswerStackFrame3();
 
-    virtual bool
-    RecvGetAnsweredParent(bool* answeredParent) override;
+  mozilla::ipc::IPCResult AnswerParent();
 
-    virtual mozilla::ipc::RacyInterruptPolicy
-    MediateInterruptRace(const MessageInfo& parent,
-                         const MessageInfo& child) override
-    {
-        return MediateRace(parent, child);
-    }
+  mozilla::ipc::IPCResult RecvGetAnsweredParent(bool* answeredParent);
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        if (!(mHasReply && mChildHasReply))
-            fail("both sides should have replies!");
-        passed("ok");
-        QuitParent();
-    }
+  mozilla::ipc::RacyInterruptPolicy MediateInterruptRace(
+      const MessageInfo& parent, const MessageInfo& child) override {
+    return MediateRace(parent, child);
+  }
 
-private:
-    void OnRaceTime();
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    if (!(mHasReply && mChildHasReply)) fail("both sides should have replies!");
+    passed("ok");
+    QuitParent();
+  }
 
-    void Test2();
-    void Test3();
+ private:
+  void OnRaceTime();
 
-    bool mHasReply;
-    bool mChildHasReply;
-    bool mAnsweredParent;
+  void Test2();
+  void Test3();
+
+  bool mHasReply;
+  bool mChildHasReply;
+  bool mAnsweredParent;
 };
 
+class TestInterruptRacesChild : public PTestInterruptRacesChild {
+  friend class PTestInterruptRacesChild;
 
-class TestInterruptRacesChild :
-    public PTestInterruptRacesChild
-{
-public:
-    TestInterruptRacesChild() : mHasReply(false) { }
-    virtual ~TestInterruptRacesChild() { }
+ public:
+  TestInterruptRacesChild() : mHasReply(false) {}
+  virtual ~TestInterruptRacesChild() {}
 
-protected:
-    virtual bool
-    RecvStart() override;
+ protected:
+  mozilla::ipc::IPCResult RecvStart();
 
-    virtual bool
-    AnswerRace(bool* hasRace) override;
+  mozilla::ipc::IPCResult AnswerRace(bool* hasRace);
 
-    virtual bool
-    AnswerStackFrame() override;
+  mozilla::ipc::IPCResult AnswerStackFrame();
 
-    virtual bool
-    AnswerStackFrame3() override;
+  mozilla::ipc::IPCResult AnswerStackFrame3();
 
-    virtual bool
-    RecvWakeup() override;
+  mozilla::ipc::IPCResult RecvWakeup();
 
-    virtual bool
-    RecvWakeup3() override;
+  mozilla::ipc::IPCResult RecvWakeup3();
 
-    virtual bool
-    AnswerChild() override;
+  mozilla::ipc::IPCResult AnswerChild();
 
-    virtual mozilla::ipc::RacyInterruptPolicy
-    MediateInterruptRace(const MessageInfo& parent,
-                         const MessageInfo& child) override
-    {
-        return MediateRace(parent, child);
-    }
+  virtual mozilla::ipc::RacyInterruptPolicy MediateInterruptRace(
+      const MessageInfo& parent, const MessageInfo& child) override {
+    return MediateRace(parent, child);
+  }
 
-    virtual void ActorDestroy(ActorDestroyReason why) override
-    {
-        if (NormalShutdown != why)
-            fail("unexpected destruction!");
-        QuitChild();
-    }
+  virtual void ActorDestroy(ActorDestroyReason why) override {
+    if (NormalShutdown != why) fail("unexpected destruction!");
+    QuitChild();
+  }
 
-private:
-    bool mHasReply;
+ private:
+  bool mHasReply;
 };
 
+}  // namespace _ipdltest
+}  // namespace mozilla
 
-} // namespace _ipdltest
-} // namespace mozilla
-
-
-#endif // ifndef mozilla__ipdltest_TestInterruptRaces_h
+#endif  // ifndef mozilla__ipdltest_TestInterruptRaces_h

@@ -14,61 +14,67 @@
 interface imgINotificationObserver;
 interface imgIRequest;
 interface URI;
-interface MozChannel;
 interface nsIStreamListener;
 
-[NamedConstructor=Image(optional unsigned long width, optional unsigned long height)]
+[NamedConstructor=Image(optional unsigned long width, optional unsigned long height),
+ Exposed=Window]
 interface HTMLImageElement : HTMLElement {
-           [SetterThrows]
+  [HTMLConstructor] constructor();
+
+           [CEReactions, SetterThrows]
            attribute DOMString alt;
-           [SetterThrows]
+           [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString src;
-           [SetterThrows, Pref="dom.image.srcset.enabled"]
+           [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows]
            attribute DOMString srcset;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString? crossOrigin;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString useMap;
-           [SetterThrows, Pref="network.http.enablePerElementReferrer"]
+           [CEReactions, SetterThrows]
            attribute DOMString referrerPolicy;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute boolean isMap;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long width;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long height;
+           [CEReactions, SetterThrows]
+           attribute DOMString decoding;
   readonly attribute unsigned long naturalWidth;
   readonly attribute unsigned long naturalHeight;
   readonly attribute boolean complete;
+           [NewObject]
+           Promise<void> decode();
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLImageElement {
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString name;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString align;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long hspace;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute unsigned long vspace;
-           [SetterThrows]
+           [CEReactions, SetterThrows]
            attribute DOMString longDesc;
 
-  [TreatNullAs=EmptyString,SetterThrows] attribute DOMString border;
+  [CEReactions, SetterThrows] attribute [TreatNullAs=EmptyString] DOMString border;
 };
 
 // [Update me: not in whatwg spec yet]
 // http://picture.responsiveimages.org/#the-img-element
 partial interface HTMLImageElement {
-           [SetterThrows, Pref="dom.image.picture.enabled"]
+           [CEReactions, SetterThrows]
            attribute DOMString sizes;
-           [Pref="dom.image.srcset.enabled"]
   readonly attribute DOMString currentSrc;
 };
 
 // Mozilla extensions.
 partial interface HTMLImageElement {
+           [CEReactions, SetterThrows]
            attribute DOMString lowsrc;
 
   // These attributes are offsets from the closest view (to mimic
@@ -77,8 +83,7 @@ partial interface HTMLImageElement {
   readonly attribute long y;
 };
 
-[NoInterfaceObject]
-interface MozImageLoadingContent {
+interface mixin MozImageLoadingContent {
   // Mirrored chrome-only nsIImageLoadingContent methods.  Please make sure
   // to update this list if nsIImageLoadingContent changes.
   [ChromeOnly]
@@ -92,8 +97,16 @@ interface MozImageLoadingContent {
   attribute boolean loadingEnabled;
   [ChromeOnly]
   readonly attribute short imageBlockingStatus;
+  /**
+   * Same as addNativeObserver but intended for scripted observers or observers
+   * from another or without a document.
+   */
   [ChromeOnly]
   void addObserver(imgINotificationObserver aObserver);
+  /**
+   * Same as removeNativeObserver but intended for scripted observers or
+   * observers from another or without a document.
+   */
   [ChromeOnly]
   void removeObserver(imgINotificationObserver aObserver);
   [ChromeOnly,Throws]
@@ -102,12 +115,20 @@ interface MozImageLoadingContent {
   long getRequestType(imgIRequest aRequest);
   [ChromeOnly,Throws]
   readonly attribute URI? currentURI;
+  // Gets the final URI of the current request, if available.
+  // Otherwise, returns null.
+  [ChromeOnly]
+  readonly attribute URI? currentRequestFinalURI;
+  /**
+   * forceReload forces reloading of the image pointed to by currentURI
+   *
+   * @param aNotify request should notify
+   * @throws NS_ERROR_NOT_AVAILABLE if there is no current URI to reload
+   */
   [ChromeOnly,Throws]
-  nsIStreamListener? loadImageWithChannel(MozChannel aChannel);
-  [ChromeOnly,Throws]
-  void forceReload(optional boolean aNotify);
+  void forceReload(optional boolean aNotify = true);
   [ChromeOnly]
   void forceImageState(boolean aForce, unsigned long long aState);
 };
 
-HTMLImageElement implements MozImageLoadingContent;
+HTMLImageElement includes MozImageLoadingContent;

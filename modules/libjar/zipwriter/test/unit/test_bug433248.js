@@ -3,71 +3,66 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-function run_test()
-{
-  var test;
+function run_test() {
   // zipW is an uninitialised zipwriter at this point.
   try {
-    test = zipW.file;
+    zipW.file;
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
-    test = zipW.comment;
+    zipW.comment;
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
     zipW.comment = "test";
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
     zipW.addEntryDirectory("test", 0, false);
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
-    zipW.addEntryFile("test", Ci.nsIZipWriter.COMPRESSION_DEFAULT, tmpDir, false);
+    zipW.addEntryFile(
+      "test",
+      Ci.nsIZipWriter.COMPRESSION_DEFAULT,
+      tmpDir,
+      false
+    );
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
     zipW.removeEntry("test", false);
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
     zipW.processQueue(null, null);
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 
   try {
     zipW.close();
     do_throw("Should have thrown uninitialized error.");
-  }
-  catch (e) {
-    do_check_eq(e.result, Components.results.NS_ERROR_NOT_INITIALIZED);
+  } catch (e) {
+    Assert.equal(e.result, Cr.NS_ERROR_NOT_INITIALIZED);
   }
 }

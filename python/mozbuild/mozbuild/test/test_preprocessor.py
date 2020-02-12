@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import unittest
 
 from StringIO import StringIO
@@ -177,6 +179,16 @@ class TestPreprocessor(unittest.TestCase):
             '#endif',
         ])
 
+    def test_indentation(self):
+        self.do_include_pass([
+            '         #define NULLVAL 0',
+            ' #if !NULLVAL',
+            'PASS',
+            '           #else',
+            'FAIL',
+            '     #endif',
+        ])
+
     def test_expand(self):
         self.do_include_pass([
             '#define ASVAR AS',
@@ -230,10 +242,18 @@ class TestPreprocessor(unittest.TestCase):
         self.do_include_compare([
             '#filter slashslash',
             'PASS//FAIL  // FAIL',
+            '  //FAIL',
+            '//FAIL',
+            'PASS  //',
+            '//',
             '#unfilter slashslash',
             'PASS // PASS',
         ], [
             'PASS',
+            '  ',
+            '',
+            'PASS  ',
+            '',
             'PASS // PASS',
         ])
 
@@ -567,65 +587,79 @@ class TestPreprocessor(unittest.TestCase):
 
     def test_include_line(self):
         files = {
-            'test.js': '\n'.join([
+            'srcdir/test.js': '\n'.join([
                 '#define foo foobarbaz',
                 '#include @inc@',
                 '@bar@',
                 '',
             ]),
-            'bar.js': '\n'.join([
+            'srcdir/bar.js': '\n'.join([
                 '#define bar barfoobaz',
                 '@foo@',
                 '',
             ]),
-            'foo.js': '\n'.join([
+            'srcdir/foo.js': '\n'.join([
                 'bazfoobar',
                 '#include bar.js',
                 'bazbarfoo',
                 '',
             ]),
-            'baz.js': 'baz\n',
-            'f.js': '\n'.join([
+            'objdir/baz.js': 'baz\n',
+            'srcdir/f.js': '\n'.join([
                 '#include foo.js',
                 '#filter substitution',
                 '#define inc bar.js',
                 '#include test.js',
-                '#include baz.js',
+                '#include ../objdir/baz.js',
                 'fin',
                 '',
             ]),
         }
 
+        preprocessed = ('//@line 1 "$SRCDIR/foo.js"\n'
+                        'bazfoobar\n'
+                        '//@line 2 "$SRCDIR/bar.js"\n'
+                        '@foo@\n'
+                        '//@line 3 "$SRCDIR/foo.js"\n'
+                        'bazbarfoo\n'
+                        '//@line 2 "$SRCDIR/bar.js"\n'
+                        'foobarbaz\n'
+                        '//@line 3 "$SRCDIR/test.js"\n'
+                        'barfoobaz\n'
+                        '//@line 1 "$OBJDIR/baz.js"\n'
+                        'baz\n'
+                        '//@line 6 "$SRCDIR/f.js"\n'
+                        'fin\n').replace('DIR/', 'DIR' + os.sep)
+
+        # Try with separate srcdir/objdir
         with MockedOpen(files):
-            self.pp.do_include('f.js')
-            self.assertEqual(self.pp.out.getvalue(),
-                             ('//@line 1 "CWD/foo.js"\n'
-                              'bazfoobar\n'
-                              '//@line 2 "CWD/bar.js"\n'
-                              '@foo@\n'
-                              '//@line 3 "CWD/foo.js"\n'
-                              'bazbarfoo\n'
-                              '//@line 2 "CWD/bar.js"\n'
-                              'foobarbaz\n'
-                              '//@line 3 "CWD/test.js"\n'
-                              'barfoobaz\n'
-                              '//@line 1 "CWD/baz.js"\n'
-                              'baz\n'
-                              '//@line 6 "CWD/f.js"\n'
-                              'fin\n').replace('CWD/',
-                                               os.getcwd() + os.path.sep))
+            self.pp.topsrcdir = os.path.abspath('srcdir')
+            self.pp.topobjdir = os.path.abspath('objdir')
+            self.pp.do_include('srcdir/f.js')
+            self.assertEqual(self.pp.out.getvalue(), preprocessed)
+
+        # Try again with relative objdir
+        self.setUp()
+        files['srcdir/objdir/baz.js'] = files['objdir/baz.js']
+        del files['objdir/baz.js']
+        files['srcdir/f.js'] = files['srcdir/f.js'].replace('../', '')
+        with MockedOpen(files):
+            self.pp.topsrcdir = os.path.abspath('srcdir')
+            self.pp.topobjdir = os.path.abspath('srcdir/objdir')
+            self.pp.do_include('srcdir/f.js')
+            self.assertEqual(self.pp.out.getvalue(), preprocessed)
 
     def test_include_missing_file(self):
         with MockedOpen({'f': '#include foo\n'}):
             with self.assertRaises(Preprocessor.Error) as e:
                 self.pp.do_include('f')
-                self.assertEqual(e.key, 'FILE_NOT_FOUND')
+            self.assertEqual(e.exception.key, 'FILE_NOT_FOUND')
 
     def test_include_undefined_variable(self):
         with MockedOpen({'f': '#filter substitution\n#include @foo@\n'}):
             with self.assertRaises(Preprocessor.Error) as e:
                 self.pp.do_include('f')
-                self.assertEqual(e.key, 'UNDEFINED_VAR')
+            self.assertEqual(e.exception.key, 'UNDEFINED_VAR')
 
     def test_include_literal_at(self):
         files = {
@@ -641,6 +675,25 @@ class TestPreprocessor(unittest.TestCase):
         with MockedOpen({"@foo@.in": '@foo@\n'}):
             self.pp.handleCommandLine(['-Fsubstitution', '-Dfoo=foobarbaz', '@foo@.in'])
             self.assertEqual(self.pp.out.getvalue(), 'foobarbaz\n')
+
+    def test_invalid_ifdef(self):
+        with MockedOpen({'dummy': '#ifdef FOO == BAR\nPASS\n#endif'}):
+            with self.assertRaises(Preprocessor.Error) as e:
+                self.pp.do_include('dummy')
+            self.assertEqual(e.exception.key, 'INVALID_VAR')
+
+        with MockedOpen({'dummy': '#ifndef FOO == BAR\nPASS\n#endif'}):
+            with self.assertRaises(Preprocessor.Error) as e:
+                self.pp.do_include('dummy')
+            self.assertEqual(e.exception.key, 'INVALID_VAR')
+
+        # Trailing whitespaces, while not nice, shouldn't be an error.
+        self.do_include_pass([
+            '#ifndef  FOO ',
+            'PASS',
+            '#endif',
+        ])
+
 
 if __name__ == '__main__':
     main()

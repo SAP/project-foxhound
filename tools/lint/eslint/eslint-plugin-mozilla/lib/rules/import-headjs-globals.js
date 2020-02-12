@@ -14,12 +14,10 @@
 // -----------------------------------------------------------------------------
 
 var fs = require("fs");
-var path = require("path");
 var helpers = require("../helpers");
 var globals = require("../globals");
 
 module.exports = function(context) {
-
   function importHead(path, node) {
     try {
       let stats = fs.statSync(path);
@@ -39,25 +37,11 @@ module.exports = function(context) {
   // ---------------------------------------------------------------------------
 
   return {
-    Program: function(node) {
-      if (!helpers.getIsTest(this)) {
-        return;
+    Program(node) {
+      let heads = helpers.getTestHeadFiles(context);
+      for (let head of heads) {
+        importHead(head, node);
       }
-
-      var currentFilePath = helpers.getAbsoluteFilePath(context);
-      var dirName = path.dirname(currentFilePath);
-      importHead(path.resolve(dirName, "head.js"), node);
-
-      if (!helpers.getIsXpcshellTest(this)) {
-        return;
-      }
-
-      let names = fs.readdirSync(dirName);
-      for (let name of names) {
-        if (name.startsWith("head_") && name.endsWith(".js")) {
-          importHead(path.resolve(dirName, name), node);
-        }
-      }
-    }
+    },
   };
 };

@@ -1,10 +1,14 @@
 function testScript(script) {
+  function makeWrapperUrl(wrapper) {
+    return wrapper + "?script=" + script;
+  }
+  let workerWrapperUrl = makeWrapperUrl("worker_wrapper.js");
 
   // The framework runs the entire test in many different configurations.
   // On slow platforms and builds this can make the tests likely to
   // timeout while they are still running.  Lengthen the timeout to
   // accomodate this.
-  SimpleTest.requestLongerTimeout(2);
+  SimpleTest.requestLongerTimeout(4);
 
   // reroute.html should have set this variable if a service worker is present!
   if (!("isSWPresent" in window)) {
@@ -13,60 +17,66 @@ function testScript(script) {
 
   function setupPrefs() {
     return new Promise(function(resolve, reject) {
-      SpecialPowers.pushPrefEnv({
-        "set": [["dom.requestcontext.enabled", true],
-                ["dom.serviceWorkers.enabled", true],
-                ["dom.serviceWorkers.testing.enabled", true],
-                ["dom.serviceWorkers.exemptFromPerDomainMax", true]]
-      }, resolve);
+      SpecialPowers.pushPrefEnv(
+        {
+          set: [
+            ["dom.serviceWorkers.enabled", true],
+            ["dom.serviceWorkers.testing.enabled", true],
+            ["dom.serviceWorkers.idle_timeout", 60000],
+            ["dom.serviceWorkers.exemptFromPerDomainMax", true],
+          ],
+        },
+        resolve
+      );
     });
   }
 
   function workerTest() {
     return new Promise(function(resolve, reject) {
-      var worker = new Worker("worker_wrapper.js");
+      var worker = new Worker(workerWrapperUrl);
       worker.onmessage = function(event) {
         if (event.data.context != "Worker") {
           return;
         }
-        if (event.data.type == 'finish') {
+        if (event.data.type == "finish") {
           resolve();
-        } else if (event.data.type == 'status') {
+        } else if (event.data.type == "status") {
           ok(event.data.status, event.data.context + ": " + event.data.msg);
         }
-      }
+      };
       worker.onerror = function(event) {
         reject("Worker error: " + event.message);
       };
 
-      worker.postMessage({ "script": script });
+      worker.postMessage({ script });
     });
   }
 
   function nestedWorkerTest() {
     return new Promise(function(resolve, reject) {
-      var worker = new Worker("nested_worker_wrapper.js");
+      var worker = new Worker(makeWrapperUrl("nested_worker_wrapper.js"));
       worker.onmessage = function(event) {
         if (event.data.context != "NestedWorker") {
           return;
         }
-        if (event.data.type == 'finish') {
+        if (event.data.type == "finish") {
           resolve();
-        } else if (event.data.type == 'status') {
+        } else if (event.data.type == "status") {
           ok(event.data.status, event.data.context + ": " + event.data.msg);
         }
-      }
+      };
       worker.onerror = function(event) {
         reject("Nested Worker error: " + event.message);
       };
 
-      worker.postMessage({ "script": script });
+      worker.postMessage({ script });
     });
   }
 
   function serviceWorkerTest() {
-    var isB2G = !navigator.userAgent.includes("Android") &&
-                /Mobile|Tablet/.test(navigator.userAgent);
+    var isB2G =
+      !navigator.userAgent.includes("Android") &&
+      /Mobile|Tablet/.test(navigator.userAgent);
     if (isB2G) {
       // TODO B2G doesn't support running service workers for now due to bug 1137683.
       dump("Skipping running the test in SW until bug 1137683 gets fixed.\n");
@@ -74,47 +84,41 @@ function testScript(script) {
     }
     return new Promise(function(resolve, reject) {
       function setupSW(registration) {
-        var worker = registration.waiting ||
-                     registration.active;
+        var worker =
+          registration.installing ||
+          registration.waiting ||
+          registration.active;
+        var iframe;
 
-        window.addEventListener("message",function onMessage(event) {
+        window.addEventListener("message", function onMessage(event) {
           if (event.data.context != "ServiceWorker") {
             return;
           }
-          if (event.data.type == 'finish') {
+          if (event.data.type == "finish") {
             window.removeEventListener("message", onMessage);
-            registration.unregister()
+            iframe.remove();
+            registration
+              .unregister()
               .then(resolve)
               .catch(reject);
-          } else if (event.data.type == 'status') {
+          } else if (event.data.type == "status") {
             ok(event.data.status, event.data.context + ": " + event.data.msg);
           }
-        }, false);
+        });
 
         worker.onerror = reject;
 
-        var iframe = document.createElement("iframe");
+        iframe = document.createElement("iframe");
         iframe.src = "message_receiver.html";
         iframe.onload = function() {
-          worker.postMessage({ script: script });
+          worker.postMessage({ script });
         };
         document.body.appendChild(iframe);
       }
 
-      navigator.serviceWorker.register("worker_wrapper.js", {scope: "."})
-        .then(function(registration) {
-          if (registration.installing) {
-            var done = false;
-            registration.installing.onstatechange = function() {
-              if (!done) {
-                done = true;
-                setupSW(registration);
-              }
-            };
-          } else {
-            setupSW(registration);
-          }
-        });
+      navigator.serviceWorker
+        .register(workerWrapperUrl, { scope: "." })
+        .then(setupSW);
     });
   }
 
@@ -162,4 +166,3 @@ function testScript(script) {
       }
     });
 }
-

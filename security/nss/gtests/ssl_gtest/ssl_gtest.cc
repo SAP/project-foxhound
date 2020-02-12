@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "test_io.h"
+#include "databuffer.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -28,15 +29,22 @@ int main(int argc, char** argv) {
       ++i;
     } else if (!strcmp(argv[i], "-v")) {
       g_ssl_gtest_verbose = true;
+      nss_test::DataBuffer::SetLogLimit(16384);
     }
   }
 
-  NSS_Initialize(g_working_dir_path.c_str(), "", "", SECMOD_DB,
-                 NSS_INIT_READONLY);
-  NSS_SetDomesticPolicy();
+  if (NSS_Initialize(g_working_dir_path.c_str(), "", "", SECMOD_DB,
+                     NSS_INIT_READONLY) != SECSuccess) {
+    return 1;
+  }
+  if (NSS_SetDomesticPolicy() != SECSuccess) {
+    return 1;
+  }
   int rv = RUN_ALL_TESTS();
 
-  NSS_Shutdown();
+  if (NSS_Shutdown() != SECSuccess) {
+    return 1;
+  }
 
   nss_test::Poller::Shutdown();
 

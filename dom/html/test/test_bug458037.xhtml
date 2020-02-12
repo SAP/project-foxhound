@@ -5,7 +5,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=458037
 -->
 <head>
   <title>Test for Bug 458037</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>        
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>        
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -103,7 +103,7 @@ document.addEventListener("DOMContentLoaded", function() {
   var origValue = d.isContentEditable;
   d.isContentEditable = !origValue;
   is(d.isContentEditable, origValue, "isContentEditable should be read only");
-}, false);
+});
 
 </script>
 </pre>

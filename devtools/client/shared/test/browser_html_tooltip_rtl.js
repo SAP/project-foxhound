@@ -10,50 +10,41 @@
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = `data:text/xml;charset=UTF-8,<?xml version="1.0"?>
-  <?xml-stylesheet href="chrome://global/skin/global.css"?>
-  <?xml-stylesheet href="chrome://devtools/skin/tooltips.css"?>
-  <window
-    xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-    htmlns="http://www.w3.org/1999/xhtml"
-    title="Tooltip test">
-    <hbox style="padding: 90px 0;" flex="1">
-      <hbox id="box1" flex="1" style="background:red; direction: rtl;">test1</hbox>
-      <hbox id="box2" flex="1" style="background:blue; direction: rtl;">test2</hbox>
-      <hbox id="box3" flex="1" style="background:red; direction: ltr;">test3</hbox>
-      <hbox id="box4" flex="1" style="background:blue; direction: ltr;">test4</hbox>
-    </hbox>
-  </window>`;
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip_rtl.xul";
 
-const {HTMLTooltip} = require("devtools/client/shared/widgets/HTMLTooltip");
+const {
+  HTMLTooltip,
+} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
 loadHelperScript("helper_html_tooltip.js");
 
 const TOOLBOX_WIDTH = 500;
 const TOOLTIP_WIDTH = 150;
 const TOOLTIP_HEIGHT = 30;
 
-add_task(function* () {
-  // Force the toolbox to be 500px wide (min width is 465px);
-  yield pushPref("devtools.toolbox.sidebar.width", TOOLBOX_WIDTH);
+add_task(async function() {
+  await pushPref("devtools.toolbox.sidebar.width", TOOLBOX_WIDTH);
 
-  let [,, doc] = yield createHost("side", TEST_URI);
+  const [, , doc] = await createHost("right", TEST_URI);
 
-  info("Test a tooltip is not closed when clicking inside itself");
+  info("Test the positioning of tooltips in RTL and LTR directions");
 
-  let tooltip = new HTMLTooltip({doc}, {useXulWrapper: false});
-  let div = doc.createElementNS(HTML_NS, "div");
+  const tooltip = new HTMLTooltip(doc, { useXulWrapper: false });
+  const div = doc.createElementNS(HTML_NS, "div");
   div.textContent = "tooltip";
   div.style.cssText = "box-sizing: border-box; border: 1px solid black";
-  tooltip.setContent(div, {width: TOOLTIP_WIDTH, height: TOOLTIP_HEIGHT});
+  tooltip.panel.appendChild(div);
+  tooltip.setContentSize({ width: TOOLTIP_WIDTH, height: TOOLTIP_HEIGHT });
 
-  yield testRtlAnchors(doc, tooltip);
-  yield testLtrAnchors(doc, tooltip);
-  yield hideTooltip(tooltip);
+  await testRtlAnchors(doc, tooltip);
+  await testLtrAnchors(doc, tooltip);
+  await hideTooltip(tooltip);
 
   tooltip.destroy();
+
+  await testRtlArrow(doc);
 });
 
-function* testRtlAnchors(doc, tooltip) {
+async function testRtlAnchors(doc, tooltip) {
   /*
    * The layout of the test page is as follows:
    *   _______________________________
@@ -67,13 +58,13 @@ function* testRtlAnchors(doc, tooltip) {
    * - box1 is aligned with the left edge of the toolbox
    * - box2 is displayed right after box1
    * - total toolbox width is 500px so each box is 125px wide
-  */
+   */
 
-  let box1 = doc.getElementById("box1");
-  let box2 = doc.getElementById("box2");
+  const box1 = doc.getElementById("box1");
+  const box2 = doc.getElementById("box2");
 
   info("Display the tooltip on box1.");
-  yield showTooltip(tooltip, box1, {position: "bottom"});
+  await showTooltip(tooltip, box1, { position: "bottom" });
 
   let panelRect = tooltip.container.getBoundingClientRect();
   let anchorRect = box1.getBoundingClientRect();
@@ -81,23 +72,43 @@ function* testRtlAnchors(doc, tooltip) {
   // box1 uses RTL direction, so the tooltip should be aligned with the right edge of the
   // anchor, but it is shifted to the right to fit in the toolbox.
   is(panelRect.left, 0, "Tooltip is aligned with left edge of the toolbox");
-  is(panelRect.top, anchorRect.bottom, "Tooltip aligned with the anchor bottom edge");
-  is(panelRect.height, TOOLTIP_HEIGHT, "Tooltip height is at 100px as expected");
+  is(
+    panelRect.top,
+    anchorRect.bottom,
+    "Tooltip aligned with the anchor bottom edge"
+  );
+  is(
+    panelRect.height,
+    TOOLTIP_HEIGHT,
+    "Tooltip height is at 100px as expected"
+  );
 
   info("Display the tooltip on box2.");
-  yield showTooltip(tooltip, box2, {position: "bottom"});
+  await showTooltip(tooltip, box2, { position: "bottom" });
 
   panelRect = tooltip.container.getBoundingClientRect();
   anchorRect = box2.getBoundingClientRect();
 
   // box2 uses RTL direction, so the tooltip is aligned with the right edge of the anchor
-  is(panelRect.right, anchorRect.right, "Tooltip is aligned with right edge of anchor");
-  is(panelRect.top, anchorRect.bottom, "Tooltip aligned with the anchor bottom edge");
-  is(panelRect.height, TOOLTIP_HEIGHT, "Tooltip height is at 100px as expected");
+  is(
+    panelRect.right,
+    anchorRect.right,
+    "Tooltip is aligned with right edge of anchor"
+  );
+  is(
+    panelRect.top,
+    anchorRect.bottom,
+    "Tooltip aligned with the anchor bottom edge"
+  );
+  is(
+    panelRect.height,
+    TOOLTIP_HEIGHT,
+    "Tooltip height is at 100px as expected"
+  );
 }
 
-function* testLtrAnchors(doc, tooltip) {
-    /*
+async function testLtrAnchors(doc, tooltip) {
+  /*
    * The layout of the test page is as follows:
    *   _______________________________
    *  | toolbox                       |
@@ -110,31 +121,104 @@ function* testLtrAnchors(doc, tooltip) {
    * - box3 is is displayed right after box2
    * - box4 is aligned with the right edge of the toolbox
    * - total toolbox width is 500px so each box is 125px wide
-  */
+   */
 
-  let box3 = doc.getElementById("box3");
-  let box4 = doc.getElementById("box4");
+  const box3 = doc.getElementById("box3");
+  const box4 = doc.getElementById("box4");
 
   info("Display the tooltip on box3.");
-  yield showTooltip(tooltip, box3, {position: "bottom"});
+  await showTooltip(tooltip, box3, { position: "bottom" });
 
   let panelRect = tooltip.container.getBoundingClientRect();
   let anchorRect = box3.getBoundingClientRect();
 
   // box3 uses LTR direction, so the tooltip is aligned with the left edge of the anchor.
-  is(panelRect.left, anchorRect.left, "Tooltip is aligned with left edge of anchor");
-  is(panelRect.top, anchorRect.bottom, "Tooltip aligned with the anchor bottom edge");
-  is(panelRect.height, TOOLTIP_HEIGHT, "Tooltip height is at 100px as expected");
+  is(
+    panelRect.left,
+    anchorRect.left,
+    "Tooltip is aligned with left edge of anchor"
+  );
+  is(
+    panelRect.top,
+    anchorRect.bottom,
+    "Tooltip aligned with the anchor bottom edge"
+  );
+  is(
+    panelRect.height,
+    TOOLTIP_HEIGHT,
+    "Tooltip height is at 100px as expected"
+  );
 
   info("Display the tooltip on box4.");
-  yield showTooltip(tooltip, box4, {position: "bottom"});
+  await showTooltip(tooltip, box4, { position: "bottom" });
 
   panelRect = tooltip.container.getBoundingClientRect();
   anchorRect = box4.getBoundingClientRect();
 
   // box4 uses LTR direction, so the tooltip should be aligned with the left edge of the
   // anchor, but it is shifted to the left to fit in the toolbox.
-  is(panelRect.right, TOOLBOX_WIDTH, "Tooltip is aligned with right edge of toolbox");
-  is(panelRect.top, anchorRect.bottom, "Tooltip aligned with the anchor bottom edge");
-  is(panelRect.height, TOOLTIP_HEIGHT, "Tooltip height is at 100px as expected");
+  is(
+    panelRect.right,
+    TOOLBOX_WIDTH,
+    "Tooltip is aligned with right edge of toolbox"
+  );
+  is(
+    panelRect.top,
+    anchorRect.bottom,
+    "Tooltip aligned with the anchor bottom edge"
+  );
+  is(
+    panelRect.height,
+    TOOLTIP_HEIGHT,
+    "Tooltip height is at 100px as expected"
+  );
+}
+
+async function testRtlArrow(doc) {
+  // Set up the arrow-style tooltip
+  const arrowTooltip = new HTMLTooltip(doc, {
+    type: "arrow",
+    useXulWrapper: false,
+  });
+  const div = doc.createElementNS(HTML_NS, "div");
+  div.textContent = "tooltip";
+  div.style.cssText = "box-sizing: border-box; border: 1px solid black";
+  arrowTooltip.panel.appendChild(div);
+  arrowTooltip.setContentSize({
+    width: TOOLTIP_WIDTH,
+    height: TOOLTIP_HEIGHT,
+  });
+
+  // box2 uses RTL direction and is far enough from the edge that the arrow
+  // should not be squashed in the wrong direction.
+  const box2 = doc.getElementById("box2");
+
+  info("Display the arrow tooltip on box2.");
+  await showTooltip(arrowTooltip, box2, { position: "top" });
+
+  const arrow = arrowTooltip.arrow;
+  ok(arrow, "Tooltip has an arrow");
+
+  const panelRect = arrowTooltip.container.getBoundingClientRect();
+  const arrowRect = arrow.getBoundingClientRect();
+
+  // The arrow should be offset from the right edge, but still closer to the
+  // right edge than the left edge.
+  ok(
+    arrowRect.right < panelRect.right,
+    "Right edge of the arrow " +
+      `(${arrowRect.right}) is less than the right edge of the panel ` +
+      `(${panelRect.right})`
+  );
+  const rightMargin = panelRect.right - arrowRect.right;
+  const leftMargin = arrowRect.left - panelRect.right;
+  ok(
+    rightMargin > leftMargin,
+    "Arrow should be closer to the right side of " +
+      ` the panel (margin: ${rightMargin}) than the left side ` +
+      ` (margin: ${leftMargin})`
+  );
+
+  await hideTooltip(arrowTooltip);
+  arrowTooltip.destroy();
 }

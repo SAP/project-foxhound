@@ -8,9 +8,10 @@
 #define mozilla_lazyidlethread_h__
 
 #ifndef MOZILLA_INTERNAL_API
-#error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
+#  error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
 #endif
 
+#include "nsINamed.h"
 #include "nsIObserver.h"
 #include "nsIThreadInternal.h"
 #include "nsITimer.h"
@@ -32,33 +33,27 @@ namespace mozilla {
  * is created on the main thread then it will automatically join its thread on
  * XPCOM shutdown using the Observer Service.
  */
-class LazyIdleThread final
-  : public nsIThread
-  , public nsITimerCallback
-  , public nsIThreadObserver
-  , public nsIObserver
-{
-public:
+class LazyIdleThread final : public nsIThread,
+                             public nsITimerCallback,
+                             public nsIThreadObserver,
+                             public nsIObserver,
+                             public nsINamed {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSIEVENTTARGET
+  NS_DECL_NSIEVENTTARGET_FULL
   NS_DECL_NSITHREAD
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSITHREADOBSERVER
   NS_DECL_NSIOBSERVER
-  using nsIEventTarget::Dispatch;
+  NS_DECL_NSINAMED
 
-  enum ShutdownMethod
-  {
-    AutomaticShutdown = 0,
-    ManualShutdown
-  };
+  enum ShutdownMethod { AutomaticShutdown = 0, ManualShutdown };
 
   /**
    * Create a new LazyIdleThread that will destroy its thread after the given
    * number of milliseconds.
    */
-  LazyIdleThread(uint32_t aIdleTimeoutMS,
-                 const nsCSubstring& aName,
+  LazyIdleThread(uint32_t aIdleTimeoutMS, const nsACString& aName,
                  ShutdownMethod aShutdownMethod = AutomaticShutdown,
                  nsIObserver* aIdleObserver = nullptr);
 
@@ -84,7 +79,7 @@ public:
    */
   void EnableIdleTimeout();
 
-private:
+ private:
   /**
    * Calls Shutdown().
    */
@@ -131,10 +126,7 @@ private:
    * Returns true if events should be queued rather than immediately dispatched
    * to mThread. Currently only happens when the thread is shutting down.
    */
-  bool UseRunnableQueue()
-  {
-    return !!mQueuedRunnables;
-  }
+  bool UseRunnableQueue() { return !!mQueuedRunnables; }
 
   /**
    * Protects data that is accessed on both threads.
@@ -145,7 +137,7 @@ private:
    * Touched on both threads but set before mThread is created. Used to direct
    * timer events to the owning thread.
    */
-  nsCOMPtr<nsIThread> mOwningThread;
+  nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
 
   /**
    * Only accessed on the owning thread. Set by EnsureThread().
@@ -163,9 +155,10 @@ private:
    * Idle observer. Called when the thread is about to be shut down. Released
    * only when Shutdown() is called.
    */
-  nsIObserver* MOZ_UNSAFE_REF("See the documentation for SetWeakIdleObserver for "
-                              "how the owner of LazyIdleThread should manage the "
-                              "lifetime information of this field") mIdleObserver;
+  nsIObserver* MOZ_UNSAFE_REF(
+      "See the documentation for SetWeakIdleObserver for "
+      "how the owner of LazyIdleThread should manage the "
+      "lifetime information of this field") mIdleObserver;
 
   /**
    * Temporary storage for events that happen to be dispatched while we're in
@@ -221,6 +214,6 @@ private:
   nsCString mName;
 };
 
-} // namespace mozilla
+}  // namespace mozilla
 
-#endif // mozilla_lazyidlethread_h__
+#endif  // mozilla_lazyidlethread_h__

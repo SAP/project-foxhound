@@ -9,10 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=311007.xul
 <window title="Mozilla Bug 311007"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <script type="application/javascript"
-    src="chrome://mochikit/content/MochiKit/packed.js"></script>
-  <script type="application/javascript"
-    src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <body  xmlns="http://www.w3.org/1999/xhtml">
 <a target="_blank"
@@ -36,8 +33,8 @@ if (navigator.platform.startsWith("Win")) {
 /** Test for Bug 311007 **/
 
 SimpleTest.waitForExplicitFinish();
-window.open("bug311007_window.xul", "bug311007",
-            "chrome,width=600,height=600");
+window.openDialog("bug311007_window.xul", "bug311007",
+                  "chrome,width=600,height=600,noopener", window);
 
 ]]>
 </script>

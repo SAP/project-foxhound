@@ -36,11 +36,11 @@ using namespace mozilla::plugins;
  * reason to retain identifiers there.
  */
 
-PluginScriptableObjectChild::IdentifierTable PluginScriptableObjectChild::sIdentifiers;
+PluginScriptableObjectChild::IdentifierTable
+    PluginScriptableObjectChild::sIdentifiers;
 
 /* static */ PluginScriptableObjectChild::StoredIdentifier*
-PluginScriptableObjectChild::HashIdentifier(const nsCString& aIdentifier)
-{
+PluginScriptableObjectChild::HashIdentifier(const nsCString& aIdentifier) {
   StoredIdentifier* stored = sIdentifiers.Get(aIdentifier).get();
   if (stored) {
     return stored;
@@ -51,31 +51,27 @@ PluginScriptableObjectChild::HashIdentifier(const nsCString& aIdentifier)
   return stored;
 }
 
-/* static */ void
-PluginScriptableObjectChild::UnhashIdentifier(StoredIdentifier* aStored)
-{
+/* static */
+void PluginScriptableObjectChild::UnhashIdentifier(StoredIdentifier* aStored) {
   MOZ_ASSERT(sIdentifiers.Get(aStored->mIdentifier));
   sIdentifiers.Remove(aStored->mIdentifier);
 }
 
-/* static */ void
-PluginScriptableObjectChild::ClearIdentifiers()
-{
-  sIdentifiers.Clear();
-}
+/* static */
+void PluginScriptableObjectChild::ClearIdentifiers() { sIdentifiers.Clear(); }
 
-PluginScriptableObjectChild::StackIdentifier::StackIdentifier(const PluginIdentifier& aIdentifier)
-: mIdentifier(aIdentifier),
-  mStored(nullptr)
-{
+PluginScriptableObjectChild::StackIdentifier::StackIdentifier(
+    const PluginIdentifier& aIdentifier)
+    : mIdentifier(aIdentifier), mStored(nullptr) {
   if (aIdentifier.type() == PluginIdentifier::TnsCString) {
-    mStored = PluginScriptableObjectChild::HashIdentifier(mIdentifier.get_nsCString());
+    mStored = PluginScriptableObjectChild::HashIdentifier(
+        mIdentifier.get_nsCString());
   }
 }
 
-PluginScriptableObjectChild::StackIdentifier::StackIdentifier(NPIdentifier aIdentifier)
-: mStored(nullptr)
-{
+PluginScriptableObjectChild::StackIdentifier::StackIdentifier(
+    NPIdentifier aIdentifier)
+    : mStored(nullptr) {
   uintptr_t bits = reinterpret_cast<uintptr_t>(aIdentifier);
   if (bits & 1) {
     int32_t num = int32_t(bits >> 1);
@@ -86,8 +82,7 @@ PluginScriptableObjectChild::StackIdentifier::StackIdentifier(NPIdentifier aIden
   }
 }
 
-PluginScriptableObjectChild::StackIdentifier::~StackIdentifier()
-{
+PluginScriptableObjectChild::StackIdentifier::~StackIdentifier() {
   if (!mStored) {
     return;
   }
@@ -96,16 +91,15 @@ PluginScriptableObjectChild::StackIdentifier::~StackIdentifier()
   // addition, the sIdentifiers table owns a reference. If mPermanent is false
   // and sIdentifiers has the last reference, then we want to remove the
   // StoredIdentifier from the table (and destroy it).
-  StoredIdentifier *stored = mStored;
+  StoredIdentifier* stored = mStored;
   mStored = nullptr;
   if (stored->mRefCnt == 1 && !stored->mPermanent) {
     PluginScriptableObjectChild::UnhashIdentifier(stored);
   }
 }
 
-NPIdentifier
-PluginScriptableObjectChild::StackIdentifier::ToNPIdentifier() const
-{
+NPIdentifier PluginScriptableObjectChild::StackIdentifier::ToNPIdentifier()
+    const {
   if (mStored) {
     MOZ_ASSERT(mIdentifier.type() == PluginIdentifier::TnsCString);
     MOZ_ASSERT((reinterpret_cast<uintptr_t>(mStored.get()) & 1) == 0);
@@ -118,35 +112,29 @@ PluginScriptableObjectChild::StackIdentifier::ToNPIdentifier() const
   return reinterpret_cast<NPIdentifier>((num << 1) | 1);
 }
 
-static PluginIdentifier
-FromNPIdentifier(NPIdentifier aIdentifier)
-{
+static PluginIdentifier FromNPIdentifier(NPIdentifier aIdentifier) {
   PluginScriptableObjectChild::StackIdentifier stack(aIdentifier);
   return stack.GetIdentifier();
 }
 
 // static
-NPObject*
-PluginScriptableObjectChild::ScriptableAllocate(NPP aInstance,
-                                                NPClass* aClass)
-{
+NPObject* PluginScriptableObjectChild::ScriptableAllocate(NPP aInstance,
+                                                          NPClass* aClass) {
   AssertPluginThread();
 
   if (aClass != GetClass()) {
-    NS_RUNTIMEABORT("Huh?! Wrong class!");
+    MOZ_CRASH("Huh?! Wrong class!");
   }
 
   return new ChildNPObject();
 }
 
 // static
-void
-PluginScriptableObjectChild::ScriptableInvalidate(NPObject* aObject)
-{
+void PluginScriptableObjectChild::ScriptableInvalidate(NPObject* aObject) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -159,13 +147,11 @@ PluginScriptableObjectChild::ScriptableInvalidate(NPObject* aObject)
 }
 
 // static
-void
-PluginScriptableObjectChild::ScriptableDeallocate(NPObject* aObject)
-{
+void PluginScriptableObjectChild::ScriptableDeallocate(NPObject* aObject) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -179,14 +165,12 @@ PluginScriptableObjectChild::ScriptableDeallocate(NPObject* aObject)
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableHasMethod(NPObject* aObject,
-                                                 NPIdentifier aName)
-{
+bool PluginScriptableObjectChild::ScriptableHasMethod(NPObject* aObject,
+                                                      NPIdentifier aName) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -206,17 +190,15 @@ PluginScriptableObjectChild::ScriptableHasMethod(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableInvoke(NPObject* aObject,
-                                              NPIdentifier aName,
-                                              const NPVariant* aArgs,
-                                              uint32_t aArgCount,
-                                              NPVariant* aResult)
-{
+bool PluginScriptableObjectChild::ScriptableInvoke(NPObject* aObject,
+                                                   NPIdentifier aName,
+                                                   const NPVariant* aArgs,
+                                                   uint32_t aArgCount,
+                                                   NPVariant* aResult) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -237,8 +219,7 @@ PluginScriptableObjectChild::ScriptableInvoke(NPObject* aObject,
 
   Variant remoteResult;
   bool success;
-  actor->CallInvoke(FromNPIdentifier(aName), args,
-                    &remoteResult, &success);
+  actor->CallInvoke(FromNPIdentifier(aName), args, &remoteResult, &success);
 
   if (!success) {
     return false;
@@ -249,16 +230,13 @@ PluginScriptableObjectChild::ScriptableInvoke(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableInvokeDefault(NPObject* aObject,
-                                                     const NPVariant* aArgs,
-                                                     uint32_t aArgCount,
-                                                     NPVariant* aResult)
-{
+bool PluginScriptableObjectChild::ScriptableInvokeDefault(
+    NPObject* aObject, const NPVariant* aArgs, uint32_t aArgCount,
+    NPVariant* aResult) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -290,14 +268,12 @@ PluginScriptableObjectChild::ScriptableInvokeDefault(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableHasProperty(NPObject* aObject,
-                                                   NPIdentifier aName)
-{
+bool PluginScriptableObjectChild::ScriptableHasProperty(NPObject* aObject,
+                                                        NPIdentifier aName) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -317,15 +293,13 @@ PluginScriptableObjectChild::ScriptableHasProperty(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableGetProperty(NPObject* aObject,
-                                                   NPIdentifier aName,
-                                                   NPVariant* aResult)
-{
+bool PluginScriptableObjectChild::ScriptableGetProperty(NPObject* aObject,
+                                                        NPIdentifier aName,
+                                                        NPVariant* aResult) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -342,8 +316,7 @@ PluginScriptableObjectChild::ScriptableGetProperty(NPObject* aObject,
 
   Variant result;
   bool success;
-  actor->CallGetParentProperty(FromNPIdentifier(aName),
-                               &result, &success);
+  actor->CallGetParentProperty(FromNPIdentifier(aName), &result, &success);
 
   if (!success) {
     return false;
@@ -354,15 +327,12 @@ PluginScriptableObjectChild::ScriptableGetProperty(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableSetProperty(NPObject* aObject,
-                                                   NPIdentifier aName,
-                                                   const NPVariant* aValue)
-{
+bool PluginScriptableObjectChild::ScriptableSetProperty(
+    NPObject* aObject, NPIdentifier aName, const NPVariant* aValue) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -382,21 +352,18 @@ PluginScriptableObjectChild::ScriptableSetProperty(NPObject* aObject,
   }
 
   bool success;
-  actor->CallSetProperty(FromNPIdentifier(aName), value,
-                         &success);
+  actor->CallSetProperty(FromNPIdentifier(aName), value, &success);
 
   return success;
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableRemoveProperty(NPObject* aObject,
-                                                      NPIdentifier aName)
-{
+bool PluginScriptableObjectChild::ScriptableRemoveProperty(NPObject* aObject,
+                                                           NPIdentifier aName) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -410,22 +377,18 @@ PluginScriptableObjectChild::ScriptableRemoveProperty(NPObject* aObject,
   NS_ASSERTION(actor->Type() == Proxy, "Bad type!");
 
   bool success;
-  actor->CallRemoveProperty(FromNPIdentifier(aName),
-                            &success);
+  actor->CallRemoveProperty(FromNPIdentifier(aName), &success);
 
   return success;
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableEnumerate(NPObject* aObject,
-                                                 NPIdentifier** aIdentifiers,
-                                                 uint32_t* aCount)
-{
+bool PluginScriptableObjectChild::ScriptableEnumerate(
+    NPObject* aObject, NPIdentifier** aIdentifiers, uint32_t* aCount) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -452,8 +415,9 @@ PluginScriptableObjectChild::ScriptableEnumerate(NPObject* aObject,
     return true;
   }
 
-  *aIdentifiers = reinterpret_cast<NPIdentifier*>(
-      PluginModuleChild::sBrowserFuncs.memalloc(*aCount * sizeof(NPIdentifier)));
+  *aIdentifiers =
+      reinterpret_cast<NPIdentifier*>(PluginModuleChild::sBrowserFuncs.memalloc(
+          *aCount * sizeof(NPIdentifier)));
   if (!*aIdentifiers) {
     NS_ERROR("Out of memory!");
     return false;
@@ -469,16 +433,14 @@ PluginScriptableObjectChild::ScriptableEnumerate(NPObject* aObject,
 }
 
 // static
-bool
-PluginScriptableObjectChild::ScriptableConstruct(NPObject* aObject,
-                                                 const NPVariant* aArgs,
-                                                 uint32_t aArgCount,
-                                                 NPVariant* aResult)
-{
+bool PluginScriptableObjectChild::ScriptableConstruct(NPObject* aObject,
+                                                      const NPVariant* aArgs,
+                                                      uint32_t aArgCount,
+                                                      NPVariant* aResult) {
   AssertPluginThread();
 
   if (aObject->_class != GetClass()) {
-    NS_RUNTIMEABORT("Don't know what kind of object this is!");
+    MOZ_CRASH("Don't know what kind of object this is!");
   }
 
   ChildNPObject* object = reinterpret_cast<ChildNPObject*>(aObject);
@@ -510,34 +472,31 @@ PluginScriptableObjectChild::ScriptableConstruct(NPObject* aObject,
 }
 
 const NPClass PluginScriptableObjectChild::sNPClass = {
-  NP_CLASS_STRUCT_VERSION,
-  PluginScriptableObjectChild::ScriptableAllocate,
-  PluginScriptableObjectChild::ScriptableDeallocate,
-  PluginScriptableObjectChild::ScriptableInvalidate,
-  PluginScriptableObjectChild::ScriptableHasMethod,
-  PluginScriptableObjectChild::ScriptableInvoke,
-  PluginScriptableObjectChild::ScriptableInvokeDefault,
-  PluginScriptableObjectChild::ScriptableHasProperty,
-  PluginScriptableObjectChild::ScriptableGetProperty,
-  PluginScriptableObjectChild::ScriptableSetProperty,
-  PluginScriptableObjectChild::ScriptableRemoveProperty,
-  PluginScriptableObjectChild::ScriptableEnumerate,
-  PluginScriptableObjectChild::ScriptableConstruct
-};
+    NP_CLASS_STRUCT_VERSION,
+    PluginScriptableObjectChild::ScriptableAllocate,
+    PluginScriptableObjectChild::ScriptableDeallocate,
+    PluginScriptableObjectChild::ScriptableInvalidate,
+    PluginScriptableObjectChild::ScriptableHasMethod,
+    PluginScriptableObjectChild::ScriptableInvoke,
+    PluginScriptableObjectChild::ScriptableInvokeDefault,
+    PluginScriptableObjectChild::ScriptableHasProperty,
+    PluginScriptableObjectChild::ScriptableGetProperty,
+    PluginScriptableObjectChild::ScriptableSetProperty,
+    PluginScriptableObjectChild::ScriptableRemoveProperty,
+    PluginScriptableObjectChild::ScriptableEnumerate,
+    PluginScriptableObjectChild::ScriptableConstruct};
 
 PluginScriptableObjectChild::PluginScriptableObjectChild(
-                                                     ScriptableObjectType aType)
-: mInstance(nullptr),
-  mObject(nullptr),
-  mInvalidated(false),
-  mProtectCount(0),
-  mType(aType)
-{
+    ScriptableObjectType aType)
+    : mInstance(nullptr),
+      mObject(nullptr),
+      mInvalidated(false),
+      mProtectCount(0),
+      mType(aType) {
   AssertPluginThread();
 }
 
-PluginScriptableObjectChild::~PluginScriptableObjectChild()
-{
+PluginScriptableObjectChild::~PluginScriptableObjectChild() {
   AssertPluginThread();
 
   if (mObject) {
@@ -546,17 +505,14 @@ PluginScriptableObjectChild::~PluginScriptableObjectChild()
     if (mObject->_class == GetClass()) {
       NS_ASSERTION(mType == Proxy, "Wrong type!");
       static_cast<ChildNPObject*>(mObject)->parent = nullptr;
-    }
-    else {
+    } else {
       NS_ASSERTION(mType == LocalObject, "Wrong type!");
       PluginModuleChild::sBrowserFuncs.releaseobject(mObject);
     }
   }
 }
 
-bool
-PluginScriptableObjectChild::InitializeProxy()
-{
+bool PluginScriptableObjectChild::InitializeProxy() {
   AssertPluginThread();
   NS_ASSERTION(mType == Proxy, "Bad type!");
   NS_ASSERTION(!mObject, "Calling Initialize more than once!");
@@ -580,9 +536,7 @@ PluginScriptableObjectChild::InitializeProxy()
   return true;
 }
 
-void
-PluginScriptableObjectChild::InitializeLocal(NPObject* aObject)
-{
+void PluginScriptableObjectChild::InitializeLocal(NPObject* aObject) {
   AssertPluginThread();
   NS_ASSERTION(mType == LocalObject, "Bad type!");
   NS_ASSERTION(!mObject, "Calling Initialize more than once!");
@@ -603,16 +557,13 @@ PluginScriptableObjectChild::InitializeLocal(NPObject* aObject)
   mObject = aObject;
 }
 
-NPObject*
-PluginScriptableObjectChild::CreateProxyObject()
-{
+NPObject* PluginScriptableObjectChild::CreateProxyObject() {
   NS_ASSERTION(mInstance, "Must have an instance!");
   NS_ASSERTION(mType == Proxy, "Shouldn't call this for non-proxy object!");
 
   NPClass* proxyClass = const_cast<NPClass*>(GetClass());
-  NPObject* npobject =
-    PluginModuleChild::sBrowserFuncs.createobject(mInstance->GetNPP(),
-                                                  proxyClass);
+  NPObject* npobject = PluginModuleChild::sBrowserFuncs.createobject(
+      mInstance->GetNPP(), proxyClass);
   NS_ASSERTION(npobject, "Failed to create object?!");
   NS_ASSERTION(npobject->_class == GetClass(), "Wrong kind of object!");
   NS_ASSERTION(npobject->referenceCount == 1, "Some kind of live object!");
@@ -631,9 +582,7 @@ PluginScriptableObjectChild::CreateProxyObject()
   return object;
 }
 
-bool
-PluginScriptableObjectChild::ResurrectProxyObject()
-{
+bool PluginScriptableObjectChild::ResurrectProxyObject() {
   NS_ASSERTION(mInstance, "Must have an instance already!");
   NS_ASSERTION(!mObject, "Should not have an object already!");
   NS_ASSERTION(mType == Proxy, "Shouldn't call this for non-proxy object!");
@@ -647,9 +596,7 @@ PluginScriptableObjectChild::ResurrectProxyObject()
   return true;
 }
 
-NPObject*
-PluginScriptableObjectChild::GetObject(bool aCanResurrect)
-{
+NPObject* PluginScriptableObjectChild::GetObject(bool aCanResurrect) {
   if (!mObject && aCanResurrect && !ResurrectProxyObject()) {
     NS_ERROR("Null object!");
     return nullptr;
@@ -657,9 +604,7 @@ PluginScriptableObjectChild::GetObject(bool aCanResurrect)
   return mObject;
 }
 
-void
-PluginScriptableObjectChild::Protect()
-{
+void PluginScriptableObjectChild::Protect() {
   NS_ASSERTION(mObject, "No object!");
   NS_ASSERTION(mProtectCount >= 0, "Negative retain count?!");
 
@@ -668,9 +613,7 @@ PluginScriptableObjectChild::Protect()
   }
 }
 
-void
-PluginScriptableObjectChild::Unprotect()
-{
+void PluginScriptableObjectChild::Unprotect() {
   NS_ASSERTION(mObject, "Bad state!");
   NS_ASSERTION(mProtectCount >= 0, "Negative retain count?!");
 
@@ -681,9 +624,7 @@ PluginScriptableObjectChild::Unprotect()
   }
 }
 
-void
-PluginScriptableObjectChild::DropNPObject()
-{
+void PluginScriptableObjectChild::DropNPObject() {
   NS_ASSERTION(mObject, "Invalidated object!");
   NS_ASSERTION(mObject->_class == GetClass(), "Wrong type of object!");
   NS_ASSERTION(mType == Proxy, "Shouldn't call this for non-proxy object!");
@@ -696,23 +637,19 @@ PluginScriptableObjectChild::DropNPObject()
   SendUnprotect();
 }
 
-void
-PluginScriptableObjectChild::NPObjectDestroyed()
-{
+void PluginScriptableObjectChild::NPObjectDestroyed() {
   NS_ASSERTION(LocalObject == mType,
                "ScriptableDeallocate should have handled this for proxies");
   mInvalidated = true;
   mObject = nullptr;
 }
 
-bool
-PluginScriptableObjectChild::AnswerInvalidate()
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvalidate() {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
-    return true;
+    return IPC_OK();
   }
 
   mInvalidated = true;
@@ -726,20 +663,18 @@ PluginScriptableObjectChild::AnswerInvalidate()
 
   Unprotect();
 
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerHasMethod(const PluginIdentifier& aId,
-                                             bool* aHasMethod)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerHasMethod(
+    const PluginIdentifier& aId, bool* aHasMethod) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerHasMethod with an invalidated object!");
     *aHasMethod = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -747,20 +682,17 @@ PluginScriptableObjectChild::AnswerHasMethod(const PluginIdentifier& aId,
 
   if (!(mObject->_class && mObject->_class->hasMethod)) {
     *aHasMethod = false;
-    return true;
+    return IPC_OK();
   }
 
   StackIdentifier id(aId);
   *aHasMethod = mObject->_class->hasMethod(mObject, id.ToNPIdentifier());
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
-                                          InfallibleTArray<Variant>&& aArgs,
-                                          Variant* aResult,
-                                          bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvoke(
+    const PluginIdentifier& aId, nsTArray<Variant>&& aArgs, Variant* aResult,
+    bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -768,7 +700,7 @@ PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
     NS_WARNING("Calling AnswerInvoke with an invalidated object!");
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -777,7 +709,7 @@ PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
   if (!(mObject->_class && mObject->_class->invoke)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   AutoTArray<NPVariant, 10> convertedArgs;
@@ -786,7 +718,7 @@ PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
   if (!convertedArgs.SetLength(argCount, mozilla::fallible)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   for (uint32_t index = 0; index < argCount; index++) {
@@ -796,9 +728,9 @@ PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
   NPVariant result;
   VOID_TO_NPVARIANT(result);
   StackIdentifier id(aId);
-  bool success = mObject->_class->invoke(mObject, id.ToNPIdentifier(),
-                                         convertedArgs.Elements(), argCount,
-                                         &result);
+  bool success =
+      mObject->_class->invoke(mObject, id.ToNPIdentifier(),
+                              convertedArgs.Elements(), argCount, &result);
 
   for (uint32_t index = 0; index < argCount; index++) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&convertedArgs[index]);
@@ -807,31 +739,28 @@ PluginScriptableObjectChild::AnswerInvoke(const PluginIdentifier& aId,
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   Variant convertedResult;
-  success = ConvertToRemoteVariant(result, convertedResult, GetInstance(),
-                                   false);
+  success =
+      ConvertToRemoteVariant(result, convertedResult, GetInstance(), false);
 
   DeferNPVariantLastRelease(&PluginModuleChild::sBrowserFuncs, &result);
 
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   *aSuccess = true;
   *aResult = convertedResult;
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aArgs,
-                                                 Variant* aResult,
-                                                 bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvokeDefault(
+    nsTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -839,7 +768,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aAr
     NS_WARNING("Calling AnswerInvokeDefault with an invalidated object!");
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -848,7 +777,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aAr
   if (!(mObject->_class && mObject->_class->invokeDefault)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   AutoTArray<NPVariant, 10> convertedArgs;
@@ -857,7 +786,7 @@ PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aAr
   if (!convertedArgs.SetLength(argCount, mozilla::fallible)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   for (uint32_t index = 0; index < argCount; index++) {
@@ -866,9 +795,8 @@ PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aAr
 
   NPVariant result;
   VOID_TO_NPVARIANT(result);
-  bool success = mObject->_class->invokeDefault(mObject,
-                                                convertedArgs.Elements(),
-                                                argCount, &result);
+  bool success = mObject->_class->invokeDefault(
+      mObject, convertedArgs.Elements(), argCount, &result);
 
   for (uint32_t index = 0; index < argCount; index++) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&convertedArgs[index]);
@@ -877,37 +805,35 @@ PluginScriptableObjectChild::AnswerInvokeDefault(InfallibleTArray<Variant>&& aAr
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   Variant convertedResult;
-  success = ConvertToRemoteVariant(result, convertedResult, GetInstance(),
-                                   false);
+  success =
+      ConvertToRemoteVariant(result, convertedResult, GetInstance(), false);
 
   DeferNPVariantLastRelease(&PluginModuleChild::sBrowserFuncs, &result);
 
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   *aResult = convertedResult;
   *aSuccess = true;
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerHasProperty(const PluginIdentifier& aId,
-                                               bool* aHasProperty)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerHasProperty(
+    const PluginIdentifier& aId, bool* aHasProperty) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerHasProperty with an invalidated object!");
     *aHasProperty = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -915,21 +841,17 @@ PluginScriptableObjectChild::AnswerHasProperty(const PluginIdentifier& aId,
 
   if (!(mObject->_class && mObject->_class->hasProperty)) {
     *aHasProperty = false;
-    return true;
+    return IPC_OK();
   }
 
   StackIdentifier id(aId);
   *aHasProperty = mObject->_class->hasProperty(mObject, id.ToNPIdentifier());
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerGetChildProperty(const PluginIdentifier& aId,
-                                                    bool* aHasProperty,
-                                                    bool* aHasMethod,
-                                                    Variant* aResult,
-                                                    bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerGetChildProperty(
+    const PluginIdentifier& aId, bool* aHasProperty, bool* aHasMethod,
+    Variant* aResult, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -938,7 +860,7 @@ PluginScriptableObjectChild::AnswerGetChildProperty(const PluginIdentifier& aId,
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerGetProperty with an invalidated object!");
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -946,7 +868,7 @@ PluginScriptableObjectChild::AnswerGetChildProperty(const PluginIdentifier& aId,
 
   if (!(mObject->_class && mObject->_class->hasProperty &&
         mObject->_class->hasMethod && mObject->_class->getProperty)) {
-    return true;
+    return IPC_OK();
   }
 
   StackIdentifier stackID(aId);
@@ -960,32 +882,29 @@ PluginScriptableObjectChild::AnswerGetChildProperty(const PluginIdentifier& aId,
     VOID_TO_NPVARIANT(result);
 
     if (!mObject->_class->getProperty(mObject, id, &result)) {
-      return true;
+      return IPC_OK();
     }
 
     Variant converted;
-    if ((*aSuccess = ConvertToRemoteVariant(result, converted, GetInstance(),
-                                            false))) {
+    if ((*aSuccess =
+             ConvertToRemoteVariant(result, converted, GetInstance(), false))) {
       DeferNPVariantLastRelease(&PluginModuleChild::sBrowserFuncs, &result);
       *aResult = converted;
     }
   }
 
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerSetProperty(const PluginIdentifier& aId,
-                                               const Variant& aValue,
-                                               bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerSetProperty(
+    const PluginIdentifier& aId, const Variant& aValue, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerSetProperty with an invalidated object!");
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -994,7 +913,7 @@ PluginScriptableObjectChild::AnswerSetProperty(const PluginIdentifier& aId,
   if (!(mObject->_class && mObject->_class->hasProperty &&
         mObject->_class->setProperty)) {
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   StackIdentifier stackID(aId);
@@ -1002,7 +921,7 @@ PluginScriptableObjectChild::AnswerSetProperty(const PluginIdentifier& aId,
 
   if (!mObject->_class->hasProperty(mObject, id)) {
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NPVariant converted;
@@ -1011,20 +930,18 @@ PluginScriptableObjectChild::AnswerSetProperty(const PluginIdentifier& aId,
   if ((*aSuccess = mObject->_class->setProperty(mObject, id, &converted))) {
     PluginModuleChild::sBrowserFuncs.releasevariantvalue(&converted);
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerRemoveProperty(const PluginIdentifier& aId,
-                                                  bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerRemoveProperty(
+    const PluginIdentifier& aId, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerRemoveProperty with an invalidated object!");
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -1033,29 +950,27 @@ PluginScriptableObjectChild::AnswerRemoveProperty(const PluginIdentifier& aId,
   if (!(mObject->_class && mObject->_class->hasProperty &&
         mObject->_class->removeProperty)) {
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   StackIdentifier stackID(aId);
   NPIdentifier id = stackID.ToNPIdentifier();
-  *aSuccess = mObject->_class->hasProperty(mObject, id) ?
-              mObject->_class->removeProperty(mObject, id) :
-              true;
+  *aSuccess = mObject->_class->hasProperty(mObject, id)
+                  ? mObject->_class->removeProperty(mObject, id)
+                  : true;
 
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerEnumerate(InfallibleTArray<PluginIdentifier>* aProperties,
-                                             bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerEnumerate(
+    nsTArray<PluginIdentifier>* aProperties, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   if (mInvalidated) {
     NS_WARNING("Calling AnswerEnumerate with an invalidated object!");
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -1063,14 +978,14 @@ PluginScriptableObjectChild::AnswerEnumerate(InfallibleTArray<PluginIdentifier>*
 
   if (!(mObject->_class && mObject->_class->enumerate)) {
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NPIdentifier* ids;
   uint32_t idCount;
   if (!mObject->_class->enumerate(mObject, &ids, &idCount)) {
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   aProperties->SetCapacity(idCount);
@@ -1081,14 +996,11 @@ PluginScriptableObjectChild::AnswerEnumerate(InfallibleTArray<PluginIdentifier>*
 
   PluginModuleChild::sBrowserFuncs.memfree(ids);
   *aSuccess = true;
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
-                                             Variant* aResult,
-                                             bool* aSuccess)
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerConstruct(
+    nsTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -1096,7 +1008,7 @@ PluginScriptableObjectChild::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
     NS_WARNING("Calling AnswerConstruct with an invalidated object!");
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
@@ -1105,7 +1017,7 @@ PluginScriptableObjectChild::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
   if (!(mObject->_class && mObject->_class->construct)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   AutoTArray<NPVariant, 10> convertedArgs;
@@ -1114,7 +1026,7 @@ PluginScriptableObjectChild::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
   if (!convertedArgs.SetLength(argCount, mozilla::fallible)) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   for (uint32_t index = 0; index < argCount; index++) {
@@ -1133,50 +1045,44 @@ PluginScriptableObjectChild::AnswerConstruct(InfallibleTArray<Variant>&& aArgs,
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   Variant convertedResult;
-  success = ConvertToRemoteVariant(result, convertedResult, GetInstance(),
-                                   false);
+  success =
+      ConvertToRemoteVariant(result, convertedResult, GetInstance(), false);
 
   DeferNPVariantLastRelease(&PluginModuleChild::sBrowserFuncs, &result);
 
   if (!success) {
     *aResult = void_t();
     *aSuccess = false;
-    return true;
+    return IPC_OK();
   }
 
   *aResult = convertedResult;
   *aSuccess = true;
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::RecvProtect()
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::RecvProtect() {
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
   NS_ASSERTION(mType == LocalObject, "Bad type!");
 
   Protect();
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::RecvUnprotect()
-{
+mozilla::ipc::IPCResult PluginScriptableObjectChild::RecvUnprotect() {
   NS_ASSERTION(mObject->_class != GetClass(), "Bad object type!");
   NS_ASSERTION(mType == LocalObject, "Bad type!");
 
   Unprotect();
-  return true;
+  return IPC_OK();
 }
 
-bool
-PluginScriptableObjectChild::Evaluate(NPString* aScript,
-                                      NPVariant* aResult)
-{
+bool PluginScriptableObjectChild::Evaluate(NPString* aScript,
+                                           NPVariant* aResult) {
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
   nsDependentCString script("");
@@ -1196,11 +1102,10 @@ PluginScriptableObjectChild::Evaluate(NPString* aScript,
   return true;
 }
 
-nsTHashtable<PluginScriptableObjectChild::NPObjectData>* PluginScriptableObjectChild::sObjectMap;
+nsTHashtable<PluginScriptableObjectChild::NPObjectData>*
+    PluginScriptableObjectChild::sObjectMap;
 
-bool
-PluginScriptableObjectChild::RegisterActor(NPObject* aObject)
-{
+bool PluginScriptableObjectChild::RegisterActor(NPObject* aObject) {
   AssertPluginThread();
   MOZ_ASSERT(aObject, "Null pointer!");
 
@@ -1214,9 +1119,7 @@ PluginScriptableObjectChild::RegisterActor(NPObject* aObject)
   return true;
 }
 
-void
-PluginScriptableObjectChild::UnregisterActor(NPObject* aObject)
-{
+void PluginScriptableObjectChild::UnregisterActor(NPObject* aObject) {
   AssertPluginThread();
   MOZ_ASSERT(aObject, "Null pointer!");
 
@@ -1227,9 +1130,9 @@ PluginScriptableObjectChild::UnregisterActor(NPObject* aObject)
   }
 }
 
-/* static */ PluginScriptableObjectChild*
-PluginScriptableObjectChild::GetActorForNPObject(NPObject* aObject)
-{
+/* static */
+PluginScriptableObjectChild* PluginScriptableObjectChild::GetActorForNPObject(
+    NPObject* aObject) {
   AssertPluginThread();
   MOZ_ASSERT(aObject, "Null pointer!");
 
@@ -1242,9 +1145,9 @@ PluginScriptableObjectChild::GetActorForNPObject(NPObject* aObject)
   return d->actor;
 }
 
-/* static */ void
-PluginScriptableObjectChild::RegisterObject(NPObject* aObject, PluginInstanceChild* aInstance)
-{
+/* static */
+void PluginScriptableObjectChild::RegisterObject(
+    NPObject* aObject, PluginInstanceChild* aInstance) {
   AssertPluginThread();
 
   if (!sObjectMap) {
@@ -1256,9 +1159,8 @@ PluginScriptableObjectChild::RegisterObject(NPObject* aObject, PluginInstanceChi
   d->instance = aInstance;
 }
 
-/* static */ void
-PluginScriptableObjectChild::UnregisterObject(NPObject* aObject)
-{
+/* static */
+void PluginScriptableObjectChild::UnregisterObject(NPObject* aObject) {
   AssertPluginThread();
 
   sObjectMap->RemoveEntry(aObject);
@@ -1269,10 +1171,15 @@ PluginScriptableObjectChild::UnregisterObject(NPObject* aObject)
   }
 }
 
-/* static */ PluginInstanceChild*
-PluginScriptableObjectChild::GetInstanceForNPObject(NPObject* aObject)
-{
+/* static */
+PluginInstanceChild* PluginScriptableObjectChild::GetInstanceForNPObject(
+    NPObject* aObject) {
   AssertPluginThread();
+  if (!sObjectMap) {
+    // All PluginInstanceChilds have been destroyed
+    return nullptr;
+  }
+
   NPObjectData* d = sObjectMap->GetEntry(aObject);
   if (!d) {
     return nullptr;
@@ -1280,9 +1187,9 @@ PluginScriptableObjectChild::GetInstanceForNPObject(NPObject* aObject)
   return d->instance;
 }
 
-/* static */ void
-PluginScriptableObjectChild::NotifyOfInstanceShutdown(PluginInstanceChild* aInstance)
-{
+/* static */
+void PluginScriptableObjectChild::NotifyOfInstanceShutdown(
+    PluginInstanceChild* aInstance) {
   AssertPluginThread();
   if (!sObjectMap) {
     return;
@@ -1291,8 +1198,8 @@ PluginScriptableObjectChild::NotifyOfInstanceShutdown(PluginInstanceChild* aInst
   for (auto iter = sObjectMap->Iter(); !iter.Done(); iter.Next()) {
     NPObjectData* d = iter.Get();
     if (d->instance == aInstance) {
-        NPObject* o = d->GetKey();
-        aInstance->mDeletingHash->PutEntry(o);
+      NPObject* o = d->GetKey();
+      aInstance->mDeletingHash->PutEntry(o);
     }
   }
 }

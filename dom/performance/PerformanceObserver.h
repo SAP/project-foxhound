@@ -27,26 +27,21 @@ class Performance;
 class PerformanceEntry;
 class PerformanceObserverCallback;
 struct PerformanceObserverInit;
-namespace workers {
 class WorkerPrivate;
-} // namespace workers
 
-class PerformanceObserver final : public nsISupports,
-                                  public nsWrapperCache
-{
-public:
+class PerformanceObserver final : public nsISupports, public nsWrapperCache {
+ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(PerformanceObserver)
 
-  static already_AddRefed<PerformanceObserver>
-  Constructor(const GlobalObject& aGlobal,
-              PerformanceObserverCallback& aCb,
-              ErrorResult& aRv);
+  static already_AddRefed<PerformanceObserver> Constructor(
+      const GlobalObject& aGlobal, PerformanceObserverCallback& aCb,
+      ErrorResult& aRv);
 
   PerformanceObserver(nsPIDOMWindowInner* aOwner,
                       PerformanceObserverCallback& aCb);
 
-  PerformanceObserver(workers::WorkerPrivate* aWorkerPrivate,
+  PerformanceObserver(WorkerPrivate* aWorkerPrivate,
                       PerformanceObserverCallback& aCb);
 
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -54,26 +49,43 @@ public:
 
   nsISupports* GetParentObject() const { return mOwner; }
 
-  void Observe(const PerformanceObserverInit& aOptions,
-               mozilla::ErrorResult& aRv);
+  void Observe(const PerformanceObserverInit& aOptions, ErrorResult& aRv);
+  static void GetSupportedEntryTypes(const GlobalObject& aGlobal,
+                                     JS::MutableHandle<JSObject*> aObject);
 
   void Disconnect();
 
-  void Notify();
+  void TakeRecords(nsTArray<RefPtr<PerformanceEntry>>& aRetval);
+
+  MOZ_CAN_RUN_SCRIPT void Notify();
   void QueueEntry(PerformanceEntry* aEntry);
 
-private:
+  bool ObservesTypeOfEntry(PerformanceEntry* aEntry);
+
+ private:
+  void ReportUnsupportedTypesErrorToConsole(bool aIsMainThread,
+                                            const char* msgId,
+                                            const nsString& aInvalidTypes);
   ~PerformanceObserver();
 
   nsCOMPtr<nsISupports> mOwner;
   RefPtr<PerformanceObserverCallback> mCallback;
   RefPtr<Performance> mPerformance;
   nsTArray<nsString> mEntryTypes;
+  nsTArray<PerformanceObserverInit> mOptions;
+  enum {
+    ObserverTypeUndefined,
+    ObserverTypeSingle,
+    ObserverTypeMultiple,
+  } mObserverType;
+  /*
+   * This is also known as registered, in the spec.
+   */
   bool mConnected;
   nsTArray<RefPtr<PerformanceEntry>> mQueuedEntries;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
 #endif

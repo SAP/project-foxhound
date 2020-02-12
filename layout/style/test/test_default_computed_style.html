@@ -6,7 +6,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800983
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 800983</title>
-  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
     #display::before { content: "Visible"; display: block }
@@ -45,7 +45,7 @@ is(cs_pseudo.display, "block", "Our ::before is block");
 // And now our actual tests
 is(cs_default.display, "block", "We have block display by default");
 is(cs_default.marginTop, "16px", "We have 16px margin by default");
-is(cs_default.backgroundColor, "transparent",
+is(cs_default.backgroundColor, "rgba(0, 0, 0, 0)",
    "We have transparent background by default");
 is(cs_default.color, "rgb(0, 0, 0)", "We have black text by default");
 is(cs_default_pseudo.content, "none", "We have no content by default");

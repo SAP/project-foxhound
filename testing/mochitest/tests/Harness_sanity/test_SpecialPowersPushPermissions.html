@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Test for SpecialPowers extension</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body onload="starttest();">
@@ -14,8 +14,6 @@ const DENY_ACTION = SpecialPowers.Ci.nsIPermissionManager.DENY_ACTION;
 const UNKNOWN_ACTION = SpecialPowers.Ci.nsIPermissionManager.UNKNOWN_ACTION;
 const PROMPT_ACTION = SpecialPowers.Ci.nsIPermissionManager.PROMPT_ACTION;
 const ACCESS_SESSION = SpecialPowers.Ci.nsICookiePermission.ACCESS_SESSION;
-const ACCESS_ALLOW_FIRST_PARTY_ONLY = SpecialPowers.Ci.nsICookiePermission.ACCESS_ALLOW_FIRST_PARTY_ONLY;
-const ACCESS_LIMIT_THIRD_PARTY = SpecialPowers.Ci.nsICookiePermission.ACCESS_LIMIT_THIRD_PARTY;
 
 const EXPIRE_TIME = SpecialPowers.Ci.nsIPermissionManager.EXPIRE_TIME;
 // expire Setting:
@@ -37,117 +35,114 @@ function starttest(){
   SpecialPowers.addPermission("pDENY", DENY_ACTION, document);
   SpecialPowers.addPermission("pREMOVE", ALLOW_ACTION, document);
   SpecialPowers.addPermission("pSESSION", ACCESS_SESSION, document);
-  SpecialPowers.addPermission("pFIRSTPARTY", ACCESS_ALLOW_FIRST_PARTY_ONLY, document);
-  SpecialPowers.addPermission("pTHIRDPARTY", ACCESS_LIMIT_THIRD_PARTY, document);
 
   setTimeout(test1, 0);
 }
 
 SimpleTest.waitForExplicitFinish();
 
-function test1() {
-  if (!SpecialPowers.testPermission('pALLOW', ALLOW_ACTION, document)) {
+async function test1() {
+  if (!await SpecialPowers.testPermission('pALLOW', ALLOW_ACTION, document)) {
     dump('/**** allow not set ****/\n');
     setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pDENY', DENY_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pDENY', DENY_ACTION, document)) {
     dump('/**** deny not set ****/\n');
     setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pPROMPT', PROMPT_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pPROMPT', PROMPT_ACTION, document)) {
     dump('/**** prompt not set ****/\n');
     setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pREMOVE', ALLOW_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pREMOVE', ALLOW_ACTION, document)) {
     dump('/**** remove not set ****/\n');
     setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pSESSION', ACCESS_SESSION, document)) {
+  } else if (!await SpecialPowers.testPermission('pSESSION', ACCESS_SESSION, document)) {
     dump('/**** ACCESS_SESSION not set ****/\n');
-    setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pFIRSTPARTY', ACCESS_ALLOW_FIRST_PARTY_ONLY, document)) {
-    dump('/**** ACCESS_ALLOW_FIRST_PARTY_ONLY not set ****/\n');
-    setTimeout(test1, 0);
-  } else if (!SpecialPowers.testPermission('pTHIRDPARTY', ACCESS_LIMIT_THIRD_PARTY, document)) {
-    dump('/**** ACCESS_LIMIT_THIRD_PARTY not set ****/\n');
     setTimeout(test1, 0);
   } else {
     test2();
   }
 }
 
-function test2() {
-  ok(SpecialPowers.testPermission('pUNKNOWN', UNKNOWN_ACTION, document), 'pUNKNOWN value should have UNKOWN permission');
-  SpecialPowers.pushPermissions([{'type': 'pUNKNOWN', 'allow': true, 'context': document}, {'type': 'pALLOW', 'allow': false, 'context': document}, {'type': 'pDENY', 'allow': true, 'context': document}, {'type': 'pPROMPT', 'allow': true, 'context': document}, {'type': 'pSESSION', 'allow': true, 'context': document}, {'type': 'pFIRSTPARTY', 'allow': true, 'context': document}, {'type': 'pTHIRDPARTY', 'allow': true, 'context': document}, {'type': 'pREMOVE', 'remove': true, 'context': document}], test3);
+async function test2() {
+  ok(await SpecialPowers.testPermission('pUNKNOWN', UNKNOWN_ACTION, document), 'pUNKNOWN value should have UNKOWN permission');
+  SpecialPowers.pushPermissions([
+    {'type': 'pUNKNOWN', 'allow': true, 'context': document},
+    {'type': 'pALLOW', 'allow': false, 'context': document},
+    {'type': 'pDENY', 'allow': true, 'context': document},
+    {'type': 'pPROMPT', 'allow': true, 'context': document},
+    {'type': 'pSESSION', 'allow': true, 'context': document},
+    {'type': 'pREMOVE', 'remove': true, 'context': document},
+  ], test3);
 }
 
-function test3() {
-  ok(SpecialPowers.testPermission('pUNKNOWN', ALLOW_ACTION, document), 'pUNKNOWN value should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pPROMPT', ALLOW_ACTION, document), 'pPROMPT value should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pALLOW', DENY_ACTION, document), 'pALLOW should have DENY permission');
-  ok(SpecialPowers.testPermission('pDENY', ALLOW_ACTION, document), 'pDENY should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pREMOVE', UNKNOWN_ACTION, document), 'pREMOVE should have REMOVE permission');
-  ok(SpecialPowers.testPermission('pSESSION', ALLOW_ACTION, document), 'pSESSION should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pFIRSTPARTY', ALLOW_ACTION, document), 'pFIRSTPARTY should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pTHIRDPARTY', ALLOW_ACTION, document), 'pTHIRDPARTY should have ALLOW permission');
+async function test3() {
+  ok(await SpecialPowers.testPermission('pUNKNOWN', ALLOW_ACTION, document), 'pUNKNOWN value should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pPROMPT', ALLOW_ACTION, document), 'pPROMPT value should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pALLOW', DENY_ACTION, document), 'pALLOW should have DENY permission');
+  ok(await SpecialPowers.testPermission('pDENY', ALLOW_ACTION, document), 'pDENY should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pREMOVE', UNKNOWN_ACTION, document), 'pREMOVE should have REMOVE permission');
+  ok(await SpecialPowers.testPermission('pSESSION', ALLOW_ACTION, document), 'pSESSION should have ALLOW permission');
 
   // only pPROMPT (last one) is different, the other stuff is just to see if it doesn't cause test failures
-  SpecialPowers.pushPermissions([{'type': 'pUNKNOWN', 'allow': true, 'context': document}, {'type': 'pALLOW', 'allow': false, 'context': document}, {'type': 'pDENY', 'allow': true, 'context': document}, {'type': 'pPROMPT', 'allow': false, 'context': document}, {'type': 'pREMOVE', 'remove': true, 'context': document}], test3b);
+  SpecialPowers.pushPermissions([
+    {'type': 'pUNKNOWN', 'allow': true, 'context': document},
+    {'type': 'pALLOW', 'allow': false, 'context': document},
+    {'type': 'pDENY', 'allow': true, 'context': document},
+    {'type': 'pPROMPT', 'allow': false, 'context': document},
+    {'type': 'pREMOVE', 'remove': true, 'context': document},
+  ], test3b);
 }
 
-function test3b() {
-  ok(SpecialPowers.testPermission('pPROMPT', DENY_ACTION, document), 'pPROMPT value should have DENY permission');
-  SpecialPowers.pushPermissions([{'type': 'pUNKNOWN', 'allow': DENY_ACTION, 'context': document}, {'type': 'pALLOW', 'allow': PROMPT_ACTION, 'context': document}, {'type': 'pDENY', 'allow': PROMPT_ACTION, 'context': document}, {'type': 'pPROMPT', 'allow': ALLOW_ACTION, 'context': document}], test4);
+async function test3b() {
+  ok(await SpecialPowers.testPermission('pPROMPT', DENY_ACTION, document), 'pPROMPT value should have DENY permission');
+  SpecialPowers.pushPermissions([
+    {'type': 'pUNKNOWN', 'allow': DENY_ACTION, 'context': document},
+    {'type': 'pALLOW', 'allow': PROMPT_ACTION, 'context': document},
+    {'type': 'pDENY', 'allow': PROMPT_ACTION, 'context': document},
+    {'type': 'pPROMPT', 'allow': ALLOW_ACTION, 'context': document},
+  ], test4);
 }
 
-function test4() {
-  ok(SpecialPowers.testPermission('pUNKNOWN', DENY_ACTION, document), 'pUNKNOWN value should have DENY permission');
-  ok(SpecialPowers.testPermission('pPROMPT', ALLOW_ACTION, document), 'pPROMPT value should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pALLOW', PROMPT_ACTION, document), 'pALLOW should have PROMPT permission');
-  ok(SpecialPowers.testPermission('pDENY', PROMPT_ACTION, document), 'pDENY should have PROMPT permission');
+async function test4() {
+  ok(await SpecialPowers.testPermission('pUNKNOWN', DENY_ACTION, document), 'pUNKNOWN value should have DENY permission');
+  ok(await SpecialPowers.testPermission('pPROMPT', ALLOW_ACTION, document), 'pPROMPT value should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pALLOW', PROMPT_ACTION, document), 'pALLOW should have PROMPT permission');
+  ok(await SpecialPowers.testPermission('pDENY', PROMPT_ACTION, document), 'pDENY should have PROMPT permission');
   //this should reset all the permissions to before all the pushPermissions calls
   SpecialPowers.flushPermissions(test5);
 }
 
-
-function test5() {
-  ok(SpecialPowers.testPermission('pUNKNOWN', UNKNOWN_ACTION, document), 'pUNKNOWN should have UNKNOWN permission');
-  ok(SpecialPowers.testPermission('pALLOW', ALLOW_ACTION, document), 'pALLOW should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pDENY', DENY_ACTION, document), 'pDENY should have DENY permission');
-  ok(SpecialPowers.testPermission('pPROMPT', PROMPT_ACTION, document), 'pPROMPT should have PROMPT permission');
-  ok(SpecialPowers.testPermission('pREMOVE', ALLOW_ACTION, document), 'pREMOVE should have ALLOW permission');
-  ok(SpecialPowers.testPermission('pSESSION', ACCESS_SESSION, document), 'pSESSION should have ACCESS_SESSION permission');
-  ok(SpecialPowers.testPermission('pFIRSTPARTY', ACCESS_ALLOW_FIRST_PARTY_ONLY, document), 'pFIRSTPARTY should have ACCESS_ALLOW_FIRST_PARTY_ONLY permission');
-  ok(SpecialPowers.testPermission('pTHIRDPARTY', ACCESS_LIMIT_THIRD_PARTY, document), 'pTHIRDPARTY should have ACCESS_LIMIT_THIRD_PARTY permission');
+async function test5() {
+  ok(await SpecialPowers.testPermission('pUNKNOWN', UNKNOWN_ACTION, document), 'pUNKNOWN should have UNKNOWN permission');
+  ok(await SpecialPowers.testPermission('pALLOW', ALLOW_ACTION, document), 'pALLOW should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pDENY', DENY_ACTION, document), 'pDENY should have DENY permission');
+  ok(await SpecialPowers.testPermission('pPROMPT', PROMPT_ACTION, document), 'pPROMPT should have PROMPT permission');
+  ok(await SpecialPowers.testPermission('pREMOVE', ALLOW_ACTION, document), 'pREMOVE should have ALLOW permission');
+  ok(await SpecialPowers.testPermission('pSESSION', ACCESS_SESSION, document), 'pSESSION should have ACCESS_SESSION permission');
 
   SpecialPowers.removePermission("pPROMPT", document);
   SpecialPowers.removePermission("pALLOW", document);
   SpecialPowers.removePermission("pDENY", document);
   SpecialPowers.removePermission("pREMOVE", document);
   SpecialPowers.removePermission("pSESSION", document);
-  SpecialPowers.removePermission("pFIRSTPARTY", document);
-  SpecialPowers.removePermission("pTHIRDPARTY", document);
 
   setTimeout(test6, 0);
 }
 
-function test6() {
-  if (!SpecialPowers.testPermission('pALLOW', UNKNOWN_ACTION, document)) {
+async function test6() {
+  if (!await SpecialPowers.testPermission('pALLOW', UNKNOWN_ACTION, document)) {
     dump('/**** allow still set ****/\n');
     setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pDENY', UNKNOWN_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pDENY', UNKNOWN_ACTION, document)) {
     dump('/**** deny still set ****/\n');
     setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pPROMPT', UNKNOWN_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pPROMPT', UNKNOWN_ACTION, document)) {
     dump('/**** prompt still set ****/\n');
     setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pREMOVE', UNKNOWN_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pREMOVE', UNKNOWN_ACTION, document)) {
     dump('/**** remove still set ****/\n');
     setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pSESSION', UNKNOWN_ACTION, document)) {
+  } else if (!await SpecialPowers.testPermission('pSESSION', UNKNOWN_ACTION, document)) {
     dump('/**** pSESSION still set ****/\n');
-    setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pFIRSTPARTY', UNKNOWN_ACTION, document)) {
-    dump('/**** pFIRSTPARTY still set ****/\n');
-    setTimeout(test6, 0);
-  } else if (!SpecialPowers.testPermission('pTHIRDPARTY', UNKNOWN_ACTION, document)) {
-    dump('/**** pTHIRDPARTY still set ****/\n');
     setTimeout(test6, 0);
   } else {
     test7();
@@ -191,10 +186,10 @@ function afterPermissionChanged(type, op, callback) {
   });
 }
 
-function permissionPollingCheck() {
+async function permissionPollingCheck() {
   var now = Number(Date.now());
   if (now < (start + PERIOD)) {
-    if (SpecialPowers.testPermission('pEXPIRE', ALLOW_ACTION, document)) {
+    if (await SpecialPowers.testPermission('pEXPIRE', ALLOW_ACTION, document)) {
       // To make sure that permission will be expired in next round,
       // the next permissionPollingCheck calling will be fired 100ms later after
       // permission is out-of-period.
@@ -206,7 +201,7 @@ function permissionPollingCheck() {
   }
 
   // The permission is already expired!
-  if (SpecialPowers.testPermission('pEXPIRE', ALLOW_ACTION, document)) {
+  if (await SpecialPowers.testPermission('pEXPIRE', ALLOW_ACTION, document)) {
     errorHandler('expired permission should be removed!');
   }
 }

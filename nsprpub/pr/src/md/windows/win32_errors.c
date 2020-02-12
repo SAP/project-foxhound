@@ -13,7 +13,7 @@
  * - GetLastError(): for Win32 functions
  * - WSAGetLastError(): for Winsock functions
  * - errno: for standard C library functions
- * 
+ *
  * GetLastError() and WSAGetLastError() return error codes in
  * non-overlapping ranges, so their error codes (ERROR_* and
  * WSAE*) can be mapped by the same function.  On the other hand,
@@ -61,7 +61,7 @@ void _MD_win32_map_default_error(PRInt32 err)
             prError = PR_NOT_IMPLEMENTED_ERROR;
             break;
         case ERROR_DISK_CORRUPT:
-            prError = PR_IO_ERROR; 
+            prError = PR_IO_ERROR;
             break;
         case ERROR_DISK_FULL:
             prError = PR_NO_DEVICE_SPACE_ERROR;
@@ -166,21 +166,26 @@ void _MD_win32_map_default_error(PRInt32 err)
             prError = PR_ADDRESS_IN_USE_ERROR;
             break;
         case WSAEADDRNOTAVAIL:
+        case ERROR_INVALID_NETNAME:
             prError = PR_ADDRESS_NOT_AVAILABLE_ERROR;
             break;
         case WSAEAFNOSUPPORT:
+        case ERROR_INCORRECT_ADDRESS:
             prError = PR_ADDRESS_NOT_SUPPORTED_ERROR;
             break;
         case WSAEALREADY:
+        case ERROR_ALREADY_INITIALIZED:
             prError = PR_ALREADY_INITIATED_ERROR;
             break;
         case WSAEBADF:
             prError = PR_BAD_DESCRIPTOR_ERROR;
             break;
         case WSAECONNABORTED:
+        case ERROR_CONNECTION_ABORTED:
             prError = PR_CONNECT_ABORTED_ERROR;
             break;
         case WSAECONNREFUSED:
+        case ERROR_CONNECTION_REFUSED:
             prError = PR_CONNECT_REFUSED_ERROR;
             break;
         case WSAECONNRESET:
@@ -193,6 +198,7 @@ void _MD_win32_map_default_error(PRInt32 err)
             prError = PR_ACCESS_FAULT_ERROR;
             break;
         case WSAEHOSTUNREACH:
+        case ERROR_HOST_UNREACHABLE:
             prError = PR_HOST_UNREACHABLE_ERROR;
             break;
         case WSAEINVAL:
@@ -208,12 +214,14 @@ void _MD_win32_map_default_error(PRInt32 err)
             prError = PR_BUFFER_OVERFLOW_ERROR;
             break;
         case WSAENETDOWN:
+        case ERROR_NO_NETWORK:
             prError = PR_NETWORK_DOWN_ERROR;
             break;
         case WSAENETRESET:
             prError = PR_CONNECT_ABORTED_ERROR;
             break;
         case WSAENETUNREACH:
+        case ERROR_NETWORK_UNREACHABLE:
             prError = PR_NETWORK_UNREACHABLE_ERROR;
             break;
         case WSAENOBUFS:
@@ -510,7 +518,7 @@ void _MD_win32_map_gethostname_error(PRInt32 err)
 }
 
 /* Win32 select() only works on sockets.  So in this
-** context, WSAENOTSOCK is equivalent to EBADF on Unix.  
+** context, WSAENOTSOCK is equivalent to EBADF on Unix.
 */
 void _MD_win32_map_select_error(PRInt32 err)
 {

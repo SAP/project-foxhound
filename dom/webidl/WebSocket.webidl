@@ -12,11 +12,14 @@
 
 enum BinaryType { "blob", "arraybuffer" };
 
-[Exposed=(Window,Worker),
- Constructor(DOMString url),
- Constructor(DOMString url, DOMString protocols),
- Constructor(DOMString url, sequence<DOMString> protocols)]
+[Exposed=(Window,Worker)]
 interface WebSocket : EventTarget {
+  [Throws]
+  constructor(DOMString url);
+  [Throws]
+  constructor(DOMString url, DOMString protocols);
+  [Throws]
+  constructor(DOMString url, sequence<DOMString> protocols);
 
   readonly attribute DOMString url;
 
@@ -43,7 +46,7 @@ interface WebSocket : EventTarget {
   readonly attribute DOMString protocol;
 
   [Throws]
-  void close([Clamp] optional unsigned short code, optional DOMString reason);
+  void close(optional [Clamp] unsigned short code, optional DOMString reason);
 
   // messaging
 
@@ -64,7 +67,7 @@ interface WebSocket : EventTarget {
   void send(ArrayBufferView data);
 };
 
-// Support for creating server-side chrome-only WebSocket. Used in FlyWeb and in
+// Support for creating server-side chrome-only WebSocket. Used in
 // devtools remote debugging server.
 interface nsITransportProvider;
 

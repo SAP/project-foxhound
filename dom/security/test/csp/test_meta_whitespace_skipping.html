@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Bug 1261634 - Update whitespace skipping for meta csp</title>
   <!-- Including SimpleTest.js so we can use waitForExplicitFinish !-->
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -23,7 +23,7 @@ const EXPECTED_DIRS = [
   "img-src", "script-src", "style-src", "child-src", "font-src"];
 
 function finishTest() {
-  window.removeEventListener("message", receiveMessage, false);
+  window.removeEventListener("message", receiveMessage);
   SimpleTest.finish();
 }
 
@@ -34,8 +34,8 @@ function checkResults(result) {
   try {
     // get the csp in JSON notation from the principal
     var frame = document.getElementById("testframe");
-    var principal = SpecialPowers.wrap(frame.contentDocument).nodePrincipal;
-    var cspJSON = principal.cspJSON;
+    var contentDoc = SpecialPowers.wrap(frame.contentDocument);
+    var cspJSON = contentDoc.cspJSON;
     ok(cspJSON, "CSP applied through meta element");
 
     // parse the cspJSON in a csp-object
@@ -71,7 +71,7 @@ function checkResults(result) {
   finishTest();
 }
 
-window.addEventListener("message", receiveMessage, false);
+window.addEventListener("message", receiveMessage);
 function receiveMessage(event) {
   checkResults(event.data.result);
 }

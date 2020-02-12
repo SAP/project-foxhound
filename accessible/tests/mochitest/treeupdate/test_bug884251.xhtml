@@ -1,12 +1,10 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 
 <script>
 
-function boom()
-{
+function boom() {
   document.getElementById("k").removeAttribute("href");
   ok(true, "changing iframe contents doesn't cause assertions");
   SimpleTest.finish();

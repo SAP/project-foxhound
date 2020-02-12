@@ -1,48 +1,29 @@
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm");
-
-function whenDelayedStartupFinished(aWindow, aCallback) {
-  return new Promise(resolve => {
-    info("Waiting for delayed startup to finish");
-    Services.obs.addObserver(function observer(aSubject, aTopic) {
-      if (aWindow == aSubject) {
-        Services.obs.removeObserver(observer, aTopic);
-        if (aCallback) {
-          executeSoon(aCallback);
-        }
-        resolve();
-      }
-    }, "browser-delayed-startup-finished", false);
-  });
-}
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm"
+);
 
 /**
- * Allows waiting for an observer notification once.
- *
- * @param topic
- *        Notification topic to observe.
- *
- * @return {Promise}
- * @resolves The array [subject, data] from the observed notification.
- * @rejects Never.
+ * Called after opening a new window or switching windows, this will wait until
+ * we are sure that an attempt to display a notification will not fail.
  */
-function promiseTopicObserved(topic)
-{
-  let deferred = Promise.defer();
-  info("Waiting for observer topic " + topic);
-  Services.obs.addObserver(function PTO_observe(subject, topic, data) {
-    Services.obs.removeObserver(PTO_observe, topic);
-    deferred.resolve([subject, data]);
-  }, topic, false);
-  return deferred.promise;
+async function waitForWindowReadyForPopupNotifications(win) {
+  // These are the same checks that PopupNotifications.jsm makes before it
+  // allows a notification to open.
+  await BrowserTestUtils.waitForCondition(
+    () => win.gBrowser.selectedBrowser.docShellIsActive,
+    "The browser should be active"
+  );
+  await BrowserTestUtils.waitForCondition(
+    () => Services.focus.activeWindow == win,
+    "The window should be active"
+  );
 }
-
 
 /**
  * Waits for a load (or custom) event to finish in a given tab. If provided
@@ -56,34 +37,39 @@ function promiseTopicObserved(topic)
  * @resolves to the received event
  * @rejects if a valid load event is not received within a meaningful interval
  */
-function promiseTabLoadEvent(tab, url)
-{
+function promiseTabLoadEvent(tab, url) {
   let browser = tab.linkedBrowser;
 
   if (url) {
-    browser.loadURI(url);
+    BrowserTestUtils.loadURI(browser, url);
   }
 
   return BrowserTestUtils.browserLoaded(browser, false, url);
 }
 
-const PREF_SECURITY_DELAY_INITIAL = Services.prefs.getIntPref("security.notification_enable_delay");
+const PREF_SECURITY_DELAY_INITIAL = Services.prefs.getIntPref(
+  "security.notification_enable_delay"
+);
 
+// Tests that call setup() should have a `tests` array defined for the actual
+// tests to be run.
+/* global tests */
 function setup() {
-  // Disable transitions as they slow the test down and we want to click the
-  // mouse buttons in a predictable location.
-
+  BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/").then(
+    goNext
+  );
   registerCleanupFunction(() => {
+    gBrowser.removeTab(gBrowser.selectedTab);
     PopupNotifications.buttonDelay = PREF_SECURITY_DELAY_INITIAL;
   });
 }
 
 function goNext() {
-  executeSoon(() => executeSoon(Task.async(runNextTest)));
+  executeSoon(() => executeSoon(runNextTest));
 }
 
-function* runNextTest() {
-  if (tests.length == 0) {
+async function runNextTest() {
+  if (!tests.length) {
     executeSoon(finish);
     return;
   }
@@ -91,61 +77,82 @@ function* runNextTest() {
   let nextTest = tests.shift();
   if (nextTest.onShown) {
     let shownState = false;
-    onPopupEvent("popupshowing", function () {
+    onPopupEvent("popupshowing", function() {
       info("[" + nextTest.id + "] popup showing");
     });
-    onPopupEvent("popupshown", function () {
+    onPopupEvent("popupshown", function() {
       shownState = true;
       info("[" + nextTest.id + "] popup shown");
-      Task.spawn(() => nextTest.onShown(this))
-          .then(undefined, ex => Assert.ok(false, "onShown failed: " + ex));
+      (nextTest.onShown(this) || Promise.resolve()).then(undefined, ex =>
+        Assert.ok(false, "onShown failed: " + ex)
+      );
     });
-    onPopupEvent("popuphidden", function () {
-      info("[" + nextTest.id + "] popup hidden");
-      nextTest.onHidden(this);
-      goNext();
-    }, () => shownState);
-    info("[" + nextTest.id + "] added listeners; panel is open: " + PopupNotifications.isPanelOpen);
+    onPopupEvent(
+      "popuphidden",
+      function() {
+        info("[" + nextTest.id + "] popup hidden");
+        (nextTest.onHidden(this) || Promise.resolve()).then(
+          () => goNext(),
+          ex => Assert.ok(false, "onHidden failed: " + ex)
+        );
+      },
+      () => shownState
+    );
+    info(
+      "[" +
+        nextTest.id +
+        "] added listeners; panel is open: " +
+        PopupNotifications.isPanelOpen
+    );
   }
 
   info("[" + nextTest.id + "] running test");
-  yield nextTest.run();
+  await nextTest.run();
 }
 
 function showNotification(notifyObj) {
   info("Showing notification " + notifyObj.id);
-  return PopupNotifications.show(notifyObj.browser,
-                                 notifyObj.id,
-                                 notifyObj.message,
-                                 notifyObj.anchorID,
-                                 notifyObj.mainAction,
-                                 notifyObj.secondaryActions,
-                                 notifyObj.options);
+  return PopupNotifications.show(
+    notifyObj.browser,
+    notifyObj.id,
+    notifyObj.message,
+    notifyObj.anchorID,
+    notifyObj.mainAction,
+    notifyObj.secondaryActions,
+    notifyObj.options
+  );
 }
 
 function dismissNotification(popup) {
   info("Dismissing notification " + popup.childNodes[0].id);
-  executeSoon(() => EventUtils.synthesizeKey("VK_ESCAPE", {}));
+  executeSoon(() => EventUtils.synthesizeKey("KEY_Escape"));
 }
 
 function BasicNotification(testId) {
   this.browser = gBrowser.selectedBrowser;
   this.id = "test-notification-" + testId;
-  this.message = "This is popup notification for " + testId;
+  this.message = testId + ": Will you allow <> to perform this action?";
   this.anchorID = null;
   this.mainAction = {
     label: "Main Action",
     accessKey: "M",
-    callback: () => this.mainActionClicked = true
+    callback: ({ source }) => {
+      this.mainActionClicked = true;
+      this.mainActionSource = source;
+    },
   };
   this.secondaryActions = [
     {
       label: "Secondary Action",
       accessKey: "S",
-      callback: () => this.secondaryActionClicked = true
-    }
+      callback: ({ source }) => {
+        this.secondaryActionClicked = true;
+        this.secondaryActionSource = source;
+      },
+    },
   ];
   this.options = {
+    name: "http://example.com",
     eventCallback: eventName => {
       switch (eventName) {
         case "dismissed":
@@ -164,16 +171,18 @@ function BasicNotification(testId) {
           this.swappingCallbackTriggered = true;
           break;
       }
-    }
+    },
   };
 }
 
 BasicNotification.prototype.addOptions = function(options) {
-  for (let [name, value] of Object.entries(options))
+  for (let [name, value] of Object.entries(options)) {
     this.options[name] = value;
+  }
 };
 
-function ErrorNotification() {
+function ErrorNotification(testId) {
+  BasicNotification.call(this, testId);
   this.mainAction.callback = () => {
     this.mainActionClicked = true;
     throw new Error("Oops!");
@@ -184,8 +193,7 @@ function ErrorNotification() {
   };
 }
 
-ErrorNotification.prototype = new BasicNotification();
-ErrorNotification.prototype.constructor = ErrorNotification;
+ErrorNotification.prototype = BasicNotification.prototype;
 
 function checkPopup(popup, notifyObj) {
   info("Checking notification " + notifyObj.id);
@@ -196,42 +204,85 @@ function checkPopup(popup, notifyObj) {
   let notifications = popup.childNodes;
   is(notifications.length, 1, "one notification displayed");
   let notification = notifications[0];
-  if (!notification)
+  if (!notification) {
     return;
-  let icon = document.getAnonymousElementByAttribute(notification, "class",
-                                                     "popup-notification-icon");
-  if (notifyObj.id == "geolocation") {
-    isnot(icon.boxObject.width, 0, "icon for geo displayed");
-    ok(popup.anchorNode.classList.contains("notification-anchor-icon"),
-       "notification anchored to icon");
   }
-  is(notification.getAttribute("label"), notifyObj.message, "message matches");
+  let icon = notification.querySelector(".popup-notification-icon");
+  if (notifyObj.id == "geolocation") {
+    isnot(icon.getBoundingClientRect().width, 0, "icon for geo displayed");
+    ok(
+      popup.anchorNode.classList.contains("notification-anchor-icon"),
+      "notification anchored to icon"
+    );
+  }
+
+  let description = notifyObj.message.split("<>");
+  let text = {};
+  text.start = description[0];
+  text.end = description[1];
+  is(notification.getAttribute("label"), text.start, "message matches");
+  is(
+    notification.getAttribute("name"),
+    notifyObj.options.name,
+    "message matches"
+  );
+  is(notification.getAttribute("endlabel"), text.end, "message matches");
+
   is(notification.id, notifyObj.id + "-notification", "id matches");
   if (notifyObj.mainAction) {
-    is(notification.getAttribute("buttonlabel"), notifyObj.mainAction.label,
-       "main action label matches");
-    is(notification.getAttribute("buttonaccesskey"),
-       notifyObj.mainAction.accessKey, "main action accesskey matches");
+    is(
+      notification.getAttribute("buttonlabel"),
+      notifyObj.mainAction.label,
+      "main action label matches"
+    );
+    is(
+      notification.getAttribute("buttonaccesskey"),
+      notifyObj.mainAction.accessKey,
+      "main action accesskey matches"
+    );
+    is(
+      notification.hasAttribute("buttonhighlight"),
+      !notifyObj.mainAction.disableHighlight,
+      "main action highlight matches"
+    );
   }
-  let actualSecondaryActions =
-    Array.filter(notification.childNodes, child => child.nodeName == "menuitem");
-  let secondaryActions = notifyObj.secondaryActions || [];
-  let actualSecondaryActionsCount = actualSecondaryActions.length;
-  if (notifyObj.options.hideNotNow) {
-    is(notification.getAttribute("hidenotnow"), "true", "'Not Now' item hidden");
-    if (secondaryActions.length)
-      is(notification.lastChild.tagName, "menuitem", "no menuseparator");
+  if (notifyObj.secondaryActions && notifyObj.secondaryActions.length) {
+    let secondaryAction = notifyObj.secondaryActions[0];
+    is(
+      notification.getAttribute("secondarybuttonlabel"),
+      secondaryAction.label,
+      "secondary action label matches"
+    );
+    is(
+      notification.getAttribute("secondarybuttonaccesskey"),
+      secondaryAction.accessKey,
+      "secondary action accesskey matches"
+    );
   }
-  else if (secondaryActions.length) {
-    is(notification.lastChild.tagName, "menuseparator", "menuseparator exists");
-  }
-  is(actualSecondaryActionsCount, secondaryActions.length,
-    actualSecondaryActions.length + " secondary actions");
-  secondaryActions.forEach(function (a, i) {
-    is(actualSecondaryActions[i].getAttribute("label"), a.label,
-       "label for secondary action " + i + " matches");
-    is(actualSecondaryActions[i].getAttribute("accesskey"), a.accessKey,
-       "accessKey for secondary action " + i + " matches");
+  // Additional secondary actions appear as menu items.
+  let actualExtraSecondaryActions = Array.prototype.filter.call(
+    notification.menupopup.childNodes,
+    child => child.nodeName == "menuitem"
+  );
+  let extraSecondaryActions = notifyObj.secondaryActions
+    ? notifyObj.secondaryActions.slice(1)
+    : [];
+  is(
+    actualExtraSecondaryActions.length,
+    extraSecondaryActions.length,
+    "number of extra secondary actions matches"
+  );
+  extraSecondaryActions.forEach(function(a, i) {
+    is(
+      actualExtraSecondaryActions[i].getAttribute("label"),
+      a.label,
+      "label for extra secondary action " + i + " matches"
+    );
+    is(
+      actualExtraSecondaryActions[i].getAttribute("accesskey"),
+      a.accessKey,
+      "accessKey for extra secondary action " + i + " matches"
+    );
   });
 }
 
@@ -239,7 +290,7 @@ XPCOMUtils.defineLazyGetter(this, "gActiveListeners", () => {
   let listeners = new Map();
   registerCleanupFunction(() => {
     for (let [listener, eventName] of listeners) {
-      PopupNotifications.panel.removeEventListener(eventName, listener, false);
+      PopupNotifications.panel.removeEventListener(eventName, listener);
     }
   });
   return listeners;
@@ -247,49 +298,79 @@ XPCOMUtils.defineLazyGetter(this, "gActiveListeners", () => {
 
 function onPopupEvent(eventName, callback, condition) {
   let listener = event => {
-    if (event.target != PopupNotifications.panel ||
-        (condition && !condition()))
+    if (
+      event.target != PopupNotifications.panel ||
+      (condition && !condition())
+    ) {
       return;
-    PopupNotifications.panel.removeEventListener(eventName, listener, false);
+    }
+    PopupNotifications.panel.removeEventListener(eventName, listener);
     gActiveListeners.delete(listener);
     executeSoon(() => callback.call(PopupNotifications.panel));
-  }
+  };
   gActiveListeners.set(listener, eventName);
-  PopupNotifications.panel.addEventListener(eventName, listener, false);
+  PopupNotifications.panel.addEventListener(eventName, listener);
+}
+
+function waitForNotificationPanel() {
+  return new Promise(resolve => {
+    onPopupEvent("popupshown", function() {
+      resolve(this);
+    });
+  });
+}
+
+function waitForNotificationPanelHidden() {
+  return new Promise(resolve => {
+    onPopupEvent("popuphidden", function() {
+      resolve(this);
+    });
+  });
 }
 
 function triggerMainCommand(popup) {
   let notifications = popup.childNodes;
-  ok(notifications.length > 0, "at least one notification displayed");
+  ok(!!notifications.length, "at least one notification displayed");
   let notification = notifications[0];
   info("Triggering main command for notification " + notification.id);
-  // 20, 10 so that the inner button is hit
-  EventUtils.synthesizeMouse(notification.button, 20, 10, {});
+  EventUtils.synthesizeMouseAtCenter(notification.button, {});
 }
 
 function triggerSecondaryCommand(popup, index) {
   let notifications = popup.childNodes;
-  ok(notifications.length > 0, "at least one notification displayed");
+  ok(!!notifications.length, "at least one notification displayed");
   let notification = notifications[0];
   info("Triggering secondary command for notification " + notification.id);
-  // Cancel the arrow panel slide-in transition (bug 767133) such that
-  // it won't interfere with us interacting with the dropdown.
-  document.getAnonymousNodes(popup)[0].style.transition = "none";
 
-  notification.button.focus();
+  if (index == 0) {
+    EventUtils.synthesizeMouseAtCenter(notification.secondaryButton, {});
+    return;
+  }
 
-  popup.addEventListener("popupshown", function handle() {
-    popup.removeEventListener("popupshown", handle, false);
-    info("Command popup open for notification " + notification.id);
-    // Press down until the desired command is selected
-    for (let i = 0; i <= index; i++) {
-      EventUtils.synthesizeKey("VK_DOWN", {});
-    }
-    // Activate
-    EventUtils.synthesizeKey("VK_RETURN", {});
-  }, false);
+  // Extra secondary actions appear in a menu.
+  notification.secondaryButton.nextElementSibling.nextElementSibling.focus();
+
+  popup.addEventListener(
+    "popupshown",
+    function() {
+      info("Command popup open for notification " + notification.id);
+      // Press down until the desired command is selected. Decrease index by one
+      // since the secondary action was handled above.
+      for (let i = 0; i <= index - 1; i++) {
+        EventUtils.synthesizeKey("KEY_ArrowDown");
+      }
+      // Activate
+      EventUtils.synthesizeKey("KEY_Enter");
+    },
+    { once: true }
+  );
 
   // One down event to open the popup
-  info("Open the popup to trigger secondary command for notification " + notification.id);
-  EventUtils.synthesizeKey("VK_DOWN", { altKey: !navigator.platform.includes("Mac") });
+  info(
+    "Open the popup to trigger secondary command for notification " +
+      notification.id
+  );
+  EventUtils.synthesizeKey("KEY_ArrowDown", {
+    altKey: !navigator.platform.includes("Mac"),
+  });
 }

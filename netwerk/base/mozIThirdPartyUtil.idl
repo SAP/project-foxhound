@@ -7,6 +7,7 @@
 interface nsIURI;
 interface mozIDOMWindowProxy;
 interface nsIChannel;
+interface nsIPrincipal;
 
 /**
  * Utility functions for determining whether a given URI, channel, or window
@@ -142,6 +143,26 @@ interface mozIThirdPartyUtil : nsISupports
   AUTF8String getBaseDomain(in nsIURI aHostURI);
 
   /**
+   * NOTE: Long term, this method won't be needed once bug 922464 is fixed which
+   * will make it possible to parse all URI's off the main thread.
+   *
+   * getBaseDomainFromSchemeHost
+   *
+   * Get the base domain for aScheme and aHost. Otherwise identical to
+   * getBaseDomain().
+   *
+   * @param aScheme
+   *        The scheme to analyze.
+   *
+   * @param aAsciiHost
+   *        The host to analyze.
+   *
+   * @return the base domain.
+   */
+  AUTF8String getBaseDomainFromSchemeHost(in AUTF8String aScheme,
+                                          in AUTF8String aAsciiHost);
+
+  /**
    * getURIFromWindow
    *
    * Returns the URI associated with the script object principal for the
@@ -150,11 +171,28 @@ interface mozIThirdPartyUtil : nsISupports
   nsIURI getURIFromWindow(in mozIDOMWindowProxy aWindow);
 
   /**
+   * getPrincipalFromWindow
+   *
+   * Returns the script object principal for the window.
+   */
+  nsIPrincipal getPrincipalFromWindow(in mozIDOMWindowProxy aWindow);
+
+  /**
+   * getContentBlockingAllowListPrincipalFromWindow
+   *
+   * Returns the content blocking allow list principal for the window.
+   */
+  [noscript]
+  nsIPrincipal getContentBlockingAllowListPrincipalFromWindow(in mozIDOMWindowProxy aWindow,
+                                                              [optional] in nsIURI aURIBeingLoaded);
+
+  /**
    * getTopWindowForChannel
    *
    * Returns the top-level window associated with the given channel.
    */
-  mozIDOMWindowProxy getTopWindowForChannel(in nsIChannel aChannel);
+  [noscript]
+  mozIDOMWindowProxy getTopWindowForChannel(in nsIChannel aChannel, [optional] in nsIURI aURIBeingLoaded);
 };
 
 %{ C++

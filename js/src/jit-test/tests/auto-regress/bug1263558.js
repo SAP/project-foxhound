@@ -1,5 +1,4 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
 evalcx(`
     eval('\
@@ -13,5 +12,5 @@ evalcx(`
     ');
     oomTest(() => eval('Array(..."")'));
     if ('Intl' in this)
-        Intl.NumberFormat.prototype.format(0);
+        new Intl.NumberFormat().format(0);
 `, newGlobal());

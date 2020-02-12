@@ -9,12 +9,12 @@
  */
 
 #include <map>
+#include <memory>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/base/scoped_ptr.h"
-#include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
-#include "webrtc/test/rtp_file_reader.h"
-#include "webrtc/test/testsupport/fileutils.h"
+#include "modules/rtp_rtcp/source/rtp_utility.h"
+#include "test/gtest.h"
+#include "test/rtp_file_reader.h"
+#include "test/testsupport/fileutils.h"
 
 namespace webrtc {
 
@@ -43,7 +43,7 @@ class TestRtpFileReader : public ::testing::Test {
   }
 
  private:
-  rtc::scoped_ptr<test::RtpFileReader> rtp_packet_source_;
+  std::unique_ptr<test::RtpFileReader> rtp_packet_source_;
   bool headers_only_file_;
 };
 
@@ -85,7 +85,8 @@ class TestPcapFileReader : public ::testing::Test {
     while (rtp_packet_source_->NextPacket(&packet)) {
       RtpUtility::RtpHeaderParser rtp_header_parser(packet.data, packet.length);
       webrtc::RTPHeader header;
-      if (!rtp_header_parser.RTCP() && rtp_header_parser.Parse(header, NULL)) {
+      if (!rtp_header_parser.RTCP() &&
+          rtp_header_parser.Parse(&header, nullptr)) {
         pps[header.ssrc]++;
       }
     }
@@ -93,7 +94,7 @@ class TestPcapFileReader : public ::testing::Test {
   }
 
  private:
-  rtc::scoped_ptr<test::RtpFileReader> rtp_packet_source_;
+  std::unique_ptr<test::RtpFileReader> rtp_packet_source_;
 };
 
 TEST_F(TestPcapFileReader, TestEthernetIIFrame) {

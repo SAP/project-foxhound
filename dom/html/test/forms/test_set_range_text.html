@@ -5,8 +5,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=850364
 -->
 <head>
 <title>Tests for Bug 850364 && Bug 918940</title>
-<script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-<script type="application/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
 <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -85,11 +85,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=850364
         } else if (numOfSelectCalls > expectedNumOfSelectCalls) {
           ok(false, "Too many select events were fired");
         }
-      }, false);
+      });
 
       elem.addEventListener("input", function (aEvent) {
         ok(false, "input event should NOT be fired for " + + aEvent.target.id);
-      }, false);
+      });
 
       var test = " setRange(replacement), shrink";
       elem.value = "0123456789ABCDEF";

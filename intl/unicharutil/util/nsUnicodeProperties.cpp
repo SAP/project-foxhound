@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:set ts=4 sw=2 sts=2 et cindent: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,70 +10,32 @@
 #include "mozilla/ArrayUtils.h"
 #include "nsCharTraits.h"
 
-#if ENABLE_INTL_API
-#include "unicode/uchar.h"
-#include "unicode/uscript.h"
-#endif
-
 #define UNICODE_BMP_LIMIT 0x10000
-#define UNICODE_LIMIT     0x110000
+#define UNICODE_LIMIT 0x110000
 
-#ifndef ENABLE_INTL_API
-static const nsCharProps1&
-GetCharProps1(uint32_t aCh)
-{
-    if (aCh < UNICODE_BMP_LIMIT) {
-        return sCharProp1Values[sCharProp1Pages[0][aCh >> kCharProp1CharBits]]
-                               [aCh & ((1 << kCharProp1CharBits) - 1)];
-    }
-    if (aCh < (kCharProp1MaxPlane + 1) * 0x10000) {
-        return sCharProp1Values[sCharProp1Pages[sCharProp1Planes[(aCh >> 16) - 1]]
-                                               [(aCh & 0xffff) >> kCharProp1CharBits]]
-                               [aCh & ((1 << kCharProp1CharBits) - 1)];
-    }
+const nsCharProps2& GetCharProps2(uint32_t aCh) {
+  if (aCh < UNICODE_BMP_LIMIT) {
+    return sCharProp2Values[sCharProp2Pages[0][aCh >> kCharProp2CharBits]]
+                           [aCh & ((1 << kCharProp2CharBits) - 1)];
+  }
+  if (aCh < (kCharProp2MaxPlane + 1) * 0x10000) {
+    return sCharProp2Values[sCharProp2Pages[sCharProp2Planes[(aCh >> 16) - 1]]
+                                           [(aCh & 0xffff) >>
+                                            kCharProp2CharBits]]
+                           [aCh & ((1 << kCharProp2CharBits) - 1)];
+  }
 
-    // Default values for unassigned
-    static const nsCharProps1 undefined = {
-        0,       // Index to mirrored char offsets
-        0,       // Hangul Syllable type
-        0        // Combining class
-    };
-    return undefined;
-}
-#endif
+  MOZ_ASSERT_UNREACHABLE(
+      "Getting CharProps for codepoint outside Unicode "
+      "range");
 
-const nsCharProps2&
-GetCharProps2(uint32_t aCh)
-{
-    if (aCh < UNICODE_BMP_LIMIT) {
-        return sCharProp2Values[sCharProp2Pages[0][aCh >> kCharProp2CharBits]]
-                              [aCh & ((1 << kCharProp2CharBits) - 1)];
-    }
-    if (aCh < (kCharProp2MaxPlane + 1) * 0x10000) {
-        return sCharProp2Values[sCharProp2Pages[sCharProp2Planes[(aCh >> 16) - 1]]
-                                               [(aCh & 0xffff) >> kCharProp2CharBits]]
-                               [aCh & ((1 << kCharProp2CharBits) - 1)];
-    }
-
-    NS_NOTREACHED("Getting CharProps for codepoint outside Unicode range");
-    // Default values for unassigned
-    using namespace mozilla::unicode;
-    static const nsCharProps2 undefined = {
-#if ENABLE_INTL_API
-        PAIRED_BRACKET_TYPE_NONE,
-        VERTICAL_ORIENTATION_R,
-        XIDMOD_NOT_CHARS
-#else
-        uint8_t(Script::UNKNOWN),
-        PAIRED_BRACKET_TYPE_NONE,
-        HB_UNICODE_GENERAL_CATEGORY_UNASSIGNED,
-        eCharType_LeftToRight,
-        XIDMOD_NOT_CHARS,
-        -1, // Numeric Value
-        VERTICAL_ORIENTATION_R
-#endif
-    };
-    return undefined;
+  // Default values for unassigned
+  using namespace mozilla::unicode;
+  static const nsCharProps2 undefined = {
+      VERTICAL_ORIENTATION_R,
+      0  // IdentifierType
+  };
+  return undefined;
 }
 
 namespace mozilla {
@@ -100,45 +63,47 @@ to provide the most compact storage, depending on the distribution
 of values.
 */
 
-const nsIUGenCategory::nsUGenCategory sDetailedToGeneralCategory[] = {
+const nsUGenCategory sDetailedToGeneralCategory[] = {
+    // clang-format off
   /*
    * The order here corresponds to the HB_UNICODE_GENERAL_CATEGORY_* constants
    * of the hb_unicode_general_category_t enum in gfx/harfbuzz/src/hb-unicode.h.
    */
-  /* CONTROL */             nsIUGenCategory::kOther,
-  /* FORMAT */              nsIUGenCategory::kOther,
-  /* UNASSIGNED */          nsIUGenCategory::kOther,
-  /* PRIVATE_USE */         nsIUGenCategory::kOther,
-  /* SURROGATE */           nsIUGenCategory::kOther,
-  /* LOWERCASE_LETTER */    nsIUGenCategory::kLetter,
-  /* MODIFIER_LETTER */     nsIUGenCategory::kLetter,
-  /* OTHER_LETTER */        nsIUGenCategory::kLetter,
-  /* TITLECASE_LETTER */    nsIUGenCategory::kLetter,
-  /* UPPERCASE_LETTER */    nsIUGenCategory::kLetter,
-  /* COMBINING_MARK */      nsIUGenCategory::kMark,
-  /* ENCLOSING_MARK */      nsIUGenCategory::kMark,
-  /* NON_SPACING_MARK */    nsIUGenCategory::kMark,
-  /* DECIMAL_NUMBER */      nsIUGenCategory::kNumber,
-  /* LETTER_NUMBER */       nsIUGenCategory::kNumber,
-  /* OTHER_NUMBER */        nsIUGenCategory::kNumber,
-  /* CONNECT_PUNCTUATION */ nsIUGenCategory::kPunctuation,
-  /* DASH_PUNCTUATION */    nsIUGenCategory::kPunctuation,
-  /* CLOSE_PUNCTUATION */   nsIUGenCategory::kPunctuation,
-  /* FINAL_PUNCTUATION */   nsIUGenCategory::kPunctuation,
-  /* INITIAL_PUNCTUATION */ nsIUGenCategory::kPunctuation,
-  /* OTHER_PUNCTUATION */   nsIUGenCategory::kPunctuation,
-  /* OPEN_PUNCTUATION */    nsIUGenCategory::kPunctuation,
-  /* CURRENCY_SYMBOL */     nsIUGenCategory::kSymbol,
-  /* MODIFIER_SYMBOL */     nsIUGenCategory::kSymbol,
-  /* MATH_SYMBOL */         nsIUGenCategory::kSymbol,
-  /* OTHER_SYMBOL */        nsIUGenCategory::kSymbol,
-  /* LINE_SEPARATOR */      nsIUGenCategory::kSeparator,
-  /* PARAGRAPH_SEPARATOR */ nsIUGenCategory::kSeparator,
-  /* SPACE_SEPARATOR */     nsIUGenCategory::kSeparator
+  /* CONTROL */             nsUGenCategory::kOther,
+  /* FORMAT */              nsUGenCategory::kOther,
+  /* UNASSIGNED */          nsUGenCategory::kOther,
+  /* PRIVATE_USE */         nsUGenCategory::kOther,
+  /* SURROGATE */           nsUGenCategory::kOther,
+  /* LOWERCASE_LETTER */    nsUGenCategory::kLetter,
+  /* MODIFIER_LETTER */     nsUGenCategory::kLetter,
+  /* OTHER_LETTER */        nsUGenCategory::kLetter,
+  /* TITLECASE_LETTER */    nsUGenCategory::kLetter,
+  /* UPPERCASE_LETTER */    nsUGenCategory::kLetter,
+  /* COMBINING_MARK */      nsUGenCategory::kMark,
+  /* ENCLOSING_MARK */      nsUGenCategory::kMark,
+  /* NON_SPACING_MARK */    nsUGenCategory::kMark,
+  /* DECIMAL_NUMBER */      nsUGenCategory::kNumber,
+  /* LETTER_NUMBER */       nsUGenCategory::kNumber,
+  /* OTHER_NUMBER */        nsUGenCategory::kNumber,
+  /* CONNECT_PUNCTUATION */ nsUGenCategory::kPunctuation,
+  /* DASH_PUNCTUATION */    nsUGenCategory::kPunctuation,
+  /* CLOSE_PUNCTUATION */   nsUGenCategory::kPunctuation,
+  /* FINAL_PUNCTUATION */   nsUGenCategory::kPunctuation,
+  /* INITIAL_PUNCTUATION */ nsUGenCategory::kPunctuation,
+  /* OTHER_PUNCTUATION */   nsUGenCategory::kPunctuation,
+  /* OPEN_PUNCTUATION */    nsUGenCategory::kPunctuation,
+  /* CURRENCY_SYMBOL */     nsUGenCategory::kSymbol,
+  /* MODIFIER_SYMBOL */     nsUGenCategory::kSymbol,
+  /* MATH_SYMBOL */         nsUGenCategory::kSymbol,
+  /* OTHER_SYMBOL */        nsUGenCategory::kSymbol,
+  /* LINE_SEPARATOR */      nsUGenCategory::kSeparator,
+  /* PARAGRAPH_SEPARATOR */ nsUGenCategory::kSeparator,
+  /* SPACE_SEPARATOR */     nsUGenCategory::kSeparator
+    // clang-format on
 };
 
-#ifdef ENABLE_INTL_API
 const hb_unicode_general_category_t sICUtoHBcategory[U_CHAR_CATEGORY_COUNT] = {
+    // clang-format off
   HB_UNICODE_GENERAL_CATEGORY_UNASSIGNED, // U_GENERAL_OTHER_TYPES = 0,
   HB_UNICODE_GENERAL_CATEGORY_UPPERCASE_LETTER, // U_UPPERCASE_LETTER = 1,
   HB_UNICODE_GENERAL_CATEGORY_LOWERCASE_LETTER, // U_LOWERCASE_LETTER = 2,
@@ -169,218 +134,18 @@ const hb_unicode_general_category_t sICUtoHBcategory[U_CHAR_CATEGORY_COUNT] = {
   HB_UNICODE_GENERAL_CATEGORY_OTHER_SYMBOL, // U_OTHER_SYMBOL = 27,
   HB_UNICODE_GENERAL_CATEGORY_INITIAL_PUNCTUATION, // U_INITIAL_PUNCTUATION = 28,
   HB_UNICODE_GENERAL_CATEGORY_FINAL_PUNCTUATION, // U_FINAL_PUNCTUATION = 29,
+    // clang-format on
 };
-#endif
 
-uint8_t GetGeneralCategory(uint32_t aCh) {
-#if ENABLE_INTL_API
-  return sICUtoHBcategory[u_charType(aCh)];
-#else
-  return GetCharProps2(aCh).mCategory;
-#endif
-}
-
-nsCharType GetBidiCat(uint32_t aCh) {
-#if ENABLE_INTL_API
-  return nsCharType(u_charDirection(aCh));
-#else
-  return nsCharType(GetCharProps2(aCh).mBidiCategory);
-#endif
-}
-
-int8_t GetNumericValue(uint32_t aCh) {
-#if ENABLE_INTL_API
-  UNumericType type =
-    UNumericType(u_getIntPropertyValue(aCh, UCHAR_NUMERIC_TYPE));
-  return type == U_NT_DECIMAL || type == U_NT_DIGIT
-         ? int8_t(u_getNumericValue(aCh))
-         : -1;  
-#else
-  return GetCharProps2(aCh).mNumericValue;
-#endif
-}
-
-uint32_t
-GetMirroredChar(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    return u_charMirror(aCh);
-#else
-    return aCh + sMirrorOffsets[GetCharProps1(aCh).mMirrorOffsetIndex];
-#endif
-}
-
-bool
-HasMirroredChar(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    return u_isMirrored(aCh);
-#else
-    return GetCharProps1(aCh).mMirrorOffsetIndex != 0;
-#endif
-}
-
-uint8_t
-GetCombiningClass(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    return u_getCombiningClass(aCh);
-#else
-    return GetCharProps1(aCh).mCombiningClass;
-#endif
-}
-
-uint8_t
-GetLineBreakClass(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    return u_getIntPropertyValue(aCh, UCHAR_LINE_BREAK);
-#else
-    return GetCharProps2(aCh).mLineBreak;
-#endif
-}
-
-Script
-GetScriptCode(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    UErrorCode err = U_ZERO_ERROR;
-    return Script(uscript_getScript(aCh, &err));
-#else
-    return Script(GetCharProps2(aCh).mScriptCode);
-#endif
-}
-
-uint32_t
-GetScriptTagForCode(Script aScriptCode)
-{
-#if ENABLE_INTL_API
-    const char* tag = uscript_getShortName(UScriptCode(aScriptCode));
-    return HB_TAG(tag[0], tag[1], tag[2], tag[3]);
-#else
-    // this will safely return 0 for negative script codes, too :)
-    if (static_cast<uint32_t>(aScriptCode) > ArrayLength(sScriptCodeToTag)) {
-        return 0;
-    }
-    return sScriptCodeToTag[static_cast<uint32_t>(aScriptCode)];
-#endif
-}
-
-PairedBracketType GetPairedBracketType(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-  return PairedBracketType
-           (u_getIntPropertyValue(aCh, UCHAR_BIDI_PAIRED_BRACKET_TYPE));
-#else
-  return PairedBracketType(GetCharProps2(aCh).mPairedBracketType);
-#endif
-}
-
-uint32_t GetPairedBracket(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-  return u_getBidiPairedBracket(aCh);
-#else
-  return GetPairedBracketType(aCh) != PAIRED_BRACKET_TYPE_NONE
-         ? GetMirroredChar(aCh) : aCh;
-#endif
-}
-
-static inline uint32_t
-GetCaseMapValue(uint32_t aCh)
-{
-    if (aCh < UNICODE_BMP_LIMIT) {
-        return sCaseMapValues[sCaseMapPages[0][aCh >> kCaseMapCharBits]]
-                             [aCh & ((1 << kCaseMapCharBits) - 1)];
-    }
-    if (aCh < (kCaseMapMaxPlane + 1) * 0x10000) {
-        return sCaseMapValues[sCaseMapPages[sCaseMapPlanes[(aCh >> 16) - 1]]
-                                           [(aCh & 0xffff) >> kCaseMapCharBits]]
-                             [aCh & ((1 << kCaseMapCharBits) - 1)];
-    }
-    return 0;
-}
-
-uint32_t
-GetUppercase(uint32_t aCh)
-{
-    uint32_t mapValue = GetCaseMapValue(aCh);
-    if (mapValue & (kLowerToUpper | kTitleToUpper)) {
-        return aCh ^ (mapValue & kCaseMapCharMask);
-    }
-    if (mapValue & kLowerToTitle) {
-        return GetUppercase(aCh ^ (mapValue & kCaseMapCharMask));
-    }
-    return aCh;
-}
-
-uint32_t
-GetLowercase(uint32_t aCh)
-{
-    uint32_t mapValue = GetCaseMapValue(aCh);
-    if (mapValue & kUpperToLower) {
-        return aCh ^ (mapValue & kCaseMapCharMask);
-    }
-    if (mapValue & kTitleToUpper) {
-        return GetLowercase(aCh ^ (mapValue & kCaseMapCharMask));
-    }
-    return aCh;
-}
-
-uint32_t
-GetTitlecaseForLower(uint32_t aCh)
-{
-    uint32_t mapValue = GetCaseMapValue(aCh);
-    if (mapValue & (kLowerToTitle | kLowerToUpper)) {
-        return aCh ^ (mapValue & kCaseMapCharMask);
-    }
-    return aCh;
-}
-
-uint32_t
-GetTitlecaseForAll(uint32_t aCh)
-{
-    uint32_t mapValue = GetCaseMapValue(aCh);
-    if (mapValue & (kLowerToTitle | kLowerToUpper)) {
-        return aCh ^ (mapValue & kCaseMapCharMask);
-    }
-    if (mapValue & kUpperToLower) {
-        return GetTitlecaseForLower(aCh ^ (mapValue & kCaseMapCharMask));
-    }
-    return aCh;
-}
-
-#if 0 // currently unused - bug 857481
-HanVariantType
-GetHanVariant(uint32_t aCh)
-{
-    // In the sHanVariantValues array, data for 4 successive characters
-    // (2 bits each) is packed in to each uint8_t entry, with the value
-    // for the lowest character stored in the least significant bits.
-    uint8_t v = 0;
-    if (aCh < UNICODE_BMP_LIMIT) {
-        v = sHanVariantValues[sHanVariantPages[0][aCh >> kHanVariantCharBits]]
-                             [(aCh & ((1 << kHanVariantCharBits) - 1)) >> 2];
-    } else if (aCh < (kHanVariantMaxPlane + 1) * 0x10000) {
-        v = sHanVariantValues[sHanVariantPages[sHanVariantPlanes[(aCh >> 16) - 1]]
-                                              [(aCh & 0xffff) >> kHanVariantCharBits]]
-                             [(aCh & ((1 << kHanVariantCharBits) - 1)) >> 2];
-    }
-    // extract the appropriate 2-bit field from the value
-    return HanVariantType((v >> ((aCh & 3) * 2)) & 3);
-}
-#endif
-
-#define DEFINE_BMP_1PLANE_MAPPING_GET_FUNC(prefix_) \
-  uint32_t Get##prefix_(uint32_t aCh) \
-  { \
-    if (aCh >= UNICODE_BMP_LIMIT) { \
-      return aCh; \
-    } \
+#define DEFINE_BMP_1PLANE_MAPPING_GET_FUNC(prefix_)             \
+  uint32_t Get##prefix_(uint32_t aCh) {                         \
+    if (aCh >= UNICODE_BMP_LIMIT) {                             \
+      return aCh;                                               \
+    }                                                           \
     auto page = s##prefix_##Pages[aCh >> k##prefix_##CharBits]; \
-    auto index = aCh & ((1 << k##prefix_##CharBits) - 1); \
-    uint32_t v = s##prefix_##Values[page][index]; \
-    return v ? v : aCh; \
+    auto index = aCh & ((1 << k##prefix_##CharBits) - 1);       \
+    uint32_t v = s##prefix_##Values[page][index];               \
+    return v ? v : aCh;                                         \
   }
 
 // full-width mappings only exist for BMP characters; all others are
@@ -388,124 +153,151 @@ GetHanVariant(uint32_t aCh)
 DEFINE_BMP_1PLANE_MAPPING_GET_FUNC(FullWidth)
 DEFINE_BMP_1PLANE_MAPPING_GET_FUNC(FullWidthInverse)
 
-bool
-IsClusterExtender(uint32_t aCh, uint8_t aCategory)
-{
-    return ((aCategory >= HB_UNICODE_GENERAL_CATEGORY_SPACING_MARK &&
-             aCategory <= HB_UNICODE_GENERAL_CATEGORY_NON_SPACING_MARK) ||
-            (aCh >= 0x200c && aCh <= 0x200d) || // ZWJ, ZWNJ
-            (aCh >= 0xff9e && aCh <= 0xff9f));  // katakana sound marks
+bool IsClusterExtender(uint32_t aCh, uint8_t aCategory) {
+  return (
+      (aCategory >= HB_UNICODE_GENERAL_CATEGORY_SPACING_MARK &&
+       aCategory <= HB_UNICODE_GENERAL_CATEGORY_NON_SPACING_MARK) ||
+      (aCh >= 0x200c && aCh <= 0x200d) ||    // ZWJ, ZWNJ
+      (aCh >= 0xff9e && aCh <= 0xff9f) ||    // katakana sound marks
+      (aCh >= 0x1F3FB && aCh <= 0x1F3FF) ||  // fitzpatrick skin tone modifiers
+      (aCh >= 0xe0020 && aCh <= 0xe007f));   // emoji (flag) tag characters
 }
 
 enum HSType {
-#if ENABLE_INTL_API
-    HST_NONE = U_HST_NOT_APPLICABLE,
-    HST_L    = U_HST_LEADING_JAMO,
-    HST_V    = U_HST_VOWEL_JAMO,
-    HST_T    = U_HST_TRAILING_JAMO,
-    HST_LV   = U_HST_LV_SYLLABLE,
-    HST_LVT  = U_HST_LVT_SYLLABLE
-#else
-    HST_NONE = 0x00,
-    HST_L    = 0x01,
-    HST_V    = 0x02,
-    HST_T    = 0x04,
-    HST_LV   = 0x03,
-    HST_LVT  = 0x07
-#endif
+  HST_NONE = U_HST_NOT_APPLICABLE,
+  HST_L = U_HST_LEADING_JAMO,
+  HST_V = U_HST_VOWEL_JAMO,
+  HST_T = U_HST_TRAILING_JAMO,
+  HST_LV = U_HST_LV_SYLLABLE,
+  HST_LVT = U_HST_LVT_SYLLABLE
 };
 
-static HSType
-GetHangulSyllableType(uint32_t aCh)
-{
-#if ENABLE_INTL_API
-    return HSType(u_getIntPropertyValue(aCh, UCHAR_HANGUL_SYLLABLE_TYPE));
-#else
-    return HSType(GetCharProps1(aCh).mHangulType);
-#endif
+static HSType GetHangulSyllableType(uint32_t aCh) {
+  return HSType(u_getIntPropertyValue(aCh, UCHAR_HANGUL_SYLLABLE_TYPE));
 }
 
-void
-ClusterIterator::Next()
-{
-    if (AtEnd()) {
-        NS_WARNING("ClusterIterator has already reached the end");
-        return;
-    }
+void ClusterIterator::Next() {
+  if (AtEnd()) {
+    NS_WARNING("ClusterIterator has already reached the end");
+    return;
+  }
 
-    uint32_t ch = *mPos++;
+  uint32_t ch = *mPos++;
 
-    if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit &&
-        NS_IS_LOW_SURROGATE(*mPos)) {
-        ch = SURROGATE_TO_UCS4(ch, *mPos++);
-    } else if ((ch & ~0xff) == 0x1100 ||
-        (ch >= 0xa960 && ch <= 0xa97f) ||
-        (ch >= 0xac00 && ch <= 0xd7ff)) {
-        // Handle conjoining Jamo that make Hangul syllables
-        HSType hangulState = GetHangulSyllableType(ch);
-        while (mPos < mLimit) {
-            ch = *mPos;
-            HSType hangulType = GetHangulSyllableType(ch);
-            switch (hangulType) {
-            case HST_L:
-            case HST_LV:
-            case HST_LVT:
-                if (hangulState == HST_L) {
-                    hangulState = hangulType;
-                    mPos++;
-                    continue;
-                }
-                break;
-            case HST_V:
-                if ((hangulState != HST_NONE) && (hangulState != HST_T) &&
-                    (hangulState != HST_LVT)) {
-                    hangulState = hangulType;
-                    mPos++;
-                    continue;
-                }
-                break;
-            case HST_T:
-                if (hangulState != HST_NONE && hangulState != HST_L) {
-                    hangulState = hangulType;
-                    mPos++;
-                    continue;
-                }
-                break;
-            default:
-                break;
-            }
-            break;
-        }
-    }
-
+  if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit && NS_IS_LOW_SURROGATE(*mPos)) {
+    ch = SURROGATE_TO_UCS4(ch, *mPos++);
+  } else if ((ch & ~0xff) == 0x1100 || (ch >= 0xa960 && ch <= 0xa97f) ||
+             (ch >= 0xac00 && ch <= 0xd7ff)) {
+    // Handle conjoining Jamo that make Hangul syllables
+    HSType hangulState = GetHangulSyllableType(ch);
     while (mPos < mLimit) {
-        ch = *mPos;
-
-        // Check for surrogate pairs; note that isolated surrogates will just
-        // be treated as generic (non-cluster-extending) characters here,
-        // which is fine for cluster-iterating purposes
-        if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit - 1 &&
-            NS_IS_LOW_SURROGATE(*(mPos + 1))) {
-            ch = SURROGATE_TO_UCS4(ch, *(mPos + 1));
-        }
-
-        if (!IsClusterExtender(ch)) {
-            break;
-        }
-
-        mPos++;
-        if (!IS_IN_BMP(ch)) {
+      ch = *mPos;
+      HSType hangulType = GetHangulSyllableType(ch);
+      switch (hangulType) {
+        case HST_L:
+        case HST_LV:
+        case HST_LVT:
+          if (hangulState == HST_L) {
+            hangulState = hangulType;
             mPos++;
-        }
+            continue;
+          }
+          break;
+        case HST_V:
+          if ((hangulState != HST_NONE) && (hangulState != HST_T) &&
+              (hangulState != HST_LVT)) {
+            hangulState = hangulType;
+            mPos++;
+            continue;
+          }
+          break;
+        case HST_T:
+          if (hangulState != HST_NONE && hangulState != HST_L) {
+            hangulState = hangulType;
+            mPos++;
+            continue;
+          }
+          break;
+        default:
+          break;
+      }
+      break;
+    }
+  }
+
+  const uint32_t kVS16 = 0xfe0f;
+  const uint32_t kZWJ = 0x200d;
+  // UTF-16 surrogate values for Fitzpatrick type modifiers
+  const uint32_t kFitzpatrickHigh = 0xD83C;
+  const uint32_t kFitzpatrickLowFirst = 0xDFFB;
+  const uint32_t kFitzpatrickLowLast = 0xDFFF;
+
+  bool baseIsEmoji = (GetEmojiPresentation(ch) == EmojiDefault) ||
+                     (GetEmojiPresentation(ch) == TextDefault &&
+                      ((mPos < mLimit && *mPos == kVS16) ||
+                       (mPos + 1 < mLimit && *mPos == kFitzpatrickHigh &&
+                        *(mPos + 1) >= kFitzpatrickLowFirst &&
+                        *(mPos + 1) <= kFitzpatrickLowLast)));
+  bool prevWasZwj = false;
+
+  while (mPos < mLimit) {
+    ch = *mPos;
+    size_t chLen = 1;
+
+    // Check for surrogate pairs; note that isolated surrogates will just
+    // be treated as generic (non-cluster-extending) characters here,
+    // which is fine for cluster-iterating purposes
+    if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit - 1 &&
+        NS_IS_LOW_SURROGATE(*(mPos + 1))) {
+      ch = SURROGATE_TO_UCS4(ch, *(mPos + 1));
+      chLen = 2;
     }
 
-    NS_ASSERTION(mText < mPos && mPos <= mLimit,
-                 "ClusterIterator::Next has overshot the string!");
+    bool extendCluster =
+        IsClusterExtender(ch) ||
+        (baseIsEmoji && prevWasZwj &&
+         ((GetEmojiPresentation(ch) == EmojiDefault) ||
+          (GetEmojiPresentation(ch) == TextDefault && mPos + chLen < mLimit &&
+           *(mPos + chLen) == kVS16)));
+    if (!extendCluster) {
+      break;
+    }
+
+    prevWasZwj = (ch == kZWJ);
+    mPos += chLen;
+  }
+
+  NS_ASSERTION(mText < mPos && mPos <= mLimit,
+               "ClusterIterator::Next has overshot the string!");
 }
 
-uint32_t
-CountGraphemeClusters(const char16_t* aText, uint32_t aLength)
-{
+void ClusterReverseIterator::Next() {
+  if (AtEnd()) {
+    NS_WARNING("ClusterReverseIterator has already reached the end");
+    return;
+  }
+
+  uint32_t ch;
+  do {
+    ch = *--mPos;
+
+    if (NS_IS_LOW_SURROGATE(ch) && mPos > mLimit &&
+        NS_IS_HIGH_SURROGATE(*(mPos - 1))) {
+      ch = SURROGATE_TO_UCS4(*--mPos, ch);
+    }
+
+    if (!IsClusterExtender(ch)) {
+      break;
+    }
+  } while (mPos > mLimit);
+
+  // XXX May need to handle conjoining Jamo
+
+  NS_ASSERTION(mPos >= mLimit,
+               "ClusterReverseIterator::Next has overshot the string!");
+}
+
+uint32_t CountGraphemeClusters(const char16_t* aText, uint32_t aLength) {
   ClusterIterator iter(aText, aLength);
   uint32_t result = 0;
   while (!iter.AtEnd()) {
@@ -515,6 +307,6 @@ CountGraphemeClusters(const char16_t* aText, uint32_t aLength)
   return result;
 }
 
-} // end namespace unicode
+}  // end namespace unicode
 
-} // end namespace mozilla
+}  // end namespace mozilla

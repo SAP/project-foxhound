@@ -1,10 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+from __future__ import absolute_import, print_function
 
 import re
 import subprocess
-from cmanager import CounterManager
+
+from cmanager_base import CounterManager
 
 
 def xrestop(binary='xrestop'):
@@ -169,7 +171,7 @@ class LinuxCounterManager(CounterManager):
         """Returns the last value of the counter 'counterName'"""
         try:
             return self.registeredCounters[counterName][0](self.pidList())
-        except:
+        except Exception:
             return None
 
     def pidList(self):
@@ -177,5 +179,5 @@ class LinuxCounterManager(CounterManager):
         try:
             return [self.process.pid] + [child.pid
                                          for child in self.process.children()]
-        except:
+        except Exception:
             print("WARNING: problem updating child PID's")

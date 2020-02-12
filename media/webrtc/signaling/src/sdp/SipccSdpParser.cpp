@@ -12,28 +12,23 @@ extern "C" {
 #include "signaling/src/sdp/sipcc/sdp.h"
 }
 
-namespace mozilla
-{
+namespace mozilla {
 
 extern "C" {
 
-void
-sipcc_sdp_parser_error_handler(void *context, uint32_t line,
-                               const char *message)
-{
-  SdpErrorHolder *errorHolder = static_cast<SdpErrorHolder *>(context);
+void sipcc_sdp_parser_error_handler(void* context, uint32_t line,
+                                    const char* message) {
+  SdpErrorHolder* errorHolder = static_cast<SdpErrorHolder*>(context);
   std::string err(message);
   errorHolder->AddParseError(line, err);
 }
 
-} // extern "C"
+}  // extern "C"
 
-UniquePtr<Sdp>
-SipccSdpParser::Parse(const std::string &sdpText)
-{
+UniquePtr<Sdp> SipccSdpParser::Parse(const std::string& sdpText) {
   ClearParseErrors();
 
-  sdp_conf_options_t *sipcc_config = sdp_init_config();
+  sdp_conf_options_t* sipcc_config = sdp_init_config();
   if (!sipcc_config) {
     return UniquePtr<Sdp>();
   }
@@ -47,22 +42,24 @@ SipccSdpParser::Parse(const std::string &sdpText)
   sdp_transport_supported(sipcc_config, SDP_TRANSPORT_RTPSAVPF, true);
   sdp_transport_supported(sipcc_config, SDP_TRANSPORT_UDPTLSRTPSAVP, true);
   sdp_transport_supported(sipcc_config, SDP_TRANSPORT_UDPTLSRTPSAVPF, true);
-  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_TCPTLSRTPSAVP, true);
-  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_TCPTLSRTPSAVPF, true);
+  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_TCPDTLSRTPSAVP, true);
+  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_TCPDTLSRTPSAVPF, true);
   sdp_transport_supported(sipcc_config, SDP_TRANSPORT_DTLSSCTP, true);
+  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_UDPDTLSSCTP, true);
+  sdp_transport_supported(sipcc_config, SDP_TRANSPORT_TCPDTLSSCTP, true);
   sdp_require_session_name(sipcc_config, false);
 
   sdp_config_set_error_handler(sipcc_config, &sipcc_sdp_parser_error_handler,
                                this);
 
   // Takes ownership of |sipcc_config| iff it succeeds
-  sdp_t *sdp = sdp_init_description(sipcc_config);
+  sdp_t* sdp = sdp_init_description(sipcc_config);
   if (!sdp) {
     sdp_free_config(sipcc_config);
     return UniquePtr<Sdp>();
   }
 
-  const char *rawString = sdpText.c_str();
+  const char* rawString = sdpText.c_str();
   sdp_result_e sdpres = sdp_parse(sdp, rawString, sdpText.length());
   if (sdpres != SDP_SUCCESS) {
     sdp_free_description(sdp);
@@ -77,7 +74,7 @@ SipccSdpParser::Parse(const std::string &sdpText)
     return UniquePtr<Sdp>();
   }
 
-  return UniquePtr<Sdp>(Move(sipccSdp));
+  return UniquePtr<Sdp>(std::move(sipccSdp));
 }
 
-} // namespace mozilla
+}  // namespace mozilla

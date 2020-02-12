@@ -6,9 +6,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1261674
 <head>
   <meta charset="utf-8">
   <title>Test for Bug 1261674</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/EventUtils.js"></script>
-  <script type="text/javascript" src="/tests/SimpleTest/paint_listener.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 </head>
 <body>
@@ -48,14 +48,14 @@ function runTests() {
 
   input.addEventListener("change", () => {
     ++rangeChange;
-  }, false);
+  });
 
   function runNext() {
     let p = params[testIdx];
-    (p["focus"]) ? input.focus() : input.blur();
-    expectChange = p["valueChanged"] == 0 ? expectChange : expectChange + 1;
-    result += parseInt(p["valueChanged"]);
-    sendWheelAndPaint(input, 1, 1, { deltaY: p["deltaY"], deltaMode: p["deltaMode"] }, () => {
+    (p.focus) ? input.focus() : input.blur();
+    expectChange = p.valueChanged == 0 ? expectChange : expectChange + 1;
+    result += parseInt(p.valueChanged);
+    sendWheelAndPaint(input, 1, 1, { deltaY: p.deltaY, deltaMode: p.deltaMode }, () => {
       ok(input.value == result,
          "Handle wheel in range input test-" + testIdx + " expect " + result + " get " + input.value);
       ok(rangeChange == expectChange,
@@ -67,7 +67,7 @@ function runTests() {
   input.addEventListener("input", () => {
     ok(input.value == result,
        "Test-" + testIdx + " receive input event, expect " + result + " get " + input.value);
-  }, false);
+  });
 
   runNext();
 }

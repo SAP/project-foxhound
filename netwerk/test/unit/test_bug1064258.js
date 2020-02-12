@@ -10,8 +10,7 @@
  * - only difference is that we get a newer version of the content from the server during the second request
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -20,15 +19,14 @@ XPCOMUtils.defineLazyGetter(this, "URL", function() {
 var httpServer = null;
 
 function make_channel(url, callback, ctx) {
-  return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
+  return NetUtil.newChannel({ uri: url, loadUsingSystemPrincipal: true });
 }
 
 const responseBody1 = "response body 1";
 const responseBody2a = "response body 2a";
 const responseBody2b = "response body 2b";
 
-function contentHandler1(metadata, response)
-{
+function contentHandler1(metadata, response) {
   response.setHeader("Content-Type", "text/plain");
   response.setHeader("Cache-control", "max-age=999999");
   response.bodyOutputStream.write(responseBody1, responseBody1.length);
@@ -36,8 +34,7 @@ function contentHandler1(metadata, response)
 
 var content2passCount = 0;
 
-function contentHandler2(metadata, response)
-{
+function contentHandler2(metadata, response) {
   response.setHeader("Content-Type", "text/plain");
   response.setHeader("Cache-control", "no-cache");
   switch (content2passCount++) {
@@ -46,8 +43,8 @@ function contentHandler2(metadata, response)
       response.bodyOutputStream.write(responseBody2a, responseBody2a.length);
       break;
     case 1:
-      do_check_true(metadata.hasHeader("If-None-Match"));
-      do_check_eq(metadata.getHeader("If-None-Match"), "testetag");
+      Assert.ok(metadata.hasHeader("If-None-Match"));
+      Assert.equal(metadata.getHeader("If-None-Match"), "testetag");
       response.bodyOutputStream.write(responseBody2b, responseBody2b.length);
       break;
     default:
@@ -55,9 +52,7 @@ function contentHandler2(metadata, response)
   }
 }
 
-
-function run_test()
-{
+function run_test() {
   httpServer = new HttpServer();
   httpServer.registerPathHandler("/content1", contentHandler1);
   httpServer.registerPathHandler("/content2", contentHandler2);
@@ -67,87 +62,79 @@ function run_test()
   do_test_pending();
 }
 
-function run_test_content1a()
-{
+function run_test_content1a() {
   var chan = make_channel(URL + "/content1");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener1a, null));
+  chan.asyncOpen(new ChannelListener(contentListener1a, null));
 }
 
-function contentListener1a(request, buffer)
-{
-  do_check_eq(buffer, responseBody1);
+function contentListener1a(request, buffer) {
+  Assert.equal(buffer, responseBody1);
 
-  asyncOpenCacheEntry(URL + "/content1", "disk", 0, null, cacheCheck1)
+  asyncOpenCacheEntry(URL + "/content1", "disk", 0, null, cacheCheck1);
 }
 
-function cacheCheck1(status, entry)
-{
-  do_check_eq(status, 0);
-  do_check_eq(entry.dataSize, 0);
+function cacheCheck1(status, entry) {
+  Assert.equal(status, 0);
+  Assert.equal(entry.dataSize, 0);
   try {
-    do_check_neq(entry.getMetaDataElement("response-head"), null);
-  }
-  catch (ex) {
+    Assert.notEqual(entry.getMetaDataElement("response-head"), null);
+  } catch (ex) {
     do_throw("Missing response head");
   }
 
   var chan = make_channel(URL + "/content1");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener1b, null, CL_IGNORE_CL));
+  chan.asyncOpen(new ChannelListener(contentListener1b, null, CL_IGNORE_CL));
 }
 
-function contentListener1b(request, buffer)
-{
+function contentListener1b(request, buffer) {
   request.QueryInterface(Ci.nsIHttpChannel);
-  do_check_eq(request.requestMethod, "GET");
-  do_check_eq(request.responseStatus, 200);
-  do_check_eq(request.getResponseHeader("Cache-control"), "max-age=999999");
+  Assert.equal(request.requestMethod, "GET");
+  Assert.equal(request.responseStatus, 200);
+  Assert.equal(request.getResponseHeader("Cache-control"), "max-age=999999");
 
-  do_check_eq(buffer, "");
+  Assert.equal(buffer, "");
   run_test_content2a();
 }
 
 // Now same set of steps but this time for an immediately expiring content.
 
-function run_test_content2a()
-{
+function run_test_content2a() {
   var chan = make_channel(URL + "/content2");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener2a, null));
+  chan.asyncOpen(new ChannelListener(contentListener2a, null));
 }
 
-function contentListener2a(request, buffer)
-{
-  do_check_eq(buffer, responseBody2a);
+function contentListener2a(request, buffer) {
+  Assert.equal(buffer, responseBody2a);
 
-  asyncOpenCacheEntry(URL + "/content2", "disk", 0, null, cacheCheck2)
+  asyncOpenCacheEntry(URL + "/content2", "disk", 0, null, cacheCheck2);
 }
 
-function cacheCheck2(status, entry)
-{
-  do_check_eq(status, 0);
-  do_check_eq(entry.dataSize, 0);
+function cacheCheck2(status, entry) {
+  Assert.equal(status, 0);
+  Assert.equal(entry.dataSize, 0);
   try {
-    do_check_neq(entry.getMetaDataElement("response-head"), null);
-    do_check_true(entry.getMetaDataElement("response-head").match('Etag: testetag'));
-  }
-  catch (ex) {
+    Assert.notEqual(entry.getMetaDataElement("response-head"), null);
+    Assert.ok(
+      entry.getMetaDataElement("response-head").match("etag: testetag")
+    );
+  } catch (ex) {
     do_throw("Missing response head");
   }
 
   var chan = make_channel(URL + "/content2");
   caching = chan.QueryInterface(Ci.nsICachingChannel);
   caching.cacheOnlyMetadata = true;
-  chan.asyncOpen2(new ChannelListener(contentListener2b, null));
+  chan.asyncOpen(new ChannelListener(contentListener2b, null));
 }
 
-function contentListener2b(request, buffer)
-{
-  do_check_eq(buffer, responseBody2b);
+function contentListener2b(request, buffer) {
+  Assert.equal(buffer, responseBody2b);
 
   httpServer.stop(do_test_finished);
 }

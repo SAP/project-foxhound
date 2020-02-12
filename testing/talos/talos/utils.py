@@ -3,49 +3,21 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """Utility functions for Talos"""
+from __future__ import absolute_import
 
 import os
-import time
-import urlparse
-import string
-import urllib
-import json
-import re
 import platform
+import re
+import string
+import time
+import urllib
+import urlparse
 
 from mozlog import get_proxy_logger
 
 # directory of this file for use with interpolatePath()
 here = os.path.dirname(os.path.realpath(__file__))
 LOG = get_proxy_logger()
-
-
-def _get_platform():
-    # get the platform we're interested in. Note that the values
-    # are used in TTest historically, this is why they are not really friendly.
-    # TODO: give some user friendly values
-    if platform.system() == "Linux":
-        return 'linux_'
-    elif platform.system() in ("Windows", "Microsoft"):
-        if '5.1' in platform.version():  # winxp
-            return 'win_'
-        elif '6.1' in platform.version():  # w7
-            return 'w7_'
-        elif '6.2' in platform.version():  # w8
-            return 'w8_'
-        # Bug 1264325 - FIXME: with python 2.7.11: reports win8 instead of 8.1
-        elif '6.3' in platform.version():
-            return 'w8_'
-        # Bug 1264325 - FIXME: with python 2.7.11: reports win8 instead of 10
-        elif '10.0' in platform.version():
-            return 'w8_'
-        else:
-            raise TalosError('unsupported windows version')
-    elif platform.system() == "Darwin":
-        return 'mac_'
-
-
-PLATFORM_TYPE = _get_platform()
 
 
 class Timer(object):
@@ -58,7 +30,7 @@ class Timer(object):
 
     def elapsed(self):
         seconds = time.time() - self._start_time
-        return time.strftime("%H:%M:%S", time.gmtime(seconds))
+        return time.strftime('%H:%M:%S', time.gmtime(seconds))
 
 
 class TalosError(Exception):
@@ -145,12 +117,11 @@ def parse_pref(value):
     return Preferences.cast(value)
 
 
-def GenerateBrowserCommandLine(browser_path, extra_args, profile_dir,
-                               url, profiling_info=None):
+def GenerateBrowserCommandLine(browser_path, extra_args, profile_dir, url, profiling_info=None):
     # TODO: allow for spaces in file names on Windows
-
     command_args = [browser_path.strip()]
-    if platform.system() == "Darwin":
+
+    if platform.system() == 'Darwin':
         command_args.extend(['-foreground'])
 
     if isinstance(extra_args, list):
@@ -162,19 +133,21 @@ def GenerateBrowserCommandLine(browser_path, extra_args, profile_dir,
     command_args.extend(['-profile', profile_dir])
 
     if profiling_info:
-        # For pageloader, buildCommandLine() puts the -tp* command line
-        # options into the url argument.
-        # It would be better to assemble all -tp arguments in one place,
-        # but we don't have the profiling information in buildCommandLine().
-        if url.find(' -tp') != -1:
-            command_args.extend(['-tpprofilinginfo',
-                                 json.dumps(profiling_info)])
-        elif url.find('?') != -1:
-            url += '&' + urllib.urlencode(profiling_info)
-        else:
-            url += '?' + urllib.urlencode(profiling_info)
+        # pageloader tests use a tpmanifest browser pref instead of passing in a manifest url
+        # profiling info is handled differently for pageloader vs non-pageloader (startup) tests
+        # for pageloader the profiling info was mirrored already in an env var; so here just
+        # need to setup profiling info for startup / non-pageloader tests
+        if url is not None:
+            # for non-pageloader/non-manifest tests the profiling info is added to the test url
+            if url.find('?') != -1:
+                url += '&' + urllib.urlencode(profiling_info)
+            else:
+                url += '?' + urllib.urlencode(profiling_info)
+            command_args.extend(url.split(' '))
 
-    command_args.extend(url.split(' '))
+    # if there's a url i.e. startup test / non-manifest test, add it to the cmd line args
+    if url is not None:
+        command_args.extend(url.split(' '))
 
     return command_args
 
@@ -189,3 +162,10 @@ def indexed_items(itr):
         yield prev_i, prev_val
         prev_i, prev_val = i, val
     yield -1, prev_val
+
+
+def run_in_debug_mode(browser_config):
+    if browser_config.get('debug') or browser_config.get('debugger') or \
+            browser_config.get('debugg_args'):
+        return True
+    return False

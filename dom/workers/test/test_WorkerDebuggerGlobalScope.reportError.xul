@@ -7,10 +7,8 @@
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         onload="test();">
 
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
-  <script type="application/javascript"
-          src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
   <script type="application/javascript" src="dom_worker_helper.js"/>
 
   <script type="application/javascript">
@@ -21,7 +19,7 @@
     const DEBUGGER_URL = BASE_URL + "WorkerDebuggerGlobalScope.reportError_debugger.js";
 
     function test() {
-      Task.spawn(function* () {
+      (async function() {
         SimpleTest.waitForExplicitFinish();
 
         info("Create a worker that creates a child worker, wait for their " +
@@ -31,7 +29,7 @@
           waitForRegister(CHILD_WORKER_URL, DEBUGGER_URL)
         ]);
         let worker = new Worker(WORKER_URL);
-        let [dbg, childDbg] = yield promise;
+        let [dbg, childDbg] = await promise;
 
         worker.onmessage = function () {
           ok(false, "Debugger error events should not be fired at workers.");
@@ -41,7 +39,7 @@
              "worker debugger to report an error.");
         promise = waitForDebuggerError(dbg);
         dbg.postMessage("report");
-        let error = yield promise;
+        let error = await promise;
         is(error.fileName, DEBUGGER_URL,
            "fileName should be name of file from which error is reported.");
         is(error.lineNumber, 6,
@@ -52,7 +50,7 @@
              "worker debugger to throw an error.");
         promise = waitForDebuggerError(dbg);
         dbg.postMessage("throw");
-        error = yield promise;
+        error = await promise;
         is(error.fileName, DEBUGGER_URL,
            "fileName should be name of file from which error is thrown");
         is(error.lineNumber, 9,
@@ -63,7 +61,7 @@
              "the child worker debugger to report an error.");
         promise = waitForDebuggerError(childDbg);
         childDbg.postMessage("report");
-        error = yield promise;
+        error = await promise;
         is(error.fileName, DEBUGGER_URL,
            "fileName should be name of file from which error is reported.");
         is(error.lineNumber, 6,
@@ -74,7 +72,7 @@
              "the child worker debugger to throw an error.");
         promise = waitForDebuggerError(childDbg);
         childDbg.postMessage("throw");
-        error = yield promise;
+        error = await promise;
         is(error.fileName, DEBUGGER_URL,
            "fileName should be name of file from which error is thrown");
         is(error.lineNumber, 9,
@@ -82,7 +80,7 @@
         is(error.message, "Error: thrown", "message should be Error: thrown");
 
         SimpleTest.finish();
-      });
+      })();
     }
 
   ]]>

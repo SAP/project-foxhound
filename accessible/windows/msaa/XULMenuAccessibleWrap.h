@@ -11,17 +11,20 @@
 namespace mozilla {
 namespace a11y {
 
-class XULMenuitemAccessibleWrap : public XULMenuitemAccessible
-{
-public:
+class XULMenuitemAccessibleWrap : public XULMenuitemAccessible {
+ public:
   XULMenuitemAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc);
   virtual ~XULMenuitemAccessibleWrap() {}
 
   // nsIAccessible
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
+
+  virtual /* [id][propget] */ HRESULT STDMETHODCALLTYPE get_accKeyboardShortcut(
+      /* [optional][in] */ VARIANT varChild,
+      /* [retval][out] */ BSTR __RPC_FAR* pszKeyboardShortcut) override;
 };
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif

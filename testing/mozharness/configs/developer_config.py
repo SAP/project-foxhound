@@ -25,13 +25,6 @@ config = {
     "exes": {
         "gittool.py": os.path.join(LOCAL_WORKDIR, "gittool.py"),
     },
-    "env": {
-        "PIP_TRUSTED_HOST": "pypi.pub.build.mozilla.org",
-    },
-
-    # Pip
-    "find_links": ["http://pypi.pub.build.mozilla.org/pub"],
-    "pip_index": False,
 
     # Talos related
     "python_webserver": True,
@@ -40,13 +33,13 @@ config = {
     "postflight_run_cmd_suites": [],
 
     # Tooltool related
-    "download_tooltool": True,
     "tooltool_cache": os.path.join(LOCAL_WORKDIR, "builds/tooltool_cache"),
     "tooltool_cache_path": os.path.join(LOCAL_WORKDIR, "builds/tooltool_cache"),
+    "tooltool_authentication_file": os.path.join(LOCAL_WORKDIR, "relengapi.tok"),
 
     # VCS tools
     "gittool.py": 'http://hg.mozilla.org/build/puppet/raw-file/faaf5abd792e/modules/packages/files/gittool.py',
 
     # Android related
-    "host_utils_url": "https://api.pub.build.mozilla.org/tooltool/sha512/372c89f9dccaf5ee3b9d35fd1cfeb089e1e5db3ff1c04e35aa3adc8800bc61a2ae10e321f37ae7bab20b56e60941f91bb003bcb22035902a73d70872e7bd3282",
+    "host_utils_url": "https://tooltool.mozilla-releng.net/sha512/372c89f9dccaf5ee3b9d35fd1cfeb089e1e5db3ff1c04e35aa3adc8800bc61a2ae10e321f37ae7bab20b56e60941f91bb003bcb22035902a73d70872e7bd3282",
 }

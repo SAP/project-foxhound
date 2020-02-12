@@ -7,23 +7,38 @@
 
 /* eslint-disable mozilla/balanced-listeners */
 
-/* exported SubprocessImpl */
-
-/* globals BaseProcess, PromiseWorker */
-
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
-
 var EXPORTED_SYMBOLS = ["SubprocessImpl"];
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/ctypes.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/subprocess/subprocess_common.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { BaseProcess, PromiseWorker } = ChromeUtils.import(
+  "resource://gre/modules/subprocess/subprocess_common.jsm"
+);
 
-Services.scriptloader.loadSubScript("resource://gre/modules/subprocess/subprocess_shared.js", this);
-Services.scriptloader.loadSubScript("resource://gre/modules/subprocess/subprocess_shared_win.js", this);
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "env",
+  "@mozilla.org/process/environment;1",
+  "nsIEnvironment"
+);
+
+/* import-globals-from subprocess_shared.js */
+/* import-globals-from subprocess_shared_win.js */
+Services.scriptloader.loadSubScript(
+  "resource://gre/modules/subprocess/subprocess_shared.js",
+  this
+);
+Services.scriptloader.loadSubScript(
+  "resource://gre/modules/subprocess/subprocess_shared_win.js",
+  this
+);
 
 class WinPromiseWorker extends PromiseWorker {
   constructor(...args) {
@@ -31,10 +46,18 @@ class WinPromiseWorker extends PromiseWorker {
 
     this.signalEvent = libc.CreateSemaphoreW(null, 0, 32, null);
 
-    this.call("init", [{
-      breakAwayFromJob: !AppConstants.isPlatformAndVersionAtLeast("win", "6.2"),
-      signalEvent: String(ctypes.cast(this.signalEvent, ctypes.uintptr_t).value),
-    }]);
+    this.call("init", [
+      {
+        breakAwayFromJob: !AppConstants.isPlatformAndVersionAtLeast(
+          "win",
+          "6.2"
+        ),
+        comspec: env.get("COMSPEC"),
+        signalEvent: String(
+          ctypes.cast(this.signalEvent, ctypes.uintptr_t).value
+        ),
+      },
+    ]);
   }
 
   signalWorker() {
@@ -64,7 +87,7 @@ var SubprocessWin = {
     return Process.create(options);
   },
 
-  * getEnvironment() {
+  *getEnvironment() {
     let env = libc.GetEnvironmentStringsW();
     try {
       for (let p = env, q = env; ; p = p.increment()) {
@@ -91,18 +114,18 @@ var SubprocessWin = {
     }
   },
 
-  isExecutableFile: Task.async(function* (path) {
+  async isExecutableFile(path) {
     if (!OS.Path.split(path).absolute) {
       return false;
     }
 
     try {
-      let info = yield OS.File.stat(path);
+      let info = await OS.File.stat(path);
       return !(info.isDir || info.isSymlink);
     } catch (e) {
       return false;
     }
-  }),
+  },
 
   /**
    * Searches for the given executable file in the system executable
@@ -120,13 +143,15 @@ var SubprocessWin = {
    *        in the search.
    * @returns {Promise<string>}
    */
-  pathSearch: Task.async(function* (bin, environment) {
+  async pathSearch(bin, environment) {
     let split = OS.Path.split(bin);
     if (split.absolute) {
-      if (yield this.isExecutableFile(bin)) {
+      if (await this.isExecutableFile(bin)) {
         return bin;
       }
-      let error = new Error(`File at path "${bin}" does not exist, or is not a normal file`);
+      let error = new Error(
+        `File at path "${bin}" does not exist, or is not a normal file`
+      );
       error.errorCode = SubprocessConstants.ERROR_BAD_EXECUTABLE;
       throw error;
     }
@@ -143,14 +168,14 @@ var SubprocessWin = {
     for (let dir of dirs) {
       let path = OS.Path.join(dir, bin);
 
-      if (yield this.isExecutableFile(path)) {
+      if (await this.isExecutableFile(path)) {
         return path;
       }
 
       for (let ext of exts) {
         let file = path + ext;
 
-        if (yield this.isExecutableFile(file)) {
+        if (await this.isExecutableFile(file)) {
           return file;
         }
       }
@@ -158,7 +183,7 @@ var SubprocessWin = {
     let error = new Error(`Executable not found: ${bin}`);
     error.errorCode = SubprocessConstants.ERROR_BAD_EXECUTABLE;
     throw error;
-  }),
+  },
 };
 
 var SubprocessImpl = SubprocessWin;

@@ -7,13 +7,13 @@ load 526875-1.svg
 load 526875-2.svg
 load 529387-1.xhtml
 load 531550-1.svg
-load 537157-1.svg
+skip-if(!xbl) load 537157-1.svg
 load 541297-1.svg
 load 547333-1.svg
 load 548899-1.svg
 load 551620-1.svg
 load 554141-1.svg
-load 554202-1.svg
+skip-if(!xbl) load 554202-1.svg
 load 554202-2.svg
 load 555026-1.svg
 load 556841-1.svg
@@ -51,4 +51,13 @@ load 697640-1.svg
 load 699325-1.svg
 load 709907-1.svg
 load 720103-1.svg
+load 849593-1.xhtml
 load 1010681-1.svg
+load 1322770-1.svg
+load 1322849-1.svg
+load 1343357-1.html
+load 1375596-1.svg
+load 1402547-1.html
+load 1411963-1.html
+load 1413319-1.html
+load 1535388-1.html

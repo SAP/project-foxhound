@@ -1,4 +1,3 @@
-if (!('oomTest' in this))
-    quit();
+// |jit-test| skip-if: !('oomTest' in this)
 
-oomTest(function() 1e300)
+oomTest(function() { return 1e300; })

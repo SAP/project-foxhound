@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,23 +17,20 @@ namespace dom {
 
 class PresentationConnection;
 
-class ControllerConnectionCollection final
-{
-public:
+class ControllerConnectionCollection final {
+ public:
   static ControllerConnectionCollection* GetSingleton();
 
-  void AddConnection(PresentationConnection* aConnection,
-                     const uint8_t aRole);
+  void AddConnection(PresentationConnection* aConnection, const uint8_t aRole);
 
   void RemoveConnection(PresentationConnection* aConnection,
                         const uint8_t aRole);
 
-  already_AddRefed<PresentationConnection>
-  FindConnection(uint64_t aWindowId,
-                 const nsAString& aId,
-                 const uint8_t aRole);
+  already_AddRefed<PresentationConnection> FindConnection(uint64_t aWindowId,
+                                                          const nsAString& aId,
+                                                          const uint8_t aRole);
 
-private:
+ private:
   friend class StaticAutoPtr<ControllerConnectionCollection>;
 
   ControllerConnectionCollection();
@@ -43,7 +40,7 @@ private:
   nsTArray<WeakPtr<PresentationConnection>> mConnections;
 };
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace dom
+}  // namespace mozilla
 
-#endif // mozilla_dom_ControllerConnectionCollection_h
+#endif  // mozilla_dom_ControllerConnectionCollection_h

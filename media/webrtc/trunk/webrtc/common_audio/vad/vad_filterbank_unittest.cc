@@ -10,16 +10,17 @@
 
 #include <stdlib.h>
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "webrtc/common_audio/vad/vad_unittest.h"
-#include "webrtc/typedefs.h"
+#include "common_audio/vad/vad_unittest.h"
+#include "test/gtest.h"
+#include "typedefs.h"  // NOLINT(build/include)
 
 extern "C" {
-#include "webrtc/common_audio/vad/vad_core.h"
-#include "webrtc/common_audio/vad/vad_filterbank.h"
+#include "common_audio/vad/vad_core.h"
+#include "common_audio/vad/vad_filterbank.h"
 }
 
-namespace {
+namespace webrtc {
+namespace test {
 
 const int kNumValidFrameLengths = 3;
 
@@ -38,8 +39,8 @@ TEST_F(VadTest, vad_filterbank) {
   // Construct a speech signal that will trigger the VAD in all modes. It is
   // known that (i * i) will wrap around, but that doesn't matter in this case.
   int16_t speech[kMaxFrameLength];
-  for (int16_t i = 0; i < kMaxFrameLength; ++i) {
-    speech[i] = (i * i);
+  for (size_t i = 0; i < kMaxFrameLength; ++i) {
+    speech[i] = static_cast<int16_t>(i * i);
   }
 
   int frame_length_index = 0;
@@ -73,7 +74,7 @@ TEST_F(VadTest, vad_filterbank) {
 
   // Verify that all ones in gives kOffsetVector out. Any other constant input
   // will have a small impact in the sub bands.
-  for (int16_t i = 0; i < kMaxFrameLength; ++i) {
+  for (size_t i = 0; i < kMaxFrameLength; ++i) {
     speech[i] = 1;
   }
   for (size_t j = 0; j < kFrameLengthsSize; ++j) {
@@ -89,4 +90,5 @@ TEST_F(VadTest, vad_filterbank) {
 
   free(self);
 }
-}  // namespace
+}  // namespace test
+}  // namespace webrtc

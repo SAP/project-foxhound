@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,31 +12,61 @@
 
 class nsTableFrame;
 
-// Factory methods for creating MathML objects
-nsIFrame* NS_NewMathMLTokenFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmoFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmrowFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmpaddedFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmspaceFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmsFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmfencedFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmfracFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmsubFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmsupFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmsubsupFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmunderoverFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmmultiscriptsFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsContainerFrame* NS_NewMathMLmtableOuterFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsContainerFrame* NS_NewMathMLmtableFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsContainerFrame* NS_NewMathMLmtrFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsContainerFrame* NS_NewMathMLmtdFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, nsTableFrame* aTableFrame);
-nsContainerFrame* NS_NewMathMLmtdInnerFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmsqrtFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmrootFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmactionFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLmencloseFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsIFrame* NS_NewMathMLsemanticsFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+namespace mozilla {
+class PresShell;
+}  // namespace mozilla
 
-nsContainerFrame* NS_NewMathMLmathBlockFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
-nsContainerFrame* NS_NewMathMLmathInlineFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
+// Factory methods for creating MathML objects
+nsIFrame* NS_NewMathMLTokenFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmoFrame(mozilla::PresShell* aPresShell,
+                              mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmrowFrame(mozilla::PresShell* aPresShell,
+                                mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmpaddedFrame(mozilla::PresShell* aPresShell,
+                                   mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmspaceFrame(mozilla::PresShell* aPresShell,
+                                  mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmsFrame(mozilla::PresShell* aPresShell,
+                              mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmfencedFrame(mozilla::PresShell* aPresShell,
+                                   mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmfracFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmsubFrame(mozilla::PresShell* aPresShell,
+                                mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmsupFrame(mozilla::PresShell* aPresShell,
+                                mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmsubsupFrame(mozilla::PresShell* aPresShell,
+                                   mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmunderoverFrame(mozilla::PresShell* aPresShell,
+                                      mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmmultiscriptsFrame(mozilla::PresShell* aPresShell,
+                                         mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewMathMLmtableOuterFrame(mozilla::PresShell* aPresShell,
+                                               mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewMathMLmtableFrame(mozilla::PresShell* aPresShell,
+                                          mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewMathMLmtrFrame(mozilla::PresShell* aPresShell,
+                                       mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewMathMLmtdFrame(mozilla::PresShell* aPresShell,
+                                       mozilla::ComputedStyle* aStyle,
+                                       nsTableFrame* aTableFrame);
+nsContainerFrame* NS_NewMathMLmtdInnerFrame(mozilla::PresShell* aPresShell,
+                                            mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmsqrtFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmrootFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmactionFrame(mozilla::PresShell* aPresShell,
+                                   mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLmencloseFrame(mozilla::PresShell* aPresShell,
+                                    mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewMathMLsemanticsFrame(mozilla::PresShell* aPresShell,
+                                     mozilla::ComputedStyle* aStyle);
+
+nsContainerFrame* NS_NewMathMLmathBlockFrame(mozilla::PresShell* aPresShell,
+                                             mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewMathMLmathInlineFrame(mozilla::PresShell* aPresShell,
+                                              mozilla::ComputedStyle* aStyle);
 #endif /* nsMathMLParts_h___ */

@@ -88,7 +88,7 @@ TestRunner._lastAssertionCount = 0;
 TestRunner._expectedMinAsserts = 0;
 TestRunner._expectedMaxAsserts = 0;
 
-TestRunner.timeout = 5 * 60 * 1000; // 5 minutes.
+TestRunner.timeout = 300 * 1000; // 5 minutes.
 TestRunner.maxTimeouts = 4; // halt testing after too many timeouts
 TestRunner.runSlower = false;
 TestRunner.dumpOutputDirectory = "";
@@ -97,6 +97,7 @@ TestRunner.dumpDMDAfterTest = false;
 TestRunner.slowestTestTime = 0;
 TestRunner.slowestTestURL = "";
 TestRunner.interactiveDebugger = false;
+TestRunner.cleanupCrashes = false;
 
 TestRunner._expectingProcessCrash = false;
 TestRunner._structuredFormatter = new StructuredFormatter();
@@ -108,6 +109,12 @@ TestRunner._numTimeouts = 0;
 TestRunner._currentTestStartTime = new Date().valueOf();
 TestRunner._timeoutFactor = 1;
 
+/**
+* Used to collect code coverage with the js debugger.
+*/
+TestRunner.jscovDirPrefix = "";
+var coverageCollector = {};
+
 TestRunner._checkForHangs = function() {
   function reportError(win, msg) {
     if ("SimpleTest" in win) {
@@ -117,12 +124,12 @@ TestRunner._checkForHangs = function() {
     }
   }
 
-  function killTest(win) {
+  async function killTest(win) {
     if ("SimpleTest" in win) {
-      win.SimpleTest.timeout();
+      await win.SimpleTest.timeout();
       win.SimpleTest.finish();
     } else if ("W3CTest" in win) {
-      win.W3CTest.timeout();
+      await win.W3CTest.timeout();
     }
   }
 
@@ -147,7 +154,14 @@ TestRunner._checkForHangs = function() {
 
       // Add a little (1 second) delay to ensure automation.py has time to notice
       // "Test timed out" log and process it (= take a screenshot).
-      setTimeout(function delayedKillTest() { killTest(frameWindow); }, 1000);
+      setTimeout(async function delayedKillTest() {
+        try {
+          await killTest(frameWindow);
+        } catch(e) {
+          reportError(frameWindow, "Test error: " + e);
+        }
+      }, 1000);
+
 
       if (TestRunner._haltTests)
         return;
@@ -202,7 +216,7 @@ TestRunner.setFailureFile = function(fileName) {
 
 TestRunner.generateFailureList = function () {
     if (TestRunner._failureFile) {
-        var failures = new SpecialPowersLogger(TestRunner._failureFile);
+        var failures = new MozillaFileLogger(TestRunner._failureFile);
         failures.log(JSON.stringify(TestRunner._failedTests));
         failures.close();
     }
@@ -305,7 +319,7 @@ TestRunner._makeIframe = function (url, retry) {
         SpecialPowers.focus();
         iframe.focus();
         if (retry < 3) {
-            window.setTimeout('TestRunner._makeIframe("'+url+'", '+(retry+1)+')', 1000);
+            window.setTimeout(function() {TestRunner._makeIframe(url, retry+1)}, 1000);
             return;
         }
 
@@ -352,20 +366,28 @@ TestRunner.runTests = function (/*url...*/) {
 
     SpecialPowers.registerProcessCrashObservers();
 
-    TestRunner._urls = flattenArguments(arguments);
-
-    var singleTestRun = this._urls.length <= 1 && TestRunner.repeat <= 1;
-    TestRunner.showTestReport = singleTestRun;
-    var frame = $('testframe');
-    frame.src = "";
-    if (singleTestRun) {
-        // Can't use document.body because this runs in a XUL doc as well...
-        var body = document.getElementsByTagName("body")[0];
-        body.setAttribute("singletest", "true");
-        frame.removeAttribute("scrolling");
+    // Initialize code coverage
+    if (TestRunner.jscovDirPrefix != "") {
+        var CoverageCollector = SpecialPowers.Cu.import("resource://testing-common/CoverageUtils.jsm", {}).CoverageCollector;
+        coverageCollector = new CoverageCollector(TestRunner.jscovDirPrefix);
     }
-    TestRunner._checkForHangs();
-    TestRunner.runNextTest();
+
+    SpecialPowers.requestResetCoverageCounters().then(() => {
+        TestRunner._urls = flattenArguments(arguments);
+
+        var singleTestRun = this._urls.length <= 1 && TestRunner.repeat <= 1;
+        TestRunner.showTestReport = singleTestRun;
+        var frame = $('testframe');
+        frame.src = "";
+        if (singleTestRun) {
+            // Can't use document.body because this runs in a XUL doc as well...
+            var body = document.getElementsByTagName("body")[0];
+            body.setAttribute("singletest", "true");
+            frame.removeAttribute("scrolling");
+        }
+        TestRunner._checkForHangs();
+        TestRunner.runNextTest();
+    });
 };
 
 /**
@@ -436,10 +458,7 @@ TestRunner.runNextTest = function() {
         {
             // No |$('testframe').contentWindow|, so manually update: ...
             // ... the log,
-            TestRunner.structuredLogger.testEnd('SimpleTest/TestRunner.js',
-                                                "ERROR",
-                                                "OK",
-                                                "No checks actually run");
+            TestRunner.structuredLogger.error("SimpleTest/TestRunner.js | No checks actually run");
             // ... the count,
             $("fail-count").innerHTML = 1;
             // ... the indicator.
@@ -447,8 +466,6 @@ TestRunner.runNextTest = function() {
             indicator.innerHTML = "Status: Fail (No checks actually run)";
             indicator.style.backgroundColor = "red";
         }
-
-        SpecialPowers.unregisterProcessCrashObservers();
 
         let e10sMode = SpecialPowers.isMainProcess() ? "non-e10s" : "e10s";
 
@@ -459,8 +476,10 @@ TestRunner.runNextTest = function() {
         TestRunner.structuredLogger.info("Mode:    " + e10sMode);
         TestRunner.structuredLogger.info("Slowest: " + TestRunner.slowestTestTime + 'ms - ' + TestRunner.slowestTestURL);
 
-        // If we are looping, don't send this cause it closes the log file
+        // If we are looping, don't send this cause it closes the log file,
+        // also don't unregister the crash observers until we're done.
         if (TestRunner.repeat === 0) {
+          SpecialPowers.unregisterProcessCrashObservers();
           TestRunner.structuredLogger.info("SimpleTest FINISHED");
         }
 
@@ -481,8 +500,12 @@ TestRunner.runNextTest = function() {
 
           if (TestRunner.onComplete)
             TestRunner.onComplete();
-       }
-       TestRunner.generateFailureList();
+        }
+        TestRunner.generateFailureList();
+
+        if (TestRunner.jscovDirPrefix != "") {
+          coverageCollector.finalize();
+        }
     }
 };
 
@@ -494,6 +517,11 @@ TestRunner.expectChildProcessCrash = function() {
  * This stub is called by SimpleTest when a test is finished.
 **/
 TestRunner.testFinished = function(tests) {
+    // Need to track subtests recorded here separately or else they'll
+    // trigger the `result after SimpleTest.finish()` error.
+    var extraTests = [];
+    var result = "OK";
+
     // Prevent a test from calling finish() multiple times before we
     // have a chance to unload it.
     if (TestRunner._currentTest == TestRunner._lastTestFinished &&
@@ -505,102 +533,127 @@ TestRunner.testFinished = function(tests) {
         TestRunner.updateUI([{ result: false }]);
         return;
     }
-    TestRunner._lastTestFinished = TestRunner._currentTest;
-    TestRunner._loopIsRestarting = false;
 
-    // TODO : replace this by a function that returns the mem data as an object
-    // that's dumped later with the test_end message
-    MemoryStats.dump(TestRunner._currentTest,
-                     TestRunner.currentTestURL,
-                     TestRunner.dumpOutputDirectory,
-                     TestRunner.dumpAboutMemoryAfterTest,
-                     TestRunner.dumpDMDAfterTest);
+    if (TestRunner.jscovDirPrefix != "") {
+        coverageCollector.recordTestCoverage(TestRunner.currentTestURL);
+    }
 
-    function cleanUpCrashDumpFiles() {
-        if (!SpecialPowers.removeExpectedCrashDumpFiles(TestRunner._expectingProcessCrash)) {
-            TestRunner.structuredLogger.testEnd(TestRunner.currentTestURL,
-                                                "ERROR",
-                                                "OK",
-                                                "This test did not leave any crash dumps behind, but we were expecting some!");
-            tests.push({ result: false });
+    SpecialPowers.requestDumpCoverageCounters().then(() => {
+        TestRunner._lastTestFinished = TestRunner._currentTest;
+        TestRunner._loopIsRestarting = false;
+
+        // TODO : replace this by a function that returns the mem data as an object
+        // that's dumped later with the test_end message
+        MemoryStats.dump(TestRunner._currentTest,
+                         TestRunner.currentTestURL,
+                         TestRunner.dumpOutputDirectory,
+                         TestRunner.dumpAboutMemoryAfterTest,
+                         TestRunner.dumpDMDAfterTest);
+
+        async function cleanUpCrashDumpFiles() {
+            if (!await SpecialPowers.removeExpectedCrashDumpFiles(TestRunner._expectingProcessCrash)) {
+                var subtest = "expected-crash-dump-missing";
+                TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL,
+                                                       subtest,
+                                                       "ERROR",
+                                                       "PASS",
+                                                       "This test did not leave any crash dumps behind, but we were expecting some!");
+                extraTests.push({ name: subtest, result: false });
+                result = "ERROR";
+            }
+
+            var unexpectedCrashDumpFiles =
+                await SpecialPowers.findUnexpectedCrashDumpFiles();
+            TestRunner._expectingProcessCrash = false;
+            if (unexpectedCrashDumpFiles.length) {
+                var subtest = "unexpected-crash-dump-found";
+                TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL,
+                                                       subtest,
+                                                       "ERROR",
+                                                       "PASS",
+                                                       "This test left crash dumps behind, but we " +
+                                                       "weren't expecting it to!",
+                                                       null,
+                                                       {unexpected_crashdump_files: unexpectedCrashDumpFiles});
+                extraTests.push({ name: subtest, result: false });
+                result = "CRASH";
+                unexpectedCrashDumpFiles.sort().forEach(function(aFilename) {
+                    TestRunner.structuredLogger.info("Found unexpected crash dump file " +
+                                                     aFilename + ".");
+                });
+            }
+
+            if (TestRunner.cleanupCrashes) {
+                if (await SpecialPowers.removePendingCrashDumpFiles()) {
+                    TestRunner.structuredLogger.info("This test left pending crash dumps");
+                }
+            }
         }
-        var unexpectedCrashDumpFiles =
-            SpecialPowers.findUnexpectedCrashDumpFiles();
-        TestRunner._expectingProcessCrash = false;
-        if (unexpectedCrashDumpFiles.length) {
+
+        function runNextTest() {
+            if (TestRunner.currentTestURL != TestRunner.getLoadedTestURL()) {
+                TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL,
+                                                       TestRunner.getLoadedTestURL(),
+                                                       "FAIL",
+                                                       "PASS",
+                                                       "finished in a non-clean fashion, probably" +
+                                                       " because it didn't call SimpleTest.finish()",
+                                                       {loaded_test_url: TestRunner.getLoadedTestURL()});
+                extraTests.push({ name: "clean-finish", result: false });
+                result = result != "CRASH" ? "ERROR": result
+            }
+
+            var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
+
             TestRunner.structuredLogger.testEnd(TestRunner.currentTestURL,
-                                                "ERROR",
+                                                result,
                                                 "OK",
-                                                "This test left crash dumps behind, but we " +
-                                                "weren't expecting it to!",
-                                                {unexpected_crashdump_files: unexpectedCrashDumpFiles});
-            tests.push({ result: false });
-            unexpectedCrashDumpFiles.sort().forEach(function(aFilename) {
-                TestRunner.structuredLogger.info("Found unexpected crash dump file " +
-                                                 aFilename + ".");
+                                                "Finished in " + runtime + "ms",
+                                                {runtime: runtime}
+            );
+
+            if (TestRunner.slowestTestTime < runtime && TestRunner._timeoutFactor >= 1) {
+              TestRunner.slowestTestTime = runtime;
+              TestRunner.slowestTestURL = TestRunner.currentTestURL;
+            }
+
+            TestRunner.updateUI(tests.concat(extraTests));
+
+            // Don't show the interstitial if we just run one test with no repeats:
+            if (TestRunner._urls.length == 1 && TestRunner.repeat <= 1) {
+                TestRunner.testUnloaded();
+                return;
+            }
+
+            var interstitialURL;
+            if ($('testframe').contentWindow.location.protocol == "chrome:") {
+                interstitialURL = "tests/SimpleTest/iframe-between-tests.html";
+            } else {
+                interstitialURL = "/tests/SimpleTest/iframe-between-tests.html";
+            }
+            // check if there were test run after SimpleTest.finish, which should never happen
+            $('testframe').contentWindow.addEventListener('unload', function() {
+               var testwin = $('testframe').contentWindow;
+               if (testwin.SimpleTest && testwin.SimpleTest._tests.length != testwin.SimpleTest.testsLength) {
+                 var wrongtestlength = testwin.SimpleTest._tests.length - testwin.SimpleTest.testsLength;
+                 var wrongtestname = '';
+                 for (var i = 0; i < wrongtestlength; i++) {
+                   wrongtestname = testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i].name;
+                   TestRunner.structuredLogger.error(TestRunner.currentTestURL + " logged result after SimpleTest.finish(): " + wrongtestname);
+                 }
+                 TestRunner.updateUI([{ result: false }]);
+               }
             });
-        }
-    }
-
-    function runNextTest() {
-        if (TestRunner.currentTestURL != TestRunner.getLoadedTestURL()) {
-            TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL,
-                                                   TestRunner.getLoadedTestURL(),
-                                                   "FAIL",
-                                                   "PASS",
-                                                   "finished in a non-clean fashion, probably" +
-                                                   " because it didn't call SimpleTest.finish()",
-                                                   {loaded_test_url: TestRunner.getLoadedTestURL()});
-            tests.push({ result: false });
+            TestRunner._makeIframe(interstitialURL, 0);
         }
 
-        var runtime = new Date().valueOf() - TestRunner._currentTestStartTime;
-
-        TestRunner.structuredLogger.testEnd(TestRunner.currentTestURL,
-                                            "OK",
-                                            undefined,
-                                            "Finished in " + runtime + "ms",
-                                            {runtime: runtime}
-        );
-
-        if (TestRunner.slowestTestTime < runtime && TestRunner._timeoutFactor >= 1) {
-          TestRunner.slowestTestTime = runtime;
-          TestRunner.slowestTestURL = TestRunner.currentTestURL;
-        }
-
-        TestRunner.updateUI(tests);
-
-        // Don't show the interstitial if we just run one test with no repeats:
-        if (TestRunner._urls.length == 1 && TestRunner.repeat <= 1) {
-            TestRunner.testUnloaded();
-            return;
-        }
-
-        var interstitialURL;
-        if ($('testframe').contentWindow.location.protocol == "chrome:") {
-            interstitialURL = "tests/SimpleTest/iframe-between-tests.html";
-        } else {
-            interstitialURL = "/tests/SimpleTest/iframe-between-tests.html";
-        }
-        // check if there were test run after SimpleTest.finish, which should never happen
-        $('testframe').contentWindow.addEventListener('unload', function() {
-           var testwin = $('testframe').contentWindow;
-           if (testwin.SimpleTest && testwin.SimpleTest._tests.length != testwin.SimpleTest.testsLength) {
-             var wrongtestlength = testwin.SimpleTest._tests.length - testwin.SimpleTest.testsLength;
-             var wrongtestname = '';
-             for (var i = 0; i < wrongtestlength; i++) {
-               wrongtestname = testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i].name;
-               TestRunner.structuredLogger.testStatus(TestRunner.currentTestURL, wrongtestname, 'FAIL', 'PASS', "Result logged after SimpleTest.finish()");
-             }
-             TestRunner.updateUI([{ result: false }]);
-           }
-        } , false);
-        TestRunner._makeIframe(interstitialURL, 0);
-    }
-
-    SpecialPowers.executeAfterFlushingMessageQueue(function() {
-        cleanUpCrashDumpFiles();
-        SpecialPowers.flushPermissions(function () { SpecialPowers.flushPrefEnv(runNextTest); });
+        SpecialPowers.executeAfterFlushingMessageQueue(async function() {
+          await SpecialPowers.waitForCrashes(TestRunner._expectingProcessCrash);
+          await cleanUpCrashDumpFiles();
+          await SpecialPowers.flushPermissions();
+          await SpecialPowers.flushPrefEnv();
+          runNextTest();
+        });
     });
 };
 
@@ -613,34 +666,19 @@ TestRunner.testUnloaded = function() {
         var numAsserts = newAssertionCount - TestRunner._lastAssertionCount;
         TestRunner._lastAssertionCount = newAssertionCount;
 
-        var url = TestRunner.getNextUrl();
         var max = TestRunner._expectedMaxAsserts;
         var min = TestRunner._expectedMinAsserts;
-        if (numAsserts > max) {
-            TestRunner.structuredLogger.testEnd(url,
-                                                "ERROR",
-                                                "OK",
-                                                "Assertion count " + numAsserts + " is greater than expected range " +
-                                                min + "-" + max + " assertions.",
-                                                {assertions: numAsserts, min_asserts: min, max_asserts: max});
-            TestRunner.updateUI([{ result: false }]);
-        } else if (numAsserts < min) {
-            TestRunner.structuredLogger.testEnd(url,
-                                                "OK",
-                                                "ERROR",
-                                                "Assertion count " + numAsserts + " is less than expected range " +
-                                                min + "-" + max + " assertions.",
-                                                {assertions: numAsserts, min_asserts: min, max_asserts: max});
-            TestRunner.updateUI([{ result: false }]);
-        } else if (numAsserts > 0) {
-            TestRunner.structuredLogger.testEnd(url,
-                                                "ERROR",
-                                                "ERROR",
-                                                "Assertion count " + numAsserts + " within expected range " +
-                                                min + "-" + max + " assertions.",
-                                                {assertions: numAsserts, min_asserts: min, max_asserts: max});
+        if (Array.isArray(TestRunner.expected)) {
+            // Accumulate all assertion counts recorded in the failure pattern file.
+            let additionalAsserts = TestRunner.expected.reduce((acc, [pat, count]) => {
+                return pat == "ASSERTION" ? acc + count : acc;
+            }, 0);
+            min += additionalAsserts;
+            max += additionalAsserts;
         }
+        TestRunner.structuredLogger.assertionCount(TestRunner.currentTestURL, numAsserts, min, max);
     }
+
     TestRunner._currentTest++;
     if (TestRunner.runSlower) {
         setTimeout(TestRunner.runNextTest, 1000);

@@ -9,15 +9,20 @@
 
 #include "nscore.h"
 #include "nsStringFwd.h"
+#include "mozilla/Attributes.h"
 
-class nsIDocument;
 class nsINode;
 class nsIRequest;
-class nsISelection;
 class nsISupports;
 class nsIWebProgress;
 
 namespace mozilla {
+
+namespace dom {
+class Document;
+class Selection;
+}  // namespace dom
+
 namespace a11y {
 
 class AccEvent;
@@ -69,7 +74,7 @@ bool IsEnabled(const nsAString& aModules);
  */
 void DocLoad(const char* aMsg, nsIWebProgress* aWebProgress,
              nsIRequest* aRequest, uint32_t aStateFlags);
-void DocLoad(const char* aMsg, nsIDocument* aDocumentNode);
+void DocLoad(const char* aMsg, dom::Document* aDocumentNode);
 void DocCompleteLoad(DocAccessible* aDocument, bool aIsLoadEventTarget);
 
 /**
@@ -85,13 +90,13 @@ void DocLoadEventHandled(AccEvent* aEvent);
 /**
  * Log the document was created.
  */
-void DocCreate(const char* aMsg, nsIDocument* aDocumentNode,
+void DocCreate(const char* aMsg, dom::Document* aDocumentNode,
                DocAccessible* aDocument = nullptr);
 
 /**
  * Log the document was destroyed.
  */
-void DocDestroy(const char* aMsg, nsIDocument* aDocumentNode,
+void DocDestroy(const char* aMsg, dom::Document* aDocumentNode,
                 DocAccessible* aDocument = nullptr);
 
 /**
@@ -127,16 +132,15 @@ void FocusDispatched(Accessible* aTarget);
 /**
  * Log the selection change.
  */
-void SelChange(nsISelection* aSelection, DocAccessible* aDocument,
+void SelChange(dom::Selection* aSelection, DocAccessible* aDocument,
                int16_t aReason);
 
 /**
  * Log the given accessible elements info.
  */
 void TreeInfo(const char* aMsg, uint32_t aExtraFlags, ...);
-void TreeInfo(const char* aMsg, uint32_t aExtraFlags,
-              const char* aMsg1, Accessible* aAcc,
-              const char* aMsg2, nsINode* aNode);
+void TreeInfo(const char* aMsg, uint32_t aExtraFlags, const char* aMsg1,
+              Accessible* aAcc, const char* aMsg2, nsINode* aNode);
 void TreeInfo(const char* aMsg, uint32_t aExtraFlags, Accessible* aParent);
 
 /**
@@ -144,7 +148,8 @@ void TreeInfo(const char* aMsg, uint32_t aExtraFlags, Accessible* aParent);
  */
 typedef const char* (*GetTreePrefix)(void* aData, Accessible*);
 void Tree(const char* aTitle, const char* aMsgText, Accessible* aRoot,
-          GetTreePrefix aPrefixFunc = nullptr, void* aGetTreePrefixData = nullptr);
+          GetTreePrefix aPrefixFunc = nullptr,
+          void* aGetTreePrefixData = nullptr);
 void DOMTree(const char* aTitle, const char* aMsgText, DocAccessible* aDoc);
 
 /**
@@ -152,7 +157,8 @@ void DOMTree(const char* aTitle, const char* aMsgText, DocAccessible* aDoc);
  * boundaries of the message body designated by '{' and '}' (2 spaces indent for
  * body).
  */
-void MsgBegin(const char* aTitle, const char* aMsgText, ...);
+void MsgBegin(const char* aTitle, const char* aMsgText, ...)
+    MOZ_FORMAT_PRINTF(2, 3);
 void MsgEnd();
 
 /**
@@ -165,7 +171,7 @@ void SubMsgEnd();
 /**
  * Log the entry into message body (4 spaces indent).
  */
-void MsgEntry(const char* aEntryText, ...);
+void MsgEntry(const char* aEntryText, ...) MOZ_FORMAT_PRINTF(1, 2);
 
 /**
  * Log the text, two spaces offset is used.
@@ -208,7 +214,7 @@ void Stack();
 /**
  * Enable logging of the specified modules, all other modules aren't logged.
  */
-void Enable(const nsAFlatCString& aModules);
+void Enable(const nsCString& aModules);
 
 /**
  * Enable logging of modules specified by A11YLOG environment variable,
@@ -216,10 +222,9 @@ void Enable(const nsAFlatCString& aModules);
  */
 void CheckEnv();
 
-} // namespace logging
+}  // namespace logging
 
-} // namespace a11y
-} // namespace mozilla
+}  // namespace a11y
+}  // namespace mozilla
 
 #endif
-

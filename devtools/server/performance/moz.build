@@ -11,3 +11,6 @@ DevToolsModules(
     'recorder.js',
     'timeline.js',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('DevTools', 'Performance Tools (Profiler/Timeline)')

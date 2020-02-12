@@ -1,19 +1,25 @@
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserTestUtils",
-  "resource://testing-common/BrowserTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "ContentTask",
-  "resource://testing-common/ContentTask.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "BrowserTestUtils",
+  "resource://testing-common/BrowserTestUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ContentTask",
+  "resource://testing-common/ContentTask.jsm"
+);
 
 const REFERRER_URL_BASE = "/browser/browser/base/content/test/referrer/";
 const REFERRER_POLICYSERVER_URL =
   "test1.example.com" + REFERRER_URL_BASE + "file_referrer_policyserver.sjs";
 const REFERRER_POLICYSERVER_URL_ATTRIBUTE =
-  "test1.example.com" + REFERRER_URL_BASE + "file_referrer_policyserver_attr.sjs";
-
-SpecialPowers.pushPrefEnv({"set": [['network.http.enablePerElementReferrer', true]]});
+  "test1.example.com" +
+  REFERRER_URL_BASE +
+  "file_referrer_policyserver_attr.sjs";
 
 var gTestWindow = null;
 var rounds = 0;
@@ -32,12 +38,12 @@ var _referrerTests = [
   {
     fromScheme: "http://",
     toScheme: "http://",
-    result: "http://test1.example.com/browser"  // full referrer
+    result: "http://test1.example.com/browser", // full referrer
   },
   {
     fromScheme: "https://",
     toScheme: "http://",
-    result: ""  // no referrer when downgrade
+    result: "", // no referrer when downgrade
   },
   // 2. Origin referrer policy - we expect an origin referrer,
   //    even on downgrade.  But rel=noreferrer trumps this.
@@ -45,14 +51,14 @@ var _referrerTests = [
     fromScheme: "https://",
     toScheme: "http://",
     policy: "origin",
-    result: "https://test1.example.com/"  // origin, even on downgrade
+    result: "https://test1.example.com/", // origin, even on downgrade
   },
   {
     fromScheme: "https://",
     toScheme: "http://",
     policy: "origin",
     rel: "noreferrer",
-    result: ""  // rel=noreferrer trumps meta-referrer
+    result: "", // rel=noreferrer trumps meta-referrer
   },
   // 3. XXX: using no-referrer here until we support all attribute values (bug 1178337)
   //    Origin-when-cross-origin policy - this depends on the triggering
@@ -62,13 +68,13 @@ var _referrerTests = [
     fromScheme: "https://",
     toScheme: "https://",
     policy: "no-referrer",
-    result: ""  // same origin https://test1.example.com/browser
+    result: "", // same origin https://test1.example.com/browser
   },
   {
     fromScheme: "http://",
     toScheme: "https://",
     policy: "no-referrer",
-    result: ""  // cross origin http://test1.example.com
+    result: "", // cross origin http://test1.example.com
   },
 ];
 
@@ -82,15 +88,40 @@ function getReferrerTest(aTestNumber) {
 }
 
 /**
+ * Returns shimmed test object for a given test number.
+ *
+ * @param aTestNumber The test number - 0, 1, 2, ...
+ * @return The test object with result hard-coded to "",
+ *          or undefined if the number is out of range.
+ */
+function getRemovedReferrerTest(aTestNumber) {
+  let testCase = _referrerTests[aTestNumber];
+  if (testCase) {
+    // We want all the referrer tests to fail!
+    testCase.result = "";
+  }
+
+  return testCase;
+}
+
+/**
  * Returns a brief summary of the test, for logging.
  * @param aTestNumber The test number - 0, 1, 2...
  * @return The test description.
  */
 function getReferrerTestDescription(aTestNumber) {
   let test = getReferrerTest(aTestNumber);
-  return "policy=[" + test.policy + "] " +
-         "rel=[" + test.rel + "] " +
-         test.fromScheme + " -> " + test.toScheme;
+  return (
+    "policy=[" +
+    test.policy +
+    "] " +
+    "rel=[" +
+    test.rel +
+    "] " +
+    test.fromScheme +
+    " -> " +
+    test.toScheme
+  );
 }
 
 /**
@@ -101,7 +132,10 @@ function getReferrerTestDescription(aTestNumber) {
  */
 function clickTheLink(aWindow, aLinkId, aOptions) {
   return BrowserTestUtils.synthesizeMouseAtCenter(
-    "#" + aLinkId, aOptions, aWindow.gBrowser.selectedBrowser);
+    "#" + aLinkId,
+    aOptions,
+    aWindow.gBrowser.selectedBrowser
+  );
 }
 
 /**
@@ -129,7 +163,7 @@ function delayedStartupFinished(aWindow) {
         Services.obs.removeObserver(observer, aTopic);
         resolve();
       }
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   });
 }
 
@@ -140,16 +174,7 @@ function delayedStartupFinished(aWindow) {
  * @resolves With the tab once it's loaded.
  */
 function someTabLoaded(aWindow) {
-  return new Promise(function(resolve) {
-    aWindow.gBrowser.addEventListener("load", function onLoad(aEvent) {
-      let tab = aWindow.gBrowser._getTabForContentWindow(
-          aEvent.target.defaultView.top);
-      if (tab) {
-        aWindow.gBrowser.removeEventListener("load", onLoad, true);
-        resolve(tab);
-      }
-    }, true);
-  });
+  return BrowserTestUtils.waitForNewTab(gTestWindow.gBrowser, null, true);
 }
 
 /**
@@ -158,8 +183,9 @@ function someTabLoaded(aWindow) {
  * @resolves With the new window once it's open and loaded.
  */
 function newWindowOpened() {
-  return TestUtils.topicObserved("browser-delayed-startup-finished")
-                  .then(([win]) => win);
+  return TestUtils.topicObserved("browser-delayed-startup-finished").then(
+    ([win]) => win
+  );
 }
 
 /**
@@ -170,8 +196,10 @@ function newWindowOpened() {
  * @resolves With the menu popup when the context menu is open.
  */
 function contextMenuOpened(aWindow, aLinkId) {
-  let popupShownPromise = BrowserTestUtils.waitForEvent(aWindow.document,
-                                                        "popupshown");
+  let popupShownPromise = BrowserTestUtils.waitForEvent(
+    aWindow.document,
+    "popupshown"
+  );
   // Simulate right-click.
   clickTheLink(aWindow, aLinkId, { type: "contextmenu", button: 2 });
   return popupShownPromise.then(e => e.target);
@@ -197,15 +225,30 @@ function doContextMenuCommand(aWindow, aMenu, aItemId) {
  */
 function referrerTestCaseLoaded(aTestNumber, aParams) {
   let test = getReferrerTest(aTestNumber);
-  let server = rounds == 0 ? REFERRER_POLICYSERVER_URL :
-                             REFERRER_POLICYSERVER_URL_ATTRIBUTE;
-  let url = test.fromScheme + server +
-            "?scheme=" + escape(test.toScheme) +
-            "&policy=" + escape(test.policy || "") +
-            "&rel=" + escape(test.rel || "");
-  var browser = gTestWindow.gBrowser;
-  browser.selectedTab = browser.addTab(url, aParams);
-  return BrowserTestUtils.browserLoaded(browser.selectedBrowser);
+  let server =
+    rounds == 0
+      ? REFERRER_POLICYSERVER_URL
+      : REFERRER_POLICYSERVER_URL_ATTRIBUTE;
+  let url =
+    test.fromScheme +
+    server +
+    "?scheme=" +
+    escape(test.toScheme) +
+    "&policy=" +
+    escape(test.policy || "") +
+    "&rel=" +
+    escape(test.rel || "") +
+    "&cross=" +
+    escape(test.cross || "");
+  let browser = gTestWindow.gBrowser;
+  return BrowserTestUtils.openNewForegroundTab(
+    browser,
+    () => {
+      browser.selectedTab = BrowserTestUtils.addTab(browser, url, aParams);
+    },
+    false,
+    true
+  );
 }
 
 /**
@@ -215,8 +258,13 @@ function referrerTestCaseLoaded(aTestNumber, aParams) {
  * @param aNewTab The new tab where the referrer target opened, or null.
  * @param aStartTestCase The callback to start the next test, aTestNumber + 1.
  */
-function checkReferrerAndStartNextTest(aTestNumber, aNewWindow, aNewTab,
-                                       aStartTestCase, aParams = {}) {
+function checkReferrerAndStartNextTest(
+  aTestNumber,
+  aNewWindow,
+  aNewTab,
+  aStartTestCase,
+  aParams = {}
+) {
   referrerResultExtracted(aNewWindow || gTestWindow).then(function(result) {
     // Compare the actual result against the expected one.
     let test = getReferrerTest(aTestNumber);

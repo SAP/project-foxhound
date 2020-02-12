@@ -1,7 +1,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Tests updated intervals</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -60,7 +60,7 @@ function testByAnimation() {
     is(gCircle.cx.animVal.value, 100,
        "Checking animVal with 'by' and keyTimes='" + curKeyTimes + "'");
 
-    anim.parentNode.removeChild(anim); // clean up
+    anim.remove(); // clean up
   }
 }
 
@@ -76,7 +76,7 @@ function testToAnimation() {
     is(gCircle.cx.animVal.value, 100,
        "Checking animVal with 'to' and keyTimes='" + curKeyTimes + "'");
 
-    anim.parentNode.removeChild(anim); // clean up
+    anim.remove(); // clean up
   }
 }
 
@@ -92,7 +92,7 @@ function testValuesAnimation() {
     is(gCircle.cx.animVal.value, 150,
        "Checking animVal with 'values' and keyTimes='" + curKeyTimes + "'");
 
-    anim.parentNode.removeChild(anim); // clean up
+    anim.remove(); // clean up
   }
 }
 
@@ -115,7 +115,7 @@ function createAnim() {
   return gCircle.appendChild(anim);
 }
 
-window.addEventListener("load", main, false);
+window.addEventListener("load", main);
 ]]>
 </script>
 </pre>

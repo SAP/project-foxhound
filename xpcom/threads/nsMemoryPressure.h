@@ -9,8 +9,7 @@
 
 #include "nscore.h"
 
-enum MemoryPressureState
-{
+enum MemoryPressureState {
   /*
    * No memory pressure.
    */
@@ -40,15 +39,28 @@ enum MemoryPressureState
    * possible on the clean-up of the memory.  After all, we are trying to
    * keep Gecko alive as long as possible.
    */
-  MemPressure_Ongoing
+  MemPressure_Ongoing,
+
+  /*
+   * Memory pressure stopped.
+   *
+   * We're no longer under acute memory pressure, so we might want to have a
+   * chance of (cautiously) re-enabling some things we previously turned off.
+   * As above, an already enqueued new memory pressure event takes precedence.
+   * The priority ordering between concurrent attempts to queue both stopped
+   * and ongoing memory pressure is currently not defined.
+   */
+  MemPressure_Stopping
 };
 
 /**
  * Return and erase the latest state of the memory pressure event set by any of
- * the corresponding dispatch function.
+ * the corresponding dispatch functions.
+ *
+ * This is called when processing events on the main thread to check whether to
+ * fire a memory pressure notification.
  */
-MemoryPressureState
-NS_GetPendingMemoryPressure();
+MemoryPressureState NS_GetPendingMemoryPressure();
 
 /**
  * This function causes the main thread to fire a memory pressure event
@@ -59,8 +71,7 @@ NS_GetPendingMemoryPressure();
  *
  * You may call this function from any thread.
  */
-void
-NS_DispatchEventualMemoryPressure(MemoryPressureState aState);
+void NS_DispatchEventualMemoryPressure(MemoryPressureState aState);
 
 /**
  * This function causes the main thread to fire a memory pressure event
@@ -71,7 +82,6 @@ NS_DispatchEventualMemoryPressure(MemoryPressureState aState);
  *
  * You may call this function from any thread.
  */
-nsresult
-NS_DispatchMemoryPressure(MemoryPressureState aState);
+nsresult NS_DispatchMemoryPressure(MemoryPressureState aState);
 
-#endif // nsMemoryPressure_h__
+#endif  // nsMemoryPressure_h__

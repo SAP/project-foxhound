@@ -2,19 +2,13 @@
 <html>
 <head>
   <title>Test playback of media files that should play OK</title>
-  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
   <script type="text/javascript" src="manifest.js"></script>
 </head>
 <body>
 <pre id="test">
 <script class="testbody" type="text/javascript">
-
-// longer timeout for slow platforms
-if (isSlowPlatform()) {
-  SimpleTest.requestLongerTimeout(3);
-  SimpleTest.requestCompleteLog();
-}
 
 var manager = new MediaTestManager;
 
@@ -45,9 +39,13 @@ function startTest(test, token) {
     ok(false, test.name + " should not fire 'load' event");
   }}(test, v);
 
+  var noError = function(test, v) { return function() {
+    ok(false, test.name + " should not fire 'error' event " + v.error.message);
+  }}(test, v);
+
   var finish = function() {
     v.finished = true;
-    v.removeEventListener("timeupdate", timeUpdate, false);
+    v.removeEventListener("timeupdate", timeUpdate);
     removeNodeAndSource(v);
     manager.finished(v.token);
   }
@@ -89,30 +87,17 @@ function startTest(test, token) {
     v.prevTime = v.currentTime;
   }}(test, v);
 
-  v.addEventListener("load", noLoad, false);
-  v.addEventListener("loadedmetadata", check, false);
-  v.addEventListener("timeupdate", timeUpdate, false);
+  v.addEventListener("load", noLoad);
+  v.addEventListener("error", noError);
+  v.addEventListener("loadedmetadata", check);
+  v.addEventListener("timeupdate", timeUpdate);
 
   // We should get "ended" and "suspend" events for every resource
-  v.addEventListener("ended", checkEnded, false);
-  v.addEventListener("suspend", checkSuspended, false);
+  v.addEventListener("ended", checkEnded);
+  v.addEventListener("suspend", checkSuspended);
 
   document.body.appendChild(v);
   v.play();
-
-  // Debug timeouts on slow platforms.
-  if (isSlowPlatform()) {
-    var events = ["suspend", "play", "canplay", "canplaythrough", "loadstart", "loadedmetadata",
-                  "loadeddata", "playing", "ended", "error", "stalled", "emptied", "abort",
-                  "waiting", "pause"];
-    function logEvent(e) {
-      var v = e.target;
-      Log(e.target.token, "got " + e.type);
-    }
-    events.forEach(function(e) {
-      v.addEventListener(e, logEvent, false);
-    });
-  }
 }
 
 manager.runTests(gPlayTests, startTest);
