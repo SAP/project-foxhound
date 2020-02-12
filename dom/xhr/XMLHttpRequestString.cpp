@@ -43,7 +43,7 @@ class XMLHttpRequestStringBuffer final {
   void AppendTaintAt(size_t aIndex, const StringTaint& aTaint)
   {
     // Caller must hold the lock
-    mData.AppendTaintAt(aIndex, aTaint);
+    mData.Taint().concat(aTaint, aIndex);
   }
 
   MOZ_MUST_USE bool GetAsString(nsAString& aString) {

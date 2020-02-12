@@ -13,6 +13,7 @@
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIPipe.h"
 #include "TimingStruct.h"
 #include "Http2Push.h"
 #include "mozilla/net/DNS.h"

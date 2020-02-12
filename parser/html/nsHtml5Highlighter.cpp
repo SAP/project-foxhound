@@ -669,7 +669,7 @@ void nsHtml5Highlighter::AppendCharacters(const char16_t* aBuffer,
   char16_t* bufferCopy = new char16_t[aLength];
   memcpy(bufferCopy, aBuffer + aStart, aLength * sizeof(char16_t));
 
-  opAppendText operation(CurrentNode(), bufferCopy, aLength);
+  opAppendText operation(CurrentNode(), bufferCopy, aLength, EmptyTaint);
   mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
 }
 

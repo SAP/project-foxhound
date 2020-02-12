@@ -100,7 +100,7 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request,
 }
 
 nsresult nsIncrementalStreamLoader::WriteSegmentFun(
-    nsIInputStream* inStr, void* closure, const char* fromSegment,
+    void* closure, const char* fromSegment,
     uint32_t toOffset, uint32_t count, const StringTaint& taint, uint32_t* writeCount) {
   nsIncrementalStreamLoader* self = (nsIncrementalStreamLoader*)closure;
 
@@ -218,11 +218,11 @@ nsIncrementalStreamLoader::OnDataAvailable(nsIRequest* request,
 
   uint32_t countRead;
   nsresult rv;
-  if (taintInputStream)
+  if (taintInputStream) {
     rv = taintInputStream->TaintedReadSegments(WriteSegmentFunTaint, this, count, &countRead);
-  else
+  } else {
     rv = inStr->ReadSegments(WriteSegmentFunNoTaint, this, count, &countRead);
-
+  }
   mRequest = nullptr;
   return rv;
 }

@@ -50,8 +50,10 @@ class nsInputStreamTee final : public nsIInputStreamTee
   static nsresult WriteSegmentFun(nsIInputStream*, void*, const char*, uint32_t,
                                   uint32_t, uint32_t*);
 
-  static NS_METHOD WriteTaintedSegmentFun(nsITaintawareInputStream*, void*, const char*,
+  static nsresult WriteTaintedSegmentFun(nsITaintawareInputStream*, void*, const char*,
                                           uint32_t, uint32_t, const StringTaint&, uint32_t*);
+
+  bool SourceIsTaintAware() const;
 
  private:
   nsCOMPtr<nsIInputStream> mSource;
@@ -206,7 +208,7 @@ nsresult nsInputStreamTee::WriteSegmentFun(nsIInputStream* aIn, void* aClosure,
   return tee->TeeSegment(aFromSegment, EmptyTaint, *aWriteCount);
 }
 
-NS_METHOD
+nsresult
 nsInputStreamTee::WriteTaintedSegmentFun(nsITaintawareInputStream* aIn, void* aClosure,
                                          const char* aFromSegment, uint32_t aOffset,
                                          uint32_t aCount, const StringTaint& aTaint, uint32_t* aWriteCount)
@@ -228,17 +230,6 @@ bool nsInputStreamTee::SourceIsTaintAware() const
   nsCOMPtr<nsITaintawareInputStream> source(do_QueryInterface(mSource));
   return !!source;
 }
-
-// TaintFox: Changed nsISupports implementation to support conditional QI to
-// nsITaintawareInputStream only if the source stream is taint aware.
-NS_IMPL_ADDREF(nsInputStreamTee)
-NS_IMPL_RELEASE(nsInputStreamTee)
-NS_INTERFACE_MAP_BEGIN(nsInputStreamTee)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStreamTee)
-  NS_INTERFACE_MAP_ENTRY(nsIInputStreamTee)
-  NS_INTERFACE_MAP_ENTRY(nsIInputStream)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsITaintawareInputStream, SourceIsTaintAware())
-NS_INTERFACE_MAP_END
 
 NS_IMPL_ISUPPORTS(nsInputStreamTee, nsIInputStreamTee, nsIInputStream)
 

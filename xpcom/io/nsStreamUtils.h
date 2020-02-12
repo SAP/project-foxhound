@@ -219,7 +219,7 @@ struct TaintedBuffer {
  *
  * @see nsITaintawareInputStream.idl for a description of this function's parameters.
  */
-extern NS_METHOD
+extern nsresult
 NS_TaintedCopySegmentToBuffer(nsITaintawareInputStream* aInputStream, void* aClosure,
                               const char* aFromSegment, uint32_t aToOffset,
                               uint32_t aCount, const StringTaint& aTaint,

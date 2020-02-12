@@ -491,7 +491,7 @@ nsresult XMLHttpRequestMainThread::DetectCharset() {
 }
 
 nsresult XMLHttpRequestMainThread::AppendToResponseText(
-    Span<const uint8_t> aBuffer, bool aLast, const StringTaint& aTaint) {
+    Span<const uint8_t> aBuffer, const StringTaint& aTaint, bool aLast) {
   // Call this with an empty buffer to send the decoder the signal
   // that we have hit the end of the stream.
 
@@ -598,8 +598,8 @@ void XMLHttpRequestMainThread::GetResponseText(
              "Unexpected mResponseBodyDecodedPos");
   Span<const uint8_t> span = mResponseBody;
   aRv = AppendToResponseText(span.From(mResponseBodyDecodedPos),
-                             mState == XMLHttpRequest_Binding::DONE,
-                             mResponseBody.Taint().subtaint(mResponseBodyDecodedPos, -1));
+                             mResponseBody.Taint().subtaint(mResponseBodyDecodedPos, -1),
+                             mState == XMLHttpRequest_Binding::DONE);
   if (aRv.Failed()) {
     return;
   }
@@ -1307,13 +1307,6 @@ XMLHttpRequestMainThread::GetCurrentJARChannel() {
 bool XMLHttpRequestMainThread::IsSystemXHR() const {
   return mIsSystem || nsContentUtils::IsSystemPrincipal(mPrincipal);
 }
- 
-bool
-XMLHttpRequestMainThread::InUploadPhase() const
-{
-  // We're in the upload phase while our state is State::opened.
-  return mState == State::opened;
-}
 
 bool XMLHttpRequestMainThread::InUploadPhase() const {
   // We're in the upload phase while our state is OPENED.
@@ -1503,7 +1496,7 @@ void XMLHttpRequestMainThread::SetOriginAttributes(
  * "Copy" from a stream.
  */
 nsresult XMLHttpRequestMainThread::HandleStreamInput(
-    nsIInputStream* in, void* closure, const char* fromRawSegment,
+    void* closure, const char* fromRawSegment,
     uint32_t toOffset, uint32_t count, const StringTaint& taint, uint32_t* writeCount) {
   XMLHttpRequestMainThread* xmlHttpRequest =
       static_cast<XMLHttpRequestMainThread*>(closure);
@@ -2099,7 +2092,7 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
                    (mResponseType == XMLHttpRequestResponseType::Json) ||
                    (mResponseType == XMLHttpRequestResponseType::_empty &&
                     !mResponseXML))) {
-    AppendToResponseText(Span<const uint8_t>(), true);
+    AppendToResponseText(Span<const uint8_t>(), EmptyTaint, true);
   }
 
   mWaitingForOnStopRequest = false;

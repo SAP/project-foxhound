@@ -441,9 +441,16 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
  protected:
   nsresult DetectCharset();
-  nsresult AppendToResponseText(Span<const uint8_t> aBuffer,
-                                bool aLast = false, const StringTaint& aTaint);
+  nsresult AppendToResponseText(Span<const uint8_t> aBuffer, const StringTaint& aTaint,
+                                bool aLast = false);
   // Taintfox: added taint aware stream reader and moved common code into new function.
+  static nsresult HandleStreamInput(void* closure,
+                                    const char* fromRawSegment,
+                                    uint32_t toOffset,
+                                    uint32_t count,
+                                    const StringTaint& aTaint,
+                                    uint32_t *writeCount);
+
   static nsresult StreamReaderFunc(nsITaintawareInputStream* in,
                                    void* closure,
                                    const char* fromRawSegment,
@@ -451,12 +458,14 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
                                    uint32_t count,
                                    const StringTaint& aTaint,
                                    uint32_t *writeCount);
+
   static nsresult StreamReaderFuncNoTaint(nsIInputStream* in,
                                           void* closure,
                                           const char* fromRawSegment,
                                           uint32_t toOffset,
                                           uint32_t count,
                                           uint32_t *writeCount);
+
   nsresult CreateResponseParsedJSON(JSContext* aCx);
   // Change the state of the object with this. The broadcast argument
   // determines if the onreadystatechange listener should be called.

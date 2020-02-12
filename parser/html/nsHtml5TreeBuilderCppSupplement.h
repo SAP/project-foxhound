@@ -694,8 +694,8 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  opAppendText operation(aParent, bufferCopy.release(), aLength);
-  treeOp->Init(mozilla::AsVariant(operation), aTaint);
+  opAppendText operation(aParent, bufferCopy.release(), aLength, aTaint);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,

@@ -259,7 +259,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
 
   void DoDataAvailableBuffer(mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint);
 
-  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer);
+  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer, const StringTaint& aTaint);
 
   static nsresult CopySegmentsToParserNoTaint(nsIInputStream* aInStream,
                                        void* aClosure, const char* aFromSegment,
@@ -333,7 +333,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * @param aFromSegment The current network buffer
    */
   nsresult SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-      mozilla::Span<const uint8_t> aFromSegment);
+    mozilla::Span<const uint8_t> aFromSegment, const StringTaint& aTaint);
 
   /**
    * Initialize the Unicode decoder, mark the BOM as the source and

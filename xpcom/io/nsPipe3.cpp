@@ -1339,9 +1339,9 @@ nsPipeInputStream::Available(uint64_t* aResult) {
 }
 
 NS_IMETHODIMP
-nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter, void* aClosure,
-                                uint32_t aCount, uint32_t* aReadCount) {
-  LOG(("III ReadSegments [this=%p count=%u]\n", this, aCount));
+nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter, void* aClosure,
+                                        uint32_t aCount, uint32_t* aReadCount) {
+  LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));
   MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
 
   nsresult rv = NS_OK;
@@ -1405,6 +1405,11 @@ nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, nsWriteTaintedSegment
   }
 
   return rv;
+}
+
+NS_IMETHODIMP
+nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure, uint32_t aCount, uint32_t* aReadCount) {
+  return ReadSegmentsInternal(aWriter, nullptr, aClosure, aCount, aReadCount);
 }
 
 NS_IMETHODIMP
@@ -1882,7 +1887,8 @@ NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
             bool aNonBlockingInput,
             bool aNonBlockingOutput,
             uint32_t aSegmentSize,
-            uint32_t aSegmentCount)
+            uint32_t aSegmentCount,
+            nsIPipe** aPipe)
 {
   nsPipe* pipe = new nsPipe();
   nsresult rv = pipe->Init(aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
@@ -1896,6 +1902,12 @@ NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
   // These always succeed because the pipe is initialized above.
   MOZ_ALWAYS_SUCCEEDS(pipe->GetInputStream(aPipeIn));
   MOZ_ALWAYS_SUCCEEDS(pipe->GetOutputStream(aPipeOut));
+
+  if (aPipe) {
+    RefPtr<nsIPipe> ref = pipe;
+    ref.forget(aPipe);
+  }
+  
   return NS_OK;
 }
 

@@ -113,6 +113,7 @@ NS_IMETHODIMP
 ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                      nsISupports* aContext,
                                      uint32_t aDataLength, const uint8_t* aData,
+                                     StringTaint aTaint,
                                      uint32_t* aConsumedLength) {
   if (mRequest->IsCanceled()) {
     // If request cancelled, ignore any incoming data.
@@ -342,7 +343,8 @@ NS_IMETHODIMP
 ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                     nsISupports* aContext, nsresult aStatus,
                                     uint32_t aDataLength,
-                                    const uint8_t* aData) {
+                                    const uint8_t* aData,
+                                    StringTaint aTaint) {
   nsresult rv = NS_OK;
   if (LOG_ENABLED()) {
     nsAutoCString url;

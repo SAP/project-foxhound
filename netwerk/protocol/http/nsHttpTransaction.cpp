@@ -372,12 +372,17 @@ nsresult nsHttpTransaction::Init(
                              NS_ASSIGNMENT_DEPEND);
   if (NS_FAILED(rv)) return rv;
 
-    // create pipe for response stream
-    rv = NS_NewPipe2(getter_AddRefs(mPipeIn),
-                     getter_AddRefs(mPipeOut),
-                     true, true,
-                     nsIOService::gDefaultSegmentSize,
-                     nsIOService::gDefaultSegmentCount);
+  mHasRequestBody = !!requestBody;
+  if (mHasRequestBody && !requestContentLength) {
+    mHasRequestBody = false;
+  }
+
+  requestContentLength += mReqHeaderBuf.Length();
+
+  if (mHasRequestBody) {
+    // wrap the headers and request body in a multiplexed input stream.
+    nsCOMPtr<nsIMultiplexInputStream> multi =
+        do_CreateInstance(kMultiplexInputStream, &rv);
     if (NS_FAILED(rv)) return rv;
 
     rv = multi->AppendStream(headers);
@@ -1408,7 +1413,7 @@ nsresult nsHttpTransaction::ParseLineSegment(char* segment, uint32_t len) {
   // append segment to mLineBuf...
   mLineBuf.Append(segment, len);
 
-  // a line buf with only a new line char signifies the end of headers.
+  // a line buf with only a new line char sginifies the end of headers.
   if (mLineBuf.First() == '\n') {
     mLineBuf.Truncate();
     // discard this response if it is a 100 continue or other 1xx status.

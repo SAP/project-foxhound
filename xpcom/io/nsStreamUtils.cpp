@@ -778,7 +778,6 @@ nsresult NS_CopySegmentToBuffer(nsIOutputStream* aOutStr, void* aClosure,
                                 char* aBuffer, uint32_t aOffset,
                                 uint32_t aCount, uint32_t* aCountRead) {
 
-{
   const char* fromBuf = static_cast<const char*>(aClosure);
   memcpy(aBuffer, &fromBuf[aOffset], aCount);
   *aCountRead = aCount;
