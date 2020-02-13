@@ -231,7 +231,18 @@ bool nsInputStreamTee::SourceIsTaintAware() const
   return !!source;
 }
 
-NS_IMPL_ISUPPORTS(nsInputStreamTee, nsIInputStreamTee, nsIInputStream)
+//NS_IMPL_ISUPPORTS(nsInputStreamTee, nsIInputStreamTee, nsIInputStream)
+
+// TaintFox: Changed nsISupports implementation to support conditional QI to
+// nsITaintawareInputStream only if the source stream is taint aware.
+NS_IMPL_ADDREF(nsInputStreamTee)
+NS_IMPL_RELEASE(nsInputStreamTee)
+NS_INTERFACE_MAP_BEGIN(nsInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY(nsIInputStreamTee)
+  NS_INTERFACE_MAP_ENTRY(nsIInputStream)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsITaintawareInputStream, SourceIsTaintAware())
+NS_INTERFACE_MAP_END
 
 NS_IMETHODIMP
 nsInputStreamTee::Close() {

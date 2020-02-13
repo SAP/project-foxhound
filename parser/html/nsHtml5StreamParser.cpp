@@ -1448,10 +1448,11 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInStream));
 #if (DEBUG_E2E_TAINTING)
-  if (!taintInputStream)
+  if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in StreamParser::OnDataAvailable !!!!!");
-  else
+  } else {
     puts("+++++ Taint-aware input stream available in StreamParser::OnDataAvailable +++++");
+  }
 #endif
 
   MOZ_ASSERT(mRequest == aRequest, "Got data on wrong stream.");

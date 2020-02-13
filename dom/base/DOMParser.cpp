@@ -94,7 +94,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
   // The new stream holds a reference to the buffer
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream), utf8str,
-                                      NS_ASSIGNMENT_DEPEND);
+                                      NS_ASSIGNMENT_DEPEND, aStr.Taint());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;

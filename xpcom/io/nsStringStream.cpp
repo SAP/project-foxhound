@@ -16,6 +16,7 @@
 #include "nsICloneableInputStream.h"
 #include "nsISeekableStream.h"
 #include "nsISupportsPrimitives.h"
+#include "nsITaintawareInputStream.h"
 #include "nsCRT.h"
 #include "prerror.h"
 #include "plstr.h"
@@ -39,7 +40,9 @@ class nsStringInputStream final : public nsIStringInputStream,
                                   public nsISeekableStream,
                                   public nsISupportsCString,
                                   public nsIIPCSerializableInputStream,
-                                  public nsICloneableInputStream {
+                                  public nsICloneableInputStream,
+                                  public nsITaintawareInputStream
+{
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
@@ -50,6 +53,7 @@ class nsStringInputStream final : public nsIStringInputStream,
   NS_DECL_NSISUPPORTSCSTRING
   NS_DECL_NSIIPCSERIALIZABLEINPUTSTREAM
   NS_DECL_NSICLONEABLEINPUTSTREAM
+  NS_DECL_NSITAINTAWAREINPUTSTREAM
 
   nsStringInputStream() : mOffset(0), mMon("nsStringInputStream") { Clear(); }
 
@@ -57,8 +61,18 @@ class nsStringInputStream final : public nsIStringInputStream,
 
   nsresult Init(nsTArray<uint8_t>&& aArray);
 
+  void SetTaint(const StringTaint& aTaint) { mData.AssignTaint(aTaint); }
+
  private:
   ~nsStringInputStream() {}
+
+  // Segmented read implementation, used by ReadSegment() and
+  // TaintedreadSegment()
+  nsresult ReadSegmentsInternal(nsWriteSegmentFun aWriter,
+                                nsWriteTaintedSegmentFun aTaintedWriter,
+                                void* aClosure,
+                                uint32_t aCount,
+                                uint32_t* aReadCount);
 
   template <typename M>
   void SerializeInternal(InputStreamParams& aParams, bool aDelayedStart,
@@ -67,6 +81,8 @@ class nsStringInputStream final : public nsIStringInputStream,
   uint32_t Length() const { return mData.Length(); }
 
   uint32_t LengthRemaining() const { return Length() - mOffset; }
+
+  StringTaint Taint() const { return mData.Taint().subtaint(mOffset, Length()); }
 
   void Clear() { mData.SetIsVoid(true); }
 
@@ -122,11 +138,15 @@ NS_IMPL_QUERY_INTERFACE_CI(nsStringInputStream, nsIStringInputStream,
                            nsIInputStream, nsISupportsCString,
                            nsISeekableStream, nsITellableStream,
                            nsIIPCSerializableInputStream,
-                           nsICloneableInputStream)
+                           nsICloneableInputStream,
+                           nsITaintawareInputStream
+  )
 NS_IMPL_CI_INTERFACE_GETTER(nsStringInputStream, nsIStringInputStream,
                             nsIInputStream, nsISupportsCString,
                             nsISeekableStream, nsITellableStream,
-                            nsICloneableInputStream)
+                            nsICloneableInputStream,
+                            nsITaintawareInputStream
+  )
 
 /////////
 // nsISupportsCString implementation
@@ -207,6 +227,7 @@ nsStringInputStream::AdoptData(char* aData, int32_t aDataLen) {
   }
   mArray.reset();
   mData.Adopt(aData, aDataLen);
+
   mOffset = 0;
   return NS_OK;
 }
@@ -281,9 +302,15 @@ nsStringInputStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount) {
 }
 
 NS_IMETHODIMP
-nsStringInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
-                                  uint32_t aCount, uint32_t* aResult) {
+nsStringInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure, uint32_t aCount, uint32_t* aReadCount) {
+  return ReadSegmentsInternal(aWriter, nullptr, aClosure, aCount, aReadCount);
+}
+
+NS_IMETHODIMP
+nsStringInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter,
+                                          void* aClosure, uint32_t aCount, uint32_t* aResult) {
   ReentrantMonitorAutoEnter lock(mMon);
+  MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
 
   NS_ASSERTION(aResult, "null ptr");
   NS_ASSERTION(Length() >= mOffset, "bad stream state");
@@ -302,8 +329,16 @@ nsStringInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
   if (aCount > maxCount) {
     aCount = maxCount;
   }
-  nsresult rv = aWriter(this, aClosure, mData.BeginReading() + mOffset, 0,
-                        aCount, aResult);
+
+  nsresult rv = NS_OK;
+
+  if (aWriter) {
+    rv = aWriter(this, aClosure, mData.BeginReading() + mOffset, 0, aCount, aResult);
+  } else {
+    rv = aTaintedWriter(this, aClosure, mData.BeginReading() + mOffset, 0, aCount,
+                        Taint(), aResult);
+  }
+
   if (NS_SUCCEEDED(rv)) {
     NS_ASSERTION(*aResult <= aCount,
                  "writer should not write more than we asked it to write");
@@ -318,6 +353,24 @@ NS_IMETHODIMP
 nsStringInputStream::IsNonBlocking(bool* aNonBlocking) {
   *aNonBlocking = true;
   return NS_OK;
+}
+
+// TaintFox
+NS_IMETHODIMP
+nsStringInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
+                                       void* aClosure,
+                                       uint32_t aCount,
+                                       uint32_t* aReadCount)
+{
+  return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
+}
+
+// TaintFox
+NS_IMETHODIMP
+nsStringInputStream::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
+{
+  TaintedBuffer buf(aToBuf, aTaint);
+  return TaintedReadSegments(NS_TaintedCopySegmentToBuffer, &buf, aBufLen, aReadCount);
 }
 
 /////////
@@ -490,7 +543,8 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
 
 nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
                                Span<const char> aStringToRead,
-                               nsAssignmentType aAssignment) {
+                               nsAssignmentType aAssignment,
+                               const StringTaint& aTaint) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
   RefPtr<nsStringInputStream> stream = new nsStringInputStream();
@@ -516,12 +570,15 @@ nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
     return rv;
   }
 
+  stream->SetTaint(aTaint);
+
   stream.forget(aStreamResult);
   return NS_OK;
 }
 
 nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
-                               nsTArray<uint8_t>&& aArray) {
+                               nsTArray<uint8_t>&& aArray,
+                               const StringTaint& aTaint) {
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
   RefPtr<nsStringInputStream> stream = new nsStringInputStream();
@@ -530,6 +587,8 @@ nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+
+  stream->SetTaint(aTaint);
 
   stream.forget(aStreamResult);
   return NS_OK;
