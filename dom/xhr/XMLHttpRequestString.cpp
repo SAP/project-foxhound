@@ -40,7 +40,7 @@ class XMLHttpRequestStringBuffer final {
     mData.Append(aString);
   }
 
-  void AppendTaintAt(size_t aIndex, const StringTaint& aTaint)
+  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint)
   {
     // Caller must hold the lock
     mData.Taint().concat(aTaint, aIndex);
@@ -192,7 +192,7 @@ mozilla::BulkWriteHandle<char16_t> XMLHttpRequestStringWriterHelper::BulkWrite(
 void
 XMLHttpRequestStringWriterHelper::AppendTaintAt(size_t aIndex, const StringTaint& aTaint)
 {
-  mBuffer->AppendTaintAt(aIndex, aTaint);
+  mBuffer->UnsafeAppendTaintAt(aIndex, aTaint);
 }
 
 // ---------------------------------------------------------------------------

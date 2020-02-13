@@ -530,7 +530,7 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     Unused << hadErrors;
     handle.Finish(len, false);
     // TaintFox: propagate taint. TODO(samuel) deal with encoding
-    helper.AppendTaintAt(mResponseText.Length(), aTaint);
+    helper.AppendTaintAt(len, aTaint);
   }  // release mutex
 
   if (aLast) {
@@ -1775,14 +1775,12 @@ XMLHttpRequestMainThread::OnDataAvailable(nsIRequest* request,
 #if (DEBUG_E2E_TAINTING)
     puts("!!!!! NO taint-aware input stream available in XMLHttpRequest::OnDataAvailable !!!!!");
 #endif
-    rv = inStr->ReadSegments(StreamReaderFuncNoTaint,
-                             (void*)this, count, &totalRead);
+    rv = inStr->ReadSegments(StreamReaderFuncNoTaint, (void*)this, count, &totalRead);
   } else {
 #if (DEBUG_E2E_TAINTING)
     puts("+++++ Taint-aware input stream available in XMLHttpRequest::OnDataAvailable +++++");
 #endif
-    rv = taintInputStream->TaintedReadSegments(StreamReaderFunc,
-                                               (void*)this, count, &totalRead);
+    rv = taintInputStream->TaintedReadSegments(StreamReaderFunc, (void*)this, count, &totalRead);
   }
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -3052,6 +3050,7 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
   } else {
     mAuthorRequestHeaders.MergeOrSet(aName, value);
   }
+
 }
 
 void XMLHttpRequestMainThread::SetTimeout(uint32_t aTimeout, ErrorResult& aRv) {
