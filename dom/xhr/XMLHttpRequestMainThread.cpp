@@ -3038,6 +3038,9 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
     return;
   }
 
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aValue), "XMLHttpRequest.setRequestHeader(value)", NS_ConvertUTF8toUTF16(aName));
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)", NS_ConvertUTF8toUTF16(aValue));
+
   // Step 6.1
   // Skipping for now, as normalizing the case of header names may not be
   // web-compatible. See bug 1285036.
