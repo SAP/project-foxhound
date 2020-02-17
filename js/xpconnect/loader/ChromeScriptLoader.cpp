@@ -215,6 +215,7 @@ AsyncScriptCompiler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
                                        nsISupports* aContext,
                                        uint32_t aDataLength,
                                        const uint8_t* aData,
+                                       StringTaint taint,
                                        uint32_t* aConsumedData) {
   return NS_OK;
 }
@@ -222,7 +223,8 @@ AsyncScriptCompiler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 NS_IMETHODIMP
 AsyncScriptCompiler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
                                       nsISupports* aContext, nsresult aStatus,
-                                      uint32_t aLength, const uint8_t* aBuf) {
+                                      uint32_t aLength, const uint8_t* aBuf,
+                                      StringTaint taint) {
   AutoJSAPI jsapi;
   if (!jsapi.Init(mGlobalObject)) {
     mPromise->MaybeReject(NS_ERROR_FAILURE);

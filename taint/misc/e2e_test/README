@@ -1,0 +1,4 @@
+Simple tool to test end2end tainting.
+
+Usage:
+Just execute run.py and browser to localhost:8000. The tests should automatically start.

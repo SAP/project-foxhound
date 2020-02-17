@@ -33,6 +33,7 @@ XPIDL_SOURCES += [
     'nsIStorageStream.idl',
     'nsIStreamBufferAccess.idl',
     'nsIStringStream.idl',
+    'nsITaintawareInputStream.idl',
     'nsITellableStream.idl',
     'nsIUnicharInputStream.idl',
     'nsIUnicharLineInputStream.idl',
@@ -150,3 +151,4 @@ LOCAL_INCLUDES += [
     '!..',
     '../build',
 ]
+

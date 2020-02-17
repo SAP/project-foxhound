@@ -13,6 +13,7 @@
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIPipe.h"
 #include "TimingStruct.h"
 #include "Http2Push.h"
 #include "mozilla/net/DNS.h"
@@ -273,6 +274,8 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   nsCOMPtr<nsITransportEventSink> mTransportSink;
   nsCOMPtr<nsIEventTarget> mConsumerTarget;
   nsCOMPtr<nsISupports> mSecurityInfo;
+  // TaintFox: reference to pipe added for SetTaint()
+  nsCOMPtr<nsIPipe>   mPipe;
   nsCOMPtr<nsIAsyncInputStream> mPipeIn;
   nsCOMPtr<nsIAsyncOutputStream> mPipeOut;
   nsCOMPtr<nsIRequestContext> mRequestContext;

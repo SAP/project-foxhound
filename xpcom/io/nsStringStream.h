@@ -47,7 +47,8 @@
  */
 extern nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
                                       mozilla::Span<const char> aStringToRead,
-                                      nsAssignmentType aAssignment);
+                                      nsAssignmentType aAssignment,
+                                      const StringTaint& aTaint = EmptyTaint);
 
 /**
  * Factory method to get an nsIInputStream from an nsTArray representing a byte
@@ -57,7 +58,8 @@ extern nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
  * nsISeekableStream.
  */
 extern nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
-                                      nsTArray<uint8_t>&& aArray);
+                                      nsTArray<uint8_t>&& aArray,
+                                      const StringTaint& aTaint = EmptyTaint);
 
 /**
  * Factory method to get an nsInputStream from an nsACString.  Result will

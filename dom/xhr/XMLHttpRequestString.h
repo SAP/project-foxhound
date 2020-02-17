@@ -70,6 +70,9 @@ class MOZ_STACK_CLASS XMLHttpRequestStringWriterHelper final {
   mozilla::BulkWriteHandle<char16_t> BulkWrite(uint32_t aCapacity,
                                                nsresult& aRv);
 
+  void
+  AppendTaintAt(size_t aIndex, const StringTaint& aTaint);
+
  private:
   XMLHttpRequestStringWriterHelper(const XMLHttpRequestStringWriterHelper&) =
       delete;

@@ -83,11 +83,13 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request,
     size_t length = mData.length();
     uint8_t* elems = mData.extractOrCopyRawBuffer();
     nsresult rv =
-        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems);
+        mObserver->OnStreamComplete(this, mContext, aStatus, length, elems, mTaint);
     if (rv != NS_SUCCESS_ADOPTED_DATA) {
       // The observer didn't take ownership of the extracted data buffer, so
       // put it back into mData.
       mData.replaceRawBuffer(elems, length);
+    } else {
+        mTaint.clear();
     }
     // done.. cleanup
     ReleaseData();
@@ -98,8 +100,8 @@ nsIncrementalStreamLoader::OnStopRequest(nsIRequest* request,
 }
 
 nsresult nsIncrementalStreamLoader::WriteSegmentFun(
-    nsIInputStream* inStr, void* closure, const char* fromSegment,
-    uint32_t toOffset, uint32_t count, uint32_t* writeCount) {
+    void* closure, const char* fromSegment,
+    uint32_t toOffset, uint32_t count, const StringTaint& taint, uint32_t* writeCount) {
   nsIncrementalStreamLoader* self = (nsIncrementalStreamLoader*)closure;
 
   const uint8_t* data = reinterpret_cast<const uint8_t*>(fromSegment);
@@ -108,7 +110,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
   if (self->mData.empty()) {
     // Shortcut when observer wants to keep the listener's buffer empty.
     rv = self->mObserver->OnIncrementalData(self, self->mContext, count, data,
-                                            &consumedCount);
+                                            taint, &consumedCount);
 
     if (rv != NS_OK) {
       return rv;
@@ -119,6 +121,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     }
 
     if (consumedCount < count) {
+      self->mTaint.concat(taint.subtaint(consumedCount, count), self->mData.length());
       if (!self->mData.append(fromSegment + consumedCount,
                               count - consumedCount)) {
         self->mData.clearAndFree();
@@ -128,6 +131,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
   } else {
     // We have some non-consumed data from previous OnIncrementalData call,
     // appending new data and reporting combined data.
+    self->mTaint.concat(taint, self->mData.length());
     if (!self->mData.append(fromSegment, count)) {
       self->mData.clearAndFree();
       return NS_ERROR_OUT_OF_MEMORY;
@@ -137,7 +141,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     uint8_t* elems = self->mData.extractOrCopyRawBuffer();
 
     rv = self->mObserver->OnIncrementalData(self, self->mContext, reportCount,
-                                            elems, &consumedCount);
+                                            elems, self->mTaint, &consumedCount);
 
     // We still own elems, freeing its memory when exiting scope.
     if (rv != NS_OK) {
@@ -158,6 +162,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
       if (consumedCount > 0) {
         self->mData.erase(self->mData.begin() + consumedCount);
       }
+      self->mTaint = self->mTaint.subtaint(consumedCount, length);
     }
   }
 
@@ -165,6 +170,29 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
   *writeCount = count;
 
   return NS_OK;
+}
+
+nsresult
+nsIncrementalStreamLoader::WriteSegmentFunTaint(nsITaintawareInputStream *inStr,
+                                                void *closure,
+                                                const char *fromSegment,
+                                                uint32_t toOffset,
+                                                uint32_t count,
+                                                const StringTaint& taint,
+                                                uint32_t *writeCount)
+{
+    return WriteSegmentFun(closure, fromSegment, toOffset, count, taint, writeCount);
+}
+
+nsresult
+nsIncrementalStreamLoader::WriteSegmentFunNoTaint(nsIInputStream *inStr,
+                                                  void *closure,
+                                                  const char *fromSegment,
+                                                  uint32_t toOffset,
+                                                  uint32_t count,
+                                                  uint32_t *writeCount)
+{
+    return WriteSegmentFun(closure, fromSegment, toOffset, count, EmptyTaint, writeCount);
 }
 
 NS_IMETHODIMP
@@ -177,8 +205,24 @@ nsIncrementalStreamLoader::OnDataAvailable(nsIRequest* request,
     // OnStreamComplete
     mRequest = request;
   }
+
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
+
+#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream)
+    puts("!!!!! NO taint-aware input stream available in nsIncrementalStreamLoader::OnDataAvailable !!!!!");
+  else
+    puts("+++++ Taint-aware input stream available in nsIncrementalStreamLoader::OnDataAvailable +++++");
+#endif
+
   uint32_t countRead;
-  nsresult rv = inStr->ReadSegments(WriteSegmentFun, this, count, &countRead);
+  nsresult rv;
+  if (taintInputStream) {
+    rv = taintInputStream->TaintedReadSegments(WriteSegmentFunTaint, this, count, &countRead);
+  } else {
+    rv = inStr->ReadSegments(WriteSegmentFunNoTaint, this, count, &countRead);
+  }
   mRequest = nullptr;
   return rv;
 }

@@ -8,6 +8,12 @@
 interface nsIAsyncInputStream;
 interface nsIAsyncOutputStream;
 
+%{C++
+    #include "Taint.h"
+%}
+
+native StringTaint(StringTaint);
+
 /**
  * nsIPipe represents an in-process buffer that can be read using nsIInputStream
  * and written using nsIOutputStream.  The reader and writer of a pipe do not
@@ -71,6 +77,11 @@ interface nsIPipe : nsISupports
      * initialized.
      */
     [must_use] readonly attribute nsIAsyncOutputStream outputStream;
+
+    /**
+     * TaintFox: See taint/docs/Netwerk.md
+     */
+    void setTaint(in StringTaint taint);
 };
 
 /**
@@ -126,6 +137,8 @@ class nsIOutputStream;
  *        passing UINT32_MAX here causes the pipe to have "infinite" space.
  *        this mode can be useful in some cases, but should always be used with
  *        caution.  the default value for this parameter is a finite value.
+ *
+ * TaintFox: extended to return a reference to the pipe itself as well. Needed for nsHttpTransaction.
  */
 extern MOZ_MUST_USE nsresult
 NS_NewPipe2(nsIAsyncInputStream **pipeIn,
@@ -133,7 +146,8 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             bool nonBlockingInput = false,
             bool nonBlockingOutput = false,
             uint32_t segmentSize = 0,
-            uint32_t segmentCount = 0);
+            uint32_t segmentCount = 0,
+            nsIPipe **pipe = nullptr);
 
 /**
  * NS_NewPipe

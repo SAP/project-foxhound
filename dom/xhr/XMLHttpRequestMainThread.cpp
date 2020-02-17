@@ -491,7 +491,7 @@ nsresult XMLHttpRequestMainThread::DetectCharset() {
 }
 
 nsresult XMLHttpRequestMainThread::AppendToResponseText(
-    Span<const uint8_t> aBuffer, bool aLast) {
+    Span<const uint8_t> aBuffer, const StringTaint& aTaint, bool aLast) {
   // Call this with an empty buffer to send the decoder the signal
   // that we have hit the end of the stream.
 
@@ -529,6 +529,8 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     MOZ_ASSERT(len <= destBufferLen.value());
     Unused << hadErrors;
     handle.Finish(len, false);
+    // TaintFox: propagate taint. TODO(samuel) deal with encoding
+    helper.AppendTaintAt(len, aTaint);
   }  // release mutex
 
   if (aLast) {
@@ -596,6 +598,7 @@ void XMLHttpRequestMainThread::GetResponseText(
              "Unexpected mResponseBodyDecodedPos");
   Span<const uint8_t> span = mResponseBody;
   aRv = AppendToResponseText(span.From(mResponseBodyDecodedPos),
+                             mResponseBody.Taint().subtaint(mResponseBodyDecodedPos, -1),
                              mState == XMLHttpRequest_Binding::DONE);
   if (aRv.Failed()) {
     return;
@@ -1492,9 +1495,9 @@ void XMLHttpRequestMainThread::SetOriginAttributes(
 /*
  * "Copy" from a stream.
  */
-nsresult XMLHttpRequestMainThread::StreamReaderFunc(
-    nsIInputStream* in, void* closure, const char* fromRawSegment,
-    uint32_t toOffset, uint32_t count, uint32_t* writeCount) {
+nsresult XMLHttpRequestMainThread::HandleStreamInput(
+    void* closure, const char* fromRawSegment,
+    uint32_t toOffset, uint32_t count, const StringTaint& taint, uint32_t* writeCount) {
   XMLHttpRequestMainThread* xmlHttpRequest =
       static_cast<XMLHttpRequestMainThread*>(closure);
   if (!xmlHttpRequest || !writeCount) {
@@ -1540,7 +1543,7 @@ nsresult XMLHttpRequestMainThread::StreamReaderFunc(
     MOZ_ASSERT(!xmlHttpRequest->mResponseXML,
                "We shouldn't be parsing a doc here");
     rv = xmlHttpRequest->AppendToResponseText(
-        AsBytes(MakeSpan(fromRawSegment, count)));
+        AsBytes(MakeSpan(fromRawSegment, count)), taint);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -1578,6 +1581,29 @@ nsresult XMLHttpRequestMainThread::StreamReaderFunc(
   }
 
   return rv;
+}
+
+nsresult
+XMLHttpRequestMainThread::StreamReaderFunc(nsITaintawareInputStream* in,
+                                 void* closure,
+                                 const char* fromRawSegment,
+                                 uint32_t toOffset,
+                                 uint32_t count,
+                                 const StringTaint& aTaint,
+                                 uint32_t *writeCount)
+{
+  return HandleStreamInput(closure, fromRawSegment, toOffset, count, aTaint, writeCount);
+}
+
+nsresult
+XMLHttpRequestMainThread::StreamReaderFuncNoTaint(nsIInputStream* in,
+                                        void* closure,
+                                        const char* fromRawSegment,
+                                        uint32_t toOffset,
+                                        uint32_t count,
+                                        uint32_t *writeCount)
+{
+  return HandleStreamInput(closure, fromRawSegment, toOffset, count, EmptyTaint, writeCount);
 }
 
 namespace {
@@ -1743,8 +1769,20 @@ XMLHttpRequestMainThread::OnDataAvailable(nsIRequest* request,
   }
 
   uint32_t totalRead;
-  rv = inStr->ReadSegments(XMLHttpRequestMainThread::StreamReaderFunc,
-                           (void*)this, count, &totalRead);
+
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
+  if (!taintInputStream) {
+#if (DEBUG_E2E_TAINTING)
+    puts("!!!!! NO taint-aware input stream available in XMLHttpRequest::OnDataAvailable !!!!!");
+#endif
+    rv = inStr->ReadSegments(StreamReaderFuncNoTaint, (void*)this, count, &totalRead);
+  } else {
+#if (DEBUG_E2E_TAINTING)
+    puts("+++++ Taint-aware input stream available in XMLHttpRequest::OnDataAvailable +++++");
+#endif
+    rv = taintInputStream->TaintedReadSegments(StreamReaderFunc, (void*)this, count, &totalRead);
+  }
+
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Fire the first progress event/loading state change
@@ -2052,7 +2090,7 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
                    (mResponseType == XMLHttpRequestResponseType::Json) ||
                    (mResponseType == XMLHttpRequestResponseType::_empty &&
                     !mResponseXML))) {
-    AppendToResponseText(Span<const uint8_t>(), true);
+    AppendToResponseText(Span<const uint8_t>(), EmptyTaint, true);
   }
 
   mWaitingForOnStopRequest = false;
@@ -3000,6 +3038,9 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
     return;
   }
 
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aValue), "XMLHttpRequest.setRequestHeader(value)", NS_ConvertUTF8toUTF16(aName));
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)", NS_ConvertUTF8toUTF16(aValue));
+
   // Step 6.1
   // Skipping for now, as normalizing the case of header names may not be
   // web-compatible. See bug 1285036.
@@ -3012,6 +3053,7 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
   } else {
     mAuthorRequestHeaders.MergeOrSet(aName, value);
   }
+
 }
 
 void XMLHttpRequestMainThread::SetTimeout(uint32_t aTimeout, ErrorResult& aRv) {

@@ -15,6 +15,7 @@
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsHtml5OwningUTF16Buffer.h"
 #include "nsIInputStream.h"
+#include "nsITaintawareInputStream.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/UniquePtr.h"
 #include "nsHtml5AtomTable.h"
@@ -24,6 +25,8 @@
 #include "nsICharsetDetector.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/Buffer.h"
+
+// TaintFox: parser modified to support taint propagation.
 
 class nsHtml5Parser;
 
@@ -254,14 +257,22 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
 
   void DoStopRequest();
 
-  void DoDataAvailableBuffer(mozilla::Buffer<uint8_t>&& aBuffer);
+  void DoDataAvailableBuffer(mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint);
 
-  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer);
+  void DoDataAvailable(mozilla::Span<const uint8_t> aBuffer, const StringTaint& aTaint);
 
-  static nsresult CopySegmentsToParser(nsIInputStream* aInStream,
+  static nsresult CopySegmentsToParserNoTaint(nsIInputStream* aInStream,
                                        void* aClosure, const char* aFromSegment,
                                        uint32_t aToOffset, uint32_t aCount,
                                        uint32_t* aWriteCount);
+
+    static nsresult CopySegmentsToParser(nsITaintawareInputStream *aInStream,
+                                         void *aClosure,
+                                         const char *aFromSegment,
+                                         uint32_t aToOffset,
+                                         uint32_t aCount,
+                                         const StringTaint& aTaint,
+                                         uint32_t *aWriteCount);
 
   bool IsTerminatedOrInterrupted() {
     mozilla::MutexAutoLock autoLock(mTerminatedMutex);
@@ -281,12 +292,14 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   /**
    * Push bytes from network when there is no Unicode decoder yet
    */
-  nsresult SniffStreamBytes(mozilla::Span<const uint8_t> aFromSegment);
+  nsresult SniffStreamBytes(mozilla::Span<const uint8_t> aFromSegment,
+                            const StringTaint& aTaint);
 
   /**
    * Push bytes from network when there is a Unicode decoder already
    */
-  nsresult WriteStreamBytes(mozilla::Span<const uint8_t> aFromSegment);
+  nsresult WriteStreamBytes(mozilla::Span<const uint8_t> aFromSegment,
+                            const StringTaint& aTaint);
 
   /**
    * Check whether every other byte in the sniffing buffer is zero.
@@ -297,7 +310,8 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * Write the start of the stream to detector.
    */
   void FinalizeSniffingWithDetector(mozilla::Span<const uint8_t> aFromSegment,
-                                    uint32_t aCountToSniffingLimit, bool aEof);
+                                    uint32_t aCountToSniffingLimit, bool aEof,
+                                    const StringTaint& aTaint);
 
   /**
    * <meta charset> scan failed. Try chardet if applicable. After this, the
@@ -309,7 +323,8 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * @param aEof true iff called upon end of stream
    */
   nsresult FinalizeSniffing(mozilla::Span<const uint8_t> aFromSegment,
-                            uint32_t aCountToSniffingLimit, bool aEof);
+                            uint32_t aCountToSniffingLimit, bool aEof,
+                            const StringTaint& aTaint);
 
   /**
    * Set up the Unicode decoder and write the sniffing buffer into it
@@ -318,7 +333,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * @param aFromSegment The current network buffer
    */
   nsresult SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-      mozilla::Span<const uint8_t> aFromSegment);
+    mozilla::Span<const uint8_t> aFromSegment, const StringTaint& aTaint);
 
   /**
    * Initialize the Unicode decoder, mark the BOM as the source and

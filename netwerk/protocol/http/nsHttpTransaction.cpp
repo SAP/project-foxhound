@@ -1413,7 +1413,7 @@ nsresult nsHttpTransaction::ParseLineSegment(char* segment, uint32_t len) {
   // append segment to mLineBuf...
   mLineBuf.Append(segment, len);
 
-  // a line buf with only a new line char signifies the end of headers.
+  // a line buf with only a new line char sginifies the end of headers.
   if (mLineBuf.First() == '\n') {
     mLineBuf.Truncate();
     // discard this response if it is a 100 continue or other 1xx status.
@@ -1706,6 +1706,14 @@ nsresult nsHttpTransaction::HandleContentStart() {
         }
       } else if (mContentLength == int64_t(-1))
         LOG(("waiting for the server to close the connection.\n"));
+    }
+
+    // TaintFox: parse any taint information from the header and
+    // add it to the content pipe.
+    nsAutoCString serializedTaint;
+    if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
+        std::string taint(serializedTaint.BeginReading());
+        mPipe->SetTaint(ParseTaint(taint));
     }
   }
 

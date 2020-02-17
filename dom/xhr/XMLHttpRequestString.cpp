@@ -40,6 +40,12 @@ class XMLHttpRequestStringBuffer final {
     mData.Append(aString);
   }
 
+  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint)
+  {
+    // Caller must hold the lock
+    mData.Taint().concat(aTaint, aIndex);
+  }
+
   MOZ_MUST_USE bool GetAsString(nsAString& aString) {
     MutexAutoLock lock(mMutex);
     return aString.Assign(mData, mozilla::fallible);
@@ -53,6 +59,7 @@ class XMLHttpRequestStringBuffer final {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(aLength <= mData.Length());
 
+    // Taintfox: nsStringBuffer and DOMString should already be taint aware
     // XXX: Bug 1408793 suggests encapsulating the following sequence within
     //      DOMString.
     nsStringBuffer* buf = nsStringBuffer::FromString(mData);
@@ -67,6 +74,7 @@ class XMLHttpRequestStringBuffer final {
     // We can get here if mData is empty.  In that case it won't have an
     // nsStringBuffer....
     MOZ_ASSERT(mData.IsEmpty());
+    // Taintfox: if mData is empty, there is no taint...?
     return aString.AsAString().Assign(mData.BeginReading(), aLength,
                                       mozilla::fallible);
   }
@@ -179,6 +187,12 @@ uint32_t XMLHttpRequestStringWriterHelper::Length() const {
 mozilla::BulkWriteHandle<char16_t> XMLHttpRequestStringWriterHelper::BulkWrite(
     uint32_t aCapacity, nsresult& aRv) {
   return mBuffer->UnsafeBulkWrite(aCapacity, aRv);
+}
+
+void
+XMLHttpRequestStringWriterHelper::AppendTaintAt(size_t aIndex, const StringTaint& aTaint)
+{
+  mBuffer->UnsafeAppendTaintAt(aIndex, aTaint);
 }
 
 // ---------------------------------------------------------------------------

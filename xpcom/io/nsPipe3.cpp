@@ -25,6 +25,7 @@
 #include "nsPipe.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsITaintawareInputStream.h"
 
 using namespace mozilla;
 
@@ -106,7 +107,8 @@ struct nsPipeReadState {
         mSegment(0),
         mAvailable(0),
         mActiveRead(false),
-        mNeedDrain(false) {}
+        mNeedDrain(false),
+        mBytesRead(0) {}
 
   char* mReadCursor;
   char* mReadLimit;
@@ -120,6 +122,9 @@ struct nsPipeReadState {
   // but that drain has been delayed due to an active read.  When the read
   // completes, this flag indicate the drain should then be performed.
   bool mNeedDrain;
+
+  // TaintFox: Required for accessing the associated taint information.
+  int32_t mBytesRead;
 };
 
 //-----------------------------------------------------------------------------
@@ -130,7 +135,8 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
                                 public nsISearchableInputStream,
                                 public nsICloneableInputStream,
                                 public nsIClassInfo,
-                                public nsIBufferedInputStream {
+                                public nsIBufferedInputStream,
+                                public nsITaintawareInputStream {
  public:
   // Pipe input streams preserve their refcount changes when record/replaying,
   // as otherwise the thread which destroys the stream may vary between
@@ -143,6 +149,7 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
   NS_DECL_NSICLONEABLEINPUTSTREAM
   NS_DECL_NSICLASSINFO
   NS_DECL_NSIBUFFEREDINPUTSTREAM
+  NS_DECL_NSITAINTAWAREINPUTSTREAM
 
   explicit nsPipeInputStream(nsPipe* aPipe)
       : mPipe(aPipe),
@@ -188,6 +195,14 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
 
  private:
   virtual ~nsPipeInputStream();
+
+  // Segmented read implementation, used by ReadSegment() and
+  // TaintedreadSegment()
+  nsresult ReadSegmentsInternal(nsWriteSegmentFun aWriter,
+                                nsWriteTaintedSegmentFun aTaintedWriter,
+                                void* aClosure,
+                                uint32_t aCount,
+                                uint32_t* aReadCount);
 
   RefPtr<nsPipe> mPipe;
 
@@ -313,7 +328,7 @@ class nsPipe final : public nsIPipe {
 
   // methods below should only be called by AutoReadSegment
   nsresult GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
-                          uint32_t& aLength);
+                          uint32_t& aLength, StringTaint* aTaint = nullptr);
   void ReleaseReadSegment(nsPipeReadState& aReadState, nsPipeEvents& aEvents);
   void AdvanceReadCursor(nsPipeReadState& aReadState, uint32_t aCount);
 
@@ -349,6 +364,14 @@ class nsPipe final : public nsIPipe {
   // |mStatus| is protected by |mReentrantMonitor|.
   nsresult mStatus;
   bool mInited;
+
+  // TaintFox: taint information for all data in this pipe.
+  // It would be cleaner to obtain the taint information through the
+  // nsPipeOutputStream. However, besides the additional overhead,
+  // providing all taint information at once is perfectly fine since
+  // the taint information for incoming HTTP responses is fully available
+  // before the data.
+  StringTaint         mTaint;
 };
 
 //-----------------------------------------------------------------------------
@@ -367,7 +390,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
         mOffset(0) {
     MOZ_DIAGNOSTIC_ASSERT(mPipe);
     MOZ_DIAGNOSTIC_ASSERT(!mReadState.mActiveRead);
-    mStatus = mPipe->GetReadSegment(mReadState, mSegment, mLength);
+    mStatus = mPipe->GetReadSegment(mReadState, mSegment, mLength, &mTaint);
     if (NS_SUCCEEDED(mStatus)) {
       MOZ_DIAGNOSTIC_ASSERT(mReadState.mActiveRead);
       MOZ_DIAGNOSTIC_ASSERT(mSegment);
@@ -396,6 +419,12 @@ class MOZ_STACK_CLASS AutoReadSegment final {
     return mSegment + mOffset;
   }
 
+  StringTaint Taint() const
+  {
+    MOZ_ASSERT(NS_SUCCEEDED(mStatus));
+    return mTaint.subtaint(mOffset, mLength);
+  }
+
   uint32_t Length() const {
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(mStatus));
     MOZ_DIAGNOSTIC_ASSERT(mLength >= mOffset);
@@ -418,6 +447,9 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   const char* mSegment;
   uint32_t mLength;
   uint32_t mOffset;
+
+  // TaintFox: taint information for the current segment
+  StringTaint mTaint;
 };
 
 //
@@ -566,6 +598,13 @@ nsPipe::GetOutputStream(nsIAsyncOutputStream** aOutputStream) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsPipe::SetTaint(StringTaint aTaint)
+{
+  mTaint = aTaint;
+  return NS_OK;
+}
+
 void nsPipe::PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
                          char*& aCursor, char*& aLimit) {
   if (aIndex == 0) {
@@ -588,8 +627,10 @@ void nsPipe::PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
   }
 }
 
-nsresult nsPipe::GetReadSegment(nsPipeReadState& aReadState,
-                                const char*& aSegment, uint32_t& aLength) {
+nsresult
+nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
+                       uint32_t& aLength, StringTaint* aTaint)
+{
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
   if (aReadState.mReadCursor == aReadState.mReadLimit) {
@@ -607,6 +648,10 @@ nsresult nsPipe::GetReadSegment(nsPipeReadState& aReadState,
   aSegment = aReadState.mReadCursor;
   aLength = aReadState.mReadLimit - aReadState.mReadCursor;
   MOZ_DIAGNOSTIC_ASSERT(aLength <= aReadState.mAvailable);
+
+  // Taintfox
+  if (aTaint)
+    *aTaint = mTaint.subtaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
 
   return NS_OK;
 }
@@ -638,6 +683,9 @@ void nsPipe::AdvanceReadCursor(nsPipeReadState& aReadState,
 
     LOG(("III advancing read cursor by %u\n", aBytesRead));
     MOZ_DIAGNOSTIC_ASSERT(aBytesRead <= mBuffer.GetSegmentSize());
+
+   // TaintFox: update total read count for taint access
+    aReadState.mBytesRead += aBytesRead;
 
     aReadState.mReadCursor += aBytesRead;
     MOZ_DIAGNOSTIC_ASSERT(aReadState.mReadCursor <= aReadState.mReadLimit);
@@ -1154,6 +1202,7 @@ NS_INTERFACE_TABLE_HEAD(nsPipeInputStream)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsICloneableInputStream)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIBufferedInputStream)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIClassInfo)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsITaintawareInputStream)
     NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsIInputStream,
                                        nsIAsyncInputStream)
     NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsISupports,
@@ -1290,9 +1339,10 @@ nsPipeInputStream::Available(uint64_t* aResult) {
 }
 
 NS_IMETHODIMP
-nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
-                                uint32_t aCount, uint32_t* aReadCount) {
-  LOG(("III ReadSegments [this=%p count=%u]\n", this, aCount));
+nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter, void* aClosure,
+                                        uint32_t aCount, uint32_t* aReadCount) {
+  LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));
+  MOZ_ASSERT(!aWriter || !aTaintedWriter, "one of aWriter and aTaintedWriter must be null");
 
   nsresult rv = NS_OK;
 
@@ -1330,8 +1380,13 @@ nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
     while (segment.Length()) {
       writeCount = 0;
 
-      rv = aWriter(static_cast<nsIAsyncInputStream*>(this), aClosure,
-                   segment.Data(), *aReadCount, segment.Length(), &writeCount);
+      if (aWriter) {
+        rv = aWriter(static_cast<nsIAsyncInputStream*>(this), aClosure, segment.Data(), *aReadCount,
+                     segment.Length(), &writeCount);
+      } else {
+        rv = aTaintedWriter(this, aClosure, segment.Data(), *aReadCount,
+                            segment.Length(), segment.Taint(), &writeCount);
+      }
 
       if (NS_FAILED(rv) || writeCount == 0) {
         aCount = 0;
@@ -1350,6 +1405,11 @@ nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
   }
 
   return rv;
+}
+
+NS_IMETHODIMP
+nsPipeInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure, uint32_t aCount, uint32_t* aReadCount) {
+  return ReadSegmentsInternal(aWriter, nullptr, aClosure, aCount, aReadCount);
 }
 
 NS_IMETHODIMP
@@ -1528,6 +1588,24 @@ nsresult nsPipeInputStream::Status() const {
 }
 
 nsPipeInputStream::~nsPipeInputStream() { Close(); }
+
+// TaintFox
+NS_IMETHODIMP
+nsPipeInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
+                                       void* aClosure,
+                                       uint32_t aCount,
+                                       uint32_t* aReadCount)
+{
+  return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
+}
+
+// TaintFox
+NS_IMETHODIMP
+nsPipeInputStream::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
+{
+  TaintedBuffer buf(aToBuf, aTaint);
+  return TaintedReadSegments(NS_TaintedCopySegmentToBuffer, &buf, aBufLen, aReadCount);
+}
 
 //-----------------------------------------------------------------------------
 // nsPipeOutputStream methods:
@@ -1803,10 +1881,15 @@ nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
   return NS_OK;
 }
 
-nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
-                     nsIAsyncOutputStream** aPipeOut, bool aNonBlockingInput,
-                     bool aNonBlockingOutput, uint32_t aSegmentSize,
-                     uint32_t aSegmentCount) {
+nsresult
+NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
+            nsIAsyncOutputStream** aPipeOut,
+            bool aNonBlockingInput,
+            bool aNonBlockingOutput,
+            uint32_t aSegmentSize,
+            uint32_t aSegmentCount,
+            nsIPipe** aPipe)
+{
   nsPipe* pipe = new nsPipe();
   nsresult rv = pipe->Init(aNonBlockingInput, aNonBlockingOutput, aSegmentSize,
                            aSegmentCount);
@@ -1819,6 +1902,12 @@ nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
   // These always succeed because the pipe is initialized above.
   MOZ_ALWAYS_SUCCEEDS(pipe->GetInputStream(aPipeIn));
   MOZ_ALWAYS_SUCCEEDS(pipe->GetOutputStream(aPipeOut));
+
+  if (aPipe) {
+    RefPtr<nsIPipe> ref = pipe;
+    ref.forget(aPipe);
+  }
+  
   return NS_OK;
 }
 

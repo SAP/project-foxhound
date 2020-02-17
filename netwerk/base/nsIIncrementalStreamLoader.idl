@@ -8,16 +8,24 @@
 interface nsIRequest;
 interface nsIIncrementalStreamLoader;
 
+%{C++
+    #include "Taint.h"
+%}
+
+native StringTaint(StringTaint);
+
 [scriptable, uuid(07c3d2cc-5454-4618-9f4f-cd93de9504a4)]
 interface nsIIncrementalStreamLoaderObserver : nsISupports
 {
     /**
      * Called when new data has arrived on the stream.
+     * Taintfox: this method has been extended to accept taint information.
      *
      * @param loader the stream loader that loaded the stream.
      * @param ctxt the context parameter of the underlying channel
      * @param dataLength the length of the new data received
      * @param data the contents of the new data received.
+     * @param taint the associated taint information if any.
      *
      * This method will always be called asynchronously by the
      * nsIIncrementalStreamLoader involved, on the thread that called the
@@ -36,16 +44,19 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
                            in nsISupports ctxt,
                            in unsigned long dataLength,
                            [const,array,size_is(dataLength)] in octet data,
+                           in StringTaint taint,
                            inout unsigned long consumedLength);
 
     /**
      * Called when the entire stream has been loaded.
+     * Taintfox: this method has been extended to accept taint information.
      *
      * @param loader the stream loader that loaded the stream.
      * @param ctxt the context parameter of the underlying channel
      * @param status the status of the underlying channel
      * @param resultLength the length of the data loaded
      * @param result the data
+     * @param taint the associated taint information if any.
      *
      * This method will always be called asynchronously by the
      * nsIIncrementalStreamLoader involved, on the thread that called the
@@ -62,7 +73,8 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
                           in nsISupports ctxt,
                           in nsresult status,
                           in unsigned long resultLength,
-                          [const,array,size_is(resultLength)] in octet result);
+                          [const,array,size_is(resultLength)] in octet result,
+                          in StringTaint taint);
 };
 
 /**

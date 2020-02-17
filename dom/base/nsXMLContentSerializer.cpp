@@ -165,6 +165,10 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
                      NS_ERROR_OUT_OF_MEMORY);
     }
   } else {
+
+    // Taintfox: propagate taint
+    aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
+
     if (aTranslateEntities) {
       NS_ENSURE_TRUE(
           AppendAndTranslateEntities(
@@ -1222,6 +1226,9 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
   uint32_t advanceLength = 0;
   nsReadingIterator<char16_t> iter;
 
+  // Taintfox: keep track of start of chunk
+  uint32_t chunkStart = 0;
+
   for (aStr.BeginReading(iter); iter != done_reading;
        iter.advance(int32_t(advanceLength))) {
     uint32_t fragmentLength = done_reading - iter;
@@ -1229,6 +1236,9 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
     const char16_t* fragmentStart = c;
     const char16_t* fragmentEnd = c + fragmentLength;
     const char* entityText = nullptr;
+
+    // Taintfox: keep track of start of chunk within string
+    chunkStart += advanceLength;
 
     advanceLength = 0;
     // for each character in this chunk, check if it
@@ -1241,10 +1251,22 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
       }
     }
 
+    // Taintfox: propagate taint for non replaced chars
+    aOutputStr.Taint().concat(
+      aStr.Taint().subtaint(chunkStart, chunkStart + advanceLength),
+      aOutputStr.Length());
+
     NS_ENSURE_TRUE(
         aOutputStr.Append(fragmentStart, advanceLength, mozilla::fallible),
         false);
     if (entityText) {
+      // Taintfox: propagate taint for replaced chars
+      const TaintFlow* flow = aStr.Taint().at(chunkStart + advanceLength);
+      if (flow) {
+        aOutputStr.Taint().append(
+          TaintRange(aOutputStr.Length(), aOutputStr.Length() + strlen(entityText), *flow)
+          );
+      }
       NS_ENSURE_TRUE(AppendASCIItoUTF16(mozilla::MakeStringSpan(entityText),
                                         aOutputStr, mozilla::fallible),
                      false);

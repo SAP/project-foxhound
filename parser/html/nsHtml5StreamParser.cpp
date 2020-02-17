@@ -29,6 +29,7 @@
 #include "expat.h"
 #include "nsINestedURI.h"
 #include "nsCharsetSource.h"
+#include "nsITaintawareInputStream.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsPrintfCString.h"
 #include "nsNetUtil.h"
@@ -385,7 +386,7 @@ void nsHtml5StreamParser::SetViewSourceTitle(nsIURI* aURL) {
 
 nsresult
 nsHtml5StreamParser::SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-    Span<const uint8_t> aFromSegment) {
+    Span<const uint8_t> aFromSegment, const StringTaint& aTaint) {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
   nsresult rv = NS_OK;
   if (mDecodingLocalFileAsUTF8 && mCharsetSource <= kCharsetFromFileURLGuess) {
@@ -401,12 +402,12 @@ nsHtml5StreamParser::SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
     mUnicodeDecoder = mEncoding->NewDecoderWithBOMRemoval();
   }
   if (mSniffingBuffer) {
-    rv = WriteStreamBytes(MakeSpan(mSniffingBuffer.get(), mSniffingLength));
+    rv = WriteStreamBytes(MakeSpan(mSniffingBuffer.get(), mSniffingLength), aTaint);
     NS_ENSURE_SUCCESS(rv, rv);
     mSniffingBuffer = nullptr;
   }
   mMetaScanner = nullptr;
-  return WriteStreamBytes(aFromSegment);
+  return WriteStreamBytes(aFromSegment, aTaint);
 }
 
 nsresult nsHtml5StreamParser::SetupDecodingFromBom(
@@ -542,8 +543,8 @@ static void HandleProcessingInstruction(void* aUserData,
 }
 
 void nsHtml5StreamParser::FinalizeSniffingWithDetector(
-    Span<const uint8_t> aFromSegment, uint32_t aCountToSniffingLimit,
-    bool aEof) {
+  Span<const uint8_t> aFromSegment, uint32_t aCountToSniffingLimit,
+  bool aEof, const StringTaint& aTaint) {
   if (mSniffingBuffer) {
     FeedDetector(MakeSpan(mSniffingBuffer.get(), mSniffingLength), false);
   }
@@ -569,7 +570,7 @@ void nsHtml5StreamParser::FinalizeSniffingWithDetector(
 
 nsresult nsHtml5StreamParser::FinalizeSniffing(Span<const uint8_t> aFromSegment,
                                                uint32_t aCountToSniffingLimit,
-                                               bool aEof) {
+                                               bool aEof, const StringTaint& aTaint) {
   MOZ_ASSERT(IsParserThread(), "Wrong thread!");
   MOZ_ASSERT(mCharsetSource < kCharsetFromUserForcedAutoDetection,
              "Should not finalize sniffing with strong decision already made.");
@@ -631,7 +632,7 @@ nsresult nsHtml5StreamParser::FinalizeSniffing(Span<const uint8_t> aFromSegment,
       mCharsetSource = kCharsetFromMetaTag;  // means confident
     }
 
-    return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment);
+    return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment, aTaint);
   }
 
   // meta scan failed.
@@ -643,7 +644,7 @@ nsresult nsHtml5StreamParser::FinalizeSniffing(Span<const uint8_t> aFromSegment,
   // the charset may have been set now
   // maybe try chardet now;
   if (mFeedChardet) {
-    FinalizeSniffingWithDetector(aFromSegment, aCountToSniffingLimit, aEof);
+    FinalizeSniffingWithDetector(aFromSegment, aCountToSniffingLimit, aEof, aTaint);
     // fall thru; callback may have changed charset
   }
   if (mCharsetSource == kCharsetUninitialized) {
@@ -659,11 +660,11 @@ nsresult nsHtml5StreamParser::FinalizeSniffing(Span<const uint8_t> aFromSegment,
     mCharsetSource = kCharsetFromDocTypeDefault;
     mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource);
   }
-  return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment);
+  return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment, aTaint);
 }
 
 nsresult nsHtml5StreamParser::SniffStreamBytes(
-    Span<const uint8_t> aFromSegment) {
+    Span<const uint8_t> aFromSegment, const StringTaint &aTaint) {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
   nsresult rv = NS_OK;
 
@@ -695,7 +696,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
         if (aFromSegment[i] == 0xFE) {
           rv = SetupDecodingFromBom(UTF_16LE_ENCODING);
           NS_ENSURE_SUCCESS(rv, rv);
-          return WriteStreamBytes(aFromSegment.From(i + 1));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
         }
         mBomState = BOM_SNIFFING_OVER;
         break;
@@ -703,7 +704,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
         if (aFromSegment[i] == 0xFF) {
           rv = SetupDecodingFromBom(UTF_16BE_ENCODING);
           NS_ENSURE_SUCCESS(rv, rv);
-          return WriteStreamBytes(aFromSegment.From(i + 1));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
         }
         mBomState = BOM_SNIFFING_OVER;
         break;
@@ -718,7 +719,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
         if (aFromSegment[i] == 0xBF) {
           rv = SetupDecodingFromBom(UTF_8_ENCODING);
           NS_ENSURE_SUCCESS(rv, rv);
-          return WriteStreamBytes(aFromSegment.From(i + 1));
+          return WriteStreamBytes(aFromSegment.From(i + 1), aTaint.subtaint(i + 1, aFromSegment.Length()));
         }
         mBomState = BOM_SNIFFING_OVER;
         break;
@@ -729,6 +730,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
   }
   // if we get here, there either was no BOM or the BOM sniffing isn't complete
   // yet
+  // TaintFox: TODO deal with this case
 
   MOZ_ASSERT(mCharsetSource != kCharsetFromByteOrderMark,
              "Should not come here if BOM was found.");
@@ -742,7 +744,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
     // overwrite mEncoding. (Note that if the user has overridden the charset,
     // we don't come here but check <meta> for XSS-dangerous charsets first.)
     mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource);
-    return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment);
+    return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment, aTaint);
   }
 
   if (!mMetaScanner &&
@@ -775,16 +777,16 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
           if (mEncoding->IsJapaneseLegacy()) {
             mFeedChardet = true;
             FinalizeSniffingWithDetector(aFromSegment, countToSniffingLimit,
-                                         false);
+                                         false, aTaint);
           }
           return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-              aFromSegment);
+              aFromSegment, aTaint);
         }
         mEncoding = WrapNotNull(encoding);
         mCharsetSource = kCharsetFromMetaPrescan;
         mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource);
         return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-            aFromSegment);
+            aFromSegment, aTaint);
       }
     }
     if (mCharsetSource == kCharsetFromParentForced ||
@@ -792,11 +794,11 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
       // meta not found, honor override
       if (mEncoding->IsJapaneseLegacy()) {
         mFeedChardet = true;
-        FinalizeSniffingWithDetector(aFromSegment, countToSniffingLimit, false);
+        FinalizeSniffingWithDetector(aFromSegment, countToSniffingLimit, false, aTaint);
       }
-      return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment);
+      return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment, aTaint);
     }
-    return FinalizeSniffing(aFromSegment, countToSniffingLimit, false);
+    return FinalizeSniffing(aFromSegment, countToSniffingLimit, false, aTaint);
   }
 
   // not the last buffer
@@ -818,12 +820,12 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
           (encoding->IsAsciiCompatible() || encoding == ISO_2022_JP_ENCODING)) {
         // Honor override
         return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(
-            aFromSegment);
+            aFromSegment, aTaint);
       }
       mEncoding = WrapNotNull(encoding);
       mCharsetSource = kCharsetFromMetaPrescan;
       mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource);
-      return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment);
+      return SetupDecodingAndWriteSniffingBufferAndCurrentSegment(aFromSegment, aTaint);
     }
   }
 
@@ -888,7 +890,7 @@ inline void nsHtml5StreamParser::OnContentComplete() {
 }
 
 nsresult nsHtml5StreamParser::WriteStreamBytes(
-    Span<const uint8_t> aFromSegment) {
+    Span<const uint8_t> aFromSegment, const StringTaint& aTaint) {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
   // mLastBuffer should always point to a buffer of the size
   // READ_BUFFER_SIZE.
@@ -920,6 +922,16 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
         mTreeBuilder->TryToEnableEncodingMenu();
       }
     }
+
+    // TaintFox: slight hack: propagate taint information after the conversion
+    // (should be done during the conversion)
+    if (aTaint.hasTaint()) {
+#if (DEBUG_E2E_TAINTING)
+      printf("+++++ Writing taint of length %d, %d/%d bytes written +++++\n", aTaint.begin()->end(), read, written);
+#endif
+      mLastBuffer->setTaint(aTaint.subtaint(totalRead, totalRead + read));
+    }
+
     src = src.From(read);
     totalRead += read;
     mLastBuffer->AdvanceEnd(written);
@@ -963,7 +975,7 @@ void nsHtml5StreamParser::ReDecodeLocalFile() {
 
   // Decode again
   for (auto&& buffer : mBufferedLocalFileData) {
-    DoDataAvailable(buffer);
+    DoDataAvailable(buffer, EmptyTaint);
   }
 }
 
@@ -1200,7 +1212,7 @@ void nsHtml5StreamParser::DoStopRequest() {
   if (!mUnicodeDecoder) {
     nsresult rv;
     Span<const uint8_t> empty;
-    if (NS_FAILED(rv = FinalizeSniffing(empty, 0, true))) {
+    if (NS_FAILED(rv = FinalizeSniffing(empty, 0, true, EmptyTaint))) {
       MarkAsBroken(rv);
       return;
     }
@@ -1301,9 +1313,9 @@ nsresult nsHtml5StreamParser::OnStopRequest(nsIRequest* aRequest,
 }
 
 void nsHtml5StreamParser::DoDataAvailableBuffer(
-    mozilla::Buffer<uint8_t>&& aBuffer) {
+    mozilla::Buffer<uint8_t>&& aBuffer, const StringTaint& aTaint) {
   if (MOZ_LIKELY(!mDecodingLocalFileAsUTF8)) {
-    DoDataAvailable(aBuffer);
+    DoDataAvailable(aBuffer, aTaint);
     return;
   }
   CheckedInt<size_t> bufferedPlusLength(aBuffer.Length());
@@ -1321,7 +1333,7 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
     // Truncation OK, because we just checked the range.
     mLocalFileBytesBuffered = bufferedPlusLength.value();
     mBufferedLocalFileData.AppendElement(std::move(aBuffer));
-    DoDataAvailable(mBufferedLocalFileData.LastElement());
+    DoDataAvailable(mBufferedLocalFileData.LastElement(), aTaint);
   } else {
     // Truncation OK, because the constant is small enough.
     size_t overBoundary =
@@ -1343,9 +1355,9 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
     mLocalFileBytesBuffered = LOCAL_FILE_UTF_8_BUFFER_SIZE;
     mBufferedLocalFileData.AppendElement(std::move(*maybe));
 
-    DoDataAvailable(head);
+    DoDataAvailable(head, aTaint.subtaint(0, untilBoundary));
     // Re-decode may have happened here.
-    DoDataAvailable(tail);
+    DoDataAvailable(tail, aTaint.subtaint(untilBoundary, aBuffer.Length()));
   }
   // Do this clean-up here to avoid use-after-free when
   // DoDataAvailable is passed a span pointing into an
@@ -1355,7 +1367,7 @@ void nsHtml5StreamParser::DoDataAvailableBuffer(
   }
 }
 
-void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer) {
+void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer, const StringTaint& aTaint) {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
   MOZ_RELEASE_ASSERT(STREAM_BEING_READ == mStreamState,
                      "DoDataAvailable called when stream not open.");
@@ -1370,9 +1382,9 @@ void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer) {
     if (mFeedChardet) {
       FeedDetector(aBuffer, false);
     }
-    rv = WriteStreamBytes(aBuffer);
+    rv = WriteStreamBytes(aBuffer, aTaint);
   } else {
-    rv = SniffStreamBytes(aBuffer);
+    rv = SniffStreamBytes(aBuffer, aTaint);
   }
   if (NS_FAILED(rv)) {
     MarkAsBroken(rv);
@@ -1408,16 +1420,18 @@ class nsHtml5DataAvailable : public Runnable {
  private:
   nsHtml5StreamParserPtr mStreamParser;
   Buffer<uint8_t> mData;
+  StringTaint mTaint;
 
  public:
   nsHtml5DataAvailable(nsHtml5StreamParser* aStreamParser,
-                       Buffer<uint8_t>&& aData)
+                       Buffer<uint8_t>&& aData, StringTaint aTaint)
       : Runnable("nsHtml5DataAvailable"),
         mStreamParser(aStreamParser),
-        mData(std::move(aData)) {}
+        mData(std::move(aData)),
+        mTaint(aTaint) {}
   NS_IMETHOD Run() override {
     mozilla::MutexAutoLock autoLock(mStreamParser->mTokenizerMutex);
-    mStreamParser->DoDataAvailableBuffer(std::move(mData));
+    mStreamParser->DoDataAvailableBuffer(std::move(mData), mTaint);
     return NS_OK;
   }
 };
@@ -1431,6 +1445,16 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
     return rv;
   }
 
+  // TaintFox: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInStream));
+#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in StreamParser::OnDataAvailable !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in StreamParser::OnDataAvailable +++++");
+  }
+#endif
+
   MOZ_ASSERT(mRequest == aRequest, "Got data on wrong stream.");
   uint32_t totalRead;
   // Main thread to parser thread dispatch requires copying to buffer first.
@@ -1440,13 +1464,19 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
       return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
     Buffer<uint8_t> data(std::move(*maybe));
-    rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
-                         data.Length(), &totalRead);
+    StringTaint taint;
+    if (taintInputStream) {
+        rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
+                                           data.Length(), &taint, &totalRead);
+    } else {
+        rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
+                             data.Length(), &totalRead);
+    }
     NS_ENSURE_SUCCESS(rv, rv);
     MOZ_ASSERT(totalRead == aLength);
 
     nsCOMPtr<nsIRunnable> dataAvailable =
-        new nsHtml5DataAvailable(this, std::move(data));
+        new nsHtml5DataAvailable(this, std::move(data), taint);
     if (NS_FAILED(mEventTarget->Dispatch(dataAvailable,
                                          nsIThread::DISPATCH_NORMAL))) {
       NS_WARNING("Dispatching DataAvailable event failed.");
@@ -1467,27 +1497,51 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
       return NS_ERROR_OUT_OF_MEMORY;
     }
     Buffer<uint8_t> data(std::move(*maybe));
-    rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
-                         data.Length(), &totalRead);
+    StringTaint taint;
+
+    if (taintInputStream) {
+        rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
+                                           data.Length(), &taint, &totalRead);
+    } else {
+        rv = aInStream->Read(reinterpret_cast<char*>(data.Elements()),
+                             data.Length(), &totalRead);
+    }
+
     NS_ENSURE_SUCCESS(rv, rv);
     MOZ_ASSERT(totalRead == aLength);
-    DoDataAvailableBuffer(std::move(data));
+    DoDataAvailableBuffer(std::move(data), taint);
     return rv;
   }
   // Read directly from response buffer.
-  rv = aInStream->ReadSegments(CopySegmentsToParser, this, aLength, &totalRead);
+  if (taintInputStream) {
+    rv = taintInputStream->TaintedReadSegments(CopySegmentsToParser, this, aLength, &totalRead);
+  } else {
+    rv = aInStream->ReadSegments(CopySegmentsToParserNoTaint, this, aLength, &totalRead);
+  }
   NS_ENSURE_SUCCESS(rv, rv);
   MOZ_ASSERT(totalRead == aLength);
   return rv;
 }
 
 /* static */
-nsresult nsHtml5StreamParser::CopySegmentsToParser(
+nsresult nsHtml5StreamParser::CopySegmentsToParserNoTaint(
     nsIInputStream* aInStream, void* aClosure, const char* aFromSegment,
     uint32_t aToOffset, uint32_t aCount, uint32_t* aWriteCount) {
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
-  parser->DoDataAvailable(AsBytes(MakeSpan(aFromSegment, aCount)));
+  parser->DoDataAvailable(AsBytes(MakeSpan(aFromSegment, aCount)), EmptyTaint);
+  // Assume DoDataAvailable consumed all available bytes.
+  *aWriteCount = aCount;
+  return NS_OK;
+}
+
+/* static */ nsresult
+nsHtml5StreamParser::CopySegmentsToParser(
+  nsITaintawareInputStream *aInStream, void *aClosure, const char *aFromSegment,
+  uint32_t aToOffset, uint32_t aCount, const StringTaint& aTaint, uint32_t *aWriteCount) {
+  nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
+
+  parser->DoDataAvailable(AsBytes(MakeSpan(aFromSegment, aCount)), aTaint);
   // Assume DoDataAvailable consumed all available bytes.
   *aWriteCount = aCount;
   return NS_OK;

@@ -77,6 +77,10 @@ void nsHtml5UTF16Buffer::setEnd(int32_t end) { this->end = end; }
 const StringTaint&
 nsHtml5UTF16Buffer::getTaint() { return taint; }
 
+void nsHtml5UTF16Buffer::setTaint(const StringTaint& taint) {
+    this->taint = taint;
+}
+
 void nsHtml5UTF16Buffer::initializeStatics() {}
 
 void nsHtml5UTF16Buffer::releaseStatics() {}

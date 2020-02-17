@@ -652,6 +652,9 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
     rv = request->SetHeader(nsHttp::Accept_Encoding, mHttpsAcceptEncodings,
                             false, nsHttpHeaderArray::eVarietyRequestDefault);
   } else {
+    // TaintFox: currently the decompression stream listeners aren't taint aware..
+    mHttpAcceptEncodings.Truncate();
+
     rv = request->SetHeader(nsHttp::Accept_Encoding, mHttpAcceptEncodings,
                             false, nsHttpHeaderArray::eVarietyRequestDefault);
   }

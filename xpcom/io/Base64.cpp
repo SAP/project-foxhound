@@ -13,6 +13,8 @@
 #include "nsString.h"
 #include "nsTArray.h"
 
+#include "Taint.h"
+
 #include "plbase64.h"
 
 namespace {
@@ -365,6 +367,7 @@ static nsresult Base64EncodeHelper(const T& aBinary, T& aBase64) {
   handle.Finish(base64Len, false);
   // Taintfox: propagate taint
   aBase64.AssignTaint(StringTaint::toBase64(aBinary.Taint()));
+
   return NS_OK;
 }
 
@@ -539,6 +542,7 @@ static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
   handle.Finish(binaryLen, true);
   // Taintfox: propagate taint and truncate taint if needed (due to padding)
   aBinary.AssignTaint(StringTaint::fromBase64(aBase64.Taint()).subtaint(0, binaryLen));
+
   return NS_OK;
 }
 

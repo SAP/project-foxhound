@@ -1,0 +1,17 @@
+<html>
+<head>
+    <style>
+        body {
+            font-family: monospace;
+        }
+    </style>
+    <script src="taintme.js"></script>
+    <script src="test.js"></script>
+    <script>
+        var inline_js_string = "1234 TAINTME 5678";
+    </script>
+</head>
+<body onload="runTests()">
+    <p>1234 TAINTME 5678</p><br>
+</body>
+</html>

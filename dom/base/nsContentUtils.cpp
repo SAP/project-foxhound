@@ -8070,7 +8070,7 @@ class BulkAppender {
 
  public:
   explicit BulkAppender(BulkWriteHandle<char16_t>&& aHandle)
-      : mHandle(std::move(aHandle)), mPosition(0) {}
+    : mHandle(std::move(aHandle)), mPosition(0), mTaint() {}
   ~BulkAppender() = default;
 
   template <int N>
@@ -8081,7 +8081,7 @@ class BulkAppender {
     mPosition += len;
   }
 
-  void Append(Span<const char16_t> aStr) {
+  void Append(Span<const char16_t> aStr, const StringTaint& aTaint) {
     size_t len = aStr.Length();
     MOZ_ASSERT(mPosition + len <= mHandle.Length());
     // Both mHandle.Elements() and aStr.Elements() are guaranteed
@@ -8090,21 +8090,28 @@ class BulkAppender {
     // memcpy does not lead to UB even if len was zero.
     memcpy(mHandle.Elements() + mPosition, aStr.Elements(),
            len * sizeof(char16_t));
+    // Taintfox: propagate taint
+    mTaint.concat(aTaint, mPosition);
     mPosition += len;
   }
 
-  void Append(Span<const char> aStr) {
+  void Append(Span<const char> aStr, const StringTaint& aTaint) {
     size_t len = aStr.Length();
     MOZ_ASSERT(mPosition + len <= mHandle.Length());
     ConvertLatin1toUtf16(aStr, mHandle.AsSpan().From(mPosition));
+    // Taintfox: propagate taint
+    mTaint.concat(aTaint, mPosition);
     mPosition += len;
   }
 
   void Finish() { mHandle.Finish(mPosition, false); }
 
+  const StringTaint& Taint() { return mTaint; }
+
  private:
   mozilla::BulkWriteHandle<char16_t> mHandle;
   size_type mPosition;
+  StringTaint mTaint;
 };
 
 class StringBuilder {
@@ -8226,35 +8233,37 @@ class StringBuilder {
         Unit& u = current->mUnits[i];
         switch (u.mType) {
           case Unit::eAtom:
-            appender.Append(*(u.mAtom));
+            appender.Append(*(u.mAtom), EmptyTaint);
             break;
           case Unit::eString:
-            appender.Append(*(u.mString));
+            appender.Append(*(u.mString), u.mString->Taint());
             break;
           case Unit::eStringWithEncode:
-            EncodeAttrString(*(u.mString), appender);
+            EncodeAttrString(*(u.mString), appender, u.mString->Taint());
             break;
           case Unit::eLiteral:
-            appender.Append(MakeSpan(u.mLiteral, u.mLength));
+            appender.Append(MakeSpan(u.mLiteral, u.mLength), EmptyTaint);
             break;
           case Unit::eTextFragment:
             if (u.mTextFragment->Is2b()) {
               appender.Append(MakeSpan(u.mTextFragment->Get2b(),
-                                       u.mTextFragment->GetLength()));
+                                       u.mTextFragment->GetLength()),
+                              u.mTextFragment->Taint());
             } else {
               appender.Append(MakeSpan(u.mTextFragment->Get1b(),
-                                       u.mTextFragment->GetLength()));
+                                       u.mTextFragment->GetLength()),
+                              u.mTextFragment->Taint());
             }
             break;
           case Unit::eTextFragmentWithEncode:
             if (u.mTextFragment->Is2b()) {
               EncodeTextFragment(MakeSpan(u.mTextFragment->Get2b(),
                                           u.mTextFragment->GetLength()),
-                                 appender);
+                                 appender, u.mTextFragment->Taint());
             } else {
               EncodeTextFragment(MakeSpan(u.mTextFragment->Get1b(),
                                           u.mTextFragment->GetLength()),
-                                 appender);
+                                 appender, u.mTextFragment->Taint());
             }
             break;
           default:
@@ -8263,6 +8272,7 @@ class StringBuilder {
       }
     }
     appender.Finish();
+    aOut.AssignTaint(appender.Taint());
     return true;
   }
 
@@ -8280,23 +8290,26 @@ class StringBuilder {
     aFirst->mLast = this;
   }
 
-  void EncodeAttrString(Span<const char16_t> aStr, BulkAppender& aAppender) {
+  void EncodeAttrString(Span<const char16_t> aStr, BulkAppender& aAppender, const StringTaint& aTaint) {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (char16_t c : aStr) {
       switch (c) {
         case '"':
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&quot;");
           flushedUntil = currentPosition + 1;
           break;
         case '&':
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&amp;");
           flushedUntil = currentPosition + 1;
           break;
         case 0x00A0:
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&nbsp;");
           flushedUntil = currentPosition + 1;
           break;
@@ -8306,33 +8319,38 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-      aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+      aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                       aTaint.subtaint(flushedUntil, currentPosition));
     }
   }
 
   template <class T>
-  void EncodeTextFragment(Span<const T> aStr, BulkAppender& aAppender) {
+  void EncodeTextFragment(Span<const T> aStr, BulkAppender& aAppender, const StringTaint& aTaint) {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (T c : aStr) {
       switch (c) {
         case '<':
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&lt;");
           flushedUntil = currentPosition + 1;
           break;
         case '>':
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&gt;");
           flushedUntil = currentPosition + 1;
           break;
         case '&':
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&amp;");
           flushedUntil = currentPosition + 1;
           break;
         case T(0xA0):
-          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+          aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                           aTaint.subtaint(flushedUntil, currentPosition));
           aAppender.AppendLiteral(u"&nbsp;");
           flushedUntil = currentPosition + 1;
           break;
@@ -8342,7 +8360,8 @@ class StringBuilder {
       currentPosition++;
     }
     if (currentPosition > flushedUntil) {
-      aAppender.Append(aStr.FromTo(flushedUntil, currentPosition));
+      aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
+                       aTaint.subtaint(flushedUntil, currentPosition));
     }
   }
 
