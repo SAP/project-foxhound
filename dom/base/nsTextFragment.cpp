@@ -204,12 +204,14 @@ static inline int32_t FirstNon8Bit(const char16_t* str, const char16_t* end) {
 
 bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
                            bool aUpdateBidi, const StringTaint& aTaint, bool aForce2b) {
-  // TaintFox: propagate taint.
-  AssignTaint(aTaint);
 
   if (aForce2b && mState.mIs2b && !m2b->IsReadonly()) {
     uint32_t storageSize = m2b->StorageSize();
     uint32_t neededSize = aLength * sizeof(char16_t);
+
+    // TaintFox: propagate taint.
+    AssignTaint(aTaint);
+
     if (!neededSize) {
       if (storageSize < AutoStringDefaultStorageSize) {
         // If we're storing small enough nsStringBuffer, let's preserve it.
@@ -237,6 +239,9 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, int32_t aLength,
   }
 
   ReleaseText();
+
+  // TaintFox: propagate taint.
+  AssignTaint(aTaint);
 
   if (aLength == 0) {
     return true;

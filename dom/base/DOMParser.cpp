@@ -60,6 +60,9 @@ static const char* StringFromSupportedType(SupportedType aType) {
 already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
+#if (DEBUG_E2E_TAINTING)
+    puts("++++ ParseFromString ++++");
+#endif
   if (aType == SupportedType::Text_html) {
     nsCOMPtr<Document> document = SetUpDocument(DocumentFlavorHTML, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
