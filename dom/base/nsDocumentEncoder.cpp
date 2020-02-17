@@ -1156,6 +1156,9 @@ nsDocumentEncoder::EncodeToStringWithMaxLength(uint32_t aMaxLength,
     aOutputString.Append(output.get(), output.Length());
   }
 
+  // taintfox: Propagate Taint
+  aOutputString.AssignTaint(output.Taint());
+
   return rv;
 }
 
