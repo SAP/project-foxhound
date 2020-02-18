@@ -671,7 +671,7 @@ static_assert(sizeof(TaintableString) == sizeof(StringTaint), "Class TaintableSt
 
 // Set to true to enable various debug outputs regarding end2end tainting
 // throughout the engine.
-#define DEBUG_E2E_TAINTING (1)
+#define DEBUG_E2E_TAINTING (DEBUG)
 
 /*
  * Deserialize taint information from its string representation. Required for
