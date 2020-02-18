@@ -1338,7 +1338,7 @@ nsPipeInputStream::Available(uint64_t* aResult) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsPipeInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter, void* aClosure,
                                         uint32_t aCount, uint32_t* aReadCount) {
   LOG(("III ReadSegmentsInternal [this=%p count=%u]\n", this, aCount));

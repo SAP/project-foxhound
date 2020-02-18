@@ -306,7 +306,7 @@ nsStringInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure, uin
   return ReadSegmentsInternal(aWriter, nullptr, aClosure, aCount, aReadCount);
 }
 
-NS_IMETHODIMP
+nsresult
 nsStringInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTaintedSegmentFun aTaintedWriter,
                                           void* aClosure, uint32_t aCount, uint32_t* aResult) {
   ReentrantMonitorAutoEnter lock(mMon);
