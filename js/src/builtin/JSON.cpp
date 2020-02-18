@@ -180,12 +180,16 @@ static size_t QuoteHelper(const JSLinearString& linear, StringBuffer& sb,
                           size_t sbOffset) {
   size_t len = linear.length();
 
+  StringTaint taint;
   JS::AutoCheckCannotGC nogc;
   RangedPtr<const SrcCharT> srcBegin{linear.chars<SrcCharT>(nogc), len};
   RangedPtr<DstCharT> dstBegin{sb.begin<DstCharT>(), sb.begin<DstCharT>(),
                                sb.end<DstCharT>()};
   RangedPtr<DstCharT> dstEnd =
-      InfallibleQuote(srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), sb.taint());
+      InfallibleQuote(srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), taint);
+
+  // Taintfox: append the taint with the correct offset
+  sb.taint().concat(taint, sbOffset);
 
   return dstEnd - dstBegin;
 }
