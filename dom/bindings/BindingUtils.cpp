@@ -2600,7 +2600,11 @@ bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
 
   if (!jsStr) return false;
 
+  // Taintfox: propagate taint
+  JS_SetStringTaint(cx, jsStr, str.Taint());
+
   rval.setString(jsStr);
+
   return true;
 }
 
@@ -2685,6 +2689,9 @@ bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
   if (!JS_EncodeStringToBuffer(cx, s, result.BeginWriting(), length)) {
     return false;
   }
+
+  // Taintfox: Propagate taint
+  result.AssignTaint(JS_GetStringTaint(s));
 
   return true;
 }
